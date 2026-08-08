@@ -12,6 +12,7 @@ from hr_recruitment.api import assessment as assessment_api
 from hr_recruitment.api import campaign as campaign_api
 from hr_recruitment.api import candidate as candidate_api
 from hr_recruitment.api import plan as plan_api
+from hr_recruitment.api import proposed_hire as proposed_hire_api
 from hr_recruitment.api import qualification as qualification_api
 from hr_recruitment.api import views as api_views
 
@@ -25,6 +26,52 @@ urlpatterns = [
         "api/hr/v1/recruitment/contract",
         api_views.hr04_api_contract,
         name="hr04-api-contract",
+    ),
+    # HR04-06 录用与人才引进（总册 13）
+    path(
+        "api/hr/v1/recruitment/proposed-hires",
+        proposed_hire_api.proposed_hire_list,
+        name="hr04-api-proposed-hire-list",
+    ),
+    path(
+        "api/hr/v1/recruitment/proposed-hires",
+        proposed_hire_api.create_proposed_hire,
+        name="hr04-api-proposed-hire-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/proposed-hires/<uuid:proposed_hire_id>/decide",
+        proposed_hire_api.decide_proposed_hire,
+        name="hr04-api-proposed-hire-decide",
+    ),
+    path(
+        "api/hr/v1/recruitment/proposed-hires/<uuid:proposed_hire_id>/handoff-to-hr05",
+        proposed_hire_api.handoff_to_hr05,
+        name="hr04-api-handoff-to-hr05",
+    ),
+    path(
+        "api/hr/v1/recruitment/notices",
+        proposed_hire_api.publish_notice,
+        name="hr04-api-notice-publish",
+    ),
+    path(
+        "api/hr/v1/recruitment/notices/<uuid:notice_id>/close",
+        proposed_hire_api.close_notice,
+        name="hr04-api-notice-close",
+    ),
+    path(
+        "api/hr/v1/recruitment/notices/<uuid:notice_id>/objections",
+        proposed_hire_api.receive_objection,
+        name="hr04-api-notice-objection",
+    ),
+    path(
+        "api/hr/v1/recruitment/offers",
+        proposed_hire_api.create_offer,
+        name="hr04-api-offer-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/offers/<uuid:offer_id>/accept",
+        proposed_hire_api.accept_offer,
+        name="hr04-api-offer-accept",
     ),
     # HR04-05 考试面试与考察（总册 12）
     path(

@@ -48,7 +48,7 @@ class HrProposedHire(models.Model):
     )
     rank = models.PositiveIntegerField()
     final_score = models.DecimalField(max_digits=8, decimal_places=2, default=0)
-    reservation_id = models.UUIDField(null=True, blank=True, db_index=True)
+    reservation_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
     reservation_no = models.CharField(max_length=64, blank=True, default="")
     decision = models.CharField(
         max_length=16, choices=ProposedHireDecision.choices, default=ProposedHireDecision.PROPOSE
@@ -263,7 +263,7 @@ class HrRecruitmentHandoff(models.Model):
         related_name="handoffs",
         verbose_name=_("Application"),
     )
-    reservation_id = models.UUIDField(null=True, blank=True, db_index=True)
+    reservation_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
     status = models.CharField(
         max_length=16, choices=HandoffStatus.choices, default=HandoffStatus.CREATED
     )
