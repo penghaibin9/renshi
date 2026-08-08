@@ -1,0 +1,50 @@
+{% comment %}
+HR04-01 年度用人计划（总册 8.2）
+列表页：计划周期 + 5 统计 + 状态 tabs + 学院列表
+数据走 GET /api/hr/v1/recruitment/plans
+{% endcomment %}
+{% extends "index.html" %}
+{% load static i18n %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="recruitment-plans">
+  {% include "hr/components/page_header.html" with title="年度用人计划" subtitle="从用人需求到学校批准的计划事实链" %}
+
+  <div class="hr-metric-strip">
+    {% include "hr/components/metric_card.html" with label="申请人数" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="批准人数" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="已启动招聘" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="已录用" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="剩余额度" status="loading" %}
+  </div>
+
+  <div class="hr-card">
+    <div class="hr-rec-plan-toolbar">
+      <h2 class="hr-section-title">{% trans "计划周期" %}</h2>
+      <button class="hr-btn" data-hr-new-cycle>{% trans "新建计划周期" %}</button>
+    </div>
+    <div id="hr04-plan-cycles" class="hr-rec-plan-cycles">
+      <div class="hr-state-view">
+        <p class="hr-meta">{% trans "数据加载中…" %}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="hr-card">
+    <h2 class="hr-section-title">{% trans "需求列表" %}</h2>
+    <div id="hr04-plan-requests" class="hr-rec-plan-requests">
+      <div class="hr-state-view">
+        <p class="hr-meta">{% trans "选择计划周期后加载需求" %}</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-plans.js' %}"></script>
+{% endblock %}

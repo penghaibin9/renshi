@@ -16,3 +16,10 @@ from hr_recruitment.permissions import require_hr04_permission
 def hr04_campaigns(request):
     """HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位，总册 5.1）。"""
     return render(request, "hr/recruitment/campaigns/console.html")
+
+
+@login_required
+@require_hr04_permission("hr04.plan.view")
+def hr04_plans(request):
+    """HR04-01 年度用人计划页面。"""
+    return render(request, "hr/recruitment/plans/plans.html")

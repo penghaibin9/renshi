@@ -23,10 +23,10 @@ urlpatterns = [
         "",
         RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
     ),
-    # S3 挂载点（占位重定向到控制台，避免 404）
+    # S3 挂载点
     path(
         "plans",
-        RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
+        views.hr04_plans,
         name="hr04-plans",
     ),
     path(
