@@ -25,6 +25,12 @@ from hr_time.models.schedule import (
     HrShiftVersion,
     HrWorkPattern,
 )
+from hr_time.models.event import (
+    HrAttendanceDevice,
+    HrRawTimeEvent,
+    HrTimeEventPair,
+    HrTimeEventSource,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -40,4 +46,8 @@ __all__ = [
     "HrWorkPattern",
     "HrScheduleAssignment",
     "HrScheduleException",
+    "HrTimeEventSource",
+    "HrAttendanceDevice",
+    "HrRawTimeEvent",
+    "HrTimeEventPair",
 ]
