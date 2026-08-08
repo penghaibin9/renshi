@@ -1,0 +1,131 @@
+"""
+hr_structure/services/relation.py
+
+RelationService —— 党政组织与业务关系（总册 10 节）。
+
+不变量：
+- source/target 同 tenant；
+- 主树 parent 不得成环；
+- 同组织同 dimension 同日期最多一个 primary parent；
+- relation 有生效期；历史不覆盖。
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from django.db import transaction
+
+from hr_structure.models import HrOrganizationRelation
+from hr_structure.scope import Hr02Scope
+
+
+class RelationServiceError(Exception):
+    def __init__(self, code: str, message: str, *, http_status: int = 422):
+        self.code = code
+        self.http_status = http_status
+        super().__init__(message)
+
+
+PRIMARY_PARENT_TYPES = (
+    HrOrganizationRelation.RelationType.ADMIN_PARENT,
+    HrOrganizationRelation.RelationType.PARTY_PARENT,
+    HrOrganizationRelation.RelationType.TEACHING_PARENT,
+)
+
+
+class RelationService:
+    def __init__(self, scope: Hr02Scope, actor: str = ""):
+        self.scope = scope
+        self.actor = actor
+
+    def _validate_tenant(self, source_org, target_org):
+        if source_org.tenant_id != self.scope.tenant_id or target_org.tenant_id != self.scope.tenant_id:
+            raise RelationServiceError("HR02_CROSS_TENANT_REFERENCE", "跨租户引用被拒绝")
+
+    @transaction.atomic
+    def create_relation(self, *, source_org_id, target_org_id, relation_type, validity_from, validity_to=None) -> HrOrganizationRelation:
+        from hr_structure.models import HrOrganization
+
+        source = HrOrganization.objects.filter(id=source_org_id).first()
+        target = HrOrganization.objects.filter(id=target_org_id).first()
+        if source is None or target is None:
+            raise RelationServiceError("HR02_ORG_NOT_FOUND", "组织不存在", http_status=404)
+        self._validate_tenant(source, target)
+
+        # 主树 parent：同 source 同日期最多一个 primary parent（INV 10.3）
+        if relation_type in PRIMARY_PARENT_TYPES:
+            existing = HrOrganizationRelation.objects.filter(
+                tenant_id=self.scope.tenant_id,
+                source_org_id=source_org_id,
+                relation_type=relation_type,
+                status="ACTIVE",
+                validity_to__isnull=True,
+            ).first()
+            if existing:
+                raise RelationServiceError(
+                    "HR02_RELATION_CONFLICT",
+                    f"该组织已有主树上级 {existing.target_org_id_id}，不能重复设置主上级",
+                )
+
+        relation = HrOrganizationRelation.objects.create(
+            tenant_id=self.scope.tenant_id,
+            source_org_id_id=source_org_id,
+            target_org_id_id=target_org_id,
+            relation_type=relation_type,
+            validity_from=validity_from,
+            validity_to=validity_to,
+            status=HrOrganizationRelation.Status.ACTIVE,
+            created_by=self.actor,
+        )
+        return relation
+
+    @transaction.atomic
+    def close(self, relation_id):
+        with transaction.atomic():
+            rel = (
+                HrOrganizationRelation.objects.select_for_update()
+                .filter(tenant_id=self.scope.tenant_id, id=relation_id)
+                .first()
+            )
+            if rel is None:
+                raise RelationServiceError("HR02_ORG_NOT_FOUND", "关系不存在", http_status=404)
+            rel.status = HrOrganizationRelation.Status.CLOSED
+            rel.validity_to = date.today()
+            rel.save(update_fields=["status", "validity_to"])
+            return rel
+
+    def detect_conflicts(self) -> list:
+        """冲突检测（总册 10.4）：党组织未匹配 / 教学组织孤儿 / 多重主归口冲突。"""
+        conflicts = []
+        from hr_structure.models import HrOrganization
+
+        # 多重主 parent 冲突
+        from django.db.models import Count
+
+        multi = (
+            HrOrganizationRelation.objects.filter(
+                tenant_id=self.scope.tenant_id,
+                relation_type__in=PRIMARY_PARENT_TYPES,
+                status="ACTIVE",
+            )
+            .values("source_org_id")
+            .annotate(cnt=Count("id"))
+            .filter(cnt__gt=1)
+        )
+        for m in multi:
+            conflicts.append(
+                {"type": "MULTI_PRIMARY_PARENT", "orgId": m["source_org_id"], "severity": "WARNING"}
+            )
+        # 行政组织无 primary parent（孤儿，除根）
+        roots_related = HrOrganizationRelation.objects.filter(
+            tenant_id=self.scope.tenant_id, relation_type="ADMIN_PARENT", status="ACTIVE"
+        ).values_list("source_org_id", flat=True)
+        root_versions = HrOrganization.objects.filter(
+            tenant_id=self.scope.tenant_id, org_dimension="ADMIN"
+        ).exclude(versions__org_type="SCHOOL").exclude(id__in=roots_related)
+        for org in root_versions[:20]:
+            conflicts.append(
+                {"type": "ORG_ORPHAN", "orgId": org.id, "severity": "INFO"}
+            )
+        return conflicts

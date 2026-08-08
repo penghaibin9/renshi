@@ -81,7 +81,7 @@ class OrganizationChangeService:
             org_dimension=dimension,
             created_by=self.actor,
         )
-        HrOrganizationVersion.objects.create(
+        version = HrOrganizationVersion.objects.create(
             organization_id=org,
             tenant_id=self.scope.tenant_id,
             name=name,
@@ -93,6 +93,20 @@ class OrganizationChangeService:
             sort_order=sort_order,
             created_by=self.actor,
         )
+        # 主树 parent 一致性：version.parent 与 relation(ADMIN_PARENT) 同步维护
+        # （总册 8.2 + 10.3：同组织同 dimension 同日期最多一个 primary parent）
+        if parent_id and dimension == "ADMIN":
+            from hr_structure.models import HrOrganizationRelation
+
+            HrOrganizationRelation.objects.create(
+                tenant_id=self.scope.tenant_id,
+                source_org_id_id=org.id,
+                target_org_id_id=parent_id,
+                relation_type=HrOrganizationRelation.RelationType.ADMIN_PARENT,
+                validity_from=validity_from,
+                status=HrOrganizationRelation.Status.ACTIVE,
+                created_by=self.actor,
+            )
         return org
 
     @transaction.atomic

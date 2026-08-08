@@ -50,4 +50,63 @@ urlpatterns = [
         api_views.position_availability,
         name="hr-api-position-availability",
     ),
+    # 党政组织与业务关系（HR02-02）
+    path(
+        "api/hr/v1/structure/org-relations",
+        api_views.org_relations,
+        name="hr-api-org-relations",
+    ),
+    path(
+        "api/hr/v1/structure/org-relations/<int:relation_id>/close",
+        api_views.org_relation_close,
+        name="hr-api-org-relation-close",
+    ),
+    # 编制方案（HR02-03）
+    path(
+        "api/hr/v1/structure/staffing-plans",
+        api_views.staffing_plans,
+        name="hr-api-staffing-plans",
+    ),
+    path(
+        "api/hr/v1/structure/staffing-plans/list",
+        api_views.staffing_plans_list,
+        name="hr-api-staffing-plans-list",
+    ),
+    path(
+        "api/hr/v1/structure/staffing-plans/<int:plan_id>/<str:action>",
+        api_views.staffing_plan_action,
+        name="hr-api-staffing-plan-action",
+    ),
+    # 岗位目录（HR02-04）
+    path(
+        "api/hr/v1/structure/post-catalogs",
+        api_views.post_catalogs,
+        name="hr-api-post-catalogs",
+    ),
+    path(
+        "api/hr/v1/structure/post-catalogs/list",
+        api_views.post_catalogs_list,
+        name="hr-api-post-catalogs-list",
+    ),
+    path(
+        "api/hr/v1/structure/post-grade-schemes",
+        api_views.post_grade_schemes,
+        name="hr-api-post-grade-schemes",
+    ),
+    # 组织岗位历史与重组（HR02-06）
+    path(
+        "api/hr/v1/structure/change-cases",
+        api_views.change_cases_list,
+        name="hr-api-change-cases",
+    ),
+    path(
+        "api/hr/v1/structure/change-cases/<int:case_id>/<str:action>",
+        api_views.change_case_action,
+        name="hr-api-change-case-action",
+    ),
+    path(
+        "api/hr/v1/structure/effective-runner/run",
+        api_views.effective_runner_trigger,
+        name="hr-api-effective-runner",
+    ),
 ]
