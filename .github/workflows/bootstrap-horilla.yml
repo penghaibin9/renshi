@@ -1,3 +1,4 @@
+# One-time bootstrap: import pinned Horilla 2.0 into this repository.
 name: Bootstrap Horilla 2.0
 
 on:
