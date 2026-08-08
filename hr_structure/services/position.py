@@ -109,7 +109,8 @@ class PositionService:
     ) -> HrPositionReservation:
         """创建预占（HARD control 下必须扣除 HELD reservation 计算可用性）。"""
         existing = HrPositionReservation.objects.filter(
-            idempotency_key=idempotency_key
+            tenant_id=self.scope.tenant_id,
+            idempotency_key=idempotency_key,
         ).first()
         if existing:
             return existing  # 幂等重试

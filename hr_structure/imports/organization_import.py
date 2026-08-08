@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List
 
+from django.db import transaction
+
 from hr_structure.scope import Hr02Scope
 from hr_structure.services.organization_change import (
     Hr02ServiceError,
@@ -132,42 +134,47 @@ class OrganizationImportService:
             result.created = len(parsed)
             return result
 
-        # 落库：先建无 parent 的（root 级），再建有 parent 的
-        parent_map = {r.stable_code: r.parent_code for r in parsed}
-        pending = list(parsed)
-        created_codes = set(existing)
-        while pending:
-            progressed = False
-            for r in list(pending):
-                parent_code = parent_map[r.stable_code]
-                parent_id = None
-                if parent_code:
-                    if parent_code not in created_codes:
-                        continue  # parent 尚未建，等下一轮
-                    parent_org = HrOrganization.objects.filter(
-                        tenant_id=self.scope.tenant_id, stable_code=parent_code
-                    ).first()
-                    parent_id = parent_org.id if parent_org else None
-                try:
-                    org = self.svc.create_organization(
-                        stable_code=r.stable_code,
-                        name=r.name,
-                        org_type=r.org_type,
-                        dimension=r.dimension,
-                        parent_id=parent_id,
-                        validity_from=r.validity_from,
-                        sort_order=r.sort_order,
-                    )
-                    created_codes.add(r.stable_code)
-                    result.created += 1
-                    pending.remove(r)
-                    progressed = True
-                except Hr02ServiceError as exc:
-                    result.errors.append(ImportRowError(0, exc.code, exc.message))
-                    pending.remove(r)  # 有错也移出，避免死循环
-            if not progressed and pending:
-                # 剩下的都是环或无法解析 parent → 全批失败（原子）
-                for r in pending:
-                    result.errors.append(ImportRowError(0, "PARENT_CYCLE", f"无法解析上级或检测到环: {r.stable_code}"))
-                pending.clear()
+        # 落库：整体原子（23.3 全有或全无，任何错误回滚整批）
+        try:
+            with transaction.atomic():
+                parent_map = {r.stable_code: r.parent_code for r in parsed}
+                pending = list(parsed)
+                created_codes = set(existing)
+                while pending:
+                    progressed = False
+                    for r in list(pending):
+                        parent_code = parent_map[r.stable_code]
+                        parent_id = None
+                        if parent_code:
+                            if parent_code not in created_codes:
+                                continue  # parent 尚未建，等下一轮
+                            parent_org = HrOrganization.objects.filter(
+                                tenant_id=self.scope.tenant_id, stable_code=parent_code
+                            ).first()
+                            parent_id = parent_org.id if parent_org else None
+                        try:
+                            self.svc.create_organization(
+                                stable_code=r.stable_code,
+                                name=r.name,
+                                org_type=r.org_type,
+                                dimension=r.dimension,
+                                parent_id=parent_id,
+                                validity_from=r.validity_from,
+                                sort_order=r.sort_order,
+                            )
+                            created_codes.add(r.stable_code)
+                            result.created += 1
+                            pending.remove(r)
+                            progressed = True
+                        except Hr02ServiceError as exc:
+                            result.errors.append(ImportRowError(0, exc.code, exc.message))
+                            pending.remove(r)
+                    if not progressed and pending:
+                        for r in pending:
+                            result.errors.append(ImportRowError(0, "PARENT_CYCLE", f"无法解析上级或检测到环: {r.stable_code}"))
+                        pending.clear()
+        except Exception as exc:
+            # 原子回滚：已创建的行全部撤销
+            result.errors.append(ImportRowError(0, "IMPORT_FAILED", str(exc)))
+            result.created = 0
         return result

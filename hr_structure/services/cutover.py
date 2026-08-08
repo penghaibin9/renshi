@@ -37,7 +37,18 @@ class Hr02CutoverService:
             tenant_id=tenant_id,
             defaults={"mode": Hr02AuthorityCutover.Mode.LEGACY_STRUCTURE_ONLY},
         )
-        record.old_mode = record.mode
+        old = record.mode
+        # 只允许前进：LEGACY→DUAL→AUTHORITY；回退仅限 AUTHORITY→DUAL（受控，需 reason）
+        forward = {
+            Hr02AuthorityCutover.Mode.LEGACY_STRUCTURE_ONLY: {Hr02AuthorityCutover.Mode.DUAL_READ_COMPARE},
+            Hr02AuthorityCutover.Mode.DUAL_READ_COMPARE: {Hr02AuthorityCutover.Mode.HR02_AUTHORITY},
+            Hr02AuthorityCutover.Mode.HR02_AUTHORITY: {Hr02AuthorityCutover.Mode.DUAL_READ_COMPARE},
+        }
+        if new_mode not in forward.get(old, set()):
+            raise ValueError(f"非法迁移路径: {old} → {new_mode}（仅允许 LEGACY→DUAL→AUTHORITY 前进，回退限 AUTHORITY→DUAL）")
+        if new_mode == Hr02AuthorityCutover.Mode.HR02_AUTHORITY and not reconcile_report_id:
+            raise ValueError("进入 HR02_AUTHORITY 必须提供 reconcile_report_id（对账报告）")
+        record.old_mode = old
         record.mode = new_mode
         record.operator = self.operator
         record.reason = reason

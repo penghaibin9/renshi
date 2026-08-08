@@ -55,17 +55,28 @@ class RelationService:
 
         # 主树 parent：同 source 同日期最多一个 primary parent（INV 10.3）
         if relation_type in PRIMARY_PARENT_TYPES:
-            existing = HrOrganizationRelation.objects.filter(
+            # 区间重叠检测（10.3：同日期最多一个 primary parent）
+            # 新关系 [validity_from, validity_to) 与既有 ACTIVE 关系重叠则冲突
+            new_to = validity_to or date.max
+            overlap = HrOrganizationRelation.objects.filter(
                 tenant_id=self.scope.tenant_id,
                 source_org_id=source_org_id,
                 relation_type=relation_type,
                 status="ACTIVE",
+            ).filter(
+                validity_from__lt=new_to,
                 validity_to__isnull=True,
-            ).first()
+            )
+            if validity_to:
+                overlap = overlap.filter(
+                    validity_from__lt=validity_to,
+                    validity_to__gt=validity_from,
+                )
+            existing = overlap.first()
             if existing:
                 raise RelationServiceError(
                     "HR02_RELATION_CONFLICT",
-                    f"该组织已有主树上级 {existing.target_org_id_id}，不能重复设置主上级",
+                    f"该组织已有主树上级 {existing.target_org_id_id}，生效区间重叠",
                 )
 
         relation = HrOrganizationRelation.objects.create(

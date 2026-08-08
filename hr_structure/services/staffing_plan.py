@@ -45,11 +45,15 @@ class StaffingPlanService:
         total_authorized = sum(
             line.authorized_headcount for line in plan.headcount_lines.all()
         )
-        # 汇总校验：学校总量 vs 分配之和（若存在学校级 line）
-        school_lines = [l for l in plan.headcount_lines.all() if l.organization_id.org_dimension == "ADMIN"]
-        # 分配之和 vs 学校总量行
+        # 汇总校验：学校总量行 vs 分配之和
         total_line = next(
-            (l for l in plan.headcount_lines.all() if l.organization_id_id and l.organization_id.org_type == "SCHOOL"),
+            (
+                l
+                for l in plan.headcount_lines.all()
+                if l.organization_id_id
+                and l.organization_id.org_dimension == "ADMIN"
+                and l.staffing_basis == l.StaffingBasis.OFFICIAL_ESTABLISHMENT
+            ),
             None,
         )
         if total_line and total_line.authorized_headcount > 0:

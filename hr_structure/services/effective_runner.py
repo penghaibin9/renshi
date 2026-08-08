@@ -17,26 +17,24 @@ from datetime import date
 from django.db import transaction
 
 from hr_structure.models import HrStructureChangeCase
+from hr_structure.scope import Hr02Scope
 from hr_structure.services.reorganization import ReorganizationService
 
 logger = logging.getLogger(__name__)
 
 
-def run_effective_runner(tenant_id=None, as_of=None):
-    """执行到期的 SCHEDULED case。返回处理结果摘要。"""
+def run_effective_runner(tenant_id, as_of=None):
+    """执行某租户到期的 SCHEDULED case。tenant_id 必填（总册 1.2 后台任务必须显式绑定 tenant）。"""
     from hr_structure.services.reorganization import find_scheduled_cases
 
+    if not tenant_id:
+        raise ValueError("effective runner 必须显式指定 tenant_id")
     as_of = as_of or date.today()
-    cases = find_scheduled_cases(tenant_id, as_of=as_of) if tenant_id else (
-        HrStructureChangeCase.objects.filter(
-            status=HrStructureChangeCase.Status.SCHEDULED,
-            requested_effective_date__lte=as_of,
-        )
-    )
+    cases = find_scheduled_cases(tenant_id, as_of=as_of)
     results = {"processed": 0, "effective": 0, "failed": 0}
     for case in cases:
         try:
-            scope = type("S", (), {"tenant_id": case.tenant_id})()
+            scope = Hr02Scope("SCHOOL", tenant_id=case.tenant_id)
             svc = ReorganizationService(scope, actor="effective-runner")
             with transaction.atomic():
                 executed = svc.execute_effective(

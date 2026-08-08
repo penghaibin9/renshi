@@ -77,12 +77,19 @@ def _parse_as_of(request):
 
 
 def _make_scope(request) -> Hr02Scope:
+    """服务端解析 scope：认证 + tenant + 用户授权范围（总册 35.1，不信前端任意值）。"""
+    if not getattr(request.user, "is_authenticated", False):
+        raise HrContextError("HR02_SCOPE_DENIED", "请先登录")
     tenant_id = resolve_tenant_from_request(request)
     if tenant_id is None:
         raise HrContextError("HR02_TENANT_CONTEXT_REQUIRED", "请选择当前学校")
+    # scope_type 白名单由 resolve_scope 校验；scope_id 仅当用户是 superuser 或拥有组织权限时接受
+    scope_type = request.GET.get("scope_type", "SCHOOL")
+    if scope_type != "SCHOOL" and not (request.user.is_superuser or request.user.has_perm("hr.organization.view")):
+        raise HrContextError("HR02_SCOPE_DENIED", "无该数据范围权限")
     return resolve_scope(
         tenant_id,
-        scope_type=request.GET.get("scope_type", "SCHOOL"),
+        scope_type=scope_type,
         org_id=request.GET.get("scope_id"),
     )
 
@@ -110,7 +117,9 @@ def organizations_bootstrap(request):
             "code": root.organization_id.stable_code if root else None,
             "name": root.name if root else None,
             "org_type": root.org_type if root else None,
-            "childCount": root.child_versions.count() if root else 0,
+            "childCount": (
+                selector.get_children(root.organization_id_id).count() if root else 0
+            ),
         },
         summary={
             "activeOrganizations": 0,
@@ -136,13 +145,14 @@ def organizations_tree(request):
 
     selector = OrganizationSelector(scope, as_of=as_of)
     children = selector.get_children(int(parent_id))
+    child_ids = {c.organization_id_id for c in children}
     nodes = [
         {
             "id": v.organization_id_id,
             "stable_code": v.organization_id.stable_code,
             "name": v.name,
             "org_type": v.org_type,
-            "has_children": v.child_versions.exists(),
+            "has_children": v.organization_id_id in child_ids,
             "validity_from": v.validity_from.isoformat(),
         }
         for v in children
@@ -787,6 +797,8 @@ def change_case_action(request, case_id, action):
                 return _error(request, "HR02_SCOPE_DENIED", "无批准权限", status=403)
             case = svc.approve(case)
         elif action == "schedule":
+            if not (request.user.is_superuser or request.user.has_perm("hr.reorg.execute")):
+                return _error(request, "HR02_SCOPE_DENIED", "无调度权限", status=403)
             case = svc.schedule(case)
         elif action == "execute":
             if not (request.user.is_superuser or request.user.has_perm("hr.reorg.execute")):
@@ -832,13 +844,26 @@ def effective_runner_trigger(request):
 
 @require_GET
 def projection_run(request):
-    """GET /api/hr/v1/structure/projection/run —— 把权威组织投影到 Horilla Department（单向）。"""
+    """GET /api/hr/v1/structure/projection/run —— 把权威组织投影到 Horilla Department（单向）。
+
+    仅 HR02_AUTHORITY/DUAL_READ_COMPARE 模式允许投影写 Horilla Department
+    （总册 30.1：LEGACY_STRUCTURE_ONLY 不得强切/覆盖 legacy）。
+    """
     try:
         scope = _make_scope(request)
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
     if not (request.user.is_superuser or request.user.has_perm("hr.organization.manage")):
         return _error(request, "HR02_SCOPE_DENIED", "无组织管理权限", status=403)
+
+    from hr_structure.services.cutover import Hr02CutoverService
+
+    mode = Hr02CutoverService().get_mode(scope.tenant_id)
+    if mode not in ("HR02_AUTHORITY", "DUAL_READ_COMPARE"):
+        return _error(
+            request, "HR02_LEGACY_WRITE_DISABLED",
+            "当前 HR02 未进入权威/对账模式，禁止投影写 Horilla Department", status=409,
+        )
 
     from hr_structure.models import HrOrganizationVersion
     from hr_structure.projections.horilla import HorillaStructureProjectionService
@@ -851,7 +876,7 @@ def projection_run(request):
     for v in versions:
         svc.project_organization(v)
         projected += 1
-    return _json(request, _root(request, scope.tenant_id, date.today(), projected=projected))
+    return _json(request, _root(request, scope.tenant_id, date.today(), projected=projected, mode=mode))
 
 
 @require_GET

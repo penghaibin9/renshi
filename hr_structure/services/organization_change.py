@@ -72,8 +72,13 @@ class OrganizationChangeService:
         """新建组织（CREATE_ORG）。"""
         if validity_from < date.today():
             raise Hr02ServiceError("HR02_EFFECTIVE_RANGE_OVERLAP", "生效日期不能早于今天")
-        if parent_id and _detect_cycle(self.scope.tenant_id, parent_id, 0):
-            raise Hr02ServiceError("HR02_ORG_CYCLE_DETECTED", "检测到组织环")
+        # parent 必须属于本 tenant（INV-01），否则跨租户引用
+        if parent_id:
+            from hr_structure.models import HrOrganization as _Org
+
+            parent = _Org.objects.filter(tenant_id=self.scope.tenant_id, id=parent_id).first()
+            if parent is None:
+                raise Hr02ServiceError("HR02_CROSS_TENANT_REFERENCE", "上级组织不存在或跨租户")
 
         org = HrOrganization.objects.create(
             tenant_id=self.scope.tenant_id,

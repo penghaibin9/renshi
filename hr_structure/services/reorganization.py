@@ -112,19 +112,93 @@ class ReorganizationService:
 
     @transaction.atomic
     def execute_effective(self, case: HrStructureChangeCase, execution_key: str) -> HrStructureChangeCase:
-        """生效执行（幂等）。总册 14.9：明确 scheduler/worker、幂等 key、事务、失败可重试。"""
-        if execution_key != getattr(case, "_execution_key", execution_key) or case.status == HrStructureChangeCase.Status.EFFECTIVE:
-            return case  # 幂等：已生效直接返回
+        """生效执行（幂等 + 真实落地）。总册 14.9。
+
+        - select_for_update 锁 case 行，防双 runner 并发重复执行；
+        - 幂等：execution_result_json.executionKey 已存在或 status=EFFECTIVE 直接返回；
+        - 按 change items 落地实际动作（RENAME_ORG 建新版本等），失败置 FAILED_EFFECT 可重试。
+        """
+        locked = (
+            HrStructureChangeCase.objects.select_for_update()
+            .filter(tenant_id=self.scope.tenant_id, id=case.id)
+            .first()
+        )
+        if locked is None:
+            raise ReorgServiceError("HR02_ORG_NOT_FOUND", "变更 case 不存在", http_status=404)
+        case = locked
+
+        if case.status == HrStructureChangeCase.Status.EFFECTIVE:
+            return case  # 已生效 → 幂等返回
+        prev_key = (case.execution_result_json or {}).get("executionKey")
+        if prev_key == execution_key:
+            return case  # 同一 execution key 已处理过 → 幂等返回
         if case.status != HrStructureChangeCase.Status.SCHEDULED:
             raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", f"当前状态 {case.status} 不可生效")
-        # 到生效日才允许
         if case.requested_effective_date > date.today():
             raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", "尚未到生效日期")
+
+        try:
+            self._apply_items(case)
+        except Exception as exc:
+            case.status = HrStructureChangeCase.Status.FAILED_EFFECT
+            case.execution_result_json = {"executionKey": execution_key, "error": str(exc)}
+            case.save(update_fields=["status", "execution_result_json"])
+            raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", f"生效执行失败: {exc}")
+
         case.status = HrStructureChangeCase.Status.EFFECTIVE
         case.executed_at = timezone.now()
         case.execution_result_json = {"executionKey": execution_key, "effectiveAt": case.requested_effective_date.isoformat()}
         case.save(update_fields=["status", "executed_at", "execution_result_json"])
         return case
+
+    def _apply_items(self, case: HrStructureChangeCase) -> None:
+        """按 change items 落地实际动作。当前支持 RENAME_ORG（建新版本，历史不漂移）。"""
+        from datetime import date as _date
+
+        from hr_structure.models import HrOrganizationVersion
+
+        items = list(case.items.order_by("sequence"))
+        for item in items:
+            action = item.action_type
+            entity_id = int(item.entity_id) if item.entity_id else None
+            if action == "RENAME_ORG" and entity_id:
+                new_name = (item.after_payload or {}).get("name")
+                if not new_name:
+                    raise ValueError(f"RENAME_ORG 缺少新名称 (entity={entity_id})")
+                # 关闭旧版本，建新版本（生效日为新版本 validity_from）
+                old = (
+                    HrOrganizationVersion.objects.filter(
+                        organization_id=entity_id,
+                        tenant_id=self.scope.tenant_id,
+                        status__in=("APPROVED", "EFFECTIVE", "SUPERSEDED"),
+                        validity_to__isnull=True,
+                    )
+                    .order_by("-version_no")
+                    .first()
+                )
+                if old is None:
+                    raise ValueError(f"组织 {entity_id} 无当前有效版本")
+                old.validity_to = case.requested_effective_date
+                old.status = HrOrganizationVersion.Status.SUPERSEDED
+                old.save(update_fields=["validity_to", "status"])
+                HrOrganizationVersion.objects.create(
+                    organization_id_id=entity_id,
+                    tenant_id=self.scope.tenant_id,
+                    name=new_name,
+                    short_name=old.short_name,
+                    org_type=old.org_type,
+                    parent_organization_id_id=old.parent_organization_id_id,
+                    validity_from=case.requested_effective_date,
+                    status=HrOrganizationVersion.Status.EFFECTIVE,
+                    sort_order=old.sort_order,
+                    change_case_id=case.case_no,
+                    version_no=old.version_no + 1,
+                    created_by=self.actor,
+                )
+            # 其他 action_type（CREATE_ORG/MERGE/SPLIT/REPARENT/MOVE_POSITION 等）
+            # 当前为最小实现：记录未执行，避免静默假生效。
+            elif action in ("CREATE_ORG", "MERGE_ORGS", "SPLIT_ORG", "REPARENT_ORG", "MOVE_POSITION", "CREATE_POSITION", "CLOSE_POSITION"):
+                raise ValueError(f"action {action} 暂未实现落地，拒绝假生效")
 
 
 def find_scheduled_cases(tenant_id, as_of=None):
