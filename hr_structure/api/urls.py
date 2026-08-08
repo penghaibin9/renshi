@@ -141,4 +141,10 @@ urlpatterns = [
         api_views.position_control_summary,
         name="hr-api-position-control-summary",
     ),
+    # 组织 Excel 导入（HR02 23 节）
+    path(
+        "api/hr/v1/structure/organization-import",
+        api_views.organization_import,
+        name="hr-api-organization-import",
+    ),
 ]

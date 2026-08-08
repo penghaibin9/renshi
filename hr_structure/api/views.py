@@ -988,3 +988,50 @@ def position_control_summary(request):
             frozen=frozen, over=over,
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# 组织 Excel 导入（总册 23 节）—— 预检 / 确认落库
+# ---------------------------------------------------------------------------
+
+
+def organization_import(request):
+    """POST /api/hr/v1/structure/organization-import
+    body: {"rows": [{组织代码,组织名称,组织类型,组织维度,上级组织代码,排序}], "dryRun": bool}
+    """
+    import json
+
+    if request.method != "POST":
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
+    if not (request.user.is_superuser or request.user.has_perm("hr.organization.manage")):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织管理权限", status=403)
+
+    try:
+        scope = _make_scope(request)
+        body = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return _error(request, "HR02_INVALID_REQUEST", "请求体不是合法 JSON", status=400)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    rows = body.get("rows", [])
+    dry_run = body.get("dryRun", True)
+
+    try:
+        from hr_structure.imports.organization_import import OrganizationImportService
+
+        svc = OrganizationImportService(scope, actor=str(getattr(request.user, "id", "")))
+        result = svc.import_rows(rows, dry_run=dry_run)
+    except Exception:
+        return _error(request, "HR02_INVALID_REQUEST", "导入失败", status=422)
+
+    return _json(
+        request,
+        _root(
+            request, scope.tenant_id, date.today(),
+            created=result.created,
+            errors=[{"row": e.row, "code": e.code, "message": e.message, "field": e.field} for e in result.errors],
+            hasErrors=result.has_errors,
+            dryRun=dry_run,
+        ),
+    )
