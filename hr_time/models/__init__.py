@@ -37,6 +37,15 @@ from hr_time.models.attendance import (
     HrTimeSheetEntry,
     HrTimeSheetPeriod,
 )
+from hr_time.models.overtime import (
+    HrAttendanceCorrectionCase,
+    HrAttendanceException,
+    HrCompTimeAccount,
+    HrCompTimeLedger,
+    HrOvertimeFact,
+    HrOvertimeRequest,
+    HrTimeSourceIncident,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -60,4 +69,11 @@ __all__ = [
     "HrTimeBalanceLedger",
     "HrTimeSheetPeriod",
     "HrTimeSheetEntry",
+    "HrAttendanceException",
+    "HrAttendanceCorrectionCase",
+    "HrTimeSourceIncident",
+    "HrOvertimeRequest",
+    "HrOvertimeFact",
+    "HrCompTimeAccount",
+    "HrCompTimeLedger",
 ]
