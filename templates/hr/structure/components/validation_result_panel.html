@@ -1,0 +1,42 @@
+{% comment %}
+HrValidationResultPanel — 方案校验结果面板。
+
+参数：
+  results — 校验结果列表，每项 dict：{level, code?, message?, level_label?}
+            level ∈ BLOCKER（阻断，红）/ WARNING（警告，黄）/ INFO（提示，灰）
+  summary — 可选 dict：{blocker, warning, info} 统计数；缺省不显示统计行
+
+无障碍：级别始终有文字（阻断/警告/提示）与配色并存，不只靠颜色。
+{% endcomment %}
+{% load i18n %}
+{% if results %}
+  <section class="hr-validation-panel" aria-label="{% trans '校验结果' %}">
+    {% if summary %}
+      <div class="hr-validation-panel__summary">
+        <span class="hr-validation-panel__count hr-validation-panel__count--blocker">
+          <span class="hr-tabular-nums">{{ summary.blocker|default:0 }}</span> {% trans "阻断" %}
+        </span>
+        <span class="hr-validation-panel__count hr-validation-panel__count--warning">
+          <span class="hr-tabular-nums">{{ summary.warning|default:0 }}</span> {% trans "警告" %}
+        </span>
+        <span class="hr-validation-panel__count hr-validation-panel__count--info">
+          <span class="hr-tabular-nums">{{ summary.info|default:0 }}</span> {% trans "提示" %}
+        </span>
+      </div>
+    {% endif %}
+    <ul class="hr-validation-panel__list">
+      {% for r in results %}
+        <li class="hr-validation-panel__item hr-validation-panel__item--{{ r.level|lower }}">
+          <span class="hr-validation-panel__level">
+            {% if r.level_label %}{{ r.level_label }}
+            {% elif r.level|lower == "blocker" %}{% trans "阻断" %}
+            {% elif r.level|lower == "warning" %}{% trans "警告" %}
+            {% else %}{% trans "提示" %}{% endif %}
+          </span>
+          {% if r.code %}<code class="hr-validation-panel__code">{{ r.code }}</code>{% endif %}
+          <span class="hr-validation-panel__message">{{ r.message }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

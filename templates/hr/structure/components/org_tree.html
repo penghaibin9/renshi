@@ -1,0 +1,111 @@
+{% comment %}
+HrOrgTree — 组织树（懒加载）组件。
+
+职责：
+  - 只渲染「当前层」：接收 nodes（当前层节点数组）与 depth（层级，从 1 起）；
+  - 子节点由 JS 经 tree_api_url 懒加载，禁止一次加载整棵树或全部人员；
+  - stable id：每行以 data-node-id 标识；刷新后经 selected_id 恢复选中并滚动到可视区；
+  - 键盘导航（↑/↓/←/→/Home/End/Enter + 键入定位）与搜索定位由 static/hr/js/structure/org-tree.js 提供；
+  - 节点只显示：名称 + 编码 + 类型 badge + 待生效/已停用 低强调状态，不堆字段、不含人员明细。
+
+无障碍：
+  - role="tree" / role="treeitem" / role="group"；
+  - aria-level / aria-expanded / aria-selected / aria-busy / aria-current；
+  - 状态同时用文字徽章表达，不只靠颜色。
+
+Usage（根调用）:
+  {% include "hr/structure/components/org_tree.html"
+       with id="org-tree"
+            nodes=roots
+            depth=1
+            tree_api_url="/api/hr/v1/structure/organizations/{id}/children"
+            selected_id=current_org_id
+            as_of="2026-08-08"
+            dimension="ADMIN"
+            search_enabled=True %}
+
+节点字段契约（node dict）:
+  id           稳定 id（必填）
+  name         显示名称（必填）
+  stable_code  稳定编码（可选）
+  type_label   组织类型文字（可选，如 "学院"）
+  url          详情链接（可选）
+  has_children 是否有子节点（可选，布尔；必须传 Python bool，勿传字符串 "false"）
+  status       ACTIVE / PENDING（待生效）/ INACTIVE（已停用）（可选）
+  selected     是否当前选中（可选，布尔）
+  expanded     是否预展开；预展开时可传 children 走服务端渲染（可选，布尔）
+  children     子节点数组（仅 expanded 时用于服务端渲染）
+{% endcomment %}
+{% load i18n %}
+{% if render_mode == "list" %}
+  {% with d=depth|default:1 %}
+  <ul class="hr-org-tree__list" role="group">
+    {% for node in nodes %}
+      <li class="hr-org-tree__item" role="none">
+        <div class="hr-org-tree__row{% if node.selected %} is-selected{% endif %}{% if node.status == 'PENDING' %} is-pending{% elif node.status == 'INACTIVE' %} is-inactive{% endif %}"
+             role="treeitem"
+             tabindex="{% if node.selected or forloop.first %}0{% else %}-1{% endif %}"
+             data-node-id="{{ node.id }}"
+             data-node-code="{{ node.stable_code|default:'' }}"
+             data-node-url="{{ node.url|default:'' }}"
+             data-search="{{ node.name|lower }}"
+             data-has-children="{{ node.has_children|yesno:'true,false' }}"
+             data-loaded="{% if node.expanded %}true{% else %}false{% endif %}"
+             aria-level="{{ d }}"
+             aria-expanded="{% if node.has_children %}{% if node.expanded %}true{% else %}false{% endif %}{% else %}false{% endif %}"
+             aria-selected="{% if node.selected %}true{% else %}false{% endif %}"
+             {% if node.selected %}aria-current="true"{% endif %}>
+          {% if node.has_children %}
+            <span class="hr-org-tree__twisty" aria-hidden="true">&#9654;</span>
+          {% else %}
+            <span class="hr-org-tree__twisty hr-org-tree__twisty--leaf" aria-hidden="true"></span>
+          {% endif %}
+          <a class="hr-org-tree__label" href="{{ node.url|default:'#' }}">{{ node.name }}</a>
+          {% if node.stable_code %}<span class="hr-org-tree__code">{{ node.stable_code }}</span>{% endif %}
+          {% if node.type_label %}<span class="hr-org-tree__type">{{ node.type_label }}</span>{% endif %}
+          {% if node.status == "PENDING" %}
+            <span class="hr-org-tree__status hr-org-tree__status--pending">{% trans "待生效" %}</span>
+          {% elif node.status == "INACTIVE" %}
+            <span class="hr-org-tree__status hr-org-tree__status--inactive">{% trans "已停用" %}</span>
+          {% endif %}
+        </div>
+        {% if node.has_children %}
+          <ul class="hr-org-tree__children" role="group"{% if not node.expanded %} hidden{% endif %}>
+            {% if node.expanded and node.children %}
+              {% with nd=d|add:1 %}
+                {% include "hr/structure/components/org_tree.html" with nodes=node.children depth=nd render_mode="list" %}
+              {% endwith %}
+            {% endif %}
+          </ul>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+  {% endwith %}
+{% else %}
+  <div class="hr-org-tree" id="{{ id|default:'hr-org-tree' }}"
+       data-hr-org-tree
+       data-tree-api="{{ tree_api_url|default:'' }}"
+       data-as-of="{{ as_of|default:'' }}"
+       data-dimension="{{ dimension|default:'' }}"
+       data-selected-id="{{ selected_id|default:'' }}"
+       role="tree"
+       aria-label="{{ aria_label|default:_('组织结构') }}">
+    {% if search_enabled %}
+      <div class="hr-org-tree__toolbar">
+        <label class="hr-sr-only" for="{{ id|default:'hr-org-tree' }}-search">{% trans "搜索组织" %}</label>
+        <input type="search" id="{{ id|default:'hr-org-tree' }}-search"
+               class="hr-org-tree__search"
+               placeholder="{% trans '搜索组织名称' %}"
+               autocomplete="off"
+               aria-describedby="{{ id|default:'hr-org-tree' }}-search-status" />
+        <span class="hr-sr-only" id="{{ id|default:'hr-org-tree' }}-search-status" role="status"></span>
+      </div>
+    {% endif %}
+    {% if nodes %}
+      {% include "hr/structure/components/org_tree.html" with nodes=nodes depth=depth render_mode="list" %}
+    {% else %}
+      {% include "hr/components/empty_state.html" with title=_("无组织节点") %}
+    {% endif %}
+  </div>
+{% endif %}

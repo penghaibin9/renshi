@@ -1,0 +1,80 @@
+{% comment %}
+HrStructureDiff — 重组前后对比。
+
+参数：
+  before / after — 树节点数组，每项 dict：
+    {name, type_label, change, old_name?, new_name?, children?}
+  change ∈ added / removed / changed / moved / unchanged（大小写不敏感）：
+    added     → <ins> 高亮（绿色）
+    removed   → <del> 高亮（红色）
+    changed   → <del>旧名</del> → <ins>新名</ins>
+    moved     → 显示「已移动」标签（黄色）
+    unchanged → 普通文本
+
+无障碍：变更始终有文字标签（新增/移除/变更/移动）与配色并存，不只靠颜色。
+{% endcomment %}
+{% load i18n %}
+{% if render_mode == "list" %}
+  {% with d=depth|default:0 %}
+  <ul class="hr-structure-diff__tree" role="list">
+    {% for item in items %}
+      {% with c=item.change|lower %}
+      <li class="hr-structure-diff__node{% if c %} is-{{ c }}{% endif %}"
+          role="listitem"
+          style="--hr-diff-depth: {{ d }};">
+        <span class="hr-structure-diff__row">
+          {% if c == "removed" %}
+            <del class="hr-structure-diff__name">{{ item.name }}</del>
+          {% elif c == "added" %}
+            <ins class="hr-structure-diff__name">{{ item.name }}</ins>
+          {% elif c == "changed" %}
+            <del class="hr-structure-diff__name">{{ item.old_name|default:item.name }}</del>
+            <span class="hr-structure-diff__arrow" aria-hidden="true">&#8594;</span>
+            <ins class="hr-structure-diff__name">{{ item.new_name|default:item.name }}</ins>
+          {% else %}
+            <span class="hr-structure-diff__name">{{ item.name }}</span>
+          {% endif %}
+          {% if item.type_label %}<span class="hr-structure-diff__type">{{ item.type_label }}</span>{% endif %}
+          {% if c %}
+            <span class="hr-structure-diff__tag">
+              {% if item.change_label %}{{ item.change_label }}
+              {% elif c == "added" %}{% trans "新增" %}
+              {% elif c == "removed" %}{% trans "移除" %}
+              {% elif c == "changed" %}{% trans "变更" %}
+              {% elif c == "moved" %}{% trans "移动" %}
+              {% else %}{% trans "不变" %}{% endif %}
+            </span>
+          {% endif %}
+        </span>
+        {% if item.children %}
+          {% with nd=d|add:1 %}
+            {% include "hr/structure/components/structure_diff.html" with render_mode="list" items=item.children depth=nd %}
+          {% endwith %}
+        {% endif %}
+      </li>
+      {% endwith %}
+    {% endfor %}
+  </ul>
+  {% endwith %}
+{% else %}
+  <div class="hr-structure-diff">
+    <div class="hr-structure-diff__columns">
+      <section class="hr-structure-diff__col" aria-label="{% trans '变更前' %}">
+        <h3 class="hr-structure-diff__title">{% trans "变更前" %}</h3>
+        {% if before %}
+          {% include "hr/structure/components/structure_diff.html" with render_mode="list" items=before depth=0 %}
+        {% else %}
+          <p class="hr-meta">—</p>
+        {% endif %}
+      </section>
+      <section class="hr-structure-diff__col" aria-label="{% trans '变更后' %}">
+        <h3 class="hr-structure-diff__title">{% trans "变更后" %}</h3>
+        {% if after %}
+          {% include "hr/structure/components/structure_diff.html" with render_mode="list" items=after depth=0 %}
+        {% else %}
+          <p class="hr-meta">—</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+{% endif %}

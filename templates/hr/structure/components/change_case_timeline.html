@@ -1,0 +1,33 @@
+{% comment %}
+HrChangeCaseTimeline — 变更 case 审批流程时间线（横向步骤条）。
+
+标准阶段：DRAFT → SUBMITTED → UNDER_REVIEW → APPROVED → SCHEDULED → EFFECTIVE。
+
+参数：
+  steps — 必填，阶段列表，每项 dict：
+    {state, label, at?, by?, status?}
+    status ∈ done / current / pending（缺省时仅渲染中性样式）
+  current_state — 可选，命中的阶段附加 aria-current="step"
+  aria_label    — 可选，步骤条区域名
+
+时间戳/操作人：at / by 可选，显示在各阶段下方；时间建议传 YYYY-MM-DD 字符串。
+
+无障碍：当前/已完成/待处理都有文字与图标数字表达；已完成段落用主色填充，不只靠颜色。
+{% endcomment %}
+{% load i18n %}
+{% if steps %}
+  <ol class="hr-case-timeline" aria-label="{{ aria_label|default:_('变更流程') }}">
+    {% for s in steps %}
+      <li class="hr-case-timeline__item
+           {% if s.status == 'done' %}is-done{% elif s.status == 'current' %}is-current{% elif s.status == 'pending' %}is-pending{% endif %}"
+          {% if s.state == current_state %}aria-current="step"{% endif %}>
+        <span class="hr-case-timeline__marker" aria-hidden="true">{{ forloop.counter }}</span>
+        <div class="hr-case-timeline__body">
+          <span class="hr-case-timeline__state">{{ s.label|default:s.state }}</span>
+          {% if s.at %}<time class="hr-case-timeline__meta hr-tabular-nums" datetime="{{ s.at }}">{{ s.at }}</time>{% endif %}
+          {% if s.by %}<span class="hr-case-timeline__meta">{{ s.by }}</span>{% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
+{% endif %}

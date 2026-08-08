@@ -1,0 +1,39 @@
+{% comment %}
+HrPositionStatusBadge — 岗位状态徽章。
+
+状态：VACANT / PARTIALLY_FILLED / FILLED / OVERFILLED / FROZEN / CLOSED / DRAFT / ACTIVE。
+硬性要求：始终有文字表达，不只靠颜色。
+
+参数：
+  status — 状态码（大小写不敏感）
+  label  — 可选，自定义文案；缺省使用内置中文文案
+
+无障碍：状态文字与颜色并存；title 提示保留原文 status。
+{% endcomment %}
+{% load i18n %}
+{% with st=status|lower %}
+  <span class="hr-position-status
+       {% if st == 'vacant' %}hr-position-status--vacant
+       {% elif st == 'partially_filled' %}hr-position-status--partial
+       {% elif st == 'filled' %}hr-position-status--filled
+       {% elif st == 'overfilled' %}hr-position-status--overfilled
+       {% elif st == 'frozen' %}hr-position-status--frozen
+       {% elif st == 'closed' %}hr-position-status--closed
+       {% elif st == 'draft' %}hr-position-status--draft
+       {% elif st == 'active' %}hr-position-status--active{% endif %}"
+       {% if status %}title="{{ status }}"{% endif %}>
+    {% if label %}
+      {{ label }}
+    {% else %}
+      {% if st == 'vacant' %}{% trans "空缺" %}
+      {% elif st == 'partially_filled' %}{% trans "部分在岗" %}
+      {% elif st == 'filled' %}{% trans "已满编" %}
+      {% elif st == 'overfilled' %}{% trans "超编" %}
+      {% elif st == 'frozen' %}{% trans "冻结" %}
+      {% elif st == 'closed' %}{% trans "已关闭" %}
+      {% elif st == 'draft' %}{% trans "草稿" %}
+      {% elif st == 'active' %}{% trans "在岗" %}
+      {% else %}{{ status }}{% endif %}
+    {% endif %}
+  </span>
+{% endwith %}

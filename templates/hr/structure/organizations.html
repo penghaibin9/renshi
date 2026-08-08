@@ -1,0 +1,43 @@
+{% extends "index.html" %}
+{% load static i18n %}
+{% comment %}
+HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未来）
+
+数据来源：GET /api/hr/v1/structure/organizations/bootstrap + /tree
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="structure-orgs">
+  {% include "hr/components/page_header.html" with title="组织机构" subtitle="管理学校正式机构、上下级关系与未来生效调整" %}
+
+  <!-- 历史/未来模式条（默认今天不显示） -->
+  <div id="hr-effective-ribbon" data-hr-ribbon></div>
+
+  <div class="hr-structure-layout">
+    <!-- 组织树 -->
+    <aside class="hr-structure-tree">
+      <div class="hr-structure-tree__search">
+        <input type="search" id="hr-org-search" class="hr-search-input"
+          placeholder="{% trans '搜索机构/代码' %}" aria-label="{% trans '搜索机构' %}">
+      </div>
+      <div id="hr-org-tree" data-hr-tree
+        data-api-url="{% url 'hr-api-structure-org-tree' %}"
+        aria-label="{% trans '组织树' %}"></div>
+    </aside>
+
+    <!-- 详情 -->
+    <main class="hr-structure-detail" id="hr-org-detail">
+      {% include "hr/components/state_view.html" with state="loading" %}
+    </main>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/structure/org-tree.js' %}"></script>
+<script src="{% static 'hr/js/structure/organizations.js' %}"></script>
+{% endblock %}

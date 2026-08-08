@@ -1,0 +1,32 @@
+{% comment %}
+HrFutureModeBanner — 未来预览蓝色横幅。
+
+职责：
+  - 显示生效日期；
+  - 明确只读提示（未来版本不允许直接 PATCH，写操作由页面级逻辑禁用）；
+  - 提供进入 change case 的入口。
+
+参数：
+  effective_date    — 生效日期（YYYY-MM-DD 字符串）
+  change_case_url   — 变更 case 详情链接（可选）
+  change_case_label — 变更 case 链接文案（可选，默认「查看变更 case →」）
+
+无障碍：role="status"；只读状态有完整文字说明，不只靠颜色。
+{% endcomment %}
+{% load i18n %}
+{% if effective_date %}
+  <div class="hr-future-banner" role="status">
+    <span class="hr-future-banner__icon" aria-hidden="true">&#9200;</span>
+    <div class="hr-future-banner__text">
+      <strong>{% trans "未来预览" %}</strong>
+      <span>
+        {% trans "该变更将于" %}
+        <time class="hr-future-banner__date" datetime="{{ effective_date }}">{{ effective_date }}</time>
+        {% trans "生效。当前为只读预览，不允许直接修改。" %}
+      </span>
+      {% if change_case_url %}
+        <a class="hr-future-banner__link" href="{{ change_case_url }}">{{ change_case_label|default:_("查看变更 case →") }}</a>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
