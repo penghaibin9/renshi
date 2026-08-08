@@ -1,0 +1,51 @@
+{% comment %}
+HrPagination — 分页（上一页 / 页码 / 下一页），Django 模板循环。
+用法与 Django 标准 PageView 的 page_obj 兼容；仅一页时不输出。
+
+Usage:
+  {% include "hr/components/pagination.html" with page_obj=page_obj base_url="?status=all" %}
+  # base_url 应已含现有查询参数（以 ? 开头），组件自动追加 &page=N；
+  # 不传 base_url 时使用 ?page=N。
+
+页码按 paginator.page_range 全量循环；若页数很多，调用方可自行把
+page_range 换成省略号处理后的列表传给 pages 参数（可选）。
+{% endcomment %}
+{% load i18n %}
+{% if page_obj and page_obj.paginator.num_pages > 1 %}
+<nav class="hr-pagination" aria-label="{% trans '分页导航' %}">
+  <ul class="hr-pagination__list">
+    {% if page_obj.has_previous %}
+      <li>
+        <a class="hr-pagination__link" href="{% if base_url %}{{ base_url }}&amp;page={{ page_obj.previous_page_number }}{% else %}?page={{ page_obj.previous_page_number }}{% endif %}">
+          {% trans "上一页" %}
+        </a>
+      </li>
+    {% else %}
+      <li><span class="hr-pagination__link is-disabled">{% trans "上一页" %}</span></li>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+      <li>
+        {% if num == page_obj.number %}
+          <span class="hr-pagination__link is-active" aria-current="page">{{ num }}</span>
+        {% else %}
+          <a class="hr-pagination__link" href="{% if base_url %}{{ base_url }}&amp;page={{ num }}{% else %}?page={{ num }}{% endif %}">{{ num }}</a>
+        {% endif %}
+      </li>
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+      <li>
+        <a class="hr-pagination__link" href="{% if base_url %}{{ base_url }}&amp;page={{ page_obj.next_page_number }}{% else %}?page={{ page_obj.next_page_number }}{% endif %}">
+          {% trans "下一页" %}
+        </a>
+      </li>
+    {% else %}
+      <li><span class="hr-pagination__link is-disabled">{% trans "下一页" %}</span></li>
+    {% endif %}
+  </ul>
+  {% if page_obj.paginator.count is not None %}
+    <p class="hr-pagination__meta hr-meta">{% trans "共" %} {{ page_obj.paginator.count }} {% trans "条" %}</p>
+  {% endif %}
+</nav>
+{% endif %}

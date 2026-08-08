@@ -1,0 +1,44 @@
+{% comment %}
+HrChartCard — 图表卡片（标题 + 副标题 + 图表容器 div + 可选 table fallback 提示）。
+状态支持：ready（默认）/ loading / empty / error / unavailable / permission_denied。
+
+Usage:
+  {% include "hr/components/chart_card.html" with title="在岗教职工趋势" subtitle="近 12 个月" chart_id="chart-workforce" fallback=table_html|safe %}
+
+约定：
+  - chart_id 为 ApexCharts 挂载容器 id，页面脚本经 HrChart.createChart(chart_id, ...) 初始化（见 static/hr/js/core/chart.js）。
+  - fallback 为"安全 HTML"插槽：图表降级时展示的表格数据；调用处用 |safe 标记。
+  - 图表颜色只允许来自 HrChart.PALETTE 语义色板，业务页不得传随机颜色。
+{% endcomment %}
+{% load i18n %}
+<section class="hr-chart-card hr-card">
+  <header class="hr-chart-card__header">
+    <h2 class="hr-chart-card__title">{{ title }}</h2>
+    {% if subtitle %}<p class="hr-chart-card__subtitle hr-meta">{{ subtitle }}</p>{% endif %}
+  </header>
+
+  <div class="hr-chart-card__body">
+    {% with st=status|lower %}
+      {% if st == "loading" %}
+        <div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div>
+        <span class="hr-sr-only">{% trans "加载中" %}</span>
+      {% elif st == "empty" %}
+        {% include "hr/components/empty_state.html" with title=empty_title|default:_("暂无图表数据") %}
+      {% elif st == "permission_denied" %}
+        {% include "hr/components/empty_state.html" with title=_("无查看权限") %}
+      {% elif st == "unavailable" %}
+        {% include "hr/components/unavailable_state.html" with message=empty_hint %}
+      {% elif st == "error" %}
+        {% include "hr/components/error_state.html" with message=error_message request_id=request_id %}
+      {% else %}
+        <div class="hr-chart-card__chart" id="{{ chart_id }}" role="img" aria-label="{{ title }}"></div>
+        {% if fallback %}
+          <div class="hr-chart-card__fallback">
+            <p class="hr-meta">{% trans "图表不可用时，以下为数据明细：" %}</p>
+            {{ fallback }}
+          </div>
+        {% endif %}
+      {% endif %}
+    {% endwith %}
+  </div>
+</section>

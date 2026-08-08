@@ -1,0 +1,85 @@
+/*
+ * hr-tokens.css — 跃科 HR 设计令牌（HR01 作为 18 模块视觉起点）
+ *
+ * 依据 docs/01_HR01_人事工作台_施工总册_终极版.md 第 9.3 / 14 节。
+ * 原则：蓝色=品牌+可交互；红/橙只用于真正风险；不用彩虹 KPI；
+ *       不用大面积渐变/玻璃拟态/transition:all/blur 常规效果。
+ */
+
+:root {
+  /* 颜色 */
+  --hr-primary-600: #2563eb;
+  --hr-primary-700: #1d4ed8;
+  --hr-primary-50: #eff6ff;
+
+  --hr-text-900: #0f172a;
+  --hr-text-700: #334155;
+  --hr-text-500: #64748b;
+
+  --hr-surface: #ffffff;
+  --hr-canvas: #f6f8fc;
+  --hr-border: #e2e8f0;
+
+  --hr-success: #16a34a;
+  --hr-warning: #d97706;
+  --hr-danger: #dc2626;
+  --hr-info: #0284c7;
+
+  /* 间距系统：4/8/12/16/20/24/32/40 */
+  --hr-space-1: 4px;
+  --hr-space-2: 8px;
+  --hr-space-3: 12px;
+  --hr-space-4: 16px;
+  --hr-space-5: 20px;
+  --hr-space-6: 24px;
+  --hr-space-7: 32px;
+  --hr-space-8: 40px;
+
+  /* 圆角：small 8 / medium 12 / large 16 */
+  --hr-radius-sm: 8px;
+  --hr-radius-md: 12px;
+  --hr-radius-lg: 16px;
+
+  /* 字体层级 */
+  --hr-font-page-title: 24px/32px 700;
+  --hr-font-section-title: 16px/24px 700;
+  --hr-font-card-label: 13px/20px 600;
+  --hr-font-kpi-value: 28px/36px 700;
+  --hr-font-body: 14px/22px 400;
+  --hr-font-meta: 12px/18px 400;
+
+  /* 阴影（轻，更多依赖边框/间距/层级） */
+  --hr-shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --hr-shadow-raised: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+/* Dark 模式（Horilla 保留 dark mode 时） */
+.dark {
+  --hr-text-900: #f1f5f9;
+  --hr-text-700: #cbd5e1;
+  --hr-text-500: #94a3b8;
+  --hr-surface: #1e293b;
+  --hr-canvas: #0f172a;
+  --hr-border: #334155;
+}
+
+/* 基础 HR 卡片 */
+.hr-card {
+  background: var(--hr-surface);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  box-shadow: var(--hr-shadow-card);
+}
+
+.hr-kpi-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hr-meta {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--hr-text-500);
+}

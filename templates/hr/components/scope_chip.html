@@ -1,0 +1,18 @@
+{% comment %}
+HrScopeChip — 数据范围标签（SCHOOL/COLLEGE/DEPARTMENT/ASSIGNED）。
+非数据组件；复用已有 .hr-scope-chip 样式。
+
+Usage:
+  {% include "hr/components/scope_chip.html" with label="全校" scope="SCHOOL" %}
+  # scope 可选 SCHOOL / COLLEGE / DEPARTMENT / ASSIGNED，仅影响 title/aria 描述，不改变样式（范围无风险含义）。
+
+无障碍：chip 自带文字；title 提供完整范围说明。
+{% endcomment %}
+{% load i18n %}
+{% if label %}
+  <span class="hr-scope-chip"
+        {% if scope %}title="{% trans '数据范围' %}: {{ scope }}"{% endif %}
+        aria-label="{% trans '数据范围' %}: {{ label }}">
+    {{ label }}
+  </span>
+{% endif %}

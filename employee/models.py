@@ -754,7 +754,17 @@ class Employee(models.Model):
 
         if not hasattr(self, "employee_work_info"):
             EmployeeWorkInformation.objects.get_or_create(employee_id=self)
-            return self.save()
+            # 原实现 `return self.save()` 会递归重跑完整 save 流程，导致
+            # post_save 信号（BonusPoint 等）重复触发、payroll pre_save 循环回写。
+            # workinfo 已创建后：
+            #   - 若第一遍 save 在内存中设置了 employee_user_id，用 update 持久化，
+            #     避免再次触发 post_save 信号。
+            #   - 否则直接返回。
+            if self.employee_user_id_id is not None:
+                Employee.objects.filter(pk=self.pk).update(
+                    employee_user_id_id=self.employee_user_id_id
+                )
+            return self
 
         return self
 

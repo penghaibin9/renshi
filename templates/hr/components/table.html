@@ -1,0 +1,55 @@
+{% comment %}
+HrTable — 表格（表头 sticky，支持空态 / loading 态，及部分异常态）。
+状态支持：ready（默认）/ loading / empty / partial / error / unavailable / permission_denied。
+
+Usage:
+  {% include "hr/components/table.html" with columns=columns rows=rows %}
+  # columns：表头列表，如 ["姓名","岗位","合同到期"]
+  # rows   ：行列表，每行为单元格列表，如 [["张三","教授","2027-08-31"], ...]
+  # caption ：可选表格说明（屏幕阅读器友好）
+  # partial_note ：partial 状态时表格上方的提示条文案
+  # 单元格默认按纯文本渲染（自动转义）；需要富文本（如徽章）时在调用处传入 |safe 的单元格。
+
+状态说明：
+  loading → 表格骨架屏；empty → 空状态；partial → 表格照常渲染 + 提示条；
+  error / unavailable / permission_denied → 复用对应状态组件，不泄露数据。
+{% endcomment %}
+{% load i18n %}
+{% with st=status|lower %}
+<div class="hr-table-wrap">
+  {% if st == "loading" %}
+    {% include "hr/components/skeleton.html" with variant="table" rows=loading_rows|default:"5" %}
+  {% elif st == "empty" or not rows %}
+    {% include "hr/components/empty_state.html" with title=empty_title|default:_("暂无数据") hint=empty_hint %}
+  {% elif st == "permission_denied" %}
+    {% include "hr/components/empty_state.html" with title=_("无查看权限") %}
+  {% elif st == "unavailable" %}
+    {% include "hr/components/unavailable_state.html" with message=empty_hint %}
+  {% elif st == "error" %}
+    {% include "hr/components/error_state.html" with message=error_message request_id=request_id %}
+  {% else %}
+    {% if st == "partial" and partial_note %}
+      <div class="hr-table__note" role="status">{{ partial_note }}</div>
+    {% endif %}
+    <table class="hr-table">
+      {% if caption %}<caption class="hr-sr-only">{{ caption }}</caption>{% endif %}
+      <thead>
+        <tr>
+          {% for col in columns %}
+            <th scope="col">{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            {% for cell in row %}
+              <td>{{ cell }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+{% endwith %}

@@ -1,0 +1,49 @@
+{% extends "index.html" %}
+{% load static i18n %}
+{% comment %}
+HR01-01 人事总览 —— 运营控制台首页（S3）
+
+数据全部来自 GET /api/hr/v1/home/bootstrap（单请求聚合），
+模板薄、组件公共化、无内联 CSS（样式在 static/hr/css/）。
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<script src="{% static 'hr/vendor/apexcharts/apexcharts.min.js' %}"></script>
+
+<div class="hr-page" data-hr-page="overview">
+  {% include "hr/components/page_header.html" with title="人事工作台" subtitle="今天最值得你关注的人员、待办与风险" %}
+
+  <!-- 6 核心 KPI -->
+  <div class="hr-metric-strip" id="hr-metric-strip" data-hr-region="metrics">
+    {% for i in "123456" %}
+      {% include "hr/components/metric_card.html" with status="loading" %}
+    {% endfor %}
+  </div>
+
+  <!-- 第二行：今日重点 / 风险雷达 -->
+  <div class="hr-overview-grid hr-overview-grid--middle">
+    {% include "hr/components/section_card.html" with title="我的待办" id="hr-todo-summary" status="loading" action_label="查看全部" action_url="/hr/todos" %}
+    {% include "hr/components/section_card.html" with title="风险雷达" id="hr-risk-summary" status="loading" action_label="查看全部" action_url="/hr/alerts" %}
+  </div>
+
+  <!-- 第三行：趋势 / 结构摘要 -->
+  <div class="hr-overview-grid hr-overview-grid--middle">
+    {% include "hr/components/chart_card.html" with chart_id="hr-headcount-trend" title="人数变化趋势" subtitle="12 个月 Headcount / 新增 / 退出" status="loading" %}
+    {% include "hr/components/chart_card.html" with chart_id="hr-structure-summary" title="队伍结构摘要" subtitle="职称 / 学历 / 年龄 / 双师" status="loading" %}
+  </div>
+
+  <!-- 第四行：最近变化 / 快捷办理 -->
+  <div class="hr-overview-grid hr-overview-grid--middle">
+    {% include "hr/components/section_card.html" with title="最近人事变化" id="hr-recent-changes" status="loading" %}
+    {% include "hr/components/section_card.html" with title="快捷办理" id="hr-quick-actions" status="loading" action_label="更多办理" action_url="/hr/actions" %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/core/chart.js' %}"></script>
+<script src="{% static 'hr/js/pages/overview.js' %}"></script>
+{% endblock %}

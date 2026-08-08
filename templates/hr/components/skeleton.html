@@ -1,0 +1,33 @@
+{% comment %}
+HrSkeleton — 骨架屏（kpi / panel / table 三种尺寸）。
+状态语义：loading（占位不改变布局，避免跳动）。
+
+Usage:
+  {% include "hr/components/skeleton.html" with variant="kpi" %}
+  {% include "hr/components/skeleton.html" with variant="panel" %}
+  {% include "hr/components/skeleton.html" with variant="table" rows=5 cols=4 %}
+
+table 变体按 rows × cols 渲染骨架单元格；rows/cols 缺省为 5/4。
+动效遵循 prefers-reduced-motion（关闭 shimmer）。
+{% endcomment %}
+{% load i18n %}
+{% if variant == "kpi" %}
+  <div class="hr-skeleton hr-skeleton--kpi" aria-hidden="true"></div>
+  <span class="hr-sr-only">{% trans "加载中" %}</span>
+{% elif variant == "table" %}
+  {% with nrows=rows|default:"5" ncols=cols|default:"4" %}
+    <div class="hr-skeleton hr-skeleton--table" role="status" aria-label="{% trans '加载中' %}">
+      {% for _ in ""|ljust:nrows %}
+        <div class="hr-skeleton--table__row">
+          {% for _ in ""|ljust:ncols %}
+            <div class="hr-skeleton hr-skeleton--table__cell"></div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+      <span class="hr-sr-only">{% trans "加载中" %}</span>
+    </div>
+  {% endwith %}
+{% else %}
+  <div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div>
+  <span class="hr-sr-only">{% trans "加载中" %}</span>
+{% endif %}

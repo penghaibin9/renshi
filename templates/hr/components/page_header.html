@@ -1,0 +1,19 @@
+{% comment %}
+HrPageHeader — 页面标题 + 一句用途 + 当前学校/范围/统计日/最后更新 + 刷新
+{% endcomment %}
+{% load i18n %}
+<div class="hr-page-header">
+  <div class="hr-page-header__main">
+    <h1 class="hr-page-title">{{ title }}</h1>
+    {% if subtitle %}<p class="hr-page-subtitle hr-meta">{{ subtitle }}</p>{% endif %}
+  </div>
+  <div class="hr-page-header__meta">
+    {% if school %}<span class="hr-meta">{{ school }}</span>{% endif %}
+    {% if scope_label %}<span class="hr-scope-chip">{{ scope_label }}</span>{% endif %}
+    {% if as_of %}<span class="hr-meta">{% trans "统计日" %}: {{ as_of }}</span>{% endif %}
+    {% if updated_at %}<span class="hr-meta">{% trans "最后更新" %}: {{ updated_at }}</span>{% endif %}
+    {% if refresh_url %}
+      <button class="hr-btn hr-btn--ghost" data-hr-refresh>{{ refresh_label|default:_("刷新") }}</button>
+    {% endif %}
+  </div>
+</div>

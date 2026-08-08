@@ -91,6 +91,7 @@ INSTALLED_APPS = [
     "horilla_ldap",
     "horilla_dbtemplate",
     "horilla_tour",
+    "hr_control_center",
 ]
 
 # ========================================

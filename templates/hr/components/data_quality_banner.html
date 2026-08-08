@@ -1,0 +1,23 @@
+{% comment %}
+HrDataQualityBanner — 数据质量提示条（warning 色系）。
+状态：warning（数据质量问题提示），区别于 error（失败）。
+
+Usage:
+  {% include "hr/components/data_quality_banner.html" with title="部分教职工数据待补全" message="12 条记录缺少职称信息" count=12 detail_url="..." %}
+
+数字（count）使用 tabular numbers；role="status" 便于播报。
+{% endcomment %}
+{% load i18n %}
+<div class="hr-data-quality-banner" role="status">
+  <span class="hr-data-quality-banner__icon" aria-hidden="true">&#33;</span>
+  <div class="hr-data-quality-banner__text">
+    <strong>{{ title|default:_("数据质量提示") }}</strong>
+    {% if message %}<span>{{ message }}</span>{% endif %}
+    {% if count %}
+      <span>（{% trans "共" %} <span class="hr-tabular-nums">{{ count }}</span> {% trans "条" %}）</span>
+    {% endif %}
+  </div>
+  {% if detail_url %}
+    <a class="hr-data-quality-banner__link" href="{{ detail_url }}">{{ detail_label|default:_("查看详情") }}</a>
+  {% endif %}
+</div>

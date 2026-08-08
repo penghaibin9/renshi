@@ -29,6 +29,15 @@ def _parse_period(request):
 
 @login_required
 def employee_dashboard_view(request):
+    """兼容旧路由 /employee/dashboard/。
+
+    迁移期（总册 9.1 / 29 节）：老路由保留；权限允许时 redirect 到 /hr/overview，
+    避免 Horilla 内部链接断裂。无 HR01 权限时回退旧 dashboard。
+    """
+    if request.user.is_superuser or request.user.has_perm("hr.dashboard.view"):
+        from django.shortcuts import redirect
+
+        return redirect("/hr/overview")
     return render(request, "employee/dashboard.html")
 
 

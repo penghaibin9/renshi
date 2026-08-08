@@ -1,0 +1,49 @@
+{% comment %}
+HrMetricCard — KPI 卡片（支持 loading/ready/empty/partial/stale/unavailable/permission_denied/error）
+
+Usage:
+  {% include "hr/components/metric_card.html" with label="在岗教职工" value=1286 status="OK" delta="+2.1%" comparison="同比" %}
+  {% include "hr/components/metric_card.html" with status="UNAVAILABLE" reason="HR09 未启用" %}
+{% endcomment %}
+{% load i18n %}
+<div class="hr-metric-card hr-card" data-status="{{ status|default:'loading' }}">
+  <div class="hr-metric-card__label">{{ label|default:"—" }}</div>
+
+  {% if status == "loading" %}
+    <div class="hr-skeleton hr-skeleton--kpi" aria-label="{% trans '加载中' %}"></div>
+  {% elif status == "ready" or status == "OK" or status == "PARTIAL" or status == "STALE" %}
+    <div class="hr-kpi-value">
+      {% if value is not None %}{{ value }}{% else %}—{% endif %}{% if unit %}<span class="hr-metric-card__unit">{{ unit }}</span>{% endif %}
+    </div>
+    <div class="hr-metric-card__delta">
+      {% if delta %}<span class="hr-delta">{{ delta }}</span>{% endif %}
+      {% if comparison %}<span class="hr-meta">{{ comparison }}</span>{% endif %}
+    </div>
+    {% if status == "STALE" %}
+      <div class="hr-freshness-badge hr-freshness-badge--stale" role="status">
+        {% trans "数据可能已过期" %}
+        {% if updated_at %}<span class="hr-meta"> · {% trans "更新于" %} {{ updated_at }}</span>{% endif %}
+      </div>
+    {% endif %}
+  {% elif status == "empty" %}
+    <div class="hr-metric-card__state">{% trans "暂无数据" %}</div>
+  {% elif status == "UNAVAILABLE" %}
+    <div class="hr-metric-card__state">
+      <span class="hr-unavailable">—</span>
+      {% if reason %}<div class="hr-meta">{{ reason }}</div>{% endif %}
+    </div>
+  {% elif status == "permission_denied" %}
+    <div class="hr-metric-card__state">{% trans "无查看权限" %}</div>
+  {% elif status == "error" %}
+    <div class="hr-metric-card__state">
+      <span class="hr-error">{% trans "数据暂时无法计算" %}</span>
+      {% if message %}<div class="hr-meta">{{ message }}</div>{% endif %}
+    </div>
+  {% else %}
+    <div class="hr-metric-card__state">—</div>
+  {% endif %}
+
+  {% if drilldown_url %}
+    <a href="{{ drilldown_url }}" class="hr-metric-card__drilldown" aria-label="{{ label }} {% trans '钻取' %}">{% trans "查看明细 →" %}</a>
+  {% endif %}
+</div>

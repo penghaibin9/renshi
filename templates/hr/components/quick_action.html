@@ -1,0 +1,26 @@
+{% comment %}
+HrQuickAction — 快捷动作单项（图标 + 名称 + 一句用途 + 可选 badge + disabled 原因）。
+状态：ready（可点）/ disabled（含原因文字，不只靠置灰）。
+
+Usage:
+  {% include "hr/components/quick_action.html" with name="入职登记" description="为新教职工建档" icon="+" url="..." %}
+  {% include "hr/components/quick_action.html" with name="双师认定" description="双师型教师申报" icon="★" badge=3 url="..." disabled="1" disabled_reason="「双师型教师」模块未启用" %}
+
+注意：
+  - icon 为单字符占位或内联 SVG（|safe）；名称+用途文字始终可见，图标仅装饰（aria-hidden）。
+  - disabled 时去掉 href 且 aria-disabled="true"、tabindex="-1"，键盘不可达。
+{% endcomment %}
+{% load i18n %}
+<a class="hr-quick-action{% if disabled %} is-disabled{% endif %}"
+   {% if url and not disabled %}href="{{ url }}"{% endif %}
+   {% if disabled %}aria-disabled="true" tabindex="-1"{% endif %}>
+  {% if icon %}<span class="hr-quick-action__icon" aria-hidden="true">{{ icon }}</span>{% endif %}
+  <span class="hr-quick-action__text">
+    <span class="hr-quick-action__name">{{ name }}</span>
+    {% if description %}<span class="hr-quick-action__desc hr-meta">{{ description }}</span>{% endif %}
+  </span>
+  {% if badge %}<span class="hr-quick-action__badge">{{ badge }}</span>{% endif %}
+</a>
+{% if disabled and disabled_reason %}
+  <p class="hr-meta hr-quick-action__disabled-reason">{{ disabled_reason }}</p>
+{% endif %}
