@@ -1,0 +1,100 @@
+name: H0 A0 Acceptance
+
+on:
+  push:
+    branches:
+      - feat/h0-a0-multitenancy-20260808
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  docker-migrate-test:
+    name: Docker / migrations / original tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure local settings stub exists
+        run: |
+          if [ ! -f horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
+          fi
+
+      - name: Build Horilla web image
+        run: docker compose -f docker-compose.yml build web
+
+      - name: Start PostgreSQL and Redis
+        run: |
+          docker compose -f docker-compose.yml up -d db redis
+          for i in $(seq 1 60); do
+            if docker compose -f docker-compose.yml exec -T db pg_isready -U horilla_user -d horilla_db >/dev/null 2>&1; then
+              echo 'PostgreSQL is ready'
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yml logs db
+          exit 1
+
+      - name: Migration consistency and apply
+        run: |
+          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint '' web sh -c '
+            set -e
+            python manage.py makemigrations --check --dry-run
+            python manage.py migrate --noinput
+            python manage.py migrate --check
+          '
+
+      - name: Django system check
+        run: |
+          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint '' web \
+            python manage.py check
+
+      - name: Original Django test suite
+        run: |
+          docker compose -f docker-compose.yml run --rm --no-deps --entrypoint '' web \
+            python manage.py test --noinput --verbosity 1
+
+      - name: Start application and verify health
+        run: |
+          docker compose -f docker-compose.yml up -d web
+          for i in $(seq 1 90); do
+            if curl -sf --max-time 5 http://localhost:8000/health/ | grep -q '"status"'; then
+              echo 'Health check OK'
+              curl -s http://localhost:8000/health/
+              break
+            fi
+            sleep 2
+            if [ "$i" -eq 90 ]; then
+              echo 'Health check failed'
+              docker compose -f docker-compose.yml logs --tail=120 web
+              exit 1
+            fi
+          done
+
+          for i in $(seq 1 60); do
+            if curl -sf --max-time 5 http://localhost:8000/ready/ | grep -q '"database"'; then
+              echo 'Readiness check OK'
+              curl -s http://localhost:8000/ready/
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'Readiness check failed'
+          docker compose -f docker-compose.yml logs --tail=120 web
+          exit 1
+
+      - name: Diagnostics
+        if: failure()
+        run: docker compose -f docker-compose.yml logs --tail=200 || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml down -v --remove-orphans || true
