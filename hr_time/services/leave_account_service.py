@@ -55,7 +55,11 @@ class LeaveAccountService:
         source_type: str = "GRANT",
         source_id: str = "",
     ) -> HrLeaveLedgerEntry:
-        """授予额度：创建账户（若不存在）+ GRANT ledger 条目。"""
+        """授予额度：创建账户（若不存在）+ ledger 条目。
+
+        RESERVE / RESERVATION_RELEASE 为冻结语义：不改变账户余额（balance_after=冻结前余额），
+        可用额度 = 余额 - 有效预占（§112）。
+        """
         account, created = HrLeaveAccount.objects.get_or_create(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
@@ -66,6 +70,10 @@ class LeaveAccountService:
         balance_before = LeaveAccountService.balance(
             account=account, as_of=effective_date
         )
+        if entry_type in (LeaveLedgerEntryType.RESERVE, LeaveLedgerEntryType.RESERVATION_RELEASE):
+            balance_after = balance_before  # 冻结不改变余额
+        else:
+            balance_after = balance_before + amount
         return HrLeaveLedgerEntry.objects.create(
             tenant_id=tenant_id,
             account=account,
@@ -74,13 +82,18 @@ class LeaveAccountService:
             effective_date=effective_date,
             source_type=source_type,
             source_id=source_id,
-            balance_after=balance_before + amount,
+            balance_after=balance_after,
         )
 
     @staticmethod
     def balance(*, account: HrLeaveAccount, as_of: Optional[date] = None) -> float:
-        """账户余额 = ledger 求和（禁止只存 running total）。"""
-        qs = HrLeaveLedgerEntry.objects.filter(account=account)
+        """账户余额 = ledger 求和（排除冻结条目 RESERVE/RESERVATION_RELEASE，§112）。"""
+        qs = HrLeaveLedgerEntry.objects.filter(account=account).exclude(
+            entry_type__in=[
+                LeaveLedgerEntryType.RESERVE,
+                LeaveLedgerEntryType.RESERVATION_RELEASE,
+            ]
+        )
         if as_of:
             qs = qs.filter(effective_date__lte=as_of)
         total = qs.aggregate(net=Sum("amount"))["net"]

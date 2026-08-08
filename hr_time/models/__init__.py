@@ -55,6 +55,13 @@ from hr_time.models.leave import (
     HrLeaveType,
     HrSchoolBreakFact,
 )
+from hr_time.models.leave_request import (
+    HrAbsenceFact,
+    HrLeaveApprovalSnapshot,
+    HrLeaveEvidence,
+    HrLeaveRequest,
+    HrReturnFromLeaveCase,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -92,4 +99,9 @@ __all__ = [
     "HrLeaveAccount",
     "HrLeaveLedgerEntry",
     "HrSchoolBreakFact",
+    "HrLeaveRequest",
+    "HrLeaveApprovalSnapshot",
+    "HrAbsenceFact",
+    "HrReturnFromLeaveCase",
+    "HrLeaveEvidence",
 ]
