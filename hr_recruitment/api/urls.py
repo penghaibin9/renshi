@@ -11,6 +11,7 @@ from hr_recruitment.api import application as application_api
 from hr_recruitment.api import campaign as campaign_api
 from hr_recruitment.api import candidate as candidate_api
 from hr_recruitment.api import plan as plan_api
+from hr_recruitment.api import qualification as qualification_api
 from hr_recruitment.api import views as api_views
 
 urlpatterns = [
@@ -23,6 +24,42 @@ urlpatterns = [
         "api/hr/v1/recruitment/contract",
         api_views.hr04_api_contract,
         name="hr04-api-contract",
+    ),
+    # HR04-04 资格审查（总册 11）
+    path(
+        "api/hr/v1/recruitment/qualification/workbench",
+        qualification_api.workbench,
+        name="hr04-api-qualification-workbench",
+    ),
+    path(
+        "api/hr/v1/recruitment/qualification/applications/<uuid:application_id>/precheck",
+        qualification_api.precheck,
+        name="hr04-api-qualification-precheck",
+    ),
+    path(
+        "api/hr/v1/recruitment/qualification/applications/<uuid:application_id>/start-review",
+        qualification_api.start_review,
+        name="hr04-api-qualification-start-review",
+    ),
+    path(
+        "api/hr/v1/recruitment/qualification/applications/<uuid:application_id>/decision",
+        qualification_api.decision,
+        name="hr04-api-qualification-decision",
+    ),
+    path(
+        "api/hr/v1/recruitment/qualification/rule-sets",
+        qualification_api.create_rule_set,
+        name="hr04-api-qualification-rule-set-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/qualification/rule-sets/<uuid:rule_set_id>/rules",
+        qualification_api.add_rule,
+        name="hr04-api-qualification-rule-add",
+    ),
+    path(
+        "api/hr/v1/recruitment/qualification/rule-sets/<uuid:rule_set_id>/lock",
+        qualification_api.lock_rule_set,
+        name="hr04-api-qualification-rule-set-lock",
     ),
     # HR04-03 人才库与应聘者（总册 10/23）
     path(
