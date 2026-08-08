@@ -54,11 +54,14 @@ def make_candidate(tenant=TENANT, name="张三", email="zhangsan@test.local"):
 
 
 def make_campaign(tenant=TENANT, code="2026-001"):
+    from uuid import uuid4
+
     return HrRecruitmentCampaign.objects.create(
         tenant_id=tenant,
         code=code,
         title="2026 专任教师招聘",
-        public_slug="2026-teacher",
+        public_slug=f"rec-{code}",
+        public_token=uuid4().hex,
     )
 
 
