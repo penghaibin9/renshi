@@ -46,6 +46,15 @@ from hr_time.models.overtime import (
     HrOvertimeRequest,
     HrTimeSourceIncident,
 )
+from hr_time.models.leave import (
+    HrLeaveAccount,
+    HrLeaveEnrollment,
+    HrLeaveLedgerEntry,
+    HrLeavePolicyPack,
+    HrLeavePolicyVersion,
+    HrLeaveType,
+    HrSchoolBreakFact,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -76,4 +85,11 @@ __all__ = [
     "HrOvertimeFact",
     "HrCompTimeAccount",
     "HrCompTimeLedger",
+    "HrLeaveType",
+    "HrLeavePolicyPack",
+    "HrLeavePolicyVersion",
+    "HrLeaveEnrollment",
+    "HrLeaveAccount",
+    "HrLeaveLedgerEntry",
+    "HrSchoolBreakFact",
 ]
