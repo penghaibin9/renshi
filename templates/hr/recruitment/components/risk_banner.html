@@ -1,0 +1,17 @@
+{% comment %}
+HrRecruitmentRiskBanner — 招聘风险横幅（超期/额度冲突/版本不一致等）
+Usage:
+  {% include "hr/recruitment/components/risk_banner.html" with risks=risks %}
+  # risks: [{code, message, level: risk/warn/info}]
+{% endcomment %}
+{% load i18n %}
+{% if risks %}
+<div class="hr-rec-risk-banner" role="status">
+  {% for risk in risks %}
+  <div class="hr-rec-risk-banner__item hr-rec-risk-banner__item--{{ risk.level|default:'risk' }}">
+    <span class="hr-rec-risk-banner__code">{{ risk.code }}</span>
+    {{ risk.message }}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

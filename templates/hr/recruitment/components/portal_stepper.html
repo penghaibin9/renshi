@@ -1,0 +1,18 @@
+{% comment %}
+HrCandidatePortalStepper — 公开报名进度步骤条（移动端可用）
+Usage:
+  {% include "hr/recruitment/components/portal_stepper.html" with steps=steps active=active_index %}
+  # steps: [label,...]；active 为当前步索引（0-based）
+{% endcomment %}
+{% load i18n %}
+<ol class="hr-rec-stepper" aria-label="{% trans '报名进度' %}">
+  {% for step in steps %}
+  <li class="hr-rec-stepper__item
+      {% if forloop.counter0 == active %}is-active{% endif %}
+      {% if forloop.counter0 < active %}is-done{% endif %}"
+      {% if forloop.counter0 == active %}aria-current="step"{% endif %}>
+    <span class="hr-rec-stepper__index" aria-hidden="true">{{ forloop.counter }}</span>
+    <span class="hr-rec-stepper__label">{{ step }}</span>
+  </li>
+  {% endfor %}
+</ol>

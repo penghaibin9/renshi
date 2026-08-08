@@ -1,0 +1,9 @@
+{% comment %}
+HrCandidateAvatar — 候选人头像（无 PII 泄漏；占位头像 + 姓名首字）
+Usage:
+  {% include "hr/recruitment/components/candidate_avatar.html" with candidate=candidate %}
+{% endcomment %}
+{% load i18n %}
+<span class="hr-rec-avatar" role="img" aria-label="{% trans '候选人' %}">
+  {% if candidate.initial %}{{ candidate.initial }}{% else %}{% trans '候' %}{% endif %}
+</span>

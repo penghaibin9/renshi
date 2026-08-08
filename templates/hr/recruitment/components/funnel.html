@@ -1,0 +1,19 @@
+{% comment %}
+HrRecruitmentFunnel — 招聘漏斗（5 级：报名→资格→选拔→拟录用→录用）
+Usage:
+  {% include "hr/recruitment/components/funnel.html" with steps=steps %}
+  # steps: [{label, count, color}]
+{% endcomment %}
+{% load i18n %}
+<div class="hr-rec-funnel" role="img" aria-label="{% trans '招聘漏斗' %}">
+  {% for step in steps %}
+  <div class="hr-rec-funnel__bar" style="width:{{ step.count|default:0 }}%">
+    <span class="hr-rec-funnel__count">{{ step.count|default:0 }}</span>
+  </div>
+  {% endfor %}
+  <div class="hr-rec-funnel__labels">
+    {% for step in steps %}
+    <span class="hr-rec-funnel__label">{{ step.label }}</span>
+    {% endfor %}
+  </div>
+</div>

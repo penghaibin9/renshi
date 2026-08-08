@@ -1,0 +1,21 @@
+{% comment %}
+HrRecruitmentTimeline — 招聘流程时间线（展示 workflow 阶段/审批时间线）
+Usage:
+  {% include "hr/recruitment/components/timeline.html" with events=events %}
+  # events: [{label, at, actor, note, status}]
+  # status: done / current / pending / risk
+{% endcomment %}
+{% load i18n %}
+<ol class="hr-rec-timeline">
+  {% for event in events %}
+  <li class="hr-rec-timeline__item hr-rec-timeline__item--{{ event.status|default:'done' }}"
+      {% if event.status == "current" %}aria-current="step"{% endif %}>
+    <div class="hr-rec-timeline__dot" aria-hidden="true"></div>
+    <div class="hr-rec-timeline__body">
+      <div class="hr-rec-timeline__label">{{ event.label }}</div>
+      {% if event.at %}<div class="hr-meta">{{ event.at }}{% if event.actor %} · {{ event.actor }}{% endif %}</div>{% endif %}
+      {% if event.note %}<div class="hr-meta">{{ event.note }}</div>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ol>
