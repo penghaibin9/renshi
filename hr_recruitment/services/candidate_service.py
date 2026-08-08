@@ -69,6 +69,7 @@ class CandidateService:
         candidate = HrRecruitmentCandidate.objects.create(
             tenant_id=self.tenant_id,
             candidate_uid=candidate_uid,
+            candidate_no=self._generate_candidate_no(),
             legal_name=legal_name,
             preferred_name=preferred_name,
             primary_email=primary_email,
@@ -81,6 +82,14 @@ class CandidateService:
             created_by=self.actor,
         )
         return candidate
+
+    def _generate_candidate_no(self) -> str:
+        while True:
+            no = f"CAN-{uuid4().hex[:8].upper()}"
+            if not HrRecruitmentCandidate.objects.filter(
+                tenant_id=self.tenant_id, candidate_no=no
+            ).exists():
+                return no
 
     def identity_match(
         self, *, legal_name=None, primary_email=None, primary_mobile=None, national_id=None

@@ -8,6 +8,7 @@ S1 阶段：健康探针 + envelope 契约自检；S3-S8 逐模块挂载。
 from django.urls import path
 
 from hr_recruitment.api import application as application_api
+from hr_recruitment.api import assessment as assessment_api
 from hr_recruitment.api import campaign as campaign_api
 from hr_recruitment.api import candidate as candidate_api
 from hr_recruitment.api import plan as plan_api
@@ -24,6 +25,67 @@ urlpatterns = [
         "api/hr/v1/recruitment/contract",
         api_views.hr04_api_contract,
         name="hr04-api-contract",
+    ),
+    # HR04-05 考试面试与考察（总册 12）
+    path(
+        "api/hr/v1/recruitment/assessment/schemes",
+        assessment_api.create_scheme,
+        name="hr04-api-assessment-scheme-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/schemes/<uuid:scheme_id>/components",
+        assessment_api.add_component,
+        name="hr04-api-assessment-component-add",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/schemes/<uuid:scheme_id>/lock",
+        assessment_api.lock_scheme,
+        name="hr04-api-assessment-scheme-lock",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/events",
+        assessment_api.create_event,
+        name="hr04-api-assessment-event-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/events/<uuid:event_id>/evaluators",
+        assessment_api.assign_evaluator,
+        name="hr04-api-assessment-evaluator-assign",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/assignments/<uuid:assignment_id>/conflict",
+        assessment_api.declare_conflict,
+        name="hr04-api-assessment-conflict",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/score-sheets",
+        assessment_api.create_score_sheet,
+        name="hr04-api-assessment-score-sheet-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/score-sheets/<uuid:score_sheet_id>",
+        assessment_api.score_sheet_detail,
+        name="hr04-api-assessment-score-sheet-detail",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/score-sheets/<uuid:score_sheet_id>/scores",
+        assessment_api.save_scores,
+        name="hr04-api-assessment-score-save",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/score-sheets/<uuid:score_sheet_id>/lock",
+        assessment_api.lock_score_sheet,
+        name="hr04-api-assessment-score-lock",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/score-sheets/<uuid:score_sheet_id>/reopen",
+        assessment_api.reopen_score_sheet,
+        name="hr04-api-assessment-score-reopen",
+    ),
+    path(
+        "api/hr/v1/recruitment/assessment/positions/<uuid:position_id>/freeze-result",
+        assessment_api.freeze_result,
+        name="hr04-api-assessment-freeze-result",
     ),
     # HR04-04 资格审查（总册 11）
     path(
