@@ -923,3 +923,156 @@
 }
 .hr-risk-danger b { color: var(--hr-danger); }
 .hr-risk-high b { color: var(--hr-warning); }
+
+/* ---- 列表项（待办/预警通用） ---- */
+.hr-alert-list, .hr-todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hr-alert-item, .hr-todo-item {
+  display: flex;
+  align-items: center;
+  gap: var(--hr-space-3);
+  padding: var(--hr-space-3) 0;
+  border-bottom: 1px solid var(--hr-border);
+}
+.hr-alert-item:last-child, .hr-todo-item:last-child {
+  border-bottom: none;
+}
+.hr-alert-item__badge, .hr-todo-item__badge {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--hr-primary-50);
+  color: var(--hr-primary-700);
+  font-size: 11px;
+  font-weight: 600;
+}
+.hr-alert-item__badge.hr-risk-danger, .hr-todo-item__badge.hr-risk-danger {
+  background: #fee2e2;
+  color: var(--hr-danger);
+}
+.hr-alert-item__badge.hr-risk-high, .hr-todo-item__badge.hr-risk-high {
+  background: #fef3c7;
+  color: var(--hr-warning);
+}
+.hr-alert-item__main, .hr-todo-item__main {
+  flex: 1;
+  min-width: 0;
+}
+.hr-alert-item__title, .hr-todo-item__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hr-text-900);
+}
+.hr-alert-item__summary, .hr-todo-item__meta {
+  margin-top: 2px;
+}
+.hr-alert-item__due, .hr-todo-item__due {
+  flex-shrink: 0;
+}
+
+/* ---- 状态 Tabs ---- */
+.hr-status-tabs {
+  display: flex;
+  gap: var(--hr-space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--hr-space-4);
+}
+.hr-status-tab {
+  padding: 6px 14px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-700);
+  font-size: 13px;
+  cursor: pointer;
+}
+.hr-status-tab:hover {
+  border-color: var(--hr-primary-600);
+  color: var(--hr-primary-600);
+}
+.hr-status-tab.is-active {
+  background: var(--hr-primary-600);
+  border-color: var(--hr-primary-600);
+  color: #fff;
+}
+
+/* ---- 队伍结构结论 ---- */
+.hr-workforce-conclusions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hr-space-4);
+}
+.hr-workforce-conclusion {
+  padding: var(--hr-space-3);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  min-width: 140px;
+}
+.hr-workforce-conclusion__label {
+  display: block;
+  font-size: 12px;
+  color: var(--hr-text-500);
+  margin-bottom: 4px;
+}
+.hr-workforce-conclusion b {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--hr-text-900);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 快捷办理网格 ---- */
+.hr-quick-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--hr-space-4);
+}
+.hr-quick-action {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--hr-space-3);
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+  text-decoration: none;
+}
+.hr-quick-action:hover {
+  border-color: var(--hr-primary-600);
+}
+.hr-quick-action__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-primary-50);
+  color: var(--hr-primary-700);
+  font-weight: 600;
+}
+.hr-quick-action__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.hr-quick-action__desc {
+  margin-top: 2px;
+}
+@media (max-width: 900px) {
+  .hr-quick-action-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .hr-quick-action-grid {
+    grid-template-columns: 1fr;
+  }
+}

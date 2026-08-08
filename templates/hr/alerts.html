@@ -1,0 +1,33 @@
+{% extends "index.html" %}
+{% load static i18n %}
+{% comment %}
+HR01-03 人事预警 —— 风险列表 + 统计 + 详情
+
+数据来源：
+  GET  /api/hr/v1/home/alerts           列表
+  GET  /api/hr/v1/home/alerts/summary   统计
+  POST /api/hr/v1/home/alerts/run-rules 触发扫描（S5）
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="alerts">
+  {% include "hr/components/page_header.html" with title="人事预警" subtitle="如果今天不处理，未来会形成管理事故的事项" %}
+
+  <!-- 顶部统计 -->
+  {% include "hr/components/section_card.html" with id="hr-alert-summary" title="风险概览" status="loading" %}
+
+  <!-- 过滤条 -->
+  {% include "hr/components/filter_bar.html" with id="hr-alert-filters" %}
+
+  <!-- 风险列表 -->
+  {% include "hr/components/section_card.html" with id="hr-alert-list" title="风险列表" status="loading" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/alerts.js' %}"></script>
+{% endblock %}

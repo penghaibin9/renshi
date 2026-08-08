@@ -353,3 +353,103 @@ def alert_run_rules(request):
     body = _api_root(request)
     body.update(payload)
     return _json(request, body)
+
+
+# ---------------------------------------------------------------------------
+# HR01-05 快捷办理
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def quick_actions(request):
+    """GET /api/hr/v1/home/quick-actions —— 已授权动作目录（服务端过滤）。"""
+    try:
+        _make_context(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    if not (request.user.is_superuser or request.user.has_perm("hr.dashboard.quick_action.use")):
+        return _error(request, "PERMISSION_DENIED", "无使用快捷办理权限", status=403)
+
+    try:
+        context = _make_context(request)
+        from hr_control_center.services.quick_action_service import QuickActionService
+
+        payload = {"items": QuickActionService().get_catalog(context, request.user)}
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    except Exception:
+        logger.exception("quick actions failed request=%s", _request_id(request))
+        return _error(request, "INTERNAL_ERROR", "数据暂时无法计算", status=500)
+
+    body = _api_root(request)
+    body.update(payload)
+    return _json(request, body)
+
+
+@require_GET
+def todo_summary(request):
+    """GET /api/hr/v1/home/todos/summary —— 待办统计。"""
+    try:
+        _make_context(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    if not (request.user.is_superuser or request.user.has_perm("hr.dashboard.todo.view")):
+        return _error(request, "PERMISSION_DENIED", "无查看待办权限", status=403)
+
+    try:
+        context = _make_context(request)
+        from hr_control_center.services.todo_service import TodoService
+
+        payload = TodoService().get_summary(context)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    except Exception:
+        logger.exception("todo summary failed request=%s", _request_id(request))
+        return _error(request, "INTERNAL_ERROR", "数据暂时无法计算", status=500)
+
+    body = _api_root(request)
+    body.update(payload)
+    return _json(request, body)
+
+
+@require_GET
+def todo_list(request):
+    """GET /api/hr/v1/home/todos —— 待办列表（聚合分页）。"""
+    try:
+        _make_context(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    if not (request.user.is_superuser or request.user.has_perm("hr.dashboard.todo.view")):
+        return _error(request, "PERMISSION_DENIED", "无查看待办权限", status=403)
+
+    try:
+        context = _make_context(request)
+        from hr_control_center.services.todo_service import TodoService
+
+        page = int(request.GET.get("page", 1) or 1)
+        page_size = int(request.GET.get("page_size", 20) or 20)
+        page_size = min(max(page_size, 1), 100)
+        payload = TodoService().list_todos(
+            context,
+            filters={
+                "category": request.GET.get("category"),
+                "severity": request.GET.get("severity"),
+                "overdue": request.GET.get("overdue"),
+            },
+            page=page,
+            page_size=page_size,
+        )
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    except (TypeError, ValueError):
+        return _error(request, "INVALID_REQUEST", "分页参数无效", status=400)
+    except Exception:
+        logger.exception("todo list failed request=%s", _request_id(request))
+        return _error(request, "INTERNAL_ERROR", "数据暂时无法计算", status=500)
+
+    body = _api_root(request)
+    body.update(payload)
+    return _json(request, body)

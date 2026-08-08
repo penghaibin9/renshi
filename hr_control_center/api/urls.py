@@ -53,4 +53,21 @@ urlpatterns = [
         api_views.alert_run_rules,
         name="hr-api-alert-run-rules",
     ),
+    # 我的待办（HR01-02）
+    path(
+        "api/hr/v1/home/todos/summary",
+        api_views.todo_summary,
+        name="hr-api-todo-summary",
+    ),
+    path(
+        "api/hr/v1/home/todos",
+        api_views.todo_list,
+        name="hr-api-todo-list",
+    ),
+    # 快捷办理（HR01-05）
+    path(
+        "api/hr/v1/home/quick-actions",
+        api_views.quick_actions,
+        name="hr-api-quick-actions",
+    ),
 ]
