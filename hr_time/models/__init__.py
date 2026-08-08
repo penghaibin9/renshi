@@ -17,6 +17,14 @@ from hr_time.models.policy import (
     HrTimePolicyVersion,
     HrTimeRecordingProfile,
 )
+from hr_time.models.calendar import HrCalendarDay, HrWorkCalendar, HrWorkCalendarVersion
+from hr_time.models.schedule import (
+    HrScheduleAssignment,
+    HrScheduleException,
+    HrShiftDefinition,
+    HrShiftVersion,
+    HrWorkPattern,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -24,4 +32,12 @@ __all__ = [
     "HrTimePolicyPack",
     "HrTimePolicyVersion",
     "HrTimeRecordingProfile",
+    "HrWorkCalendar",
+    "HrWorkCalendarVersion",
+    "HrCalendarDay",
+    "HrShiftDefinition",
+    "HrShiftVersion",
+    "HrWorkPattern",
+    "HrScheduleAssignment",
+    "HrScheduleException",
 ]
