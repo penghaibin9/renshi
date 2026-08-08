@@ -130,4 +130,15 @@ urlpatterns = [
         api_views.cutover_status,
         name="hr-api-cutover-status",
     ),
+    # 岗位台账（HR02-05）
+    path(
+        "api/hr/v1/structure/positions",
+        api_views.positions_list,
+        name="hr-api-positions",
+    ),
+    path(
+        "api/hr/v1/structure/position-control/summary",
+        api_views.position_control_summary,
+        name="hr-api-position-control-summary",
+    ),
 ]

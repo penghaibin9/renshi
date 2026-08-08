@@ -919,3 +919,72 @@ def cutover_status(request):
 
     mode = Hr02CutoverService().get_mode(scope.tenant_id)
     return _json(request, _root(request, scope.tenant_id, date.today(), mode=mode))
+
+
+# ---------------------------------------------------------------------------
+# 岗位台账列表/概览（HR02-05）
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def positions_list(request):
+    """GET /api/hr/v1/structure/positions —— 岗位列表（DB 分页）。"""
+    try:
+        as_of = _parse_as_of(request)
+        scope = _make_scope(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    from hr_structure.selectors.position import PositionSelector
+
+    page = int(request.GET.get("page", 1) or 1)
+    page_size = int(request.GET.get("page_size", 20) or 20)
+    page_size = min(max(page_size, 1), 100)
+    selector = PositionSelector(scope, as_of=as_of)
+    result = selector.list_positions(
+        organization_id=request.GET.get("organizationId"),
+        lifecycle_status=request.GET.get("lifecycleStatus"),
+        page=page,
+        page_size=page_size,
+    )
+    return _json(request, _root(request, scope.tenant_id, as_of, **result))
+
+
+@require_GET
+def position_control_summary(request):
+    """GET /api/hr/v1/structure/position-control/summary —— 台账概览。"""
+    try:
+        as_of = _parse_as_of(request)
+        scope = _make_scope(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    from hr_structure.models import HrPosition, HrPositionReservation
+    from django.db.models import Sum
+
+    qs = HrPosition.objects.filter(
+        tenant_id=scope.tenant_id,
+        validity_from__lte=as_of,
+        lifecycle_status__in=("ACTIVE", "FROZEN"),
+    )
+    authorized = qs.count()
+    frozen = qs.filter(lifecycle_status="FROZEN").count()
+    active = authorized - frozen
+    held = (
+        HrPositionReservation.objects.filter(
+            tenant_id=scope.tenant_id, status="HELD"
+        ).aggregate(t=Sum("reserved_count"))["t"]
+        or 0
+    )
+    # occupied: HR03 正式 assignment（占位，当前用 reservation）
+    occupied = held
+    vacant = max(0, active - occupied)
+    over = max(0, occupied - active)
+    return _json(
+        request,
+        _root(
+            request, scope.tenant_id, as_of,
+            authorized=authorized, occupied=occupied, vacant=vacant,
+            frozen=frozen, over=over,
+        ),
+    )

@@ -64,14 +64,14 @@ class HrOrganizationModelTests(TestCase):
 
     # INV-03 No Cycle：主树不得成环
     def test_inv03_cycle_detected(self):
-        from datetime import timedelta
-
         from hr_structure.services.organization_change import _detect_cycle
 
         # 把 school（college 的祖先）作为 college 的子级 → 成环
-        cycle = _detect_cycle(1, self.school.id, self.college.id)
+        # _detect_cycle(parent_id=college, candidate_child=school)
+        # college 的祖先链: college → school，遇到 school == candidate → 成环
+        cycle = _detect_cycle(1, self.college.id, self.school.id)
         self.assertTrue(cycle)
-        # 无环场景
+        # 无环场景：把不相关 org 挂到 college 下
         no_cycle = _detect_cycle(1, self.college.id, 999999)
         self.assertFalse(no_cycle)
 

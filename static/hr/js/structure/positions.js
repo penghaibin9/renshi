@@ -1,0 +1,80 @@
+/**
+ * hr/js/structure/positions.js — HR02-05 岗位编制台账页面脚本
+ *
+ * 数据：GET /api/hr/v1/structure/positions（DB 分页）。
+ * 占用状态来自服务端派生（VACANT/FILLED/OVERFILLED），前端不拼。
+ */
+(function () {
+  "use strict";
+
+  const STATUS_LABELS = {
+    VACANT: "空缺", PARTIALLY_FILLED: "部分在岗", FILLED: "已满",
+    OVERFILLED: "超编", FROZEN: "冻结", CLOSED: "已关闭",
+    DRAFT: "草稿", ACTIVE: "在岗", PENDING_APPROVAL: "待批准",
+  };
+
+  async function loadSummary() {
+    const el = document.getElementById("hr-position-summary");
+    if (!el) return;
+    try {
+      const res = await window.HrApi.request("/api/hr/v1/structure/position-control/summary");
+      if (!res.ok) throw new Error("summary failed");
+      const d = res.data;
+      el.innerHTML = `<div class="hr-summary-numbers">
+        <span class="hr-summary-number"><b>${d.authorized ?? "—"}</b> 核定岗位</span>
+        <span class="hr-summary-number"><b>${d.occupied ?? "—"}</b> 已占</span>
+        <span class="hr-summary-number"><b>${d.vacant ?? "—"}</b> 空缺</span>
+        <span class="hr-summary-number"><b>${d.frozen ?? "—"}</b> 冻结</span>
+        <span class="hr-summary-number hr-risk-danger"><b>${d.over ?? "—"}</b> 超额</span>
+      </div>`;
+    } catch (e) {
+      el.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
+    }
+  }
+
+  async function loadPositions() {
+    const el = document.getElementById("hr-position-table");
+    if (!el) return;
+    try {
+      const res = await window.HrApi.request("/api/hr/v1/structure/positions", {
+        params: { page_size: 50 },
+      });
+      if (!res.ok) throw new Error("positions failed");
+      const items = res.data.items || [];
+      if (!items.length) {
+        el.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">暂无岗位数据</div></div>`;
+        return;
+      }
+      el.innerHTML = `<table class="hr-table">
+        <thead><tr>
+          <th>岗位编码</th><th>机构</th><th>岗位标准</th><th>等级</th>
+          <th>FTE</th><th>编制数</th><th>占用</th><th>状态</th>
+        </tr></thead>
+        <tbody>` + items.map(positionRow).join("") + `</tbody></table>`;
+    } catch (e) {
+      el.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
+    }
+  }
+
+  function positionRow(p) {
+    const occ = p.occupancyStatus || "VACANT";
+    const occClass = occ === "OVERFILLED" ? "hr-risk-danger"
+      : occ === "FILLED" ? ""
+      : "";
+    return `<tr>
+      <td>${p.positionCode || ""}</td>
+      <td>${p.organizationName || "—"}</td>
+      <td>${p.postCatalog || "—"}</td>
+      <td>${p.postGrade || "—"}</td>
+      <td>${p.plannedFte || "—"}</td>
+      <td>${p.maxIncumbents ?? "—"}</td>
+      <td class="${occClass}">${p.occupiedCount ?? 0}</td>
+      <td><span class="hr-scope-chip">${STATUS_LABELS[p.lifecycleStatus] || p.lifecycleStatus}</span></td>
+    </tr>`;
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadSummary();
+    loadPositions();
+  });
+})();

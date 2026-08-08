@@ -41,6 +41,7 @@ urlpatterns = [
     ),
     path(
         "positions",
-        RedirectView.as_view(pattern_name="hr-structure-organizations", permanent=False),
+        views.hr_positions,
+        name="hr-structure-positions",
     ),
 ]

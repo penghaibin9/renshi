@@ -12,3 +12,9 @@ from django.shortcuts import render
 def hr_organizations(request):
     """HR02-01 组织机构页面。"""
     return render(request, "hr/structure/organizations.html")
+
+
+@login_required
+def hr_positions(request):
+    """HR02-05 岗位编制台账页面。"""
+    return render(request, "hr/structure/positions.html")

@@ -10,8 +10,10 @@ hr_structure/tests/test_reservation.py
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
+from django.conf import settings
 from django.db import close_old_connections
 from django.test import TransactionTestCase
+from django.test.utils import skipIf
 
 from hr_structure.models import HrPosition, HrPositionReservation
 from hr_structure.scope import Hr02Scope
@@ -69,6 +71,10 @@ class PositionReservationTests(TransactionTestCase):
             self.svc.release(r.id)
         self.assertEqual(cm.exception.code, "HR02_POSITION_NOT_AVAILABLE")
 
+    @skipIf(
+        "sqlite" in settings.DATABASES["default"]["ENGINE"],
+        "SQLite 单写者不支持真并发（select_for_update 是 no-op）；真并发由 PostgreSQL CI 跑 test_reservation.py（总册 40.8）",
+    )
     def test_concurrent_reservation_20_take_1(self):
         """20 并发抢 1 个 max_incumbents=1 岗位 → 仅 1 个成功。"""
 
