@@ -94,9 +94,11 @@ class HrRecruitmentPosition(models.Model):
     organization_name = models.CharField(max_length=200, blank=True, default="")
     post_catalog_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     post_catalog_name = models.CharField(max_length=200, blank=True, default="")
-    # HR02 岗位预占（S4 接入；未稳定交付前保持 nullable）
+    # HR02 岗位预占（S4 接入）
     position_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     position_pool_id = models.BigIntegerField(null=True, blank=True)
+    reservation_id = models.CharField(max_length=128, blank=True, default="")
+    reservation_no = models.CharField(max_length=64, blank=True, default="")
     planned_headcount = models.PositiveIntegerField(default=1)
     reserved_headcount = models.PositiveIntegerField(default=0)
     min_hires = models.PositiveIntegerField(default=1)
