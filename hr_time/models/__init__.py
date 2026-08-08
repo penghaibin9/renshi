@@ -31,6 +31,12 @@ from hr_time.models.event import (
     HrTimeEventPair,
     HrTimeEventSource,
 )
+from hr_time.models.attendance import (
+    HrAttendanceDayFact,
+    HrTimeBalanceLedger,
+    HrTimeSheetEntry,
+    HrTimeSheetPeriod,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -50,4 +56,8 @@ __all__ = [
     "HrAttendanceDevice",
     "HrRawTimeEvent",
     "HrTimeEventPair",
+    "HrAttendanceDayFact",
+    "HrTimeBalanceLedger",
+    "HrTimeSheetPeriod",
+    "HrTimeSheetEntry",
 ]
