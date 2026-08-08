@@ -394,3 +394,82 @@ class LegacyWorkforceProvider:
         except Exception as exc:
             self._fail(context, metric_key, "ORG_COMPARISON_QUERY_FAILED", exc)
         return provider_ok(data, **self._base_kwargs(context))
+
+    def distribution_by_hr02_org(self, context: HrRequestContext) -> ProviderResult:
+        """
+        HR02-aware 学院分布（总册 1.3：HR02 权威化后切 HR02 组织事实）。
+
+        HR02 组织树已就绪时按 HR02 组织分组（dataBasis = HR02_AUTHORITY）；
+        未就绪 → UNAVAILABLE（不 fallback legacy Horilla Department）。
+        """
+        from hr_control_center.providers.base import (
+            DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT,
+            ProviderResult,
+        )
+
+        metric_key = "workforce_distribution_org"
+        try:
+            from hr_structure.models import HrLegacyObjectLink, HrOrganizationVersion
+            from hr_structure.scope import Hr02Scope
+            from hr_structure.selectors.effective import children_as_of
+
+            scope = Hr02Scope("SCHOOL", tenant_id=context.tenant_id)
+            as_of = context.as_of or context.today()
+            root = (
+                HrOrganizationVersion.objects.filter(
+                    tenant_id=context.tenant_id,
+                    status__in=("APPROVED", "EFFECTIVE", "SUPERSEDED"),
+                    org_type="SCHOOL",
+                )
+                .filter(validity_to__isnull=True)
+                .first()
+            )
+            if root is None:
+                return ProviderResult.unavailable(
+                    provider_key=self.provider_key,
+                    metric_key=metric_key,
+                    reason_code="HR02_ROOT_MISSING",
+                    message="学校根组织尚未建立",
+                    authority_mode=context.authority_mode,
+                )
+
+            # 一级组织（学院/部门）列表
+            colleges = list(children_as_of(context.tenant_id, root.organization_id_id, as_of, dimension="ADMIN"))
+            buckets = []
+            total = 0
+            for version in colleges:
+                org_id = version.organization_id_id
+                # 该组织下人员数：从 EmployeeWorkInformation.department 无法直接映射 HR02 org，
+                # 需通过 HrLegacyObjectLink 找 legacy Department，再查人数（若映射存在）。
+                link = (
+                    HrLegacyObjectLink.objects.filter(
+                        tenant_id=context.tenant_id,
+                        domain_entity_type="organization",
+                        domain_entity_id=str(org_id),
+                        legacy_model="department",
+                    ).first()
+                )
+                count = 0
+                if link:
+                    from employee.models import EmployeeWorkInformation
+
+                    count = EmployeeWorkInformation.objects.filter(
+                        employee_id__is_active=True,
+                        department_id_id=int(link.legacy_pk),
+                    ).count()
+                buckets.append(
+                    {"key": org_id, "label": version.name, "count": count}
+                )
+                total += count
+
+            data = {
+                "dimension": "department",
+                "buckets": sorted(buckets, key=lambda b: b["count"], reverse=True),
+                "total": total,
+                "interpretation": "HR02_AUTHORITY_ORG",
+            }
+        except Exception as exc:
+            self._fail(context, metric_key, "HR02_ORG_DISTRIBUTION_FAILED", exc)
+        kwargs = self._base_kwargs(context)
+        kwargs["data_basis"] = DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT
+        return provider_ok(data, **kwargs)

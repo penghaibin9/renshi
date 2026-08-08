@@ -278,7 +278,11 @@ class WorkforceSelector:
                 "reasonCode": "INVALID_DIMENSION",
                 "message": f"非法维度: {dimension}，允许的维度: {sorted(DISTRIBUTION_DIMENSIONS)}",
             }
-        result = getattr(self.provider, _DISTRIBUTION_METHODS[dimension])(self.context)
+        # department 维度优先 HR02 权威组织（总册 1.3）；HR02 未就绪 → UNAVAILABLE，不 fallback legacy
+        if dimension == "department":
+            result = self.provider.distribution_by_hr02_org(self.context)
+        else:
+            result = getattr(self.provider, _DISTRIBUTION_METHODS[dimension])(self.context)
         if result.status != OK:
             return {
                 "status": result.status,
