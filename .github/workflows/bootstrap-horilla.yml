@@ -40,7 +40,7 @@ jobs:
           rsync -a --delete \
             --exclude '.git/' \
             --exclude 'UPSTREAM_BASELINE.md' \
-            --exclude '.github/workflows/bootstrap-horilla.yml' \
+            --exclude '.github/workflows/' \
             "$UPSTREAM_DIR/" ./
 
       - name: Commit imported source
