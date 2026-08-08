@@ -46,6 +46,8 @@ class HrRecruitmentCampaign(models.Model):
         max_length=24, choices=CampaignStatus.choices, default=CampaignStatus.DRAFT
     )
     public_slug = models.SlugField(max_length=100, blank=True, default="")
+    # 公开门户 token（A0：公开入口由 token 解析学校，禁止客户端传 tenant_id）
+    public_token = models.CharField(max_length=64, unique=True, blank=True, default="")
     application_open_at = models.DateTimeField(null=True, blank=True)
     application_close_at = models.DateTimeField(null=True, blank=True)
     timezone = models.CharField(max_length=64, default="Asia/Shanghai")

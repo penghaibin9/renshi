@@ -16,6 +16,10 @@ class HrRecruitmentConfig(AppConfig):
         urlpatterns.append(
             path("hr/recruitment/", include("hr_recruitment.urls")),
         )
+        # 公开门户：/recruit/{token}（独立前缀，token 解析学校）
+        urlpatterns.append(
+            path("", include("hr_recruitment.public.urls")),
+        )
         # API 路由：独立前缀 /api/hr/v1/recruitment/
         urlpatterns.append(
             path("", include("hr_recruitment.api.urls")),

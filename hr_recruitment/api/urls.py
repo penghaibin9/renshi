@@ -7,7 +7,9 @@ S1 阶段：健康探针 + envelope 契约自检；S3-S8 逐模块挂载。
 
 from django.urls import path
 
+from hr_recruitment.api import application as application_api
 from hr_recruitment.api import campaign as campaign_api
+from hr_recruitment.api import candidate as candidate_api
 from hr_recruitment.api import plan as plan_api
 from hr_recruitment.api import views as api_views
 
@@ -21,6 +23,57 @@ urlpatterns = [
         "api/hr/v1/recruitment/contract",
         api_views.hr04_api_contract,
         name="hr04-api-contract",
+    ),
+    # HR04-03 人才库与应聘者（总册 10/23）
+    path(
+        "api/hr/v1/recruitment/candidates",
+        candidate_api.list_candidates,
+        name="hr04-api-candidate-list",
+    ),
+    path(
+        "api/hr/v1/recruitment/candidates",
+        candidate_api.create_candidate,
+        name="hr04-api-candidate-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/candidates/identity-match",
+        candidate_api.identity_match,
+        name="hr04-api-candidate-identity-match",
+    ),
+    path(
+        "api/hr/v1/recruitment/candidates/identity-match-exact",
+        candidate_api.identity_match_exact,
+        name="hr04-api-candidate-identity-match-exact",
+    ),
+    path(
+        "api/hr/v1/recruitment/candidates/<uuid:candidate_id>",
+        candidate_api.candidate_detail,
+        name="hr04-api-candidate-detail",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/drafts",
+        application_api.save_draft,
+        name="hr04-api-application-draft",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>",
+        application_api.application_detail,
+        name="hr04-api-application-detail",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/submit",
+        application_api.submit_application,
+        name="hr04-api-application-submit",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/withdraw",
+        application_api.withdraw_application,
+        name="hr04-api-application-withdraw",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/materials",
+        application_api.add_material,
+        name="hr04-api-application-material",
     ),
     # HR04-02 招聘控制台/项目/岗位（总册 9）
     path(

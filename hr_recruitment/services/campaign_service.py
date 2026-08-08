@@ -109,6 +109,10 @@ class CampaignService:
             tenant_id=self.tenant_id, public_slug=public_slug
         ).exists():
             public_slug = f"{slugify(title)}-{uuid4().hex[:4]}"
+        # 公开 token：全局唯一不透明串（A0 解析键，不依赖 tenant_id 客户端传值）
+        public_token = uuid4().hex
+        while HrRecruitmentCampaign.objects.filter(public_token=public_token).exists():
+            public_token = uuid4().hex
         return HrRecruitmentCampaign.objects.create(
             tenant_id=self.tenant_id,
             code=code,
@@ -117,6 +121,7 @@ class CampaignService:
             plan_cycle_id=plan_cycle_id,
             status=CampaignStatus.DRAFT,
             public_slug=public_slug,
+            public_token=public_token,
             application_open_at=application_open_at,
             application_close_at=application_close_at,
             timezone=timezone,
