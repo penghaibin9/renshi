@@ -109,4 +109,25 @@ urlpatterns = [
         api_views.effective_runner_trigger,
         name="hr-api-effective-runner",
     ),
+    # Legacy 迁移 + Projection + Cutover（S9/S10）
+    path(
+        "api/hr/v1/structure/projection/run",
+        api_views.projection_run,
+        name="hr-api-projection-run",
+    ),
+    path(
+        "api/hr/v1/structure/projection/reconcile",
+        api_views.projection_reconcile,
+        name="hr-api-projection-reconcile",
+    ),
+    path(
+        "api/hr/v1/structure/cutover",
+        api_views.cutover,
+        name="hr-api-cutover",
+    ),
+    path(
+        "api/hr/v1/structure/cutover/status",
+        api_views.cutover_status,
+        name="hr-api-cutover-status",
+    ),
 ]

@@ -26,6 +26,7 @@ from hr_structure.models.change_case import (
     HrStructureChangeCase,
     HrStructureChangeItem,
 )
+from hr_structure.models.cutover import Hr02AuthorityCutover
 from hr_structure.models.migration_link import (
     HrLegacyObjectLink,
     HrExternalIdentifier,
@@ -49,6 +50,7 @@ __all__ = [
     "HrPositionReservation",
     "HrStructureChangeCase",
     "HrStructureChangeItem",
+    "Hr02AuthorityCutover",
     "HrLegacyObjectLink",
     "HrExternalIdentifier",
 ]

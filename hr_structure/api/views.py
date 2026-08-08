@@ -823,3 +823,99 @@ def effective_runner_trigger(request):
 
     result = run_effective_runner(tenant_id=scope.tenant_id)
     return _json(request, _root(request, scope.tenant_id, date.today(), **result))
+
+
+# ---------------------------------------------------------------------------
+# Legacy 迁移 + Projection + Authority Cutover（总册 29/30 节）—— S9/S10
+# ---------------------------------------------------------------------------
+
+
+@require_GET
+def projection_run(request):
+    """GET /api/hr/v1/structure/projection/run —— 把权威组织投影到 Horilla Department（单向）。"""
+    try:
+        scope = _make_scope(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    if not (request.user.is_superuser or request.user.has_perm("hr.organization.manage")):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织管理权限", status=403)
+
+    from hr_structure.models import HrOrganizationVersion
+    from hr_structure.projections.horilla import HorillaStructureProjectionService
+
+    svc = HorillaStructureProjectionService(scope.tenant_id)
+    versions = HrOrganizationVersion.objects.filter(
+        tenant_id=scope.tenant_id, status="EFFECTIVE", validity_to__isnull=True
+    ).select_related("organization_id")
+    projected = 0
+    for v in versions:
+        svc.project_organization(v)
+        projected += 1
+    return _json(request, _root(request, scope.tenant_id, date.today(), projected=projected))
+
+
+@require_GET
+def projection_reconcile(request):
+    """GET /api/hr/v1/structure/projection/reconcile —— 对账报告。"""
+    try:
+        scope = _make_scope(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    from hr_structure.projections.horilla import HorillaStructureProjectionService
+
+    report = HorillaStructureProjectionService(scope.tenant_id).reconcile_report()
+    return _json(request, _root(request, scope.tenant_id, date.today(), report=report))
+
+
+def cutover(request):
+    """POST /api/hr/v1/structure/cutover —— 切换 authority mode（tenant 级）。"""
+    import json
+
+    if request.method != "POST":
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
+    if not request.user.is_superuser:
+        return _error(request, "HR02_SCOPE_DENIED", "仅超级管理员可切换", status=403)
+
+    try:
+        scope = _make_scope(request)
+        body = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return _error(request, "HR02_INVALID_REQUEST", "请求体不是合法 JSON", status=400)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    try:
+        from hr_structure.services.cutover import Hr02CutoverService
+
+        svc = Hr02CutoverService(operator=str(getattr(request.user, "username", "")))
+        record = svc.set_mode(
+            scope.tenant_id,
+            body.get("mode", ""),
+            reason=body.get("reason", ""),
+            reconcile_report_id=body.get("reconcileReportId", ""),
+        )
+    except ValueError as exc:
+        return _error(request, "HR02_INVALID_REQUEST", str(exc), status=422)
+
+    return _json(
+        request,
+        _root(
+            request, scope.tenant_id, date.today(),
+            cutover={"tenantId": record.tenant_id, "mode": record.mode, "oldMode": record.old_mode},
+        ),
+    )
+
+
+@require_GET
+def cutover_status(request):
+    """GET /api/hr/v1/structure/cutover/status —— 当前 tenant 的 authority mode。"""
+    try:
+        scope = _make_scope(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    from hr_structure.services.cutover import Hr02CutoverService
+
+    mode = Hr02CutoverService().get_mode(scope.tenant_id)
+    return _json(request, _root(request, scope.tenant_id, date.today(), mode=mode))
