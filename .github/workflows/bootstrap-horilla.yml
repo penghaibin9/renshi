@@ -20,26 +20,28 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout pinned Horilla upstream
-        uses: actions/checkout@v4
-        with:
-          repository: horilla/horilla-hr
-          ref: eb16ac3bfcbcb74e17a6bc4e93ea3b326059890a
-          path: .upstream-src
-          fetch-depth: 1
+      - name: Clone pinned Horilla upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPSTREAM_DIR="$RUNNER_TEMP/horilla-upstream"
+          rm -rf "$UPSTREAM_DIR"
+          git init "$UPSTREAM_DIR"
+          git -C "$UPSTREAM_DIR" remote add origin https://github.com/horilla/horilla-hr.git
+          git -C "$UPSTREAM_DIR" fetch --depth 1 origin eb16ac3bfcbcb74e17a6bc4e93ea3b326059890a
+          git -C "$UPSTREAM_DIR" checkout --detach FETCH_HEAD
+          test "$(git -C "$UPSTREAM_DIR" rev-parse HEAD)" = "eb16ac3bfcbcb74e17a6bc4e93ea3b326059890a"
 
       - name: Import upstream snapshot
         shell: bash
         run: |
           set -euo pipefail
+          UPSTREAM_DIR="$RUNNER_TEMP/horilla-upstream"
           rsync -a --delete \
             --exclude '.git/' \
-            --exclude '.upstream-src/' \
             --exclude 'UPSTREAM_BASELINE.md' \
             --exclude '.github/workflows/bootstrap-horilla.yml' \
-            .upstream-src/ ./
-          rm -rf .upstream-src
-          rm -f .github/workflows/bootstrap-horilla.yml
+            "$UPSTREAM_DIR/" ./
 
       - name: Commit imported source
         shell: bash
