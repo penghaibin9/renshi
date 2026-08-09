@@ -24,6 +24,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from hr_recruitment.api.base import error, make_hr04_context, ok
 from hr_recruitment.api.exceptions import Hr04ApiError
 from hr_recruitment.constants import ApplicationCanonicalStatus as S
+from hr_recruitment.labels import APPLICATION_STATUS_LABELS, status_label
 from hr_recruitment.models import HrJobApplication
 from hr_recruitment.permissions import require_hr04_permission
 from hr_recruitment.services.qualification_service import (
@@ -80,6 +81,7 @@ def workbench(request):
                     "candidate_name": a.candidate_id.legal_name if a.candidate_id else "",
                     "position": a.recruitment_position_id.post_catalog_name if a.recruitment_position_id else "",
                     "canonical_status": a.canonical_status,
+                    "statusLabel": status_label(APPLICATION_STATUS_LABELS, a.canonical_status),
                     "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
                 }
                 for a in queue

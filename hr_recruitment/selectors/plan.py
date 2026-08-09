@@ -7,6 +7,11 @@ HR04-01 年度用人计划只读查询。
 
 from __future__ import annotations
 
+from hr_recruitment.labels import (
+    NEED_TYPE_LABELS,
+    PLAN_REQUEST_STATUS_LABELS,
+    status_label,
+)
 from hr_recruitment.models import HrHiringPlanCycle, HrHiringPlanLine, HrHiringPlanRequest
 
 
@@ -62,6 +67,7 @@ def _request_dto(r: HrHiringPlanRequest) -> dict:
         "organization_name": r.organization_name,
         "requested_by": r.requested_by,
         "status": r.status,
+        "statusLabel": status_label(PLAN_REQUEST_STATUS_LABELS, r.status),
         "total_requested": r.total_requested,
         "total_approved": r.total_approved,
         "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None,
@@ -79,6 +85,7 @@ def _line_dto(l: HrHiringPlanLine) -> dict:
         "position_id": l.position_id,
         "position_pool_id": l.position_pool_id,
         "need_type": l.need_type,
+        "needTypeLabel": status_label(NEED_TYPE_LABELS, l.need_type),
         "requested_headcount": l.requested_headcount,
         "approved_headcount": l.approved_headcount,
         "requested_fte": str(l.requested_fte),
@@ -87,6 +94,7 @@ def _line_dto(l: HrHiringPlanLine) -> dict:
         "reason": l.reason,
         "qualification_summary": l.qualification_summary,
         "status": l.status,
+        "statusLabel": status_label(PLAN_REQUEST_STATUS_LABELS, l.status),
         "version": l.version,
     }
 
@@ -99,6 +107,7 @@ def _cycle_dto(c: HrHiringPlanCycle) -> dict:
         "start_date": c.start_date.isoformat() if c.start_date else None,
         "end_date": c.end_date.isoformat() if c.end_date else None,
         "status": c.status,
+        "statusLabel": status_label(PLAN_REQUEST_STATUS_LABELS, c.status),
         "version": c.version,
         "notes": c.notes,
     }

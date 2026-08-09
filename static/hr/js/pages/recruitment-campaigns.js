@@ -56,7 +56,7 @@
           (c) =>
             `<div class="hr-card hr-rec-campaign-card">
                <div class="hr-rec-campaign-card__head">
-                 <span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.status}</span>
+                 <span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.statusLabel || c.status}</span>
                  <strong>${c.title}</strong>
                  <span class="hr-meta">${c.code}</span>
                </div>

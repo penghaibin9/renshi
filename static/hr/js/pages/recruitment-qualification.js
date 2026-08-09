@@ -48,7 +48,7 @@
                  <td>${a.application_no || "—"}</td>
                  <td>${a.candidate_name || "—"}</td>
                  <td>${a.position || "—"}</td>
-                 <td><span class="hr-rec-badge hr-rec-badge--${(a.canonical_status || "").toLowerCase()}">${a.canonical_status}</span></td>
+                 <td><span class="hr-rec-badge hr-rec-badge--${(a.canonical_status || "").toLowerCase()}">${a.statusLabel || a.canonical_status}</span></td>
                  <td>${a.submitted_at ? new Date(a.submitted_at).toLocaleString() : "—"}</td>
                </tr>`
           )

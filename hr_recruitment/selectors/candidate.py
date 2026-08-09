@@ -10,7 +10,17 @@ from __future__ import annotations
 
 from django.db.models import Q
 
+from hr_recruitment.labels import CANDIDATE_STATUS_LABELS, status_label
 from hr_recruitment.models import HrJobApplication, HrRecruitmentCandidate
+
+# 候选来源（展示层映射，不改机器字段）
+SOURCE_LABELS = {
+    "PUBLIC_PORTAL": "公开报名",
+    "ADMIN_CREATED": "管理员录入",
+    "LEGACY_MIGRATION": "历史迁移",
+    "TALENT_POOL": "人才库",
+    "OTHER": "其他",
+}
 
 
 def list_candidates(
@@ -85,7 +95,9 @@ def _candidate_dto(c) -> dict:
         "primary_email": c.primary_email,
         "primary_mobile_masked": _mask(c.primary_mobile),
         "source": c.source,
+        "sourceLabel": SOURCE_LABELS.get(c.source, c.source),
         "status": c.status,
+        "statusLabel": status_label(CANDIDATE_STATUS_LABELS, c.status),
         "talent_tags": c.talent_tags,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }

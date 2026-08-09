@@ -38,8 +38,8 @@
                  <td>${c.legal_name || "—"}</td>
                  <td>${c.primary_email || "—"}</td>
                  <td>${c.primary_mobile_masked || "—"}</td>
-                 <td>${c.source || "—"}</td>
-                 <td><span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.status}</span></td>
+                 <td>${c.sourceLabel || c.source || "—"}</td>
+                 <td><span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.statusLabel || c.status}</span></td>
                </tr>`
           )
           .join("") +

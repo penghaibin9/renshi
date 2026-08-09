@@ -34,7 +34,7 @@
                  <td>${p.candidate_name || "—"}</td>
                  <td>${p.position || "—"}</td>
                  <td>${p.final_score}</td>
-                 <td><span class="hr-rec-badge hr-rec-badge--${(p.approval_status || "").toLowerCase()}">${p.approval_status}</span></td>
+                 <td><span class="hr-rec-badge hr-rec-badge--${(p.approval_status || "").toLowerCase()}">${p.approvalStatusLabel || p.approval_status}</span></td>
                  <td>${p.reservation_id ? "已预占" : "—"}</td>
                </tr>`
           )

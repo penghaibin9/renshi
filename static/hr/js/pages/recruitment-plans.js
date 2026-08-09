@@ -26,7 +26,7 @@
         .map(
           (c) =>
             `<div class="hr-rec-plan-cycle" data-id="${c.id}">
-               <span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.status}</span>
+               <span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.statusLabel || c.status}</span>
                <strong>${c.year} ${c.title}</strong>
                <span class="hr-meta">${c.start_date || ""}</span>
              </div>`
@@ -65,7 +65,7 @@
                  <td>${r.organization_name || "—"}</td>
                  <td>${r.total_requested}</td>
                  <td>${r.total_approved}</td>
-                 <td><span class="hr-rec-badge hr-rec-badge--${(r.status || "").toLowerCase()}">${r.status}</span></td>
+                 <td><span class="hr-rec-badge hr-rec-badge--${(r.status || "").toLowerCase()}">${r.statusLabel || r.status}</span></td>
                  <td>${r.submitted_at ? new Date(r.submitted_at).toLocaleString() : "—"}</td>
                </tr>`
           )

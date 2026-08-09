@@ -29,6 +29,7 @@ from hr_recruitment.api.base import (
     ok,
 )
 from hr_recruitment.api.exceptions import Hr04ApiError
+from hr_recruitment.labels import PROPOSED_HIRE_STATUS_LABELS, status_label
 from hr_recruitment.permissions import require_hr04_permission
 from hr_recruitment.services.handoff_service import HandoffService, HandoffServiceError
 from hr_recruitment.services.notice_service import NoticeService, NoticeServiceError
@@ -76,6 +77,7 @@ def proposed_hire_list(request):
                     "rank": p.rank,
                     "final_score": str(p.final_score),
                     "approval_status": p.approval_status,
+                    "approvalStatusLabel": status_label(PROPOSED_HIRE_STATUS_LABELS, p.approval_status),
                     "candidate_name": p.application_id.candidate_id.legal_name if p.application_id and p.application_id.candidate_id else "",
                     "position": p.recruitment_position_id.post_catalog_name if p.recruitment_position_id else "",
                     "reservation_id": p.reservation_id or "",
@@ -84,6 +86,7 @@ def proposed_hire_list(request):
                 for p in items
             ]
         },
+        status=200,
     )
 
 
