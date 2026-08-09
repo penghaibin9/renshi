@@ -157,6 +157,21 @@ def job_identity(request):
 
 
 @login_required
+def secondments(request):
+    tenant_id, err = _page_context(request)
+    if err:
+        return err
+    from hr_changes.selectors.temporary_selector import TemporarySelector
+
+    data = TemporarySelector(tenant_id).list()
+    return render(
+        request,
+        "hr_changes/secondments.html",
+        {"items": data["items"], "stats": data["stats"]},
+    )
+
+
+@login_required
 def change_preview(request, case_id):
     tenant_id, err = _page_context(request)
     if err:

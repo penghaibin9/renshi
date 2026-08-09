@@ -15,6 +15,7 @@ from django.urls import path
 
 from hr_changes.api import changes as changes_api
 from hr_changes.api import identity_changes as identity_api
+from hr_changes.api import temporary as temporary_api
 from hr_changes.api import transfers as transfers_api
 from hr_changes.api import views as api_views
 
@@ -91,5 +92,26 @@ urlpatterns = [
         "api/hr/v1/changes/identity-changes/<uuid:case_id>",
         identity_api.identity_change_detail,
         name="hr06-api-identity-detail",
+    ),
+    # ---- S6 借调挂职 ----
+    path(
+        "api/hr/v1/changes/temporary",
+        temporary_api.temporary_list,
+        name="hr06-api-temporary-list",
+    ),
+    path(
+        "api/hr/v1/changes/temporary/<uuid:link_id>/extend",
+        temporary_api.temporary_extend,
+        name="hr06-api-temporary-extend",
+    ),
+    path(
+        "api/hr/v1/changes/temporary/<uuid:link_id>/plan-return",
+        temporary_api.temporary_plan_return,
+        name="hr06-api-temporary-plan-return",
+    ),
+    path(
+        "api/hr/v1/changes/temporary/<uuid:link_id>/return",
+        temporary_api.temporary_return,
+        name="hr06-api-temporary-return",
     ),
 ]
