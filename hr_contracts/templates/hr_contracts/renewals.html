@@ -1,0 +1,35 @@
+{% load i18n %}{% load hr07_components %}
+{% trans "续聘中心" as t_title %}{% trans "待评审" as t_pending %}{% trans "到期风险" as t_expiry %}{% trans "当前合同事实" as t_facts %}{% trans "履职参考" as t_perf %}{% trans "决策" as t_decide %}{% trans "续聘" as t_renew %}{% trans "调整后续聘" as t_renew_chg %}{% trans "转换类型" as t_convert %}{% trans "不再续聘" as t_no_renew %}{% trans "解除" as t_term %}{% trans "需复核" as t_needs_rev %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ t_title }} · HR07</title>
+<style>:root{--hr-primary:#2563eb;--hr-success:#16a34a;--hr-warning:#d97706;--hr-danger:#dc2626;--hr-bg:#f5f7fa;--hr-card:#fff;--hr-border:#e5e7eb;--hr-text:#1f2937;--hr-muted:#6b7280}*{box-sizing:border-box}body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:var(--hr-bg);color:var(--hr-text)}.page{max-width:1400px;margin:0 auto;padding:24px;display:grid;grid-template-columns:280px 1fr 320px;gap:16px}.panel{background:var(--hr-card);border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}.panel h3{font-size:15px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--hr-border)}.review-item{padding:10px;border:1px solid var(--hr-border);border-radius:8px;margin-bottom:8px;font-size:13px}.review-item__name{font-weight:600}.review-item__date{color:var(--hr-muted);font-size:12px}.kv{display:flex;padding:6px 0;border-bottom:1px solid var(--hr-border);font-size:13px}.kv__key{width:120px;color:var(--hr-muted);flex-shrink:0}.btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.btn{padding:8px 14px;border-radius:8px;border:1px solid var(--hr-border);background:#fff;font-size:13px;cursor:pointer}.btn.primary{background:var(--hr-primary);color:#fff;border-color:var(--hr-primary)}.btn.danger{background:var(--hr-danger);color:#fff;border-color:var(--hr-danger)}.btn.warning{background:var(--hr-warning);color:#fff}.empty{text-align:center;color:var(--hr-muted);padding:40px 0}@media(max-width:900px){.page{grid-template-columns:1fr}}</style></head>
+<body><div class="page">
+<div class="panel"><h3>{{ t_pending }}</h3>
+  {% for r in reviews %}
+  <div class="review-item">
+    <div class="review-item__name">{{ r.legalName|default:"-" }}（{{ r.staffNo|default:"-" }}）</div>
+    <div class="review-item__date">评审截止: {{ r.reviewDueAt }}</div>
+    <div style="margin-top:6px"><a href="#" onclick="selectReview('{{ r.reviewId }}')">查看</a></div>
+  </div>{% empty %}<div class="empty">无待评审合同</div>{% endfor %}
+</div>
+<div class="panel" id="center-panel">
+  <h3>{{ t_facts }}</h3>
+  <div id="contract-facts"><div class="empty">请从左侧选择一个评审</div></div>
+  <h3 style="margin-top:16px">{{ t_perf }}</h3>
+  <div id="performance-refs"><div class="empty">HR12 考核数据（只读引用）</div></div>
+</div>
+<div class="panel"><h3>{{ t_decide }}</h3>
+  <div class="btn-row">
+    <button class="btn primary" onclick="decide('RENEW')">{{ t_renew }}</button>
+    <button class="btn warning" onclick="decide('RENEW_WITH_CHANGES')">{{ t_renew_chg }}</button>
+    <button class="btn" onclick="decide('CONVERT_TYPE')">{{ t_convert }}</button>
+    <button class="btn danger" onclick="decide('DO_NOT_RENEW')">{{ t_no_renew }}</button>
+    <button class="btn danger" onclick="decide('TERMINATE')">{{ t_term }}</button>
+  </div>
+  <textarea placeholder="评审意见" style="width:100%;height:80px;margin-top:12px;border:1px solid var(--hr-border);border-radius:8px;padding:8px;font-size:13px"></textarea>
+</div>
+</div>
+<script>let selectedReviewId=null;
+function selectReview(id){selectedReviewId=id;document.getElementById('contract-facts').innerHTML='已选择评审 '+id}
+function decide(decision){if(!selectedReviewId){alert('请先选择一个评审');return}fetch('/api/hr/v1/contracts/renewal-reviews/'+selectedReviewId+'/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:decision})}).then(r=>r.json()).then(d=>{if(d.error)alert(d.error.message);else location.reload()})}
+</script>
+</body></html>

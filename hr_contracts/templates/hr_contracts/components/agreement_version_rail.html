@@ -1,0 +1,11 @@
+<!-- §99 HrAgreementVersionRail -->
+<div class="hr-version-rail">
+  {% for v in versions %}
+  <div class="hr-version-rail__item {% if v.id|stringformat:'s' == current_version_id %}hr-version-rail__item--current{% endif %}">
+    <span class="hr-version-rail__no">V{{ v.version_no }}</span>
+    <span class="hr-version-rail__type">{{ v.version_type }}</span>
+    <span class="hr-version-rail__status">{{ v.status }}</span>
+    <span class="hr-version-rail__date">{{ v.signed_at|default:"" }}</span>
+  </div>
+  {% empty %}<div>暂无版本记录</div>{% endfor %}
+</div>

@@ -1,0 +1,8 @@
+<!-- §99 HrRenewalDecisionBar -->
+<div class="hr-renewal-decision-bar">
+  <span class="hr-renewal-decision-bar__label">续聘决策:</span>
+  <button onclick="decideRenewal('{{ review.reviewId }}', 'RENEW')">续聘</button>
+  <button onclick="decideRenewal('{{ review.reviewId }}', 'RENEW_WITH_CHANGES')">调整后续聘</button>
+  <button onclick="decideRenewal('{{ review.reviewId }}', 'DO_NOT_RENEW')">不再续聘</button>
+  <button onclick="decideRenewal('{{ review.reviewId }}', 'TERMINATE')">解除</button>
+</div>

@@ -1,0 +1,24 @@
+{% load i18n %}{% trans "合同变更对比" as t_title %}{% trans "原合同条款" as t_old %}{% trans "变更后" as t_new %}{% trans "来源事件" as t_src %}{% trans "无差异" as t_no_diff %}{% trans "仅元数据更正，无正文差异" as t_meta_only %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ t_title }} · HR07</title>
+<style>:root{--hr-primary:#2563eb;--hr-success:#16a34a;--hr-danger:#dc2626;--hr-bg:#f5f7fa;--hr-card:#fff;--hr-border:#e5e7eb;--hr-text:#1f2937;--hr-muted:#6b7280}*{box-sizing:border-box}body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:var(--hr-bg);color:var(--hr-text)}.page{max-width:1100px;margin:0 auto;padding:24px}h2{font-size:18px;margin:0 0 16px}.diff-table{width:100%;border-collapse:collapse;background:var(--hr-card);border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)}.diff-table th{background:#f9fafb;color:var(--hr-muted);font-weight:600;padding:10px 12px;font-size:13px;text-align:left;border-bottom:2px solid var(--hr-border)}.diff-table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--hr-border);vertical-align:top}.diff-table .old{background:#fef2f2}.diff-table .new{background:#f0fdf4}.diff-table .same{}.event-badge{display:inline-block;padding:3px 8px;background:var(--hr-primary);color:#fff;border-radius:6px;font-size:12px;margin-bottom:12px}.empty{text-align:center;color:var(--hr-muted);padding:40px 0}fieldset{border:1px solid var(--hr-border);border-radius:8px;padding:12px;margin-bottom:12px}legend{font-size:13px;color:var(--hr-muted)}[aria-label]{font-size:13px}</style></head>
+<body><div class="page">
+<h2>{{ t_title }}</h2>
+{% if event %}
+<div class="event-badge" aria-label="事件来源">{{ t_src }}: {{ event.eventType }} ({{ event.status }})</div>
+{% endif %}
+{% if diffs %}
+<table class="diff-table">
+  <thead><tr><th>字段</th><th aria-label="原值">{{ t_old }}</th><th aria-label="新值">{{ t_new }}</th></tr></thead>
+  <tbody>
+  {% for d in diffs %}
+  <tr>
+    <td>{{ d.field }}</td>
+    <td class="{% if d.changed %}old{% else %}same{% endif %}">{{ d.old_value|default:"-" }}</td>
+    <td class="{% if d.changed %}new{% else %}same{% endif %}">{{ d.new_value|default:"-" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% elif meta_only %}<div class="empty">{{ t_meta_only }}</div>
+{% else %}<div class="empty">{{ t_no_diff }}</div>{% endif %}
+</div></body></html>

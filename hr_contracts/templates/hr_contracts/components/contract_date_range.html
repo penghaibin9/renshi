@@ -1,0 +1,10 @@
+<!-- §99 HrContractDateRange -->
+<div class="hr-date-range">
+  <div class="hr-date-range__bar">
+    <div class="hr-date-range__fill" style="width:{{ percentage }}%"></div>
+  </div>
+  <span>{{ agreement.contractStartDate|default:"-" }} — {{ agreement.contractEndDate|default:"-" }}</span>
+  {% if agreement.contractEndDate %}
+  <span>剩余 {{ days_remaining }} 天</span>
+  {% endif %}
+</div>

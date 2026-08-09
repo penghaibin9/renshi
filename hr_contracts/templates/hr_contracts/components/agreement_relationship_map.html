@@ -1,0 +1,11 @@
+<!-- §99 HrAgreementRelationshipMap -->
+<div class="hr-relationship-map">
+  {% for r in relationships %}
+  <div class="hr-relationship-map__item">
+    <span>聘用关系: {{ r.relationshipType|default:"-" }}</span>
+    <span>任职: {{ r.assignmentType|default:"-" }}</span>
+    <span>组织: {{ r.organizationName|default:"-" }}</span>
+    <span>岗位: {{ r.positionName|default:"-" }}</span>
+  </div>
+  {% empty %}<div>无关联聘用关系</div>{% endfor %}
+</div>

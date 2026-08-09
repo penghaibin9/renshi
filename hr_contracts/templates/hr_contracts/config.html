@@ -1,0 +1,38 @@
+{% load i18n %}{% load hr07_components %}
+{% trans "合同模板与规则" as t_title %}{% trans "合同类型" as t_types %}{% trans "模板" as t_tpl %}{% trans "模板版本" as t_tpl_ver %}{% trans "规则集" as t_rules %}{% trans "编号规则" as t_number %}{% trans "新增" as t_add %}{% trans "发布" as t_publish %}{% trans "停用" as t_retire %}{% trans "暂未配置" as t_empty %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ t_title }} · HR07</title>
+<style>:root{--hr-primary:#2563eb;--hr-success:#16a34a;--hr-warning:#d97706;--hr-danger:#dc2626;--hr-bg:#f5f7fa;--hr-card:#fff;--hr-border:#e5e7eb;--hr-text:#1f2937;--hr-muted:#6b7280}*{box-sizing:border-box}body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:var(--hr-bg);color:var(--hr-text)}.page{max-width:1200px;margin:0 auto;padding:24px}.tabs{display:flex;gap:4px;margin:16px 0}.tab{padding:8px 16px;border:1px solid var(--hr-border);border-radius:8px;background:#fff;font-size:13px;cursor:pointer}.tab.active{background:var(--hr-primary);color:#fff;border-color:var(--hr-primary)}.section{display:none;background:var(--hr-card);border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.08)}.section.active{display:block}table{width:100%;border-collapse:collapse}th,td{padding:10px 12px;font-size:13px;text-align:left;border-bottom:1px solid var(--hr-border)}th{color:var(--hr-muted);font-weight:600}tr:hover td{background:#f9fafb}.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px}.badge.success{background:#dcfce7;color:#166534}.badge.secondary{background:#e5e7eb;color:#374151}.btn{padding:6px 12px;border-radius:6px;border:1px solid var(--hr-border);background:#fff;font-size:12px;cursor:pointer}.btn.primary{background:var(--hr-primary);color:#fff;border-color:var(--hr-primary)}.empty{text-align:center;color:var(--hr-muted);padding:40px 0}</style></head>
+<body><div class="page">
+<h1>{{ t_title }}</h1>
+<div class="tabs">
+  <button class="tab active" onclick="showSection('types')">{{ t_types }}</button>
+  <button class="tab" onclick="showSection('templates')">{{ t_tpl }}</button>
+  <button class="tab" onclick="showSection('versions')">{{ t_tpl_ver }}</button>
+  <button class="tab" onclick="showSection('rules')">{{ t_rules }}</button>
+  <button class="tab" onclick="showSection('numbering')">{{ t_number }}</button>
+</div>
+<div class="section active" id="sec-types">
+  <table><thead><tr><th>编码</th><th>名称</th><th>家族</th><th>期限模式</th><th>状态</th></tr></thead>
+  <tbody>{% for t in types %}<tr><td>{{ t.code }}</td><td>{{ t.name }}</td><td>{{ t.family }}</td><td>{{ t.term_mode }}</td><td><span class="badge {% if t.active %}success{% else %}secondary{% endif %}">{% if t.active %}生效{% else %}停用{% endif %}</span></td></tr>{% empty %}<tr><td colspan="5"><div class="empty">{{ t_empty }}</div></td></tr>{% endfor %}</tbody></table>
+</div>
+<div class="section" id="sec-templates">
+  <table><thead><tr><th>编码</th><th>名称</th><th>关联类型</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody>{% for t in templates %}<tr><td>{{ t.code }}</td><td>{{ t.name }}</td><td>{{ t.agreement_type_name|default:"-" }}</td><td>{% template_version_badge t.status %}</td><td><button class="btn" onclick="publishTemplate('{{ t.id }}')">{{ t_publish }}</button></td></tr>{% empty %}<tr><td colspan="5"><div class="empty">{{ t_empty }}</div></td></tr>{% endfor %}</tbody></table>
+</div>
+<div class="section" id="sec-versions">
+  <table><thead><tr><th>模板</th><th>版本号</th><th>状态</th><th>生效日</th><th>失效日</th></tr></thead>
+  <tbody>{% for tv in template_versions %}<tr><td>{{ tv.template_name|default:"-" }}</td><td>V{{ tv.version_no }}</td><td>{% template_version_badge tv.status %}</td><td>{{ tv.effective_from|default:"-" }}</td><td>{{ tv.effective_to|default:"-" }}</td></tr>{% empty %}<tr><td colspan="5"><div class="empty">{{ t_empty }}</div></td></tr>{% endfor %}</tbody></table>
+</div>
+<div class="section" id="sec-rules">
+  <table><thead><tr><th>编码</th><th>名称</th><th>版本</th><th>状态</th></tr></thead>
+  <tbody>{% for r in rule_sets %}<tr><td>{{ r.code }}</td><td>{{ r.name|default:"-" }}</td><td>V{{ r.version }}</td><td>{% template_version_badge r.status %}</td></tr>{% empty %}<tr><td colspan="4"><div class="empty">{{ t_empty }}</div></td></tr>{% endfor %}</tbody></table>
+</div>
+<div class="section" id="sec-numbering">
+  <table><thead><tr><th>编码</th><th>前缀</th><th>序列长度</th><th>重置策略</th><th>状态</th></tr></thead>
+  <tbody>{% for n in number_rules %}<tr><td>{{ n.code }}</td><td>{{ n.prefix }}</td><td>{{ n.sequence_length }}</td><td>{{ n.reset_policy }}</td><td><span class="badge {% if n.active %}success{% else %}secondary{% endif %}">{% if n.active %}生效{% else %}停用{% endif %}</span></td></tr>{% empty %}<tr><td colspan="5"><div class="empty">{{ t_empty }}</div></td></tr>{% endfor %}</tbody></table>
+</div>
+</div>
+<script>
+function showSection(id){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));event.target.classList.add('active');document.getElementById('sec-'+id).classList.add('active')}
+</script>
+</body></html>

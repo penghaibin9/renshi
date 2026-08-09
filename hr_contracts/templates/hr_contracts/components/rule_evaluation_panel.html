@@ -1,0 +1,10 @@
+<!-- §99 HrRuleEvaluationPanel -->
+<div class="hr-rule-panel">
+  {% for r in rules %}
+  <div class="hr-rule-panel__item hr-rule-panel__item--{{ r.severity|lower }}">
+    <span class="oh-badge">{{ r.severity }}</span>
+    <span>{{ r.message }}</span>
+    {% if r.recommendedAction %}<span class="hr-rule-panel__action">建议: {{ r.recommendedAction }}</span>{% endif %}
+  </div>
+  {% empty %}<div>规则校验通过</div>{% endfor %}
+</div>
