@@ -1,0 +1,20 @@
+{% load i18n %}
+{# HR05 公共组件：人员匹配面板（总册 §23/§30） #}
+<div class="hr-person-match-panel hr-card">
+  <h3>{% trans "人员匹配" %}</h3>
+  {% if match.status == "EXACT_MATCH" %}
+  <span class="oh-badge oh-badge--success">{% trans "精确匹配" %}</span>
+  {% elif match.status == "POSSIBLE_MATCH" %}
+  <span class="oh-badge oh-badge--warning">{% trans "疑似匹配，需人工确认" %}</span>
+  {% elif match.status == "NO_MATCH" %}
+  <span class="oh-badge oh-badge--secondary">{% trans "无匹配（可创建）" %}</span>
+  {% else %}
+  <span class="oh-badge oh-badge--warning">{% trans "信息不足" %}</span>
+  {% endif %}
+  {% if match.person_id %}
+  <p>{% trans "关联人员" %}：{{ match.person_id }}</p>
+  {% endif %}
+  {% if match.requires_review %}
+  <button type="button" class="oh-btn oh-btn--secondary" data-action="resolve-match">{% trans "人工确认" %}</button>
+  {% endif %}
+</div>

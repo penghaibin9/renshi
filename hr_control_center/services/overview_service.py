@@ -40,6 +40,16 @@ CORE_METRIC_KEYS = (
     "open_risk_count",
 )
 
+# HR08 外聘指标（总册 §132）：由 Hr08DashboardProvider 提供，metrics 端点一并返回。
+HR08_METRIC_KEYS = (
+    "hr08_active_engagements",
+    "hr08_engagements_expiring",
+    "hr08_tasks_overdue",
+    "hr08_workload_unverified",
+    "hr08_industry_experts",
+    "hr08_renewals_due",
+)
+
 
 class OverviewService:
     """
@@ -56,7 +66,19 @@ class OverviewService:
         - LEGACY_ONLY            → legacy provider
         - DUAL_READ_COMPARE      → 生产 UI 优先 authority；legacy 仅后台对账
         - AUTHORITY_ONLY         → 仅 authority；legacy 生产调用硬失败
+
+        HR08 指标（hr08_*）是 HR08 authority 事实，三态下均优先 HR08 Provider；
+        hr_external 未安装时返回 None → OverviewService 输出 UNAVAILABLE（不转 0）。
         """
+        if metric_key.startswith("hr08_"):
+            from django.apps import apps
+
+            if not apps.is_installed("hr_external"):
+                return None
+            from hr_external.providers.hr01_adapter import Hr08DashboardProvider
+
+            return Hr08DashboardProvider()
+
         if authority_mode == AUTHORITY_ONLY:
             # 后续 HR02/HR03 authority provider 就绪后在此路由。
             # 当前阶段没有 authority provider，直接返回不可用（不允许 fallback）。
@@ -286,6 +308,8 @@ class OverviewService:
             "departure_ytd": "/employee/employee-view-new/",
             "open_risk_count": "/hr/alerts",
         }
+        if metric_key.startswith("hr08_"):
+            return "/hr/external-teachers"
         return routes.get(metric_key, "/hr/overview")
 
     @staticmethod

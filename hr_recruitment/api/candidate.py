@@ -30,6 +30,10 @@ from hr_recruitment.services.candidate_service import CandidateService, Candidat
 
 
 def _handle(request, exc):
+    from django.core.exceptions import ObjectDoesNotExist
+
+    if isinstance(exc, ObjectDoesNotExist):
+        return error(request, "NOT_FOUND", "资源不存在", 404)
     if isinstance(exc, (Hr04ApiError, CandidateServiceError)):
         return error(request, exc.code, exc.message, getattr(exc, "http_status", exc.status_code if hasattr(exc, "status_code") else 422))
     return error(request, "INTERNAL_ERROR", "服务器内部错误", 500)
@@ -109,11 +113,11 @@ def identity_match(request):
     try:
         body = json.loads(request.body or b"{}")
         service = CandidateService(tenant_id=ctx.tenant_id)
+        # 普通身份匹配：禁止身份证入参（身份证检索只能走 identity-match-exact 特权端点）
         result = service.identity_match(
             legal_name=body.get("legal_name"),
             primary_email=body.get("primary_email"),
             primary_mobile=body.get("primary_mobile"),
-            national_id=body.get("national_id"),
         )
         return ok(request, result)
     except Exception as exc:  # noqa: BLE001

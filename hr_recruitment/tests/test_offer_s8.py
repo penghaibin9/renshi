@@ -97,11 +97,40 @@ class OfferFlowTests(TestCase):
         self.assessment.lock_score_sheet(score_sheet_id=str(sheet.id))
 
         self.proposed_service = ProposedHireService(tenant_id=TENANT, actor="hr")
+        # 真实 HR02 预占（handoff 前置要求 HELD）
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from hr_structure.models import HrOrganization, HrPosition, HrPositionPool, HrPositionReservation
+
+        org = HrOrganization.objects.create(
+            tenant_id=TENANT, stable_code="ORG-OFFER", org_dimension="ADMIN"
+        )
+        hr_position = HrPosition.objects.create(
+            tenant_id=TENANT,
+            position_code="POS-OFFER-1",
+            organization_id=org,
+            post_catalog_version_id_id=None,
+            max_incumbents=1,
+            validity_from=date.today(),
+            lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,
+        )
+        reservation = HrPositionReservation.objects.create(
+            tenant_id=TENANT,
+            reservation_no="RESV-TEST-1",
+            position_id=hr_position,
+            source_domain="hr04",
+            source_business_type="recruitment_position",
+            source_business_id="offer-test",
+            status=HrPositionReservation.Status.HELD,
+            expires_at=timezone.now() + timedelta(days=7),
+            idempotency_key="offer-test-resv",
+        )
         self.proposed = self.proposed_service.create(
             application_id=str(self.app.id),
             rank=1,
-            reservation_id="resv-1",
-            reservation_no="RESV-001",
+            reservation_id=str(reservation.id),
+            reservation_no=reservation.reservation_no,
         )
         self.proposed_service.decide(
             proposed_hire_id=str(self.proposed.id), decision="APPROVE"
@@ -169,11 +198,18 @@ class OfferFlowTests(TestCase):
         offer_service.accept(offer_id=str(offer.id))
 
         handoff_service = HandoffService(tenant_id=TENANT, actor="hr")
+
+        class FakeConsumer:
+            def handle(self, *, proposed_hire_id, idempotency_key):
+                return "hr05-case-1"
+
         handoff = handoff_service.handoff(
             proposed_hire_id=str(self.proposed.id),
             idempotency_key="handoff-key-1",
+            hr05_consumer=FakeConsumer(),
         )
         self.assertEqual(handoff.status, "CREATED")
+        self.assertEqual(handoff.hr05_case_id, "hr05-case-1")
         self.app.refresh_from_db()
         self.assertEqual(self.app.canonical_status, S.HANDOFF_TO_HR05)
 
@@ -181,9 +217,36 @@ class OfferFlowTests(TestCase):
         handoff2 = handoff_service.handoff(
             proposed_hire_id=str(self.proposed.id),
             idempotency_key="handoff-key-2",  # 不同 key 也应命中 proposed 唯一
+            hr05_consumer=FakeConsumer(),
         )
         self.assertEqual(str(handoff2.id), str(handoff.id))
         self.assertEqual(HrRecruitmentHandoff.objects.filter(proposed_hire_id_id=self.proposed.id).count(), 1)
+
+    def test_handoff_without_consumer_stays_failed(self):
+        """消费者未交付：handoff FAILED，申请不推终态（防 HR05 从未收到但申请锁死）。"""
+        notice_service = NoticeService(tenant_id=TENANT, actor="hr")
+        notice = notice_service.publish_notice(
+            campaign_id=str(self.campaign.id),
+            notice_no="GS-2026-003",
+            entries=[{"proposed_hire_id": str(self.proposed.id), "public_display_name": "张**"}],
+        )
+        notice_service.close_notice(notice_id=str(notice.id), has_blocker=False)
+        offer_service = OfferService(tenant_id=TENANT, actor="hr")
+        offer = offer_service.create_offer(
+            proposed_hire_id=str(self.proposed.id), offer_no="OFFER-003"
+        )
+        offer_service.transition(offer_id=str(offer.id), target="APPROVED")
+        offer_service.transition(offer_id=str(offer.id), target="ISSUED")
+        offer_service.accept(offer_id=str(offer.id))
+
+        handoff_service = HandoffService(tenant_id=TENANT, actor="hr")
+        handoff = handoff_service.handoff(
+            proposed_hire_id=str(self.proposed.id), idempotency_key="no-consumer-key"
+        )
+        self.assertEqual(handoff.status, "FAILED")
+        self.app.refresh_from_db()
+        # 不推终态：保持 OFFER_ACCEPTED
+        self.assertEqual(self.app.canonical_status, S.OFFER_ACCEPTED)
 
     def test_handoff_blocked_without_preconditions(self):
         """未公示闭环/未 Offer 接受 → 拒绝 handoff。"""

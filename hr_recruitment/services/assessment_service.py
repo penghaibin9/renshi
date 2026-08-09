@@ -21,6 +21,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 
 from hr_recruitment.api.exceptions import (
@@ -33,6 +34,7 @@ from hr_recruitment.models import (
     HrCandidateScore,
     HrCandidateScoreSheet,
     HrEvaluatorAssignment,
+    HrRecruitmentPosition,
     HrScoreCriterion,
     HrScoreSheetTemplate,
     HrSelectionComponent,
@@ -107,26 +109,32 @@ class AssessmentService:
 
     @transaction.atomic
     def lock_scheme(self, *, scheme_version_id: str) -> HrSelectionSchemeVersion:
-        scheme = HrSelectionSchemeVersion.objects.get(
-            id=scheme_version_id, tenant_id=self.tenant_id
-        )
+        scheme = HrSelectionSchemeVersion.objects.select_related(
+            "recruitment_position_id"
+        ).get(id=scheme_version_id, tenant_id=self.tenant_id)
         if scheme.status != "DRAFT":
             raise AssessmentServiceError("SCHEME_NOT_DRAFT", "仅 DRAFT 方案可锁定", http_status=409)
-        # 权重合计校验（服务端）
-        components = scheme.components.all()
-        total_weight = sum((Decimal(c.weight) for c in components), Decimal(0))
-        if components and total_weight <= 0:
-            raise AssessmentServiceError("SCHEME_WEIGHT_INVALID", "组件权重合计必须 > 0", http_status=422)
-        scheme.status = "LOCKED"
-        scheme.locked_at = timezone.now()
-        scheme.save(update_fields=["status", "locked_at"])
+        # 行锁岗位：同岗位方案锁定串行化，防并发产生多个 ACTIVE 方案
+        HrRecruitmentPosition.objects.select_for_update().get(
+            id=scheme.recruitment_position_id_id, tenant_id=self.tenant_id
+        )
+        # 权重校验（服务端）：每个组件 weight > 0
+        components = list(scheme.components.all())
+        if not components:
+            raise AssessmentServiceError("SCHEME_NO_COMPONENTS", "评分方案至少需要一个组件", http_status=422)
+        for comp in components:
+            if comp.weight <= 0:
+                raise AssessmentServiceError(
+                    "SCHEME_WEIGHT_INVALID", f"组件 {comp.name} 权重必须 > 0", http_status=422
+                )
         HrSelectionSchemeVersion.objects.filter(
             tenant_id=self.tenant_id,
             recruitment_position_id=scheme.recruitment_position_id,
             status="ACTIVE",
         ).exclude(id=scheme.id).update(status="SUPERSEDED")
         scheme.status = "ACTIVE"
-        scheme.save(update_fields=["status"])
+        scheme.locked_at = timezone.now()
+        scheme.save(update_fields=["status", "locked_at"])
         return scheme
 
     # ---- 场次与专家 ----
@@ -283,8 +291,11 @@ class AssessmentService:
         )
         if sheet is None:
             raise AssessmentServiceError("SCORE_SHEET_NOT_FOUND", "评分表不存在", http_status=404)
-        if sheet.status == ScoreSheetStatus.LOCKED:
-            raise ScoreAlreadyLockedError("评分已锁定，不可修改")
+        if sheet.status not in (ScoreSheetStatus.DRAFT, ScoreSheetStatus.SUBMITTED):
+            # LOCKED / REOPEN_REQUESTED / REOPEN_APPROVED 均不可编辑（§12.7）
+            raise ScoreAlreadyLockedError(
+                f"评分表状态 {sheet.status} 不可编辑（需特权解锁回到 DRAFT）"
+            )
 
         component = sheet.event_id.component_id
         criteria = list(self._criteria_for_component(component))
@@ -297,7 +308,12 @@ class AssessmentService:
             criterion = criteria_map.get(criterion_id)
             if criterion is None:
                 raise AssessmentServiceError("CRITERION_NOT_FOUND", "评分标准不存在", http_status=404)
-            score = Decimal(str(raw_score))
+            try:
+                score = Decimal(str(raw_score))
+            except Exception:  # noqa: BLE001
+                raise AssessmentServiceError(
+                    "SCORE_INVALID", f"{criterion.title} 分数必须是数字", http_status=422
+                )
             if score < 0 or score > criterion.max_score:
                 raise AssessmentServiceError(
                     "SCORE_OUT_OF_RANGE",
@@ -312,6 +328,16 @@ class AssessmentService:
             )
 
         if submit:
+            # 提交前校验：所有 criterion 必须已打分（禁止部分分提交）
+            missing = [c for c in criteria if not HrCandidateScore.objects.filter(
+                sheet_id=sheet, criterion_id=c
+            ).exists()]
+            if missing:
+                raise AssessmentServiceError(
+                    "SCORE_INCOMPLETE",
+                    f"以下评分项未打分: {', '.join(c.title for c in missing)}",
+                    http_status=422,
+                )
             sheet.status = ScoreSheetStatus.SUBMITTED
             sheet.submitted_at = timezone.now()
         # 服务端计算总分：Σ raw_score / max_score × component.weight
@@ -384,35 +410,68 @@ class AssessmentService:
     def freeze_result_snapshot(self, *, position_id: str) -> list[HrSelectionResultSnapshot]:
         """
         冻结选拔结果（§12.7/§24）：按服务端总分生成排名快照。
-        后续规则变化不得改变已冻结结果。
+
+        规则：
+        - 版本化：每次冻结生成新 snapshot_version，保留历史（不删旧快照）；
+        - 同一组件多位评估人：先按候选对该组件取评估人平均，再按组件权重加权聚合；
+        - 无 LOCKED 评分表 → 拒绝冻结（不产生空版本）。
         """
-        sheets = HrCandidateScoreSheet.objects.filter(
-            tenant_id=self.tenant_id,
-            application_id__recruitment_position_id_id=position_id,
-            status=ScoreSheetStatus.LOCKED,
+        position = HrRecruitmentPosition.objects.select_for_update().get(
+            id=position_id, tenant_id=self.tenant_id
         )
-        agg = {}
+        sheets = list(
+            HrCandidateScoreSheet.objects.filter(
+                tenant_id=self.tenant_id,
+                application_id__recruitment_position_id_id=position_id,
+                status=ScoreSheetStatus.LOCKED,
+            ).select_related("application_id", "event_id", "event_id__component_id")
+        )
+        if not sheets:
+            raise AssessmentServiceError(
+                "NO_LOCKED_SCORES", "没有已锁定的评分结果，禁止冻结选拔排名", http_status=409
+            )
+
+        # (application_id, component_id) → [total_scores]（同一组件多位评估人）
+        app_component_scores: dict[tuple[str, str], list] = {}
         for sheet in sheets:
             app_id = str(sheet.application_id_id)
-            agg[app_id] = agg.get(app_id, Decimal(0)) + sheet.total_score
+            component_id = str(sheet.event_id.component_id_id)
+            app_component_scores.setdefault((app_id, component_id), []).append(sheet.total_score)
 
-        # 清空旧快照（同一 position 只保留一版冻结结果）
-        HrSelectionResultSnapshot.objects.filter(
-            tenant_id=self.tenant_id, recruitment_position_id_id=position_id
-        ).delete()
+        # 组件权重
+        component_weights: dict[str, Decimal] = {}
+        for sheet in sheets:
+            comp = sheet.event_id.component_id
+            component_weights[str(comp.id)] = comp.weight
+
+        # 按候选聚合：Σ(组件内评估人平均 × 组件权重)
+        app_totals: dict[str, Decimal] = {}
+        for (app_id, component_id), scores in app_component_scores.items():
+            avg = sum(scores, Decimal(0)) / len(scores)
+            app_totals[app_id] = app_totals.get(app_id, Decimal(0)) + avg * component_weights.get(component_id, Decimal(0))
+
+        # 新版本号（保留历史）
+        last_version = (
+            HrSelectionResultSnapshot.objects.filter(
+                tenant_id=self.tenant_id, recruitment_position_id_id=position_id
+            ).aggregate(max=Max("snapshot_version"))["max"]
+            or 0
+        )
+        snapshot_version = last_version + 1
 
         snapshots = []
         for rank, (app_id, total) in enumerate(
-            sorted(agg.items(), key=lambda kv: kv[1], reverse=True), start=1
+            sorted(app_totals.items(), key=lambda kv: kv[1], reverse=True), start=1
         ):
             snapshots.append(
                 HrSelectionResultSnapshot.objects.create(
                     tenant_id=self.tenant_id,
                     recruitment_position_id_id=position_id,
+                    snapshot_version=snapshot_version,
                     rank=rank,
                     application_id_id=app_id,
                     final_score=total,
-                    calculation_version="v1",
+                    calculation_version=f"v{snapshot_version}",
                 )
             )
         return snapshots

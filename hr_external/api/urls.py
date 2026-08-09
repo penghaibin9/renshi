@@ -1,0 +1,282 @@
+"""
+hr_external/api/urls.py —— HR08 API 路由。
+
+前缀：/api/hr/v1/external-teachers/*
+注意：identity-match 等静态段必须注册在 {profile_id} 之前。
+"""
+
+from django.urls import path
+
+from hr_external.api import hiring as hiring_api
+from hr_external.api import industry as industry_api
+from hr_external.api import integration as integration_api
+from hr_external.api import materials as materials_api
+from hr_external.api import portal as portal_api
+from hr_external.api import renewal_exit as renewal_exit_api
+from hr_external.api import tasks as tasks_api
+from hr_external.api import views as api_views
+
+urlpatterns = [
+    path(
+        "api/hr/v1/external-teachers/contract",
+        api_views.contract_probe,
+        name="hr08-api-contract",
+    ),
+    path(
+        "api/hr/v1/external-teachers/categories",
+        api_views.category_catalog,
+        name="hr08-api-categories",
+    ),
+    path(
+        "api/hr/v1/external-teachers/identity-match",
+        api_views.identity_match,
+        name="hr08-api-identity-match",
+    ),
+    # ---- HR08-02 产业教授与技能大师（S4）----
+    path(
+        "api/hr/v1/external-teachers/industry/workspaces",
+        industry_api.workspace_list,
+        name="hr08-api-industry-workspaces",
+    ),
+    path(
+        "api/hr/v1/external-teachers/industry/workspaces/create",
+        industry_api.workspace_create,
+        name="hr08-api-industry-workspace-create",
+    ),
+    path(
+        "api/hr/v1/external-teachers/industry/profiles/<uuid:profile_id>",
+        industry_api.industry_profile_create,
+        name="hr08-api-industry-profile-create",
+    ),
+    path(
+        "api/hr/v1/external-teachers/contributions/<uuid:contribution_id>/verify",
+        industry_api.contribution_verify,
+        name="hr08-api-contribution-verify",
+    ),
+    path(
+        "api/hr/v1/external-teachers/contributions/<uuid:contribution_id>/submit",
+        industry_api.contribution_submit,
+        name="hr08-api-contribution-submit",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/contributions",
+        industry_api.contribution_create,
+        name="hr08-api-contribution-create",
+    ),
+    path(
+        "api/hr/v1/external-teachers/industry/<uuid:engagement_id>",
+        industry_api.industry_engagement_detail,
+        name="hr08-api-industry-engagement-detail",
+    ),
+    path(
+        "api/hr/v1/external-teachers/industry",
+        industry_api.industry_list,
+        name="hr08-api-industry-list",
+    ),
+    # ---- HR08-03 聘用审批（S5）----
+    path(
+        "api/hr/v1/external-teachers/hiring-cases/<uuid:case_id>/validate",
+        hiring_api.hiring_validate,
+        name="hr08-api-hiring-validate",
+    ),
+    path(
+        "api/hr/v1/external-teachers/hiring-cases/<uuid:case_id>/submit",
+        hiring_api.hiring_submit,
+        name="hr08-api-hiring-submit",
+    ),
+    path(
+        "api/hr/v1/external-teachers/hiring-cases/<uuid:case_id>/return",
+        hiring_api.hiring_return,
+        name="hr08-api-hiring-return",
+    ),
+    path(
+        "api/hr/v1/external-teachers/hiring-cases/<uuid:case_id>/approve",
+        hiring_api.hiring_approve,
+        name="hr08-api-hiring-approve",
+    ),
+    path(
+        "api/hr/v1/external-teachers/hiring-cases/<uuid:case_id>/activate",
+        hiring_api.hiring_activate,
+        name="hr08-api-hiring-activate",
+    ),
+    path(
+        "api/hr/v1/external-teachers/hiring-cases/<uuid:case_id>",
+        hiring_api.hiring_detail,
+        name="hr08-api-hiring-detail",
+    ),
+    path(
+        "api/hr/v1/external-teachers/hiring-cases",
+        hiring_api.hiring_create,
+        name="hr08-api-hiring-create",
+    ),
+    # ---- HR08-S6 IAM/教务集成 ----
+    path(
+        "api/hr/v1/external-teachers/reconciliations/run",
+        integration_api.reconciliation_run,
+        name="hr08-api-reconciliation-run",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/academic",
+        integration_api.engagement_academic,
+        name="hr08-api-engagement-academic",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/access/revoke",
+        integration_api.engagement_access_revoke,
+        name="hr08-api-engagement-access-revoke",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/access/provision",
+        integration_api.engagement_access_provision,
+        name="hr08-api-engagement-access-provision",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/access",
+        integration_api.engagement_access,
+        name="hr08-api-engagement-access",
+    ),
+    # ---- HR08-S7 教学与服务任务 ----
+    path(
+        "api/hr/v1/external-teachers/workload/verify",
+        tasks_api.workload_verify,
+        name="hr08-api-workload-verify",
+    ),
+    path(
+        "api/hr/v1/external-teachers/workload",
+        tasks_api.workload_list,
+        name="hr08-api-workload-list",
+    ),
+    path(
+        "api/hr/v1/external-teachers/tasks/<uuid:task_id>/accept",
+        tasks_api.task_accept,
+        name="hr08-api-task-accept",
+    ),
+    path(
+        "api/hr/v1/external-teachers/tasks/<uuid:task_id>/submit",
+        tasks_api.task_submit,
+        name="hr08-api-task-submit",
+    ),
+    path(
+        "api/hr/v1/external-teachers/tasks/<uuid:task_id>/verify",
+        tasks_api.task_verify,
+        name="hr08-api-task-verify",
+    ),
+    path(
+        "api/hr/v1/external-teachers/tasks/<uuid:task_id>",
+        tasks_api.task_detail,
+        name="hr08-api-task-detail",
+    ),
+    path(
+        "api/hr/v1/external-teachers/tasks",
+        tasks_api.task_create,
+        name="hr08-api-task-create",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/settlement",
+        tasks_api.settlement_create,
+        name="hr08-api-settlement-create",
+    ),
+    # ---- HR08-S8 续聘与退出 ----
+    path(
+        "api/hr/v1/external-teachers/exits/<uuid:exit_id>/complete",
+        renewal_exit_api.exit_complete,
+        name="hr08-api-exit-complete",
+    ),
+    path(
+        "api/hr/v1/external-teachers/exits/<uuid:exit_id>",
+        renewal_exit_api.exit_detail,
+        name="hr08-api-exit-detail",
+    ),
+    path(
+        "api/hr/v1/external-teachers/renewal-reviews/<uuid:review_id>/decide",
+        renewal_exit_api.renewal_decide,
+        name="hr08-api-renewal-decide",
+    ),
+    path(
+        "api/hr/v1/external-teachers/renewals",
+        renewal_exit_api.renewal_list,
+        name="hr08-api-renewal-list",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/exit",
+        renewal_exit_api.exit_create,
+        name="hr08-api-exit-create",
+    ),
+    path(
+        "api/hr/v1/external-teachers/engagements/<uuid:engagement_id>/renewal-review",
+        renewal_exit_api.renewal_create,
+        name="hr08-api-renewal-create",
+    ),
+    path(
+        "api/hr/v1/external-teachers/import-jobs/<uuid:job_id>/execute",
+        api_views.import_job_execute,
+        name="hr08-api-import-execute",
+    ),
+    path(
+        "api/hr/v1/external-teachers/import-jobs/<uuid:job_id>/confirm",
+        api_views.import_job_confirm,
+        name="hr08-api-import-confirm",
+    ),
+    path(
+        "api/hr/v1/external-teachers/import-jobs/<uuid:job_id>/validate",
+        api_views.import_job_validate,
+        name="hr08-api-import-validate",
+    ),
+    path(
+        "api/hr/v1/external-teachers/import-jobs",
+        api_views.import_job_upload,
+        name="hr08-api-import-upload",
+    ),
+    # ---- B5 材料与安全下载 ticket ----
+    path(
+        "api/hr/v1/external-teachers/file-ticket",
+        materials_api.file_ticket_redeem,
+        name="hr08-api-file-ticket-redeem",
+    ),
+    # ---- B6 外聘本人门户 ----
+    path(
+        "api/hr/v1/external-teachers/portal/tokens",
+        portal_api.portal_token_issue,
+        name="hr08-api-portal-token-issue",
+    ),
+    path(
+        "api/hr/v1/external-teachers/portal/me",
+        portal_api.portal_me,
+        name="hr08-api-portal-me",
+    ),
+    path(
+        "api/hr/v1/external-teachers/materials/<uuid:material_id>/upload",
+        materials_api.material_upload,
+        name="hr08-api-material-upload",
+    ),
+    path(
+        "api/hr/v1/external-teachers/materials/<uuid:material_id>/download-ticket",
+        materials_api.material_download_ticket,
+        name="hr08-api-material-download-ticket",
+    ),
+    path(
+        "api/hr/v1/external-teachers/<uuid:profile_id>/materials",
+        materials_api.material_collection,
+        name="hr08-api-material-collection",
+    ),
+    path(
+        "api/hr/v1/external-teachers",
+        api_views.profile_collection,
+        name="hr08-api-profiles",
+    ),
+    path(
+        "api/hr/v1/external-teachers/<uuid:profile_id>/engagements",
+        api_views.profile_engagements,
+        name="hr08-api-profile-engagements",
+    ),
+    path(
+        "api/hr/v1/external-teachers/<uuid:profile_id>/history",
+        api_views.profile_history,
+        name="hr08-api-profile-history",
+    ),
+    path(
+        "api/hr/v1/external-teachers/<uuid:profile_id>",
+        api_views.profile_detail,
+        name="hr08-api-profile-detail",
+    ),
+]

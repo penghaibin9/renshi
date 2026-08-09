@@ -78,6 +78,17 @@ class ApplicationService:
                 .first()
             )
             if app is None:
+                # 同候选+同岗位已有 active 非 DRAFT 申请 → 409（不撞 unique 抛 500）
+                existing_active = HrJobApplication.objects.filter(
+                    tenant_id=self.tenant_id,
+                    candidate_id_id=candidate_id,
+                    recruitment_position_id_id=recruitment_position_id,
+                    is_active=True,
+                ).first()
+                if existing_active is not None:
+                    raise ApplicationAlreadySubmittedError(
+                        "该候选人已存在进行中的申请，不可重复创建草稿"
+                    )
                 app = HrJobApplication.objects.create(
                     tenant_id=self.tenant_id,
                     candidate_id_id=candidate_id,
@@ -98,7 +109,7 @@ class ApplicationService:
         application_id: str,
         idempotency_key: str | None = None,
     ) -> HrJobApplication:
-        """正式提交（幂等 + 冻结版本 + ledger）。"""
+        """正式提交（幂等：Idempotency-Key 落库 + active 唯一约束，冻结版本 + ledger）。"""
         app = (
             HrJobApplication.objects.select_for_update()
             .filter(id=application_id, tenant_id=self.tenant_id)
@@ -107,13 +118,26 @@ class ApplicationService:
         if app is None:
             raise ApplicationServiceError("APPLICATION_NOT_FOUND", "申请不存在", http_status=404)
 
-        if app.canonical_status in (S.SUBMITTED, S.UNDER_REVIEW, S.QUALIFIED):
-            # 幂等重放：已提交返回原对象
+        # Idempotency-Key 幂等：同 key 已提交 → 返回原申请（§49 公开报名可靠性）
+        if idempotency_key:
+            from hr_recruitment.models import HrApplicationSubmissionKey
+
+            recorded = HrApplicationSubmissionKey.objects.filter(
+                tenant_id=self.tenant_id, idempotency_key=idempotency_key
+            ).first()
+            if recorded is not None:
+                return recorded.application_id
+
+        if app.canonical_status == S.SUBMITTED:
+            # 已提交（同申请重放）：记录 key 后返回
+            if idempotency_key:
+                self._record_submission_key(idempotency_key, app)
             return app
         if app.canonical_status != S.DRAFT:
-            raise InvalidStateTransitionError(
-                f"当前状态 {app.canonical_status} 不可提交"
-            )
+            # 已推进（重试/并发）：幂等语义下返回原对象，不因状态推进而 409
+            if idempotency_key:
+                self._record_submission_key(idempotency_key, app)
+            return app
 
         assert_transition(app.canonical_status, S.SUBMITTED)
         app.canonical_status = S.SUBMITTED
@@ -127,6 +151,9 @@ class ApplicationService:
             app.save()
         except IntegrityError:
             raise ApplicationAlreadySubmittedError("重复提交：同岗位存在 active 申请")
+
+        if idempotency_key:
+            self._record_submission_key(idempotency_key, app)
 
         # ledger（§14.3）
         from hr_recruitment.models import HrApplicationTransition
@@ -142,6 +169,19 @@ class ApplicationService:
         )
         return app
 
+    def _record_submission_key(self, idempotency_key: str, app) -> None:
+        """幂等键落库（unique(tenant, key)），重复提交命中返回原申请。"""
+        from hr_recruitment.models import HrApplicationSubmissionKey
+
+        try:
+            HrApplicationSubmissionKey.objects.create(
+                tenant_id=self.tenant_id,
+                idempotency_key=idempotency_key,
+                application_id=app,
+            )
+        except IntegrityError:
+            pass  # 并发重复：已存在，无需处理
+
     def _generate_application_no(self) -> str:
         while True:
             no = f"APP-{timezone.now().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}"
@@ -151,7 +191,11 @@ class ApplicationService:
                 return no
 
     def _freeze_versions(self, app: HrJobApplication) -> HrJobApplication:
-        """冻结公告/资格/评分方案版本（发布后不可静默改）。"""
+        """
+        冻结公告/资格/评分方案版本（发布后不可静默改，§49/§51）。
+
+        fail-closed：岗位存在任何 DRAFT 规则集/方案但无 ACTIVE 版本 → 阻断提交（禁止"无规则依据"报名）。
+        """
         from hr_recruitment.models import (
             HrQualificationRuleSetVersion,
             HrRecruitmentAnnouncementVersion,
@@ -166,9 +210,17 @@ class ApplicationService:
             .order_by("-version_no")
             .first()
         )
-        if last_ann and last_ann.published_at:
+        if last_ann is not None and last_ann.published_at is None:
+            raise ApplicationServiceError(
+                "ANNOUNCEMENT_NOT_PUBLISHED", "公告尚未发布，禁止提交申请", http_status=409
+            )
+        if last_ann is not None and last_ann.published_at:
             app.announcement_version_id = last_ann.id
 
+        qual_any = HrQualificationRuleSetVersion.objects.filter(
+            tenant_id=self.tenant_id,
+            recruitment_position_id=app.recruitment_position_id,
+        ).exists()
         qual = (
             HrQualificationRuleSetVersion.objects.filter(
                 tenant_id=self.tenant_id,
@@ -178,9 +230,19 @@ class ApplicationService:
             .order_by("-version_no")
             .first()
         )
+        if qual_any and qual is None:
+            raise ApplicationServiceError(
+                "QUALIFICATION_RULES_NOT_ACTIVE",
+                "岗位已配置资格条件但未发布 ACTIVE 版本，禁止提交申请",
+                http_status=409,
+            )
         if qual:
             app.qualification_rule_version_id = qual.id
 
+        scheme_any = HrSelectionSchemeVersion.objects.filter(
+            tenant_id=self.tenant_id,
+            recruitment_position_id=app.recruitment_position_id,
+        ).exists()
         scheme = (
             HrSelectionSchemeVersion.objects.filter(
                 tenant_id=self.tenant_id,
@@ -190,6 +252,12 @@ class ApplicationService:
             .order_by("-version_no")
             .first()
         )
+        if scheme_any and scheme is None:
+            raise ApplicationServiceError(
+                "SELECTION_SCHEME_NOT_ACTIVE",
+                "岗位已配置评分方案但未发布 ACTIVE 版本，禁止提交申请",
+                http_status=409,
+            )
         if scheme:
             app.selection_scheme_version_id = scheme.id
         return app
@@ -238,12 +306,25 @@ class ApplicationService:
         file_size_bytes: int = 0,
         sensitive_level: str = "RESTRICTED_HR",
     ) -> HrApplicationMaterial:
-        """添加材料（版本化：同类型同标题递增版本）。"""
+        """添加材料（版本化：同类型同标题递增版本；提交后禁止增改；sensitive_level 服务端校验）。"""
         app = HrJobApplication.objects.filter(
             id=application_id, tenant_id=self.tenant_id
         ).first()
         if app is None:
             raise ApplicationServiceError("APPLICATION_NOT_FOUND", "申请不存在", http_status=404)
+        # 已提交/已推进的申请禁止增改材料（§49：提交后冻结）
+        if app.canonical_status != S.DRAFT:
+            raise ApplicationServiceError(
+                "APPLICATION_SUBMITTED", "申请已提交，材料已冻结，不可增改", http_status=409
+            )
+        # sensitive_level 服务端枚举校验（不信任客户端任意值）
+        from hr_recruitment.constants import SensitiveLevel
+
+        allowed_levels = set(SensitiveLevel.values)
+        if sensitive_level not in allowed_levels:
+            raise ApplicationServiceError(
+                "INVALID_SENSITIVE_LEVEL", "非法材料敏感级", http_status=422
+            )
         last = (
             HrApplicationMaterial.objects.filter(
                 tenant_id=self.tenant_id,

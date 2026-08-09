@@ -78,7 +78,7 @@ class HrOrganizationModelTests(TestCase):
     # INV-04 Effective Overlap：同一实体正式版本区间不得重叠（as-of 唯一解析）
     def test_inv04_effective_overlap_as_of_unique(self):
         as_of = self.today
-        v = org_version_as_of(self.school.id, as_of)
+        v = org_version_as_of(self.scope.tenant_id, self.school.id, as_of)
         self.assertIsNotNone(v)
         # as-of 解析唯一
         versions = HrOrganizationVersion.objects.filter(
@@ -92,7 +92,7 @@ class HrOrganizationModelTests(TestCase):
         from datetime import timedelta
 
         # as-of 在生效日期之前 → 不应解析到它
-        v = org_version_as_of(self.school.id, self.today - timedelta(days=1))
+        v = org_version_as_of(self.scope.tenant_id, self.school.id, self.today - timedelta(days=1))
         self.assertIsNone(v)
 
     # INV-06 Code No Reuse：stable_code 唯一

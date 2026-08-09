@@ -221,6 +221,12 @@ class CampaignService:
         description="",
     ) -> HrRecruitmentPosition:
         campaign = self._get_campaign(campaign_id)
+        public_slug = slugify(post_catalog_name) or f"pos-{uuid4().hex[:8]}"
+        # 同 campaign 内 slug 去重（防同名岗位 slug 冲突，防 public_position 返回错误岗位）
+        while HrRecruitmentPosition.objects.filter(
+            tenant_id=self.tenant_id, campaign_id=campaign, public_slug=public_slug
+        ).exists():
+            public_slug = f"{slugify(post_catalog_name) or 'pos'}-{uuid4().hex[:4]}"
         position = HrRecruitmentPosition.objects.create(
             tenant_id=self.tenant_id,
             campaign_id=campaign,
@@ -235,7 +241,7 @@ class CampaignService:
             min_hires=min_hires,
             max_hires=max_hires,
             description=description,
-            public_slug=slugify(post_catalog_name) or uuid4().hex[:8],
+            public_slug=public_slug,
         )
         return position
 
@@ -246,26 +252,29 @@ class CampaignService:
                 f"非法招聘岗位状态迁移: {position.status} -> {target}"
             )
 
-    def _get_position(self, position_id: str) -> HrRecruitmentPosition:
+    def _get_position(self, position_id: str, for_update: bool = False) -> HrRecruitmentPosition:
+        qs = HrRecruitmentPosition.objects.select_related("campaign_id")
+        if for_update:
+            qs = qs.select_for_update()
         try:
-            return HrRecruitmentPosition.objects.select_related("campaign_id").get(
-                id=position_id, tenant_id=self.tenant_id
-            )
+            return qs.get(id=position_id, tenant_id=self.tenant_id)
         except HrRecruitmentPosition.DoesNotExist:
             raise CampaignServiceError("POSITION_NOT_FOUND", "招聘岗位不存在", http_status=404)
 
     @transaction.atomic
     def make_ready(self, position_id: str) -> HrRecruitmentPosition:
-        """READY：预占 HR02 额度（§9.6）。未预占不可进入 READY/OPEN。"""
-        position = self._get_position(position_id)
+        """READY：预占 HR02 额度（§9.6）。行锁防与 cancel 并发 TOCTOU；已 READY 幂等返回。"""
+        position = self._get_position(position_id, for_update=True)
         self._assert_position(position, RecruitmentPositionStatus.READY)
         if position.position_id is None and position.position_pool_id is None:
-            # 未绑定 HR02 岗位/岗位池：走容量 Provider 校验后允许（无预占时标记 UNAVAILABLE 会阻断）
             raise CampaignServiceError(
                 "POSITION_HR02_REFERENCE_REQUIRED",
                 "招聘岗位必须先绑定 HR02 岗位/岗位池才能预占开放",
                 http_status=422,
             )
+        # 幂等：已 READY 且已有预占 → 直接返回（不重复预占）
+        if position.status == RecruitmentPositionStatus.READY and position.reservation_id:
+            return position
         provider = Hr02ReservationProvider(tenant_id=self.tenant_id, actor=self.actor)
         idem_key = f"hr04:reserve:{position.id}:{position.version}"
         result = provider.reserve(
@@ -273,6 +282,7 @@ class CampaignService:
             position_pool_id=position.position_pool_id,
             count=position.planned_headcount,
             idempotency_key=idem_key,
+            source_business_id=str(position.id),
         )
         position.reserved_headcount = position.planned_headcount
         position.reservation_id = result["reservation_id"]
@@ -292,8 +302,19 @@ class CampaignService:
 
     @transaction.atomic
     def open_position(self, position_id: str) -> HrRecruitmentPosition:
-        position = self._get_position(position_id)
+        """OPEN：须先发布/开放 campaign（防未开放岗位对公网可见）。"""
+        position = self._get_position(position_id, for_update=True)
         self._assert_position(position, RecruitmentPositionStatus.OPEN)
+        if position.campaign_id.status not in (
+            CampaignStatus.PUBLISHED,
+            CampaignStatus.OPEN,
+            CampaignStatus.RESULT_PROCESSING,
+        ):
+            raise CampaignServiceError(
+                "CAMPAIGN_NOT_PUBLISHED",
+                "招聘项目未发布/未开放，禁止开放岗位报名",
+                http_status=409,
+            )
         position.status = RecruitmentPositionStatus.OPEN
         position.version += 1
         position.save(update_fields=["status", "version"])
@@ -301,14 +322,31 @@ class CampaignService:
 
     @transaction.atomic
     def cancel_position(self, position_id: str, reason: str = "") -> HrRecruitmentPosition:
-        """取消：未录用额度必须 release（§9.6）。"""
-        position = self._get_position(position_id)
+        """取消：未录用额度必须 release（§9.6）。
+
+        顺序：行锁 → 先写 DB 状态 CANCELLED 并清空预占引用 → 再 release HR02（补偿式）。
+        release 失败不阻塞取消（记录到状态字段，由对账/重试补偿），避免"DB 回滚但外部已释放"的悬挂。
+        """
+        position = self._get_position(position_id, for_update=True)
         self._assert_position(position, RecruitmentPositionStatus.CANCELLED)
-        if getattr(position, "reservation_id", None):
-            provider = Hr02ReservationProvider(tenant_id=self.tenant_id, actor=self.actor)
-            provider.release(position.reservation_id)
-            position.reserved_headcount = 0
+        reservation_id = position.reservation_id
+        position.reserved_headcount = 0
+        position.reservation_id = ""
+        position.reservation_no = ""
         position.status = RecruitmentPositionStatus.CANCELLED
         position.version += 1
-        position.save(update_fields=["reserved_headcount", "status", "version"])
+        position.save(
+            update_fields=["reserved_headcount", "reservation_id", "reservation_no", "status", "version"]
+        )
+        if reservation_id:
+            try:
+                provider = Hr02ReservationProvider(tenant_id=self.tenant_id, actor=self.actor)
+                provider.release(reservation_id)
+            except Exception as exc:  # noqa: BLE001
+                # 释放失败：状态已取消，预占由 HR02 到期/对账补偿，不阻塞取消
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "hr04 cancel release failed reservation=%s reason=%s", reservation_id, exc
+                )
         return position

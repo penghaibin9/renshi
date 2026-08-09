@@ -41,6 +41,10 @@ def _service(request):
 
 
 def _handle(request, exc):
+    from django.core.exceptions import ObjectDoesNotExist
+
+    if isinstance(exc, ObjectDoesNotExist):
+        return error(request, "NOT_FOUND", "资源不存在", 404)
     if isinstance(exc, (Hr04ApiError, CampaignServiceError)):
         return error(request, exc.code, exc.message, getattr(exc, "http_status", exc.status_code if hasattr(exc, "status_code") else 422))
     return error(request, "INTERNAL_ERROR", "服务器内部错误", 500)

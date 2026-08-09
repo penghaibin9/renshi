@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hr-external-home">
+  <header class="hr-page-header">
+    <h1>{{ page_title|default:"外聘教师库" }}</h1>
+    <p class="hr-page-subtitle">学校外部人才与受聘合作的统一入口（HR08）</p>
+  </header>
+
+  <section class="hr-workspace-grid">
+    <a class="hr-workspace-card" href="{% url 'hr08-home' %}">
+      <h2>外聘教师库</h2>
+      <p>外部教师/专家身份、来源单位、能力标签、资格与合作历史</p>
+    </a>
+    <a class="hr-workspace-card hr-workspace-card--disabled" href="#" aria-disabled="true">
+      <h2>产业教授与技能大师</h2>
+      <p>专项身份、任务、成果与考核（S4 施工中）</p>
+    </a>
+    <a class="hr-workspace-card hr-workspace-card--disabled" href="#" aria-disabled="true">
+      <h2>聘用审批</h2>
+      <p>需求、候选、资格、合规、学校审批、协议与激活（S5 施工中）</p>
+    </a>
+    <a class="hr-workspace-card hr-workspace-card--disabled" href="#" aria-disabled="true">
+      <h2>教学与服务任务</h2>
+      <p>任务分配、履职、验收、工作量与结算依据（S7 施工中）</p>
+    </a>
+    <a class="hr-workspace-card hr-workspace-card--disabled" href="#" aria-disabled="true">
+      <h2>续聘与退出</h2>
+      <p>到期评估、续聘、角色转换、任务清算与权限回收（S8 施工中）</p>
+    </a>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hr-page-header">
+  <h1>{{ page_title }}</h1>
+  <p class="hr-page-subtitle">产教融合高价值外部人才专项管理（HR08-02）</p>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-home' %}">← 外聘教师库</a>
+</header>
+
+<section class="hr-panel">
+  <h2>产业人才</h2>
+  <div class="hr-table-wrap">
+  <table class="hr-data-table">
+    <thead>
+      <tr><th>姓名</th><th>类别</th><th>当前雇主</th><th>行业角色</th><th>行业领域</th><th>技能</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+      {% for p in items %}
+      <tr>
+        <td><a href="{% url 'hr08-profile-detail' p.id %}">{{ p.person_id.legal_name }}</a></td>
+        <td>{% include "hr_external/components/external_category_badge.html" with category_code=p.primary_category.code category_name=p.primary_category.name %}</td>
+        <td>{{ p.industry_profile.current_employer|default:"-" }}</td>
+        <td>{{ p.industry_profile.current_industry_role|default:"-" }}</td>
+        <td>{{ p.industry_profile.industry_domains|join:"、"|default:"-" }}</td>
+        <td>{{ p.industry_profile.skills|join:"、"|default:"-" }}</td>
+        <td>
+          {% for e in p.engagements.all|slice:":1" %}
+          <a class="oh-btn oh-btn--small oh-btn--secondary" href="{% url 'hr08-industry-engagement-detail' e.id %}">详情</a>
+          {% empty %}
+          <span class="hr-muted">暂无聘期</span>
+          {% endfor %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="hr-empty">暂无产业人才</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="hr-panel">
+  <h2>技能大师/产业工作室</h2>
+  <div class="hr-table-wrap">
+  <table class="hr-data-table">
+    <thead>
+      <tr><th>名称</th><th>类型</th><th>组织</th><th>起止</th><th>状态</th></tr>
+    </thead>
+    <tbody>
+      {% for w in workspaces %}
+      <tr>
+        <td>{{ w.name }}</td>
+        <td>{{ w.workspace_type }}</td>
+        <td>{{ w.organization_id }}</td>
+        <td>{% include "hr_external/components/engagement_period.html" with start_at=w.start_at end_at=w.end_at %}</td>
+        <td>{{ w.status }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="hr-empty">暂无工作室</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

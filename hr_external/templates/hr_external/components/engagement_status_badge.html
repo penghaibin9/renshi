@@ -1,0 +1,15 @@
+{% comment %}
+HrEngagementStatusBadge —— Engagement 状态徽标。
+状态文本必须可见（颜色不是唯一状态表达，00 §51）。
+用法：{% include "hr_external/components/engagement_status_badge.html" with status="ACTIVE" %}
+{% endcomment %}
+{% if status == "ACTIVE" %}<span class="hr-status-badge hr-status-badge--success">有效</span>
+{% elif status == "APPROVED" %}<span class="hr-status-badge hr-status-badge--info">已批准</span>
+{% elif status in "DRAFT" %}<span class="hr-status-badge hr-status-badge--muted">草稿</span>
+{% elif status == "WAITING_AGREEMENT" or status == "SIGNED_WAITING_EFFECTIVE" %}<span class="hr-status-badge hr-status-badge--warning">待协议/待生效</span>
+{% elif status == "REVIEW_DUE" or status == "RENEWAL_IN_PROGRESS" %}<span class="hr-status-badge hr-status-badge--warning">待续聘评估</span>
+{% elif status == "EXPIRED" or status == "ENDED" %}<span class="hr-status-badge hr-status-badge--muted">已结束</span>
+{% elif status == "EXITING" %}<span class="hr-status-badge hr-status-badge--warning">退出中</span>
+{% elif status == "SUSPENDED" or status == "BLOCKED" or status == "REJECTED" %}<span class="hr-status-badge hr-status-badge--danger">异常</span>
+{% else %}<span class="hr-status-badge">{{ status|default:"-" }}</span>
+{% endif %}

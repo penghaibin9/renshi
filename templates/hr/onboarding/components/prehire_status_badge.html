@@ -1,0 +1,25 @@
+{% load i18n %}
+{# HR05 公共组件：待报到状态徽标（总册 §30；枚举值不变，仅展示中文） #}
+{% if status == "CREATED" %}<span class="oh-badge oh-badge--secondary">{% trans "已创建" %}</span>
+{% elif status == "PREPARING" %}<span class="oh-badge oh-badge--secondary">{% trans "准备中" %}</span>
+{% elif status == "READY_TO_REPORT" %}<span class="oh-badge oh-badge--secondary">{% trans "可报到" %}</span>
+{% elif status == "REPORT_SCHEDULED" %}<span class="oh-badge oh-badge--info">{% trans "已预约报到" %}</span>
+{% elif status == "REPORTED" %}<span class="oh-badge oh-badge--info">{% trans "已报到" %}</span>
+{% elif status == "VERIFYING" %}<span class="oh-badge oh-badge--info">{% trans "材料核验中" %}</span>
+{% elif status == "READY_FOR_ACTIVATION" %}<span class="oh-badge oh-badge--warning">{% trans "待正式生效" %}</span>
+{% elif status == "ACTIVATING" %}<span class="oh-badge oh-badge--warning">{% trans "正式生效中" %}</span>
+{% elif status == "ACTIVE" %}<span class="oh-badge oh-badge--success">{% trans "已生效" %}</span>
+{% elif status == "ONBOARDING_IN_PROGRESS" %}<span class="oh-badge oh-badge--success">{% trans "入职协同中" %}</span>
+{% elif status == "ONBOARDING_COMPLETED" %}<span class="oh-badge oh-badge--success">{% trans "入职完成" %}</span>
+{% elif status == "PROBATION" %}<span class="oh-badge oh-badge--info">{% trans "试用期" %}</span>
+{% elif status == "CONFIRMED" %}<span class="oh-badge oh-badge--success">{% trans "已转正" %}</span>
+{% elif status == "REPORT_DELAYED" %}<span class="oh-badge oh-badge--warning">{% trans "报到延期" %}</span>
+{% elif status == "DECLINED" %}<span class="oh-badge oh-badge--neutral">{% trans "已放弃" %}</span>
+{% elif status == "NO_SHOW" %}<span class="oh-badge oh-badge--neutral">{% trans "未报到" %}</span>
+{% elif status == "BLOCKED" %}<span class="oh-badge oh-badge--danger">{% trans "已阻断" %}</span>
+{% elif status == "ACTIVATION_FAILED" %}<span class="oh-badge oh-badge--danger">{% trans "生效失败" %}</span>
+{% elif status == "CANCELLED" %}<span class="oh-badge oh-badge--neutral">{% trans "已取消" %}</span>
+{% elif status == "PROBATION_EXTENDED" %}<span class="oh-badge oh-badge--warning">{% trans "试用期延长" %}</span>
+{% elif status == "PROBATION_FAILED" %}<span class="oh-badge oh-badge--danger">{% trans "试用不合格" %}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{{ status|default:_("未知") }}</span>
+{% endif %}

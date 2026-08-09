@@ -42,7 +42,7 @@ class OrganizationSelector:
         return self._base_qs().filter(id=org_id).first()
 
     def get_version_as_of(self, org_id) -> Optional[HrOrganizationVersion]:
-        return org_version_as_of(org_id, self.as_of)
+        return org_version_as_of(self.scope.tenant_id, org_id, self.as_of)
 
     def get_children(self, org_id):
         return children_as_of(self.scope.tenant_id, org_id, self.as_of)

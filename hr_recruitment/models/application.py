@@ -85,6 +85,12 @@ class HrJobApplication(models.Model):
                 condition=models.Q(is_active=True),
                 name="uniq_hr_application_active_per_position",
             ),
+            # application_no tenant 内唯一（§46 兜底，防并发撞号）
+            models.UniqueConstraint(
+                fields=["tenant_id", "application_no"],
+                condition=models.Q(application_no__gt=""),
+                name="uniq_hr_application_no_tenant",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant_id", "canonical_status"]),
@@ -187,3 +193,34 @@ class HrApplicationMaterial(models.Model):
 
     def __str__(self):
         return f"{self.application_id} {self.title or self.material_type} v{self.version_no}"
+
+
+class HrApplicationSubmissionKey(models.Model):
+    """提交幂等键记录（§49：同 Idempotency-Key 重放返回同一申请，绝不双提交）。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    idempotency_key = models.CharField(max_length=128)
+    application_id = models.ForeignKey(
+        HrJobApplication,
+        on_delete=models.CASCADE,
+        related_name="submission_keys",
+        verbose_name=_("Application"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Application Submission Key")
+        verbose_name_plural = _("Application Submission Keys")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "idempotency_key"],
+                name="uniq_hr_application_submission_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant_id", "idempotency_key"]),
+        ]
+
+    def __str__(self):
+        return f"{self.idempotency_key} → {self.application_id}"

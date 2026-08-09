@@ -199,7 +199,24 @@ class HrBootstrapApiTests(TestCase):
         resp = self.client.get("/api/hr/v1/home/overview/metrics")
         self.assertEqual(resp.status_code, 200, resp.content[:300])
         data = resp.json()
-        self.assertEqual(len(data["metrics"]), 6)
+        keys = {m["metricKey"] for m in data["metrics"]}
+        # 核心 6 KPI 全部返回
+        for key in (
+            "active_headcount",
+            "full_time_teacher",
+            "double_teacher_valid",
+            "new_join_ytd",
+            "departure_ytd",
+            "open_risk_count",
+        ):
+            self.assertIn(key, keys)
+        # HR08 指标已接入（任务 1）：hr08_active_engagements 必须返回，status 语义正确
+        self.assertIn("hr08_active_engagements", keys)
+        hr08_metric = next(m for m in data["metrics"] if m["metricKey"] == "hr08_active_engagements")
+        self.assertIn(hr08_metric["status"], ("OK", "UNAVAILABLE"))
+        # UNAVAILABLE 不转 0：若 status 非 OK 则 value 必须为 None
+        if hr08_metric["status"] != "OK":
+            self.assertIsNone(hr08_metric["value"])
 
     def test_cache_control_no_store(self):
         self._login_school()

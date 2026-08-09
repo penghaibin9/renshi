@@ -24,6 +24,17 @@ from hr_recruitment.models import (
     HrPublicNoticeEntry,
 )
 
+# 公示条目允许展示的字段白名单（服务端强制；不含身份证/手机号/邮箱等 PII）
+PUBLIC_NOTICE_FIELD_WHITELIST = frozenset(
+    {
+        "public_display_name",  # 已脱敏展示名（如 张**）
+        "position",  # 应聘岗位
+        "organization",  # 招聘单位
+        "rank",  # 排名
+        "final_score",  # 综合成绩
+    }
+)
+
 
 class NoticeServiceError(Exception):
     def __init__(self, code: str, message: str, *, http_status: int = 422):
@@ -59,26 +70,44 @@ class NoticeService:
             published_by=self.actor,
         )
         for entry in entries or []:
+            # 公示字段白名单（服务端强制，§13.4：绝不暴露 Candidate 全字段）
+            public_fields = {
+                k: v
+                for k, v in (entry.get("public_fields") or {}).items()
+                if k in PUBLIC_NOTICE_FIELD_WHITELIST
+            }
             HrPublicNoticeEntry.objects.create(
                 tenant_id=self.tenant_id,
                 notice_id=notice,
                 proposed_hire_id_id=entry.get("proposed_hire_id"),
                 public_display_name=entry.get("public_display_name", ""),
-                public_fields_json=entry.get("public_fields", {}),
+                public_fields_json=public_fields,
             )
-        # 关联申请的 canonical_status → PUBLIC_NOTICE
+        # 关联申请的 canonical_status → PUBLIC_NOTICE（走状态机 + 写 ledger）
+        from hr_recruitment.constants import ApplicationCanonicalStatus as S
+        from hr_recruitment.models import HrApplicationTransition
+        from hr_recruitment.policies.state_machine import assert_transition
+
         for entry in entries or []:
             proposed = HrProposedHire.objects.filter(
                 tenant_id=self.tenant_id, id=entry.get("proposed_hire_id")
             ).first()
             if proposed:
                 app = proposed.application_id
-                from hr_recruitment.constants import ApplicationCanonicalStatus as S
-
-                if app.canonical_status in (S.PROPOSED_HIRE,):
+                if app.canonical_status == S.PROPOSED_HIRE:
+                    assert_transition(app.canonical_status, S.PUBLIC_NOTICE)
                     app.canonical_status = S.PUBLIC_NOTICE
                     app.version += 1
                     app.save(update_fields=["canonical_status", "version"])
+                    HrApplicationTransition.objects.create(
+                        tenant_id=self.tenant_id,
+                        application_id=app,
+                        from_status=S.PROPOSED_HIRE,
+                        to_status=S.PUBLIC_NOTICE,
+                        action="PUBLIC_NOTICE_PUBLISHED",
+                        actor_id=self.actor,
+                        source="HR_ADMIN",
+                    )
         return notice
 
     @transaction.atomic

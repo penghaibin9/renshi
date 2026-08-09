@@ -112,10 +112,23 @@ class CampaignServiceTests(TestCase):
         self.assertEqual(reservation.source_domain, "hr04")
 
     def test_position_open_after_ready(self):
+        # open 前须发布并开放 campaign（§9.5 防未开放岗位对公网可见）
+        self.service.transition_campaign(str(self.campaign.id), target="UNDER_APPROVAL")
+        self.service.transition_campaign(str(self.campaign.id), target="APPROVED")
+        self.service.transition_campaign(str(self.campaign.id), target="PUBLISHED")
+        self.service.transition_campaign(str(self.campaign.id), target="OPEN")
         self.service.make_ready(str(self.position.id))
         self.service.open_position(str(self.position.id))
         self.position.refresh_from_db()
         self.assertEqual(self.position.status, RecruitmentPositionStatus.OPEN)
+
+    def test_position_open_requires_published_campaign(self):
+        """未发布 campaign 禁止 open（防未开放岗位对公网可见）。"""
+        from hr_recruitment.services.campaign_service import CampaignServiceError
+
+        self.service.make_ready(str(self.position.id))
+        with self.assertRaises(CampaignServiceError):
+            self.service.open_position(str(self.position.id))
 
     def test_position_cancel_releases_reservation(self):
         self.service.make_ready(str(self.position.id))

@@ -71,6 +71,7 @@ class Hr02ReservationProvider:
         fte=1.00,
         idempotency_key: str,
         expires_at=None,
+        source_business_id=None,
     ):
         if not (position_id or position_pool_id):
             raise PositionCapacityConflictError(
@@ -81,7 +82,9 @@ class Hr02ReservationProvider:
             reservation = service.reserve(
                 source_domain=SOURCE_DOMAIN,
                 source_business_type=SOURCE_BUSINESS_TYPE,
-                source_business_id=str(position_id or position_pool_id),
+                # 契约：source_business_id = <HrRecruitmentPosition.id>（HR04 业务对象）
+                source_business_id=source_business_id
+                or str(position_id or position_pool_id),
                 position_id=position_id,
                 position_pool_id=position_pool_id,
                 count=count,

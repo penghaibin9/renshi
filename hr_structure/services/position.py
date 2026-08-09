@@ -126,10 +126,16 @@ class PositionService:
             )
             if pos is None:
                 raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位不存在或未激活")
-            # 计算已占用（HELD reservation 也算占用）
-            held = HrPositionReservation.objects.filter(
-                position_id=pos, status="HELD"
-            ).aggregate(total=__import__("django.db.models", fromlist=["Sum"]).Sum("reserved_count"))["total"] or 0
+            # 计算已占用（HELD reservation 也算占用），过滤过期预占（50.1 防御层）
+            from django.utils import timezone as _tz
+
+            held = (
+                HrPositionReservation.objects.filter(
+                    position_id=pos, status="HELD", expires_at__gt=_tz.now()
+                )
+                .aggregate(total=__import__("django.db.models", fromlist=["Sum"]).Sum("reserved_count"))["total"]
+                or 0
+            )
             if held + count > pos.max_incumbents:
                 raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位可用额度不足")
 
@@ -141,9 +147,13 @@ class PositionService:
             )
             if pool is None:
                 raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位池不存在或未激活")
-            held = HrPositionReservation.objects.filter(
-                position_pool_id=pool, status="HELD"
-            ).aggregate(total=__import__("django.db.models", fromlist=["Sum"]).Sum("reserved_count"))["total"] or 0
+            held = (
+                HrPositionReservation.objects.filter(
+                    position_pool_id=pool, status="HELD", expires_at__gt=_tz.now()
+                )
+                .aggregate(total=__import__("django.db.models", fromlist=["Sum"]).Sum("reserved_count"))["total"]
+                or 0
+            )
             if held + count > pool.authorized_count:
                 raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位池可用额度不足")
 

@@ -56,7 +56,10 @@ class PlanService:
             PlanRequestStatus.RETURNED,
         },
         PlanRequestStatus.APPROVED: {PlanRequestStatus.CLOSED},
-        PlanRequestStatus.PARTIALLY_APPROVED: {PlanRequestStatus.CLOSED},
+        PlanRequestStatus.PARTIALLY_APPROVED: {
+            PlanRequestStatus.CLOSED,
+            PlanRequestStatus.UNDER_SCHOOL_APPROVAL,  # 补批剩余额度
+        },
         PlanRequestStatus.REJECTED: set(),
         PlanRequestStatus.CLOSED: set(),
     }
@@ -71,19 +74,26 @@ class PlanService:
     # ---- 周期级操作 ----
 
     def create_cycle(self, *, tenant_id, year, title, start_date, actor=""):
+        from django.db import IntegrityError as DbIntegrityError
+
         from hr_recruitment.models import HrHiringPlanCycle
 
         if HrHiringPlanCycle.objects.filter(tenant_id=tenant_id, year=year).exists():
             raise PlanServiceError(
                 "PLAN_CYCLE_DUPLICATE", f"{year} 年度用人计划周期已存在", http_status=409
             )
-        return HrHiringPlanCycle.objects.create(
-            tenant_id=tenant_id,
-            year=year,
-            title=title,
-            start_date=start_date,
-            created_by=actor,
-        )
+        try:
+            return HrHiringPlanCycle.objects.create(
+                tenant_id=tenant_id,
+                year=year,
+                title=title,
+                start_date=start_date,
+                created_by=actor,
+            )
+        except DbIntegrityError:
+            raise PlanServiceError(
+                "PLAN_CYCLE_DUPLICATE", f"{year} 年度用人计划周期已存在", http_status=409
+            )
 
     # ---- 请求级操作 ----
 
@@ -148,8 +158,11 @@ class PlanService:
         """
         req = self._get(request_id, tenant_id)
         self._assert(req.status, PlanRequestStatus.APPROVED)
-        if req.status == PlanRequestStatus.UNDER_SCHOOL_APPROVAL:
-            # 事务重检 + 行锁防并发
+        if req.status in (
+            PlanRequestStatus.UNDER_SCHOOL_APPROVAL,
+            PlanRequestStatus.PARTIALLY_APPROVED,
+        ):
+            # 事务重检 + 行锁防并发（UNDER_SCHOOL_APPROVAL 首次批；PARTIALLY_APPROVED 补批剩余）
             lines = list(
                 HrHiringPlanLine.objects.select_for_update().filter(
                     request_id=req, tenant_id=tenant_id
@@ -158,20 +171,26 @@ class PlanService:
             full_approved = True
             approved_count = 0
             for line in lines:
+                # 已批额度保留，只对未批准部分补批
+                remaining = max(line.requested_headcount - line.approved_headcount, 0)
+                if remaining <= 0:
+                    approved_count += line.approved_headcount
+                    continue
                 available = self._available_headcount(
                     line, tenant_id=tenant_id, capacity_provider=capacity_provider
                 )
-                approve_qty = min(line.requested_headcount, available)
-                if approve_qty < line.requested_headcount:
+                approve_qty = min(remaining, available)
+                if approve_qty < remaining:
                     full_approved = False
-                line.approved_headcount = approve_qty
+                line.approved_headcount += approve_qty
                 line.status = (
                     PlanLineStatus.APPROVED
-                    if approve_qty == line.requested_headcount and approve_qty > 0
+                    if line.approved_headcount == line.requested_headcount
+                    and line.approved_headcount > 0
                     else PlanLineStatus.PARTIALLY_APPROVED
                 )
                 line.save(update_fields=["approved_headcount", "status"])
-                approved_count += approve_qty
+                approved_count += line.approved_headcount
 
             req.total_approved = approved_count
             req.status = (
@@ -186,6 +205,7 @@ class PlanService:
             )
         return req
 
+    @transaction.atomic
     def reject(self, request_id: str, *, tenant_id: int, reason: str, actor: str = ""):
         req = self._get(request_id, tenant_id)
         self._assert(req.status, PlanRequestStatus.REJECTED)
@@ -196,25 +216,35 @@ class PlanService:
         return req
 
     def _available_headcount(self, line, *, tenant_id, capacity_provider=None):
-        """单行额度：优先 HR02 容量 Provider；未接入选 HR02 校验或显式 UNAVAILABLE。"""
+        """单行额度：优先 HR02 容量 Provider；STALE/UNAVAILABLE/ERROR 一律 fail-closed。"""
         provider = capacity_provider
         if provider is None:
             from hr_recruitment.policies.capacity import CapacityProvider
 
             provider = CapacityProvider()
-        snapshot = provider.query_capacity(
-            tenant_id=tenant_id,
-            organization_id=line.request_id.organization_id or 0,
-            post_catalog_id=line.post_catalog_id,
-            position_id=line.position_id,
-            position_pool_id=line.position_pool_id,
-        )
-        if snapshot.status in ("UNAVAILABLE", "ERROR"):
-            # 额度不可用：fail-closed，不放行超批
-            raise PositionCapacityConflictError(
-                "计划批准需要 HR02 岗位额度校验，当前额度不可用，禁止批准"
+        try:
+            snapshot = provider.query_capacity(
+                tenant_id=tenant_id,
+                organization_id=line.request_id.organization_id or 0,
+                post_catalog_id=line.post_catalog_id,
+                position_id=line.position_id,
+                position_pool_id=line.position_pool_id,
             )
-        return min(snapshot.available_count, line.requested_headcount) if snapshot.available_count is not None else line.requested_headcount
+        except Exception as exc:  # noqa: BLE001
+            # HR02 未接线/查询失败 → fail-closed，禁止批准
+            raise PositionCapacityConflictError(
+                f"计划批准需要 HR02 岗位额度校验，当前额度不可用（{getattr(exc, 'code', 'HR02_CAPACITY_ERROR')}），禁止批准"
+            ) from exc
+        if snapshot.status in ("UNAVAILABLE", "ERROR", "STALE"):
+            # 额度不可用/过期：fail-closed，不放行超批（STALE 与 UNAVAILABLE 同权）
+            raise PositionCapacityConflictError(
+                "计划批准需要 HR02 岗位额度校验，当前额度不可用或已过期，禁止批准"
+            )
+        if snapshot.available_count is None:
+            raise PositionCapacityConflictError(
+                "计划批准需要 HR02 岗位额度校验，可用额度未知，禁止臆造额度"
+            )
+        return min(snapshot.available_count, line.requested_headcount)
 
     def _get(self, request_id: str, tenant_id: int) -> HrHiringPlanRequest:
         try:

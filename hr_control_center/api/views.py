@@ -86,7 +86,19 @@ def _resolve_authority_mode(tenant_id) -> str:
         if mode == "HR02_AUTHORITY":
             return "DUAL_READ_COMPARE"
     except Exception:
-        pass
+        # HR02 未就绪（app 未注册/表未建）→ 安全回退 LEGACY_ONLY，不阻 HR01 正常运行
+        # 实际异常通过日志记录，不静默吞
+        try:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "_resolve_authority_mode failed for tenant=%s, falling back to LEGACY_ONLY",
+                tenant_id,
+                exc_info=True,
+            )
+        except Exception:
+            pass
     return "LEGACY_ONLY"
 
 

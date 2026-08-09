@@ -1,0 +1,14 @@
+{% load i18n %}
+{# HR05 公共组件：Onboarding Case 头部（总册 §30） #}
+<div class="hr-onboarding-case-header hr-card">
+  <div class="hr-entity-header">
+    <h2>{{ case.case_no|default:_("未编号") }}</h2>
+    <span class="hr-prehire-status-badge">{{ status_label|default:_("—") }}</span>
+  </div>
+  <dl class="hr-entity-meta">
+    <div><dt>{% trans "姓名" %}</dt><dd>{{ legal_name|default:"—" }}</dd></div>
+    <div><dt>{% trans "来源" %}</dt><dd>{{ source_type_label|default:"—" }}</dd></div>
+    <div><dt>{% trans "预计报到" %}</dt><dd>{{ expected_report_date|default:"—" }}</dd></div>
+    <div><dt>{% trans "岗位预占" %}</dt><dd>{{ reservation_label|default:_("—") }}</dd></div>
+  </dl>
+</div>

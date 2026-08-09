@@ -50,6 +50,24 @@ class ConcurrencyIdempotencyTests(TestCase):
         )
         self.app_service = ApplicationService(tenant_id=TENANT, actor="test")
 
+    def _bind_rule_set(self, app):
+        """建锁定规则集并绑定（decision QUALIFIED 要求绑定冻结规则集）。"""
+        from hr_recruitment.services.qualification_service import QualificationService
+
+        qual = QualificationService(tenant_id=TENANT, actor="reviewer")
+        rs = qual.create_rule_set(position_id=str(self.position.id))
+        qual.add_rule(
+            rule_set_version_id=str(rs.id),
+            rule_code="DEGREE",
+            label="学历要求",
+            operator="eq",
+            expected_value={"field": "degree", "value": "博士"},
+            severity="HARD",
+        )
+        qual.lock_rule_set(rule_set_version_id=str(rs.id))
+        app.qualification_rule_version_id = rs.id
+        app.save(update_fields=["qualification_rule_version_id"])
+
     def test_double_submit_single_application(self):
         """§25.1 双提交：同 candidate+position active 唯一 → 只一条 active 申请。"""
         draft = self.app_service.save_draft(

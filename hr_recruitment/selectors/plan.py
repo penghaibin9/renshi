@@ -10,10 +10,14 @@ from __future__ import annotations
 from hr_recruitment.models import HrHiringPlanCycle, HrHiringPlanLine, HrHiringPlanRequest
 
 
-def list_plan_requests(*, tenant_id, status=None, organization_id=None, page=1, page_size=20):
+def list_plan_requests(*, tenant_id, cycle_id=None, status=None, status__in=None, organization_id=None, page=1, page_size=20):
     qs = HrHiringPlanRequest.objects.filter(tenant_id=tenant_id).select_related("cycle_id")
+    if cycle_id:
+        qs = qs.filter(cycle_id_id=cycle_id)
     if status:
         qs = qs.filter(status=status)
+    if status__in:
+        qs = qs.filter(status__in=status__in)
     if organization_id:
         qs = qs.filter(organization_id=organization_id)
     total = qs.count()

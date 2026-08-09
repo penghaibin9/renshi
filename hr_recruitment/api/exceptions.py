@@ -22,9 +22,11 @@ class Hr04ApiError(Exception):
     status_code = 400
     code = "HR04_API_ERROR"
 
-    def __init__(self, message: str, details: dict | None = None):
+    def __init__(self, message: str, details: dict | None = None, status_code: int | None = None):
         self.message = message
         self.details = details or {}
+        if status_code is not None:
+            self.status_code = status_code
         super().__init__(message)
 
 

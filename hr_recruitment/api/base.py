@@ -83,6 +83,8 @@ def make_hr04_context(request):
     从请求构造 Hr04RequestContext（服务端重新验证 tenant/scope，不信任前端）。
     tenant_id 由 session/contextvar 解析，禁止读取客户端查询参数。
     """
+    from hr_recruitment.api.exceptions import Hr04ApiError
+
     tenant_id = resolve_tenant_from_request(request)
     if tenant_id is None:
         raise TenantContextRequiredError()
@@ -95,21 +97,27 @@ def make_hr04_context(request):
         try:
             scope_org_id = int(scope_org_id)
         except (TypeError, ValueError):
-            from hr_control_center.context import HrContextError
+            raise Hr04ApiError(
+                "SCOPE_NOT_ALLOWED", "scope_id 必须是整数", status_code=403
+            ) from None
 
-            raise HrContextError("SCOPE_NOT_ALLOWED", "scope_id 必须是整数")
-
-    return build_hr04_context(
-        tenant_id=tenant_id,
-        school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
-        user_id=request.user.id if request.user.is_authenticated else None,
-        as_of=request.GET.get("as_of"),
-        period_from=request.GET.get("period_from"),
-        period_to=request.GET.get("period_to"),
-        scope_type=scope_type,
-        scope_org_id=scope_org_id,
-        authority_mode=request.GET.get("authority_mode", "LEGACY_RECRUITING_ONLY"),
-    )
+    try:
+        return build_hr04_context(
+            tenant_id=tenant_id,
+            school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
+            user_id=request.user.id if request.user.is_authenticated else None,
+            as_of=request.GET.get("as_of"),
+            period_from=request.GET.get("period_from"),
+            period_to=request.GET.get("period_to"),
+            scope_type=scope_type,
+            scope_org_id=scope_org_id,
+            authority_mode=request.GET.get("authority_mode", "LEGACY_RECRUITING_ONLY"),
+        )
+    except Exception as exc:  # HrContextError（非法日期/scope）→ Hr04ApiError 统一错误码
+        code = getattr(exc, "code", "INVALID_REQUEST")
+        message = getattr(exc, "message", "请求参数无效")
+        status = 403 if code == "SCOPE_NOT_ALLOWED" else 400
+        raise Hr04ApiError(code, message, status_code=status) from exc
 
 
 def get_idempotency_key(request) -> str | None:

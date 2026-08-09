@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hr-page-header">
+  <h1>{{ page_title }}</h1>
+  <div class="hr-page-header__actions">
+    <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-pool' %}">候选池</a>
+    <a class="oh-btn oh-btn--primary" href="#">推荐人选</a>
+    <a class="oh-btn oh-btn--secondary" href="#">批量导入</a>
+  </div>
+</header>
+
+<section class="hr-kpi-row">
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ total }}</span><span class="hr-kpi-card__label">人才库</span></div>
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ engaged_count }}</span><span class="hr-kpi-card__label">当前受聘</span></div>
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ industry_count }}</span><span class="hr-kpi-card__label">产业专家</span></div>
+</section>
+
+<form class="hr-filter-bar" method="get" action="{% url 'hr08-home' %}">
+  <input type="search" name="keyword" value="{{ request.GET.keyword }}" placeholder="姓名 / 外聘编号" aria-label="姓名或外聘编号" />
+  <select name="category" aria-label="外聘类别">
+    <option value="">全部类别</option>
+    {% for cat in categories %}
+    <option value="{{ cat.code }}" {% if request.GET.category == cat.code %}selected{% endif %}>{{ cat.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="pool_status" aria-label="候选状态">
+    <option value="">全部状态</option>
+    <option value="AVAILABLE" {% if pool_status == "AVAILABLE" %}selected{% endif %}>可聘</option>
+    <option value="ENGAGED" {% if pool_status == "ENGAGED" %}selected{% endif %}>受聘中</option>
+    <option value="UNDER_REVIEW" {% if pool_status == "UNDER_REVIEW" %}selected{% endif %}>待核验</option>
+    <option value="TEMPORARILY_UNAVAILABLE" {% if pool_status == "TEMPORARILY_UNAVAILABLE" %}selected{% endif %}>暂停合作</option>
+  </select>
+  <button class="oh-btn oh-btn--primary" type="submit">筛选</button>
+</form>
+
+<div class="hr-table-wrap">
+<table class="hr-data-table">
+  <thead>
+    <tr>
+      <th>姓名</th>
+      <th>类别</th>
+      <th>来源单位</th>
+      <th>领域</th>
+      <th>职称/技能</th>
+      <th>状态</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr data-profile-id="{{ item.id }}">
+      <td><a href="{% url 'hr08-profile-detail' item.id %}">{{ item.legalName }}</a>
+        <span class="hr-muted">{{ item.externalTeacherNo }}</span></td>
+      <td>{% include "hr_external/components/external_category_badge.html" with category_code=item.category.code category_name=item.category.name %}</td>
+      <td>{{ item.sourceOrganization|default:"-" }}</td>
+      <td>{{ item.industryDomain|default:"-" }}</td>
+      <td>{{ item.highestProfessionalTitle|default:"-" }}{% if item.highestSkillLevel %} / {{ item.highestSkillLevel }}{% endif %}</td>
+      <td>{{ item.poolStatus|default:"-" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="hr-empty">暂无外聘档案</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

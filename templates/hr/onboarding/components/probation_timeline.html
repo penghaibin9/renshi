@@ -1,0 +1,36 @@
+{% load i18n %}
+{# HR05 公共组件：试用时间线（总册 §17.6/§30） #}
+<div class="hr-probation-timeline">
+  <ol class="hr-timeline">
+    <li class="hr-timeline__item {% if probation.start_date %}hr-timeline__item--done{% endif %}">
+      <span class="hr-timeline__dot" aria-hidden="true"></span>
+      <div>
+        <strong>{% trans "试用开始" %}</strong>
+        <p>{{ probation.start_date|date:"Y-m-d" }}</p>
+      </div>
+    </li>
+    <li class="hr-timeline__item {% if probation.review_due %}hr-timeline__item--active{% endif %}">
+      <span class="hr-timeline__dot" aria-hidden="true"></span>
+      <div>
+        <strong>{% trans "评价与审核" %}</strong>
+        <p>
+          {% if probation.review_due %}{% trans "待评价" %}
+          {% elif probation.status == "UNDER_REVIEW" %}{% trans "评价中" %}
+          {% else %}{% trans "计划转正日" %}：{{ probation.planned_end_date|date:"Y-m-d" }}{% endif %}
+        </p>
+      </div>
+    </li>
+    <li class="hr-timeline__item {% if probation.status == "CONFIRMED" %}hr-timeline__item--done{% endif %}">
+      <span class="hr-timeline__dot" aria-hidden="true"></span>
+      <div>
+        <strong>{% trans "试用结果" %}</strong>
+        <p>
+          {% if probation.status == "CONFIRMED" %}{% trans "已转正" %}
+          {% elif probation.status == "FAILED" %}{% trans "不合格" %}
+          {% elif probation.status == "EXTENDED" %}{% trans "已延长" %}
+          {% else %}{% trans "待定" %}{% endif %}
+        </p>
+      </div>
+    </li>
+  </ol>
+</div>

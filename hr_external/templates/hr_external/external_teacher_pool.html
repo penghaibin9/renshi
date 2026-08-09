@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hr-page-header">
+  <h1>{{ page_title }}</h1>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-home' %}">← 外聘教师库</a>
+</header>
+
+<section class="hr-kpi-row">
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ total }}</span><span class="hr-kpi-card__label">候选池</span></div>
+</section>
+
+<div class="hr-table-wrap">
+<table class="hr-data-table">
+  <thead>
+    <tr><th>姓名</th><th>来源单位</th><th>领域</th><th>状态</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td><a href="{% url 'hr08-profile-detail' item.id %}">{{ item.legalName }}</a></td>
+      <td>{{ item.sourceOrganization|default:"-" }}</td>
+      <td>{{ item.industryDomain|default:"-" }}</td>
+      <td>{{ item.poolStatus|default:"-" }}</td>
+      <td><a class="oh-btn oh-btn--small oh-btn--primary" href="#">发起聘用</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="hr-empty">候选池为空</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

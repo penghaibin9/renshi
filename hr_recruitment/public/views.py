@@ -122,7 +122,13 @@ def public_apply(request, token):
     公开提交申请（幂等）。
 
     A0：token 解析学校；body 不得含 tenant_id。
-    流程：创建候选 → save draft → submit（冻结版本 + ledger + application_no）。
+    流程：创建/复用候选 → save draft → submit（冻结版本 + ledger + application_no）。
+
+    候选复用硬规则（总册 §23/§30.1）：
+    - 仅凭 email 的 POSSIBLE_MATCH 一律不复用（防冒用他人邮箱报名）；
+    - 只有身份证 hash EXACT_MATCH 或 email+mobile 双因子匹配才复用既有候选。
+
+    幂等（§49）：同候选+同岗位已存在申请时——DRAFT 继续完成 submit；SUBMITTED+ 视为重放直接返回。
     """
     campaign = _resolve_campaign(token)
     if campaign is None:
@@ -135,31 +141,46 @@ def public_apply(request, token):
         ).first()
         if position is None:
             return error(request, "POSITION_NOT_FOUND", "岗位不存在", 404)
+        if position.status != "OPEN":
+            return error(request, "POSITION_NOT_OPEN", "该岗位未在开放报名", 409)
 
         legal_name = body.get("legal_name")
-        primary_email = body.get("primary_email")
+        primary_email = (body.get("primary_email") or "").strip().lower()
+        primary_mobile = body.get("primary_mobile") or ""
+        national_id = body.get("national_id")
         if not legal_name or not primary_email:
             return error(request, "INVALID_REQUEST", "姓名和邮箱必填", 422)
 
-        candidate_service = CandidateService(tenant_id=campaign.tenant_id, actor="public")
-        # 复用已有候选（按 email POSSIBLE_MATCH），避免重复创建
-        match = candidate_service.identity_match(primary_email=primary_email)
-        if match["match_result"] in ("POSSIBLE_MATCH", "EXACT_MATCH") and match["matches"]:
-            from hr_recruitment.models import HrRecruitmentCandidate
+        from hr_recruitment.models import HrRecruitmentCandidate
 
-            candidate = HrRecruitmentCandidate.objects.get(id=match["matches"][0]["id"])
-        else:
+        candidate = None
+        # 1) 身份证 hash EXACT_MATCH（最可信）才复用
+        if national_id:
+            match = CandidateService(tenant_id=campaign.tenant_id).identity_match(
+                national_id=national_id
+            )
+            if match["match_result"] == "EXACT_MATCH" and match["matches"]:
+                candidate = HrRecruitmentCandidate.objects.get(id=match["matches"][0]["id"])
+        # 2) email+mobile 双因子（仅凭 email 不复用）
+        if candidate is None and primary_mobile:
+            candidate = HrRecruitmentCandidate.objects.filter(
+                tenant_id=campaign.tenant_id,
+                primary_email__iexact=primary_email,
+                primary_mobile=primary_mobile,
+            ).first()
+
+        candidate_service = CandidateService(tenant_id=campaign.tenant_id, actor="public")
+        if candidate is None:
             candidate = candidate_service.create_candidate(
                 legal_name=legal_name,
                 preferred_name=body.get("preferred_name", ""),
                 primary_email=primary_email,
-                primary_mobile=body.get("primary_mobile", ""),
-                national_id=body.get("national_id"),
+                primary_mobile=primary_mobile,
+                national_id=national_id,
                 source="PUBLIC_PORTAL",
             )
 
         application_service = ApplicationService(tenant_id=campaign.tenant_id, actor="")
-        # 幂等重放：同候选+同岗位已有 active 申请 → 直接返回（不重复创建/不重复提交）
         existing = HrJobApplication.objects.filter(
             tenant_id=campaign.tenant_id,
             candidate_id_id=candidate.id,
@@ -167,6 +188,22 @@ def public_apply(request, token):
             is_active=True,
         ).first()
         if existing is not None:
+            if existing.canonical_status == ApplicationCanonicalStatus.DRAFT:
+                # 上次在 draft 后中断：继续完成 submit（§49 公开报名可靠性）
+                app = application_service.submit(
+                    application_id=str(existing.id),
+                    idempotency_key=get_idempotency_key(request),
+                )
+                return ok(
+                    request,
+                    {
+                        "application_no": app.application_no,
+                        "canonical_status": app.canonical_status,
+                        "candidate_uid": candidate.candidate_uid,
+                    },
+                    status=201,
+                )
+            # SUBMITTED 及以上 → 幂等重放
             return ok(
                 request,
                 {
@@ -203,25 +240,30 @@ def public_apply(request, token):
 @require_http_methods(["POST"])
 def public_my_applications(request):
     """
-    候选人本人申请查询（self scope）。
+    候选人本人申请查询（self scope，P0 防跨租户泄漏）。
 
-    身份因子：email + mobile（候选账号体系与员工隔离）。
-    只返回该候选本人的申请；不泄漏其他候选人。
+    身份因子（A0 §1.1）：必须 email+mobile 双因子。
+    - 仅 email → 422 INSUFFICIENT_IDENTITY（fail-closed，不返回任何申请）；
+    - email 存在但 mobile 不匹配 → 返回空（不泄漏该邮箱对应候选的申请）。
     """
     try:
         body = json.loads(request.body or b"{}")
         primary_email = (body.get("primary_email") or "").strip().lower()
         primary_mobile = body.get("primary_mobile") or ""
-        if not primary_email:
-            return error(request, "INVALID_REQUEST", "邮箱必填", 422)
+        if not primary_email or not primary_mobile:
+            return error(
+                request,
+                "INSUFFICIENT_IDENTITY",
+                "查询本人申请需要邮箱+手机号双因子",
+                422,
+            )
         from hr_recruitment.models import HrRecruitmentCandidate
 
-        candidates = HrRecruitmentCandidate.objects.filter(
-            primary_email__iexact=primary_email
-        )
-        if primary_mobile:
-            candidates = candidates.filter(primary_mobile=primary_mobile)
-        candidate = candidates.first()
+        candidate = HrRecruitmentCandidate.objects.filter(
+            tenant_id__isnull=False,
+            primary_email__iexact=primary_email,
+            primary_mobile=primary_mobile,
+        ).first()
         if candidate is None:
             return ok(request, {"applications": []})
         applications = HrJobApplication.objects.filter(

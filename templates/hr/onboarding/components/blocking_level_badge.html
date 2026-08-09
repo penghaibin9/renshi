@@ -1,0 +1,10 @@
+{% load i18n %}
+{# HR05 公共组件：阻断等级徽标（总册 §14.3/§30） #}
+{% if level == "INFO" %}<span class="oh-badge oh-badge--secondary">{% trans "提示" %}</span>
+{% elif level == "NON_BLOCKING" %}<span class="oh-badge oh-badge--secondary">{% trans "不阻断" %}</span>
+{% elif level == "BLOCKS_ACTIVATION" %}<span class="oh-badge oh-badge--warning">{% trans "阻断生效" %}</span>
+{% elif level == "BLOCKS_ONBOARDING_COMPLETE" %}<span class="oh-badge oh-badge--warning">{% trans "阻断入职完成" %}</span>
+{% elif level == "BLOCKS_PAYROLL" %}<span class="oh-badge oh-badge--danger">{% trans "阻断薪酬" %}</span>
+{% elif level == "BLOCKS_WORK_ACCESS" %}<span class="oh-badge oh-badge--danger">{% trans "阻断工作访问" %}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{{ level|default:_("未知") }}</span>
+{% endif %}

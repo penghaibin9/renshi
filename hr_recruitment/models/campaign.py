@@ -130,6 +130,10 @@ class HrRecruitmentPosition(models.Model):
                 & models.Q(max_hires__gte=1),
                 name="ck_hr_position_headcount_nonneg",
             ),
+            models.UniqueConstraint(
+                fields=["tenant_id", "campaign_id", "public_slug"],
+                name="uniq_hr_position_slug_per_campaign",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant_id", "campaign_id", "status"]),

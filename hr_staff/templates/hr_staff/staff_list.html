@@ -1,0 +1,126 @@
+{% load static i18n %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>教职工名册 · HR03</title>
+  <style>
+    :root {
+      --hr-color-primary: #2563eb; --hr-color-primary-soft: #eff6ff;
+      --hr-color-success: #16a34a; --hr-color-warning: #d97706; --hr-color-danger: #dc2626;
+      --hr-bg-page: #f5f7fa; --hr-bg-card: #fff; --hr-border-subtle: #e5e7eb;
+      --hr-text-primary: #1f2937; --hr-text-secondary: #6b7280;
+      --hr-radius-md: 12px; --hr-shadow-card: 0 1px 3px rgba(0,0,0,.08);
+    }
+    * { box-sizing: border-box; }
+    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: var(--hr-bg-page); color: var(--hr-text-primary); }
+    .page { max-width: 1480px; margin: 0 auto; padding: 24px; }
+    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .header h1 { font-size: 22px; margin: 0; }
+    .subtitle { color: var(--hr-text-secondary); font-size: 13px; }
+    .stats { display: flex; gap: 24px; padding: 12px 0 16px; border-bottom: 1px solid var(--hr-border-subtle); margin-bottom: 16px; }
+    .stat { font-size: 13px; color: var(--hr-text-secondary); }
+    .stat b { font-size: 20px; color: var(--hr-text-primary); display: block; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .toolbar input, .toolbar select { padding: 7px 10px; border: 1px solid var(--hr-border-subtle); border-radius: 8px; font-size: 13px; background: #fff; }
+    .btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--hr-border-subtle); background: #fff; font-size: 13px; cursor: pointer; }
+    .btn.primary { background: var(--hr-color-primary); color: #fff; border-color: var(--hr-color-primary); }
+    table { width: 100%; border-collapse: collapse; background: var(--hr-bg-card); border-radius: var(--hr-radius-md); box-shadow: var(--hr-shadow-card); overflow: hidden; font-size: 13px; }
+    th { text-align: left; padding: 10px 12px; background: #f9fafb; color: var(--hr-text-secondary); font-weight: 600; border-bottom: 1px solid var(--hr-border-subtle); }
+    td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+    tr:hover td { background: #f8fafc; }
+    .name { font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
+    .badge.active { background: #dcfce7; color: #166534; }
+    .badge.pending { background: #fef9c3; color: #854d0e; }
+    .badge.departed, .badge.retired { background: #fee2e2; color: #991b1b; }
+    .link { color: var(--hr-color-primary); cursor: pointer; text-decoration: none; }
+    .pager { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 13px; color: var(--hr-text-secondary); }
+    .empty { text-align: center; padding: 48px; color: var(--hr-text-secondary); }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <h1>教职工名册</h1>
+        <div class="subtitle">统一查询学校教职工当前人事事实 · 数据截至 <span id="asOf">--</span></div>
+      </div>
+      <div><button class="btn primary">+ 新增</button> <button class="btn">导入</button> <button class="btn">导出</button></div>
+    </div>
+    <div class="stats" id="stats">载入中…</div>
+    <div class="toolbar">
+      <input id="keyword" placeholder="姓名/工号/工作手机(权限后)" />
+      <select id="status">
+        <option value="">全部状态</option>
+        <option value="ACTIVE">在职</option>
+        <option value="PENDING_ENTRY">待入职</option>
+        <option value="DEPARTED">已离职</option>
+        <option value="RETIRED">已退休</option>
+      </select>
+      <select id="category">
+        <option value="">人员类别</option>
+        <option value="TEACHER">专任教师</option>
+        <option value="ADMIN">行政管理</option>
+      </select>
+      <button class="btn primary" onclick="loadRows(1)">查询</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>姓名/工号</th><th>单位</th><th>主岗</th><th>人员类别</th><th>状态</th><th>入校日</th><th>未来变更</th></tr>
+      </thead>
+      <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+    </table>
+    <div class="pager">
+      <button class="btn" onclick="loadRows(page-1)" id="prev">上一页</button>
+      <span id="pageInfo">-</span>
+      <button class="btn" onclick="loadRows(page+1)" id="next">下一页</button>
+    </div>
+  </div>
+  <script>
+    let page = 1;
+    const statusLabels = {ACTIVE:["在职","active"],PENDING_ENTRY:["待入职","pending"],DEPARTED:["已离职","departed"],RETIRED:["已退休","retired"]};
+    async function loadRows(p, keepKeyword) {
+      if (p < 1) return;
+      page = p;
+      const q = new URLSearchParams({
+        page, pageSize: 50,
+        keyword: document.getElementById("keyword").value,
+        status: document.getElementById("status").value,
+        category: document.getElementById("category").value,
+      });
+      const resp = await fetch("/api/hr/v1/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}});
+      if (!resp.ok) { document.getElementById("rows").innerHTML = `<tr><td colspan="7" class="empty">查询失败（${resp.status}）</td></tr>`; return; }
+      const body = await resp.json();
+      document.getElementById("asOf").textContent = body.asOf || "-";
+      document.getElementById("stats").innerHTML =
+        `<div class="stat"><b>${body.total ?? "-"}</b>在岗/总计</div>` +
+        `<div class="stat"><b>${body.page ?? 1}</b>当前页</div>` +
+        `<div class="stat">数据口径 <b>${body.dataBasis ?? "-"}</b></div>`;
+      const tbody = document.getElementById("rows");
+      if (!body.items || !body.items.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">暂无符合条件的教职工</td></tr>`;
+      } else {
+        tbody.innerHTML = body.items.map(r => {
+          const [label, cls] = statusLabels[r.current_employment_status] || [escapeHtml(r.current_employment_status), ""];
+          return `<tr data-id="${r.staff_id}">
+            <td><span class="name">${escapeHtml(r.legal_name)}</span> <span class="link" style="color:#6b7280">${escapeHtml(r.staff_no)}</span></td>
+            <td>${escapeHtml(r.org_name || "-")}</td>
+            <td>${escapeHtml(r.position_name || "-")}</td>
+            <td>${escapeHtml(r.staff_category_code || "-")}</td>
+            <td><span class="badge ${cls}">${escapeHtml(label)}</span></td>
+            <td>${escapeHtml(r.date_joining || "-")}</td>
+            <td>${r.has_future_change ? "有未来变更" : "-"}</td>
+          </tr>`;
+        }).join("");
+      }
+      document.getElementById("pageInfo").textContent = `第 ${body.page} / ${Math.max(1, Math.ceil((body.total||0)/50))} 页 · 共 ${body.total || 0} 人`;
+      document.getElementById("prev").disabled = page <= 1;
+    }
+    function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+    document.getElementById("keyword").addEventListener("keydown", e => { if (e.key === "Enter") loadRows(1); });
+    loadRows(1);
+  </script>
+</body>
+</html>

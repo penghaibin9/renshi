@@ -92,7 +92,12 @@ INSTALLED_APPS = [
     "horilla_dbtemplate",
     "horilla_tour",
     "hr_control_center",
+    "hr_structure",
+    "hr_staff",
+    "hr_time",
     "hr_recruitment",
+    "hr_external",
+    "hr_onboarding",
 ]
 
 # ========================================

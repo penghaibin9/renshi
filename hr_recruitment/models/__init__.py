@@ -32,6 +32,7 @@ from hr_recruitment.models.candidate import (
 )
 from hr_recruitment.models.application import (
     HrApplicationMaterial,
+    HrApplicationSubmissionKey,
     HrApplicationTransition,
     HrJobApplication,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "HrJobApplication",
     "HrApplicationTransition",
     "HrApplicationMaterial",
+    "HrApplicationSubmissionKey",
     "HrQualificationRule",
     "HrQualificationReview",
     "HrQualificationDecision",

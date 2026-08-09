@@ -35,6 +35,7 @@ from hr_recruitment.api.base import (
     ok,
 )
 from hr_recruitment.api.exceptions import Hr04ApiError
+from hr_recruitment.constants import PlanCycleStatus, PlanRequestStatus
 from hr_recruitment.permissions import require_hr04_permission
 from hr_recruitment.selectors import plan as plan_selector
 from hr_recruitment.services.plan_service import PlanService, PlanServiceError
@@ -43,6 +44,10 @@ SERVICE = PlanService()
 
 
 def _handle(request, exc):
+    from django.core.exceptions import ObjectDoesNotExist
+
+    if isinstance(exc, ObjectDoesNotExist):
+        return error(request, "NOT_FOUND", "资源不存在", 404)
     if isinstance(exc, Hr04ApiError):
         return error(request, exc.code, exc.message, exc.status_code, exc.details)
     if isinstance(exc, PlanServiceError):
@@ -101,6 +106,7 @@ def plan_detail(request, cycle_id):
         return error(request, "PERMISSION_DENIED", "无查看年度用人计划权限", 403)
     data = plan_selector.list_plan_requests(
         tenant_id=ctx.tenant_id,
+        cycle_id=cycle_id,
         status=request.GET.get("status"),
         organization_id=request.GET.get("organization_id"),
         page=int(request.GET.get("page", 1)),
@@ -111,18 +117,47 @@ def plan_detail(request, cycle_id):
 
 @require_POST
 def plan_submit(request, cycle_id):
+    """周期级提交：该周期内全部 DRAFT 需求请求 → SUBMITTED，周期状态迁移。"""
     try:
         ctx = make_hr04_context(request)
     except Hr04ApiError as exc:
         return error(request, exc.code, exc.message, exc.status_code)
     if not (request.user.is_superuser or request.user.has_perm("hr04.plan.create")):
         return error(request, "PERMISSION_DENIED", "无提交权限", 403)
-    # 周期级提交 = 全部请求进入审核（V1 最小实现：仅返回状态）
-    return ok(request, {"cycle_id": cycle_id, "submitted": True})
+    try:
+        from django.db import transaction as db_transaction
+
+        from hr_recruitment.models import HrHiringPlanCycle, HrHiringPlanRequest
+
+        cycle = HrHiringPlanCycle.objects.filter(
+            tenant_id=ctx.tenant_id, id=cycle_id
+        ).first()
+        if cycle is None:
+            return error(request, "PLAN_CYCLE_NOT_FOUND", "计划周期不存在", 404)
+        with db_transaction.atomic():
+            requests = list(
+                HrHiringPlanRequest.objects.select_for_update().filter(
+                    tenant_id=ctx.tenant_id, cycle_id=cycle, status=PlanRequestStatus.DRAFT
+                )
+            )
+            if not requests:
+                return error(request, "NO_DRAFT_REQUEST", "该周期没有待提交的需求", 422)
+            for req in requests:
+                SERVICE.submit(str(req.id), tenant_id=ctx.tenant_id, actor=str(request.user.id))
+            cycle.status = PlanCycleStatus.SUBMITTED
+            cycle.version += 1
+            cycle.save(update_fields=["status", "version"])
+        return ok(
+            request,
+            {"cycle_id": str(cycle.id), "submitted_requests": len(requests), "status": cycle.status},
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
 
 
 @require_POST
 def plan_approve(request, cycle_id):
+    """周期级批准：只批该周期内 UNDER_SCHOOL_APPROVAL / PARTIALLY_APPROVED 的需求，整体事务。"""
     try:
         ctx = make_hr04_context(request)
     except Hr04ApiError as exc:
@@ -130,13 +165,28 @@ def plan_approve(request, cycle_id):
     if not (request.user.is_superuser or request.user.has_perm("hr04.plan.approve")):
         return error(request, "PERMISSION_DENIED", "无批准年度用人计划权限", 403)
     try:
-        body = json.loads(request.body or b"{}")
-        approved = []
-        for r in plan_selector.list_plan_requests(tenant_id=ctx.tenant_id)["items"]:
-            req = SERVICE.approve(
-                r["id"], tenant_id=ctx.tenant_id, actor=str(request.user.id)
-            )
-            approved.append({"id": str(req.id), "status": req.status})
+        from django.db import transaction as db_transaction
+
+        from hr_recruitment.models import HrHiringPlanCycle, HrHiringPlanRequest
+
+        cycle = HrHiringPlanCycle.objects.filter(
+            tenant_id=ctx.tenant_id, id=cycle_id
+        ).first()
+        if cycle is None:
+            return error(request, "PLAN_CYCLE_NOT_FOUND", "计划周期不存在", 404)
+        targets = plan_selector.list_plan_requests(
+            tenant_id=ctx.tenant_id,
+            cycle_id=cycle_id,
+            status__in=[PlanRequestStatus.UNDER_SCHOOL_APPROVAL, PlanRequestStatus.PARTIALLY_APPROVED],
+        )
+        request_ids = [r["id"] for r in targets["items"]]
+        if not request_ids:
+            return error(request, "NO_REQUEST_TO_APPROVE", "该周期没有待批准的请求", 422)
+        with db_transaction.atomic():
+            approved = []
+            for rid in request_ids:
+                req = SERVICE.approve(rid, tenant_id=ctx.tenant_id, actor=str(request.user.id))
+                approved.append({"id": str(req.id), "status": req.status})
         return ok(request, {"approved": approved})
     except Exception as exc:  # noqa: BLE001
         return _handle(request, exc)

@@ -52,6 +52,27 @@ class QualificationServiceTests(TestCase):
         )
         self.app = self.app_service.submit(application_id=str(draft.id))
         self.qual_service = QualificationService(tenant_id=TENANT, actor="reviewer-1")
+        # 建规则集并绑定（decision 要求绑定冻结规则集）
+        rs = self.qual_service.create_rule_set(position_id=str(self.position.id))
+        self.qual_service.add_rule(
+            rule_set_version_id=str(rs.id),
+            rule_code="DEGREE",
+            label="学历要求博士",
+            operator="eq",
+            expected_value={"field": "degree", "value": "博士"},
+            severity="HARD",
+        )
+        self.qual_service.add_rule(
+            rule_set_version_id=str(rs.id),
+            rule_code="WORK_YEARS",
+            label="工作年限≥3",
+            operator="gte",
+            expected_value={"field": "work_years", "value": 3},
+            severity="SOFT",
+        )
+        self.qual_service.lock_rule_set(rule_set_version_id=str(rs.id))
+        self.app.qualification_rule_version_id = rs.id
+        self.app.save(update_fields=["qualification_rule_version_id"])
 
     def _make_locked_rule_set(self):
         rs = self.qual_service.create_rule_set(position_id=str(self.position.id))

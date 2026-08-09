@@ -36,6 +36,10 @@ from hr_recruitment.services.application_service import (
 
 
 def _handle(request, exc):
+    from django.core.exceptions import ObjectDoesNotExist
+
+    if isinstance(exc, ObjectDoesNotExist):
+        return error(request, "NOT_FOUND", "资源不存在", 404)
     if isinstance(exc, (Hr04ApiError, ApplicationServiceError)):
         return error(request, exc.code, exc.message, getattr(exc, "http_status", exc.status_code if hasattr(exc, "status_code") else 422))
     return error(request, "INTERNAL_ERROR", "服务器内部错误", 500)
@@ -47,7 +51,7 @@ def save_draft(request):
         ctx = make_hr04_context(request)
     except Hr04ApiError as exc:
         return error(request, exc.code, exc.message, exc.status_code)
-    if not (request.user.is_superuser or request.user.has_perm("hr04.application.view")):
+    if not (request.user.is_superuser or request.user.has_perm("hr04.application.manage")):
         return error(request, "PERMISSION_DENIED", "无操作申请权限", 403)
     try:
         body = json.loads(request.body or b"{}")
@@ -69,7 +73,7 @@ def submit_application(request, application_id):
         ctx = make_hr04_context(request)
     except Hr04ApiError as exc:
         return error(request, exc.code, exc.message, exc.status_code)
-    if not (request.user.is_superuser or request.user.has_perm("hr04.application.view")):
+    if not (request.user.is_superuser or request.user.has_perm("hr04.application.manage")):
         return error(request, "PERMISSION_DENIED", "无提交申请权限", 403)
     try:
         service = ApplicationService(tenant_id=ctx.tenant_id, actor=str(request.user.id))
@@ -91,7 +95,7 @@ def withdraw_application(request, application_id):
         ctx = make_hr04_context(request)
     except Hr04ApiError as exc:
         return error(request, exc.code, exc.message, exc.status_code)
-    if not (request.user.is_superuser or request.user.has_perm("hr04.application.view")):
+    if not (request.user.is_superuser or request.user.has_perm("hr04.application.manage")):
         return error(request, "PERMISSION_DENIED", "无撤回权限", 403)
     try:
         service = ApplicationService(tenant_id=ctx.tenant_id, actor=str(request.user.id))
@@ -158,7 +162,7 @@ def add_material(request, application_id):
         ctx = make_hr04_context(request)
     except Hr04ApiError as exc:
         return error(request, exc.code, exc.message, exc.status_code)
-    if not (request.user.is_superuser or request.user.has_perm("hr04.application.view")):
+    if not (request.user.is_superuser or request.user.has_perm("hr04.application.manage")):
         return error(request, "PERMISSION_DENIED", "无上传材料权限", 403)
     try:
         body = json.loads(request.body or b"{}")

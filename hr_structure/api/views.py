@@ -1024,6 +1024,7 @@ def position_control_summary(request):
 
     from hr_structure.models import HrPosition, HrPositionReservation
     from django.db.models import Sum
+    from django.utils import timezone as _tz
 
     qs = HrPosition.objects.filter(
         tenant_id=scope.tenant_id,
@@ -1035,7 +1036,7 @@ def position_control_summary(request):
     active = authorized - frozen
     held = (
         HrPositionReservation.objects.filter(
-            tenant_id=scope.tenant_id, status="HELD"
+            tenant_id=scope.tenant_id, status="HELD", expires_at__gt=_tz.now()
         ).aggregate(t=Sum("reserved_count"))["t"]
         or 0
     )

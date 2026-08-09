@@ -58,11 +58,14 @@ class ProposedHireService:
         reservation_no: str = "",
         decision_reason: str = "",
     ) -> HrProposedHire:
-        """创建拟录用（校验资格/选拔/体检/额度）。"""
+        """创建拟录用（校验资格/选拔/体检/额度；行锁 position 防超编 TOCTOU）。"""
         app = HrJobApplication.objects.select_related("recruitment_position_id").get(
             id=application_id, tenant_id=self.tenant_id
         )
-        position = app.recruitment_position_id
+        # 行锁岗位：同岗位拟录用创建串行化，防并发超编（§25.2）
+        position = HrRecruitmentPosition.objects.select_for_update().get(
+            id=app.recruitment_position_id_id, tenant_id=self.tenant_id
+        )
 
         # 1) 申请状态合法（QUALIFIED 或已进入选拔/体检）
         if app.canonical_status not in (
@@ -90,7 +93,7 @@ class ProposedHireService:
                     "ASSESSMENT_NOT_LOCKED", "存在评分方案但无锁定评分结果，禁止拟录用", http_status=409
                 )
 
-        # 3) 额度校验：已拟录用人数 < max_hires
+        # 3) 额度校验：已拟录用人数 < max_hires（持有 position 行锁，无 TOCTOU）
         already = HrProposedHire.objects.filter(
             tenant_id=self.tenant_id,
             recruitment_position_id=position,
@@ -132,10 +135,24 @@ class ProposedHireService:
             created_by=self.actor,
         )
 
-        # 申请状态 → PROPOSED_HIRE
+        # 申请状态 → PROPOSED_HIRE（走状态机 + 写 ledger）
+        from hr_recruitment.models import HrApplicationTransition
+        from hr_recruitment.policies.state_machine import assert_transition
+
+        from_status = app.canonical_status
+        assert_transition(from_status, S.PROPOSED_HIRE)
         app.canonical_status = S.PROPOSED_HIRE
         app.version += 1
         app.save(update_fields=["canonical_status", "version"])
+        HrApplicationTransition.objects.create(
+            tenant_id=self.tenant_id,
+            application_id=app,
+            from_status=from_status,
+            to_status=S.PROPOSED_HIRE,
+            action="PROPOSED_HIRE_CREATED",
+            actor_id=self.actor,
+            source="HR_ADMIN",
+        )
         return proposed
 
     @transaction.atomic
@@ -147,7 +164,12 @@ class ProposedHireService:
         reason: str = "",
         approving_user: str = "",
     ) -> HrProposedHire:
-        """决策：PROPOSE → APPROVE（特权）/ REJECT / WITHDRAW。"""
+        """决策：PROPOSE → APPROVE（特权）/ REJECT / WITHDRAW（校验枚举值）。"""
+        allowed = {ProposedHireDecision.APPROVE, ProposedHireDecision.REJECT, ProposedHireDecision.WITHDRAW}
+        if decision not in allowed:
+            raise ProposedHireServiceError(
+                "INVALID_DECISION", f"非法决策: {decision}（允许 APPROVE/REJECT/WITHDRAW）", http_status=422
+            )
         proposed = self._get(proposed_hire_id)
         if proposed.approval_status in (ProposedHireDecision.APPROVE,):
             raise ProposedHireServiceError("ALREADY_APPROVED", "拟录用已批准", http_status=409)

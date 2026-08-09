@@ -308,6 +308,7 @@ class HrSelectionResultSnapshot(models.Model):
         verbose_name=_("Recruitment Position"),
     )
     scheme_version_id = models.UUIDField(null=True, blank=True, db_index=True)
+    snapshot_version = models.PositiveIntegerField(default=1)
     rank = models.PositiveIntegerField()
     application_id = models.ForeignKey(
         "hr_recruitment.HrJobApplication",
@@ -325,12 +326,12 @@ class HrSelectionResultSnapshot(models.Model):
         verbose_name_plural = _("Selection Result Snapshots")
         constraints = [
             models.UniqueConstraint(
-                fields=["recruitment_position_id", "rank"],
-                name="uniq_hr_selection_rank_per_position",
+                fields=["recruitment_position_id", "snapshot_version", "rank"],
+                name="uniq_hr_selection_rank_per_version",
             ),
         ]
         indexes = [
-            models.Index(fields=["tenant_id", "recruitment_position_id", "rank"]),
+            models.Index(fields=["tenant_id", "recruitment_position_id", "snapshot_version", "rank"]),
         ]
 
     def __str__(self):

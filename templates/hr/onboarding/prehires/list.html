@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "待报到人员" %}{% endblock %}
+
+{% block content %}
+<div class="hr-page">
+  <div class="hr-page-header">
+    <h1>{% trans "待报到人员" %}</h1>
+    <p class="hr-page-subtitle">{% trans "管理已录用但尚未正式到校的新教工（HR05-01）" %}</p>
+  </div>
+
+  <div class="hr-card">
+    <div class="hr-freshness" data-source-updated-at data-calculated-at data-status="OK">
+      {% trans "数据口径：HrOnboardingCase 权威（待报到/意愿/延期/风险）" %}
+    </div>
+  </div>
+
+  <div class="hr-card">
+    <table class="hr-table" id="prehireTable">
+      <thead>
+        <tr>
+          <th>{% trans "入职单编号" %}</th>
+          <th>{% trans "来源" %}</th>
+          <th>{% trans "人员类别" %}</th>
+          <th>{% trans "预计报到" %}</th>
+          <th>{% trans "状态" %}</th>
+          <th>{% trans "人员匹配" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td colspan="6" class="hr-empty">
+            {% trans "S3 后端已就绪：列表数据由 /api/hr/v1/onboarding/cases 提供（tenant+scope 服务端裁剪）。" %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

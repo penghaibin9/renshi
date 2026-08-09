@@ -1,0 +1,29 @@
+{% load i18n %}
+{# HR05 公共组件：材料核验面板（总册 §12.5/§30） #}
+<div class="hr-material-verification-panel">
+  <div class="hr-material-verification-panel__meta">
+    <h3>{{ material.label }}</h3>
+    <p class="hr-material-verification-panel__requirement">
+      {{ material.blocking_phase_label|default:material.blocking_phase }} ·
+      {% if material.required %}{% trans "必交" %}{% else %}{% trans "选交" %}{% endif %}
+    </p>
+  </div>
+  <div class="hr-material-verification-panel__actions">
+    {% if allow_verify %}
+    <button type="button" class="oh-btn oh-btn--primary" data-action="verify">{% trans "核验通过" %}</button>
+    {% endif %}
+    {% if allow_return %}
+    <button type="button" class="oh-btn oh-btn--secondary" data-action="return">{% trans "退回补交" %}</button>
+    {% endif %}
+    {% if allow_waive %}
+    <button type="button" class="oh-btn oh-btn--neutral" data-action="waive">{% trans "豁免" %}</button>
+    {% endif %}
+  </div>
+  {% if material.verifications %}
+  <ul class="hr-material-verification-panel__history">
+    {% for v in material.verifications %}
+    <li>{{ v.reviewer }} · {{ v.result_label|default:v.result }} · {{ v.verified_at|date:"Y-m-d H:i" }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

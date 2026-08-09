@@ -33,6 +33,7 @@ from hr_recruitment.models import (
     HrQualificationReview,
     HrQualificationRule,
     HrQualificationRuleSetVersion,
+    HrRecruitmentPosition,
 )
 from hr_recruitment.services.rule_engine import RuleEngine
 
@@ -106,23 +107,28 @@ class QualificationService:
 
     @transaction.atomic
     def lock_rule_set(self, *, rule_set_version_id: str) -> HrQualificationRuleSetVersion:
-        """锁定规则集（LOCKED → 不可变；版本变化不重写旧申请）。"""
-        rs = HrQualificationRuleSetVersion.objects.get(
-            id=rule_set_version_id, tenant_id=self.tenant_id
-        )
+        """锁定规则集（LOCKED → ACTIVE，不可变；版本变化不重写旧申请）。
+
+        行锁 position 串行化，防并发产生多个 ACTIVE 规则集。
+        """
+        rs = HrQualificationRuleSetVersion.objects.select_related(
+            "recruitment_position_id"
+        ).get(id=rule_set_version_id, tenant_id=self.tenant_id)
         if rs.status != "DRAFT":
             raise QualificationServiceError("RULE_SET_NOT_DRAFT", "仅 DRAFT 规则集可锁定", http_status=409)
-        rs.status = "LOCKED"
-        rs.published_at = timezone.now()
-        rs.save(update_fields=["status", "published_at"])
-        # 旧 ACTIVE 规则集降级 SUPERSEDED
+        # 锁岗位行：同一岗位的规则集锁定串行化
+        HrRecruitmentPosition.objects.select_for_update().get(
+            id=rs.recruitment_position_id_id, tenant_id=self.tenant_id
+        )
+        # 旧 ACTIVE 规则集降级 SUPERSEDED（此刻已持有 position 锁，无双 ACTIVE）
         HrQualificationRuleSetVersion.objects.filter(
             tenant_id=self.tenant_id,
             recruitment_position_id=rs.recruitment_position_id,
             status="ACTIVE",
         ).exclude(id=rs.id).update(status="SUPERSEDED")
         rs.status = "ACTIVE"
-        rs.save(update_fields=["status"])
+        rs.published_at = timezone.now()
+        rs.save(update_fields=["status", "published_at"])
         return rs
 
     # ---- 预检 ----
@@ -158,12 +164,21 @@ class QualificationService:
     def save_review(
         self, *, application_id: str, rule_id: str, system_result: str, reviewer_result: str, note: str = ""
     ) -> HrQualificationReview:
-        """保存逐条人工审核结论。"""
+        """保存逐条人工审核结论（校验 rule 属于该申请绑定的规则集，防跨岗位/跨版本挂接）。"""
         app = self._get_application(application_id)
+        rule = HrQualificationRule.objects.filter(
+            tenant_id=self.tenant_id, id=rule_id
+        ).first()
+        if rule is None:
+            raise QualificationServiceError("RULE_NOT_FOUND", "规则不存在", http_status=404)
+        if app.qualification_rule_version_id and str(rule.rule_set_version_id_id) != str(app.qualification_rule_version_id):
+            raise QualificationServiceError(
+                "RULE_SET_MISMATCH", "规则不属于该申请绑定的规则集版本", http_status=409
+            )
         return HrQualificationReview.objects.create(
             tenant_id=self.tenant_id,
             application_id=app,
-            rule_id_id=rule_id,
+            rule_id=rule,
             system_result=system_result,
             reviewer_result=reviewer_result,
             reviewer_id=self.actor,
@@ -205,6 +220,17 @@ class QualificationService:
                 f"当前状态 {app.canonical_status} 不可做资格决策"
             )
         from_status = app.canonical_status
+
+        if decision in (
+            QualificationDecisionType.QUALIFIED,
+            QualificationDecisionType.DISQUALIFIED,
+        ) and not app.qualification_rule_version_id:
+            # 最终资格结论必须基于冻结的规则集（§11.3/§51），无绑定禁止出结论
+            raise QualificationServiceError(
+                "QUALIFICATION_RULES_NOT_BOUND",
+                "申请未绑定资格规则集版本，禁止出最终结论",
+                http_status=409,
+            )
 
         if decision == QualificationDecisionType.RETURNED:
             if not reason_text and not missing_items:

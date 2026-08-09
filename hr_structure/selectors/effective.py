@@ -20,10 +20,11 @@ from hr_structure.models import HrOrganizationVersion
 FORMAL_STATUSES = ("APPROVED", "EFFECTIVE", "SUPERSEDED")
 
 
-def org_version_as_of(organization_id, as_of: date) -> Optional[HrOrganizationVersion]:
-    """解析某组织在 as_of 日期的有效版本。"""
+def org_version_as_of(tenant_id, organization_id, as_of: date) -> Optional[HrOrganizationVersion]:
+    """解析某组织在 as_of 日期的有效版本。tenant_id 必填（INV-01 跨租户防泄漏）。"""
     return (
         HrOrganizationVersion.objects.filter(
+            tenant_id=tenant_id,
             organization_id=organization_id,
             status__in=FORMAL_STATUSES,
             validity_from__lte=as_of,
@@ -34,12 +35,13 @@ def org_version_as_of(organization_id, as_of: date) -> Optional[HrOrganizationVe
     )
 
 
-def post_catalog_version_as_of(catalog_id, as_of: date) -> Optional["HrPostCatalogVersion"]:
-    """解析某岗位目录在 as_of 日期的有效版本。"""
+def post_catalog_version_as_of(tenant_id, catalog_id, as_of: date) -> Optional["HrPostCatalogVersion"]:
+    """解析某岗位目录在 as_of 日期的有效版本。tenant_id 必填（INV-01）。"""
     from hr_structure.models import HrPostCatalogVersion
 
     return (
         HrPostCatalogVersion.objects.filter(
+            tenant_id=tenant_id,
             catalog_id=catalog_id,
             status__in=("ACTIVE",),
             validity_from__lte=as_of,
@@ -50,12 +52,13 @@ def post_catalog_version_as_of(catalog_id, as_of: date) -> Optional["HrPostCatal
     )
 
 
-def position_as_of(position_id, as_of: date) -> Optional["HrPosition"]:
-    """岗位在 as_of 日期的有效状态（lifecycle + validity）。"""
+def position_as_of(tenant_id, position_id, as_of: date) -> Optional["HrPosition"]:
+    """岗位在 as_of 日期的有效状态。tenant_id 必填（INV-01）。"""
     from hr_structure.models import HrPosition
 
     return (
         HrPosition.objects.filter(
+            tenant_id=tenant_id,
             id=position_id,
             validity_from__lte=as_of,
         )
@@ -64,12 +67,13 @@ def position_as_of(position_id, as_of: date) -> Optional["HrPosition"]:
     )
 
 
-def position_pool_as_of(pool_id, as_of: date) -> Optional["HrPositionPool"]:
-    """岗位池在 as_of 日期的有效状态。"""
+def position_pool_as_of(tenant_id, pool_id, as_of: date) -> Optional["HrPositionPool"]:
+    """岗位池在 as_of 日期的有效状态。tenant_id 必填（INV-01）。"""
     from hr_structure.models import HrPositionPool
 
     return (
         HrPositionPool.objects.filter(
+            tenant_id=tenant_id,
             id=pool_id,
             status="ACTIVE",
             validity_from__lte=as_of,
@@ -97,7 +101,7 @@ def children_as_of(tenant_id, parent_org_id, as_of: date, dimension=None):
 def build_tree_as_of(tenant_id, root_org_id, as_of: date, dimension=None, depth_limit=10):
     """构建 as_of 组织树（懒加载友好：返回节点 + has_children）。"""
     nodes = []
-    root_version = org_version_as_of(root_org_id, as_of)
+    root_version = org_version_as_of(tenant_id, root_org_id, as_of)
     if root_version is None:
         return []
     stack = [(root_version, 0)]

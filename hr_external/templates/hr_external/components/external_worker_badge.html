@@ -1,0 +1,9 @@
+{% comment %}
+HrExternalWorkerBadge —— 外聘身份标记（worker_kind=EXTERNAL）。
+用法：{% include "hr_external/components/external_worker_badge.html" with label="外聘" %}
+注意：颜色不是唯一状态表达；必须带文本。
+{% endcomment %}
+<span class="hr-external-badge hr-external-badge--worker" title="External worker (non-regular)">
+  <span class="hr-external-badge__dot" aria-hidden="true"></span>
+  {{ label|default:"外聘" }}
+</span>

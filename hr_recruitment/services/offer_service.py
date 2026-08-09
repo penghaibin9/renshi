@@ -93,10 +93,14 @@ class OfferService:
 
     @transaction.atomic
     def accept(self, *, offer_id: str) -> HrRecruitmentOffer:
-        """接受 Offer（幂等：已 ACCEPTED 直接返回）。"""
+        """接受 Offer（幂等：已 ACCEPTED 直接返回；过期拒绝）。"""
         offer = self._get(offer_id)
         if offer.status == OfferStatus.ACCEPTED:
             return offer  # 幂等重放
+        if offer.expires_at and offer.expires_at < timezone.now():
+            raise OfferServiceError(
+                "OFFER_EXPIRED", "Offer 已过期，不可接受", http_status=409
+            )
         self._assert(offer, OfferStatus.ACCEPTED)
         offer.status = OfferStatus.ACCEPTED
         offer.accepted_at = timezone.now()
@@ -106,13 +110,28 @@ class OfferService:
         return offer
 
     def _on_accepted(self, offer: HrRecruitmentOffer) -> None:
-        """Offer 接受 → 申请状态 OFFER_ACCEPTED（幂等）。"""
+        """Offer 接受 → 申请状态 OFFER_ACCEPTED（走状态机 + 写 ledger，幂等）。"""
         proposed = offer.proposed_hire_id
         app = proposed.application_id
-        if app.canonical_status in (S.PROPOSED_HIRE, S.PUBLIC_NOTICE, S.OFFER_PENDING, S.OFFERED):
-            app.canonical_status = S.OFFER_ACCEPTED
-            app.version += 1
-            app.save(update_fields=["canonical_status", "version"])
+        from hr_recruitment.models import HrApplicationTransition
+        from hr_recruitment.policies.state_machine import assert_transition
+
+        if app.canonical_status == S.OFFER_ACCEPTED:
+            return  # 幂等
+        assert_transition(app.canonical_status, S.OFFER_ACCEPTED)
+        from_status = app.canonical_status
+        app.canonical_status = S.OFFER_ACCEPTED
+        app.version += 1
+        app.save(update_fields=["canonical_status", "version"])
+        HrApplicationTransition.objects.create(
+            tenant_id=self.tenant_id,
+            application_id=app,
+            from_status=from_status,
+            to_status=S.OFFER_ACCEPTED,
+            action="OFFER_ACCEPTED",
+            actor_id=self.actor,
+            source="HR_ADMIN",
+        )
 
     def _get(self, offer_id: str) -> HrRecruitmentOffer:
         try:

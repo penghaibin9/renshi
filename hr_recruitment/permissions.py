@@ -25,6 +25,7 @@ HR04_PERMISSIONS = (
     "hr04.campaign.publish",
     # HR04-03 人才库与应聘者
     "hr04.application.view",
+    "hr04.application.manage",
     "hr04.application.sensitive_view",
     "hr04.application.export",
     # HR04-04 资格审查

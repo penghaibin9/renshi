@@ -1,0 +1,10 @@
+{% comment %}
+HrExternalRiskBadge —— 风险等级徽标。
+用法：{% include "hr_external/components/external_risk_badge.html" with severity="CRITICAL" %}
+{% endcomment %}
+{% if severity == "CRITICAL" %}<span class="hr-risk-badge hr-risk-badge--critical">严重风险</span>
+{% elif severity == "HIGH" %}<span class="hr-risk-badge hr-risk-badge--high">高风险</span>
+{% elif severity == "MEDIUM" %}<span class="hr-risk-badge hr-risk-badge--medium">中风险</span>
+{% elif severity == "LOW" %}<span class="hr-risk-badge hr-risk-badge--low">低风险</span>
+{% else %}<span class="hr-risk-badge">提示</span>
+{% endif %}
