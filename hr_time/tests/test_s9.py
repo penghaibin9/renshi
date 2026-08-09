@@ -60,7 +60,7 @@ class CloseFlowTests(TestCase):
         HrAttendanceDayFact.objects.create(
             tenant_id=1, staff_master_id=100, business_date=D,
             status=AttendanceStatus.PRESENT, expected_minutes=480,
-            credited_minutes=480, finalized=True,
+            actual_minutes=480, credited_minutes=480, finalized=True,
         )
         snapshot = CloseService.close(tenant_id=1, period=period)
         period.refresh_from_db()

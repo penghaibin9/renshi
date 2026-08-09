@@ -45,6 +45,21 @@ def _stable_dumps(data) -> str:
     return json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
+class VersionQuerySet(models.QuerySet):
+    """版本对象的 queryset 保护：bulk update/delete 一律拒绝，编辑必须逐行 save() 走 immutable guard。"""
+
+    def update(self, *args, **kwargs):
+        raise ValidationError(_("版本对象禁止 bulk update；请逐行保存以触发 immutable guard"))
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("版本对象禁止 bulk delete"))
+
+
+class VersionManager(models.Manager):
+    def get_queryset(self):
+        return VersionQuerySet(self.model, using=self._db)
+
+
 class HrTimeRecordingProfile(TimeTenantModel):
     """
     记录方式模板（总册 §24）。
@@ -145,6 +160,7 @@ class HrTimePolicyVersion(TimeTenantModel):
     policy_pack = models.ForeignKey(
         HrTimePolicyPack, on_delete=models.PROTECT, related_name="versions"
     )
+    objects = VersionManager()
     version_no = models.PositiveIntegerField(verbose_name=_("版本号"))
     status = models.CharField(
         max_length=16, choices=PolicyStatus.choices, default=PolicyStatus.DRAFT

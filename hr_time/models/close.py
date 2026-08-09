@@ -69,6 +69,10 @@ class HrTimeClosePeriod(TimeTenantModel):
         if self.end_date < self.start_date:
             raise ValidationError(_("结束日期早于开始日期"))
 
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.tenant_id}] {self.start_date}~{self.end_date} {self.status}"
 

@@ -82,7 +82,10 @@ class AttendanceEvaluator:
         """
         评估某人员某工作日事实。
 
-        force=False 且已存在 finalized 事实时拒绝覆盖（fail-closed）。
+        - 已 finalized（月结冻结）事实一律拒绝覆盖（fail-closed），
+          force 仅用于月结前重算（更新 evaluation_version），不用于解锁已冻结事实；
+          月结后更正必须走 S9 Reopen → Correction → reclose 流程。
+        - force=True 且已存在非 finalized 事实时允许重算（version+1）。
         """
         existing = HrAttendanceDayFact.objects.filter(
             tenant_id=tenant_id,
@@ -90,10 +93,10 @@ class AttendanceEvaluator:
             business_date=business_date,
         ).first()
 
-        if existing is not None and existing.finalized and not force:
+        if existing is not None and existing.finalized:
             raise EvaluatorError(
-                "ATTENDANCE_FACT_CONFLICT",
-                "当日考勤事实已终态（finalized），禁止静默覆盖；请走 Correction Case",
+                "ATTENDANCE_PERIOD_CLOSED",
+                "当日考勤事实已月结冻结，禁止覆盖；请走 Reopen/Correction 流程",
             )
 
         # 收集当日配对事件（一次性求值，避免 QuerySet 双重查询）

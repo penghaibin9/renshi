@@ -18,6 +18,7 @@ _EXCLUDE_APPS = {
     "hr_recruitment",
     "hr_external",
     "hr_onboarding",
+    "hr_staff",  # HR03 并行窗口正在施工（import_service 间歇性语法错误），HR11 无 FK 依赖
 }
 
 INSTALLED_APPS = [app for app in INSTALLED_APPS if app not in _EXCLUDE_APPS]

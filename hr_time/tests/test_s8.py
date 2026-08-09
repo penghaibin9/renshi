@@ -10,7 +10,7 @@ HR11-S8 验收测试：
 - tenant_id NOT NULL
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.db import IntegrityError, transaction
 from django.test import TestCase
@@ -64,7 +64,7 @@ class RequestLifecycleTests(TestCase):
     def _request(self, days=2):
         return HrLeaveRequest.objects.create(
             tenant_id=1, staff_master_id=100, leave_type=self.lt,
-            start_at=D, end_at=D + __import__("datetime").timedelta(days=days - 1),
+            start_at=D, end_at=D + timedelta(days=days - 1),
             requested_amount=days, unit="DAYS", account=self.acct,
             status=LeaveRequestStatus.DRAFT,
         )

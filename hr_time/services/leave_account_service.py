@@ -60,7 +60,7 @@ class LeaveAccountService:
         RESERVE / RESERVATION_RELEASE 为冻结语义：不改变账户余额（balance_after=冻结前余额），
         可用额度 = 余额 - 有效预占（§112）。
         """
-        account, created = HrLeaveAccount.objects.get_or_create(
+        account, _ = HrLeaveAccount.objects.get_or_create(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             leave_type_id=leave_type_id,

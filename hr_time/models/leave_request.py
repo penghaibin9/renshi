@@ -104,6 +104,10 @@ class HrLeaveRequest(TimeTenantModel):
         if self.end_at < self.start_at:
             raise ValidationError(_("结束日期早于开始日期"))
 
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.leave_type.code} {self.status}"
 

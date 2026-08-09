@@ -165,7 +165,8 @@ class EvaluatorTests(TestCase):
         self.assertEqual(result.fact.status, AttendanceStatus.PARTIAL_PRESENT)
 
     def test_finalized_fact_not_overwritten(self):
-        fact = HrAttendanceDayFact.objects.create(
+        # 月结冻结（finalized）后评估器一律拒绝覆盖，force 也不能解锁（须走 Reopen/Correction）
+        HrAttendanceDayFact.objects.create(
             tenant_id=1, staff_master_id=100, business_date=D,
             status=AttendanceStatus.PRESENT, finalized=True,
         )
@@ -173,11 +174,22 @@ class EvaluatorTests(TestCase):
             AttendanceEvaluator.evaluate_day(
                 tenant_id=1, staff_master_id=100, business_date=D,
             )
-        # force=True 允许重算（月结前纠错路径）
+        with self.assertRaises(EvaluatorError):
+            AttendanceEvaluator.evaluate_day(
+                tenant_id=1, staff_master_id=100, business_date=D, force=True,
+            )
+
+    def test_force_recomputes_unfrozen_existing(self):
+        # 月结前已存在但未冻结的事实：force=True 允许重算（evaluation_version+1）
+        fact = HrAttendanceDayFact.objects.create(
+            tenant_id=1, staff_master_id=100, business_date=D,
+            status=AttendanceStatus.MISSING_TIME,
+        )
         result = AttendanceEvaluator.evaluate_day(
             tenant_id=1, staff_master_id=100, business_date=D, force=True,
         )
         self.assertEqual(result.created, False)
+        self.assertEqual(result.fact.evaluation_version, 2)
 
     def test_ledger_created_for_credited_and_pending(self):
         shift = HrShiftDefinition.objects.create(tenant_id=1, code="DAY", name="白班")

@@ -19,8 +19,7 @@ import hashlib
 import json
 from datetime import date
 
-from django.db import models, transaction
-from django.db.models import Count, Sum
+from django.db import transaction
 from django.utils import timezone
 
 from hr_time.enums import AttendanceStatus, LeaveRequestStatus
@@ -92,11 +91,13 @@ class CloseService:
         if blockers:
             raise CloseServiceError("TIME_CLOSE_BLOCKED", "存在 P0 blocker，禁止月结", blockers)
 
-        # 事实 hash
-        facts = HrAttendanceDayFact.objects.filter(
-            tenant_id=tenant_id,
-            business_date__range=(period.start_date, period.end_date),
-        ).order_by("staff_master_id", "business_date")
+        # 事实（一次性物化，避免多次查询）；月结后将期间内事实置为终态（硬闸门）
+        facts = list(
+            HrAttendanceDayFact.objects.filter(
+                tenant_id=tenant_id,
+                business_date__range=(period.start_date, period.end_date),
+            ).order_by("staff_master_id", "business_date")
+        )
         fact_hash = hashlib.sha256(
             json.dumps(
                 [(f.staff_master_id, f.business_date.isoformat(), f.status, f.credited_minutes) for f in facts],
@@ -108,31 +109,35 @@ class CloseService:
             tenant_id=tenant_id,
             period=period,
             metric_definition_version="1.0",
-            staff_count=facts.values("staff_master_id").distinct().count(),
+            staff_count=len({f.staff_master_id for f in facts}),
             attendance_fact_hash=fact_hash,
         )
 
         # 生成 Payroll basis（不含金额；按 staff 聚合一次完成，避免 N+1）
-        staff_rows = (
-            facts.values("staff_master_id")
-            .annotate(
-                regular=Sum("credited_minutes"),
-                unpaid=Sum(
-                    "expected_minutes",
-                    filter=models.Q(status=AttendanceStatus.UNEXCUSED_ABSENCE),
-                ),
+        staff_rows = {}
+        for f in facts:
+            row = staff_rows.setdefault(
+                f.staff_master_id,
+                {"regular": 0, "unpaid": 0},
             )
-            .order_by()
-        )
-        for row in staff_rows:
+            row["regular"] += f.credited_minutes
+            if f.status == AttendanceStatus.UNEXCUSED_ABSENCE:
+                row["unpaid"] += f.expected_minutes
+        for staff_id, row in staff_rows.items():
             HrPayrollTimeBasis.objects.create(
                 tenant_id=tenant_id,
                 close_snapshot=snapshot,
-                staff_master_id=row["staff_master_id"],
-                regular_work_minutes=row["regular"] or 0,
-                unpaid_absence_minutes=row["unpaid"] or 0,
+                staff_master_id=staff_id,
+                regular_work_minutes=row["regular"],
+                unpaid_absence_minutes=row["unpaid"],
                 basis_version="1.0",
             )
+
+        # 冻结：期间内事实置终态（月结硬闸门；评估器/delete/update 均被模型层拒绝）
+        HrAttendanceDayFact.objects.filter(
+            tenant_id=tenant_id,
+            business_date__range=(period.start_date, period.end_date),
+        ).update(finalized=True)
 
         period.status = "CLOSED"
         period.closed_at = timezone.now()
@@ -163,6 +168,11 @@ class CloseService:
             before_snapshot_id=before,
             approved_by=actor_user,
         )
+        # 解冻：期间内事实允许更正（更正后 reclose 再冻结）
+        HrAttendanceDayFact.objects.filter(
+            tenant_id=tenant_id,
+            business_date__range=(period.start_date, period.end_date),
+        ).update(finalized=False)
         period.status = "REOPENED"
         period.save()
         return batch

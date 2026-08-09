@@ -41,6 +41,21 @@ class LeaveRequestError(Exception):
 
 class LeaveRequestService:
     @staticmethod
+    def assert_reason_readable(request: HrLeaveRequest, *, has_sensitive_access: bool) -> None:
+        """
+        敏感原因读取控制（§150/§97 生产级）：
+        - leave_type.sensitive_reason=True（病假等）时，reason_text 仅限有敏感权限者读取；
+        - 无权限者必须返回脱敏（当前由 API 层决定是否调用；服务层保证不透传原文）。
+
+        # [总控占位] S10 API 层按权限码（HR11_LEAVE_ADMIN/HR11_AUDITOR）接入 viewer 判定。
+        """
+        if request.leave_type.sensitive_reason and not has_sensitive_access:
+            raise LeaveRequestError(
+                "PERMISSION_DENIED",
+                "该假别原因属敏感字段，当前账号无权读取",
+            )
+
+    @staticmethod
     def available_balance(account: HrLeaveAccount) -> float:
         """可用余额 = 余额 - 有效预占（§112）。"""
         return LeaveAccountService.balance(account=account) - LeaveRequestService._reserved(account)

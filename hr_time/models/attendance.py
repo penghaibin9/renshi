@@ -23,8 +23,55 @@ from hr_time.enums import AttendanceStatus
 from hr_time.models.base import TimeTenantModel
 
 
+# 考勤事实字段（finalized 后禁改；finalized 字段本身由 service 控制）
+DAY_FACT_FIELDS = frozenset(
+    {
+        "staff_master_id",
+        "assignment_id",
+        "business_date",
+        "policy_version_id",
+        "calendar_version_id",
+        "schedule_snapshot_json",
+        "expected_minutes",
+        "actual_minutes",
+        "credited_minutes",
+        "authorized_absence_minutes",
+        "overtime_minutes_candidate",
+        "status",
+        "evaluation_version",
+        "source_pair_ids",
+    }
+)
+
+
+class FrozenFactQuerySet(models.QuerySet):
+    """已冻结（finalized）日事实禁止 bulk update/delete（防绕过模型 save guard）。"""
+
+    def update(self, **kwargs):
+        if self.filter(finalized=True).exists():
+            changed = set(kwargs) & DAY_FACT_FIELDS
+            if changed:
+                raise ValidationError(
+                    _("已冻结（finalized）的考勤事实禁止修改字段: %(fields)s；更正请走 Correction Case")
+                    % {"fields": ", ".join(sorted(changed))}
+                )
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(finalized=True).exists():
+            raise ValidationError(_("已冻结（finalized）的考勤事实禁止删除"))
+        return super().delete()
+
+
+class FrozenFactManager(models.Manager):
+    def get_queryset(self):
+        return FrozenFactQuerySet(self.model, using=self._db)
+
+
 class HrAttendanceDayFact(TimeTenantModel):
     """日考勤事实（§60）。这是日考勤权威，不是打卡事件。"""
+
+    objects = FrozenFactManager()
 
     staff_master_id = models.BigIntegerField(verbose_name=_("HR03 人员 id"))
     assignment_id = models.BigIntegerField(null=True, blank=True)
@@ -86,6 +133,30 @@ class HrAttendanceDayFact(TimeTenantModel):
             raise ValidationError(
                 _("credited_minutes 不能大于 actual + authorized_absence（禁止虚增记入工时）")
             )
+
+    def save(self, *args, **kwargs):
+        """finalized 后事实字段不可变（finalized 自身由月结/重开流程控制）。"""
+        self.clean()
+        if self.pk:
+            try:
+                old = HrAttendanceDayFact._base_manager.get(pk=self.pk)
+            except HrAttendanceDayFact.DoesNotExist:
+                old = None
+            if old is not None and old.finalized and not self.finalized:
+                # 仅允许服务层重开流程解除冻结；普通路径禁止把 finalized 改回 False
+                raise ValidationError(_("已冻结考勤事实不能直接解除；请走 Reopen/Correction 流程"))
+            if old is not None and old.finalized:
+                changed = [
+                    f
+                    for f in DAY_FACT_FIELDS
+                    if getattr(old, f, None) != getattr(self, f, None)
+                ]
+                if changed:
+                    raise ValidationError(
+                        _("已冻结考勤事实禁止修改字段: %(fields)s；更正请走 Correction Case")
+                        % {"fields": ", ".join(sorted(changed))}
+                    )
+        super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         # 已终态（含月结 closed 的投影事实）禁止删除；更正走 Correction Case
@@ -183,6 +254,10 @@ class HrTimeSheetPeriod(TimeTenantModel):
         super().clean()
         if self.end_date < self.start_date:
             raise ValidationError(_("结束日期早于开始日期"))
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.start_date}~{self.end_date}"

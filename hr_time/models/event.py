@@ -107,16 +107,33 @@ class HrAttendanceDevice(TimeTenantModel):
         return f"[{self.tenant_id}] {self.name} ({self.provider})"
 
 
+class AppendOnlyQuerySet(models.QuerySet):
+    """append-only 事件账本的 queryset 保护：禁止 bulk update/delete（防绕过模型 save guard）。"""
+
+    def update(self, *args, **kwargs):
+        raise ValidationError(_("原始事件 append-only，禁止 bulk update"))
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("原始事件 append-only，禁止 bulk delete"))
+
+
+class AppendOnlyManager(models.Manager):
+    def get_queryset(self):
+        return AppendOnlyQuerySet(self.model, using=self._db)
+
+
 class HrRawTimeEvent(TimeTenantModel):
     """
     不可变事件账本（总册 §51）。
 
-    append-only 保证：
-    - delete() 一律拒绝（raise ValidationError）；
-    - save() 对已存在行：关键字段（event 事实）不可变更；
+    append-only 保证（模型层 + queryset 层双保险）：
+    - delete() / queryset.delete() 一律拒绝（raise ValidationError）；
+    - save() / queryset.update() 对已存在行：关键字段（event 事实）不可变更；
     - 幂等：(tenant_id, source, dedupe_key) 唯一；
     - 时间语义：event_at_utc + event_timezone + local_event_at。
     """
+
+    objects = AppendOnlyManager()
 
     IMMUTABLE_FIELDS = frozenset(
         {
@@ -237,6 +254,20 @@ class HrTimeEventPair(TimeTenantModel):
         null=True, blank=True, verbose_name=_("时长（分钟）")
     )
     anomaly_codes = models.JSONField(default=list, blank=True)
+
+    def clean(self):
+        super().clean()
+        # 防跨租户/跨人员配对（S4 生产级校验）
+        if self.in_event.tenant_id != self.tenant_id:
+            raise ValidationError(_("配对 in_event 不属于当前租户"))
+        if self.out_event_id and self.out_event.tenant_id != self.tenant_id:
+            raise ValidationError(_("配对 out_event 不属于当前租户"))
+        if self.out_event_id and self.out_event.staff_master_id != self.in_event.staff_master_id:
+            raise ValidationError(_("配对 in/out 事件必须属于同一人员"))
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = _("Time Event Pair")

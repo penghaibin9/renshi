@@ -253,5 +253,9 @@ class HrScheduleException(TimeTenantModel):
         if self.date_to < self.date_from:
             raise ValidationError(_("结束日期早于开始日期"))
 
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.tenant_id}] {self.exception_type} {self.date_from}~{self.date_to}"

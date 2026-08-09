@@ -27,6 +27,7 @@ from hr_time.enums import (
     PolicyStatus,
 )
 from hr_time.models.base import TimeTenantModel
+from hr_time.models.policy import VersionManager
 
 
 class HrLeaveType(TimeTenantModel):
@@ -115,6 +116,7 @@ class HrLeavePolicyVersion(TimeTenantModel):
     leave_policy_pack = models.ForeignKey(
         HrLeavePolicyPack, on_delete=models.PROTECT, related_name="versions"
     )
+    objects = VersionManager()
     leave_type = models.ForeignKey(
         HrLeaveType, on_delete=models.PROTECT, related_name="policy_versions"
     )
