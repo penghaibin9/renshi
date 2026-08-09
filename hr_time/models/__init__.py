@@ -62,6 +62,13 @@ from hr_time.models.leave_request import (
     HrLeaveRequest,
     HrReturnFromLeaveCase,
 )
+from hr_time.models.close import (
+    HrPayrollTimeBasis,
+    HrTimeClosePeriod,
+    HrTimeCloseSnapshot,
+    HrTimeCorrectionBatch,
+    HrTimeRiskCase,
+)
 
 __all__ = [
     "TimeTenantModel",
@@ -104,4 +111,9 @@ __all__ = [
     "HrAbsenceFact",
     "HrReturnFromLeaveCase",
     "HrLeaveEvidence",
+    "HrTimeClosePeriod",
+    "HrTimeCloseSnapshot",
+    "HrTimeCorrectionBatch",
+    "HrPayrollTimeBasis",
+    "HrTimeRiskCase",
 ]
