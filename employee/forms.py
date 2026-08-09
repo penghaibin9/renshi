@@ -13,8 +13,7 @@ Classes:
 Usage:
 from django import forms
 
-class YourForm(forms.Form):
-    field_name = forms.CharField()
+class YourForm(forms.Form):    field_name = forms.CharField()
 
     def clean_field_name(self):
         # Custom validation logic goes here
@@ -55,6 +54,26 @@ from horilla_widgets.widgets.horilla_multi_select_field import HorillaMultiSelec
 from horilla_widgets.widgets.select_widgets import HorillaMultiSelectWidget
 
 logger = logging.getLogger(__name__)
+
+# HR06 受管字段（LegacyChangeMapping §1）：这些字段已由人事异动（HR06 Case + HR03 权威）管理，
+# 旧编辑表单不得直接写；只允许 HR03 facts → Legacy Projection 写入。
+# S9 封堵：加入 fields_to_remove（批量更新不可选）并在 WorkInfo 表单中禁用。
+HR06_MANAGED_WORK_INFO_FIELDS = frozenset(
+    {
+        "department_id",
+        "job_position_id",
+        "job_role_id",
+        "reporting_manager_id",
+        "employee_type_id",
+        "work_type_id",
+        "shift_id",
+        "location",
+    }
+)
+
+HR06_MANAGED_BULK_FIELDS = frozenset(
+    f"employee_work_info__{f}" for f in HR06_MANAGED_WORK_INFO_FIELDS
+)
 
 
 class ModelForm(forms.ModelForm):
@@ -377,6 +396,11 @@ class EmployeeWorkInformationForm(ModelForm):
             self.fields[field].widget.attrs["placeholder"] = self.fields[field].label
             if disable:
                 self.fields[field].disabled = True
+        # HR06 受管字段封堵（S9）：只读 + 提示走人事异动
+        for field_name in HR06_MANAGED_WORK_INFO_FIELDS:
+            if field_name in self.fields:
+                self.fields[field_name].disabled = True
+                self.fields[field_name].help_text = _("该字段已由人事异动管理，请发起异动。")
         field_names = {
             "Department": "department",
             "Job Position": "job_position",
@@ -488,6 +512,11 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 "hx-get": "/employee/get-job-roles-hx",
             }
         )
+        # HR06 受管字段封堵（S9）：只读 + 提示走人事异动
+        for field_name in HR06_MANAGED_WORK_INFO_FIELDS:
+            if field_name in self.fields:
+                self.fields[field_name].disabled = True
+                self.fields[field_name].help_text = _("该字段已由人事异动管理，请发起异动。")
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}
@@ -609,6 +638,8 @@ fields_to_remove = [
     "email",
     "phone",
     "employee_bank_details__account_number",
+    # HR06 受管字段封堵（S9）：批量更新不允许直改组织/岗位/上级/用工性质等
+    *sorted(HR06_MANAGED_BULK_FIELDS),
 ]
 
 
