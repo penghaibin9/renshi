@@ -15,8 +15,9 @@ urlpatterns = [
     path("future", views.future_changes, name="hr06-changes-future-page"),
     path("<uuid:case_id>", views.change_detail, name="hr06-change-detail"),
     path("<uuid:case_id>/preview", views.change_preview, name="hr06-change-preview"),
-    # S4-S7 占位（当前阶段重定向到中心，避免 404）
-    path("transfers", views.change_center, name="hr06-transfers"),
+    # S4 校内调动
+    path("transfers", views.transfers, name="hr06-transfers"),
+    # S5-S7 占位（当前阶段重定向到中心，避免 404）
     path("job-identity", views.change_center, name="hr06-job-identity"),
     path("secondments", views.change_center, name="hr06-secondments"),
     path("ledger", views.change_center, name="hr06-ledger"),

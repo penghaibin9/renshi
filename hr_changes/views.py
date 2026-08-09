@@ -118,6 +118,27 @@ def change_detail(request, case_id):
 
 
 @login_required
+def transfers(request):
+    tenant_id, err = _page_context(request)
+    if err:
+        return err
+    from hr_changes.context import build_hr_change_context
+    from hr_changes.selectors.transfer_selector import TransferSelector
+
+    try:
+        build_hr_change_context(tenant_id=tenant_id, user_id=request.user.id)
+    except HrChangeContextError:
+        return render(
+            request,
+            "hr_changes/error.html",
+            {"error_code": "SCOPE_DENIED", "error_message": "数据范围不合法"},
+            status=403,
+        )
+    data = TransferSelector(tenant_id).list()
+    return render(request, "hr_changes/transfers.html", {"items": data["items"], "total": data["total"]})
+
+
+@login_required
 def change_preview(request, case_id):
     tenant_id, err = _page_context(request)
     if err:

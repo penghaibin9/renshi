@@ -15,6 +15,7 @@ from hr_changes.services.state_machine import (
     can_transition,
     transition,
 )
+from hr_changes.services.transfer_service import TransferService
 from hr_changes.services.validation_service import ValidationService
 
 __all__ = [
@@ -28,5 +29,6 @@ __all__ = [
     "allowed_next_status",
     "can_transition",
     "transition",
+    "TransferService",
     "ValidationService",
 ]
