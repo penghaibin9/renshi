@@ -130,9 +130,17 @@ def time_health(request):
             "timezone": ctx.school_timezone,
             "schoolToday": ctx.today().isoformat(),
         },
+        # JSON 字段规范：机器字段 camelCase（status），人看的中文 label 成对（statusLabel）
         "stages": {
-            "S1": "DONE",
-            "S2": "PENDING",
+            "S1": {"status": "DONE", "statusLabel": "已完成"},
+            "S2": {"status": "PENDING", "statusLabel": "待开工"},
+            "S3": {"status": "PENDING", "statusLabel": "待开工"},
+            "S4": {"status": "PENDING", "statusLabel": "待开工"},
+            "S5": {"status": "PENDING", "statusLabel": "待开工"},
+            "S6": {"status": "PENDING", "statusLabel": "待开工"},
+            "S7": {"status": "PENDING", "statusLabel": "待开工"},
+            "S8": {"status": "PENDING", "statusLabel": "待开工"},
+            "S9": {"status": "PENDING", "statusLabel": "待开工"},
         },
     }
     body = _api_root(request)

@@ -47,7 +47,10 @@ class ScheduleService:
             )
         )
         if overlaps.exists():
-            raise ValidationError("SCHEDULE_OVERLAP")
+            raise ValidationError(
+                "排班时间段重叠，禁止重复排班（同一人员同一时间区间只能有一套生效排班）",
+                code="SCHEDULE_OVERLAP",
+            )
         assignment.clean()
         assignment.save()
         return assignment

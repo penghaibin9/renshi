@@ -12,12 +12,13 @@ HR11 抽象基类。
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 
 class TimeTenantModel(models.Model):
     """HR11 租户隔离抽象基类。业务模型必须继承。"""
 
-    tenant_id = models.BigIntegerField(db_index=True, verbose_name="Tenant ID")
+    tenant_id = models.BigIntegerField(db_index=True, verbose_name=_("Tenant ID"))
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(
