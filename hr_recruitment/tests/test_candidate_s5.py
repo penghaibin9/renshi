@@ -174,8 +174,14 @@ class PublicPortalTests(TestCase):
         url = reverse("hr04-public-campaign", kwargs={"token": self.campaign.public_token})
         resp = self.client.get(url)
         self.assertEqual(resp.status_code, 200)
-        payload = json.loads(resp.content)
+        # 服务端渲染标题（模板薄，岗位列表走 JS）
+        self.assertContains(resp, "公开招聘")
+        # JSON 端点返回岗位列表（JS 数据源）
+        json_resp = self.client.get(url + "?format=json")
+        payload = json.loads(json_resp.content)
         self.assertEqual(payload["data"]["campaign"]["title"], "公开招聘")
+        self.assertEqual(len(payload["data"]["positions"]), 1)
+        self.assertEqual(payload["data"]["positions"][0]["post_catalog_name"], "公开岗位")
 
     def test_public_campaign_invalid_token_404(self):
         url = reverse("hr04-public-campaign", kwargs={"token": "invalid-token"})

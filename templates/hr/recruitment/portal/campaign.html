@@ -1,0 +1,73 @@
+{% comment %}
+招聘公开门户岗位列表页（总册 15.3，mobile-first 375px）
+无管理端导航；token 解析学校；数据走 GET /recruit/{token}（JSON）
+{% endcomment %}
+{% load static i18n %}
+<!DOCTYPE html>
+<html lang="zh-hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>招聘门户</title>
+  <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+  <style>
+    body { margin: 0; background: var(--hr-canvas); color: var(--hr-text-900); }
+    .portal { max-width: 640px; margin: 0 auto; padding: 16px; }
+    .portal__brand { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+    .portal__title { font-size: 20px; font-weight: 700; margin: 8px 0; }
+    .portal__meta { color: var(--hr-text-500); margin: 4px 0; }
+    .portal__card { background: var(--hr-surface); border: 1px solid var(--hr-border); border-radius: var(--hr-radius-md); padding: 16px; margin-bottom: 12px; }
+    .portal__card h3 { margin: 0 0 8px; font-size: 16px; }
+    .portal__apply { display: inline-block; margin-top: 8px; padding: 8px 16px; background: var(--hr-primary-600); color: #fff; border-radius: var(--hr-radius-sm); text-decoration: none; }
+    .portal__state { padding: 24px; text-align: center; color: var(--hr-text-500); }
+  </style>
+</head>
+<body>
+  <main class="portal" data-portal-token="{{ token }}">
+    <div class="portal__brand">
+      <span class="portal__brand-icon" aria-hidden="true">🏫</span>
+      <span>招聘门户</span>
+    </div>
+    <div id="portal-content">
+      <h1 class="portal__title">{{ campaign.title }}</h1>
+      {% if campaign.description %}<p class="portal__meta">{{ campaign.description }}</p>{% endif %}
+      {% if campaign.application_close_at %}
+        <p class="portal__meta">报名截止：{{ campaign.application_close_at|date:"Y-m-d H:i" }}</p>
+      {% endif %}
+      <div id="portal-positions">
+        <div class="portal__state">加载中…</div>
+      </div>
+    </div>
+  </main>
+  <script src="{% static 'hr/js/core/api-client.js' %}"></script>
+  <script>
+    (function () {
+      var main = document.querySelector('[data-portal-token]');
+      if (!main) return;
+      var token = main.getAttribute('data-portal-token');
+      window.HrApi.request('/recruit/' + token + '?format=json')
+        .then(function (res) {
+          var positions = (res.data && res.data.positions) || [];
+          var box = document.getElementById('portal-positions');
+          if (!positions.length) {
+            box.innerHTML = '<div class="portal__state">当前暂无开放岗位</div>';
+            return;
+          }
+          box.innerHTML = positions.map(function (p) {
+            return '<div class="portal__card">' +
+              '<h3>' + p.post_catalog_name + '</h3>' +
+              '<p class="portal__meta">' + (p.organization_name || '') + '</p>' +
+              '<p class="portal__meta">招聘人数：' + p.max_hires + '</p>' +
+              '<a class="portal__apply" href="/recruit/' + token + '/positions/' + p.slug + '">查看详情</a>' +
+              '</div>';
+          }).join('');
+        })
+        .catch(function (err) {
+          var box = document.getElementById('portal-positions');
+          box.innerHTML = '<div class="portal__state">' + (window.HrApi.apiErrorToMessage(err) || '招聘项目不存在或未开放') + '</div>';
+        });
+    })();
+  </script>
+</body>
+</html>

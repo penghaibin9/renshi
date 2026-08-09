@@ -52,34 +52,41 @@ def _handle(request, exc):
 
 @require_GET
 def public_campaign(request, token):
+    """公开门户岗位列表页（HTML 默认；?format=json 返回岗位 JSON 供 JS 加载）。"""
     campaign = _resolve_campaign(token)
     if campaign is None:
         return error(request, "CAMPAIGN_NOT_FOUND", "招聘项目不存在或未开放", 404)
-    positions = HrRecruitmentPosition.objects.filter(
-        tenant_id=campaign.tenant_id, campaign_id=campaign
-    ).exclude(status__in=["CANCELLED"])
-    return ok(
-        request,
-        {
-            "campaign": {
-                "title": campaign.title,
-                "description": campaign.description,
-                "application_open_at": campaign.application_open_at.isoformat() if campaign.application_open_at else None,
-                "application_close_at": campaign.application_close_at.isoformat() if campaign.application_close_at else None,
+    if request.GET.get("format") == "json":
+        positions = HrRecruitmentPosition.objects.filter(
+            tenant_id=campaign.tenant_id, campaign_id=campaign
+        ).exclude(status__in=["CANCELLED"])
+        return ok(
+            request,
+            {
+                "campaign": {
+                    "title": campaign.title,
+                    "description": campaign.description,
+                },
+                "positions": [
+                    {
+                        "id": str(p.id),
+                        "slug": p.public_slug,
+                        "post_catalog_name": p.post_catalog_name,
+                        "organization_name": p.organization_name,
+                        "description": p.description,
+                        "max_hires": p.max_hires,
+                        "status": p.status,
+                    }
+                    for p in positions
+                ],
             },
-            "positions": [
-                {
-                    "id": str(p.id),
-                    "slug": p.public_slug,
-                    "post_catalog_name": p.post_catalog_name,
-                    "organization_name": p.organization_name,
-                    "description": p.description,
-                    "max_hires": p.max_hires,
-                    "status": p.status,
-                }
-                for p in positions
-            ],
-        },
+        )
+    from django.shortcuts import render
+
+    return render(
+        request,
+        "hr/recruitment/portal/campaign.html",
+        {"token": token, "campaign": campaign},
     )
 
 

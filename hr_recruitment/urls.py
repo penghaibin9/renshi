@@ -36,22 +36,17 @@ urlpatterns = [
     ),
     path(
         "candidates",
-        RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
+        views.hr04_candidates,
         name="hr04-candidates",
     ),
     path(
         "qualification",
-        RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
+        views.hr04_qualification,
         name="hr04-qualification",
     ),
     path(
-        "assessment",
-        RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
-        name="hr04-assessment",
-    ),
-    path(
         "proposed-hires",
-        RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
+        views.hr04_proposed_hires,
         name="hr04-proposed-hires",
     ),
 ]

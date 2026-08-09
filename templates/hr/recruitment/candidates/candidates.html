@@ -1,0 +1,30 @@
+{% comment %}
+HR04-03 人才库（总册 10.2）
+数据走 GET /api/hr/v1/recruitment/candidates
+{% endcomment %}
+{% extends "index.html" %}
+{% load static i18n %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="recruitment-candidates">
+  {% include "hr/components/page_header.html" with title="人才库与应聘者" subtitle="候选自然人与应聘申请分离（HR04-03）" %}
+
+  <div class="hr-card">
+    <div class="hr-rec-plan-toolbar">
+      <h2 class="hr-section-title">{% trans "候选人" %}</h2>
+      <input class="hr-input" id="hr04-candidate-keyword" placeholder="{% trans '搜索姓名/编号/邮箱' %}" />
+    </div>
+    <div id="hr04-candidate-list" class="hr-rec-candidate-table">
+      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-candidates.js' %}"></script>
+{% endblock %}

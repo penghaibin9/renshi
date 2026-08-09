@@ -1,6 +1,6 @@
 {% comment %}
-HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位，总册 5.1）
-S1 阶段：页面骨架（5 KPI + 漏斗 + 项目卡），数据在 S4 接入。
+HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位，总册 5.1/9.2）
+数据走 GET /api/hr/v1/recruitment/console + campaigns
 {% endcomment %}
 {% extends "index.html" %}
 {% load static i18n %}
@@ -12,8 +12,7 @@ S1 阶段：页面骨架（5 KPI + 漏斗 + 项目卡），数据在 S4 接入�
 <div class="hr-page" data-hr-page="recruitment-console">
   {% include "hr/components/page_header.html" with title="招聘与人才引进" subtitle="从年度用人计划到 HR05 报到的招聘事实链" %}
 
-  <!-- 5 KPI（总册 9.2 招聘控制台） -->
-  <div class="hr-metric-strip">
+  <div class="hr-kpi-grid" id="hr04-kpis">
     {% include "hr/components/metric_card.html" with label="进行中项目" status="loading" %}
     {% include "hr/components/metric_card.html" with label="开放岗位" status="loading" %}
     {% include "hr/components/metric_card.html" with label="待资格审核" status="loading" %}
@@ -21,19 +20,19 @@ S1 阶段：页面骨架（5 KPI + 漏斗 + 项目卡），数据在 S4 接入�
     {% include "hr/components/metric_card.html" with label="待拟录用" status="loading" %}
   </div>
 
-  <!-- 招聘漏斗 / 项目卡 / 风险 -->
-  <div class="hr-overview-grid hr-overview-grid--middle">
-    {% include "hr/components/section_card.html" with title="招聘漏斗" id="hr04-funnel" status="loading" %}
-    {% include "hr/components/section_card.html" with title="招聘项目" id="hr04-campaigns" status="loading" %}
-  </div>
-
-  <div class="hr-overview-grid hr-overview-grid--middle">
-    {% include "hr/components/section_card.html" with title="超期岗位" id="hr04-overdue-positions" status="loading" %}
-    {% include "hr/components/section_card.html" with title="近期截止" id="hr04-closing-soon" status="loading" %}
+  <div class="hr-card">
+    <div class="hr-rec-plan-toolbar">
+      <h2 class="hr-section-title">{% trans "招聘项目" %}</h2>
+      <button class="hr-btn" data-hr-new-campaign>{% trans "新建招聘项目" %}</button>
+    </div>
+    <div id="hr04-campaign-list" class="hr-rec-campaign-grid">
+      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-campaigns.js' %}"></script>
 {% endblock %}
