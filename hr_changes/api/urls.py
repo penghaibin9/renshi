@@ -14,6 +14,7 @@ hr_changes/api/urls.py —— HR06 API 路由。
 from django.urls import path
 
 from hr_changes.api import changes as changes_api
+from hr_changes.api import identity_changes as identity_api
 from hr_changes.api import transfers as transfers_api
 from hr_changes.api import views as api_views
 
@@ -79,5 +80,16 @@ urlpatterns = [
         "api/hr/v1/changes/transfers/<uuid:case_id>/release",
         transfers_api.transfer_release,
         name="hr06-api-transfers-release",
+    ),
+    # ---- S5 岗位与身份变更 ----
+    path(
+        "api/hr/v1/changes/identity-changes",
+        identity_api.identity_change_list,
+        name="hr06-api-identity-list",
+    ),
+    path(
+        "api/hr/v1/changes/identity-changes/<uuid:case_id>",
+        identity_api.identity_change_detail,
+        name="hr06-api-identity-detail",
     ),
 ]

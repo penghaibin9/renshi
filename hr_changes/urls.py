@@ -17,8 +17,9 @@ urlpatterns = [
     path("<uuid:case_id>/preview", views.change_preview, name="hr06-change-preview"),
     # S4 校内调动
     path("transfers", views.transfers, name="hr06-transfers"),
-    # S5-S7 占位（当前阶段重定向到中心，避免 404）
-    path("job-identity", views.change_center, name="hr06-job-identity"),
+    # S5 岗位与身份变更
+    path("job-identity", views.job_identity, name="hr06-job-identity"),
+    # S6-S7 占位（当前阶段重定向到中心，避免 404）
     path("secondments", views.change_center, name="hr06-secondments"),
     path("ledger", views.change_center, name="hr06-ledger"),
 ]

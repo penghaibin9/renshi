@@ -8,6 +8,7 @@ from hr_changes.services.approval_service import (
 )
 from hr_changes.services.case_number_service import CaseNumberService
 from hr_changes.services.change_service import ChangeService, ChangeServiceError
+from hr_changes.services.identity_change_service import IdentityChangeService
 from hr_changes.services.impact_service import ImpactService
 from hr_changes.services.state_machine import (
     ChangeStateError,
@@ -24,6 +25,7 @@ __all__ = [
     "CaseNumberService",
     "ChangeService",
     "ChangeServiceError",
+    "IdentityChangeService",
     "ImpactService",
     "ChangeStateError",
     "allowed_next_status",

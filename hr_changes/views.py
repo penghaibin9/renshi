@@ -139,6 +139,24 @@ def transfers(request):
 
 
 @login_required
+def job_identity(request):
+    tenant_id, err = _page_context(request)
+    if err:
+        return err
+    from hr_changes.api.identity_changes import IDENTITY_ACTIONS
+    from hr_changes.models import HrPersonnelChangeCase
+
+    cases = (
+        HrPersonnelChangeCase.objects.filter(
+            tenant_id=tenant_id, action_id__code__in=IDENTITY_ACTIONS
+        )
+        .select_related("action_id", "staff_master_id", "target_org_id")
+        .order_by("-created_at")
+    )
+    return render(request, "hr_changes/job_identity.html", {"cases": cases})
+
+
+@login_required
 def change_preview(request, case_id):
     tenant_id, err = _page_context(request)
     if err:

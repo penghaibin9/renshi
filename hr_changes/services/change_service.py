@@ -136,6 +136,7 @@ class ChangeService:
         target_org_id=None,
         source_position_id=None,
         target_position_id=None,
+        source_assignment_id=None,
         priority: str = "NORMAL",
         version: Optional[int] = None,
     ) -> HrPersonnelChangeCase:
@@ -169,6 +170,7 @@ class ChangeService:
             target_org_id=target_org,
             source_position_id=source_pos,
             target_position_id=target_pos,
+            source_assignment_id=_resolve_assignment_or_none(self.tenant_id, source_assignment_id),
             priority=priority,
             initiator_id=self.actor_user_id,
             owner_id=self.actor_user_id,
@@ -435,6 +437,24 @@ def _load_position_or_none(tenant_id, value):
     if pos is None:
         raise ChangeServiceError("CHANGE_TARGET_POSITION_INVALID", "岗位不存在或不属于当前学校")
     return pos
+
+
+def _resolve_assignment_or_none(tenant_id, value):
+    """source_assignment 归一：实例→实例；UUID/字符串→tenant 校验后取实例；空→None。"""
+    if value in (None, ""):
+        return None
+    from hr_staff.models import HrStaffAssignment
+
+    if hasattr(value, "pk"):
+        if value.tenant_id != tenant_id:
+            raise ChangeServiceError("CHANGE_SOURCE_ASSIGNMENT_MISMATCH", "任职段不属于当前学校")
+        return value
+    assignment = HrStaffAssignment.objects.filter(
+        tenant_id=tenant_id, id=_norm_id(value)
+    ).first()
+    if assignment is None:
+        raise ChangeServiceError("CHANGE_SOURCE_ASSIGNMENT_MISMATCH", "任职段不存在或不属于当前学校")
+    return assignment
 
 
 def _load_action(tenant_id, action_id):
