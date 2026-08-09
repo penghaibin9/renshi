@@ -8,11 +8,33 @@ hr_changes.models —— HR06 权威模型包（S1 骨架 → S2 扩展）。
 """
 
 from hr_changes.models.action import HrChangeAction
+from hr_changes.models.bulk import HrBulkChangeBatch, HrBulkChangeItem
+from hr_changes.models.case import HrPersonnelChangeCase
+from hr_changes.models.correction import HrChangeCorrection
+from hr_changes.models.downstream import HrChangeDownstreamEffect
 from hr_changes.models.field_definition import HrChangeFieldDefinition
+from hr_changes.models.impact import HrChangeImpactSnapshot
+from hr_changes.models.proposal import HrChangeProposal
 from hr_changes.models.reason import HrChangeReason
+from hr_changes.models.rescind import HrChangeRescind
+from hr_changes.models.snapshot import HrChangeApprovalSnapshot, HrChangeEffectiveSnapshot
+from hr_changes.models.temporary import HrTemporaryAssignmentLink
+from hr_changes.models.transition import HrChangeTransition
 
 __all__ = [
     "HrChangeAction",
     "HrChangeReason",
     "HrChangeFieldDefinition",
+    "HrPersonnelChangeCase",
+    "HrChangeProposal",
+    "HrChangeTransition",
+    "HrChangeImpactSnapshot",
+    "HrChangeApprovalSnapshot",
+    "HrChangeEffectiveSnapshot",
+    "HrChangeDownstreamEffect",
+    "HrTemporaryAssignmentLink",
+    "HrChangeCorrection",
+    "HrChangeRescind",
+    "HrBulkChangeBatch",
+    "HrBulkChangeItem",
 ]
