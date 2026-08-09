@@ -83,6 +83,18 @@ class CloseFlowTests(TestCase):
         with self.assertRaises(CloseServiceError):
             CloseService.close(tenant_id=1, period=period)
 
+    def test_finalized_fact_cannot_be_deleted(self):
+        """月结后（finalized）事实禁止删除（更正走 Correction Case）。"""
+        from django.core.exceptions import ValidationError
+
+        fact = HrAttendanceDayFact.objects.create(
+            tenant_id=1, staff_master_id=100, business_date=D,
+            status=AttendanceStatus.PRESENT, finalized=True,
+        )
+        with self.assertRaises(ValidationError):
+            fact.delete()
+        self.assertTrue(HrAttendanceDayFact.objects.filter(pk=fact.pk).exists())
+
 
 class ReopenRecloseTests(TestCase):
     def test_reopen_reclose_keeps_old_snapshot(self):

@@ -87,6 +87,12 @@ class HrAttendanceDayFact(TimeTenantModel):
                 _("credited_minutes 不能大于 actual + authorized_absence（禁止虚增记入工时）")
             )
 
+    def delete(self, *args, **kwargs):
+        # 已终态（含月结 closed 的投影事实）禁止删除；更正走 Correction Case
+        if self.finalized:
+            raise ValidationError(_("已终态考勤事实禁止删除；更正请走 Correction Case"))
+        super().delete(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.business_date} {self.status}"
 

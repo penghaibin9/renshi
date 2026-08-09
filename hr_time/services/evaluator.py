@@ -96,13 +96,17 @@ class AttendanceEvaluator:
                 "当日考勤事实已终态（finalized），禁止静默覆盖；请走 Correction Case",
             )
 
-        # 收集当日配对事件
-        pairs = HrTimeEventPair.objects.filter(
-            tenant_id=tenant_id,
-            shift_business_date=business_date,
-        ).filter(
-            in_event__staff_master_id=staff_master_id,
-        ).select_related("in_event", "out_event")
+        # 收集当日配对事件（一次性求值，避免 QuerySet 双重查询）
+        pairs = list(
+            HrTimeEventPair.objects.filter(
+                tenant_id=tenant_id,
+                shift_business_date=business_date,
+            )
+            .filter(
+                in_event__staff_master_id=staff_master_id,
+            )
+            .select_related("in_event", "out_event")
+        )
 
         # 实际工时：统计 PAIRED 配对的 duration（raw 永不 rounding）
         actual_minutes = 0
@@ -128,7 +132,7 @@ class AttendanceEvaluator:
         # 状态判定（§61-62：缺卡先 MISSING_TIME，禁止直接旷工）
         if expected_minutes == 0:
             status = AttendanceStatus.NOT_APPLICABLE
-        elif not pairs.exists():
+        elif not pairs:
             status = AttendanceStatus.MISSING_TIME
         elif actual_minutes >= expected_minutes:
             status = AttendanceStatus.PRESENT

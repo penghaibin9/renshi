@@ -19,7 +19,7 @@ import hashlib
 import json
 from datetime import date
 
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Count, Sum
 from django.utils import timezone
 
@@ -112,22 +112,25 @@ class CloseService:
             attendance_fact_hash=fact_hash,
         )
 
-        # 生成 Payroll basis（不含金额）
-        staff_ids = facts.values_list("staff_master_id", flat=True).distinct()
-        for staff_id in staff_ids:
-            staff_facts = facts.filter(staff_master_id=staff_id)
-            regular = sum(f.credited_minutes for f in staff_facts)
-            unpaid = sum(
-                f.expected_minutes
-                for f in staff_facts
-                if f.status == AttendanceStatus.UNEXCUSED_ABSENCE
+        # 生成 Payroll basis（不含金额；按 staff 聚合一次完成，避免 N+1）
+        staff_rows = (
+            facts.values("staff_master_id")
+            .annotate(
+                regular=Sum("credited_minutes"),
+                unpaid=Sum(
+                    "expected_minutes",
+                    filter=models.Q(status=AttendanceStatus.UNEXCUSED_ABSENCE),
+                ),
             )
+            .order_by()
+        )
+        for row in staff_rows:
             HrPayrollTimeBasis.objects.create(
                 tenant_id=tenant_id,
                 close_snapshot=snapshot,
-                staff_master_id=staff_id,
-                regular_work_minutes=regular,
-                unpaid_absence_minutes=unpaid,
+                staff_master_id=row["staff_master_id"],
+                regular_work_minutes=row["regular"] or 0,
+                unpaid_absence_minutes=row["unpaid"] or 0,
                 basis_version="1.0",
             )
 
