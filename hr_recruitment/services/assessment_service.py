@@ -431,24 +431,19 @@ class AssessmentService:
                 "NO_LOCKED_SCORES", "没有已锁定的评分结果，禁止冻结选拔排名", http_status=409
             )
 
-        # (application_id, component_id) → [total_scores]（同一组件多位评估人）
+        # (application_id, component_id) → [sheet.total_score]（同一组件多位评估人）
+        # sheet.total_score 已含组件权重（save_scores 中 raw/max×weight），此处不再重复乘权重
         app_component_scores: dict[tuple[str, str], list] = {}
         for sheet in sheets:
             app_id = str(sheet.application_id_id)
             component_id = str(sheet.event_id.component_id_id)
             app_component_scores.setdefault((app_id, component_id), []).append(sheet.total_score)
 
-        # 组件权重
-        component_weights: dict[str, Decimal] = {}
-        for sheet in sheets:
-            comp = sheet.event_id.component_id
-            component_weights[str(comp.id)] = comp.weight
-
-        # 按候选聚合：Σ(组件内评估人平均 × 组件权重)
+        # 按候选聚合：Σ(组件内评估人平均)（已含权重）
         app_totals: dict[str, Decimal] = {}
-        for (app_id, component_id), scores in app_component_scores.items():
+        for (app_id, _component_id), scores in app_component_scores.items():
             avg = sum(scores, Decimal(0)) / len(scores)
-            app_totals[app_id] = app_totals.get(app_id, Decimal(0)) + avg * component_weights.get(component_id, Decimal(0))
+            app_totals[app_id] = app_totals.get(app_id, Decimal(0)) + avg
 
         # 新版本号（保留历史）
         last_version = (

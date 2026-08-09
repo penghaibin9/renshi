@@ -60,8 +60,20 @@ class OfferFlowTests(TestCase):
             form_data={"degree": "博士"},
         )
         self.app = self.app_service.submit(application_id=str(draft.id))
-        # 资格通过
+        # 资格通过（先建规则集并绑定，decision 要求绑定冻结规则集）
         self.qual_service = QualificationService(tenant_id=TENANT, actor="reviewer")
+        rs = self.qual_service.create_rule_set(position_id=str(self.position.id))
+        self.qual_service.add_rule(
+            rule_set_version_id=str(rs.id),
+            rule_code="DEGREE",
+            label="学历要求",
+            operator="eq",
+            expected_value={"field": "degree", "value": "博士"},
+            severity="HARD",
+        )
+        self.qual_service.lock_rule_set(rule_set_version_id=str(rs.id))
+        self.app.qualification_rule_version_id = rs.id
+        self.app.save(update_fields=["qualification_rule_version_id"])
         self.qual_service.start_review(application_id=str(self.app.id))
         self.qual_service.decision(
             application_id=str(self.app.id), decision="QUALIFIED", reason_text="满足"
@@ -101,16 +113,31 @@ class OfferFlowTests(TestCase):
         from datetime import timedelta
 
         from django.utils import timezone
-        from hr_structure.models import HrOrganization, HrPosition, HrPositionPool, HrPositionReservation
+        from hr_structure.models import (
+            HrOrganization,
+            HrPosition,
+            HrPositionReservation,
+            HrPostCatalog,
+            HrPostCatalogVersion,
+        )
 
         org = HrOrganization.objects.create(
             tenant_id=TENANT, stable_code="ORG-OFFER", org_dimension="ADMIN"
+        )
+        catalog = HrPostCatalog.objects.create(
+            tenant_id=TENANT, stable_code="CAT-OFFER"
+        )
+        catalog_ver = HrPostCatalogVersion.objects.create(
+            catalog_id=catalog,
+            tenant_id=TENANT,
+            name="专任教师",
+            validity_from=date.today(),
         )
         hr_position = HrPosition.objects.create(
             tenant_id=TENANT,
             position_code="POS-OFFER-1",
             organization_id=org,
-            post_catalog_version_id_id=None,
+            post_catalog_version_id=catalog_ver,
             max_incumbents=1,
             validity_from=date.today(),
             lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,

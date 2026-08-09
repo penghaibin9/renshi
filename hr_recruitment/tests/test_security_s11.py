@@ -132,13 +132,17 @@ class TenantIsolationSecurityTests(TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_candidate_self_scope(self):
-        """self scope：他人候选看不到 A 候选。"""
+        """self scope：他人候选看不到 A 候选（需 email+mobile 双因子）。"""
         cand_b = CandidateService(tenant_id=TENANT_B).create_candidate(
-            legal_name="B 候选人", primary_email="b@test.local"
+            legal_name="B 候选人",
+            primary_email="b@test.local",
+            primary_mobile="13800005555",
         )
         resp = self.client.post(
             "/recruit/my-applications",
-            data=json.dumps({"primary_email": cand_b.primary_email}),
+            data=json.dumps(
+                {"primary_email": cand_b.primary_email, "primary_mobile": "13800005555"}
+            ),
             content_type="application/json",
         )
         payload = json.loads(resp.content)

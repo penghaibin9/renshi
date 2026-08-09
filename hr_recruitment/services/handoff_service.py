@@ -65,14 +65,18 @@ class HandoffService:
         终态安全：消费者未交付（None）时 handoff 标 FAILED 且申请保持 OFFER_ACCEPTED，
         不推入不可逆 HANDOFF_TO_HR05 终态（防 HR05 从未收到但申请已锁死）。
         """
-        # 幂等重放：同一 proposed_hire 已存在成功 handoff → 返回原记录
+        # 幂等：同一 proposed_hire 已有记录（任意 status，唯一约束保证只有一条）
         existing = HrRecruitmentHandoff.objects.filter(
             tenant_id=self.tenant_id,
             proposed_hire_id_id=proposed_hire_id,
-            status=HandoffStatus.CREATED,
         ).first()
         if existing is not None:
-            return existing
+            if existing.status == HandoffStatus.CREATED:
+                return existing  # 已成功交接
+            if hr05_consumer is None:
+                return existing  # 消费者未交付：返回 FAILED 占位（重复调用不重复建）
+            # FAILED + 有消费者：补消费（重试），不重建记录
+            return self._complete_handoff(existing, hr05_consumer, idempotency_key)
 
         # 行锁 proposed（防 TOCTOU：precondition 检查与 create 之间 offer/notice 被改）
         proposed = self._get_proposed(proposed_hire_id, for_update=True)
@@ -91,31 +95,38 @@ class HandoffService:
             )
         except IntegrityError:
             # 并发重复：返回已存在记录
-            return HrRecruitmentHandoff.objects.get(
+            existing = HrRecruitmentHandoff.objects.get(
                 tenant_id=self.tenant_id, proposed_hire_id_id=proposed_hire_id
             )
+            if existing.status == HandoffStatus.CREATED or hr05_consumer is None:
+                return existing
+            return self._complete_handoff(existing, hr05_consumer, idempotency_key)
 
         # 调用 HR05 消费端（V1 契约占位）
-        hr05_case_id = ""
         if hr05_consumer is not None:
-            try:
-                hr05_case_id = hr05_consumer.handle(
-                    proposed_hire_id=proposed_hire_id, idempotency_key=idempotency_key
-                )
-            except Exception:  # noqa: BLE001
-                # 消费失败：保留 FAILED，申请不进终态，由重试机制补偿
-                return handoff
-            handoff.hr05_case_id = hr05_case_id or ""
-            handoff.status = HandoffStatus.CREATED
-            handoff.save(update_fields=["hr05_case_id", "status"])
-        else:
-            # 消费者未交付：handoff 占位 FAILED，申请保持 OFFER_ACCEPTED（不推终态）
+            return self._complete_handoff(handoff, hr05_consumer, idempotency_key)
+        # 消费者未交付：handoff 占位 FAILED，申请保持 OFFER_ACCEPTED（不推终态）
+        return handoff
+
+    def _complete_handoff(self, handoff, hr05_consumer, idempotency_key) -> HrRecruitmentHandoff:
+        """调用 HR05 消费端；成功置 CREATED + 推终态；失败保留 FAILED。"""
+        try:
+            hr05_case_id = hr05_consumer.handle(
+                proposed_hire_id=str(handoff.proposed_hire_id_id),
+                idempotency_key=idempotency_key,
+            )
+        except Exception:  # noqa: BLE001
+            # 消费失败：保留 FAILED，申请不进终态，由重试机制补偿
             return handoff
+        handoff.hr05_case_id = hr05_case_id or ""
+        handoff.status = HandoffStatus.CREATED
+        handoff.save(update_fields=["hr05_case_id", "status"])
 
         # 消费成功后才推终态（走状态机 + 写 ledger）
         from hr_recruitment.models import HrApplicationTransition
         from hr_recruitment.policies.state_machine import assert_transition
 
+        proposed = handoff.proposed_hire_id
         app = proposed.application_id
         if app.canonical_status != S.HANDOFF_TO_HR05:
             assert_transition(app.canonical_status, S.HANDOFF_TO_HR05)

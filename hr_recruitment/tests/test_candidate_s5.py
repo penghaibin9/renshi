@@ -169,6 +169,44 @@ class PublicPortalTests(TestCase):
         self.camp_service.transition_campaign(str(self.campaign.id), target="APPROVED")
         self.camp_service.transition_campaign(str(self.campaign.id), target="PUBLISHED")
         self.camp_service.transition_campaign(str(self.campaign.id), target="OPEN")
+        # 发布公告（submit 冻结要求公告已发布）
+        ann = self.camp_service.create_announcement(
+            campaign_id=str(self.campaign.id),
+            title="公开招聘公告",
+            content="公开招聘专任教师",
+        )
+        self.camp_service.publish_announcement(str(ann.id))
+        # 岗位绑定 HR02 岗位并 open（public_apply 要求 position OPEN）
+        from hr_structure.models import (
+            HrOrganization,
+            HrPosition,
+            HrPostCatalog,
+            HrPostCatalogVersion,
+        )
+
+        org = HrOrganization.objects.create(
+            tenant_id=TENANT, stable_code="ORG-PUB", org_dimension="ADMIN"
+        )
+        catalog = HrPostCatalog.objects.create(tenant_id=TENANT, stable_code="CAT-PUB")
+        catalog_ver = HrPostCatalogVersion.objects.create(
+            catalog_id=catalog,
+            tenant_id=TENANT,
+            name="公开岗位",
+            validity_from=date.today(),
+        )
+        hr_position = HrPosition.objects.create(
+            tenant_id=TENANT,
+            position_code="POS-PUB-1",
+            organization_id=org,
+            post_catalog_version_id=catalog_ver,
+            max_incumbents=1,
+            validity_from=date.today(),
+            lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,
+        )
+        self.position.position_id = hr_position.id
+        self.position.save(update_fields=["position_id"])
+        self.camp_service.make_ready(str(self.position.id))
+        self.camp_service.open_position(str(self.position.id))
 
     def test_public_campaign_by_token(self):
         url = reverse("hr04-public-campaign", kwargs={"token": self.campaign.public_token})
@@ -214,6 +252,7 @@ class PublicPortalTests(TestCase):
                 "position_id": str(self.position.id),
                 "legal_name": "候选人乙",
                 "primary_email": "cand-b@test.local",
+                "primary_mobile": "13800002222",
             }
         )
         resp1 = self.client.post(
@@ -245,6 +284,7 @@ class PublicPortalTests(TestCase):
                     "position_id": str(self.position.id),
                     "legal_name": "本人",
                     "primary_email": "me@test.local",
+                    "primary_mobile": "13800003333",
                 }
             ),
             content_type="application/json",
@@ -253,7 +293,7 @@ class PublicPortalTests(TestCase):
         me_url = reverse("hr04-public-my-applications")
         resp = self.client.post(
             me_url,
-            data=json.dumps({"primary_email": "me@test.local"}),
+            data=json.dumps({"primary_email": "me@test.local", "primary_mobile": "13800003333"}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
@@ -262,7 +302,7 @@ class PublicPortalTests(TestCase):
 
         resp_other = self.client.post(
             me_url,
-            data=json.dumps({"primary_email": "other@test.local"}),
+            data=json.dumps({"primary_email": "other@test.local", "primary_mobile": "13800009999"}),
             content_type="application/json",
         )
         payload_other = json.loads(resp_other.content)

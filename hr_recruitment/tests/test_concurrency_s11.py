@@ -151,6 +151,7 @@ class ConcurrencyIdempotencyTests(TestCase):
             recruitment_position_id=str(self.position.id),
         )
         app = self.app_service.submit(application_id=str(draft.id))
+        self._bind_rule_set(app)
         # 走资格通过
         from hr_recruitment.services.qualification_service import QualificationService
 
@@ -189,6 +190,7 @@ class ConcurrencyIdempotencyTests(TestCase):
             recruitment_position_id=str(self.position.id),
         )
         app = self.app_service.submit(application_id=str(draft.id))
+        self._bind_rule_set(app)
         qual = QualificationService(tenant_id=TENANT, actor="reviewer")
         qual.start_review(application_id=str(app.id))
         qual.decision(application_id=str(app.id), decision="QUALIFIED", reason_text="ok")
@@ -197,8 +199,50 @@ class ConcurrencyIdempotencyTests(TestCase):
         app.save(update_fields=["canonical_status"])
 
         proposed_service = ProposedHireService(tenant_id=TENANT, actor="hr")
+        # 真实 HR02 HELD 预占（handoff 前置要求 HELD）
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from hr_structure.models import (
+            HrOrganization,
+            HrPosition,
+            HrPositionReservation,
+            HrPostCatalog,
+            HrPostCatalogVersion,
+        )
+
+        org = HrOrganization.objects.create(
+            tenant_id=TENANT, stable_code="ORG-CONC", org_dimension="ADMIN"
+        )
+        catalog = HrPostCatalog.objects.create(tenant_id=TENANT, stable_code="CAT-CONC")
+        catalog_ver = HrPostCatalogVersion.objects.create(
+            catalog_id=catalog, tenant_id=TENANT, name="并发岗位", validity_from=date.today()
+        )
+        hr_position = HrPosition.objects.create(
+            tenant_id=TENANT,
+            position_code="POS-CONC-1",
+            organization_id=org,
+            post_catalog_version_id=catalog_ver,
+            max_incumbents=1,
+            validity_from=date.today(),
+            lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,
+        )
+        reservation = HrPositionReservation.objects.create(
+            tenant_id=TENANT,
+            reservation_no="RESV-CONC-1",
+            position_id=hr_position,
+            source_domain="hr04",
+            source_business_type="recruitment_position",
+            source_business_id="conc-test",
+            status=HrPositionReservation.Status.HELD,
+            expires_at=timezone.now() + timedelta(days=7),
+            idempotency_key="conc-resv",
+        )
         proposed = proposed_service.create(
-            application_id=str(app.id), rank=1, reservation_id="r2"
+            application_id=str(app.id),
+            rank=1,
+            reservation_id=str(reservation.id),
+            reservation_no=reservation.reservation_no,
         )
         proposed_service.decide(proposed_hire_id=str(proposed.id), decision="APPROVE")
         # 公示闭环
@@ -241,6 +285,7 @@ class ConcurrencyIdempotencyTests(TestCase):
                 recruitment_position_id=str(self.position.id),
             )
             app = self.app_service.submit(application_id=str(draft.id))
+            self._bind_rule_set(app)
             qual = QualificationService(tenant_id=TENANT, actor="reviewer")
             qual.start_review(application_id=str(app.id))
             qual.decision(application_id=str(app.id), decision="QUALIFIED", reason_text="ok")
