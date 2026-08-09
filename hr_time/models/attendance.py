@@ -204,7 +204,7 @@ class HrTimeBalanceLedger(TimeTenantModel):
         indexes = [
             models.Index(
                 fields=["tenant_id", "staff_master_id", "account_type", "effective_date"],
-                name="hr11_ledger_ten_staff_type_date",
+                name="hex_time_ledger_type_date",
             ),
         ]
 
