@@ -17,9 +17,11 @@ from hr_staff.api import views as api_views
 from hr_staff.api import assignments as assignments_api
 from hr_staff.api import backgrounds as backgrounds_api
 from hr_staff.api import corrections as corrections_api
+from hr_staff.api import data_quality as dq_api
 from hr_staff.api import export as export_api
 from hr_staff.api import imports as imports_api
 from hr_staff.api import materials as materials_api
+from hr_staff.api import material_requests as mr_api
 from hr_staff.api import sensitive as sensitive_api
 from hr_staff.api import staff as staff_api
 from hr_staff.api import profile as profile_api
@@ -179,5 +181,20 @@ urlpatterns = [
         "api/hr/v1/staff/import/<uuid:job_id>",
         imports_api.import_status,
         name="hr03-api-staff-import-status",
+    ),
+    path(
+        "api/hr/v1/staff/data-quality-scan",
+        dq_api.scan,
+        name="hr03-api-staff-data-quality-scan",
+    ),
+    path(
+        "api/hr/v1/staff/<uuid:staff_id>/material-requests",
+        mr_api.list_requests,
+        name="hr03-api-staff-material-requests-list",
+    ),
+    path(
+        "api/hr/v1/staff/<uuid:staff_id>/material-requests/create",
+        mr_api.create_request,
+        name="hr03-api-staff-material-requests-create",
     ),
 ]

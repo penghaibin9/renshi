@@ -212,7 +212,7 @@ class ApplyService:
         assignment_service = AssignmentService(
             self.tenant_id, audit_actor_user_id=self.actor_user_id
         )
-        biz_type = f"HR06_{action}"
+        biz_type = _map_source_business_type(action)
         biz_id = case.case_no
 
         def _ref(field):
@@ -427,6 +427,26 @@ def _int_or_uuid(value):
     if value in (None, ""):
         return None
     return value
+
+
+def _map_source_business_type(action_code: str) -> str:
+    """HR06 动作代码 → HR03 VALID_ASSIGNMENT_SOURCES 白名单（对齐 hr_staff/services/assignment_service.py）。"""
+    TRANSFER_ACTIONS = frozenset({
+        "ORG_TRANSFER", "POSITION_TRANSFER", "ORG_POSITION_TRANSFER",
+        "PRIMARY_ASSIGNMENT_SWITCH", "MANAGER_CHANGE",
+    })
+    POSITION_ACTIONS = frozenset({
+        "POST_CATEGORY_CHANGE", "EMPLOYEE_CATEGORY_CHANGE",
+        "EMPLOYMENT_TYPE_CHANGE", "ADD_SECONDARY_ASSIGNMENT",
+        "END_SECONDARY_ASSIGNMENT", "TEMPORARY_SECONDMENT",
+        "TEMPORARY_ATTACHMENT", "RETURN_FROM_TEMPORARY",
+        "LOCATION_CHANGE",
+    })
+    if action_code in TRANSFER_ACTIONS:
+        return "HR06_TRANSFER"
+    if action_code in POSITION_ACTIONS:
+        return "HR06_POSITION_CHANGE"
+    return "HR06_POSITION_CHANGE"
 
 
 def _resolve_org(tenant_id, value):

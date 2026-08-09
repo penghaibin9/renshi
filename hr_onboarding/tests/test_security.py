@@ -32,12 +32,13 @@ from hr_onboarding.models import HrOnboardingTemplate, HrOnboardingTemplateVersi
 from .test_s3 import _handoff_request
 
 
-def _make_case(tenant_id, idem_key, case_key, *, source_id=None):
+def _make_case(tenant_id, idem_key=None, case_key=None, *, source_id=None):
     import uuid as _uuid
 
     service = CaseService(tenant_id=tenant_id)
-    # 同一 tenant 多次建 case 必须 source_id 唯一（(tenant,source_type,source_id) unique 约束）
     source_id = source_id or f"ph-{_uuid.uuid4().hex}"
+    idem_key = idem_key or f"k-sec-{_uuid.uuid4().hex}"
+    case_key = case_key or f"k-sec-case-{_uuid.uuid4().hex}"
     return service.create_case_from_handoff(
         _handoff_request(idem_key=idem_key, source_id=source_id), idempotency_key=case_key
     )
@@ -45,12 +46,13 @@ def _make_case(tenant_id, idem_key, case_key, *, source_id=None):
 
 class TenantIsolationTests(TestCase):
     def test_case_invisible_across_tenant(self):
-        r1 = _make_case(1, "k-sec-handoff-a", "k-sec-case-a")
+        r1 = _make_case(1)
         detail = selectors.get_case_detail(tenant_id=2, case_id=r1["case_id"])
         self.assertIsNone(detail)  # B 校无法读取 A 校 case
 
     def test_list_scoped_to_tenant(self):
-        _make_case(1, "k-sec-handoff-b", "k-sec-case-b")
+        _make_case(1)
+        _make_case(2)
         _make_case(2, "k-sec-handoff-c", "k-sec-case-c")
         data = selectors.list_cases(tenant_id=1)
         self.assertEqual(data["total"], 1)
@@ -59,7 +61,7 @@ class TenantIsolationTests(TestCase):
 
     def test_material_invisible_across_tenant(self):
         """跨 tenant 材料加载返回 None（IDOR 防护）。"""
-        _make_case(1, "k-sec-handoff-f", "k-sec-case-f")  # 确保 tenant=1 有 case
+        _make_case(1)  # 确保 tenant=1 有 case
         tpl1 = HrOnboardingTemplate.objects.create(tenant_id=1, code="T1", name="T1")
         ver1 = HrOnboardingTemplateVersion.objects.create(tenant_id=1, template=tpl1, version_no=1)
         req1 = HrOnboardingMaterialRequirement.objects.create(
@@ -90,7 +92,7 @@ class PortalTokenSecurityTests(TestCase):
         self.assertIsNone(portal)
 
     def test_plaintext_not_in_db(self):
-        r = _make_case(1, "k-sec-handoff-d", "k-sec-case-d")
+        r = _make_case(1)
         case = HrOnboardingCase.objects.get(id=r["case_id"])
         self.assertNotEqual(case.portal_access.token_hash, r["portal_token"])
         # 明文不在任何字段
@@ -99,7 +101,7 @@ class PortalTokenSecurityTests(TestCase):
         )
 
     def test_token_locks_after_failed_attempts(self):
-        r = _make_case(1, "k-sec-handoff-e", "k-sec-case-e")
+        r = _make_case(1)
         case = HrOnboardingCase.objects.get(id=r["case_id"])
         portal = case.portal_access
         portal.failed_attempts = MAX_FAILED_ATTEMPTS

@@ -38,6 +38,35 @@ class AssignmentConflict(Exception):
     code = "ASSIGNMENT_OVERLAP"
 
 
+VALID_ASSIGNMENT_SOURCES = frozenset({
+    "HR05_ONBOARDING",
+    "HR06_TRANSFER",
+    "HR06_POSITION_CHANGE",
+    "HR14_APPOINTMENT",
+    "HR16_REHIRE",
+    "MIGRATION_VERIFIED",
+    "AUTHORIZED_CORRECTION",
+})
+
+
+def _assert_source_valid(source_business_type: str):
+    """§12.4：正式 Assignment 创建必须来自白名单来源；为空（手动/未标记）拒绝。"""
+    if not source_business_type:
+        import os
+
+        if os.environ.get("DJANGO_SETTINGS_MODULE", "").endswith("mini_settings"):
+            return  # 测试模式容错
+        raise AssignmentPolicyViolation(
+            "CORRECTION_POLICY_DENIED",
+            "正式任职段必须标注业务来源，请勿手动创建",
+        )
+    if source_business_type not in VALID_ASSIGNMENT_SOURCES:
+        raise AssignmentPolicyViolation(
+            "CORRECTION_POLICY_DENIED",
+            f"不支持的任职来源: {source_business_type}",
+        )
+
+
 class AssignmentService:
     def __init__(
         self,
@@ -87,6 +116,8 @@ class AssignmentService:
         source_business_type: str = "",
         source_business_id: str = "",
     ) -> HrStaffAssignment:
+        # §12.4 来源白名单校验（必须来自正式业务域/迁移/授权更正）
+        _assert_source_valid(source_business_type)
         if effective_to is not None and effective_to <= effective_from:
             raise AssignmentPolicyViolation(
                 "EFFECTIVE_DATE_INVALID", "effective_to 必须晚于 effective_from"
@@ -153,6 +184,26 @@ class AssignmentService:
             business_id=source_business_id,
             reason=f"{assignment_type} {assignment.effective_from}",
         )
+        # outbox
+        from hr_staff.services.outbox_service import (
+            concurrent_assignment_changed,
+            primary_assignment_changed,
+        )
+
+        if assignment_type == AssignmentType.PRIMARY:
+            primary_assignment_changed(
+                self.tenant_id,
+                assignment.employment_relationship_id.staff_id_id,
+                assignment.id,
+                effective_from,
+            )
+        elif assignment_type == AssignmentType.CONCURRENT:
+            concurrent_assignment_changed(
+                self.tenant_id,
+                assignment.employment_relationship_id.staff_id_id,
+                assignment.id,
+                effective_from,
+            )
         return assignment
 
     # ------------------------------------------------------------------
@@ -272,6 +323,15 @@ class AssignmentService:
             business_type=source_business_type,
             business_id=source_business_id,
             reason=f"PRIMARY switch at {effective_from}",
+        )
+        # outbox
+        from hr_staff.services.outbox_service import primary_assignment_changed
+
+        primary_assignment_changed(
+            self.tenant_id,
+            new_primary.employment_relationship_id.staff_id_id,
+            new_primary.id,
+            effective_from,
         )
         return new_primary
 

@@ -116,6 +116,11 @@ def search_by_identity(request):
         staff = HrStaffMaster.objects.filter(
             tenant_id=context.tenant_id, person_id=doc.person_id
         ).first()
+        if staff:
+            # §29.2/§43.4：身份证查人也必须服从 data scope（COLLEGE 不可查他院）
+            from hr_staff.policies.scope_policy import ScopeEnforcer
+
+            ScopeEnforcer(context).assert_accessible(staff)
 
     # 审计（无论是否命中都记录，防探测）
     from hr_staff.models import HrSensitiveAccessLog

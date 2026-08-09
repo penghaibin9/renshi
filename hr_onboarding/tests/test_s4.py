@@ -33,7 +33,7 @@ from .test_s3 import _handoff_request
 TZ = timezone.utc
 
 
-def _ready_case(case_service, *, report_at="2026-09-01T09:00:00+00:00"):
+def _ready_case(case_service, *, report_at="2026-01-15T09:00:00+00:00"):
     """构造一个到达 READY_FOR_ACTIVATION 的 case（含 person match 解决）。"""
     import uuid as _uuid
 
@@ -82,7 +82,7 @@ class ReportCheckinTests(TestCase):
         service.confirm_intent(case)
         service._transition_locked(case, CaseStatus.READY_TO_REPORT, "TEST", "测试")
 
-        at = datetime(2026, 9, 1, 9, 0, tzinfo=TZ)
+        at = datetime(2026, 1, 15, 9, 0, tzinfo=TZ)
         report = ReportService(tenant_id=1, actor_user_id=1)
         c1 = report.confirm_report(case, actual_report_at=at, location="行政楼", checked_identity=True)
         c2 = report.confirm_report(case, actual_report_at=at, location="行政楼", checked_identity=True)

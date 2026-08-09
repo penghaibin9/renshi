@@ -13,20 +13,15 @@ from hr_onboarding.api import selectors
 from hr_onboarding.models import HrOnboardingCase
 from hr_onboarding.services import portal_service, token_service
 
-from .test_s3 import _handoff_request
 from .test_security import _make_case
 
 
 class ListPerformanceTests(TestCase):
     def test_list_uses_db_pagination(self):
         """构造 5 条跨 tenant case，分页只返回当前页且 total 正确（DB COUNT 而非全表）。"""
-        for i in range(3):
-            _make_case(
-                1,
-                f"k-perf-handoff-{i}",
-                f"k-perf-case-{i}",
-            )
-        _make_case(2, "k-perf-handoff-x", "k-perf-case-x")
+        for _ in range(3):
+            _make_case(1)
+        _make_case(2)
 
         data = selectors.list_cases(tenant_id=1, page=1, page_size=2)
         self.assertEqual(len(data["items"]), 2)
@@ -39,7 +34,7 @@ class ListPerformanceTests(TestCase):
         self.assertFalse(page2["hasNext"])
 
     def test_list_filter_by_status_db_level(self):
-        _make_case(1, "k-perf-handoff-a", "k-perf-case-a")
+        _make_case(1)
         case = HrOnboardingCase.objects.filter(tenant_id=1).first()
         case.status = "PREPARING"
         case.save(update_fields=["status"])
@@ -50,7 +45,7 @@ class ListPerformanceTests(TestCase):
 
     def test_detail_single_query_shape(self):
         """详情返回有限字段，不包含高敏明文。"""
-        r = _make_case(1, "k-perf-handoff-b", "k-perf-case-b")
+        r = _make_case(1)
         detail = selectors.get_case_detail(tenant_id=1, case_id=r["case_id"])
         self.assertIsNotNone(detail)
         self.assertNotIn("portal_token", detail)
@@ -61,10 +56,10 @@ class ListPerformanceTests(TestCase):
 
 class PortalPerformanceTests(TestCase):
     def test_get_me_self_only(self):
-        r1 = _make_case(1, "k-perf-handoff-c", "k-perf-case-c")
-        _make_case(1, "k-perf-handoff-d", "k-perf-case-d")
+        r1 = _make_case(1)
+        _make_case(1)
         portal = token_service.resolve_portal_access(tenant_id=None, token=r1["portal_token"])
         data = portal_service.get_me(portal)
         self.assertEqual(data["case_no"], HrOnboardingCase.objects.get(id=r1["case_id"]).case_no)
-        # 不包含其他 case 数据（case_no/legal_name/expected_report_date/status/verification_status）
-        self.assertEqual(len(data.keys()), 5)
+        # 不包含其他 case 数据（case_no/legal_name/expected_report_date/status/verification_status/statusLabel/verificationStatusLabel）
+        self.assertEqual(len(data.keys()), 7)

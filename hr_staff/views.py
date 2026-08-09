@@ -83,3 +83,39 @@ def assignment_history(request, staff_id):
         "hr_staff/assignment_history.html",
         {"staff_id": str(staff_id), "as_of": context.as_of.isoformat()},
     )
+
+
+@ensure_csrf_cookie
+def background_facts(request, staff_id):
+    """HR03-04 教育资格履历（S7）。"""
+    context, exc = _context_or_403(request)
+    if exc:
+        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
+    return render(request, "hr_staff/background_facts.html", {"staff_id": str(staff_id)})
+
+
+@ensure_csrf_cookie
+def materials(request, staff_id):
+    """HR03-05 人事材料档案（S8）。"""
+    context, exc = _context_or_403(request)
+    if exc:
+        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
+    return render(request, "hr_staff/materials.html", {"staff_id": str(staff_id)})
+
+
+@ensure_csrf_cookie
+def corrections(request, staff_id):
+    """HR03-06 信息更正与历史（S9）。"""
+    context, exc = _context_or_403(request)
+    if exc:
+        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
+    return render(request, "hr_staff/corrections.html", {"staff_id": str(staff_id)})
+
+
+@ensure_csrf_cookie
+def data_quality(request):
+    """数据质量异常中心（§34）。"""
+    context, exc = _context_or_403(request)
+    if exc:
+        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
+    return render(request, "hr_staff/data_quality.html", {"tenant_id": context.tenant_id})

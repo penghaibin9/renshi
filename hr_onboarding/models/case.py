@@ -130,6 +130,7 @@ class HrOnboardingCase(models.Model):
         indexes = [
             models.Index(fields=["tenant_id", "status"]),
             models.Index(fields=["tenant_id", "expected_report_date"]),
+            models.Index(fields=["tenant_id", "actual_report_at"]),
             models.Index(
                 fields=["tenant_id", "planned_organization_id", "status"],
                 name="idx_hr_ob_case_org_status",

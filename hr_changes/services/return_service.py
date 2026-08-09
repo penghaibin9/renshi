@@ -112,7 +112,7 @@ class ReturnService:
                 assignment_id=temporary.id,
                 effective_to=return_effective_at,
                 reason_code="HR06_RETURN_FROM_TEMPORARY",
-                source_business_type="HR06_RETURN",
+                source_business_type="HR06_POSITION_CHANGE",
                 source_business_id=str(link.change_case_id_id),
             )
         except AssignmentPolicyViolation as exc:
@@ -140,7 +140,7 @@ class ReturnService:
                 assignment_id=source.id,
                 effective_to=return_effective_at,
                 reason_code="HR06_RESTORE_SOURCE_END",
-                source_business_type="HR06_RETURN",
+                source_business_type="HR06_POSITION_CHANGE",
                 source_business_id=str(link.change_case_id_id),
             )
         from hr_staff.services.assignment_service import AssignmentPolicyViolation
@@ -158,7 +158,7 @@ class ReturnService:
                 assignment_role_code=source.assignment_role_code,
                 fte=source.fte,
                 reporting_staff_id=source.reporting_staff_id,
-                source_business_type="HR06_RETURN",
+                source_business_type="HR06_POSITION_CHANGE",
                 source_business_id=str(link.change_case_id_id),
             )
         except AssignmentPolicyViolation as exc:

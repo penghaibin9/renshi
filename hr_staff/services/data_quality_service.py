@@ -15,6 +15,7 @@ from datetime import date
 from hr_staff.models import (
     HrCredential,
     HrEmploymentRelationship,
+    HrPerson,
     HrStaffAssignment,
     HrStaffMaster,
 )
@@ -118,4 +119,90 @@ class DataQualityService:
                 )
             )
 
+        # ---- 补充 8 类规则（§34 全 13 类）----
+
+        # ASSIGNMENT_OVERLAP：PRIMARY 段重叠（同关系有界段重叠）
+        from django.db.models import Q
+
+        primary_assignments = list(
+            HrStaffAssignment.objects.filter(
+                tenant_id=self.tenant_id,
+                employment_relationship_id__staff_id=staff,
+                assignment_type="PRIMARY",
+            ).order_by("effective_from")
+        )
+        for i in range(len(primary_assignments) - 1):
+            a, b = primary_assignments[i], primary_assignments[i + 1]
+            if a.effective_to and b.effective_from and a.effective_to > b.effective_from:
+                issues.append(DataQualityIssue(staff_id, staff_no, "ASSIGNMENT_OVERLAP", "HIGH",
+                                               f"PRIMARY 任职段 {a.effective_from}~{a.effective_to} 与 {b.effective_from} 重叠"))
+                break
+
+        # STAFF_NO_CONFLICT：工号缺失
+        if not staff.staff_no:
+            issues.append(DataQualityIssue(staff_id, staff_no or "?", "STAFF_NO_CONFLICT", "HIGH", "工号缺失"))
+
+        # IDENTITY_CONFLICT：同 tenant 同证件 fingerprint 多 Person
+        from hr_staff.models import HrPersonIdentityDocument
+
+        fp = (HrPersonIdentityDocument.objects.filter(tenant_id=self.tenant_id, person_id=staff.person_id)
+              .exclude(document_number_fingerprint="").values("document_number_fingerprint").first())
+        if fp:
+            count = HrPersonIdentityDocument.objects.filter(
+                tenant_id=self.tenant_id, document_number_fingerprint=fp["document_number_fingerprint"]
+            ).count()
+            if count > 1:
+                issues.append(DataQualityIssue(staff_id, staff_no, "IDENTITY_CONFLICT", "MEDIUM",
+                                               f"同证件 fingerprint 归属 {count} 个 Person"))
+
+        # DUPLICATE_PERSON：同 tenant 同姓名+出生日期的 Person
+        if staff.person_id.birth_date:
+            dup_count = (
+                HrPerson.objects.filter(
+                    tenant_id=self.tenant_id,
+                    legal_name__iexact=staff.person_id.legal_name,
+                    birth_date=staff.person_id.birth_date,
+                ).count()
+                - 1
+            )
+            if dup_count > 0:
+                issues.append(DataQualityIssue(staff_id, staff_no, "DUPLICATE_PERSON", "LOW",
+                                               f"存在 {dup_count} 个疑似重复 Person（同姓名+生日）"))
+
+        # POSITION_MAPPING_MISSING：任职有组织但无岗位
+        has_org_no_pos = HrStaffAssignment.objects.filter(
+            tenant_id=self.tenant_id,
+            employment_relationship_id__staff_id=staff,
+            organization_id__isnull=False,
+            position_id__isnull=True,
+        ).exists()
+        if has_org_no_pos:
+            issues.append(DataQualityIssue(staff_id, staff_no, "POSITION_MAPPING_MISSING", "LOW",
+                                           "有组织但无权威岗位"))
+
+        # MATERIAL_MISSING：有教育记录但无对应学历材料
+        from hr_staff.models import HrEducationExperience, HrStaffMaterial
+
+        has_edu = HrEducationExperience.objects.filter(tenant_id=self.tenant_id, staff_id=staff).exists()
+        has_edu_mat = HrStaffMaterial.objects.filter(
+            tenant_id=self.tenant_id, staff_id=staff, category_code="EDUCATION"
+        ).exists()
+        if has_edu and not has_edu_mat:
+            issues.append(DataQualityIssue(staff_id, staff_no, "MATERIAL_MISSING", "LOW", "有教育经历但无学历材料"))
+
+        # ORPHAN_LEGACY_REFERENCE：legacy_employee_id 指向不存在的 Employee
+        if staff.legacy_employee_id:
+            try:
+                from employee.models import Employee
+
+                if not Employee.objects.filter(id=staff.legacy_employee_id).exists():
+                    issues.append(DataQualityIssue(staff_id, staff_no, "ORPHAN_LEGACY_REFERENCE", "LOW",
+                                                   f"legacy_employee_id={staff.legacy_employee_id} 指向不存在"))
+            except Exception:
+                pass  # employee app 不可用时不检查
+
+        # LEGACY_AUTHORITY_MISMATCH：有 legacy 映射但 staff_no/状态与实际 legacy 不一致（占位，留钩子）
+        if staff.legacy_employee_id and staff.current_employment_status:
+            issues.append(DataQualityIssue(staff_id, staff_no, "LEGACY_AUTHORITY_MISMATCH", "LOW",
+                                           "建议执行 reconciliation 确认 legacy 一致性"))
         return issues

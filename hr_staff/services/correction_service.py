@@ -320,6 +320,11 @@ class CorrectionService:
             business_type="CORRECTION",
             business_id=str(case.id),
         )
+        # outbox
+        from hr_staff.services.outbox_service import staff_basic_info_corrected
+
+        fields = list(case.items.values_list("field_code", flat=True))
+        staff_basic_info_corrected(self.tenant_id, case.staff_id_id, case.id, fields)
         case.refresh_from_db()
         return case
 

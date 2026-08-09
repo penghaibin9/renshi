@@ -77,9 +77,12 @@ class SensitiveFieldServiceTests(TestCase):
             {"documentNumber": ID_NO, "purpose": "入职核验"},
         )
         request.user = user
+        from hr_staff.context import HrStaffScope
+
+        mock_ctx = mock.Mock(tenant_id=TENANT, scope=HrStaffScope(scope_type="SCHOOL"))
         with mock.patch(
             "hr_staff.api.sensitive.make_staff_context",
-            return_value=mock.Mock(tenant_id=TENANT),
+            return_value=mock_ctx,
         ):
             resp = search_by_identity(request)
         self.assertEqual(resp.status_code, 200)

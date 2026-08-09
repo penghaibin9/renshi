@@ -81,6 +81,10 @@ class EmploymentService:
             business_id=source_business_id,
             reason=reason_code,
         )
+        # outbox
+        from hr_staff.services.outbox_service import relationship_started
+
+        relationship_started(self.tenant_id, staff.id, rel.id, relationship_type, effective_from)
         return rel
 
     @transaction.atomic
@@ -133,6 +137,11 @@ class EmploymentService:
             reason=reason_code,
         )
         self._refresh_staff_projection(rel.staff_id_id)  # P1-9：投影不陈旧
+        # outbox
+        from hr_staff.services.outbox_service import relationship_ended, staff_status_changed
+
+        relationship_ended(self.tenant_id, rel.staff_id_id, rel.id, effective_to, reason_code)
+        staff_status_changed(self.tenant_id, rel.staff_id_id, "ACTIVE", self._derived_status(rel.staff_id_id))
         return rel
 
     def _refresh_staff_projection(self, staff_id):
@@ -151,6 +160,11 @@ class EmploymentService:
         staff.save(
             update_fields=["current_employment_status", "primary_assignment_id", "version", "updated_at"]
         )
+
+    def _derived_status(self, staff_id):
+        from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+
+        return EffectiveDatedQueryService(self.tenant_id).status_as_of(staff_id)
 
     # ------------------------------------------------------------------
     # 用工性质变更（HR06 调用；新增 domain 方法，不改变历史模型语义）

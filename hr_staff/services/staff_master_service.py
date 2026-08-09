@@ -144,6 +144,10 @@ class StaffMasterService:
             staff_id=staff.id,
             reason=f"staff_no={staff_no} source={source}",
         )
+        # outbox
+        from hr_staff.services.outbox_service import staff_master_created
+
+        staff_master_created(tenant_id, staff.id, staff_no, source)
         return staff
 
     def get_by_legacy_employee(self, tenant_id: int, legacy_employee_id: int) -> Optional[HrStaffMaster]:

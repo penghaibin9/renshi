@@ -35,6 +35,7 @@ from hr_staff.models.material import (
     HrStaffMaterial,
     HrStaffMaterialVersion,
 )
+from hr_staff.models.merge import HrPersonMergeAlias, HrPersonMergeCase
 from hr_staff.models.number_sequence import HrStaffNumberSequence
 from hr_staff.models.person import HrEmergencyContact, HrPerson, HrPersonContact
 from hr_staff.models.permission_meta import HrStaffPermissionMeta
@@ -60,6 +61,8 @@ __all__ = [
     "HrMaterialRequest",
     "HrMaterialDownloadTicket",
     "HrStaffNumberSequence",
+    "HrPersonMergeCase",
+    "HrPersonMergeAlias",
     "HrCorrectionCase",
     "HrCorrectionItem",
     "HrFieldGovernancePolicy",

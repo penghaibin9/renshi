@@ -202,6 +202,10 @@ class MaterialService:
             business_type="MATERIAL",
             business_id=str(material.id),
         )
+        # outbox
+        from hr_staff.services.outbox_service import staff_material_verified
+
+        staff_material_verified(self.tenant_id, material.staff_id_id, material.id)
         return material
 
     # ------------------------------------------------------------------
