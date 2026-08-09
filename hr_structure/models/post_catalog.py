@@ -130,6 +130,13 @@ class HrPostCatalogVersion(models.Model):
     class Meta:
         verbose_name = _("HR Post Catalog Version")
         verbose_name_plural = _("HR Post Catalog Versions")
+        constraints = [
+            # 同一目录版本号唯一（复审 P2：防并发 new_version 生成重复版本号）
+            models.UniqueConstraint(
+                fields=["catalog_id", "version_no"],
+                name="uniq_hr_catalog_version_no",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} [{self.category}/{self.subcategory}]"

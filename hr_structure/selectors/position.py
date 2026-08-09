@@ -91,8 +91,12 @@ class PositionSelector:
                 return {"available": False, "reason": "HR02_POSITION_NOT_FOUND"}
             if p.lifecycle_status != HrPosition.LifecycleStatus.ACTIVE:
                 return {"available": False, "reason": f"岗位状态 {p.lifecycle_status}"}
+            from django.utils import timezone as _tz
+
             held = (
-                HrPositionReservation.objects.filter(position_id=p, status="HELD")
+                HrPositionReservation.objects.filter(
+                    position_id=p, status="HELD", expires_at__gt=_tz.now()
+                )
                 .aggregate(t=Sum("reserved_count"))["t"]
                 or 0
             )
@@ -110,8 +114,12 @@ class PositionSelector:
             )
             if pool is None:
                 return {"available": False, "reason": "HR02_POSITION_NOT_FOUND"}
+            from django.utils import timezone as _tz
+
             held = (
-                HrPositionReservation.objects.filter(position_pool_id=pool, status="HELD")
+                HrPositionReservation.objects.filter(
+                    position_pool_id=pool, status="HELD", expires_at__gt=_tz.now()
+                )
                 .aggregate(t=Sum("reserved_count"))["t"]
                 or 0
             )

@@ -115,6 +115,7 @@ class WorkforceSelector:
         return {
             "computedAt": computed.isoformat() if computed else None,
             "sourceUpdatedAt": updated.isoformat() if updated else None,
+            "dataBasis": next((r.data_basis for r in results if getattr(r, "data_basis", None)), None),
         }
 
     @staticmethod

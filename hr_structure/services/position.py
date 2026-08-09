@@ -115,6 +115,9 @@ class PositionService:
         if existing:
             return existing  # 幂等重试
 
+        # 先清理过期预占，避免过期 HELD 继续占额（总册 50.1）
+        self.expire_overdue()
+
         if position_id:
             pos = (
                 HrPosition.objects.select_for_update()
@@ -193,3 +196,20 @@ class PositionService:
             r.released_at = timezone.now()
             r.save(update_fields=["status", "released_at"])
             return r
+
+    @transaction.atomic
+    def expire_overdue(self, *, as_of=None) -> int:
+        """把已过期（expires_at < now）的 HELD 预占置为 EXPIRED（总册 50.1）。
+
+        返回处理条数。后台任务/管理命令调用。
+        """
+        from django.utils import timezone as _tz
+
+        now = as_of or _tz.now()
+        qs = HrPositionReservation.objects.filter(
+            tenant_id=self.scope.tenant_id,
+            status=HrPositionReservation.Status.HELD,
+            expires_at__lt=now,
+        ).select_for_update()
+        count = qs.update(status=HrPositionReservation.Status.EXPIRED)
+        return count

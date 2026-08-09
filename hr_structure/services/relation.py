@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Q
 
 from hr_structure.models import HrOrganizationRelation
 from hr_structure.scope import Hr02Scope
@@ -56,23 +57,25 @@ class RelationService:
         # 主树 parent：同 source 同日期最多一个 primary parent（INV 10.3）
         if relation_type in PRIMARY_PARENT_TYPES:
             # 区间重叠检测（10.3：同日期最多一个 primary parent）
-            # 新关系 [validity_from, validity_to) 与既有 ACTIVE 关系重叠则冲突
+            # 统一谓词：既有关系与新增关系区间重叠即冲突
+            #   重叠 = 既有.from < 新.to AND (既有.to IS NULL OR 既有.to > 新.from)
+            new_from = validity_from
             new_to = validity_to or date.max
-            overlap = HrOrganizationRelation.objects.filter(
-                tenant_id=self.scope.tenant_id,
-                source_org_id=source_org_id,
-                relation_type=relation_type,
-                status="ACTIVE",
-            ).filter(
-                validity_from__lt=new_to,
-                validity_to__isnull=True,
-            )
-            if validity_to:
-                overlap = overlap.filter(
-                    validity_from__lt=validity_to,
-                    validity_to__gt=validity_from,
+            existing = (
+                HrOrganizationRelation.objects.filter(
+                    tenant_id=self.scope.tenant_id,
+                    source_org_id=source_org_id,
+                    relation_type=relation_type,
+                    status="ACTIVE",
                 )
-            existing = overlap.first()
+                .filter(
+                    validity_from__lt=new_to,
+                )
+                .filter(
+                    Q(validity_to__isnull=True) | Q(validity_to__gt=new_from)
+                )
+                .first()
+            )
             if existing:
                 raise RelationServiceError(
                     "HR02_RELATION_CONFLICT",

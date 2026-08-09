@@ -11,6 +11,7 @@ import logging
 import uuid
 from datetime import date
 
+from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -145,14 +146,25 @@ def organizations_tree(request):
 
     selector = OrganizationSelector(scope, as_of=as_of)
     children = selector.get_children(int(parent_id))
-    child_ids = {c.organization_id_id for c in children}
+    child_ids = [c.organization_id_id for c in children]
+    # 批量查孙级：哪些子节点有下级（避免每节点 exists() 的 N+1，也避免恒真 bug）
+    grandchild_org_ids = set(
+        HrOrganizationVersion.objects.filter(
+            tenant_id=scope.tenant_id,
+            status__in=("APPROVED", "EFFECTIVE", "SUPERSEDED"),
+            parent_organization_id__in=child_ids,
+            validity_from__lte=as_of,
+        )
+        .filter(Q(validity_to__isnull=True) | Q(validity_to__gt=as_of))
+        .values_list("parent_organization_id", flat=True)
+    )
     nodes = [
         {
             "id": v.organization_id_id,
             "stable_code": v.organization_id.stable_code,
             "name": v.name,
             "org_type": v.org_type,
-            "has_children": v.organization_id_id in child_ids,
+            "has_children": v.organization_id_id in grandchild_org_ids,
             "validity_from": v.validity_from.isoformat(),
         }
         for v in children
@@ -805,6 +817,12 @@ def change_case_action(request, case_id, action):
                 return _error(request, "HR02_SCOPE_DENIED", "无执行权限", status=403)
             body = json.loads(request.body or "{}") if request.body else {}
             case = svc.execute_effective(case, execution_key=body.get("executionKey", f"manual-{case.case_no}"))
+            if case.status == "FAILED_EFFECT":
+                return _error(
+                    request, "HR02_REORG_HAS_BLOCKERS",
+                    "生效执行失败: " + ((case.execution_result_json or {}).get("error") or "未知错误"),
+                    status=409,
+                )
         else:
             return _error(request, "HR02_INVALID_REQUEST", "未知动作", status=400)
     except ReorgServiceError as exc:

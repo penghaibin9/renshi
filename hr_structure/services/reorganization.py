@@ -138,12 +138,15 @@ class ReorganizationService:
             raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", "尚未到生效日期")
 
         try:
-            self._apply_items(case)
+            # _apply_items 内层 savepoint：失败回滚 items
+            with transaction.atomic():
+                self._apply_items(case)
         except Exception as exc:
+            # 记录 FAILED_EFFECT（本方法外层 @transaction.atomic 会提交它），不穿透异常
             case.status = HrStructureChangeCase.Status.FAILED_EFFECT
             case.execution_result_json = {"executionKey": execution_key, "error": str(exc)}
             case.save(update_fields=["status", "execution_result_json"])
-            raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", f"生效执行失败: {exc}")
+            return case
 
         case.status = HrStructureChangeCase.Status.EFFECTIVE
         case.executed_at = timezone.now()

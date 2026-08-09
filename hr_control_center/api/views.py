@@ -24,7 +24,11 @@ from hr_control_center.context import (
 )
 from hr_control_center.permissions import require_hr_permission
 from hr_control_center.providers.base import HrProviderError
-from hr_control_center.services.overview_service import OverviewService
+from hr_control_center.services.overview_service import (
+    CORE_METRIC_KEYS,
+    HR08_METRIC_KEYS,
+    OverviewService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +72,24 @@ def _error(request, code: str, message: str, status: int, details=None) -> JsonR
     return _json(request, body, status=status)
 
 
+def _resolve_authority_mode(tenant_id) -> str:
+    """服务端解析 authority mode（复审：不信前端参数）。
+
+    HR02 cutover mode 映射到 HR01 context 语义：
+      HR02_AUTHORITY       → DUAL_READ_COMPARE（HR01 在权威化前先走对账）
+      其它（LEGACY/DUAL）  → LEGACY_ONLY（HR01 保持 legacy 快照）
+    """
+    try:
+        from hr_structure.services.cutover import Hr02CutoverService
+
+        mode = Hr02CutoverService().get_mode(tenant_id)
+        if mode == "HR02_AUTHORITY":
+            return "DUAL_READ_COMPARE"
+    except Exception:
+        pass
+    return "LEGACY_ONLY"
+
+
 def _make_context(request):
     """从请求构造 HrRequestContext（服务端重新验证 tenant/scope，不信任前端参数）。"""
     tenant_id = resolve_tenant_from_request(request)
@@ -95,7 +117,8 @@ def _make_context(request):
         period_to=request.GET.get("period_to"),
         scope_type=scope_type,
         scope_org_id=scope_org_id,
-        authority_mode=request.GET.get("authority_mode", "LEGACY_ONLY"),
+        # authority_mode 服务端解析：不信前端参数（复审 P1-7）
+        authority_mode=_resolve_authority_mode(tenant_id),
     )
 
 
@@ -150,17 +173,7 @@ def home_metrics(request):
     try:
         context = _make_context(request)
         service = OverviewService()
-        metrics = [
-            service.get_metric(key, context)
-            for key in (
-                "active_headcount",
-                "full_time_teacher",
-                "double_teacher_valid",
-                "new_join_ytd",
-                "departure_ytd",
-                "open_risk_count",
-            )
-        ]
+        metrics = [service.get_metric(key, context) for key in CORE_METRIC_KEYS + HR08_METRIC_KEYS]
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
     except HrProviderError as exc:

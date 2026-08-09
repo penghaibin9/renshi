@@ -110,7 +110,7 @@ class HrPositionReservation(models.Model):
     expires_at = models.DateTimeField()
     committed_at = models.DateTimeField(null=True, blank=True)
     released_at = models.DateTimeField(null=True, blank=True)
-    idempotency_key = models.CharField(max_length=128, unique=True)
+    idempotency_key = models.CharField(max_length=128)
     version = models.PositiveIntegerField(default=1)
 
     class Meta:
@@ -125,6 +125,11 @@ class HrPositionReservation(models.Model):
             models.UniqueConstraint(
                 fields=["position_pool_id", "source_business_id"],
                 name="uniq_hr_reservation_pool_biz",
+            ),
+            # 幂等键按 tenant 唯一（复审：避免跨租户同 key 冲突泄露）
+            models.UniqueConstraint(
+                fields=["tenant_id", "idempotency_key"],
+                name="uniq_hr_reservation_tenant_idem",
             ),
         ]
         indexes = [

@@ -128,7 +128,9 @@ class WorkforceService:
             "status": status,
             "freshnessStatus": status,
             "definitionVersion": WORKFORCE_DEFINITION_VERSION,
-            "dataBasis": DATA_BASIS_LEGACY_CURRENT_SNAPSHOT,
+            # dataBasis 透传 provider 实际值（HR02 权威时为 AUTHORITATIVE_EFFECTIVE_FACT，
+            # legacy 时为 LEGACY_CURRENT_SNAPSHOT）——复审修正：不再固定标 legacy
+            "dataBasis": payload.get("dataBasis") or DATA_BASIS_LEGACY_CURRENT_SNAPSHOT,
             "computedAt": payload.get("computedAt"),
             "sourceUpdatedAt": payload.get("sourceUpdatedAt"),
             "asOf": context.as_of.isoformat() if context.as_of else None,

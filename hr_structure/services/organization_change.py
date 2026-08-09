@@ -79,6 +79,15 @@ class OrganizationChangeService:
             parent = _Org.objects.filter(tenant_id=self.scope.tenant_id, id=parent_id).first()
             if parent is None:
                 raise Hr02ServiceError("HR02_CROSS_TENANT_REFERENCE", "上级组织不存在或跨租户")
+        # SCHOOL 根唯一性（INV-02）：每 tenant 恰好一个 SCHOOL 根
+        if org_type == "SCHOOL":
+            existing_root = HrOrganizationVersion.objects.filter(
+                tenant_id=self.scope.tenant_id,
+                org_type="SCHOOL",
+                status__in=("APPROVED", "EFFECTIVE", "SUPERSEDED"),
+            ).exists()
+            if existing_root:
+                raise Hr02ServiceError("HR02_SCOPE_DENIED", "该学校已存在根组织，禁止重复创建")
 
         org = HrOrganization.objects.create(
             tenant_id=self.scope.tenant_id,
