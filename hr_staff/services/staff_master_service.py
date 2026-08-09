@@ -150,3 +150,37 @@ class StaffMasterService:
         return HrStaffMaster.objects.filter(
             tenant_id=tenant_id, legacy_employee_id=legacy_employee_id
         ).first()
+
+    # ------------------------------------------------------------------
+    # 人员类别变更（HR06 调用；新增 domain 方法，不改变历史模型语义）
+    # ------------------------------------------------------------------
+    @transaction.atomic
+    def update_staff_category(
+        self,
+        *,
+        tenant_id: int,
+        staff_id,
+        staff_category_code: str,
+        source_business_type: str = "",
+        source_business_id: str = "",
+        reason_code: str = "",
+    ) -> HrStaffMaster:
+        staff = HrStaffMaster.objects.filter(tenant_id=tenant_id, id=staff_id).first()
+        if staff is None:
+            raise StaffNoConflict(f"staff not found in tenant {tenant_id}")
+        if staff.staff_category_code == staff_category_code:
+            return staff
+        staff.staff_category_code = staff_category_code
+        staff.version += 1
+        staff.save(update_fields=["staff_category_code", "version", "updated_at"])
+        from hr_staff.services.audit_service import write_audit_event
+
+        write_audit_event(
+            tenant_id=tenant_id,
+            action="StaffCategoryChanged",
+            staff_id=staff.id,
+            business_type=source_business_type,
+            business_id=source_business_id,
+            reason=reason_code,
+        )
+        return staff

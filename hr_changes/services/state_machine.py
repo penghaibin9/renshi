@@ -63,6 +63,8 @@ TRANSITIONS: list[TransitionRule] = [
     TransitionRule("apply", CaseStatus.APPROVED_WAITING_EFFECTIVE, CaseStatus.APPLYING),
     TransitionRule("apply_success", CaseStatus.APPLYING, CaseStatus.EFFECTIVE),
     TransitionRule("apply_failed", CaseStatus.APPLYING, CaseStatus.APPLY_FAILED),
+    # 生效前重检失败（校验/冲突阻断）也可直达 APPLY_FAILED
+    TransitionRule("apply_failed", CaseStatus.APPROVED_WAITING_EFFECTIVE, CaseStatus.APPLY_FAILED),
     # 终局维护
     TransitionRule("close", CaseStatus.EFFECTIVE, CaseStatus.CLOSED),
     # 撤回 / 取消（仅未生效案件）

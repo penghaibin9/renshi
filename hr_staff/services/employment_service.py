@@ -151,3 +151,41 @@ class EmploymentService:
         staff.save(
             update_fields=["current_employment_status", "primary_assignment_id", "version", "updated_at"]
         )
+
+    # ------------------------------------------------------------------
+    # 用工性质变更（HR06 调用；新增 domain 方法，不改变历史模型语义）
+    # UPDATE_RELATIONSHIP：更新开放关系的 relationship_type/employment_type。
+    # ------------------------------------------------------------------
+    @transaction.atomic
+    def update_relationship_type(
+        self,
+        *,
+        relationship_id,
+        relationship_type: str,
+        employment_type: str = "",
+        source_business_type: str = "",
+        source_business_id: str = "",
+        reason_code: str = "",
+    ) -> HrEmploymentRelationship:
+        rel = (
+            HrEmploymentRelationship.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, id=relationship_id)
+            .first()
+        )
+        if rel is None:
+            raise AssignmentPolicyViolation("RELATIONSHIP_NOT_FOUND", "聘用关系不存在")
+        rel.relationship_type = relationship_type
+        if employment_type:
+            rel.employment_type = employment_type
+        rel.version += 1
+        rel.save(update_fields=["relationship_type", "employment_type", "version", "updated_at"])
+        write_audit_event(
+            tenant_id=self.tenant_id,
+            action="EmploymentRelationshipTypeChanged",
+            actor_user_id=self.audit_actor_user_id,
+            staff_id=rel.staff_id_id,
+            business_type=source_business_type,
+            business_id=source_business_id,
+            reason=reason_code,
+        )
+        return rel

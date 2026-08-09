@@ -336,6 +336,14 @@ class ChangeService:
     # 批准 / 驳回（审批并发重检：锁行 + 状态重验 + impact 重检 + 步骤推进）
     # ------------------------------------------------------------------
     @transaction.atomic
+    def approve_all(self, case_id, *, comment: str = "") -> HrPersonnelChangeCase:
+        """连续批准直至 APPROVED_WAITING_EFFECTIVE（多步审批便捷入口）。"""
+        case = self._get_case_or_deny(case_id)
+        while case.status == CaseStatus.UNDER_APPROVAL:
+            case = self.approve(case.id, comment=comment)
+        return case
+
+    @transaction.atomic
     def approve(self, case_id, *, version: Optional[int] = None, comment: str = "") -> HrPersonnelChangeCase:
         case = self._get_case_or_deny(case_id)
         if case.status != CaseStatus.UNDER_APPROVAL:

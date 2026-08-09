@@ -13,6 +13,7 @@ hr_changes/api/urls.py —— HR06 API 路由。
 
 from django.urls import path
 
+from hr_changes.api import bulk as bulk_api
 from hr_changes.api import changes as changes_api
 from hr_changes.api import correction as correction_api
 from hr_changes.api import identity_changes as identity_api
@@ -152,5 +153,21 @@ urlpatterns = [
         "api/hr/v1/rescinds/<uuid:rescind_id>/<str:action>",
         rescind_api.rescind_action,
         name="hr06-api-rescinds-action",
+    ),
+    # ---- S8 批量异动 ----
+    path(
+        "api/hr/v1/changes/bulk",
+        bulk_api.create_bulk,
+        name="hr06-api-bulk-create",
+    ),
+    path(
+        "api/hr/v1/changes/bulk/<uuid:batch_id>/prevalidate",
+        bulk_api.prevalidate_bulk,
+        name="hr06-api-bulk-prevalidate",
+    ),
+    path(
+        "api/hr/v1/changes/bulk/<uuid:batch_id>/execute",
+        bulk_api.execute_bulk,
+        name="hr06-api-bulk-execute",
     ),
 ]
