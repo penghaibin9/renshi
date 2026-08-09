@@ -98,6 +98,8 @@ INSTALLED_APPS = [
     "hr_recruitment",
     "hr_external",
     "hr_onboarding",
+    "hr_contracts",
+    "hr_changes",
 ]
 
 # ========================================

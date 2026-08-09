@@ -77,7 +77,10 @@ class MaterialAccessDenied(Exception):
 
 
 class TicketInvalid(Exception):
-    code = "MATERIAL_ACCESS_DENIED"class MaterialService:
+    code = "MATERIAL_ACCESS_DENIED"
+
+
+class MaterialService:
     @staticmethod
     def _secret() -> str:
         return getattr(settings, "SECRET_KEY", "hr08-insecure-fallback")
