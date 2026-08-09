@@ -1,0 +1,15 @@
+{% extends "hr/development/base.html" %}
+{% block title %}培训报名与审批{% endblock %}
+{% block title_zh %}培训报名与审批{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <a class="btn btn-primary" href="/api/v1/hr/development/requests/create">新建申请</a>
+</div>
+<div class="empty">
+  培训报名与审批工作台：
+  <br><br>
+  · 待我审批 · 待预算 · 待报名 · 候补 · 完成待核验
+  <br><br>
+  <a class="btn" href="/api/v1/hr/development/requests">查看申请列表 (API)</a>
+</div>
+{% endblock %}

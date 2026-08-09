@@ -1,0 +1,5 @@
+# 临时 override：为收尾验证暴露 db 端口到宿主机（不修改主 compose 业务配置）
+services:
+  db:
+    ports:
+      - "15432:5432"

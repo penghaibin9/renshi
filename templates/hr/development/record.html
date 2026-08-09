@@ -1,0 +1,19 @@
+{% extends "hr/development/base.html" %}
+{% block title %}教师发展档案{% endblock %}
+{% block title_zh %}教师发展档案{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <span class="badge badge-primary">教职工 ID: {{ staff_id }}</span>
+  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}">档案摘要 (API)</a>
+  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}/facts">已核验事实 (API)</a>
+  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}/compliance">合规评估 (API)</a>
+  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}/risks">风险 (API)</a>
+</div>
+<div class="empty">
+  发展档案聚合视图：
+  <br><br>
+  · 发展概览 · 发展计划 · 培训/研修 · 进修 · 企业实践 · 成果转化
+  <br>
+  · 学时/学分/实践时长分账 · 资格证据引用 · 风险 · 历史更正 · 审计
+</div>
+{% endblock %}

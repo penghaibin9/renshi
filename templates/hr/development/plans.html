@@ -1,0 +1,47 @@
+{% extends "hr/development/base.html" %}
+{% block title %}教师发展计划{% endblock %}
+{% block title_zh %}教师发展计划{% endblock %}
+{% block content %}
+<div class="stats">
+  <div class="stat-card"><div class="label">在执行计划</div><div class="value">{{ stats.in_execution }}</div></div>
+  <div class="stat-card"><div class="label">待审批</div><div class="value">{{ stats.pending_review }}</div></div>
+  <div class="stat-card"><div class="label">已关闭</div><div class="value">{{ stats.closed }}</div></div>
+  <div class="stat-card"><div class="label">计划总数</div><div class="value">{{ plans|length }}</div></div>
+</div>
+<div class="toolbar">
+  <a class="btn btn-primary" href="/api/v1/hr/development/plans/create">新建计划</a>
+</div>
+{% if plans %}
+<table>
+  <thead>
+    <tr>
+      <th>计划编号</th><th>计划类型</th><th>周期</th><th>开始日期</th><th>结束日期</th><th>状态</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in plans %}
+    <tr>
+      <td>{{ p.plan_no }}</td>
+      <td>{{ p.get_plan_type_display }}</td>
+      <td>{{ p.get_cycle_type_display }}</td>
+      <td>{{ p.start_date }}</td>
+      <td>{{ p.end_date }}</td>
+      <td>
+        {% if p.lifecycle_status == 'ACTIVE' or p.lifecycle_status == 'PUBLISHED' %}
+          <span class="badge badge-success">{{ p.get_lifecycle_status_display }}</span>
+        {% elif p.lifecycle_status == 'UNDER_REVIEW' %}
+          <span class="badge badge-primary">{{ p.get_lifecycle_status_display }}</span>
+        {% elif p.lifecycle_status == 'REJECTED' or p.lifecycle_status == 'CANCELLED' %}
+          <span class="badge badge-danger">{{ p.get_lifecycle_status_display }}</span>
+        {% else %}
+          <span class="badge">{{ p.get_lifecycle_status_display }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">暂无发展计划，点击"新建计划"开始创建。</div>
+{% endif %}
+{% endblock %}
