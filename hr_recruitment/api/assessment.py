@@ -184,6 +184,26 @@ def declare_conflict(request, assignment_id):
 
 
 @require_http_methods(["POST"])
+def assign_participant(request, event_id):
+    """POST .../assessment/events/{id}/participants —— 候选参加场次（含排期冲突/容量检查）。"""
+    try:
+        service, ctx = _service(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    denied = _perm(request, "hr04.assessment.manage", "无排期管理权限")
+    if denied:
+        return denied
+    try:
+        body = json.loads(request.body or b"{}")
+        participant = service.assign_participant(
+            event_id=event_id, application_id=body.get("application_id")
+        )
+        return ok(request, {"id": str(participant.id)}, status=201)
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
+
+
+@require_http_methods(["POST"])
 def create_score_sheet(request):
     try:
         service, ctx = _service(request)

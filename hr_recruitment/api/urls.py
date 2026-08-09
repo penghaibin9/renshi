@@ -11,6 +11,7 @@ from hr_recruitment.api import application as application_api
 from hr_recruitment.api import assessment as assessment_api
 from hr_recruitment.api import campaign as campaign_api
 from hr_recruitment.api import candidate as candidate_api
+from hr_recruitment.api import medical_background as medical_background_api
 from hr_recruitment.api import plan as plan_api
 from hr_recruitment.api import proposed_hire as proposed_hire_api
 from hr_recruitment.api import qualification as qualification_api
@@ -100,6 +101,11 @@ urlpatterns = [
         name="hr04-api-assessment-evaluator-assign",
     ),
     path(
+        "api/hr/v1/recruitment/assessment/events/<uuid:event_id>/participants",
+        assessment_api.assign_participant,
+        name="hr04-api-assessment-participant-assign",
+    ),
+    path(
         "api/hr/v1/recruitment/assessment/assignments/<uuid:assignment_id>/conflict",
         assessment_api.declare_conflict,
         name="hr04-api-assessment-conflict",
@@ -133,6 +139,27 @@ urlpatterns = [
         "api/hr/v1/recruitment/assessment/positions/<uuid:position_id>/freeze-result",
         assessment_api.freeze_result,
         name="hr04-api-assessment-freeze-result",
+    ),
+    # 体检/考察（§12.8 敏感隔离）
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/medical",
+        medical_background_api.record_medical,
+        name="hr04-api-medical-record",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/medical",
+        medical_background_api.medical_summary,
+        name="hr04-api-medical-summary",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/background",
+        medical_background_api.record_background,
+        name="hr04-api-background-record",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/background",
+        medical_background_api.background_summary,
+        name="hr04-api-background-summary",
     ),
     # HR04-04 资格审查（总册 11）
     path(
@@ -228,6 +255,11 @@ urlpatterns = [
         name="hr04-api-console",
     ),
     path(
+        "api/hr/v1/recruitment/pipeline",
+        campaign_api.pipeline,
+        name="hr04-api-pipeline",
+    ),
+    path(
         "api/hr/v1/recruitment/campaigns",
         campaign_api.list_campaigns,
         name="hr04-api-campaign-list",
@@ -236,6 +268,11 @@ urlpatterns = [
         "api/hr/v1/recruitment/campaigns",
         campaign_api.create_campaign,
         name="hr04-api-campaign-create",
+    ),
+    path(
+        "api/hr/v1/recruitment/campaigns/from-plan",
+        campaign_api.create_campaign_from_plan,
+        name="hr04-api-campaign-create-from-plan",
     ),
     path(
         "api/hr/v1/recruitment/campaigns/<uuid:campaign_id>",

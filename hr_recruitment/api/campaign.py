@@ -112,6 +112,62 @@ def create_campaign(request):
         return _handle(request, exc)
 
 
+@require_http_methods(["POST"])
+def create_campaign_from_plan(request):
+    """POST /api/hr/v1/recruitment/campaigns/from-plan —— 从已批准计划创建招聘项目（§9.1）。"""
+    try:
+        service, ctx = _service(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    if not (request.user.is_superuser or request.user.has_perm("hr04.campaign.manage")):
+        return error(request, "PERMISSION_DENIED", "无创建招聘项目权限", 403)
+    try:
+        body = json.loads(request.body or b"{}")
+        campaign = service.create_from_plan(
+            plan_cycle_id=body.get("plan_cycle_id"),
+            code=body.get("code"),
+            title=body.get("title"),
+            campaign_type=body.get("campaign_type", "MULTI_POSITION"),
+            application_open_at=body.get("application_open_at"),
+            application_close_at=body.get("application_close_at"),
+            timezone=body.get("timezone", "Asia/Shanghai"),
+        )
+        return ok(
+            request,
+            {
+                "id": str(campaign.id),
+                "public_slug": campaign.public_slug,
+                "position_count": campaign.positions.count(),
+            },
+            status=201,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
+
+
+@require_GET
+def pipeline(request):
+    """GET /api/hr/v1/recruitment/pipeline —— Pipeline/Kanban 看板数据（§36）。"""
+    try:
+        ctx = make_hr04_context(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    if not (request.user.is_superuser or request.user.has_perm("hr04.campaign.view")):
+        return error(request, "PERMISSION_DENIED", "无查看招聘管道权限", 403)
+    try:
+        from hr_recruitment.selectors import pipeline as pipeline_selector
+
+        boards = pipeline_selector.pipeline_boards(
+            tenant_id=ctx.tenant_id,
+            campaign_id=request.GET.get("campaign_id"),
+            position_id=request.GET.get("position_id"),
+            scope=ctx.scope,
+        )
+        return ok(request, {"columns": boards})
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
+
+
 @require_GET
 def campaign_detail(request, campaign_id):
     try:

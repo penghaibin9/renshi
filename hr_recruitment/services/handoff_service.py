@@ -122,9 +122,10 @@ class HandoffService:
         handoff.status = HandoffStatus.CREATED
         handoff.save(update_fields=["hr05_case_id", "status"])
 
-        # 消费成功后才推终态（走状态机 + 写 ledger）
+        # 消费成功后才推终态（走状态机 + 写 ledger + commit 预占 + 审计）
         from hr_recruitment.models import HrApplicationTransition
         from hr_recruitment.policies.state_machine import assert_transition
+        from hr_recruitment.services.audit_service import audit_event
 
         proposed = handoff.proposed_hire_id
         app = proposed.application_id
@@ -143,6 +144,34 @@ class HandoffService:
                 actor_id=self.actor,
                 source="HR_ADMIN",
             )
+        # 预占 HELD → COMMITTED（§40：reservation 提交；HR03 assignment 生效时由 HR05 延续）
+        if proposed.reservation_id:
+            try:
+                from hr_recruitment.integrations.hr02 import Hr02ReservationProvider
+
+                Hr02ReservationProvider(tenant_id=self.tenant_id, actor=self.actor).commit(
+                    proposed.reservation_id
+                )
+            except Exception:  # noqa: BLE001
+                audit_event(
+                    tenant_id=self.tenant_id,
+                    event_type="RESERVATION_COMMIT_FAILED",
+                    business_object="HrRecruitmentHandoff",
+                    business_object_id=str(handoff.id),
+                    actor_id=self.actor,
+                    action="COMMIT_FAILED",
+                    summary=f"预占 commit 失败（reservation={proposed.reservation_id}）",
+                )
+        audit_event(
+            tenant_id=self.tenant_id,
+            event_type="HANDOFF_TO_HR05",
+            business_object="HrRecruitmentHandoff",
+            business_object_id=str(handoff.id),
+            actor_id=self.actor,
+            action="HANDOFF_CREATED",
+            summary=f"HR05 交接创建（hr05_case_id={handoff.hr05_case_id}，proposed={proposed.id}）",
+            after={"status": handoff.status, "hr05_case_id": handoff.hr05_case_id},
+        )
         return handoff
 
     def _check_preconditions(self, proposed: HrProposedHire) -> None:

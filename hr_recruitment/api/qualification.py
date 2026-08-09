@@ -53,9 +53,13 @@ def workbench(request):
     if not (request.user.is_superuser or request.user.has_perm("hr04.qualification.review")):
         return error(request, "PERMISSION_DENIED", "无资格审查权限", 403)
     position_id = request.GET.get("position_id")
+    assignee_id = request.GET.get("assignee_id")
     qs = HrJobApplication.objects.filter(tenant_id=ctx.tenant_id)
     if position_id:
         qs = qs.filter(recruitment_position_id_id=position_id)
+    if assignee_id:
+        # 审核人数据范围（§38）：只显示分配给该审核人的申请
+        qs = qs.filter(current_owner_id=str(assignee_id))
     stats = {
         "pending": qs.filter(
             canonical_status__in=[S.SUBMITTED, S.UNDER_REVIEW, S.RESUBMITTED]
@@ -65,15 +69,24 @@ def workbench(request):
         "disqualified": qs.filter(canonical_status=S.DISQUALIFIED).count(),
         "total": qs.count(),
     }
+    # DB 层分页（§38 审核队列跨页准确）
+    page = max(int(request.GET.get("page", 1)), 1)
+    page_size = max(min(int(request.GET.get("page_size", 50)), 200), 1)
+    queue_total = qs.filter(
+        canonical_status__in=[S.SUBMITTED, S.UNDER_REVIEW, S.RESUBMITTED]
+    ).count()
     queue = (
         qs.filter(canonical_status__in=[S.SUBMITTED, S.UNDER_REVIEW, S.RESUBMITTED])
         .select_related("candidate_id", "recruitment_position_id")
-        .order_by("submitted_at")[:50]
+        .order_by("submitted_at")[(page - 1) * page_size : page * page_size]
     )
     return ok(
         request,
         {
             "stats": stats,
+            "queue_total": queue_total,
+            "page": page,
+            "page_size": page_size,
             "queue": [
                 {
                     "id": str(a.id),

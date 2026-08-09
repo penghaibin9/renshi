@@ -111,10 +111,22 @@ class PlanService:
             raise PlanServiceError(
                 "PLAN_REQUEST_EMPTY", "需求申请至少包含一行需求", http_status=422
             )
+        from hr_recruitment.services.audit_service import audit_event
+
         req.status = target
         req.submitted_at = timezone.now()
         req.version += 1
         req.save(update_fields=["status", "submitted_at", "version"])
+        audit_event(
+            tenant_id=tenant_id,
+            event_type="PLAN_REQUEST_SUBMITTED",
+            business_object="HrHiringPlanRequest",
+            business_object_id=str(req.id),
+            actor_id=actor,
+            action=target,
+            summary=f"需求申请提交：{req.organization_name} → {target}",
+            after={"status": req.status, "version": req.version},
+        )
         return req
 
     @transaction.atomic
@@ -202,6 +214,18 @@ class PlanService:
             req.version += 1
             req.save(
                 update_fields=["total_approved", "status", "approved_at", "version"]
+            )
+            from hr_recruitment.services.audit_service import audit_event
+
+            audit_event(
+                tenant_id=tenant_id,
+                event_type="PLAN_REQUEST_APPROVED",
+                business_object="HrHiringPlanRequest",
+                business_object_id=str(req.id),
+                actor_id=actor,
+                action=req.status,
+                summary=f"需求申请批准：{req.organization_name} → {req.status}（批准 {req.total_approved} 人）",
+                after={"status": req.status, "total_approved": req.total_approved, "version": req.version},
             )
         return req
 

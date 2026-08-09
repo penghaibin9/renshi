@@ -36,11 +36,17 @@ CAMPAIGN_TYPE_LABELS = {
 }
 
 
-def console_summary(*, tenant_id):
-    """招聘控制台 5 KPI + 漏斗 + 超期岗位（总册 9.2）。"""
+def console_summary(*, tenant_id, scope=None):
+    """招聘控制台 5 KPI + 漏斗 + 超期岗位（总册 9.2；支持跨学院 scope）。"""
+    from hr_recruitment.selectors.scope_utils import apply_org_scope
+
     campaigns = HrRecruitmentCampaign.objects.filter(tenant_id=tenant_id)
     positions = HrRecruitmentPosition.objects.filter(tenant_id=tenant_id)
     applications = HrJobApplication.objects.filter(tenant_id=tenant_id)
+    if scope:
+        campaigns = apply_org_scope(campaigns, scope, org_field="positions__organization_id").distinct()
+        positions = apply_org_scope(positions, scope)
+        applications = apply_org_scope(applications, scope, org_field="recruitment_position_id__organization_id")
 
     ongoing = campaigns.filter(
         status__in=[CampaignStatus.PUBLISHED, CampaignStatus.OPEN, CampaignStatus.RESULT_PROCESSING]
@@ -125,8 +131,12 @@ def console_summary(*, tenant_id):
     }
 
 
-def list_campaigns(*, tenant_id, status=None, page=1, page_size=20):
+def list_campaigns(*, tenant_id, scope=None, status=None, page=1, page_size=20):
     qs = HrRecruitmentCampaign.objects.filter(tenant_id=tenant_id)
+    if scope:
+        from hr_recruitment.selectors.scope_utils import apply_org_scope
+
+        qs = apply_org_scope(qs, scope, org_field="positions__organization_id").distinct()
     if status:
         qs = qs.filter(status=status)
     total = qs.count()

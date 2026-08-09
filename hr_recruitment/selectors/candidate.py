@@ -26,6 +26,7 @@ SOURCE_LABELS = {
 def list_candidates(
     *,
     tenant_id,
+    scope=None,
     keyword=None,
     status=None,
     source=None,
@@ -34,6 +35,12 @@ def list_candidates(
     exclude_inactive=True,
 ):
     qs = HrRecruitmentCandidate.objects.filter(tenant_id=tenant_id)
+    if scope:
+        from hr_recruitment.selectors.scope_utils import apply_org_scope
+
+        qs = apply_org_scope(
+            qs, scope, org_field="applications__recruitment_position_id__organization_id"
+        ).distinct()
     if exclude_inactive:
         qs = qs.exclude(status="ANONYMIZED")
     if status:

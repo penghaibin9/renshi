@@ -143,6 +143,23 @@ class HrRecruitmentPosition(models.Model):
     def __str__(self):
         return f"{self.post_catalog_name} [{self.status}]"
 
+    def scheme_tie_break_rule(self) -> dict | None:
+        """当前 ACTIVE 评分方案的 tie-break 规则（§39 排名并列处理）。"""
+        from hr_recruitment.models import HrSelectionSchemeVersion
+
+        scheme = (
+            HrSelectionSchemeVersion.objects.filter(
+                tenant_id=self.tenant_id,
+                recruitment_position_id=self,
+                status="ACTIVE",
+            )
+            .order_by("-version_no")
+            .first()
+        )
+        if scheme and scheme.tie_break_rule_json:
+            return scheme.tie_break_rule_json
+        return None
+
 
 class HrRecruitmentAnnouncementVersion(models.Model):
     """招聘公告版本（发布后 immutable；amendment 新建版本）。"""

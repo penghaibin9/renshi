@@ -198,6 +198,55 @@ class AssessmentService:
         assignment.save(update_fields=["conflict_status", "recusal_reason"])
         return assignment
 
+    # ---- 排期与冲突（§39）----
+
+    @transaction.atomic
+    def assign_participant(self, *, event_id: str, application_id: str) -> HrAssessmentParticipant:
+        """候选参加场次（含排期冲突/容量检查）。"""
+        from hr_recruitment.models import HrAssessmentParticipant, HrJobApplication
+
+        event = HrAssessmentEvent.objects.get(id=event_id, tenant_id=self.tenant_id)
+        app = HrJobApplication.objects.get(id=application_id, tenant_id=self.tenant_id)
+        conflicts = self.check_schedule_conflicts(event_id=event_id, application_id=application_id)
+        if conflicts:
+            raise AssessmentServiceError(
+                "SCHEDULE_CONFLICT",
+                "；".join(conflicts),
+                http_status=409,
+            )
+        if event.capacity > 0:
+            booked = HrAssessmentParticipant.objects.filter(
+                tenant_id=self.tenant_id, event_id=event
+            ).count()
+            if booked >= event.capacity:
+                raise AssessmentServiceError(
+                    "EVENT_CAPACITY_FULL", f"场次已满（容量 {event.capacity}）", http_status=409
+                )
+        return HrAssessmentParticipant.objects.create(
+            tenant_id=self.tenant_id,
+            event_id=event,
+            application_id=app,
+            created_by=self.actor,
+        )
+
+    def check_schedule_conflicts(self, *, event_id: str, application_id: str) -> list[str]:
+        """排期冲突检查（§39）：候选跨场时间冲突（V1）。返回冲突描述列表（空=无冲突）。"""
+        from hr_recruitment.models import HrAssessmentParticipant
+
+        event = HrAssessmentEvent.objects.filter(id=event_id, tenant_id=self.tenant_id).first()
+        if event is None:
+            raise AssessmentServiceError("EVENT_NOT_FOUND", "场次不存在", http_status=404)
+        conflicts: list[str] = []
+        same_day_participations = HrAssessmentParticipant.objects.filter(
+            tenant_id=self.tenant_id,
+            application_id_id=application_id,
+            event_id__event_date=event.event_date,
+        ).exclude(event_id_id=event_id)
+        if same_day_participations.exists():
+            other_events = same_day_participations.values_list("event_id__title", flat=True)
+            conflicts.append(f"候选人当天已安排其他场次: {', '.join(other_events)}")
+        return conflicts
+
     # ---- 评分 ----
 
     @transaction.atomic
@@ -455,9 +504,30 @@ class AssessmentService:
         snapshot_version = last_version + 1
 
         snapshots = []
-        for rank, (app_id, total) in enumerate(
-            sorted(app_totals.items(), key=lambda kv: kv[1], reverse=True), start=1
-        ):
+        # 排名：总分降序；并列时按 tie_break_rule_json 规则（§39 tie-break）
+        # 支持 {"by": "submitted_at", "order": "asc"|"desc"}（V1 实现提交时间次级排序）
+        from hr_recruitment.models import HrJobApplication
+
+        tie_rule = position.scheme_tie_break_rule()
+        by = (tie_rule or {}).get("by")
+        order = (tie_rule or {}).get("order", "asc")
+        apps_map = {
+            str(a.id): a for a in HrJobApplication.objects.filter(
+                tenant_id=self.tenant_id, id__in=list(app_totals.keys())
+            )
+        }
+
+        def _sort_key(kv):
+            # 主 key：总分（降序）；副 key：tie-break 字段
+            app = apps_map.get(kv[0])
+            if by == "submitted_at" and app and app.submitted_at:
+                ts = app.submitted_at.timestamp()
+                # reverse=True 时副 key 需取反以实现 asc 语义
+                return (kv[1], -ts if order == "asc" else ts)
+            return (kv[1], kv[0])
+
+        ranked = sorted(app_totals.items(), key=_sort_key, reverse=True)
+        for rank, (app_id, total) in enumerate(ranked, start=1):
             snapshots.append(
                 HrSelectionResultSnapshot.objects.create(
                     tenant_id=self.tenant_id,

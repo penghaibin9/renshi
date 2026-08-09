@@ -43,6 +43,7 @@ from hr_recruitment.models.qualification import (
 )
 from hr_recruitment.models.assessment import (
     HrAssessmentEvent,
+    HrAssessmentParticipant,
     HrBackgroundCheck,
     HrCandidateScore,
     HrCandidateScoreSheet,
@@ -86,6 +87,7 @@ __all__ = [
     "HrQualificationDecision",
     "HrSelectionComponent",
     "HrAssessmentEvent",
+    "HrAssessmentParticipant",
     "HrEvaluatorAssignment",
     "HrScoreSheetTemplate",
     "HrScoreCriterion",

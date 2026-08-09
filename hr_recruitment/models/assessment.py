@@ -338,6 +338,44 @@ class HrSelectionResultSnapshot(models.Model):
         return f"{self.recruitment_position_id} rank#{self.rank}"
 
 
+class HrAssessmentParticipant(models.Model):
+    """候选参加场次记录（§39 排期冲突：同候选多场冲突/容量校验）。"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    event_id = models.ForeignKey(
+        HrAssessmentEvent,
+        on_delete=models.PROTECT,
+        related_name="participants",
+        verbose_name=_("Event"),
+    )
+    application_id = models.ForeignKey(
+        "hr_recruitment.HrJobApplication",
+        on_delete=models.PROTECT,
+        related_name="assessment_participations",
+        verbose_name=_("Application"),
+    )
+    created_by = models.CharField(max_length=128, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Assessment Participant")
+        verbose_name_plural = _("Assessment Participants")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "event_id", "application_id"],
+                name="uniq_hr_assessment_participant_event_app",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant_id", "event_id"]),
+            models.Index(fields=["tenant_id", "application_id"]),
+        ]
+
+    def __str__(self):
+        return f"{self.application_id} → {self.event_id}"
+
+
 class HrMedicalCheck(models.Model):
     """体检（HIGH_SENSITIVE：普通管理员默认只看结论）。"""
 

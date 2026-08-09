@@ -143,7 +143,44 @@ class CampaignService:
         campaign.status = target
         campaign.version += 1
         campaign.save(update_fields=["status", "version"])
+        # 关闭/完成招聘时释放未用于拟录用的 HELD 预占（§36 关闭释放未使用 reservation）
+        if target in (CampaignStatus.CLOSED, CampaignStatus.COMPLETED):
+            self._release_unused_reservations(campaign)
         return campaign
+
+    def _release_unused_reservations(self, campaign: HrRecruitmentCampaign) -> None:
+        """释放该招聘项目下未进入拟录用流程的岗位 HELD 预占。"""
+        from hr_recruitment.models import HrProposedHire
+
+        positions = list(
+            HrRecruitmentPosition.objects.filter(
+                tenant_id=self.tenant_id, campaign_id=campaign
+            ).exclude(status=RecruitmentPositionStatus.CANCELLED)
+        )
+        proposed_position_ids = set(
+            HrProposedHire.objects.filter(
+                tenant_id=self.tenant_id,
+                recruitment_position_id__in=positions,
+            ).values_list("recruitment_position_id_id", flat=True)
+        )
+        from hr_recruitment.integrations.hr02 import Hr02ReservationProvider
+
+        provider = Hr02ReservationProvider(tenant_id=self.tenant_id, actor=self.actor)
+        for position in positions:
+            if not position.reservation_id:
+                continue
+            if str(position.id) in proposed_position_ids:
+                continue  # 有拟录用，预占保留（由 handoff commit 或后续处理）
+            try:
+                provider.release(position.reservation_id)
+            except Exception:  # noqa: BLE001
+                continue
+            position.reservation_id = ""
+            position.reservation_no = ""
+            position.reserved_headcount = 0
+            position.save(
+                update_fields=["reservation_id", "reservation_no", "reserved_headcount"]
+            )
 
     def _get_campaign(self, campaign_id: str) -> HrRecruitmentCampaign:
         try:
@@ -152,6 +189,80 @@ class CampaignService:
             )
         except HrRecruitmentCampaign.DoesNotExist:
             raise CampaignServiceError("CAMPAIGN_NOT_FOUND", "招聘项目不存在", http_status=404)
+
+    @transaction.atomic
+    def create_from_plan(
+        self,
+        *,
+        plan_cycle_id: str,
+        code: str,
+        title: str,
+        campaign_type: str = "MULTI_POSITION",
+        application_open_at=None,
+        application_close_at=None,
+        timezone="Asia/Shanghai",
+    ) -> HrRecruitmentCampaign:
+        """从已批准年度计划创建招聘项目（§9.1 / §36 验收）。"""
+        from hr_recruitment.constants import PlanLineStatus, PlanRequestStatus
+        from hr_recruitment.models import HrHiringPlanCycle, HrHiringPlanLine
+
+        cycle = HrHiringPlanCycle.objects.filter(
+            tenant_id=self.tenant_id, id=plan_cycle_id
+        ).first()
+        if cycle is None:
+            raise CampaignServiceError("PLAN_CYCLE_NOT_FOUND", "计划周期不存在", http_status=404)
+        approved_lines = HrHiringPlanLine.objects.filter(
+            tenant_id=self.tenant_id,
+            request_id__cycle_id=cycle,
+            request_id__status__in=[
+                PlanRequestStatus.APPROVED,
+                PlanRequestStatus.PARTIALLY_APPROVED,
+            ],
+            status__in=[PlanLineStatus.APPROVED, PlanLineStatus.PARTIALLY_APPROVED],
+            approved_headcount__gt=0,
+        ).select_related("request_id")
+        if not approved_lines.exists():
+            raise CampaignServiceError(
+                "NO_APPROVED_PLAN_LINE",
+                "该计划周期没有已批准的需求行，无法创建招聘项目",
+                http_status=422,
+            )
+        campaign = self.create_campaign(
+            code=code,
+            title=title,
+            campaign_type=campaign_type,
+            plan_cycle_id=plan_cycle_id,
+            application_open_at=application_open_at,
+            application_close_at=application_close_at,
+            timezone=timezone,
+            description=f"依据 {cycle.year} 年度用人计划创建",
+        )
+        for line in approved_lines:
+            self.create_position(
+                campaign_id=str(campaign.id),
+                hiring_plan_line_id=str(line.id),
+                post_catalog_id=line.post_catalog_id,
+                post_catalog_name=line.post_catalog_name,
+                organization_id=line.request_id.organization_id,
+                organization_name=line.request_id.organization_name,
+                planned_headcount=line.approved_headcount,
+                min_hires=1,
+                max_hires=line.approved_headcount,
+                description=line.reason,
+            )
+        from hr_recruitment.services.audit_service import audit_event
+
+        audit_event(
+            tenant_id=self.tenant_id,
+            event_type="CAMPAIGN_CREATED_FROM_PLAN",
+            business_object="HrRecruitmentCampaign",
+            business_object_id=str(campaign.id),
+            actor_id=self.actor,
+            action="CREATE_FROM_PLAN",
+            summary=f"从计划周期创建招聘项目：{title}（岗位 {approved_lines.count()} 个）",
+            after={"plan_cycle_id": plan_cycle_id, "position_count": approved_lines.count()},
+        )
+        return campaign
 
     # ---- Announcement（公告版本）----
 
