@@ -69,9 +69,12 @@ def make_case(
     status="DRAFT",
     with_relationship=True,
 ) -> HrPersonnelChangeCase:
+    import uuid as _uuid
+
     action = make_action(tenant_id, action_code)
     reason = make_reason(tenant_id, action_code)
-    staff = make_staff(tenant_id, make_person(tenant_id, "张某某"), f"T-S3-{tenant_id}-{abs(hash((action_code, case_no))) % 100000}")
+    final_case_no = case_no or f"HRCHG-2026-{abs(hash(_uuid.uuid4())) % 1000000:06d}"
+    staff = make_staff(tenant_id, make_person(tenant_id, "张某某"), f"T-S3-{tenant_id}-{abs(hash((action_code, final_case_no))) % 1000000:06d}")
     if with_relationship:
         from hr_staff.services.employment_service import EmploymentService
 
@@ -82,7 +85,7 @@ def make_case(
         )
     return HrPersonnelChangeCase.objects.create(
         tenant_id=tenant_id,
-        case_no=case_no or f"HRCHG-2026-{abs(hash(str(tenant_id))) % 100000}",
+        case_no=final_case_no,
         staff_master_id=staff,
         action_id=action,
         reason_id=reason,

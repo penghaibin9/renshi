@@ -21,6 +21,6 @@ urlpatterns = [
     path("job-identity", views.job_identity, name="hr06-job-identity"),
     # S6 借调挂职
     path("secondments", views.secondments, name="hr06-secondments"),
-    # S7 台账（当前阶段占位）
-    path("ledger", views.change_center, name="hr06-ledger"),
+    # S7 异动台账
+    path("ledger", views.ledger, name="hr06-ledger"),
 ]

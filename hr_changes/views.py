@@ -172,6 +172,24 @@ def secondments(request):
 
 
 @login_required
+def ledger(request):
+    tenant_id, err = _page_context(request)
+    if err:
+        return err
+    from hr_changes.selectors.ledger import LedgerSelector
+
+    data = LedgerSelector(tenant_id).list(
+        status=request.GET.get("status") or None,
+        action_code=request.GET.get("action") or None,
+    )
+    return render(
+        request,
+        "hr_changes/ledger.html",
+        {"items": data["items"], "total": data["total"]},
+    )
+
+
+@login_required
 def change_preview(request, case_id):
     tenant_id, err = _page_context(request)
     if err:
