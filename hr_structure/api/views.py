@@ -11,6 +11,7 @@ import logging
 import uuid
 from datetime import date
 
+from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
@@ -148,6 +149,8 @@ def organizations_tree(request):
     children = selector.get_children(int(parent_id))
     child_ids = [c.organization_id_id for c in children]
     # 批量查孙级：哪些子节点有下级（避免每节点 exists() 的 N+1，也避免恒真 bug）
+    from hr_structure.models import HrOrganizationVersion
+
     grandchild_org_ids = set(
         HrOrganizationVersion.objects.filter(
             tenant_id=scope.tenant_id,
@@ -307,6 +310,17 @@ def position_reservations(request):
         return _error(request, exc.code, exc.message, status=exc.http_status)
     except (TypeError, ValueError):
         return _error(request, "HR02_INVALID_REQUEST", "count/fte 参数无效", status=400)
+    except IntegrityError:
+        # 并发同 key 幂等重试撞唯一约束（复审 P1：TOCTOU）→ 重查并幂等返回
+        from hr_structure.models import HrPositionReservation
+
+        existing = HrPositionReservation.objects.filter(
+            tenant_id=scope.tenant_id, idempotency_key=idempotency_key
+        ).first()
+        if existing:
+            r = existing
+        else:
+            return _error(request, "HR02_POSITION_NOT_AVAILABLE", "预占创建冲突，请重试", status=409)
 
     return _json(
         request,
@@ -606,8 +620,14 @@ def staffing_plan_action(request, plan_id, action):
         if action == "submit":
             if not (request.user.is_superuser or request.user.has_perm("hr.staffing_plan.submit")):
                 return _error(request, "HR02_SCOPE_DENIED", "无提交权限", status=403)
-            result = svc.submit(plan)
-            return _json(request, _root(request, scope.tenant_id, date.today(), plan={"id": plan.id, "status": plan.status}))
+            locked_plan = svc.submit(plan)
+            return _json(
+                request,
+                _root(
+                    request, scope.tenant_id, date.today(),
+                    plan={"id": locked_plan.id, "status": locked_plan.status, "versionNo": locked_plan.version_no},
+                ),
+            )
         if action == "approve":
             if not (request.user.is_superuser or request.user.has_perm("hr.staffing_plan.approve")):
                 return _error(request, "HR02_SCOPE_DENIED", "无批准权限", status=403)

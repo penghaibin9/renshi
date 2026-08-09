@@ -107,6 +107,12 @@ def _make_context(request):
             scope_org_id = int(scope_org_id)
         except (TypeError, ValueError):
             raise HrContextError("SCOPE_NOT_ALLOWED", "scope_id 必须是整数")
+    # scope 权限（复审：非 SCHOOL 范围需授权，防前端任意切范围）
+    if scope_type != "SCHOOL" and not (
+        request.user.is_superuser
+        or request.user.has_perm("hr.dashboard.workforce.drilldown")
+    ):
+        raise HrContextError("SCOPE_NOT_ALLOWED", "无该数据范围权限")
 
     return build_hr_context(
         tenant_id=tenant_id,

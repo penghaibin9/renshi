@@ -130,9 +130,10 @@ class ReorganizationService:
         if case.status == HrStructureChangeCase.Status.EFFECTIVE:
             return case  # 已生效 → 幂等返回
         prev_key = (case.execution_result_json or {}).get("executionKey")
-        if prev_key == execution_key:
-            return case  # 同一 execution key 已处理过 → 幂等返回
-        if case.status != HrStructureChangeCase.Status.SCHEDULED:
+        # FAILED_EFFECT 视为可重试：同 key 时允许重新执行（先回 SCHEDULED）
+        if prev_key == execution_key and case.status != HrStructureChangeCase.Status.FAILED_EFFECT:
+            return case  # 同一 execution key 且非失败态已处理 → 幂等返回
+        if case.status not in (HrStructureChangeCase.Status.SCHEDULED, HrStructureChangeCase.Status.FAILED_EFFECT):
             raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", f"当前状态 {case.status} 不可生效")
         if case.requested_effective_date > date.today():
             raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", "尚未到生效日期")
@@ -154,6 +155,22 @@ class ReorganizationService:
         case.save(update_fields=["status", "executed_at", "execution_result_json"])
         return case
 
+    @transaction.atomic
+    def reset_failed_effect(self, case_id) -> HrStructureChangeCase:
+        """FAILED_EFFECT → SCHEDULED 受控复位（复审 P1：提供可重试路径）。"""
+        locked = (
+            HrStructureChangeCase.objects.select_for_update()
+            .filter(tenant_id=self.scope.tenant_id, id=case_id)
+            .first()
+        )
+        if locked is None:
+            raise ReorgServiceError("HR02_ORG_NOT_FOUND", "变更 case 不存在", http_status=404)
+        if locked.status != HrStructureChangeCase.Status.FAILED_EFFECT:
+            raise ReorgServiceError("HR02_REORG_HAS_BLOCKERS", f"仅 FAILED_EFFECT 可复位，当前 {locked.status}")
+        locked.status = HrStructureChangeCase.Status.SCHEDULED
+        locked.save(update_fields=["status"])
+        return locked
+
     def _apply_items(self, case: HrStructureChangeCase) -> None:
         """按 change items 落地实际动作。当前支持 RENAME_ORG（建新版本，历史不漂移）。"""
         from datetime import date as _date
@@ -169,8 +186,10 @@ class ReorganizationService:
                 if not new_name:
                     raise ValueError(f"RENAME_ORG 缺少新名称 (entity={entity_id})")
                 # 关闭旧版本，建新版本（生效日为新版本 validity_from）
+                # 锁当前版本行，防并发 case 同时改同一 org（复审 P1）
                 old = (
-                    HrOrganizationVersion.objects.filter(
+                    HrOrganizationVersion.objects.select_for_update()
+                    .filter(
                         organization_id=entity_id,
                         tenant_id=self.scope.tenant_id,
                         status__in=("APPROVED", "EFFECTIVE", "SUPERSEDED"),
@@ -181,6 +200,20 @@ class ReorganizationService:
                 )
                 if old is None:
                     raise ValueError(f"组织 {entity_id} 无当前有效版本")
+                if case.requested_effective_date < old.validity_from:
+                    raise ValueError(
+                        f"生效日 {case.requested_effective_date} 早于当前版本开始日 {old.validity_from}（INV-04 重叠）"
+                    )
+                # 校验已存在未来版本（APPROVED 且 validity_from >= 生效日）不重叠（INV-04/INV-13）
+                future_conflict = HrOrganizationVersion.objects.filter(
+                    organization_id=entity_id,
+                    tenant_id=self.scope.tenant_id,
+                    status__in=("APPROVED", "EFFECTIVE"),
+                    validity_from__gte=case.requested_effective_date,
+                    validity_to__isnull=True,
+                ).exclude(id=old.id).exists()
+                if future_conflict:
+                    raise ValueError(f"组织 {entity_id} 存在与生效日重叠的未来版本")
                 old.validity_to = case.requested_effective_date
                 old.status = HrOrganizationVersion.Status.SUPERSEDED
                 old.save(update_fields=["validity_to", "status"])

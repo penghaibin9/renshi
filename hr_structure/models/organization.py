@@ -107,6 +107,13 @@ class HrOrganizationVersion(models.Model):
     class Meta:
         verbose_name = _("HR Organization Version")
         verbose_name_plural = _("HR Organization Versions")
+        constraints = [
+            # 同组织版本号唯一（复审 P1：防并发 reorg 生成重复版本号）
+            models.UniqueConstraint(
+                fields=["organization_id", "version_no"],
+                name="uniq_hr_org_version_no",
+            ),
+        ]
         indexes = [
             models.Index(fields=["tenant_id", "parent_organization_id", "status"]),
             models.Index(fields=["tenant_id", "status"]),

@@ -82,7 +82,7 @@ class StaffingPlanService:
         return plan
 
     @transaction.atomic
-    def submit(self, plan) -> PreflightResult:
+    def submit(self, plan) -> HrStaffingPlan:
         """DRAFT → UNDER_REVIEW，先过 preflight。乐观锁：select_for_update + version。"""
         locked = (
             HrStaffingPlan.objects.select_for_update()
@@ -100,7 +100,7 @@ class StaffingPlanService:
         plan.status = HrStaffingPlan.Status.UNDER_REVIEW
         plan.version_no += 1
         plan.save(update_fields=["status", "version_no"])
-        return result
+        return plan
 
     @transaction.atomic
     def approve(self, plan) -> HrStaffingPlan:
