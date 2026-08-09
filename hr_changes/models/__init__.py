@@ -10,6 +10,7 @@ hr_changes.models —— HR06 权威模型包（S1 骨架 → S8 扩展）。
 """
 
 from hr_changes.models.action import HrChangeAction
+from hr_changes.models.authority import HrChangeAuthorityMode
 from hr_changes.models.bulk import HrBulkChangeBatch, HrBulkChangeItem
 from hr_changes.models.case import HrPersonnelChangeCase
 from hr_changes.models.correction import HrChangeCorrection
@@ -29,6 +30,7 @@ from hr_changes.models.transition import HrChangeTransition
 
 __all__ = [
     "HrChangeAction",
+    "HrChangeAuthorityMode",
     "HrChangeReason",
     "HrChangeFieldDefinition",
     "HrPersonnelChangeCase",

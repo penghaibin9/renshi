@@ -7,6 +7,10 @@ from hr_changes.services.approval_service import (
     ApprovalServiceError,
 )
 from hr_changes.services.apply_service import ApplyService, ApplyServiceError
+from hr_changes.services.authority_mode_service import (
+    AuthorityModeError,
+    AuthorityModeService,
+)
 from hr_changes.services.bulk_service import BulkService, BulkServiceError
 from hr_changes.services.case_number_service import CaseNumberService
 from hr_changes.services.change_service import ChangeService, ChangeServiceError
@@ -34,6 +38,8 @@ __all__ = [
     "ApprovalServiceError",
     "ApplyService",
     "ApplyServiceError",
+    "AuthorityModeError",
+    "AuthorityModeService",
     "BulkService",
     "BulkServiceError",
     "CaseNumberService",
