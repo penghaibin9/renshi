@@ -1,0 +1,89 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>人事异动中心 · HR06</title>
+  <style>
+    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { margin: 0; font-size: 18px; }
+    .btn { display: inline-block; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 14px; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+    .wrap { max-width: 1180px; margin: 24px auto; padding: 0 24px; }
+    .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .card .num { font-size: 26px; font-weight: 600; }
+    .card .lbl { font-size: 13px; color: #6b7280; margin-top: 4px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab { padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 14px; color: #374151; background: #fff; border: 1px solid #d1d5db; }
+    .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
+    th { background: #f9fafb; color: #6b7280; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
+    .b-wait { background: #fef3c7; color: #92400e; }
+    .b-eff { background: #d1fae5; color: #065f46; }
+    .b-appr { background: #dbeafe; color: #1e40af; }
+    .b-term { background: #fee2e2; color: #991b1b; }
+    a.staff { color: #2563eb; text-decoration: none; }
+    .empty { text-align: center; color: #9ca3af; padding: 48px 0; background: #fff; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>人事异动中心</h1>
+    <div>
+      <a class="btn btn-outline" href="/hr/changes/future">未来生效</a>
+      <a class="btn btn-primary" href="/hr/changes/new">发起异动</a>
+    </div>
+  </div>
+  <div class="wrap">
+    <div class="stats">
+      <div class="card"><div class="num">{{ stats.myTodos }}</div><div class="lbl">待我处理</div></div>
+      <div class="card"><div class="num">{{ stats.underApproval }}</div><div class="lbl">审批中</div></div>
+      <div class="card"><div class="num">{{ stats.waitingEffective }}</div><div class="lbl">待生效</div></div>
+      <div class="card"><div class="num">{{ stats.effectiveThisMonth }}</div><div class="lbl">本月生效</div></div>
+      <div class="card"><div class="num">{{ stats.risks }}</div><div class="lbl">风险</div></div>
+    </div>
+    <div class="tabs">
+      {% for key, label in view_tabs %}
+        <a class="tab {% if view == key %}active{% endif %}" href="/hr/changes/?view={{ key }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    {% if items %}
+    <table>
+      <thead>
+        <tr>
+          <th>案件号</th><th>人员</th><th>动作</th><th>原单位/岗位 → 目标单位/岗位</th>
+          <th>生效日</th><th>优先级</th><th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td><a class="staff" href="/hr/changes/{{ it.id }}">{{ it.caseNo }}</a></td>
+          <td>{{ it.staffName }}（{{ it.staffNo }}）</td>
+          <td>{{ it.actionLabel }}</td>
+          <td>{{ it.source|default:"—" }} → {{ it.target|default:"—" }}</td>
+          <td>{{ it.requestedEffectiveAt }}</td>
+          <td>{{ it.priority }}</td>
+          <td>
+            {% if it.status == "APPROVED_WAITING_EFFECTIVE" %}<span class="badge b-wait">{{ it.statusLabel }}</span>
+            {% elif it.status == "EFFECTIVE" or it.status == "CLOSED" %}<span class="badge b-eff">{{ it.statusLabel }}</span>
+            {% elif it.status == "UNDER_APPROVAL" or it.status == "SUBMITTED" %}<span class="badge b-appr">{{ it.statusLabel }}</span>
+            {% else %}<span class="badge b-term">{{ it.statusLabel }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="color:#6b7280;font-size:13px;">共 {{ total }} 条</p>
+    {% else %}
+    <div class="empty">暂无数据</div>
+    {% endif %}
+  </div>
+</body>
+</html>

@@ -57,6 +57,7 @@ TRANSITIONS: list[TransitionRule] = [
     TransitionRule("enter_approval", CaseStatus.RESUBMITTED, CaseStatus.UNDER_APPROVAL),
     # 批准 / 驳回
     TransitionRule("approve", CaseStatus.UNDER_APPROVAL, CaseStatus.APPROVED_WAITING_EFFECTIVE),
+    TransitionRule("approve_step", CaseStatus.UNDER_APPROVAL, CaseStatus.UNDER_APPROVAL),
     TransitionRule("reject", CaseStatus.UNDER_APPROVAL, CaseStatus.REJECTED),
     # 生效
     TransitionRule("apply", CaseStatus.APPROVED_WAITING_EFFECTIVE, CaseStatus.APPLYING),
