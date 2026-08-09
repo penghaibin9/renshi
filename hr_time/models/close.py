@@ -16,6 +16,7 @@ S9 月结冻结（总册 §113-120、§193）。
 - 旧 snapshot 保留（重开后生成新 snapshot）。
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -64,8 +65,6 @@ class HrTimeClosePeriod(TimeTenantModel):
         ]
 
     def clean(self):
-        from django.core.exceptions import ValidationError
-
         super().clean()
         if self.end_date < self.start_date:
             raise ValidationError(_("结束日期早于开始日期"))
@@ -170,7 +169,6 @@ class HrTimeRiskCase(TimeTenantModel):
         ("SOURCE_RECONCILIATION_FAILED", _("数据源对账失败")),
     ]
 
-    tenant_id = models.BigIntegerField(db_index=True)
     risk_code = models.CharField(max_length=40, choices=RISK_CODES)
     staff_master_id = models.BigIntegerField(null=True, blank=True)
     status = models.CharField(

@@ -21,7 +21,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from django.db import transaction
-from django.db.models import Q
 
 from hr_time.enums import LeaveLedgerEntryType, LeaveRequestStatus
 from hr_time.models.leave import HrLeaveAccount

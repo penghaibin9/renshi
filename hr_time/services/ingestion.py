@@ -24,7 +24,6 @@ from datetime import datetime, timezone as dt_tz
 from typing import Optional
 
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 
 from hr_time.enums import TimeEventIngestStatus, TimeEventType
 from hr_time.models.event import (
