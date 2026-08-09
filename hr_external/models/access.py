@@ -52,17 +52,17 @@ class HrExternalAccessGrant(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_access_grant_version_gte_1",
+                name="hex_access_grant_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "engagement_id", "status"],
-                name="hr_external_grant_eng_status_idx",
+                name="hex_grant_eng_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "target_system", "status"],
-                name="hr_external_grant_target_status_idx",
+                name="hex_grant_target_status_idx",
             ),
         ]
 
@@ -110,17 +110,17 @@ class HrExternalProvisioningRequest(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_provisioning_version_gte_1",
+                name="hex_provisioning_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_provisioning_status_idx",
+                name="hex_provisioning_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "engagement_id", "operation"],
-                name="hr_external_provisioning_eng_op_idx",
+                name="hex_provisioning_eng_op_idx",
             ),
         ]
 

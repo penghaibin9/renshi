@@ -46,7 +46,7 @@ class HrExternalPortalToken(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "external_profile_id", "status"],
-                name="hr_external_portal_token_profile_idx",
+                name="hex_portal_token_profile_idx",
             ),
         ]
 

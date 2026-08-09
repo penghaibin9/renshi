@@ -97,21 +97,21 @@ class HrExternalTeacherProfile(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_profile_version_gte_1",
+                name="hex_profile_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "candidate_pool_status"],
-                name="hr_external_profile_pool_idx",
+                name="hex_profile_pool_idx",
             ),
             models.Index(
                 fields=["tenant_id", "primary_category"],
-                name="hr_external_profile_category_idx",
+                name="hex_profile_category_idx",
             ),
             models.Index(
                 fields=["tenant_id", "source_organization_name"],
-                name="hr_external_profile_source_org_idx",
+                name="hex_profile_source_org_idx",
             ),
         ]
 

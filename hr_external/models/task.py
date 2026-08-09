@@ -57,7 +57,7 @@ class HrExternalTaskPlan(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "engagement_id"],
-                name="hr_external_task_plan_eng_idx",
+                name="hex_task_plan_eng_idx",
             ),
         ]
 
@@ -127,21 +127,21 @@ class HrExternalServiceTask(models.Model):
             models.CheckConstraint(
                 condition=models.Q(planned_end__isnull=True)
                 | models.Q(planned_start__lt=models.F("planned_end")),
-                name="hr_external_task_dates_valid",
+                name="hex_task_dates_valid",
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_task_version_gte_1",
+                name="hex_task_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "engagement_id", "task_type", "status"],
-                name="hr_external_task_eng_type_status_idx",
+                name="hex_task_eng_type_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "owner_org_id", "status"],
-                name="hr_external_task_org_status_idx",
+                name="hex_task_org_status_idx",
             ),
         ]
 
@@ -175,13 +175,13 @@ class HrExternalTaskEvidence(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_evidence_version_gte_1",
+                name="hex_evidence_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "task_id"],
-                name="hr_external_evidence_task_idx",
+                name="hex_evidence_task_idx",
             ),
         ]
 
@@ -236,17 +236,17 @@ class HrExternalWorkloadRecord(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_workload_version_gte_1",
+                name="hex_workload_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "engagement_id", "service_date"],
-                name="hr_external_workload_eng_date_idx",
+                name="hex_workload_eng_date_idx",
             ),
             models.Index(
                 fields=["tenant_id", "verification_status"],
-                name="hr_external_workload_ver_idx",
+                name="hex_workload_ver_idx",
             ),
         ]
 
@@ -287,7 +287,7 @@ class HrExternalSettlementBasis(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_settlement_version_gte_1",
+                name="hex_settlement_version_gte_1",
             ),
         ]
 

@@ -53,17 +53,17 @@ class HrExternalEthicsReview(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_ethics_version_gte_1",
+                name="hex_ethics_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "person_id"],
-                name="hr_external_ethics_person_idx",
+                name="hex_ethics_person_idx",
             ),
             models.Index(
                 fields=["tenant_id", "case_id", "status"],
-                name="hr_external_ethics_case_status_idx",
+                name="hex_ethics_case_status_idx",
             ),
         ]
 

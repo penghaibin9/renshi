@@ -72,17 +72,17 @@ class HrExternalRenewalReview(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_renewal_version_gte_1",
+                name="hex_renewal_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "status", "review_due_at"],
-                name="hr_external_renewal_status_due_idx",
+                name="hex_renewal_status_due_idx",
             ),
             models.Index(
                 fields=["tenant_id", "engagement_id"],
-                name="hr_external_renewal_eng_idx",
+                name="hex_renewal_eng_idx",
             ),
         ]
 
@@ -130,17 +130,17 @@ class HrExternalExitCase(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_exit_version_gte_1",
+                name="hex_exit_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_exit_status_idx",
+                name="hex_exit_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "engagement_id"],
-                name="hr_external_exit_eng_idx",
+                name="hex_exit_eng_idx",
             ),
         ]
 

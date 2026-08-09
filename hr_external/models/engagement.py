@@ -99,29 +99,29 @@ class HrExternalEngagement(models.Model):
             models.CheckConstraint(
                 condition=models.Q(end_at__isnull=True)
                 | models.Q(start_at__lt=models.F("end_at")),
-                name="hr_external_engagement_dates_valid",
+                name="hex_engagement_dates_valid",
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_engagement_version_gte_1",
+                name="hex_engagement_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_eng_tenant_status_idx",
+                name="hex_eng_tenant_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "person_id", "start_at", "end_at"],
-                name="hr_external_eng_person_period_idx",
+                name="hex_eng_person_period_idx",
             ),
             models.Index(
                 fields=["tenant_id", "host_organization_id", "status"],
-                name="hr_external_eng_host_org_idx",
+                name="hex_eng_host_org_idx",
             ),
             models.Index(
                 fields=["tenant_id", "end_at", "status"],
-                name="hr_external_eng_end_status_idx",
+                name="hex_eng_end_status_idx",
             ),
         ]
 

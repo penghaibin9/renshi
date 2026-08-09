@@ -61,17 +61,17 @@ class HrExternalCategory(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_category_version_gte_1",
+                name="hex_category_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "is_active"],
-                name="hr_external_cat_tenant_active_idx",
+                name="hex_cat_tenant_active_idx",
             ),
             models.Index(
                 fields=["tenant_id", "code"],
-                name="hr_external_cat_tenant_code_idx",
+                name="hex_cat_tenant_code_idx",
             ),
         ]
         ordering = ["code"]

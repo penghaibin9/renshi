@@ -81,17 +81,17 @@ class HrExternalMaterial(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_material_version_gte_1",
+                name="hex_material_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "external_profile_id", "category"],
-                name="hr_external_material_profile_cat_idx",
+                name="hex_material_profile_cat_idx",
             ),
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_material_status_idx",
+                name="hex_material_status_idx",
             ),
         ]
 
@@ -125,7 +125,7 @@ class HrExternalFileTicket(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "token_hash"],
-                name="hr_external_file_ticket_token_idx",
+                name="hex_file_ticket_token_idx",
             ),
         ]
 

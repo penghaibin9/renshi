@@ -65,21 +65,21 @@ class HrExternalHiringCase(models.Model):
             models.CheckConstraint(
                 condition=models.Q(requested_end__isnull=True)
                 | models.Q(requested_start__lt=models.F("requested_end")),
-                name="hr_external_hiring_dates_valid",
+                name="hex_hiring_dates_valid",
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_hiring_version_gte_1",
+                name="hex_hiring_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_hiring_tenant_status_idx",
+                name="hex_hiring_tenant_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "request_org_id", "status"],
-                name="hr_external_hiring_org_status_idx",
+                name="hex_hiring_org_status_idx",
             ),
         ]
 

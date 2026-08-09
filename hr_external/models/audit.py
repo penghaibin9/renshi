@@ -40,15 +40,15 @@ class HrExternalAuditEvent(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "external_profile_id", "occurred_at"],
-                name="hr_external_audit_profile_time_idx",
+                name="hex_audit_profile_time_idx",
             ),
             models.Index(
                 fields=["tenant_id", "engagement_id", "occurred_at"],
-                name="hr_external_audit_eng_time_idx",
+                name="hex_audit_eng_time_idx",
             ),
             models.Index(
                 fields=["tenant_id", "business_type", "business_id"],
-                name="hr_external_audit_biz_idx",
+                name="hex_audit_biz_idx",
             ),
         ]
 
@@ -78,11 +78,11 @@ class HrSensitiveExternalAccessLog(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "external_profile_id", "revealed_at"],
-                name="hr_external_sens_access_profile_idx",
+                name="hex_sens_access_profile_idx",
             ),
             models.Index(
                 fields=["tenant_id", "field_code"],
-                name="hr_external_sens_access_field_idx",
+                name="hex_sens_access_field_idx",
             ),
         ]
 

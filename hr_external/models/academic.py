@@ -51,17 +51,17 @@ class HrExternalAcademicIdentity(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_academic_version_gte_1",
+                name="hex_academic_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_academic_status_idx",
+                name="hex_academic_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "academic_teacher_id"],
-                name="hr_external_academic_teacher_idx",
+                name="hex_academic_teacher_idx",
             ),
         ]
 

@@ -50,17 +50,17 @@ class HrExternalConflictDeclaration(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_conflict_version_gte_1",
+                name="hex_conflict_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "person_id"],
-                name="hr_external_conflict_person_idx",
+                name="hex_conflict_person_idx",
             ),
             models.Index(
                 fields=["tenant_id", "case_id", "status"],
-                name="hr_external_conflict_case_status_idx",
+                name="hex_conflict_case_status_idx",
             ),
         ]
 

@@ -62,11 +62,11 @@ class HrExternalProjectionState(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_projection_status_idx",
+                name="hex_projection_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "legacy_employee_id"],
-                name="hr_external_projection_legacy_idx",
+                name="hex_projection_legacy_idx",
             ),
         ]
 

@@ -58,21 +58,21 @@ class HrExternalEngagementAssignment(models.Model):
             models.CheckConstraint(
                 condition=models.Q(end_at__isnull=True)
                 | models.Q(start_at__lt=models.F("end_at")),
-                name="hr_external_assignment_dates_valid",
+                name="hex_assignment_dates_valid",
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_assignment_version_gte_1",
+                name="hex_assignment_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "engagement_id", "status"],
-                name="hr_external_assign_eng_status_idx",
+                name="hex_assign_eng_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "organization_id", "status"],
-                name="hr_external_assign_org_status_idx",
+                name="hex_assign_org_status_idx",
             ),
         ]
 

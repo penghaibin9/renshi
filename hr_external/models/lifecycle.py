@@ -61,17 +61,17 @@ class HrExternalLifecycleEvent(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(event_version__gte=1),
-                name="hr_external_lifecycle_version_gte_1",
+                name="hex_lifecycle_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "event_type", "occurred_at"],
-                name="hr_external_lifecycle_type_time_idx",
+                name="hex_lifecycle_type_time_idx",
             ),
             models.Index(
                 fields=["tenant_id", "engagement_id", "occurred_at"],
-                name="hr_external_lifecycle_eng_time_idx",
+                name="hex_lifecycle_eng_time_idx",
             ),
         ]
 

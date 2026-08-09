@@ -138,7 +138,7 @@ class HrExternalProvisioningRequestAdmin(ReadOnlyAdmin):
 class HrExternalLifecycleEventAdmin(ReadOnlyAdmin):
     list_display = ("tenant_id", "event_type", "event_version", "status", "occurred_at")
     list_filter = ("event_type", "status")
-    readonly_fields = ("id", "tenant_id", "event_id", "created_at")
+    readonly_fields = ("id", "tenant_id", "event_id", "occurred_at")
 
 
 @admin.register(HrExternalAuditEvent)

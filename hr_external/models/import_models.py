@@ -49,11 +49,11 @@ class HrExternalImportJob(models.Model):
         indexes = [
             models.Index(
                 fields=["tenant_id", "status"],
-                name="hr_external_import_status_idx",
+                name="hex_import_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "job_type", "created_at"],
-                name="hr_external_import_type_time_idx",
+                name="hex_import_type_time_idx",
             ),
         ]
 

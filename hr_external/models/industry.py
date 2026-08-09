@@ -58,7 +58,7 @@ class HrExternalIndustryProfile(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_industry_profile_version_gte_1",
+                name="hex_industry_profile_version_gte_1",
             ),
         ]
 
@@ -110,17 +110,17 @@ class HrExternalContribution(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_contribution_version_gte_1",
+                name="hex_contribution_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "engagement_id", "verification_status"],
-                name="hr_external_contrib_eng_ver_idx",
+                name="hex_contrib_eng_ver_idx",
             ),
             models.Index(
                 fields=["tenant_id", "contribution_type", "status"],
-                name="hr_external_contrib_type_status_idx",
+                name="hex_contrib_type_status_idx",
             ),
         ]
 
@@ -168,21 +168,21 @@ class HrExternalWorkspace(models.Model):
             models.CheckConstraint(
                 condition=models.Q(end_at__isnull=True)
                 | models.Q(start_at__lt=models.F("end_at")),
-                name="hr_external_workspace_dates_valid",
+                name="hex_workspace_dates_valid",
             ),
             models.CheckConstraint(
                 condition=models.Q(version__gte=1),
-                name="hr_external_workspace_version_gte_1",
+                name="hex_workspace_version_gte_1",
             ),
         ]
         indexes = [
             models.Index(
                 fields=["tenant_id", "workspace_type", "status"],
-                name="hr_external_workspace_type_status_idx",
+                name="hex_workspace_type_status_idx",
             ),
             models.Index(
                 fields=["tenant_id", "organization_id", "status"],
-                name="hr_external_workspace_org_status_idx",
+                name="hex_workspace_org_status_idx",
             ),
         ]
 
