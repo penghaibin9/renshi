@@ -1,0 +1,29 @@
+{% comment %}
+HR04 Pipeline/Kanban（§36：从权威数据投影渲染，非 legacy stage）
+数据走 GET /api/hr/v1/recruitment/pipeline
+{% endcomment %}
+{% extends "index.html" %}
+{% load static i18n %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="recruitment-pipeline">
+  {% include "hr/components/page_header.html" with title="招聘管道" subtitle="按流程阶段展示应聘进展（展示层，权威状态见状态徽标）" %}
+
+  <div class="hr-card">
+    <div class="hr-rec-plan-toolbar">
+      <h2 class="hr-section-title">{% trans "Pipeline" %}</h2>
+    </div>
+    <div id="hr04-pipeline-boards" class="hr-rec-pipeline">
+      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-pipeline.js' %}"></script>
+{% endblock %}

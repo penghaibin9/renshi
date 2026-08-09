@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "入职协同中心" %}{% endblock %}
+{% block content %}
+<div class="hr-page" id="collaborationPage">
+  <div class="hr-page-header">
+    <h1>{% trans "入职协同中心" %}</h1>
+    <div class="hr-task-matrix__stats">
+      <span class="hr-stat">{% trans "本周入职" %}：{{ stats.this_week|default:0 }}</span>
+      <span class="hr-stat hr-stat--danger">{% trans "超期" %}：{{ stats.overdue|default:0 }}</span>
+      <span class="hr-stat hr-stat--warning">{% trans "阻塞" %}：{{ stats.blocked|default:0 }}</span>
+    </div>
+  </div>
+  <div class="hr-tabs">
+    <nav class="hr-tabs__nav" role="tablist">
+      <button class="hr-tabs__tab active" data-panel="matrix" role="tab" aria-selected="true">{% trans "任务矩阵" %}</button>
+      <button class="hr-tabs__tab" data-panel="mine" role="tab">{% trans "我的任务" %}</button>
+    </nav>
+    <div class="hr-tabs__panel active" id="panel-matrix" role="tabpanel">
+      {% include "hr/onboarding/components/task_matrix.html" %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-mine" role="tabpanel" hidden>
+      <div class="hr-card">
+        <h3>{% trans "我的任务" %}</h3>
+        <div class="hr-filter-bar">
+          <button class="oh-btn oh-btn--small active" data-filter="todo">{% trans "待办" %}</button>
+          <button class="oh-btn oh-btn--small" data-filter="in_progress">{% trans "进行中" %}</button>
+          <button class="oh-btn oh-btn--small" data-filter="waiting">{% trans "等待外部" %}</button>
+          <button class="oh-btn oh-btn--small" data-filter="overdue">{% trans "超期" %}</button>
+          <button class="oh-btn oh-btn--small" data-filter="done">{% trans "已完成" %}</button>
+        </div>
+        <ul class="hr-task-list" id="myTaskList">
+          {% for task in my_tasks %}
+          <li class="hr-task-list__item" data-task-id="{{ task.id }}">
+            <div class="hr-task-list__summary">
+              <strong>{{ task.title }}</strong>
+              <span class="hr-task-list__case">{{ task.case_no }}</span>
+              {% include "hr/onboarding/components/task_status_badge.html" with status=task.status %}
+              {% include "hr/onboarding/components/blocking_level_badge.html" with level=task.blocking_level %}
+            </div>
+            <div class="hr-task-list__meta">
+              <span>{% trans "截止" %}：{{ task.due_at|date:"Y-m-d"|default:"—" }}</span>
+              <div class="hr-task-list__actions">
+                <button class="oh-btn oh-btn--small oh-btn--primary" data-action="start">{% trans "开始" %}</button>
+                <button class="oh-btn oh-btn--small oh-btn--success" data-action="complete">{% trans "完成" %}</button>
+                <button class="oh-btn oh-btn--small oh-btn--neutral" data-action="waive">{% trans "豁免" %}</button>
+              </div>
+            </div>
+          </li>
+          {% empty %}
+          <li class="hr-empty">{% trans "暂无任务" %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

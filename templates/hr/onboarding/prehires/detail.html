@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "入职单详情" %} — {{ case.case_no|default:_("未编号") }}{% endblock %}
+{% block content %}
+<div class="hr-page" id="caseDetailPage" data-case-id="{{ case.id }}">
+  {% include "hr/onboarding/components/case_header.html" %}
+  <div class="hr-tabs">
+    <nav class="hr-tabs__nav" role="tablist">
+      <button class="hr-tabs__tab active" data-panel="prep" role="tab" aria-selected="true">{% trans "报到准备" %}</button>
+      <button class="hr-tabs__tab" data-panel="profile" role="tab">{% trans "个人资料" %}</button>
+      <button class="hr-tabs__tab" data-panel="materials" role="tab">{% trans "材料" %}</button>
+      <button class="hr-tabs__tab" data-panel="org" role="tab">{% trans "岗位与组织" %}</button>
+      <button class="hr-tabs__tab" data-panel="portal" role="tab">{% trans "Portal 状态" %}</button>
+      <button class="hr-tabs__tab" data-panel="history" role="tab">{% trans "历史" %}</button>
+    </nav>
+    <div class="hr-tabs__panel active" id="panel-prep" role="tabpanel">
+      {% include "hr/onboarding/components/readiness_card.html" with readiness=readiness %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-profile" role="tabpanel" hidden>
+      <div class="hr-card">
+        <h3>{% trans "个人资料" %}</h3>
+        <dl class="hr-dl">
+          <dt>{% trans "姓名" %}</dt><dd>{{ profile.legal_name|default:"—" }}</dd>
+          <dt>{% trans "联系方式" %}</dt><dd>{{ profile.contact_json|default:"—" }}</dd>
+          <dt>{% trans "地址" %}</dt><dd>{{ profile.address|default:"—" }}</dd>
+          <dt>{% trans "紧急联系人" %}</dt><dd>{{ profile.emergency_contact_json|default:"—" }}</dd>
+          <dt>{% trans "教育经历" %}</dt><dd>{{ profile.education_json|default:"—"|length }} {% trans "条" %}</dd>
+          <dt>{% trans "工作经历" %}</dt><dd>{{ profile.work_experience_json|default:"—"|length }} {% trans "条" %}</dd>
+          <dt>{% trans "数据来源" %}</dt><dd>{{ profile.verification_status_label|default:profile.verification_status }}</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="hr-tabs__panel" id="panel-materials" role="tabpanel" hidden>
+      {% include "hr/onboarding/components/material_checklist.html" with materials=materials %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-org" role="tabpanel" hidden>
+      <div class="hr-card">
+        <h3>{% trans "岗位与组织" %}</h3>
+        <dl class="hr-dl">
+          <dt>{% trans "计划组织" %}</dt><dd>{{ case.planned_organization_id|default:"—" }}</dd>
+          <dt>{% trans "岗位目录" %}</dt><dd>{{ case.planned_post_catalog_id|default:"—" }}</dd>
+          <dt>{% trans "岗位" %}</dt><dd>{{ case.planned_position_id|default:"—" }}</dd>
+          <dt>{% trans "用工性质" %}</dt><dd>{{ case.employment_type_label|default:case.employment_type }}</dd>
+          <dt>{% trans "人员类别" %}</dt><dd>{{ case.staff_category_label|default:case.staff_category }}</dd>
+        </dl>
+        {% include "hr/onboarding/components/position_reservation_card.html" with reservation=reservation %}
+      </div>
+    </div>
+    <div class="hr-tabs__panel" id="panel-portal" role="tabpanel" hidden>
+      {% include "hr/onboarding/components/portal_security_status.html" with portal=portal %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-history" role="tabpanel" hidden>
+      <div class="hr-card">
+        <h3>{% trans "变更历史" %}</h3>
+        <ol class="hr-timeline">
+          {% for t in stage_transitions %}
+          <li class="hr-timeline__item">
+            <span class="hr-timeline__dot" aria-hidden="true"></span>
+            <div>
+              <strong>{{ t.to_stage_label|default:t.to_stage }}</strong>
+              <p>{% trans "操作" %}：{{ t.action }} · {{ t.occurred_at|date:"Y-m-d H:i" }}</p>
+              {% if t.reason %}<p class="hr-muted">{% trans "原因" %}：{{ t.reason }}</p>{% endif %}
+            </div>
+          </li>
+          {% empty %}
+          <li class="hr-empty">{% trans "暂无变更记录" %}</li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

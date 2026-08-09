@@ -8,6 +8,7 @@ HR05 API 路由。
 
 from django.urls import path
 
+from hr_onboarding.api import excel as excel_views
 from hr_onboarding.api import materials as materials_views
 from hr_onboarding.api import portal as portal_views
 from hr_onboarding.api import probations as probations_views
@@ -181,5 +182,26 @@ urlpatterns = [
         "api/hr/v1/prehire/me/confirm-intent",
         portal_views.prehire_confirm_intent,
         name="hr05-api-prehire-confirm",
+    ),
+    # Excel 导入（S10）
+    path(
+        "api/hr/v1/onboarding/excel/template",
+        excel_views.excel_template_download,
+        name="hr05-api-excel-template",
+    ),
+    path(
+        "api/hr/v1/onboarding/excel/upload",
+        excel_views.excel_upload,
+        name="hr05-api-excel-upload",
+    ),
+    path(
+        "api/hr/v1/onboarding/excel/confirm",
+        excel_views.excel_confirm,
+        name="hr05-api-excel-confirm",
+    ),
+    path(
+        "api/hr/v1/onboarding/excel/errors",
+        excel_views.excel_error_workbook,
+        name="hr05-api-excel-errors",
     ),
 ]
