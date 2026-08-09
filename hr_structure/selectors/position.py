@@ -67,7 +67,7 @@ class PositionSelector:
             occ_status = "FILLED"
         else:
             occ_status = "OVERFILLED"
-        return {
+        dto = {
             "id": p.id,
             "positionCode": p.position_code,
             "organizationId": p.organization_id_id,
@@ -81,6 +81,11 @@ class PositionSelector:
             "occupiedCount": occupancy,
             "dataBasis": "LEGACY_CURRENT_SNAPSHOT",
         }
+        from hr_structure.display_labels import POSITION_LIFECYCLE_STATUS, POSITION_OCCUPANCY_STATUS, label_of
+
+        dto["lifecycleStatusLabel"] = label_of(POSITION_LIFECYCLE_STATUS, p.lifecycle_status)
+        dto["occupancyStatusLabel"] = label_of(POSITION_OCCUPANCY_STATUS, occ_status)
+        return dto
 
     def availability(self, position_id=None, post_catalog_version_id=None, organization_id=None) -> dict:
         """可用性（HR04 招聘/HR06 调动调用契约）。HARD 扣减 HELD reservation。"""

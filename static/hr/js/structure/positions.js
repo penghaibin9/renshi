@@ -58,9 +58,11 @@
 
   function positionRow(p) {
     const occ = p.occupancyStatus || "VACANT";
+    const occLabel = p.occupancyStatusLabel || occ;
     const occClass = occ === "OVERFILLED" ? "hr-risk-danger"
       : occ === "FILLED" ? ""
       : "";
+    const statusLabel = p.lifecycleStatusLabel || p.lifecycleStatus;
     return `<tr>
       <td>${p.positionCode || ""}</td>
       <td>${p.organizationName || "—"}</td>
@@ -68,8 +70,8 @@
       <td>${p.postGrade || "—"}</td>
       <td>${p.plannedFte || "—"}</td>
       <td>${p.maxIncumbents ?? "—"}</td>
-      <td class="${occClass}">${p.occupiedCount ?? 0}</td>
-      <td><span class="hr-scope-chip">${STATUS_LABELS[p.lifecycleStatus] || p.lifecycleStatus}</span></td>
+      <td class="${occClass}">${occLabel} · ${p.occupiedCount ?? 0}</td>
+      <td><span class="hr-scope-chip">${statusLabel}</span></td>
     </tr>`;
   }
 

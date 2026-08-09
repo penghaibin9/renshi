@@ -23,6 +23,27 @@ from hr_control_center.context import (
 )
 from hr_structure.scope import Hr02Scope, resolve_scope
 from hr_structure.selectors.organization import OrganizationSelector
+from hr_structure.display_labels import (
+    append_labels,
+    append_labels_deep,
+    CHANGE_TYPE,
+    CHANGE_CASE_STATUS,
+    ORG_TYPE,
+    ORG_VERSION_STATUS,
+    ORG_RELATION_TYPE,
+    ORG_RELATION_STATUS,
+    STAFFING_PLAN_STATUS,
+    POST_CATALOG_CATEGORY,
+    POST_CATALOG_SUBCATEGORY,
+    POST_CATALOG_CONTROL_MODE,
+    POSITION_LIFECYCLE_STATUS,
+    POSITION_OCCUPANCY_STATUS,
+    POSITION_RESERVATION_STATUS,
+    AUTHORITY_MODE,
+    SCOPE_TYPE,
+    DATA_BASIS,
+    METRIC_FRESHNESS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +60,30 @@ def _request_id(request) -> str:
 
 
 def _root(request, tenant_id, as_of, **extra) -> dict:
+    """构建 API 根信封。自动为已知枚举字段追加 *Label（总控 §12）。"""
+    # 标签注入：遍历 extra 中已知枚举字段名，自动追加 fieldLabel
+    _LABEL_MAP = {
+        "org_type": ORG_TYPE,
+        "status": ORG_VERSION_STATUS,
+        "lifecycleStatus": POSITION_LIFECYCLE_STATUS,
+        "occupancyStatus": POSITION_OCCUPANCY_STATUS,
+        "changeType": CHANGE_TYPE,
+        "category": POST_CATALOG_CATEGORY,
+        "subcategory": POST_CATALOG_SUBCATEGORY,
+        "controlMode": POST_CATALOG_CONTROL_MODE,
+        "mode": AUTHORITY_MODE,
+        "relationType": ORG_RELATION_TYPE,
+    }
+    for field, mapping in _LABEL_MAP.items():
+        val = extra.get(field)
+        if val is not None:
+            extra[f"{field}Label"] = label_of(mapping, val)
+    # 特殊：status 字段在不同上下文有不同含义（ORG_VERSION_STATUS 是默认，
+    # 但 POSITION_RESERVATION_STATUS / STAFFING_PLAN_STATUS / CHANGE_CASE_STATUS
+    # 也可以在调用方显式传 statusLabel 覆盖）
+    if extra.get("status") is not None and "statusLabel" not in extra:
+        extra["statusLabel"] = label_of(ORG_VERSION_STATUS, extra["status"])
+
     return {
         "apiVersion": API_VERSION,
         "schemaVersion": SCHEMA_VERSION,
@@ -76,6 +121,32 @@ def _parse_as_of(request):
         return date.fromisoformat(raw)
     except ValueError:
         raise HrContextError("HR02_INVALID_ASOF", "无效日期")
+
+
+# ---- 标签注入（总控 §12：成对 {field, fieldLabel}）----
+
+def _inject_labels(data: dict, *, field_specs: list):
+    """
+    给 dict 自动追加 *Label。field_specs: [(field_name, label_mapping), ...]
+    例: _inject_labels(d, field_specs=[("org_type", ORG_TYPE), ("status", ORG_VERSION_STATUS)])
+    """
+    for field_name, mapping in field_specs:
+        value = data.get(field_name)
+        if value is not None:
+            data[f"{field_name}Label"] = label_of(mapping, value)
+
+
+def _inject_labels_list(items: list, *, field_specs: list):
+    for item in items:
+        _inject_labels(item, field_specs=field_specs)
+
+
+# 导入标签映射
+from hr_structure.display_labels import label_of, ORG_TYPE, ORG_VERSION_STATUS, ORG_RELATION_TYPE
+from hr_structure.display_labels import ORG_RELATION_STATUS, STAFFING_PLAN_STATUS
+from hr_structure.display_labels import POST_CATALOG_CATEGORY, POST_CATALOG_SUBCATEGORY, POST_CATALOG_CONTROL_MODE
+from hr_structure.display_labels import POSITION_LIFECYCLE_STATUS, POSITION_OCCUPANCY_STATUS, POSITION_RESERVATION_STATUS
+from hr_structure.display_labels import CHANGE_TYPE, CHANGE_CASE_STATUS, AUTHORITY_MODE
 
 
 def _make_scope(request) -> Hr02Scope:
@@ -172,6 +243,7 @@ def organizations_tree(request):
         }
         for v in children
     ]
+    append_labels_deep(nodes, field_mappings=[("org_type", ORG_TYPE)])
     return _json(request, _root(request, scope.tenant_id, as_of, nodes=nodes))
 
 
@@ -204,6 +276,7 @@ def organization_detail(request, org_id):
             child_count=child_count,
         ),
     )
+    _inject_labels(payload["id"] is not None and payload or payload, field_specs=[("org_type", ORG_TYPE), ("status", ORG_VERSION_STATUS)])
 
 
 # ---------------------------------------------------------------------------
