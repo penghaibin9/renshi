@@ -1,0 +1,5 @@
+{% comment %}
+公共组件：HrStatusBadge —— 状态徽标（总册 §11.4/§16）
+用法：{% include "hr_staff/components/status_badge.html" with status=status label=label %}
+{% endcomment %}
+<span class="badge {% if status == 'ACTIVE' %}active{% elif status == 'PENDING_ENTRY' or status == 'SUBMITTED' or status == 'UNDER_REVIEW' %}pending{% elif status == 'DEPARTED' or status == 'RETIRED' or status == 'REJECTED' or status == 'FAILED' or status == 'EXPIRED' %}departed{% else %}pending{% endif %}">{{ label|default:status }}</span>

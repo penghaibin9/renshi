@@ -1,0 +1,28 @@
+{% comment %}
+公共组件：HrMaterialCard —— 材料卡片（总册 §14.6）
+用法：{% include "hr_staff/components/material_card.html" with m=material %}
+{% endcomment %}
+<div class="material-card">
+  <div class="material-header">
+    <span class="material-icon">📄</span>
+    <strong>{{ m.title }}</strong>
+    <span class="badge {{ m.verificationStatus|lower }}">
+      {{ m.verificationStatusLabel|default:m.verificationStatus }}
+    </span>
+    {% if m.currentVersionNo %}
+    <span class="version-tag">V{{ m.currentVersionNo }}</span>
+    {% endif %}
+  </div>
+  <div class="material-meta">
+    <span>{{ m.categoryLabel|default:m.categoryCode }}</span>
+    {% if m.sensitivityLevel and m.sensitivityLevel != 'PUBLIC_HR' %}
+      <span class="sens-tag">{{ m.sensitivityLabel|default:m.sensitivityLevel }}</span>
+    {% endif %}
+    {% if m.expiryDate %}<span>到期 {{ m.expiryDate }}</span>{% endif %}
+    {% if m.sha256 %}<span title="{{ m.sha256 }}" class="sha-hint">SHA-256 ✓</span>{% endif %}
+  </div>
+  <div class="material-actions">
+    <button class="btn-small" onclick="downloadTicket('{{ m.id }}')">预览</button>
+    <button class="btn-small" onclick="viewVersions('{{ m.id }}')">版本</button>
+  </div>
+</div>

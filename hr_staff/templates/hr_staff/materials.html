@@ -1,0 +1,154 @@
+{% load static i18n %}
+{% trans "人事材料档案" as t_title %}
+{% trans "返回主档" as t_back %}
+{% trans "全部" as t_all %}
+{% trans "待核验" as t_unverified %}
+{% trans "即将到期" as t_expiring %}
+{% trans "已失效" as t_expired %}
+{% trans "加载中…" as t_loading %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无材料" as t_empty %}
+{% trans "预览" as t_preview %}
+{% trans "版本" as t_versions %}
+{% trans "下载失败" as t_download_failed %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ t_title }} · HR03</title>
+  <style>
+    body { font-family:"Segoe UI","Microsoft YaHei",sans-serif; margin:0; background:#f5f7fa; color:#1f2937; }
+    .wrap { max-width:1200px; margin:0 auto; padding:24px; }
+    .back { color:#2563eb; text-decoration:none; font-size:13px; }
+    .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .toolbar button { padding:8px 14px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; font-size:13px; cursor:pointer; }
+    .toolbar button.on { background:#2563eb; color:#fff; border-color:#2563eb; }
+    .card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:18px; margin-bottom:12px; }
+    .card-header { display:flex; justify-content:space-between; align-items:center; }
+    .card-header h4 { margin:0; font-size:15px; }
+    .card-meta { font-size:12px; color:#6b7280; margin-top:6px; }
+    .card-actions { margin-top:10px; display:flex; gap:8px; }
+    .card-actions button { padding:5px 12px; border-radius:6px; border:1px solid #e5e7eb; background:#fff; font-size:12px; cursor:pointer; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; }
+    .badge.VERIFIED { background:#dcfce7; color:#166534; }
+    .badge.UNVERIFIED { background:#f3f4f6; color:#6b7280; }
+    .badge.EXPIRED,.badge.REJECTED { background:#fee2e2; color:#991b1b; }
+    .badge.PENDING { background:#fef9c3; color:#854d0e; }
+    .sens-tag { padding:1px 6px; border-radius:999px; font-size:10px; }
+    .sens-tag.SENSITIVE { background:#fef3c7; color:#92400e; }
+    .sens-tag.HIGH_SENSITIVE { background:#fee2e2; color:#991b1b; }
+    .sens-tag.RESTRICTED_HR { background:#eff6ff; color:#1e40af; }
+    .version-row { padding:8px 12px; border-bottom:1px solid #f3f4f6; font-size:13px; display:flex; justify-content:space-between; }
+    .section { margin-bottom:20px; }
+    .section h3 { font-size:15px; margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid #e5e7eb; }
+    .subtitle { font-size:13px; color:#6b7280; margin:8px 0 16px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/hr/staff/{{ staff_id }}/">← {{ t_back }}</a>
+  <div style="margin-top:16px">
+    <h2 style="margin:0 0 4px">{{ t_title }}</h2>
+    <div class="subtitle">每份材料包含版本历史、核验状态与文件 SHA-256 校验</div>
+  </div>
+  <div class="toolbar">
+    <button class="on" id="btn-all" onclick="filter('')">{{ t_all }}</button>
+    <button id="btn-unverified" onclick="filter('UNVERIFIED')">{{ t_unverified }}</button>
+    <button id="btn-expiring" onclick="filter('EXPIRING')">{{ t_expiring }}</button>
+    <button id="btn-expired" onclick="filter('EXPIRED')">{{ t_expired }}</button>
+  </div>
+  <div id="content">{{ t_loading }}</div>
+</div>
+<script>
+  const staffId = "{{ staff_id }}";
+  const L = {empty:"{{ t_empty|escapejs }}", loadFailed:"{{ t_load_failed|escapejs }}", preview:"{{ t_preview|escapejs }}", versions:"{{ t_versions|escapejs }}", downloadFailed:"{{ t_download_failed|escapejs }}"};
+  let items = [];
+  let activeFilter = "";
+  async function load() {
+    try {
+      const resp = await fetch(`/api/hr/v1/staff/${staffId}/materials`);
+      if (!resp.ok) { document.getElementById("content").innerHTML = `<div class="card"><div style="text-align:center;padding:32px;color:#6b7280">${L.loadFailed}（${resp.status}）</div></div>`; return; }
+      const body = await resp.json();
+      items = body.data.items || [];
+      filter("");
+    } catch (e) {
+      document.getElementById("content").innerHTML = `<div class="card"><div style="text-align:center;padding:32px;color:#6b7280">${L.loadFailed}</div></div>`;
+    }
+  }
+  function groupByCategory(items) {
+    const map = {};
+    for (const m of items) {
+      const cat = m.categoryLabel || m.categoryCode;
+      (map[cat] = map[cat] || []).push(m);
+    }
+    return map;
+  }
+  function filter(vf) {
+    activeFilter = vf;
+    document.querySelectorAll(".toolbar button").forEach(b => b.classList.remove("on"));
+    document.getElementById(vf ? `btn-${vf.toLowerCase()}` : "btn-all").classList.add("on");
+    render();
+  }
+  function render() {
+    let filtered = items;
+    if (activeFilter === "UNVERIFIED") filtered = items.filter(i => i.verificationStatus === "UNVERIFIED" || !i.verificationStatus);
+    else if (activeFilter === "EXPIRING") filtered = items.filter(i => i.sha256 && i.expiryDate && new Date(i.expiryDate) < new Date(Date.now() + 90*86400000));
+    else if (activeFilter === "EXPIRED") filtered = items.filter(i => i.sha256 && i.expiryDate && new Date(i.expiryDate) < new Date());
+    if (!filtered.length) {
+      document.getElementById("content").innerHTML = `<div style="text-align:center;padding:48px;color:#6b7280">${L.empty}</div>`;
+      return;
+    }
+    const groups = groupByCategory(filtered);
+    let html = "";
+    for (const [cat, arr] of Object.entries(groups)) {
+      html += `<div class="section"><h3>${escapeHtml(cat)}</h3>`;
+      for (const m of arr) {
+        html += `<div class="card">
+          <div class="card-header">
+            <h4>${escapeHtml(m.title)}</h4>
+            <span class="badge ${m.verificationStatus||''}">${escapeHtml(m.verificationStatusLabel||m.verificationStatus||"-")}</span>
+          </div>
+          <div class="card-meta">
+            V${m.currentVersionNo||1} · ${m.originalFilename||"-"} · ${m.sizeBytes||0} 字节
+            ${m.sensitivityLevel && m.sensitivityLevel !== 'PUBLIC_HR' ? `<span class="sens-tag ${m.sensitivityLevel}">${escapeHtml(m.sensitivityLabel||m.sensitivityLevel)}</span>` : ''}
+            ${m.expiryDate ? ` · 到期 ${m.expiryDate}` : ''}
+          </div>
+          <div class="card-actions">
+            <button onclick="downloadTicket('${m.id}')">${L.preview}</button>
+            <button onclick="viewVersions('${m.id}')">${L.versions}</button>
+          </div>
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    document.getElementById("content").innerHTML = html;
+  }
+  async function downloadTicket(materialId) {
+    const purpose = prompt("请填写查看用途（将记录审计）", "材料核对");
+    if (!purpose) return;
+    const resp = await fetch(`/api/hr/v1/staff/${staffId}/materials/${materialId}/download-ticket`, {
+      method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"}, body:JSON.stringify({purpose})
+    });
+    if (!resp.ok) { alert(`${L.downloadFailed}（`+(await resp.json()).error?.code+`)`); return; }
+    const body = await resp.json();
+    window.open(`/api/hr/v1/staff/${staffId}/materials/${materialId}/download/${body.data.ticket}`, "_blank");
+  }
+  async function viewVersions(materialId) {
+    const resp = await fetch(`/api/hr/v1/staff/${staffId}/materials/${materialId}/versions`);
+    if (!resp.ok) return;
+    const body = await resp.json();
+    const versions = body.data.versions || [];
+    let html = `<div class="card" style="max-height:400px;overflow-y:auto">`;
+    html += `<div style="font-weight:600;margin-bottom:8px">版本历史</div>`;
+    for (const v of versions) {
+      html += `<div class="version-row"><span>V${v.versionNo} · ${escapeHtml(v.statusLabel||v.status)} · ${v.sizeBytes||0} 字节 · ${v.uploadedAt?.slice(0,10)||"-"}</span></div>`;
+    }
+    html += `</div>`;
+    document.getElementById("content").insertAdjacentHTML("beforebegin", html);
+  }
+  function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  load();
+</script>
+</body>
+</html>

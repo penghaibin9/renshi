@@ -1,0 +1,33 @@
+{% load static i18n %}
+{% trans "数据质量异常中心" as t_title %}
+{% trans "加载中…" as t_loading %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无异常" as t_clean %}
+{% trans "高" as t_high %}
+{% trans "中" as t_medium %}
+{% trans "低" as t_low %}
+<form id="scanForm">
+  <input type="date" id="asOf" name="as_of"> <button type="submit">{{ t_title }}扫描</button>
+</form>
+<div id="result">{{ t_loading }}</div>
+<script>
+document.getElementById("scanForm").onsubmit = async e => {
+  e.preventDefault();
+  const d = document.getElementById("asOf").value;
+  document.getElementById("result").textContent = "{{ t_loading|escapejs }}";
+  try {
+    const resp = await fetch(`/api/hr/v1/staff/data-quality-scan${d?'?as_of='+d:''}`);
+    if (!resp.ok) { document.getElementById("result").textContent = "{{ t_load_failed|escapejs }}（"+resp.status+"）"; return; }
+    const body = await resp.json();
+    const issues = body.data.issues || [];
+    if (!issues.length) { document.getElementById("result").textContent = "{{ t_clean|escapejs }}"; return; }
+    const sev = {"HIGH":"{{ t_high|escapejs }}","MEDIUM":"{{ t_medium|escapejs }}","LOW":"{{ t_low|escapejs }}"};
+    document.getElementById("result").innerHTML = `<div>共 ${issues.length} 条异常：</div>` + issues.map(i =>
+      `<div style="padding:6px 12px;margin:4px 0;border-left:3px solid ${i.severity==='HIGH'?'#dc2626':'#d97706'};font-size:13px">
+        ${sev[i.severity]||i.severity} · ${escapeHtml(i.rule)} · staff=${escapeHtml(i.staffNo)} · ${escapeHtml(i.message)}
+      </div>`
+    ).join("");
+  } catch(e) { document.getElementById("result").textContent = "{{ t_load_failed|escapejs }}"; }
+};
+function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+</script>
