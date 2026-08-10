@@ -44,6 +44,35 @@ jobs:
           docker compose -f "$COMPOSE_FILE" logs db
           exit 1
 
+      - name: Migration schema diagnostics
+        run: |
+          docker compose -f "$COMPOSE_FILE" run --rm --no-deps --entrypoint "" web python manage.py shell -c '
+          import importlib
+          from django.apps import apps
+          from django.db import connection
+          from django.db.migrations.loader import MigrationLoader
+
+          config = apps.get_app_config("dictionary")
+          print("DICTIONARY_APP", config.name, config.path)
+          company = apps.get_model("base", "Company")
+          company_pk = company._meta.pk
+          print("BASE_COMPANY_PK", company_pk.__class__.__name__, company_pk.db_type(connection))
+          general = apps.get_model("dictionary", "HorillaGeneralSettings")
+          for field in general._meta.fields:
+              if "company" in field.name.lower() or "company" in field.column.lower():
+                  print("DICTIONARY_COMPANY_FIELD", field.name, field.column, field.__class__.__name__, field.db_type(connection), getattr(getattr(field, "target_field", None), "__class__", type(None)).__name__)
+          loader = MigrationLoader(connection, ignore_no_migrations=True)
+          migration = loader.get_migration("dictionary", "0001_initial")
+          module_name = migration.__class__.__module__
+          module = importlib.import_module(module_name)
+          print("DICTIONARY_MIGRATION", module_name, module.__file__)
+          for operation in migration.operations:
+              if getattr(operation, "name", "").lower() == "horillageneralsettings":
+                  for field_name, field in operation.fields:
+                      if "company" in field_name.lower():
+                          print("MIGRATION_COMPANY_FIELD", field_name, field.__class__.__name__, field.deconstruct())
+          '
+
       - name: Fresh migration + checks
         run: |
           docker compose -f "$COMPOSE_FILE" run --rm --no-deps --entrypoint "" web sh -c '
