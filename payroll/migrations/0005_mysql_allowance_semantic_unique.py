@@ -139,6 +139,11 @@ def remove_mysql_allowance_unique(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL cannot execute ALTER TABLE / CREATE INDEX safely inside Django's
+    # migration transaction because DDL is not rollback-capable. Keep the
+    # semantic invariant strict, but run this compatibility DDL non-atomically.
+    atomic = False
+
     dependencies = [("payroll", "0004_alter_allowance_include_active_employees_and_more")]
 
     operations = [
