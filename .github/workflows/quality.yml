@@ -65,10 +65,25 @@ jobs:
             printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
           fi
 
-      - name: Format gate for takeover bootstrap
+      - name: Syntax gate
+        run: python -m compileall -q horilla base employee hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment
+
+      - name: Format gate for takeover-owned bootstrap files
         run: |
-          black --check horilla/settings horilla/urls.py horilla/hr_urls.py base/auth_backends.py base/horilla_company_manager.py employee/scheduler.py
-          isort --check-only --profile black horilla/settings horilla/urls.py horilla/hr_urls.py base/auth_backends.py base/horilla_company_manager.py employee/scheduler.py
+          black --check \
+            horilla/settings/__init__.py \
+            horilla/settings/ci_test.py \
+            horilla/settings/security.py \
+            horilla/hr_urls.py \
+            base/auth_backends.py \
+            employee/scheduler.py
+          isort --check-only --profile black \
+            horilla/settings/__init__.py \
+            horilla/settings/ci_test.py \
+            horilla/settings/security.py \
+            horilla/hr_urls.py \
+            base/auth_backends.py \
+            employee/scheduler.py
 
       - name: Django system check
         run: python manage.py check
