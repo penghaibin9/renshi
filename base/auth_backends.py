@@ -1,22 +1,45 @@
-"""Company-scoped permission helpers with fail-closed tenant semantics."""
+"""Company-scoped authentication backend for the HR takeover."""
 
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
 
 from horilla.horilla_middlewares import _thread_locals, get_selected_company
+from horilla.hr_permissions import (
+    is_semantic_hr_permission,
+    permission_aliases,
+    semantic_codes_for_codename,
+)
 
 
 class CompanyScopedBackend(ModelBackend):
-    """ModelBackend whose group grants are resolved inside the current school."""
+    """
+    Resolve permissions inside the current school and understand semantic HR
+    permission codes.
+
+    Important differences from Django's default ModelBackend:
+    - group grants are tenant scoped;
+    - direct user permissions are disabled when tenant-scoped RBAC is active,
+      because they are global and would bypass the selected school;
+    - no cross-tenant permission cache is kept on the user object;
+    - dotted business codenames (``hr.staff.view``) are resolved as codenames,
+      not misread as Django app labels.
+    """
+
+    @staticmethod
+    def _scoped_mode():
+        return bool(getattr(settings, "COMPANY_SCOPED_PERMISSIONS", False))
+
+    def _get_user_permissions(self, user_obj):
+        if self._scoped_mode():
+            return Permission.objects.none()
+        return super()._get_user_permissions(user_obj)
 
     def _get_group_permissions(self, user_obj):
-        if not getattr(settings, "COMPANY_SCOPED_PERMISSIONS", False):
+        if not self._scoped_mode():
             return super()._get_group_permissions(user_obj)
 
         selected = get_selected_company()
-        # H0/A0 fail closed: session-less/API/job code does not inherit the
-        # user's home school or the union of all school roles by accident.
         if selected is None:
             return Permission.objects.none()
 
@@ -26,6 +49,61 @@ class CompanyScopedBackend(ModelBackend):
         return Permission.objects.filter(
             group__company_assignments__in=assignments
         ).distinct()
+
+    def _effective_permission_objects(self, user_obj):
+        if not getattr(user_obj, "is_active", False) or getattr(
+            user_obj, "is_anonymous", True
+        ):
+            return Permission.objects.none()
+
+        if getattr(user_obj, "is_superuser", False):
+            return Permission.objects.all()
+
+        user_ids = self._get_user_permissions(user_obj).values_list("pk", flat=True)
+        group_ids = self._get_group_permissions(user_obj).values_list("pk", flat=True)
+        return Permission.objects.filter(pk__in=user_ids.union(group_ids)).select_related(
+            "content_type"
+        )
+
+    @staticmethod
+    def _render_permission_strings(permission_objects):
+        rendered = set()
+        for permission in permission_objects:
+            rendered.add(f"{permission.content_type.app_label}.{permission.codename}")
+            rendered.update(semantic_codes_for_codename(permission.codename))
+        return rendered
+
+    def get_user_permissions(self, user_obj, obj=None):
+        if obj is not None:
+            return set()
+        permissions = self._get_user_permissions(user_obj).select_related("content_type")
+        return self._render_permission_strings(permissions)
+
+    def get_group_permissions(self, user_obj, obj=None):
+        if obj is not None:
+            return set()
+        permissions = self._get_group_permissions(user_obj).select_related("content_type")
+        return self._render_permission_strings(permissions)
+
+    def get_all_permissions(self, user_obj, obj=None):
+        if obj is not None:
+            return set()
+        return self._render_permission_strings(
+            self._effective_permission_objects(user_obj)
+        )
+
+    def has_perm(self, user_obj, perm, obj=None):
+        if not getattr(user_obj, "is_active", False):
+            return False
+        if getattr(user_obj, "is_superuser", False):
+            return True
+        if obj is not None:
+            return False
+
+        permissions = self.get_all_permissions(user_obj)
+        if is_semantic_hr_permission(perm):
+            return bool(permission_aliases(perm) & permissions)
+        return perm in permissions
 
     @staticmethod
     def _resolve_company_id(user_obj):
@@ -148,7 +226,7 @@ def get_effective_permission_codenames(user, company_id=None, include_direct=Tru
         return []
 
     codenames = set()
-    if include_direct:
+    if include_direct and not company_scoped_active():
         codenames.update(user.user_permissions.values_list("codename", flat=True))
 
     if not company_scoped_active():
