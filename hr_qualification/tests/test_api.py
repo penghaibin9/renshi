@@ -62,7 +62,7 @@ class ResourceEndpointTest(TestCase):
     def test_credential_list_requires_tenant(self):
         resp = self.client.get("/api/v1/hr/qualifications/credentials")
         self.assertEqual(resp.status_code, 400)
-        self.assertIn(resp.json()["error"]["code"], {"TENANT_CONTEXT_REQUIRED", "VALIDATION_ERROR"})
+        self.assertEqual(resp.json()["error"]["code"], "VALIDATION_ERROR")
 
     def test_credential_list_with_tenant(self):
         resp = self.client.get(
