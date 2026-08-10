@@ -17,7 +17,7 @@ from base.models import Company
 from employee.models import Employee, EmployeeWorkInformation
 from horilla_auth.models import HorillaUser
 
-HEALTH_URL = "/api/hr/v1/time/health"
+HEALTH_URL = "/api/v1/hr/time/health"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
