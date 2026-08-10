@@ -27,5 +27,9 @@ MISSING_CORE_PARTS = (
     "Django AppConfig",
     "完整模型入口",
     "migration 历史",
-    "模块测试入口",
+)
+RECOVERED_CORE_PARTS = (
+    "模块 README/恢复清单",
+    "模块边界合同",
+    "恢复门禁与测试入口",
 )
