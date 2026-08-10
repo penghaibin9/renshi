@@ -1,5 +1,5 @@
 """
-hr_qualification/services/verification_service.py —— 核验编排。
+hr_qualification/services/verification_service.py —— 核验查询/时效判断。
 
 总册 §24-25：
 - 多种核验类型（MANUAL_ORIGINAL_REVIEW / OFFICIAL_DATABASE / THIRD_PARTY / ISSUER / IMPORT / MIGRATION）
@@ -7,6 +7,7 @@ hr_qualification/services/verification_service.py —— 核验编排。
 - 核验本身也可过期（verification_valid_until）
 - 无真实核验渠道时 → MANUAL_ORIGINAL_REVIEW
 - 禁止 mock provider 标记 VERIFIED
+- 所有读取必须显式 tenant scope；credential UUID 不是跨租户读取凭证。
 """
 
 from __future__ import annotations
@@ -18,23 +19,38 @@ from hr_qualification.models import HrCredentialVerification, HrPersonCredential
 
 
 class VerificationService:
-    """证书核验编排服务。"""
+    """证书核验查询服务。"""
 
     @staticmethod
-    def get_latest(credential_id: uuid.UUID) -> HrCredentialVerification | None:
+    def get_latest(
+        *,
+        tenant_id: int,
+        credential_id: uuid.UUID,
+    ) -> HrCredentialVerification | None:
+        if not tenant_id:
+            return None
         return (
-            HrCredentialVerification.objects
-            .filter(credential_id=credential_id)
+            HrCredentialVerification.objects.filter(
+                credential_id_id=credential_id,
+                credential_id__tenant_id=tenant_id,
+            )
             .order_by("-verified_at", "-created_at")
             .first()
         )
 
     @staticmethod
-    def get_history(credential_id: uuid.UUID) -> list[HrCredentialVerification]:
+    def get_history(
+        *,
+        tenant_id: int,
+        credential_id: uuid.UUID,
+    ) -> list[HrCredentialVerification]:
+        if not tenant_id:
+            return []
         return list(
-            HrCredentialVerification.objects
-            .filter(credential_id=credential_id)
-            .order_by("-verified_at", "-created_at")
+            HrCredentialVerification.objects.filter(
+                credential_id_id=credential_id,
+                credential_id__tenant_id=tenant_id,
+            ).order_by("-verified_at", "-created_at")
         )
 
     @staticmethod
