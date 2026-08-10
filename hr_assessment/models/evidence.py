@@ -87,7 +87,12 @@ class HrReviewerAssignment(TenantScopedModel):
     class Meta:
         db_table = "hr_assessment_reviewer_assignment"
         verbose_name = _("评议人分配")
-        unique_together = ("case_id", "reviewer_staff_id", "reviewer_role")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["case_id", "reviewer_staff_id", "reviewer_role"],
+                name="uniq_reviewer_case_role",
+            )
+        ]
 
 
 class HrReviewerEvaluation(TenantScopedModel):
