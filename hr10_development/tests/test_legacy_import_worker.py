@@ -3,7 +3,11 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
-from hr10_development.services.import_worker import _parse_legacy_employee
+from hr10_development.services.import_worker import (
+    ExcelImportPipelineUnavailable,
+    _parse_excel,
+    _parse_legacy_employee,
+)
 
 
 class LegacyImportWorkerTests(SimpleTestCase):
@@ -71,3 +75,15 @@ class LegacyImportWorkerTests(SimpleTestCase):
 
         self.assertEqual(job.processed_rows, 0)
         self.assertEqual(job.result_summary_json["stagedRows"], 0)
+
+    def test_excel_placeholder_fails_closed_instead_of_returning_success(self):
+        job = MagicMock(id=100, tenant_id=77)
+
+        with self.assertRaisesRegex(
+            ExcelImportPipelineUnavailable,
+            "HR10_EXCEL_IMPORT_PIPELINE_UNAVAILABLE",
+        ):
+            _parse_excel(job)
+
+        # 没接入真实文件/校验/预览链时不得伪造 processed_rows/result_summary。
+        self.assertFalse(hasattr(job, "processed_rows") and isinstance(job.processed_rows, int))
