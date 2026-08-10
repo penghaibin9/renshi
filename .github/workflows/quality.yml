@@ -17,6 +17,7 @@ env:
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
+  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
 
 jobs:
   django-contract:
@@ -30,6 +31,7 @@ jobs:
           MYSQL_USER: horilla_user
           MYSQL_PASSWORD: horilla_pass
           MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
@@ -135,6 +137,35 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
+      - name: Provision isolated Django test database
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute(
+                  "CREATE DATABASE `test_horilla_db` "
+                  "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+              )
+              cursor.execute(
+                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
+                  "TO 'horilla_user'@'%'"
+              )
+              cursor.execute("FLUSH PRIVILEGES")
+          finally:
+              connection.close()
+          PY
+
       - name: Tenant and registered HR tests
         shell: bash
         run: |
@@ -146,7 +177,10 @@ jobs:
           PY
           )
           echo "Testing registered apps: $HR_APPS"
-          python manage.py test base $HR_APPS --noinput --verbosity 1
+          # The database above is recreated from scratch on every run by root.
+          # --keepdb tells Django to use that isolated database without granting
+          # the application user global CREATE/DROP DATABASE privileges.
+          python manage.py test base $HR_APPS --keepdb --noinput --verbosity 1
 
   production-settings-gate:
     runs-on: ubuntu-latest
