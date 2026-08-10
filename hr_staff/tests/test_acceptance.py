@@ -24,6 +24,7 @@ from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
 OTHER_TENANT = 2
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 class AccidentNegativeAcceptanceTests(TestCase):
@@ -36,7 +37,6 @@ class AccidentNegativeAcceptanceTests(TestCase):
         self.other_org = make_org(OTHER_TENANT, "BXY", "B校学院", date(2020, 1, 1))
 
     def test_a_school_cannot_modify_b_school_person(self):
-        """A 校改 B 校人员 → 组织跨租户拒绝（CROSS_TENANT_REFERENCE）。"""
         rel_b = EmploymentService(OTHER_TENANT).start_relationship(
             staff_id=self.staff_b,
             relationship_type="REGULAR_EMPLOYMENT",
@@ -48,11 +48,11 @@ class AccidentNegativeAcceptanceTests(TestCase):
                 assignment_type=AssignmentType.PRIMARY,
                 effective_from=date(2024, 9, 1),
                 organization_id=self.other_org,
+                source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "CROSS_TENANT_REFERENCE")
 
     def test_dual_open_primary_rejected(self):
-        """双并发 PRIMARY → ASSIGNMENT_OVERLAP（service）且 DB 条件唯一兜底。"""
         rel = EmploymentService(TENANT).start_relationship(
             staff_id=self.staff_a,
             relationship_type="REGULAR_EMPLOYMENT",
@@ -63,6 +63,7 @@ class AccidentNegativeAcceptanceTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2024, 9, 1),
             organization_id=self.org,
+            source_business_type=FIXTURE_SOURCE,
         )
         with self.assertRaises(AssignmentPolicyViolation) as ctx:
             AssignmentService(TENANT).create_assignment(
@@ -70,11 +71,11 @@ class AccidentNegativeAcceptanceTests(TestCase):
                 assignment_type=AssignmentType.PRIMARY,
                 effective_from=date(2025, 1, 1),
                 organization_id=self.org,
+                source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "ASSIGNMENT_OVERLAP")
 
     def test_business_process_only_field_immune_to_correction(self):
-        """更正直接改 BUSINESS_PROCESS_ONLY → CORRECTION_POLICY_DENIED。"""
         HrFieldGovernancePolicy.objects.update_or_create(
             tenant_id=TENANT,
             field_code="employment.effective_from",
@@ -89,7 +90,6 @@ class AccidentNegativeAcceptanceTests(TestCase):
             )
 
     def test_authority_mode_blocks_fallback(self):
-        """AUTHORITY 模式故障时禁止 silent fallback legacy。"""
         svc = AuthorityModeService()
         with mock.patch.object(svc, "get_mode", return_value=AuthorityMode.HR03_AUTHORITY):
             mode = svc.assert_authority_available(TENANT, require_authority=True)
@@ -99,7 +99,6 @@ class AccidentNegativeAcceptanceTests(TestCase):
                 svc.assert_authority_available(TENANT, require_authority=True)
 
     def test_rehire_does_not_create_duplicate_person(self):
-        """rehire 复用已有 Person/Staff（不重复建）。"""
         self.assertEqual(self.staff_a.person_id.id, self.person_a.id)
         rel1 = EmploymentService(TENANT).start_relationship(
             staff_id=self.staff_a,
@@ -117,7 +116,6 @@ class AccidentNegativeAcceptanceTests(TestCase):
         self.assertEqual(rel2.staff_id_id, self.staff_a.id)
 
     def test_high_sensitive_not_in_plain_export_path(self):
-        """名册/履历/材料 API 均不回身份证明文（高敏不入列表/导出）。"""
         from hr_staff.selectors.staff_list import STAFF_LIST_FIELDS
 
         self.assertNotIn("identity", STAFF_LIST_FIELDS)
@@ -125,10 +123,8 @@ class AccidentNegativeAcceptanceTests(TestCase):
         self.assertNotIn("phone", STAFF_LIST_FIELDS)
 
     def test_history_never_shows_current_org(self):
-        """历史 as-of 绝不显示当前学院（#55 第 10 项核心）。"""
         from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
-        # 只建 2024-2026 计算机学院段；2024 历史查主岗必须是计算机
         rel = EmploymentService(TENANT).start_relationship(
             staff_id=self.staff_a,
             relationship_type="REGULAR_EMPLOYMENT",
@@ -140,6 +136,7 @@ class AccidentNegativeAcceptanceTests(TestCase):
             effective_from=date(2024, 9, 1),
             effective_to=date(2026, 2, 1),
             organization_id=self.org,
+            source_business_type=FIXTURE_SOURCE,
         )
         qs = EffectiveDatedQueryService(TENANT)
         self.assertIsNone(qs.primary_assignment_as_of(self.staff_a.id, date(2026, 3, 1)))
