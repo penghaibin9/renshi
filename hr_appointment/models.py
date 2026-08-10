@@ -24,7 +24,8 @@ class AppointmentPolicyVersion(HrVersionedModel):
                 name="uq_hr14_policy_tenant_code_ver",
             ),
             models.CheckConstraint(
-                condition=Q(effective_to__isnull=True) | Q(effective_to__gt=models.F("effective_from")),
+                condition=Q(effective_to__isnull=True)
+                | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr14_policy_effective_range",
             ),
         ]
@@ -41,30 +42,44 @@ class AppointmentApplicationCase(HrTenantScopedModel):
         UNDER_REVIEW = "UNDER_REVIEW", "Under review"
         PROPOSED = "PROPOSED", "Proposed appointment"
         PUBLICITY = "PUBLICITY", "Publicity"
+        EFFECT_PENDING = "EFFECT_PENDING", "Final, waiting for HR03 effect"
         EFFECTIVE = "EFFECTIVE", "Effective"
         CANCELLED = "CANCELLED", "Cancelled"
 
     case_no = models.CharField(max_length=64)
     person_id = models.UUIDField()
     policy_version_id = models.UUIDField()
-    position_instance_id = models.UUIDField()
+    # HR02 HrPosition uses a BigAutoField primary key.  Keep a scalar provider
+    # reference here (not a cross-domain FK), but the scalar type must match.
+    position_instance_id = models.PositiveBigIntegerField()
     batch_no = models.CharField(max_length=64)
     requested_level_code = models.CharField(max_length=64, blank=True, default="")
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.DRAFT, db_index=True
+    )
 
     class Meta:
         db_table = "hr14_appointment_application_case"
         constraints = [
-            models.UniqueConstraint(fields=("tenant_id", "case_no"), name="uq_hr14_case_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "case_no"), name="uq_hr14_case_tenant_no"
+            ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr14_case_tenant_person"),
-            models.Index(fields=("tenant_id", "batch_no", "status"), name="idx_hr14_case_tenant_batch"),
+            models.Index(
+                fields=("tenant_id", "person_id", "status"),
+                name="idx_hr14_case_tenant_person",
+            ),
+            models.Index(
+                fields=("tenant_id", "batch_no", "status"),
+                name="idx_hr14_case_tenant_batch",
+            ),
         ]
 
 
 class PositionAppointmentFact(HrTenantScopedModel):
     class Status(models.TextChoices):
+        EFFECT_PENDING = "EFFECT_PENDING", "Final, waiting for HR03 effect"
         EFFECTIVE = "EFFECTIVE", "Effective"
         REVISED = "REVISED", "Revised"
         ENDED = "ENDED", "Ended"
@@ -72,12 +87,18 @@ class PositionAppointmentFact(HrTenantScopedModel):
 
     appointment_no = models.CharField(max_length=64)
     person_id = models.UUIDField()
-    position_instance_id = models.UUIDField()
+    # Scalar Provider reference to HR02 HrPosition.id (BigAutoField).
+    position_instance_id = models.PositiveBigIntegerField()
     application_case_id = models.UUIDField()
     level_code = models.CharField(max_length=64, blank=True, default="")
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.EFFECTIVE, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.EFFECT_PENDING,
+        db_index=True,
+    )
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
@@ -88,11 +109,18 @@ class PositionAppointmentFact(HrTenantScopedModel):
                 name="uq_hr14_fact_tenant_no",
             ),
             models.CheckConstraint(
-                condition=Q(effective_to__isnull=True) | Q(effective_to__gt=models.F("effective_from")),
+                condition=Q(effective_to__isnull=True)
+                | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr14_fact_effective_range",
             ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr14_fact_tenant_person"),
-            models.Index(fields=("tenant_id", "position_instance_id", "status"), name="idx_hr14_fact_tenant_position"),
+            models.Index(
+                fields=("tenant_id", "person_id", "status"),
+                name="idx_hr14_fact_tenant_person",
+            ),
+            models.Index(
+                fields=("tenant_id", "position_instance_id", "status"),
+                name="idx_hr14_fact_tenant_position",
+            ),
         ]
