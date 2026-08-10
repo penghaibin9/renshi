@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from hr_structure.models import HrPosition, HrPositionPool, HrPositionReservation
@@ -66,7 +67,9 @@ class PositionService:
                 .first()
             )
             if pos is None:
-                raise PositionServiceError("HR02_POSITION_NOT_FOUND", "岗位不存在", http_status=404)
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_FOUND", "岗位不存在", http_status=404
+                )
             if pos.lifecycle_status == HrPosition.LifecycleStatus.CLOSED:
                 raise PositionServiceError("HR02_POSITION_FROZEN", "已关闭岗位不能冻结")
             pos.lifecycle_status = HrPosition.LifecycleStatus.FROZEN
@@ -84,7 +87,9 @@ class PositionService:
                 .first()
             )
             if pos is None:
-                raise PositionServiceError("HR02_POSITION_NOT_FOUND", "岗位不存在", http_status=404)
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_FOUND", "岗位不存在", http_status=404
+                )
             pos.lifecycle_status = HrPosition.LifecycleStatus.CLOSED
             pos.close_reason = reason
             pos.version += 1
@@ -107,7 +112,7 @@ class PositionService:
         idempotency_key,
         expires_at=None,
     ) -> HrPositionReservation:
-        """创建预占（HARD control 下必须扣除 HELD reservation 计算可用性）。"""
+        """创建预占；可用量 = max - HR03 当前占用 - 未过期 HELD。"""
         existing = HrPositionReservation.objects.filter(
             tenant_id=self.scope.tenant_id,
             idempotency_key=idempotency_key,
@@ -117,45 +122,76 @@ class PositionService:
 
         # 先清理过期预占，避免过期 HELD 继续占额（总册 50.1）
         self.expire_overdue()
+        now = timezone.now()
 
         if position_id:
+            # HrPosition 本身是所有 capacity-sensitive writer 的串行化锚点。
             pos = (
                 HrPosition.objects.select_for_update()
-                .filter(tenant_id=self.scope.tenant_id, id=position_id, lifecycle_status="ACTIVE")
+                .filter(
+                    tenant_id=self.scope.tenant_id,
+                    id=position_id,
+                    lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,
+                )
                 .first()
             )
             if pos is None:
-                raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位不存在或未激活")
-            # 计算已占用（HELD reservation 也算占用），过滤过期预占（50.1 防御层）
-            from django.utils import timezone as _tz
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_AVAILABLE", "岗位不存在或未激活"
+                )
 
+            # INV-09：岗位占用不是 HR02 手填字段，必须从 HR03 Assignment Authority 派生。
+            # 旧实现只数 HELD reservation，导致 max_incumbents=1 且已有在岗人员时
+            # 仍能再次预占。这里在持有 Position 行锁期间把 occupancy 一并计入。
+            from hr_staff.services.effective_dated_query_service import (
+                EffectiveDatedQueryService,
+            )
+
+            occupied = EffectiveDatedQueryService(
+                self.scope.tenant_id
+            ).position_occupancy_as_of(pos.id, date.today())
             held = (
                 HrPositionReservation.objects.filter(
-                    position_id=pos, status="HELD", expires_at__gt=_tz.now()
-                )
-                .aggregate(total=__import__("django.db.models", fromlist=["Sum"]).Sum("reserved_count"))["total"]
+                    tenant_id=self.scope.tenant_id,
+                    position_id=pos,
+                    status=HrPositionReservation.Status.HELD,
+                    expires_at__gt=now,
+                ).aggregate(total=Sum("reserved_count"))["total"]
                 or 0
             )
-            if held + count > pos.max_incumbents:
-                raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位可用额度不足")
+            if occupied + held + count > pos.max_incumbents:
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_AVAILABLE",
+                    f"岗位可用额度不足（已占 {occupied}，预占 {held}，上限 {pos.max_incumbents}）",
+                )
 
         if position_pool_id:
             pool = (
                 HrPositionPool.objects.select_for_update()
-                .filter(tenant_id=self.scope.tenant_id, id=position_pool_id, status="ACTIVE")
+                .filter(
+                    tenant_id=self.scope.tenant_id,
+                    id=position_pool_id,
+                    status="ACTIVE",
+                )
                 .first()
             )
             if pool is None:
-                raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位池不存在或未激活")
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_AVAILABLE", "岗位池不存在或未激活"
+                )
             held = (
                 HrPositionReservation.objects.filter(
-                    position_pool_id=pool, status="HELD", expires_at__gt=_tz.now()
-                )
-                .aggregate(total=__import__("django.db.models", fromlist=["Sum"]).Sum("reserved_count"))["total"]
+                    tenant_id=self.scope.tenant_id,
+                    position_pool_id=pool,
+                    status=HrPositionReservation.Status.HELD,
+                    expires_at__gt=now,
+                ).aggregate(total=Sum("reserved_count"))["total"]
                 or 0
             )
             if held + count > pool.authorized_count:
-                raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", "岗位池可用额度不足")
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_AVAILABLE", "岗位池可用额度不足"
+                )
 
         reservation = HrPositionReservation.objects.create(
             tenant_id=self.scope.tenant_id,
@@ -168,7 +204,11 @@ class PositionService:
             reserved_count=count,
             reserved_fte=fte,
             status=HrPositionReservation.Status.HELD,
-            expires_at=expires_at or (timezone.now() + __import__("datetime", fromlist=["timedelta"]).timedelta(days=7)),
+            expires_at=expires_at
+            or (
+                timezone.now()
+                + __import__("datetime", fromlist=["timedelta"]).timedelta(days=7)
+            ),
             idempotency_key=idempotency_key,
         )
         return reservation
@@ -182,9 +222,16 @@ class PositionService:
                 .first()
             )
             if r is None:
-                raise PositionServiceError("HR02_POSITION_NOT_FOUND", "预占不存在", http_status=404)
-            if r.status not in (HrPositionReservation.Status.HELD, HrPositionReservation.Status.COMMITTED):
-                raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", f"预占状态 {r.status} 不可提交")
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_FOUND", "预占不存在", http_status=404
+                )
+            if r.status not in (
+                HrPositionReservation.Status.HELD,
+                HrPositionReservation.Status.COMMITTED,
+            ):
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_AVAILABLE", f"预占状态 {r.status} 不可提交"
+                )
             r.status = HrPositionReservation.Status.COMMITTED
             r.committed_at = timezone.now()
             r.save(update_fields=["status", "committed_at"])
@@ -199,9 +246,13 @@ class PositionService:
                 .first()
             )
             if r is None:
-                raise PositionServiceError("HR02_POSITION_NOT_FOUND", "预占不存在", http_status=404)
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_FOUND", "预占不存在", http_status=404
+                )
             if r.status != HrPositionReservation.Status.HELD:
-                raise PositionServiceError("HR02_POSITION_NOT_AVAILABLE", f"预占状态 {r.status} 不可释放")
+                raise PositionServiceError(
+                    "HR02_POSITION_NOT_AVAILABLE", f"预占状态 {r.status} 不可释放"
+                )
             r.status = HrPositionReservation.Status.RELEASED
             r.released_at = timezone.now()
             r.save(update_fields=["status", "released_at"])
@@ -209,13 +260,8 @@ class PositionService:
 
     @transaction.atomic
     def expire_overdue(self, *, as_of=None) -> int:
-        """把已过期（expires_at < now）的 HELD 预占置为 EXPIRED（总册 50.1）。
-
-        返回处理条数。后台任务/管理命令调用。
-        """
-        from django.utils import timezone as _tz
-
-        now = as_of or _tz.now()
+        """把已过期（expires_at < now）的 HELD 预占置为 EXPIRED（总册 50.1）。"""
+        now = as_of or timezone.now()
         qs = HrPositionReservation.objects.filter(
             tenant_id=self.scope.tenant_id,
             status=HrPositionReservation.Status.HELD,
