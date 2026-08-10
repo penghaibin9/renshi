@@ -38,7 +38,12 @@ class HrAssessmentGoal(TenantScopedModel):
     class Meta:
         db_table = "hr_assessment_goal"
         verbose_name = _("目标任务")
-        unique_together = ("tenant_id", "goal_code")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "goal_code"],
+                name="uniq_goal_tenant_code",
+            )
+        ]
 
 
 class HrGoalVersion(models.Model):
