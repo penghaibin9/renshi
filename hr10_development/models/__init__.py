@@ -41,6 +41,12 @@ from .development_fact import (
     HrDevelopmentComplianceRule, HrDevelopmentRiskCase,
 )
 
+# Legacy takeover models are still part of the HR10 data migration contract.
+# Import them explicitly so Django's migration state does not mistake the
+# staging/import tables for abandoned models and propose destructive drops.
+from hr10_development.legacy.import_job import HrDevelopmentImportJob
+from hr10_development.legacy.staging import HrDevelopmentStagingRow
+
 __all__ = [
     "DevelopmentTenantModel",
     "DevelopmentActivityCatalog",
@@ -83,4 +89,6 @@ __all__ = [
     "HrDevelopmentMetricLedger",
     "HrDevelopmentComplianceRule",
     "HrDevelopmentRiskCase",
+    "HrDevelopmentImportJob",
+    "HrDevelopmentStagingRow",
 ]
