@@ -154,20 +154,24 @@ class MigrationService:
         emp_svc = EmploymentService(self.tenant_id)
         assign_svc = AssignmentService(self.tenant_id)
         try:
-            rel = emp_svc.start_relationship(
-                staff_id=staff,
-                relationship_type="REGULAR_EMPLOYMENT",
-                effective_from=joining,
-                source_business_type="MIGRATION_VERIFIED",
-                source_business_id=f"legacy-employee-{staff.legacy_employee_id}",
-            )
-            assign_svc.create_assignment(
-                employment_relationship_id=rel,
-                assignment_type="PRIMARY",
-                effective_from=joining,
-                organization_id=None,
-                legacy_department_id=legacy_department_id,
-            )
+            # 这里必须再开 savepoint：函数需要把单个员工失败转换成结构化结果，
+            # 如果只依赖外层 @atomic，却在内部 catch Exception，Django 会认为事务正常结束，
+            # 可能留下“relationship 已建、assignment 失败”的半迁移事实。
+            with transaction.atomic():
+                rel = emp_svc.start_relationship(
+                    staff_id=staff,
+                    relationship_type="REGULAR_EMPLOYMENT",
+                    effective_from=joining,
+                    source_business_type="MIGRATION_VERIFIED",
+                    source_business_id=f"legacy-employee-{staff.legacy_employee_id}",
+                )
+                assign_svc.create_assignment(
+                    employment_relationship_id=rel,
+                    assignment_type="PRIMARY",
+                    effective_from=joining,
+                    organization_id=None,
+                    legacy_department_id=legacy_department_id,
+                )
             return {"status": "created", "relationshipId": str(rel.id)}
         except Exception as exc:
             return {"status": "failed", "reason": f"{exc}"}
