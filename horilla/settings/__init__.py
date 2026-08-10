@@ -5,7 +5,7 @@ horilla/settings/__init__.py
 
 规则：
 1. base 是上游基础设置；addons/local_settings 只能做受控覆盖。
-2. HR01~HR12 必须显式注册，不能再依赖 AppConfig.ready() 偷偷改根 URL。
+2. 已进入施工的 HR 模块必须显式注册，不能再依赖 AppConfig.ready() 偷偷改根 URL。
 3. 开发、CI、迁移验收、生产统一 MySQL；非 MySQL 配置直接 fail-closed。
 """
 
@@ -27,8 +27,8 @@ try:
 except ImportError:
     pass
 
-# HR01~HR12 production baseline. Keep this list ordered by domain number so a
-# beginner can immediately see what the current baseline contains.
+# Canonical HR production apps. Keep this list ordered by domain number so a
+# beginner can immediately see which authorities are registered on this branch.
 CANONICAL_HR_APPS = [
     "hr_control_center",  # HR01
     "hr_structure",  # HR02
@@ -42,6 +42,7 @@ CANONICAL_HR_APPS = [
     "hr10_development",  # HR10
     "hr_time",  # HR11
     "hr_assessment",  # HR12
+    "hr_title",  # HR13
 ]
 
 for _app in CANONICAL_HR_APPS:
