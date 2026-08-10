@@ -66,7 +66,10 @@ jobs:
           fi
 
       - name: Syntax gate
-        run: python -m compileall -q horilla base employee hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment
+        shell: bash
+        run: |
+          mapfile -t hr_dirs < <(find . -maxdepth 1 -type d \( -name 'hr_*' -o -name 'hr10_development' \) -printf '%f\n' | sort)
+          python -m compileall -q horilla base employee "${hr_dirs[@]}"
 
       - name: Format gate for takeover-owned bootstrap files
         run: |
@@ -104,7 +107,7 @@ jobs:
               printf '%s\n' "$output"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,line=78,title=Migration drift detected::" + e)'
+            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,title=Migration drift detected::" + e)'
 
             # Generate reproducible candidate files for review. These files are
             # never used to make this run green: the gate still exits non-zero.
@@ -132,13 +135,18 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
-      - name: Tenant and HR baseline tests
+      - name: Tenant and registered HR tests
+        shell: bash
         run: |
-          python manage.py test \
-            base \
-            hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding \
-            hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment \
-            --noinput --verbosity 1
+          HR_APPS=$(python - <<'PY'
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "horilla.settings")
+          from horilla.settings import CANONICAL_HR_APPS
+          print(" ".join(CANONICAL_HR_APPS))
+          PY
+          )
+          echo "Testing registered apps: $HR_APPS"
+          python manage.py test base $HR_APPS --noinput --verbosity 1
 
   production-settings-gate:
     runs-on: ubuntu-latest
