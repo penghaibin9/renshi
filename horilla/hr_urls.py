@@ -1,47 +1,35 @@
-"""Explicit HR01~HR12 URL registry.
+"""Explicit HR01~HR12 URL registry."""
 
-Do not mutate ``horilla.urls.urlpatterns`` from AppConfig.ready(). Keeping the
-routing graph in one file makes startup deterministic and makes the module map
-obvious to a beginner.
-"""
+from django.urls import include, path, re_path
 
-from django.urls import include, path
+from horilla.legacy_hr_api import legacy_hr_api_redirect
 
 urlpatterns = [
-    # HR01
+    # HR01~HR06 UI routes
     path("hr/", include("hr_control_center.urls")),
-    path("", include("hr_control_center.api.urls")),
-    # HR02
     path("hr/structure/", include("hr_structure.urls")),
-    path("", include("hr_structure.api.urls")),
-    # HR03
     path("hr/staff/", include("hr_staff.urls")),
-    path("", include("hr_staff.api.urls")),
-    # HR04
     path("hr/recruitment/", include("hr_recruitment.urls")),
     path("", include("hr_recruitment.public.urls")),
-    path("", include("hr_recruitment.api.urls")),
-    # HR05
     path("hr/onboarding/", include("hr_onboarding.urls")),
-    path("", include("hr_onboarding.api.urls")),
-    # HR06
     path("hr/changes/", include("hr_changes.urls")),
-    path("", include("hr_changes.api.urls")),
-    # HR07 is intentionally NOT routed until its missing Authority app/models/
-    # migrations/tests are recovered and pass MySQL acceptance.
-    # HR08
+    # HR07 remains deliberately unrouted until its missing Authority app,
+    # migrations and tests are recovered.
+    # HR08 UI
     path("hr/external-teachers/", include("hr_external.urls")),
-    path("", include("hr_external.api.urls")),
-    # HR09
+    # HR09 UI
     path("hr/qualifications/", include("hr_qualification.urls")),
     path("hr/double-teacher/", include("hr_qualification.urls_double_teacher")),
-    path("", include("hr_qualification.api.urls")),
-    # HR10 (its URL modules own their canonical sub-prefixes)
+    # HR10 UI owns its internal /hr/development/... route prefixes.
     path("", include("hr10_development.urls")),
-    path("", include("hr10_development.api.urls")),
-    # HR11
-    path("", include("hr_time.api.urls")),
-    # HR12
+    # HR12 UI
     path("hr/assessments/", include("hr_assessment.urls")),
+    # Canonical APIs for the old-root modules HR01/02/03/04/05/06/08/11.
+    path("", include("horilla.canonical_hr_api")),
+    # HR09/10/12 already declare /api/v1/hr/... routes natively.
+    path("", include("hr_qualification.api.urls")),
+    path("", include("hr10_development.api.urls")),
     path("", include("hr_assessment.api.urls")),
+    # Legacy API root is adapter-only. 308 preserves POST/PUT/PATCH bodies.
+    re_path(r"^api/hr/v1/(?P<tail>.*)$", legacy_hr_api_redirect, name="legacy-hr-api"),
 ]
