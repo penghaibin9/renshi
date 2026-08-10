@@ -69,7 +69,10 @@ _HIRING_TRANSITIONS = {
         ExternalHiringStatus.CANCELLED,
     },
     ExternalHiringStatus.SUBMITTED: {
+        # 当前产品流程把 SUBMITTED 定义为“已提交、等待学院审批”。学院批准后
+        # 可直接进入 HR 审；UNDER_COLLEGE_REVIEW 仍保留给显式开始学院审的客户端。
         ExternalHiringStatus.UNDER_COLLEGE_REVIEW,
+        ExternalHiringStatus.UNDER_HR_REVIEW,
         ExternalHiringStatus.RETURNED,
         ExternalHiringStatus.WITHDRAWN,
     },
@@ -184,6 +187,42 @@ class HiringService:
             tenant_id=tenant_id,
             agreement_type_code=agreement_type_code,
             agreement_id=agreement_id,
+        )
+        status = result.data.get("agreementStatus") if result.is_available else ""
+        return status in (
+            AgreementProviderStatus.SIGNED.value,
+            AgreementProviderStatus.ACTIVE.value,
+        )
+
+    @transaction.atomic
+    def activate(self, case: HrExternalHiringCase, *, actor_id=None) -> HrExternalEngagement:
+        """ActivateExternalEngagement（§43 事务序列）。
+
+        生产级并发防护：对 case 加行锁（select_for_update），
+        双请求同时 activate 时第二个等待锁后读到 ACTIVATED → 拒绝（409）。
+        """
+        case = HrExternalHiringCase.objects.select_for_update().get(id=case.id)
+        if case.status != ExternalHiringStatus.READY_TO_ACTIVATE:
+            raise InvalidHiringState("case not ready to activate")
+
+        # 2) revalidate dates
+        if case.requested_end and case.requested_start >= case.requested_end:
+            raise InvalidHiringState("EXTERNAL_ENGAGEMENT_DATES_INVALID")
+        if case.proposed_person_id is None:
+            raise HiringCaseNotFound("proposed person missing")
+
+        profile = HrExternalTeacherProfile.objects.filter(
+            tenant_id=case.tenant_id,
+            person_id_id=case.proposed_person_id_id,
+        ).first()
+        if profile is None:
+            raise HiringCaseNotFound("external profile missing for proposed person")
+
+        # 3) confirm HR07 agreement state
+        gate_ok = self.agreement_gate(
+            tenant_id=case.tenant_id,
+            agreement_type_code=case.category_id.agreement_type_code,
+            agreement_id=case.approval_instance_id,
         )
         status = result.data.get("agreementStatus") if result.is_available else ""
         return status in (
