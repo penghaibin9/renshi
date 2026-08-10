@@ -51,7 +51,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="selfservicecatalogitem",
-            index=models.Index(fields=["tenant_id", "enabled", "sort_order"], name="idx_hr17_catalog_tenant_enabled"),
+            index=models.Index(fields=["tenant_id", "enabled", "sort_order"], name="idx_hr17_catalog_enabled"),
         ),
         migrations.AddConstraint(
             model_name="selfservicepinnedservice",
