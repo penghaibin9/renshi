@@ -23,6 +23,7 @@ class ExitCase(HrTenantScopedModel):
         REJECTED = "REJECTED", "Rejected"
         HANDOVER = "HANDOVER", "Handover"
         SETTLEMENT = "SETTLEMENT", "Settlement"
+        EFFECT_PENDING = "EFFECT_PENDING", "Waiting for HR03 employment effect"
         EFFECTIVE = "EFFECTIVE", "Effective"
         CANCELLED = "CANCELLED", "Cancelled"
 
@@ -48,6 +49,7 @@ class ExitCase(HrTenantScopedModel):
 
 class ExitFact(HrTenantScopedModel):
     class Status(models.TextChoices):
+        EFFECT_PENDING = "EFFECT_PENDING", "Waiting for HR03 employment effect"
         EFFECTIVE = "EFFECTIVE", "Effective"
         REVISED = "REVISED", "Revised"
         REVOKED = "REVOKED", "Revoked"
@@ -60,7 +62,9 @@ class ExitFact(HrTenantScopedModel):
     employment_end_date = models.DateField()
     last_working_date = models.DateField(null=True, blank=True)
     access_end_at = models.DateTimeField(null=True, blank=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.EFFECTIVE, db_index=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.EFFECT_PENDING, db_index=True)
+    effect_receipt_json = models.JSONField(default=dict, blank=True)
+    last_effect_error = models.TextField(blank=True, default="")
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
@@ -91,7 +95,7 @@ class RetirementFact(HrTenantScopedModel):
         default=PensionStatus.NOT_STARTED,
         db_index=True,
     )
-    status = models.CharField(max_length=16, choices=ExitFact.Status.choices, default=ExitFact.Status.EFFECTIVE, db_index=True)
+    status = models.CharField(max_length=16, choices=ExitFact.Status.choices, default=ExitFact.Status.EFFECT_PENDING, db_index=True)
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
