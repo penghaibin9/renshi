@@ -73,7 +73,7 @@ class ProjectionService:
                 continue
             seen_profiles.add(profile.id)
 
-            state = HrExternalProjectionState.objects.get_or_create(
+            state, _ = HrExternalProjectionState.objects.get_or_create(
                 tenant_id=tenant_id,
                 external_profile_id=profile,
                 defaults={
@@ -83,21 +83,28 @@ class ProjectionService:
                     "payroll_regular": False,
                     "attendance_regular": False,
                 },
-            )[0]
+            )
             state.projection_hash = self._hash(profile, eng)
             state.last_projected_at = timezone.now()
-            state.save(
-                update_fields=["projection_hash", "last_projected_at", "updated_at"]
-            )
 
-            # 关联 legacy Employee（映射，非 authority key，§112）：通过 HR03 StaffMasterProvider
-            # 按 person 找 legacy 投影；找不到 → LEGACY_EMPLOYEE_MISSING。
+            # 关联 legacy Employee（映射，非 authority key，§112）：通过 HR03 StaffMasterProvider。
             legacy_id = self._resolve_legacy_employee(tenant_id, profile)
             summary.projected += 1
             if not legacy_id:
                 summary.missing_legacy += 1
                 state.status = "LEGACY_EMPLOYEE_MISSING"
-                state.save(update_fields=["status", "updated_at"])
+
+            # ProjectionState 是 HR08 权威状态：每次投影事实变化都递增版本。
+            state.version += 1
+            state.save(
+                update_fields=[
+                    "projection_hash",
+                    "last_projected_at",
+                    "status",
+                    "version",
+                    "updated_at",
+                ]
+            )
 
         return summary
 
@@ -127,7 +134,16 @@ class ProjectionService:
             ).exists()
             if not active:
                 state.status = "SUPERSEDED"
-                state.save(update_fields=["status", "updated_at"])
+                state.last_reconciled_at = timezone.now()
+                state.version += 1
+                state.save(
+                    update_fields=[
+                        "status",
+                        "last_reconciled_at",
+                        "version",
+                        "updated_at",
+                    ]
+                )
                 continue
-            summary.checked = getattr(summary, "checked", 0) + 1
+            summary.checked += 1
         return summary
