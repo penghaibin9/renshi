@@ -19,7 +19,7 @@ from base.models import Company, Department, EmployeeType, JobPosition
 from employee.models import Employee, EmployeeWorkInformation
 from horilla_auth.models import HorillaUser
 
-BOOTSTRAP_URL = "/api/hr/v1/home/bootstrap"
+BOOTSTRAP_URL = "/api/v1/hr/home/bootstrap"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
@@ -196,7 +196,7 @@ class HrBootstrapApiTests(TestCase):
 
     def test_metrics_endpoint(self):
         self._login_school()
-        resp = self.client.get("/api/hr/v1/home/overview/metrics")
+        resp = self.client.get("/api/v1/hr/home/overview/metrics")
         self.assertEqual(resp.status_code, 200, resp.content[:300])
         data = resp.json()
         keys = {m["metricKey"] for m in data["metrics"]}
