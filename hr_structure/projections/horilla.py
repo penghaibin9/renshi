@@ -81,8 +81,6 @@ class HorillaStructureProjectionService:
 
     def create_root_from_company(self, company) -> HrOrganization:
         """Company → HrOrganization(SCHOOL) 根（M1，总册 31.2）。幂等。"""
-        from base.models import Company
-
         link = HrLegacyObjectLink.objects.filter(
             tenant_id=company.id,
             domain_entity_type="root",
@@ -121,16 +119,23 @@ class HorillaStructureProjectionService:
         return org
 
     def reconcile_report(self) -> dict:
-        """对账（总册 30.2 DUAL_READ_COMPARE 维度）。"""
+        """对账（总册 30.2 DUAL_READ_COMPARE 维度），严格按 tenant 隔离。"""
         from base.models import Department
-        from employee.models import Employee, EmployeeWorkInformation
+        from employee.models import EmployeeWorkInformation
 
-        active_depts = Department.objects.filter(is_active=True).count()
+        active_depts = Department.objects.filter(
+            company_id=self.tenant_id,
+            is_active=True,
+        ).count()
         mapped_depts = HrLegacyObjectLink.objects.filter(
-            tenant_id=self.tenant_id, legacy_model="department", link_status="MAPPED"
+            tenant_id=self.tenant_id,
+            legacy_model="department",
+            link_status="MAPPED",
         ).count()
         # Employee current org mapping（EmployeeWorkInformation.department → HR02 org）
+        # 必须显式 company/tenant 过滤，禁止依赖 Horilla request thread-local manager。
         unmapped_employees = EmployeeWorkInformation.objects.filter(
+            company_id_id=self.tenant_id,
             employee_id__is_active=True,
         ).filter(department_id__isnull=True).count()
 
