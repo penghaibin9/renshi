@@ -1,10 +1,8 @@
-"""
-hr_external/models/title_qualification.py 鈥斺€?绉板彿浠诲懡 + 鑱樼敤璧勬牸瀹℃煡 + 灞ヨ亴璇勪环锛堟€诲唽 搂14/搂5.2/搂35/搂71锛夈€?
+"""HR08 title appointments, qualification reviews and performance reviews.
 
-S2/S4/S5 缂哄け妯″瀷琛ラ綈锛?
-- HrExternalTitleAppointment锛氱О鍙蜂换鍛斤紙Title 鈮?Engagement锛岃崳瑾夋€хО鍙蜂笌鍙楄仒鍒嗙锛?
-- HrExternalQualificationReview锛氳仒鐢ㄨ祫鏍煎鏌ワ紙搂35 瀹℃壒鍓嶆鏌ワ紝璇?HR09 宸叉牳楠屼簨瀹烇級
-- HrExternalPerformanceReview锛氬鑱樺饱鑱岃瘎浠凤紙搂71锛岀画鑱樺喅绛栬緭鍏ワ級
+These models intentionally keep honorary titles separate from active external
+engagements. Qualification review consumes verified HR09 facts when available;
+performance review feeds renewal decisions without mutating finalized facts.
 """
 
 from __future__ import annotations
@@ -22,8 +20,7 @@ from hr_external.constants import (
 
 
 class HrExternalTitleAppointment(models.Model):
-    """绉板彿浠诲懡锛埪?.2/搂14/搂15锛夈€傝崳瑾夌О鍙蜂笌 Engagement 鍒嗙锛?
-    HONORARY_TITLE 涓嶈嚜鍔ㄦ剰鍛崇潃鏈夎/宸ヨ祫/闂ㄧ/OA/鏁欏姟鏉冮檺銆?""
+    """Title appointment fact; an honorary title never grants employment access."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
@@ -49,7 +46,10 @@ class HrExternalTitleAppointment(models.Model):
     valid_to = models.DateField(null=True, blank=True)
     is_honorary_only = models.BooleanField(
         default=False,
-        help_text="绾崳瑾夌О鍙凤紙涓嶉粯璁ゅ紑鏀捐/宸ヨ祫/闂ㄧ/鏁欏姟鏉冮檺锛?,
+        help_text=(
+            "Honorary-only title. It does not by itself grant teaching, payroll, "
+            "door-access, office-system, or academic-system permissions."
+        ),
     )
     version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -84,7 +84,7 @@ class HrExternalTitleAppointment(models.Model):
 
 
 class HrExternalQualificationReview(models.Model):
-    """鑱樼敤璧勬牸瀹℃煡锛埪?5/搂14锛夈€傝 HR09 宸叉牳楠屼簨瀹烇紱鏃犲垯 staging evidence 鎻愪氦鏍搁獙锛埪?0锛夈€?""
+    """Pre-engagement qualification review referencing verified HR09 evidence."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
@@ -105,9 +105,9 @@ class HrExternalQualificationReview(models.Model):
         choices=QualificationReviewStatus.choices,
         default=QualificationReviewStatus.PENDING,
     )
-    # 寮曠敤 HR09 鏉冨▉璧勬牸浜嬪疄锛坧rovider 鍗犱綅锛汬R09 鏈氦浠樺垯绌猴級
+    # Provider reference to an HR09 verified qualification fact.
     hr09_credential_ref = models.CharField(max_length=64, blank=True, default="")
-    # 鏆傚瓨寰呮牳楠岃瘉鎹紙鏉愭枡寮曠敤鍒楄〃锛?
+    # Evidence can be staged until HR09 verification is available.
     staging_evidence = models.JSONField(default=list, blank=True)
     reviewer = models.BigIntegerField(null=True, blank=True)
     review_notes = models.TextField(blank=True, default="")
@@ -141,7 +141,7 @@ class HrExternalQualificationReview(models.Model):
 
 
 class HrExternalPerformanceReview(models.Model):
-    """灞ヨ亴璇勪环锛埪?4/搂71锛夈€傜画鑱樺喅绛栧叧閿緭鍏ワ紱璇勪环缁撴灉涓嶅彲鍘熷湴鏀癸紙00 搂20 FINAL 鍚庝笉鍙彉鏇达級銆?""
+    """External-engagement performance review used by renewal decisions."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
@@ -153,7 +153,7 @@ class HrExternalPerformanceReview(models.Model):
     period = models.CharField(max_length=64)
     task_completion = models.TextField(blank=True, default="")
     teaching_quality_ref = models.CharField(max_length=64, blank=True, default="")
-    host_org_rating = models.CharField(max_length=16, blank=True, default="")  # 1-5 鎴栧瓧鍏?
+    host_org_rating = models.CharField(max_length=16, blank=True, default="")
     compliance_result = models.CharField(max_length=32, blank=True, default="")
     contribution_summary = models.TextField(blank=True, default="")
     result = models.CharField(
