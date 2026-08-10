@@ -48,13 +48,19 @@ class HorillaMySQLSchemaEditor(DatabaseSchemaEditor):
     )
 
     def _create_unique_sql(self, model, fields, *args, **kwargs):
-        """Skip only the impossible payroll physical key; 0005 installs its equivalent."""
+        """Defer only the impossible payroll key; ``payroll.0005`` installs its equivalent.
+
+        ``create_model()`` stores this method's return value in ``deferred_sql``.
+        Returning ``None`` would therefore make SchemaEditor attempt to execute
+        SQL ``None`` at context-manager exit. Return an explicit harmless SQL
+        statement instead; the real semantic UNIQUE is created by payroll.0005.
+        """
         field_names = tuple(getattr(field, "name", None) for field in fields)
         if (
             model._meta.db_table == self._ALLOWANCE_TABLE
             and field_names == self._ALLOWANCE_OVERSIZED_UNIQUE
         ):
-            return None
+            return "SELECT 1 /* payroll.0005 installs semantic allowance UNIQUE */"
         return super()._create_unique_sql(model, fields, *args, **kwargs)
 
     def alter_unique_together(self, model, old_unique_together, new_unique_together):
