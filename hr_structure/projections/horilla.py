@@ -120,16 +120,27 @@ class HorillaStructureProjectionService:
 
     def reconcile_report(self) -> dict:
         """对账（总册 30.2 DUAL_READ_COMPARE 维度），严格按 tenant 隔离。"""
-        from base.models import Department
+        from base.models import Department, JobPosition
         from employee.models import EmployeeWorkInformation
 
         active_depts = Department.objects.filter(
             company_id=self.tenant_id,
             is_active=True,
         ).count()
+        active_job_positions = JobPosition.objects.filter(
+            company_id=self.tenant_id,
+            is_active=True,
+        ).count()
         mapped_depts = HrLegacyObjectLink.objects.filter(
             tenant_id=self.tenant_id,
+            legacy_app="base",
             legacy_model="department",
+            link_status="MAPPED",
+        ).count()
+        mapped_job_positions = HrLegacyObjectLink.objects.filter(
+            tenant_id=self.tenant_id,
+            legacy_app="base",
+            legacy_model="jobposition",
             link_status="MAPPED",
         ).count()
         # Employee current org mapping（EmployeeWorkInformation.department → HR02 org）
@@ -143,6 +154,8 @@ class HorillaStructureProjectionService:
             "tenantId": self.tenant_id,
             "activeLegacyDepartments": active_depts,
             "mappedOrganizations": mapped_depts,
+            "activeLegacyJobPositions": active_job_positions,
+            "mappedJobPositions": mapped_job_positions,
             "unmappedOrgEmployees": unmapped_employees,
             "generatedAt": timezone.now().isoformat(),
         }
