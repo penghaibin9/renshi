@@ -1,33 +1,41 @@
-import sys
-from datetime import date, datetime, time, timedelta
+"""Employee scheduled jobs.
+
+This module defines jobs only. It must never start APScheduler at import time.
+Run the dedicated worker with ``python manage.py run_employee_scheduler``.
+"""
+
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
+
+from horilla.horilla_middlewares import tenant_context
+
+
+def _for_each_company(job):
+    """Execute one legacy job once per concrete school/tenant."""
+    from base.models import Company
+
+    for company_id in Company.objects.values_list("id", flat=True).iterator():
+        with tenant_context(company_id):
+            job()
 
 
 def update_experience():
     from employee.models import EmployeeWorkInformation
 
-    """
-    This scheduled task to trigger the experience calculator
-    to update the employee work experience
-    """
     queryset = EmployeeWorkInformation.objects.filter(employee_id__is_active=True)
-    for instance in queryset:
+    for instance in queryset.iterator():
         instance.experience_calculator()
-    return
 
 
 def block_unblock_disciplinary():
-    """
-    Scheduled task to apply disciplinary actions and block/unblock employee accounts.
-    """
     from base.models import EmployeeShiftSchedule
     from employee.models import DisciplinaryAction
     from horilla_auth.models import HorillaUser
 
     today = date.today()
     now = datetime.now().time()
-
     dis_actions = DisciplinaryAction.objects.select_related("action").prefetch_related(
         "employee_id"
     )
@@ -43,7 +51,6 @@ def block_unblock_disciplinary():
 
         if dis.action.action_type == "suspension":
             active = None
-
             if dis.days:
                 start_date = dis.start_date
                 end_date = start_date + timedelta(days=dis.days)
@@ -55,57 +62,68 @@ def block_unblock_disciplinary():
             if dis.hours:
                 if today != dis.start_date:
                     continue
-                hour_str = dis.hours + ":00"
-                hour_time = datetime.strptime(hour_str, "%H:%M:%S").time()
-
+                hour_time = datetime.strptime(dis.hours + ":00", "%H:%M:%S").time()
                 for emp in employees:
                     if not emp.employee_work_info:
                         continue
-
                     shift = emp.employee_work_info.shift_id
                     shift_today = EmployeeShiftSchedule.objects.filter(
                         shift_id=shift, day__day=datetime.today().strftime("%A").lower()
                     ).first()
                     if not shift_today:
                         continue
-
                     st_time = shift_today.start_time
-                    suspension_end_datetime = datetime.combine(
-                        today, st_time
-                    ) + timedelta(
-                        hours=hour_time.hour,
-                        minutes=hour_time.minute,
-                        seconds=hour_time.second,
-                    )
-                    suspension_end_time = suspension_end_datetime.time()
-
+                    suspension_end_time = (
+                        datetime.combine(today, st_time)
+                        + timedelta(
+                            hours=hour_time.hour,
+                            minutes=hour_time.minute,
+                            seconds=hour_time.second,
+                        )
+                    ).time()
                     if now >= suspension_end_time:
                         active = True
                     elif now >= st_time:
                         active = False
-
                     user = emp.employee_user_id
-                    if user:
+                    if user and active is not None:
                         user.is_active = active
-                        user.save()
+                        user.save(update_fields=["is_active"])
 
             if dis.days and active is not None:
                 HorillaUser.objects.filter(id__in=user_ids).update(is_active=active)
 
-        elif dis.action.action_type == "dismissal":
-            if today >= dis.start_date:
-                active = False
-                HorillaUser.objects.filter(id__in=user_ids).update(is_active=active)
+        elif dis.action.action_type == "dismissal" and today >= dis.start_date:
+            HorillaUser.objects.filter(id__in=user_ids).update(is_active=False)
 
 
-if not any(
-    cmd in sys.argv
-    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell", "test"]
-):
-    """
-    Initializes and starts background tasks using APScheduler when the server is running.
-    """
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(update_experience, "interval", hours=4)
-    scheduler.add_job(block_unblock_disciplinary, "interval", seconds=60)
-    scheduler.start()
+def update_experience_all_tenants():
+    _for_each_company(update_experience)
+
+
+def block_unblock_disciplinary_all_tenants():
+    _for_each_company(block_unblock_disciplinary)
+
+
+def build_scheduler(*, blocking=False):
+    scheduler_cls = BlockingScheduler if blocking else BackgroundScheduler
+    scheduler = scheduler_cls(timezone="UTC")
+    scheduler.add_job(
+        update_experience_all_tenants,
+        "interval",
+        hours=4,
+        id="employee.update_experience",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        block_unblock_disciplinary_all_tenants,
+        "interval",
+        seconds=60,
+        id="employee.block_unblock_disciplinary",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    return scheduler

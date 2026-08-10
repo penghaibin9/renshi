@@ -1,25 +1,30 @@
-"""
-CI test settings — inherits base, overrides DB for Docker PostgreSQL.
-"""
+"""CI settings: MySQL is the only acceptance database."""
+
 import os
+
 from horilla.settings.base import *  # noqa: F401,F403
 
-# Override database for CI testing
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "horilla_db",
-        "USER": "horilla_user",
-        "PASSWORD": "horilla_pass",
-        "HOST": "127.0.0.1",
-        "PORT": "5432",
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": os.getenv("MYSQL_DATABASE", "horilla_db"),
+        "USER": os.getenv("MYSQL_USER", "horilla_user"),
+        "PASSWORD": os.getenv("MYSQL_PASSWORD", "horilla_pass"),
+        "HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
+        "PORT": os.getenv("MYSQL_PORT", "3306"),
+        "CONN_MAX_AGE": 0,
+        "CONN_HEALTH_CHECKS": True,
         "OPTIONS": {
-            "connect_timeout": 10,
+            "charset": "utf8mb4",
+            "init_command": (
+                "SET sql_mode='STRICT_TRANS_TABLES,NO_ZERO_DATE,"
+                "NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'"
+            ),
+            "isolation_level": "read committed",
         },
     }
 }
 
-# Disable Redis for CI (not needed for check + test)
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",

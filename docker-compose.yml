@@ -1,9 +1,5 @@
-# Development Compose stack for Horilla HR.
-# Zero-config: `make dev` / `docker compose up --build`
-# Production: `make prod` (uses docker-compose.prod.yml + .env — see .env.dist)
-#
-# Dev secrets below are intentionally weak and for local use only.
-# Replaces the legacy docker-compose.yaml (Python 3.10 / runserver) stack.
+# 跃科高校人事系统开发栈：MySQL-only。
+# 新手入口：`make dev`；数据库控制台：`make db-shell`。
 
 services:
   web:
@@ -15,14 +11,18 @@ services:
       - staticfiles:/app/staticfiles
       - media:/app/media
     environment:
-      - DEBUG=1
-      - DB_HOST=db
-      - SECRET_KEY=dev-secret-key-change-in-production
-      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
-      - CSRF_TRUSTED_ORIGINS=http://localhost:8000
-      - DATABASE_URL=postgres://horilla_user:horilla_pass@db:5432/horilla_db
-      - DB_INIT_PASSWORD=dev-init-password-change-in-production
-      - REDIS_URL=redis://:horilla_pass@redis:6379/0
+      DEBUG: "1"
+      HORILLA_ENV: development
+      DB_HOST: db
+      DB_PORT: "3306"
+      SECRET_KEY: dev-secret-key-change-in-production
+      ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+      CSRF_TRUSTED_ORIGINS: http://localhost:8000
+      DATABASE_URL: mysql://horilla_user:horilla_pass@db:3306/horilla_db?charset=utf8mb4
+      DB_INIT_PASSWORD: dev-init-password-change-in-production
+      REDIS_URL: redis://:horilla_pass@redis:6379/0
+      COMPANY_SCOPED_PERMISSIONS: "True"
+      TENANT_FAIL_CLOSED: "True"
     depends_on:
       db:
         condition: service_healthy
@@ -36,18 +36,28 @@ services:
       retries: 3
 
   db:
-    image: postgres:16-alpine
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
     environment:
-      POSTGRES_DB: horilla_db
-      POSTGRES_USER: horilla_user
-      POSTGRES_PASSWORD: horilla_pass
+      MYSQL_DATABASE: horilla_db
+      MYSQL_USER: horilla_user
+      MYSQL_PASSWORD: horilla_pass
+      MYSQL_ROOT_PASSWORD: horilla_root_pass
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U horilla_user -d horilla_db"]
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent",
+        ]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 30
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
@@ -65,8 +75,6 @@ services:
     ports:
       - "80:80"
     volumes:
-      # Static only — /media/ is proxied to Django (protected_media). Do not
-      # mount the media volume here; an alias location would bypass auth.
       - staticfiles:/static:ro
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -77,5 +85,5 @@ services:
 volumes:
   staticfiles:
   media:
-  postgres_data:
+  mysql_data:
   redis_data:

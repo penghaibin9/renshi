@@ -37,6 +37,7 @@ html5lib
 Jinja2
 idna
 lxml
+mysqlclient>=2.2,<3
 numpy
 oauthlib
 openpyxl
@@ -75,6 +76,5 @@ webencodings
 xhtml2pdf
 XlsxWriter
 gunicorn
-psycopg2-binary
 whitenoise
 django-storages

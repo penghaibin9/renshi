@@ -1,34 +1,55 @@
-# Lightweight quality gates for open-source PRs.
-# Full-repo Black reformatting is left to pre-commit for contributors;
-# CI checks settings/bootstrap modules + Django system checks.
-
-name: Quality
+name: Quality / MySQL Contract
 
 on:
   push:
-    branches: [dev/v2.0, "2.0"]
+    branches: [main, agent/renshi-takeover-cleanup-20260810]
   pull_request:
-    branches: [dev/v2.0, "2.0"]
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
 
 jobs:
-  lint-and-check:
+  django-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: horilla_db
+          MYSQL_USER: horilla_user
+          MYSQL_PASSWORD: horilla_pass
+          MYSQL_ROOT_PASSWORD: horilla_root_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
-      - name: Install system libraries (Weasy/xhtml2pdf)
+      - name: Install native libraries
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config \
             libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
             libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
 
@@ -38,67 +59,76 @@ jobs:
           pip install -r requirements.txt
           pip install "black==24.4.2" "isort==5.13.2"
 
-      - name: Ensure local_settings stub exists
+      - name: Ensure local settings stub
         run: |
           if [ ! -f horilla/settings/local_settings.py ]; then
             printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
           fi
 
-      - name: Black (settings + urls)
-        run: black --check horilla/settings horilla/urls.py
+      - name: Format gate for takeover bootstrap
+        run: |
+          black --check horilla/settings horilla/urls.py horilla/hr_urls.py base/auth_backends.py base/horilla_company_manager.py employee/scheduler.py
+          isort --check-only --profile black horilla/settings horilla/urls.py horilla/hr_urls.py base/auth_backends.py base/horilla_company_manager.py employee/scheduler.py
 
-      - name: isort (settings + urls)
-        run: isort --check-only --profile black horilla/settings horilla/urls.py
-
-      - name: Django system checks (SQLite defaults)
-        env:
-          DJANGO_SETTINGS_MODULE: horilla.settings
-          DEBUG: "True"
-          SECRET_KEY: ci-dev-not-for-production
-          ALLOWED_HOSTS: localhost,127.0.0.1
+      - name: Django system check
         run: python manage.py check
+
+      - name: Migration drift gate
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Fresh MySQL migrate
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+
+      - name: Tenant and HR baseline tests
+        run: |
+          python manage.py test \
+            base \
+            hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding \
+            hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment \
+            --noinput --verbosity 1
 
   production-settings-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-
-      - name: Install dependencies
+      - name: Install minimal settings dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install Django==5.2 django-environ
 
-      - name: Ensure local_settings stub exists
-        run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
-          fi
-
-      - name: Reject insecure production defaults
+      - name: Production must reject DEBUG=true
         env:
-          DJANGO_SETTINGS_MODULE: horilla.settings
-          DEBUG: "False"
-          SECRET_KEY: django-insecure-default-key
-          ALLOWED_HOSTS: "*"
-          DB_INIT_PASSWORD: d3f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d
+          HORILLA_ENV: production
+          DEBUG: "True"
+          SECRET_KEY: a-strong-ci-key-that-is-not-a-placeholder
+          ALLOWED_HOSTS: example.edu
+          DB_INIT_PASSWORD: strong-ci-db-init-password
+          DATABASE_URL: mysql://u:p@127.0.0.1:3306/db
         run: |
           set +e
-          # Accessing settings forces LazySettings to load base.py (where the gate runs).
-          out=$(python -c "from django.conf import settings; print(settings.DEBUG)" 2>&1)
+          out=$(python -c "from horilla.settings.security import is_production_mode; print(is_production_mode(True, 'production'))" 2>&1)
           status=$?
           set -e
           echo "$out"
-          if [ "$status" -eq 0 ]; then
-            echo "Expected ImproperlyConfigured for insecure production defaults"
-            exit 1
-          fi
+          test "$status" -ne 0
+          echo "$out" | grep -qi "DEBUG=True"
+
+      - name: Production must reject documented weak secrets
+        run: |
+          set +e
+          out=$(python - <<'PY' 2>&1
+          from horilla.settings.security import validate_production_secrets
+          validate_production_secrets('django-insecure-default-key', ['*'], 'dev-init-password-change-in-production')
+          PY
+          )
+          status=$?
+          set -e
+          echo "$out"
+          test "$status" -ne 0
           echo "$out" | grep -qi "production security check failed"
