@@ -17,6 +17,10 @@ class LegacyImportSourceError(RuntimeError):
     """旧数据源不可读取时显式失败，禁止静默把 0 行当成功。"""
 
 
+class ExcelImportPipelineUnavailable(RuntimeError):
+    """Excel 文件存储/解析链未接通时 fail-closed，禁止把 placeholder 标 SUCCESS。"""
+
+
 def run_import_job(job_id: int):
     """
     执行异步导入任务。
@@ -118,11 +122,7 @@ def _parse_legacy_employee(job):
 
 
 def _parse_excel(job):
-    """解析 Excel 文件。"""
-    # S10: Excel 解析由 celery/cron job 驱动
-    # 生产阶段：读取 file_hash → open workbook → row validation → create staging rows
-    job.processed_rows = 0
-    job.result_summary_json = {
-        "message": "Excel parsing requires file storage integration (S10 placeholder)"
-    }
-    job.save(update_fields=["processed_rows", "result_summary_json", "updated_at"])
+    """Excel 真实解析链未交付前必须失败，绝不制造“0 行 SUCCESS”。"""
+    raise ExcelImportPipelineUnavailable(
+        "HR10_EXCEL_IMPORT_PIPELINE_UNAVAILABLE: file storage/validation/preview/confirm pipeline is not wired"
+    )
