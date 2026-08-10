@@ -13,6 +13,7 @@ from hr_staff.services.staff_master_service import StaffMasterService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "AUTHORIZED_CORRECTION"
 
 
 class EmploymentServiceTests(TestCase):
@@ -34,6 +35,7 @@ class EmploymentServiceTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2020, 9, 1),
             organization_id=self.org,
+            source_business_type=FIXTURE_SOURCE,
         )
         ended = self.emp_service.end_relationship(
             relationship_id=rel.id,
