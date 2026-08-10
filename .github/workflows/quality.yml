@@ -70,7 +70,7 @@ jobs:
 
       - name: Format gate for takeover-owned bootstrap files
         run: |
-          black --check \
+          black --check --diff \
             horilla/settings/__init__.py \
             horilla/settings/ci_test.py \
             horilla/settings/security.py \
