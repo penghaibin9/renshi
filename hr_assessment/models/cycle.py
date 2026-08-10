@@ -32,7 +32,12 @@ class HrAssessmentCycle(TenantScopedModel):
         db_table = "hr_assessment_cycle"
         verbose_name = _("考核周期")
         verbose_name_plural = _("考核周期")
-        unique_together = ("tenant_id", "cycle_no", "assessment_type")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "cycle_no", "assessment_type"],
+                name="uniq_cycle_tenant_no_type",
+            )
+        ]
         indexes = [models.Index(fields=["tenant_id", "assessment_type", "lifecycle_status"])]
 
     def __str__(self):
