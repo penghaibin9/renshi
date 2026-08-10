@@ -2,6 +2,7 @@
 hr_qualification/selectors/credential_selector.py —— 资格查询选择器。
 
 总册 §142：WHERE → COUNT → ORDER → PAGE，禁止先分页再 Python 过滤。
+所有 credential 详情读取必须显式 tenant scope，UUID 不能成为跨租户访问凭证。
 """
 
 from __future__ import annotations
@@ -12,7 +13,6 @@ from datetime import date
 from typing import Any
 
 from django.core.paginator import Paginator
-from django.db.models import QuerySet
 
 from hr_qualification.models import HrCredentialCatalogItem, HrPersonCredential
 
@@ -75,11 +75,15 @@ class CredentialSelector:
         }
 
     @staticmethod
-    def get_detail(credential_id: uuid.UUID) -> HrPersonCredential:
+    def get_detail(
+        *,
+        tenant_id: int,
+        credential_id: uuid.UUID,
+    ) -> HrPersonCredential:
         return (
-            HrPersonCredential.objects
-            .select_related("catalog_item_id", "person_id", "staff_master_id")
-            .get(id=credential_id)
+            HrPersonCredential.objects.select_related(
+                "catalog_item_id", "person_id", "staff_master_id"
+            ).get(id=credential_id, tenant_id=tenant_id)
         )
 
     @staticmethod
@@ -87,8 +91,9 @@ class CredentialSelector:
         """证号精确匹配（需权限受控）。"""
         no_hash = hashlib.sha256(certificate_no.encode()).hexdigest()
         return (
-            HrPersonCredential.objects
-            .filter(tenant_id=tenant_id, certificate_no_hash=no_hash)
+            HrPersonCredential.objects.filter(
+                tenant_id=tenant_id, certificate_no_hash=no_hash
+            )
             .select_related("catalog_item_id")
             .first()
         )
