@@ -7,7 +7,7 @@ PositionGate：
 - release_for_case：未生效取消时释放预占；
 - check_capacity：容量校验（HARD control 下 HELD 也算占用）。
 
-不新建岗位；只读取/预占/提交/释放（HR02 Authority）。
+不新建岗位；只读取/预占/提交/释放（HR02 Authority）。所有读写显式 tenant scope。
 """
 
 from __future__ import annotations
@@ -15,11 +15,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+from hr_changes.constants import ChangeActionCode
+from hr_structure.models import HrPositionReservation
 from hr_structure.scope import Hr02Scope
 from hr_structure.services.position import PositionService, PositionServiceError
-from hr_structure.models import HrPosition, HrPositionReservation
-
-from hr_changes.constants import ChangeActionCode
 
 
 class Hr02GateError(Exception):
@@ -35,13 +34,18 @@ class PositionGate:
     SOURCE_DOMAIN = "HR06"
 
     def __init__(self, tenant_id: int):
+        if not tenant_id:
+            raise Hr02GateError("TENANT_REQUIRED", "tenant_id is required")
         self.tenant_id = tenant_id
         self.scope = Hr02Scope(scope_type="SCHOOL", tenant_id=tenant_id)
         self.service = PositionService(self.scope, actor="HR06")
 
-    # ------------------------------------------------------------------
     def _idempotency_key(self, case_id) -> str:
-        return f"HR06-CASE-{case_id}"
+        return f"HR06-TENANT-{self.tenant_id}-CASE-{case_id}"
+
+    def _assert_case_tenant(self, case) -> None:
+        if getattr(case, "tenant_id", None) != self.tenant_id:
+            raise Hr02GateError("CROSS_TENANT_CASE", "change case tenant mismatch")
 
     def needs_position(self, action_code: str) -> bool:
         return action_code in (
@@ -50,14 +54,17 @@ class PositionGate:
         )
 
     def target_position(self, case):
-        """案件目标岗位（position-only 或 org+position 动作）。"""
+        self._assert_case_tenant(case)
         if not self.needs_position(case.action_id.code):
             return None
-        return case.target_position_id
+        position = case.target_position_id
+        if position is None:
+            return None
+        if getattr(position, "tenant_id", None) != self.tenant_id:
+            raise Hr02GateError("CROSS_TENANT_POSITION", "target position tenant mismatch")
+        return position
 
-    # ------------------------------------------------------------------
     def reserve_for_case(self, case) -> Optional[HrPositionReservation]:
-        """预占目标岗位（幂等：同 case 同岗位只一条）。"""
         position = self.target_position(case)
         if position is None:
             return None
@@ -72,27 +79,55 @@ class PositionGate:
                 idempotency_key=self._idempotency_key(case.id),
             )
         except PositionServiceError as exc:
-            raise Hr02GateError(exc.code, exc.args[0] if exc.args else "岗位预占失败")
+            raise Hr02GateError(
+                exc.code,
+                exc.args[0] if exc.args else "岗位预占失败",
+            )
 
     def commit_for_case(self, case) -> Optional[HrPositionReservation]:
+        self._assert_case_tenant(case)
         reservation = self._get_reservation(case)
         if reservation is None:
             return None
         try:
             return self.service.commit(reservation.id)
         except PositionServiceError as exc:
-            raise Hr02GateError(exc.code, exc.args[0] if exc.args else "岗位预占提交失败")
+            raise Hr02GateError(
+                exc.code,
+                exc.args[0] if exc.args else "岗位预占提交失败",
+            )
+
+    def require_commit_for_case(self, case) -> HrPositionReservation:
+        """需要岗位的异动必须存在并成功提交预占；不得把缺失/失败当成无事发生。"""
+        self._assert_case_tenant(case)
+        if not self.needs_position(case.action_id.code):
+            raise Hr02GateError(
+                "POSITION_RESERVATION_NOT_REQUIRED",
+                "当前异动类型不需要岗位预占",
+            )
+        reservation = self._get_reservation(case)
+        if reservation is None:
+            raise Hr02GateError(
+                "CHANGE_POSITION_RESERVATION_MISSING",
+                "目标岗位预占缺失，禁止生效",
+            )
+        return self.commit_for_case(case)
 
     def release_for_case(self, case) -> Optional[HrPositionReservation]:
+        self._assert_case_tenant(case)
         reservation = self._get_reservation(case)
         if reservation is None or reservation.status != HrPositionReservation.Status.HELD:
             return None
         try:
             return self.service.release(reservation.id)
         except PositionServiceError as exc:
-            raise Hr02GateError(exc.code, exc.args[0] if exc.args else "岗位预占释放失败")
+            raise Hr02GateError(
+                exc.code,
+                exc.args[0] if exc.args else "岗位预占释放失败",
+            )
 
     def _get_reservation(self, case) -> Optional[HrPositionReservation]:
+        self._assert_case_tenant(case)
         return (
             HrPositionReservation.objects.filter(
                 tenant_id=self.tenant_id,
@@ -103,30 +138,32 @@ class PositionGate:
             .first()
         )
 
-    # ------------------------------------------------------------------
     def check_capacity(self, case, as_of: Optional[date] = None) -> list[dict]:
-        """返回容量阻断项（[{code,message}]）；空=可预占。"""
         position = self.target_position(case)
         if position is None:
             return []
-        from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+        from hr_staff.services.effective_dated_query_service import (
+            EffectiveDatedQueryService,
+        )
 
         as_of = as_of or date.today()
         occupancy = EffectiveDatedQueryService(self.tenant_id).position_occupancy_as_of(
-            position.id, as_of
+            position.id,
+            as_of,
         )
-        # HELD 预占也算占用（HARD control）
-        held = (
-            HrPositionReservation.objects.filter(
-                position_id=position, status="HELD"
-            )
-            .count()
-        )
+        held = HrPositionReservation.objects.filter(
+            tenant_id=self.tenant_id,
+            position_id=position,
+            status=HrPositionReservation.Status.HELD,
+        ).count()
         if occupancy + held >= position.max_incumbents:
             return [
                 {
                     "code": "CHANGE_POSITION_CAPACITY_CONFLICT",
-                    "message": f"目标岗位可用额度不足（已占 {occupancy}，预占 {held}，上限 {position.max_incumbents}）",
+                    "message": (
+                        f"目标岗位可用额度不足（已占 {occupancy}，预占 {held}，"
+                        f"上限 {position.max_incumbents}）"
+                    ),
                 }
             ]
         return []

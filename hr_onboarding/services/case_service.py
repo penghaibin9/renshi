@@ -6,6 +6,8 @@ Onboarding Case 编排（HR05-01 待报到人员）：
 - confirm_intent / request_delay / approve_delay / decline：意愿与延期（延期不覆盖原日期，保留历史）；
 - transition：状态迁移（含 HrOnboardingStageTransition ledger）；
 - decline 时释放 Position Reservation（HR02 Provider）。
+
+安全纪律：所有 case/delay 读取都必须显式 tenant scope；所有幂等键必须 tenant namespace。
 """
 
 from __future__ import annotations
@@ -49,13 +51,20 @@ def _next_case_no(tenant_id: int) -> str:
 
 class CaseService:
     def __init__(self, *, tenant_id: int, actor_user_id: Optional[int] = None):
+        if not tenant_id:
+            raise OnboardingCaseInvalidSourceError("tenant_id is required")
         self.tenant_id = tenant_id
         self.actor_user_id = actor_user_id
 
+    def _case_for_update(self, case_id):
+        """统一 tenant-scoped 锁行；禁止只按全局主键取 case。"""
+        return HrOnboardingCase.objects.select_for_update().get(
+            id=case_id,
+            tenant_id=self.tenant_id,
+        )
+
     # ------------------------------------------------------------------
     # HR04 HANDOFF → 建 case（幂等，RecruitToHireMapping §1.3）
-    # 入参为 Hr04HandoffProvider.consume_handoff 返回的 case_create_request dict，
-    # 幂等存储保存同一 dict，保证重复调用返回原结果。
     # ------------------------------------------------------------------
     @transaction.atomic
     def create_case_from_handoff(
@@ -65,7 +74,10 @@ class CaseService:
         *,
         portal_ttl_days: int = 30,
     ) -> dict:
-        key = normalize_key(idempotency_key, namespace="hr05:handoff")
+        key = normalize_key(
+            idempotency_key,
+            namespace=f"hr05:handoff:tenant:{self.tenant_id}",
+        )
         replay = apply_idempotency(key)
         if replay is not None:
             return replay
@@ -76,6 +88,11 @@ class CaseService:
             raise OnboardingCaseInvalidSourceError("handoff 缺少来源标识")
         if source_type not in CaseSourceType.values:
             raise OnboardingCaseInvalidSourceError(f"非法来源类型: {source_type}")
+
+        # 若上游携带 tenant_id，必须和当前 service tenant 完全一致。
+        request_tenant_id = request.get("tenant_id")
+        if request_tenant_id is not None and int(request_tenant_id) != self.tenant_id:
+            raise OnboardingCaseInvalidSourceError("handoff tenant mismatch")
 
         # DB unique(tenant,source_type,source_id) 兜底并发
         if HrOnboardingCase.objects.filter(
@@ -125,10 +142,9 @@ class CaseService:
             "case_id": str(case.id),
             "case_no": case.case_no,
             "status": case.status,
-            "portal_token": plaintext_token,  # 仅首次创建时返回一次；调用方负责不落日志
+            "portal_token": plaintext_token,
             "created": True,
         }
-        # 幂等 cache 不存明文 token（避免 cache/Redis 泄漏）：重放返回无 token 副本
         replay_result = {k: v for k, v in result.items() if k != "portal_token"}
         replay_result["created"] = False
         store_result(key, replay_result)
@@ -139,22 +155,22 @@ class CaseService:
     # ------------------------------------------------------------------
     def confirm_intent(self, case: HrOnboardingCase) -> HrOnboardingCase:
         with transaction.atomic():
-            case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
+            case = self._case_for_update(case.id)
             assert_case_transition(case.status, CaseStatus.PREPARING)
-            self._transition_locked(case, CaseStatus.PREPARING, "CONFIRM_INTENT", "候选人确认入职意愿")
-            # expected_report_date 由 HR04 来源或延期审批提供；不在此自动填"今天"（学校时区纪律）
+            self._transition_locked(
+                case,
+                CaseStatus.PREPARING,
+                "CONFIRM_INTENT",
+                "候选人确认入职意愿",
+            )
             case.save(update_fields=["updated_at"])
         return case
 
     def request_delay(
         self, case: HrOnboardingCase, *, new_date: date, reason: str
     ) -> HrReportDelay:
-        """
-        申请延期：只记录 HrReportDelay（保留历史），不直接覆盖 expected_report_date。
-        审批通过后再改日期（approve_delay）。
-        """
         with transaction.atomic():
-            case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
+            case = self._case_for_update(case.id)
             if not case.expected_report_date:
                 raise PositionReservationInvalidError("尚无预计报到日期，不能申请延期")
             delay = HrReportDelay.objects.create(
@@ -166,22 +182,28 @@ class CaseService:
                 approval_status=ReportDelayApprovalStatus.PENDING,
                 requested_by=self.actor_user_id,
             )
-            # case 进入 REPORT_DELAYED 等待审批（不覆盖日期）
-            # 状态机仅允许 PREPARING/READY_TO_REPORT/REPORT_SCHEDULED → REPORT_DELAYED
             if case.status in (
                 CaseStatus.PREPARING,
                 CaseStatus.READY_TO_REPORT,
                 CaseStatus.REPORT_SCHEDULED,
             ):
                 assert_case_transition(case.status, CaseStatus.REPORT_DELAYED)
-                self._transition_locked(case, CaseStatus.REPORT_DELAYED, "REQUEST_DELAY", reason)
+                self._transition_locked(
+                    case,
+                    CaseStatus.REPORT_DELAYED,
+                    "REQUEST_DELAY",
+                    reason,
+                )
         return delay
 
     def approve_delay(self, case: HrOnboardingCase, delay: HrReportDelay) -> HrOnboardingCase:
-        """审批延期：更新 expected_report_date（历史保留在 HrReportDelay），case 回到可预约。"""
         with transaction.atomic():
-            case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
-            delay = HrReportDelay.objects.select_for_update().get(id=delay.id)
+            case = self._case_for_update(case.id)
+            delay = HrReportDelay.objects.select_for_update().get(
+                id=delay.id,
+                tenant_id=self.tenant_id,
+                case_id=case.id,
+            )
             if delay.approval_status != ReportDelayApprovalStatus.PENDING:
                 return case
             delay.approval_status = ReportDelayApprovalStatus.APPROVED
@@ -190,21 +212,22 @@ class CaseService:
             delay.save(update_fields=["approval_status", "decided_by", "decided_at"])
             case.expected_report_date = delay.new_date
             assert_case_transition(case.status, CaseStatus.READY_TO_REPORT)
-            self._transition_locked(case, CaseStatus.READY_TO_REPORT, "APPROVE_DELAY", "延期审批通过")
+            self._transition_locked(
+                case,
+                CaseStatus.READY_TO_REPORT,
+                "APPROVE_DELAY",
+                "延期审批通过",
+            )
             case.save(update_fields=["expected_report_date", "updated_at"])
         return case
 
     def decline(self, case: HrOnboardingCase, *, reason: str = "") -> HrOnboardingCase:
-        """
-        放弃入职：case → DECLINED；必须释放 Position Reservation（HR02 Provider）。
-        释放失败不得静默跳过（显式抛错，可补偿）。
-        """
         from hr_onboarding.integrations.hr02 import Hr02PositionProvider
 
         with transaction.atomic():
-            case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
+            case = self._case_for_update(case.id)
             if case.status == CaseStatus.DECLINED:
-                return case  # 幂等
+                return case
             assert_case_transition(case.status, CaseStatus.DECLINED)
             if case.position_reservation_id_id:
                 provider = Hr02PositionProvider(self.tenant_id)
@@ -216,24 +239,40 @@ class CaseService:
     # Person 匹配（Activation 前）
     # ------------------------------------------------------------------
     def resolve_person_match(
-        self, case: HrOnboardingCase, *, person_id, status: str = PersonMatchStatus.EXACT_MATCH
+        self,
+        case: HrOnboardingCase,
+        *,
+        person_id,
+        status: str = PersonMatchStatus.EXACT_MATCH,
     ) -> HrOnboardingCase:
         with transaction.atomic():
-            case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
+            case = self._case_for_update(case.id)
             case.hr03_person_id = person_id
             case.person_match_status = status
-            case.save(update_fields=["hr03_person_id", "person_match_status", "updated_at"])
+            case.save(
+                update_fields=["hr03_person_id", "person_match_status", "updated_at"]
+            )
         return case
 
     # ------------------------------------------------------------------
     # 内部
     # ------------------------------------------------------------------
-    def _transition_locked(self, case: HrOnboardingCase, to_status: str, action: str, reason: str):
+    def _transition_locked(
+        self,
+        case: HrOnboardingCase,
+        to_status: str,
+        action: str,
+        reason: str,
+    ):
+        if getattr(case, "tenant_id", None) != self.tenant_id:
+            raise OnboardingCaseInvalidSourceError("case tenant mismatch")
         from_status = case.status
         case.status = to_status
         case.current_stage_code = to_status
         case.version += 1
-        case.save(update_fields=["status", "current_stage_code", "version", "updated_at"])
+        case.save(
+            update_fields=["status", "current_stage_code", "version", "updated_at"]
+        )
         HrOnboardingStageTransition.objects.create(
             tenant_id=self.tenant_id,
             case=case,
