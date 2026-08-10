@@ -4,11 +4,14 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
+from hr_external.constants import ExternalEngagementStatus
 from hr_external.services.engagement_service import (
+    AgreementGateBlocked,
     CrossTenantReference,
     EngagementCreateInput,
     EngagementOverlap,
     EngagementService,
+    InvalidEngagementState,
 )
 
 
@@ -100,3 +103,83 @@ class EngagementConcurrencyAndOverlapTests(SimpleTestCase):
                 "SIGNED",
                 tenant_id=77,
             )
+
+    @patch("hr_external.services.engagement_service.HrExternalEngagement.objects")
+    def test_transition_lookup_is_locked_and_tenant_scoped(self, engagement_objects):
+        engagement = MagicMock()
+        engagement.status = ExternalEngagementStatus.DRAFT
+        engagement.version = 3
+        engagement_objects.select_for_update.return_value.filter.return_value.first.return_value = engagement
+
+        result = EngagementService().transition(
+            engagement_id="eng-1",
+            tenant_id=77,
+            target_status=ExternalEngagementStatus.UNDER_REVIEW,
+            expected_version=3,
+        )
+
+        engagement_objects.select_for_update.return_value.filter.assert_called_once_with(
+            id="eng-1", tenant_id=77
+        )
+        self.assertEqual(engagement.status, ExternalEngagementStatus.UNDER_REVIEW)
+        self.assertEqual(engagement.version, 4)
+        engagement.save.assert_called_once_with(
+            update_fields=["status", "version", "updated_at"]
+        )
+        self.assertIs(result, engagement)
+
+    @patch("hr_external.services.engagement_service.HrExternalEngagement.objects")
+    def test_transition_rejects_version_conflict_before_state_write(self, engagement_objects):
+        engagement = MagicMock()
+        engagement.status = ExternalEngagementStatus.DRAFT
+        engagement.version = 4
+        engagement_objects.select_for_update.return_value.filter.return_value.first.return_value = engagement
+
+        with self.assertRaises(InvalidEngagementState):
+            EngagementService().transition(
+                engagement_id="eng-1",
+                tenant_id=77,
+                target_status=ExternalEngagementStatus.UNDER_REVIEW,
+                expected_version=3,
+            )
+        engagement.save.assert_not_called()
+
+    @patch("hr_external.services.engagement_service.HrExternalEngagement.objects")
+    def test_activation_requires_agreement_gate(self, engagement_objects):
+        engagement = MagicMock()
+        engagement.status = ExternalEngagementStatus.SIGNED_WAITING_EFFECTIVE
+        engagement.version = 1
+        engagement.start_at = date(2026, 8, 1)
+        engagement.end_at = None
+        engagement.agreement_requirement = "REQUIRED_BEFORE_ACTIVATION"
+        engagement.agreement_status = "UNAVAILABLE"
+        engagement_objects.select_for_update.return_value.filter.return_value.first.return_value = engagement
+
+        with self.assertRaises(AgreementGateBlocked):
+            EngagementService().transition(
+                engagement_id="eng-1",
+                tenant_id=77,
+                target_status=ExternalEngagementStatus.ACTIVE,
+                as_of=date(2026, 8, 10),
+            )
+        engagement.save.assert_not_called()
+
+    @patch("hr_external.services.engagement_service.HrExternalEngagement.objects")
+    def test_activation_cannot_happen_before_start_date(self, engagement_objects):
+        engagement = MagicMock()
+        engagement.status = ExternalEngagementStatus.SIGNED_WAITING_EFFECTIVE
+        engagement.version = 1
+        engagement.start_at = date(2026, 9, 1)
+        engagement.end_at = None
+        engagement.agreement_requirement = "REQUIRED_BEFORE_ACTIVATION"
+        engagement.agreement_status = "SIGNED"
+        engagement_objects.select_for_update.return_value.filter.return_value.first.return_value = engagement
+
+        with self.assertRaises(InvalidEngagementState):
+            EngagementService().transition(
+                engagement_id="eng-1",
+                tenant_id=77,
+                target_status=ExternalEngagementStatus.ACTIVE,
+                as_of=date(2026, 8, 10),
+            )
+        engagement.save.assert_not_called()
