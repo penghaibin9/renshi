@@ -2,24 +2,24 @@
 
 Approval, handover, settlement and account operations are not employment facts.
 The exit becomes effective only after HR03 ends the referenced employment
-relationship.  HR16 therefore persists a recoverable ``EFFECT_PENDING`` fact,
-executes the HR03 Authority write in a savepoint, and exposes ``EFFECTIVE`` only
-when that write succeeds.
+relationship. HR16 persists a recoverable ``EFFECT_PENDING`` fact and a durable
+``ExitEffect`` saga ledger, executes the HR03 Authority write in a savepoint,
+and exposes the core ExitFact as ``EFFECTIVE`` only when HR03 succeeds.
 
-This is deliberately only the core HR03 participant of the larger HR16 saga.
-IAM, HR14, HR15, archive and other downstream effects must be tracked
-separately; they are not collapsed into a fake ``all_done`` flag here.
+Non-core participants (HR14/IAM/settlement/archive) are tracked separately by
+``ExitEffectSagaService``. Their later failure must become PARTIAL_FAILED, never
+rewrite an already-successful HR03 employment termination out of history.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
-from typing import Optional
+from typing import Iterable, Optional
 
 from django.db import transaction
 
-from hr_exit.models import ExitCase, ExitFact
+from hr_exit.models import ExitCase, ExitEffect, ExitFact
+from hr_exit.services.saga_service import ExitEffectSagaService
 
 
 class ExitEffectError(Exception):
@@ -31,6 +31,7 @@ class ExitEffectError(Exception):
 @dataclass(frozen=True)
 class ExitEffectResult:
     fact: ExitFact
+    effect: ExitEffect
     effective: bool
     error: str = ""
 
@@ -53,6 +54,7 @@ class ExitEffectService:
         if case.status not in (
             ExitCase.Status.SETTLEMENT,
             ExitCase.Status.EFFECT_PENDING,
+            ExitCase.Status.EFFECTIVE,
         ):
             raise ExitEffectError(
                 "EXIT_CASE_INVALID_STATE",
@@ -122,9 +124,10 @@ class ExitEffectService:
                     "EXIT_EFFECT_IDEMPOTENCY_CONFLICT",
                     "fact_no already belongs to a different exit payload",
                 )
-            if fact.status == ExitFact.Status.EFFECTIVE:
-                return fact
-            if fact.status != ExitFact.Status.EFFECT_PENDING:
+            if fact.status not in (
+                ExitFact.Status.EFFECT_PENDING,
+                ExitFact.Status.EFFECTIVE,
+            ):
                 raise ExitEffectError(
                     "EXIT_FACT_INVALID_STATE",
                     f"fact status {fact.status} cannot be retried",
@@ -147,14 +150,43 @@ class ExitEffectService:
         )
 
     @transaction.atomic
-    def apply(self, *, case_id, fact_no: str, reason_code: str = "") -> ExitEffectResult:
-        """Apply the core HR03 employment termination and publish ExitFact."""
+    def apply(
+        self,
+        *,
+        case_id,
+        fact_no: str,
+        idempotency_key: str,
+        reason_code: str = "",
+        correlation_id: str = "",
+        required_participants: Iterable[str] = (),
+    ) -> ExitEffectResult:
+        """Apply HR03 employment termination and record it in the durable saga."""
+        saga = ExitEffectSagaService(self.tenant_id, self.actor_user_id)
+        effect = saga.begin(
+            case_id=case_id,
+            idempotency_key=idempotency_key,
+            correlation_id=correlation_id,
+            required_participants=required_participants,
+        )
         case = self._lock_case(case_id)
         relationship = self._lock_relationship(case)
         fact = self._get_or_create_pending_fact(case=case, fact_no=fact_no)
 
+        # Exact idempotent replay after a successful core effect must not call
+        # HR03 again. This also heals older rows where ExitFact became EFFECTIVE
+        # before the saga ledger was introduced.
         if fact.status == ExitFact.Status.EFFECTIVE:
-            return ExitEffectResult(fact=fact, effective=True)
+            if effect.hr03_status != ExitEffect.ParticipantStatus.SUCCESS:
+                effect = saga.record_participant(
+                    effect_id=effect.id,
+                    participant="HR03",
+                    status=ExitEffect.ParticipantStatus.SUCCESS,
+                    receipt=fact.effect_receipt_json or {
+                        "hr03RelationshipId": str(relationship.id),
+                        "employmentEndDate": case.planned_employment_end_date.isoformat(),
+                    },
+                )
+            return ExitEffectResult(fact=fact, effect=effect, effective=True)
 
         case.status = ExitCase.Status.EFFECT_PENDING
         case.updated_by = self.actor_user_id
@@ -167,10 +199,17 @@ class ExitEffectService:
             update_fields=["status", "last_effect_error", "updated_by", "updated_at"]
         )
 
+        # Retry of a previously failed/unavailable core participant becomes a
+        # visible RUNNING transition. A prior SUCCESS is already handled above.
+        effect = saga.record_participant(
+            effect_id=effect.id,
+            participant="HR03",
+            status=ExitEffect.ParticipantStatus.RUNNING,
+        )
+
         try:
-            # Keep the HR03 Authority write inside a savepoint.  If it fails,
-            # HR16 retains the pending case/fact for reconciliation instead of
-            # fabricating EFFECTIVE or leaving a half-written relationship.
+            # Keep the HR03 Authority write inside a savepoint. If it fails,
+            # HR16 retains pending case/fact and records FAILED in the saga.
             with transaction.atomic():
                 from hr_staff.services.employment_service import EmploymentService
 
@@ -187,18 +226,33 @@ class ExitEffectService:
         except Exception as exc:
             fact.last_effect_error = str(exc)[:2000]
             fact.save(update_fields=["last_effect_error", "updated_at"])
+            effect = saga.record_participant(
+                effect_id=effect.id,
+                participant="HR03",
+                status=ExitEffect.ParticipantStatus.FAILED,
+                error=fact.last_effect_error,
+            )
             return ExitEffectResult(
                 fact=fact,
+                effect=effect,
                 effective=False,
                 error=fact.last_effect_error,
             )
 
-        fact.status = ExitFact.Status.EFFECTIVE
-        fact.effect_receipt_json = {
+        receipt = {
             "hr03RelationshipId": str(ended_relationship.id),
             "hr03RelationshipStatus": str(ended_relationship.status),
             "employmentEndDate": case.planned_employment_end_date.isoformat(),
         }
+        effect = saga.record_participant(
+            effect_id=effect.id,
+            participant="HR03",
+            status=ExitEffect.ParticipantStatus.SUCCESS,
+            receipt=receipt,
+        )
+
+        fact.status = ExitFact.Status.EFFECTIVE
+        fact.effect_receipt_json = receipt
         fact.last_effect_error = ""
         fact.updated_by = self.actor_user_id
         fact.save(
@@ -214,4 +268,4 @@ class ExitEffectService:
         case.status = ExitCase.Status.EFFECTIVE
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
-        return ExitEffectResult(fact=fact, effective=True)
+        return ExitEffectResult(fact=fact, effect=effect, effective=True)
