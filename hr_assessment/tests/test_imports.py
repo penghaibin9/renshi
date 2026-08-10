@@ -131,8 +131,9 @@ class TestAllImports(TestCase):
         from hr_assessment.permissions import (
             ASSESSMENT_PERMISSIONS,
             DataScope,
-            PERMISSION_DEFAULT_SCOPE,
+            PERMISSION_SCOPE,
             SOD_CONFLICT_PAIRS,
         )
         self.assertEqual(len(ASSESSMENT_PERMISSIONS), 14)
         self.assertIn("hr.assessment.policy.admin", dict(ASSESSMENT_PERMISSIONS))
+        self.assertIn("hr.assessment.employee_self", PERMISSION_SCOPE)
