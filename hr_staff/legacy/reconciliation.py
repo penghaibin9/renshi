@@ -67,7 +67,7 @@ class ReconciliationService:
         current_status = qs.status_as_of(staff.id)
         legacy_active = bool(legacy_emp.is_active)
         if current_status == "ACTIVE" and not legacy_active:
-            item.mismatches.append(f"status: authority=ACTIVE legacy=inactive")
+            item.mismatches.append("status: authority=ACTIVE legacy=inactive")
         elif current_status not in ("ACTIVE", "PENDING_ENTRY") and legacy_active:
             item.mismatches.append(f"status: authority={current_status} legacy=active")
         return item
@@ -81,15 +81,24 @@ class ReconciliationService:
         return {
             "total": len(items),
             "mismatchCount": len(mismatched),
-            "mismatched": [{"legacyEmployeeId": i.legacy_employee_id, "staffId": i.staff_id, "issues": i.mismatches} for i in mismatched],
+            "mismatched": [
+                {
+                    "legacyEmployeeId": i.legacy_employee_id,
+                    "staffId": i.staff_id,
+                    "issues": i.mismatches,
+                }
+                for i in mismatched
+            ],
         }
 
     def _legacy_employee(self, legacy_employee_id):
+        """按 tenant 读取 legacy Employee；禁止依赖 request thread-local 和跨租户主键直取。"""
         if not legacy_employee_id:
             return None
-        try:
-            from employee.models import Employee
 
-            return Employee.objects.filter(id=legacy_employee_id).first()
-        except Exception:
-            return None
+        from employee.models import Employee
+
+        return Employee.objects.filter(
+            id=legacy_employee_id,
+            employee_work_info__company_id_id=self.tenant_id,
+        ).first()
