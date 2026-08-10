@@ -19,7 +19,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from hr_onboarding.api.exceptions import OnboardingCaseDuplicateError
-from hr_onboarding.policies.idempotency import apply_idempotency, store_result
+from hr_onboarding.policies.idempotency import (
+    apply_idempotency,
+    normalize_key,
+    store_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +64,15 @@ class Hr04HandoffProvider:
         idempotency_key: str,
     ):
         """
-        幂等消费：同 idempotency_key 返回先前结果（replay）。
+        幂等消费：同一 tenant 内同 idempotency_key 返回先前结果（replay）。
         未命中时返回 case_create_request（HR05-S3 CaseService 据此建 case，
         并以 source_type+source_id 唯一约束兜底）。
         """
-        replay = apply_idempotency(idempotency_key)
+        tenant_key = normalize_key(
+            idempotency_key,
+            namespace=f"hr05:handoff:tenant:{payload.tenant_id}",
+        )
+        replay = apply_idempotency(tenant_key)
         if replay is not None:
             return replay, True
 
@@ -88,5 +96,5 @@ class Hr04HandoffProvider:
             "legal_name": payload.legal_name,
             "preferred_name": payload.preferred_name,
         }
-        store_result(idempotency_key, request)
+        store_result(tenant_key, request)
         return request, False
