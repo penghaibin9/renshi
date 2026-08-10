@@ -49,7 +49,7 @@ class AppointmentApplicationCase(HrTenantScopedModel):
     case_no = models.CharField(max_length=64)
     person_id = models.UUIDField()
     policy_version_id = models.UUIDField()
-    # HR02 HrPosition uses a BigAutoField primary key.  Keep a scalar provider
+    # HR02 HrPosition uses a BigAutoField primary key. Keep a scalar provider
     # reference here (not a cross-domain FK), but the scalar type must match.
     position_instance_id = models.PositiveBigIntegerField()
     batch_no = models.CharField(max_length=64)
@@ -90,6 +90,9 @@ class PositionAppointmentFact(HrTenantScopedModel):
     # Scalar Provider reference to HR02 HrPosition.id (BigAutoField).
     position_instance_id = models.PositiveBigIntegerField()
     application_case_id = models.UUIDField()
+    # Receipt for the exact HR02 capacity hold consumed by this result. It is
+    # scalar on purpose: HR14 does not own HR02 lifecycle or cascade behavior.
+    reservation_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
     level_code = models.CharField(max_length=64, blank=True, default="")
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
@@ -99,6 +102,10 @@ class PositionAppointmentFact(HrTenantScopedModel):
         default=Status.EFFECT_PENDING,
         db_index=True,
     )
+    # Provider receipt/error allow EFFECT_PENDING to be retried/reconciled
+    # without claiming that the HR03 assignment was already made effective.
+    effect_receipt_json = models.JSONField(default=dict, blank=True)
+    last_effect_error = models.TextField(blank=True, default="")
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
