@@ -89,6 +89,7 @@ jobs:
         run: python manage.py check
 
       - name: Migration drift gate
+        id: migration-drift
         shell: bash
         run: |
           set +e
@@ -103,9 +104,28 @@ jobs:
               printf '%s\n' "$output"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,line=77,title=Migration drift detected::" + e)'
+            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,line=78,title=Migration drift detected::" + e)'
+
+            # Generate reproducible candidate files for review. These files are
+            # never used to make this run green: the gate still exits non-zero.
+            python manage.py makemigrations --noinput --verbosity 1
+            mkdir -p migration-drift-artifacts
+            while IFS= read -r file; do
+              [ -n "$file" ] || continue
+              mkdir -p "migration-drift-artifacts/$(dirname "$file")"
+              cp "$file" "migration-drift-artifacts/$file"
+            done < <(git ls-files --others --exclude-standard '*migrations/*.py')
             exit "$status"
           fi
+
+      - name: Upload migration drift candidates
+        if: failure() && steps.migration-drift.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-drift-candidates
+          path: migration-drift-artifacts/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Fresh MySQL migrate
         run: |
