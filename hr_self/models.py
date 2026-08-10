@@ -25,10 +25,16 @@ class SelfServiceCatalogItem(HrTenantScopedModel):
     class Meta:
         db_table = "hr17_self_service_catalog"
         constraints = [
-            models.UniqueConstraint(fields=("tenant_id", "service_code"), name="uq_hr17_catalog_tenant_code"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "service_code"),
+                name="uq_hr17_catalog_tenant_code",
+            ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "enabled", "sort_order"), name="idx_hr17_catalog_tenant_enabled"),
+            models.Index(
+                fields=("tenant_id", "enabled", "sort_order"),
+                name="idx_hr17_catalog_enabled",
+            ),
         ]
 
 
@@ -46,5 +52,8 @@ class SelfServicePinnedService(HrTenantScopedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "staff_id", "sort_order"), name="idx_hr17_pin_tenant_staff"),
+            models.Index(
+                fields=("tenant_id", "staff_id", "sort_order"),
+                name="idx_hr17_pin_tenant_staff",
+            ),
         ]
