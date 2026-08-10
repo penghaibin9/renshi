@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          output=$(python manage.py makemigrations --check --dry-run 2>&1)
+          output=$(python manage.py makemigrations --check --dry-run --noinput --verbosity 2 2>&1)
           status=$?
           set -e
           printf '%s\n' "$output"
@@ -103,8 +103,7 @@ jobs:
               printf '%s\n' "$output"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            encoded=$(printf '%s' "$output" | head -c 8000 | python -c 'import sys; s=sys.stdin.read(); print(s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))')
-            echo "::error file=.github/workflows/quality.yml,line=77,title=Migration drift detected::$encoded"
+            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,line=77,title=Migration drift detected::" + e)'
             exit "$status"
           fi
 
