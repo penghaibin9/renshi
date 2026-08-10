@@ -6,10 +6,8 @@ HR04 HANDOFF 消费 Provider 契约（00 §91 / 04 §13.7 / 05 RecruitToHireMapp
 硬规则：
 - HANDOFF_TO_HR05 必须显式、幂等、可审计；
 - 同一 HR04 ProposedHire 重复消费 → 返回同一 case（不生成第二份）；
-- HR04 Hired ≠ 可入职；Offer 接受和 handoff 幂等。
-
-S0 核实：HR04 仅 S1 契约层（状态/权限已冻结，handoff API 未实现）。
-本 Provider 为幂等消费契约 + 内存占位，标 [总控占位] 待 HR04-S8 交付后替换为事件消费。
+- HR04 Hired ≠ 可入职；Offer 接受和 handoff 幂等；
+- tenant_id 必须透传到 HR05，禁止跨学校 handoff 混用。
 """
 
 from __future__ import annotations
@@ -54,8 +52,6 @@ class Hr04HandoffProvider:
     consume_handoff 返回 (case_create_request, is_replay)。is_replay=True 表示重复调用。
     """
 
-    # [总控占位] 待 HR04-S8 交付 handoff-to-hr05 API / RecruitmentHandoffCreated 事件后，
-    # 本 Provider 改为 outbox 事件消费（eventId 幂等），并校验 HR04 前置条件回执。
     mode = "CONTRACT_STUB"
 
     def consume_handoff(
@@ -63,11 +59,9 @@ class Hr04HandoffProvider:
         payload: HandoffPayload,
         idempotency_key: str,
     ):
-        """
-        幂等消费：同一 tenant 内同 idempotency_key 返回先前结果（replay）。
-        未命中时返回 case_create_request（HR05-S3 CaseService 据此建 case，
-        并以 source_type+source_id 唯一约束兜底）。
-        """
+        if not payload.tenant_id:
+            raise OnboardingCaseDuplicateError("missing tenant_id")
+
         tenant_key = normalize_key(
             idempotency_key,
             namespace=f"hr05:handoff:tenant:{payload.tenant_id}",
@@ -76,12 +70,11 @@ class Hr04HandoffProvider:
         if replay is not None:
             return replay, True
 
-        # 无 HR04 前置回执（ProposedHire APPROVED / PublicNotice CLOSED / Offer ACCEPTED）时，
-        # 不得仅凭声明创建 case —— 契约占位阶段由 HR05 侧显式准入。
         if not payload.proposed_hire_id:
             raise OnboardingCaseDuplicateError("missing proposed_hire_id")
 
         request = {
+            "tenant_id": payload.tenant_id,
             "source_type": "HR04_HIRE",
             "source_id": payload.proposed_hire_id,
             "hr04_proposed_hire_id": payload.proposed_hire_id,
