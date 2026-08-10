@@ -106,3 +106,30 @@ class PositionProjectionTenantGateTests(SimpleTestCase):
             HorillaStructureProjectionService(77).project_position(_position())
 
         job_position_objects.filter.assert_called_once_with(id=55, company_id=77)
+
+    @patch("base.models.JobPosition.objects")
+    @patch("base.models.Department.objects")
+    @patch("hr_structure.projections.horilla.HrLegacyObjectLink.objects")
+    def test_unchanged_projection_hash_skips_legacy_job_position_write(
+        self, link_objects, department_objects, job_position_objects
+    ):
+        position = _position()
+        service = HorillaStructureProjectionService(77)
+        expected_hash = service._hash(
+            {
+                "positionCode": position.position_code,
+                "name": position.post_catalog_version_id.name,
+                "organizationId": str(position.organization_id_id),
+                "lifecycleStatus": position.lifecycle_status,
+            }
+        )
+        org_link = SimpleNamespace(legacy_pk="9")
+        position_link = SimpleNamespace(legacy_pk="55", projection_hash=expected_hash)
+        link_objects.filter.side_effect = [_first(org_link), _first(position_link)]
+        department_objects.filter.return_value.first.return_value = MagicMock()
+
+        result = service.project_position(position)
+
+        self.assertIs(result, position_link)
+        job_position_objects.filter.assert_not_called()
+        job_position_objects.create.assert_not_called()
