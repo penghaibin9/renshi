@@ -61,9 +61,9 @@ class CompanyScopedBackend(ModelBackend):
 
         user_ids = self._get_user_permissions(user_obj).values_list("pk", flat=True)
         group_ids = self._get_group_permissions(user_obj).values_list("pk", flat=True)
-        return Permission.objects.filter(pk__in=user_ids.union(group_ids)).select_related(
-            "content_type"
-        )
+        return Permission.objects.filter(
+            pk__in=user_ids.union(group_ids)
+        ).select_related("content_type")
 
     @staticmethod
     def _render_permission_strings(permission_objects):
@@ -76,13 +76,17 @@ class CompanyScopedBackend(ModelBackend):
     def get_user_permissions(self, user_obj, obj=None):
         if obj is not None:
             return set()
-        permissions = self._get_user_permissions(user_obj).select_related("content_type")
+        permissions = self._get_user_permissions(user_obj).select_related(
+            "content_type"
+        )
         return self._render_permission_strings(permissions)
 
     def get_group_permissions(self, user_obj, obj=None):
         if obj is not None:
             return set()
-        permissions = self._get_group_permissions(user_obj).select_related("content_type")
+        permissions = self._get_group_permissions(user_obj).select_related(
+            "content_type"
+        )
         return self._render_permission_strings(permissions)
 
     def get_all_permissions(self, user_obj, obj=None):
