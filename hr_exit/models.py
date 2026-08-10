@@ -47,6 +47,91 @@ class ExitCase(HrTenantScopedModel):
         ]
 
 
+class ExitEffect(HrTenantScopedModel):
+    """Durable HR16 effect saga state; never treats partial effects as rolled back."""
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPLYING = "APPLYING", "Applying"
+        SUCCESS = "SUCCESS", "Success"
+        PARTIAL_FAILED = "PARTIAL_FAILED", "Partial failed"
+        FAILED = "FAILED", "Failed"
+
+    class ParticipantStatus(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        RUNNING = "RUNNING", "Running"
+        SUCCESS = "SUCCESS", "Success"
+        FAILED = "FAILED", "Failed"
+        UNAVAILABLE = "UNAVAILABLE", "Unavailable"
+        NOT_REQUIRED = "NOT_REQUIRED", "Not required"
+
+    case_id = models.UUIDField(db_index=True)
+    effect_version = models.PositiveIntegerField(default=1)
+    idempotency_key = models.CharField(max_length=128)
+    correlation_id = models.CharField(max_length=128, blank=True, default="")
+    requested_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+
+    hr03_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.PENDING,
+    )
+    hr03_receipt_json = models.JSONField(default=dict, blank=True)
+    hr14_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    hr14_receipt_json = models.JSONField(default=dict, blank=True)
+    iam_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    iam_receipt_json = models.JSONField(default=dict, blank=True)
+    settlement_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    settlement_receipt_json = models.JSONField(default=dict, blank=True)
+    archive_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    archive_receipt_json = models.JSONField(default=dict, blank=True)
+
+    last_error = models.TextField(blank=True, default="")
+    applied_at = models.DateTimeField(null=True, blank=True)
+    reconciled_at = models.DateTimeField(null=True, blank=True)
+    version = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        db_table = "hr16_exit_effect"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr16_effect_idem",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "case_id", "effect_version"),
+                name="uq_hr16_effect_case_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "case_id", "status"),
+                name="idx_hr16_effect_case",
+            ),
+            models.Index(
+                fields=("tenant_id", "status", "reconciled_at"),
+                name="idx_hr16_effect_recon",
+            ),
+        ]
+
+
 class ExitFact(HrTenantScopedModel):
     class Status(models.TextChoices):
         EFFECT_PENDING = "EFFECT_PENDING", "Waiting for HR03 employment effect"
