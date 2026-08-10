@@ -111,8 +111,6 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,title=Migration drift detected::" + e)'
 
-            # Generate reproducible candidate files for review. These files are
-            # never used to make this run green: the gate still exits non-zero.
             python manage.py makemigrations --noinput --verbosity 1
             mkdir -p migration-drift-artifacts
             while IFS= read -r file; do
@@ -184,6 +182,7 @@ jobs:
             python manage.py migrate --check
 
       - name: Tenant and registered HR tests
+        id: hr-tests
         shell: bash
         run: |
           HR_APPS=$(python - <<'PY'
@@ -197,7 +196,30 @@ jobs:
           # test_horilla_db is cloned from the exact fresh-migration schema and
           # completed with --run-syncdb above. --keepdb reuses that isolated
           # schema without granting the application user global DB privileges.
-          python manage.py test base $HR_APPS --keepdb --noinput --verbosity 1
+          # Capture full output as a diagnostic artifact while preserving the
+          # exact Django test exit status: this does not weaken the gate.
+          set +e
+          python manage.py test base $HR_APPS --keepdb --noinput --verbosity 2 2>&1 | tee hr-test-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Registered HR test failure tail"
+              echo '```text'
+              tail -n 350 hr-test-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$status"
+          fi
+
+      - name: Upload registered HR test diagnostics
+        if: failure() && steps.hr-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: registered-hr-test-output
+          path: hr-test-output.log
+          if-no-files-found: error
+          retention-days: 3
 
   production-settings-gate:
     runs-on: ubuntu-latest
