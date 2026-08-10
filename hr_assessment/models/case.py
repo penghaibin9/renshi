@@ -7,6 +7,10 @@
 - HrSpecialAssessmentCase
 - HrEthicsAssessmentCase
 - HrAssessmentPublicityCase
+
+多表继承的父链字段显式使用 ``assessmentcase_ptr``。这是 HR12 已提交
+``0001_initial`` 的数据库列合同，不能让 Django 按当前类名自动生成
+``hrassessmentcase_ptr`` 后在 CI/生产中产生隐式 rename。
 """
 
 from django.db import models
@@ -17,6 +21,7 @@ from hr_assessment.models.base import TenantScopedModel
 
 class HrSubjectSnapshot(TenantScopedModel):
     """考核对象快照 —— 总册 §76。冻结 as-of 时的人员/组织/岗位/分类。"""
+
     case_id = models.UUIDField(unique=True, verbose_name=_("考核 Case ID"))
     staff_id = models.UUIDField(verbose_name=_("人员 ID"))
     display_name = models.CharField(max_length=200, verbose_name=_("姓名展示"))
@@ -40,24 +45,63 @@ class HrSubjectSnapshot(TenantScopedModel):
 
 class HrAssessmentCase(TenantScopedModel):
     """考核 Case 基类 —— 总册 §104 等。年度/聘期/专项/师德公共字段。"""
+
     assessment_type = models.CharField(max_length=30, db_index=True, verbose_name=_("考核类型"))
-    cycle = models.ForeignKey("hr_assessment.HrAssessmentCycle", on_delete=models.PROTECT, null=True, related_name="cases", verbose_name=_("所属周期"))
+    cycle = models.ForeignKey(
+        "hr_assessment.HrAssessmentCycle",
+        on_delete=models.PROTECT,
+        null=True,
+        related_name="cases",
+        verbose_name=_("所属周期"),
+    )
     staff_id = models.UUIDField(verbose_name=_("人员 ID"))
-    subject_snapshot = models.OneToOneField(HrSubjectSnapshot, on_delete=models.PROTECT, null=True, verbose_name=_("对象快照"))
+    subject_snapshot = models.OneToOneField(
+        HrSubjectSnapshot,
+        on_delete=models.PROTECT,
+        null=True,
+        verbose_name=_("对象快照"),
+    )
     policy_version_id = models.UUIDField(null=True, verbose_name=_("适用政策版本 ID"))
-    status = models.CharField(max_length=30, default="DRAFT", db_index=True, verbose_name=_("Case 状态"))
+    status = models.CharField(
+        max_length=30,
+        default="DRAFT",
+        db_index=True,
+        verbose_name=_("Case 状态"),
+    )
     provider_snapshot_set_id = models.UUIDField(null=True, verbose_name=_("Provider 快照集 ID"))
 
     class Meta:
         db_table = "hr_assessment_case"
         verbose_name = _("考核 Case")
-        unique_together = ("cycle", "staff_id")  # 每周期每人唯一
+        constraints = [
+            models.UniqueConstraint(
+                fields=("cycle", "staff_id"),
+                name="uniq_case_cycle_staff",
+            ),
+        ]
+
+
+class _AssessmentCaseParentLink(models.OneToOneField):
+    """Marker only for readability; no custom schema behavior."""
 
 
 class HrAnnualAssessmentCase(HrAssessmentCase):
     """年度考核 Case —— 总册 §104。"""
+
+    assessmentcase_ptr = models.OneToOneField(
+        HrAssessmentCase,
+        on_delete=models.CASCADE,
+        parent_link=True,
+        primary_key=True,
+        auto_created=True,
+    )
     business_year = models.PositiveSmallIntegerField(null=True, verbose_name=_("业务年度"))
-    academic_year = models.CharField(max_length=20, null=True, verbose_name=_("学年"))
+    academic_year = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        verbose_name=_("学年"),
+    )
     annual_goal_plan_id = models.UUIDField(null=True, verbose_name=_("目标计划 ID"))
     routine_snapshot_id = models.UUIDField(null=True, verbose_name=_("平时考核快照 ID"))
     special_refs_json = models.JSONField(default=list, verbose_name=_("专项引用"))
@@ -69,6 +113,14 @@ class HrAnnualAssessmentCase(HrAssessmentCase):
 
 class HrTermAssessmentCase(HrAssessmentCase):
     """聘期考核 Case —— 总册 §121。"""
+
+    assessmentcase_ptr = models.OneToOneField(
+        HrAssessmentCase,
+        on_delete=models.CASCADE,
+        parent_link=True,
+        primary_key=True,
+        auto_created=True,
+    )
     term_id = models.UUIDField(verbose_name=_("HR07 Term ID"))
     agreement_id = models.UUIDField(verbose_name=_("HR07 Agreement ID"))
     term_start = models.DateField(verbose_name=_("聘期开始"))
@@ -84,6 +136,14 @@ class HrTermAssessmentCase(HrAssessmentCase):
 
 class HrSpecialAssessmentCase(HrAssessmentCase):
     """专项考核 Case —— 总册 §135。"""
+
+    assessmentcase_ptr = models.OneToOneField(
+        HrAssessmentCase,
+        on_delete=models.CASCADE,
+        parent_link=True,
+        primary_key=True,
+        auto_created=True,
+    )
     special_type = models.CharField(max_length=50, verbose_name=_("专项类型"))
     title = models.CharField(max_length=200, verbose_name=_("专项标题"))
     trigger_event = models.CharField(max_length=100, default="", verbose_name=_("触发事件"))
@@ -98,8 +158,20 @@ class HrSpecialAssessmentCase(HrAssessmentCase):
 
 class HrEthicsAssessmentCase(HrAssessmentCase):
     """师德考核 Case —— 总册 §13/§138。"""
+
+    assessmentcase_ptr = models.OneToOneField(
+        HrAssessmentCase,
+        on_delete=models.CASCADE,
+        parent_link=True,
+        primary_key=True,
+        auto_created=True,
+    )
     ethics_policy_version_id = models.UUIDField(null=True, verbose_name=_("师德政策版本 ID"))
-    gate_status = models.CharField(max_length=30, default="REVIEW_REQUIRED", verbose_name=_("Gate 状态"))
+    gate_status = models.CharField(
+        max_length=30,
+        default="REVIEW_REQUIRED",
+        verbose_name=_("Gate 状态"),
+    )
     gate_reason_code = models.CharField(max_length=50, default="", verbose_name=_("Gate 原因码"))
     source_refs_json = models.JSONField(default=list, verbose_name=_("师德事实引用"))
     decided_by = models.UUIDField(null=True, verbose_name=_("确定人"))
@@ -112,7 +184,14 @@ class HrEthicsAssessmentCase(HrAssessmentCase):
 
 class HrAssessmentPublicityCase(TenantScopedModel):
     """公示案例 —— 总册 §111。"""
-    cycle = models.ForeignKey("hr_assessment.HrAssessmentCycle", on_delete=models.PROTECT, null=True, related_name="publicity_cases", verbose_name=_("所属周期"))
+
+    cycle = models.ForeignKey(
+        "hr_assessment.HrAssessmentCycle",
+        on_delete=models.PROTECT,
+        null=True,
+        related_name="publicity_cases",
+        verbose_name=_("所属周期"),
+    )
     scope_json = models.JSONField(default=dict, verbose_name=_("公示范围"))
     candidate_result_refs_json = models.JSONField(default=list, verbose_name=_("候选结果引用"))
     start_at = models.DateTimeField(verbose_name=_("公示开始"))
