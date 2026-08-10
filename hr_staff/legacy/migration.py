@@ -25,11 +25,31 @@ class MigrationReport:
         return f"wave={self.wave} counts={self.counts} issues={len(self.issues)}"
 
 
+class MigrationTenantScopeError(Exception):
+    """迁移对象不属于当前 tenant 时 fail-closed。"""
+
+
 class MigrationService:
     """Legacy → HR03 迁移（S11）。"""
 
     def __init__(self, tenant_id: int):
+        if not tenant_id:
+            raise MigrationTenantScopeError("tenant_id is required")
         self.tenant_id = tenant_id
+
+    def _assert_legacy_employee_in_tenant(self, employee) -> None:
+        work = getattr(employee, "employee_work_info", None)
+        company_id = getattr(work, "company_id_id", None)
+        if company_id != self.tenant_id:
+            raise MigrationTenantScopeError(
+                f"legacy employee {getattr(employee, 'id', None)} is outside tenant {self.tenant_id}"
+            )
+
+    def _assert_staff_in_tenant(self, staff) -> None:
+        if getattr(staff, "tenant_id", None) != self.tenant_id:
+            raise MigrationTenantScopeError(
+                f"HR03 staff {getattr(staff, 'id', None)} is outside tenant {self.tenant_id}"
+            )
 
     # ------------------------------------------------------------------
     # Wave 0：只盘点（P1-10：按 tenant 过滤，不跨租户）
@@ -70,6 +90,8 @@ class MigrationService:
         document_number: Optional[str] = None,
         source: str = "MIGRATED",
     ) -> dict:
+        self._assert_legacy_employee_in_tenant(employee)
+
         from hr_staff.services.person_identity_service import (
             PersonDuplicateHardMatch,
             PersonDuplicateReviewRequired,
@@ -123,6 +145,8 @@ class MigrationService:
     # ------------------------------------------------------------------
     @transaction.atomic
     def wave2_employment(self, *, staff, legacy_work_info=None, legacy_department_id=None) -> dict:
+        self._assert_staff_in_tenant(staff)
+
         from hr_staff.services.assignment_service import AssignmentService
         from hr_staff.services.employment_service import EmploymentService
 
