@@ -10,14 +10,15 @@ S9 月结冻结服务（总册 §113-117）。
 铁律：
 - P0 blocker 未清零不能 CLOSED；
 - 已 CLOSED 期间不得普通编辑（评估器对 finalized 已拒绝覆盖，S5 已实现）；
-- Payroll basis 不含金额；重开生成新 snapshot，旧 snapshot 保留。
+- Payroll basis 不含金额；重开生成新 snapshot，旧 snapshot 保留；
+- tenant_id 与 period/batch 必须一致，禁止跨学校关账；
+- blocker 只统计当前月结期间，其他期间的候选事实不得误伤本期关账。
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
 
 from django.db import transaction
 from django.utils import timezone
@@ -45,8 +46,35 @@ class CloseServiceError(Exception):
 
 class CloseService:
     @staticmethod
+    def _assert_period_tenant(*, tenant_id: int, period: HrTimeClosePeriod) -> None:
+        if not tenant_id:
+            raise CloseServiceError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
+        if getattr(period, "tenant_id", None) != tenant_id:
+            raise CloseServiceError(
+                "CROSS_TENANT_REFERENCE",
+                "月结期间不属于当前 tenant",
+            )
+
+    @staticmethod
+    def _assert_batch_scope(
+        *,
+        tenant_id: int,
+        period: HrTimeClosePeriod,
+        batch: HrTimeCorrectionBatch,
+    ) -> None:
+        CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
+        if getattr(batch, "tenant_id", None) != tenant_id or getattr(
+            batch, "period_id", None
+        ) != period.id:
+            raise CloseServiceError(
+                "CROSS_TENANT_REFERENCE",
+                "更正批次不属于当前 tenant/period",
+            )
+
+    @staticmethod
     def precheck(*, tenant_id: int, period: HrTimeClosePeriod) -> list[dict]:
-        """PRE_CLOSE gate（§114）：返回 P0 blockers 列表。"""
+        """PRE_CLOSE gate（§114）：返回当前期间 P0 blockers 列表。"""
+        CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
         blockers = []
 
         # 1. 待处理缺卡（有排班期望但状态 MISSING_TIME 未核）
@@ -58,7 +86,7 @@ class CloseService:
         if missing:
             blockers.append({"code": "MISSING_PUNCH", "count": missing})
 
-        # 2. 待审批请假（SUBMITTED/UNDER_REVIEW）
+        # 2. 待审批请假（SUBMITTED/UNDER_REVIEW），只看和本期间重叠的申请。
         pending_leave = HrLeaveRequest.objects.filter(
             tenant_id=tenant_id,
             start_at__lte=period.end_date,
@@ -71,9 +99,12 @@ class CloseService:
         if pending_leave:
             blockers.append({"code": "PENDING_LEAVE", "count": pending_leave})
 
-        # 3. 未核验加班
+        # 3. 未核验加班。旧实现漏了日期范围，导致任意未来/历史月份的
+        # CANDIDATE 都会卡住本期月结。按实际加班区间与本期的重叠关系过滤。
         pending_ot = HrOvertimeFact.objects.filter(
             tenant_id=tenant_id,
+            actual_start_at__date__lte=period.end_date,
+            actual_end_at__date__gte=period.start_date,
             verification_status="CANDIDATE",
         ).count()
         if pending_ot:
@@ -83,13 +114,18 @@ class CloseService:
 
     @staticmethod
     @transaction.atomic
-    def close(*, tenant_id: int, period: HrTimeClosePeriod, actor_user=None) -> HrTimeCloseSnapshot:
+    def close(
+        *, tenant_id: int, period: HrTimeClosePeriod, actor_user=None
+    ) -> HrTimeCloseSnapshot:
         """月结：P0 blockers 清零后才允许；生成快照 + Payroll basis。"""
+        CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
         if period.status == "CLOSED":
             raise CloseServiceError("VERSION_CONFLICT", "期间已关闭")
         blockers = CloseService.precheck(tenant_id=tenant_id, period=period)
         if blockers:
-            raise CloseServiceError("TIME_CLOSE_BLOCKED", "存在 P0 blocker，禁止月结", blockers)
+            raise CloseServiceError(
+                "TIME_CLOSE_BLOCKED", "存在 P0 blocker，禁止月结", blockers
+            )
 
         # 事实（一次性物化，避免多次查询）；月结后将期间内事实置为终态（硬闸门）
         facts = list(
@@ -100,7 +136,15 @@ class CloseService:
         )
         fact_hash = hashlib.sha256(
             json.dumps(
-                [(f.staff_master_id, f.business_date.isoformat(), f.status, f.credited_minutes) for f in facts],
+                [
+                    (
+                        f.staff_master_id,
+                        f.business_date.isoformat(),
+                        f.status,
+                        f.credited_minutes,
+                    )
+                    for f in facts
+                ],
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()
@@ -158,6 +202,7 @@ class CloseService:
         *, tenant_id: int, period: HrTimeClosePeriod, reason: str, actor_user=None
     ) -> HrTimeCorrectionBatch:
         """重开申请：生成 Correction Batch（§116-117）；旧 snapshot 保留。"""
+        CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
         if period.status != "CLOSED":
             raise CloseServiceError("VERSION_CONFLICT", "仅已关闭期间可申请重开")
         before = period.snapshot_id
@@ -180,12 +225,23 @@ class CloseService:
     @staticmethod
     @transaction.atomic
     def reclose(
-        *, tenant_id: int, period: HrTimeClosePeriod, batch: HrTimeCorrectionBatch, actor_user=None
+        *,
+        tenant_id: int,
+        period: HrTimeClosePeriod,
+        batch: HrTimeCorrectionBatch,
+        actor_user=None,
     ) -> HrTimeCloseSnapshot:
         """更正后重新关闭：生成新 snapshot，旧 snapshot 保留（§116）。"""
+        CloseService._assert_batch_scope(
+            tenant_id=tenant_id,
+            period=period,
+            batch=batch,
+        )
         if period.status != "REOPENED":
             raise CloseServiceError("VERSION_CONFLICT", "仅 REOPENED 期间可 reclose")
-        new_snapshot = CloseService.close(tenant_id=tenant_id, period=period, actor_user=actor_user)
+        new_snapshot = CloseService.close(
+            tenant_id=tenant_id, period=period, actor_user=actor_user
+        )
         batch.after_snapshot_id = new_snapshot.id
         batch.audit = {"reclosed_at": str(new_snapshot.created_at)}
         batch.save()
