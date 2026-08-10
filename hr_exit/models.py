@@ -95,7 +95,7 @@ class RetirementFact(HrTenantScopedModel):
         default=PensionStatus.NOT_STARTED,
         db_index=True,
     )
-    status = models.CharField(max_length=16, choices=ExitFact.Status.choices, default=ExitFact.Status.EFFECT_PENDING, db_index=True)
+    status = models.CharField(max_length=16, choices=ExitFact.Status.choices, default=ExitFact.Status.EFFECTIVE, db_index=True)
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
