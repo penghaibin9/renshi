@@ -47,30 +47,34 @@ jobs:
       - name: Migration schema diagnostics
         run: |
           docker compose -f "$COMPOSE_FILE" run --rm --no-deps --entrypoint "" web python manage.py shell -c '
-          import importlib
           from django.apps import apps
           from django.db import connection
           from django.db.migrations.loader import MigrationLoader
 
-          config = apps.get_app_config("dictionary")
-          print("DICTIONARY_APP", config.name, config.path)
-          company = apps.get_model("base", "Company")
-          company_pk = company._meta.pk
-          print("BASE_COMPANY_PK", company_pk.__class__.__name__, company_pk.db_type(connection))
-          general = apps.get_model("dictionary", "HorillaGeneralSettings")
-          for field in general._meta.fields:
-              if "company" in field.name.lower() or "company" in field.column.lower():
-                  print("DICTIONARY_COMPANY_FIELD", field.name, field.column, field.__class__.__name__, field.db_type(connection), getattr(getattr(field, "target_field", None), "__class__", type(None)).__name__)
+          if connection.vendor != "mysql":
+              raise SystemExit(f"Docker smoke requires MySQL, got {connection.vendor}")
+
           loader = MigrationLoader(connection, ignore_no_migrations=True)
-          migration = loader.get_migration("dictionary", "0001_initial")
-          module_name = migration.__class__.__module__
-          module = importlib.import_module(module_name)
-          print("DICTIONARY_MIGRATION", module_name, module.__file__)
-          for operation in migration.operations:
-              if getattr(operation, "name", "").lower() == "horillageneralsettings":
-                  for field_name, field in operation.fields:
-                      if "company" in field_name.lower():
-                          print("MIGRATION_COMPANY_FIELD", field_name, field.__class__.__name__, field.deconstruct())
+          hr_labels = sorted(
+              label
+              for label in loader.migrated_apps
+              if label.startswith("hr_") or label == "hr10_development"
+          )
+          if not hr_labels:
+              raise SystemExit("No migrated HR apps discovered")
+
+          conflicts = {
+              label: names
+              for label, names in loader.detect_conflicts().items()
+              if label in hr_labels
+          }
+          print("DATABASE_VENDOR", connection.vendor)
+          print("HR_MIGRATED_APPS", ",".join(hr_labels))
+          for label in hr_labels:
+              leaves = loader.graph.leaf_nodes(label)
+              print("HR_MIGRATION_LEAVES", label, ",".join(name for _, name in leaves))
+          if conflicts:
+              raise SystemExit(f"Conflicting HR migration leaves: {conflicts}")
           '
 
       - name: Fresh migration + checks
