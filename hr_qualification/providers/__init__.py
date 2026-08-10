@@ -16,9 +16,11 @@ from hr_qualification.providers.hr10 import (
     Hr10TrainingProvider,
 )
 from hr_qualification.providers.hr12 import Hr12AssessmentProvider, ResearchProjectProvider
+from hr_qualification.providers.legacy_horilla import HorillaLegacyQualificationProvider
 
 __all__ = [
     "AcademicTeachingProvider",
+    "HorillaLegacyQualificationProvider",
     "Hr03EducationProvider",
     "Hr03WorkHistoryProvider",
     "Hr08EngagementProvider",
