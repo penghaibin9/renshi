@@ -6,7 +6,8 @@ hr_external/services/engagement_service.py —— Engagement 创建/状态转换
 - 时间区间统一为 [start_at, end_at)；
 - 同一 person 的有效 engagement 不得重叠；
 - 创建时锁住 profile 行，避免“当前无 engagement”时两个并发事务同时插入；
-- 状态机合法转换守卫。
+- 状态机合法转换守卫；
+- 正式状态写入必须锁行、校验 version，并在 ACTIVE 前执行 HR07 agreement gate。
 """
 
 from __future__ import annotations
@@ -41,6 +42,10 @@ class CrossTenantReference(Exception):
 
 class InvalidEngagementState(Exception):
     code = "VERSION_CONFLICT"
+
+
+class AgreementGateBlocked(Exception):
+    code = "EXTERNAL_AGREEMENT_REQUIRED"
 
 
 _ALLOWED_TRANSITIONS = {
@@ -184,6 +189,52 @@ class EngagementService:
             agreement_status=AgreementProviderStatus.UNAVAILABLE.value,
             status=ExternalEngagementStatus.DRAFT,
         )
+
+    @transaction.atomic
+    def transition(
+        self,
+        *,
+        engagement_id,
+        tenant_id: int,
+        target_status: str,
+        expected_version: Optional[int] = None,
+        as_of: Optional[date] = None,
+    ) -> HrExternalEngagement:
+        """唯一正式状态写入口：tenant + 行锁 + version + agreement/effective gate。"""
+        if not tenant_id:
+            raise CrossTenantReference("tenant_id is required")
+
+        engagement = (
+            HrExternalEngagement.objects.select_for_update()
+            .filter(id=engagement_id, tenant_id=tenant_id)
+            .first()
+        )
+        if engagement is None:
+            # 不区分“对象存在于别的 tenant”与“不存在”，防止越权枚举。
+            raise CrossTenantReference("engagement not found inside tenant")
+
+        if expected_version is not None and engagement.version != expected_version:
+            raise InvalidEngagementState("VERSION_CONFLICT")
+
+        if not self.validate_transition(engagement.status, target_status):
+            raise InvalidEngagementState(
+                f"invalid engagement transition: {engagement.status} -> {target_status}"
+            )
+
+        if target_status == ExternalEngagementStatus.ACTIVE:
+            if not self.agreement_gate_passed(engagement):
+                raise AgreementGateBlocked("agreement is not ready for activation")
+
+            effective_day = as_of or date.today()
+            if engagement.start_at > effective_day:
+                raise InvalidEngagementState("EXTERNAL_ENGAGEMENT_NOT_EFFECTIVE_YET")
+            if engagement.end_at is not None and engagement.end_at <= effective_day:
+                raise InvalidEngagementState("EXTERNAL_ENGAGEMENT_ALREADY_ENDED")
+
+        engagement.status = target_status
+        engagement.version += 1
+        engagement.save(update_fields=["status", "version", "updated_at"])
+        return engagement
 
     def set_agreement_status(
         self,
