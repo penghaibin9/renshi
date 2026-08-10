@@ -18,7 +18,12 @@ from datetime import date
 
 from django.utils import timezone
 
-from hr_structure.models import HrLegacyObjectLink, HrOrganization, HrOrganizationVersion
+from hr_structure.models import (
+    HrLegacyObjectLink,
+    HrOrganization,
+    HrOrganizationVersion,
+    HrPosition,
+)
 
 
 class LegacyProjectionError(Exception):
@@ -42,6 +47,16 @@ class HorillaStructureProjectionService:
         org_tenant_id = getattr(org, "tenant_id", None)
         if version_tenant_id != self.tenant_id or org_tenant_id != self.tenant_id:
             raise LegacyProjectionError("HR02_CROSS_TENANT_AUTHORITY_OBJECT")
+
+    def _assert_position_in_tenant(self, position: HrPosition) -> None:
+        org = getattr(position, "organization_id", None)
+        catalog_version = getattr(position, "post_catalog_version_id", None)
+        if (
+            getattr(position, "tenant_id", None) != self.tenant_id
+            or getattr(org, "tenant_id", None) != self.tenant_id
+            or getattr(catalog_version, "tenant_id", None) != self.tenant_id
+        ):
+            raise LegacyProjectionError("HR02_CROSS_TENANT_POSITION")
 
     def project_organization(self, version: HrOrganizationVersion) -> HrLegacyObjectLink:
         """权威组织 → Horilla Department 投影（单向，幂等，tenant fail-closed）。"""
@@ -100,6 +115,93 @@ class HorillaStructureProjectionService:
             link.projection_hash = payload_hash
             link.last_projected_at = timezone.now()
             link.save(update_fields=["projection_hash", "last_projected_at"])
+        return link
+
+    def project_position(self, position: HrPosition) -> HrLegacyObjectLink:
+        """权威岗位 → Horilla JobPosition 投影，要求组织先完成 tenant-safe Department 映射。"""
+        from base.models import Department, JobPosition
+
+        self._assert_position_in_tenant(position)
+
+        org_link = HrLegacyObjectLink.objects.filter(
+            tenant_id=self.tenant_id,
+            domain_entity_type="organization",
+            domain_entity_id=str(position.organization_id_id),
+            legacy_app="base",
+            legacy_model="department",
+            link_status="MAPPED",
+        ).first()
+        if org_link is None or not org_link.legacy_pk:
+            raise LegacyProjectionError("HR02_POSITION_ORG_LEGACY_LINK_REQUIRED")
+
+        try:
+            legacy_department_id = int(org_link.legacy_pk)
+        except (TypeError, ValueError) as exc:
+            raise LegacyProjectionError("HR02_POSITION_ORG_LEGACY_LINK_INVALID") from exc
+
+        department = Department.objects.filter(
+            id=legacy_department_id,
+            company_id=self.tenant_id,
+        ).first()
+        if department is None:
+            raise LegacyProjectionError("HR02_POSITION_ORG_LEGACY_TENANT_MISMATCH")
+
+        link = HrLegacyObjectLink.objects.filter(
+            tenant_id=self.tenant_id,
+            domain_entity_type="position",
+            domain_entity_id=str(position.id),
+            legacy_app="base",
+            legacy_model="jobposition",
+        ).first()
+
+        payload = {
+            "positionCode": position.position_code,
+            "name": position.post_catalog_version_id.name,
+            "organizationId": str(position.organization_id_id),
+            "lifecycleStatus": position.lifecycle_status,
+        }
+        payload_hash = self._hash(payload)
+        if link and link.projection_hash == payload_hash:
+            return link
+
+        if link and link.legacy_pk:
+            try:
+                legacy_position_id = int(link.legacy_pk)
+            except (TypeError, ValueError) as exc:
+                raise LegacyProjectionError("HR02_POSITION_LEGACY_LINK_INVALID") from exc
+            legacy_position = JobPosition.objects.filter(
+                id=legacy_position_id,
+                company_id=self.tenant_id,
+            ).first()
+            if legacy_position is None:
+                raise LegacyProjectionError("HR02_POSITION_LEGACY_TENANT_MISMATCH")
+            legacy_position.job_position = position.post_catalog_version_id.name
+            legacy_position.department_id = department
+            legacy_position.save(update_fields=["job_position", "department_id"])
+        else:
+            legacy_position = JobPosition.objects.create(
+                job_position=position.post_catalog_version_id.name,
+                department_id=department,
+            )
+            # JobPosition.company_id 同样是 M2M；新投影必须立即绑定学校。
+            legacy_position.company_id.add(self.tenant_id)
+
+        if link is None:
+            return HrLegacyObjectLink.objects.create(
+                tenant_id=self.tenant_id,
+                domain_entity_type="position",
+                domain_entity_id=str(position.id),
+                legacy_app="base",
+                legacy_model="jobposition",
+                legacy_pk=str(legacy_position.id),
+                link_status="MAPPED",
+                projection_hash=payload_hash,
+                last_projected_at=timezone.now(),
+            )
+
+        link.projection_hash = payload_hash
+        link.last_projected_at = timezone.now()
+        link.save(update_fields=["projection_hash", "last_projected_at"])
         return link
 
     def create_root_from_company(self, company) -> HrOrganization:
