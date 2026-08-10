@@ -166,6 +166,23 @@ jobs:
               connection.close()
           PY
 
+          # Django test setup uses syncdb for apps without migrations. Some of
+          # those tables reference migrated HR authority tables, so starting
+          # from a completely empty test schema makes syncdb run before its FK
+          # dependencies exist. Clone the already-verified fresh migration DB,
+          # then add only the unmigrated-app tables on top of that schema.
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers horilla_db' \
+            | docker exec -i "$mysql_container" sh -c \
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --run-syncdb --noinput
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --check
+
       - name: Tenant and registered HR tests
         shell: bash
         run: |
@@ -177,9 +194,9 @@ jobs:
           PY
           )
           echo "Testing registered apps: $HR_APPS"
-          # The database above is recreated from scratch on every run by root.
-          # --keepdb tells Django to use that isolated database without granting
-          # the application user global CREATE/DROP DATABASE privileges.
+          # test_horilla_db is cloned from the exact fresh-migration schema and
+          # completed with --run-syncdb above. --keepdb reuses that isolated
+          # schema without granting the application user global DB privileges.
           python manage.py test base $HR_APPS --keepdb --noinput --verbosity 1
 
   production-settings-gate:
