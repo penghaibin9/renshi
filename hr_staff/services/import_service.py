@@ -198,11 +198,11 @@ class StaffMasterRowApplier:
     def _parse_date(value):
         if not value:
             return None
-        from datetime import date
+        from datetime import datetime
 
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
             try:
-                return date.strptime(str(value).strip(), fmt)
+                return datetime.strptime(str(value).strip(), fmt).date()
             except ValueError:
                 continue
         raise ValueError(f"无效日期: {value}")
