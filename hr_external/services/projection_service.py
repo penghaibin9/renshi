@@ -89,10 +89,13 @@ class ProjectionService:
 
             # 关联 legacy Employee（映射，非 authority key，§112）：通过 HR03 StaffMasterProvider。
             legacy_id = self._resolve_legacy_employee(tenant_id, profile)
+            state.legacy_employee_id = legacy_id
             summary.projected += 1
-            if not legacy_id:
+            if legacy_id is None:
                 summary.missing_legacy += 1
                 state.status = "LEGACY_EMPLOYEE_MISSING"
+            else:
+                state.status = "PROJECTED"
 
             # ProjectionState 是 HR08 权威状态：每次投影事实变化都递增版本。
             state.version += 1
@@ -100,6 +103,7 @@ class ProjectionService:
                 update_fields=[
                     "projection_hash",
                     "last_projected_at",
+                    "legacy_employee_id",
                     "status",
                     "version",
                     "updated_at",
