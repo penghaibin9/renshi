@@ -13,7 +13,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     return {
         "summary": {
             "metricVersions": metrics.count(),
-            "currentMetrics": metrics.filter(status="PUBLISHED").count(),
+            "metricCodes": metrics.values("metric_code").distinct().count(),
             "openFindings": open_findings.count(),
             "criticalFindings": open_findings.filter(severity="CRITICAL").count(),
             "submissions": submissions.count(),
