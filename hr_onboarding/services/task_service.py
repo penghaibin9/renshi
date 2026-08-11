@@ -152,6 +152,25 @@ class TaskService:
                 details={"missing": missing},
             )
 
+    def _promote_ready_if_possible(
+        self, instance: HrOnboardingTaskInstance
+    ) -> HrOnboardingTaskInstance:
+        """Resolve NOT_STARTED lazily once prerequisites are satisfied.
+
+        Instances intentionally start as NOT_STARTED. The first actionable
+        operation may therefore need to pass through READY before entering the
+        public action state. Keeping that promotion inside the service avoids
+        weakening the state machine with direct NOT_STARTED -> action edges.
+        """
+        if instance.status != TaskStatus.NOT_STARTED:
+            return instance
+        self._check_prerequisites(instance)
+        assert_task_transition(instance.status, TaskStatus.READY)
+        instance.status = TaskStatus.READY
+        instance.version += 1
+        instance.save(update_fields=["status", "version", "updated_at"])
+        return instance
+
     @transaction.atomic
     def start_task(self, instance: HrOnboardingTaskInstance) -> HrOnboardingTaskInstance:
         instance = HrOnboardingTaskInstance.objects.select_for_update().get(
@@ -160,6 +179,8 @@ class TaskService:
         )
         if instance.status == TaskStatus.COMPLETED:
             raise TaskAlreadyCompletedError("任务已完成")
+        instance = self._promote_ready_if_possible(instance)
+        self._check_prerequisites(instance)
         assert_task_transition(instance.status, TaskStatus.IN_PROGRESS)
         instance.status = TaskStatus.IN_PROGRESS
         instance.started_at = timezone.now()
@@ -207,6 +228,7 @@ class TaskService:
             raise Hr05ApiError("豁免必须填写 reason（WAIVED 语义：reason+authority+audit）")
         if instance.status == TaskStatus.COMPLETED:
             raise TaskAlreadyCompletedError("任务已完成")
+        instance = self._promote_ready_if_possible(instance)
         assert_task_transition(instance.status, TaskStatus.WAIVED)
         instance.status = TaskStatus.WAIVED
         instance.completion_payload = {
