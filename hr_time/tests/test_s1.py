@@ -160,8 +160,10 @@ class HrTimeS1TenantFailClosedTests(TestCase):
     # ── 权限（总册 §151）────────────────────────────────────────────
 
     def test_permission_denied_for_regular_user(self):
-        self._login_school()
+        # force_login 会轮换/重建 session；先完成登录，再建立学校上下文，
+        # 才能真正测试 permission gate，而不是被 tenant gate 提前拦截。
         self.client.force_login(self.plain_user)
+        self._login_school()
         resp = self.client.get(HEALTH_URL)
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["error"]["code"], "PERMISSION_DENIED")
