@@ -85,7 +85,17 @@ _PROV_ALLOWED: dict[str, set[str]] = {
 
 _PROBATION_ALLOWED: dict[str, set[str]] = {
     PR.NOT_STARTED: {PR.IN_PROGRESS, PR.CANCELLED},
-    PR.IN_PROGRESS: {PR.REVIEW_DUE, PR.EXTENDED, PR.CONFIRMED, PR.FAILED, PR.CANCELLED},
+    # A submitted review is itself the signal that an in-progress probation
+    # has entered review; requiring an artificial REVIEW_DUE hop would make
+    # normal self/unit review submissions impossible.
+    PR.IN_PROGRESS: {
+        PR.REVIEW_DUE,
+        PR.UNDER_REVIEW,
+        PR.EXTENDED,
+        PR.CONFIRMED,
+        PR.FAILED,
+        PR.CANCELLED,
+    },
     PR.REVIEW_DUE: {PR.UNDER_REVIEW, PR.EXTENDED, PR.CONFIRMED, PR.FAILED},
     PR.UNDER_REVIEW: {PR.CONFIRMED, PR.EXTENDED, PR.FAILED, PR.REVIEW_DUE},
     PR.EXTENDED: {PR.IN_PROGRESS, PR.REVIEW_DUE},
