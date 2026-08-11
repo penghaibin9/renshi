@@ -22,6 +22,8 @@ from django.core.files.base import ContentFile
 from django.utils.translation import gettext as _
 from django.utils import timezone
 
+from hr_onboarding.constants import CaseSourceType, EmploymentType, StaffCategoryCode
+
 logger = logging.getLogger(__name__)
 
 BATCH_CASE_TEMPLATE_COLS = [
@@ -111,8 +113,6 @@ class ExcelImportJob:
 
     def validate(self) -> bool:
         """校验 staging 数据。返回 True 表示全部合法。"""
-        from hr_onboarding.constants import CaseSourceType, EmploymentType, StaffCategoryCode
-
         self.errors = []
         for i, record in enumerate(self.rows):
             try:
