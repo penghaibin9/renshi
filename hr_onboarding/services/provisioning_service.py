@@ -28,6 +28,11 @@ RETRY_BASE_SECONDS = 60
 
 
 class ProvisioningService:
+    # Public contract used by callers/tests; keep the module constants as the
+    # single source of truth while exposing them on the service class.
+    MAX_ATTEMPTS = MAX_ATTEMPTS
+    RETRY_BASE_SECONDS = RETRY_BASE_SECONDS
+
     def __init__(self, *, tenant_id: int):
         self.tenant_id = tenant_id
 
