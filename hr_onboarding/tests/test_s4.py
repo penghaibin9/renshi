@@ -53,10 +53,9 @@ def _ready_case(case_service, *, report_at="2026-01-15T09:00:00+00:00"):
     # VERIFYING → READY_FOR_ACTIVATION
     case_service._transition_locked(case, CaseStatus.VERIFYING, "TEST", "材料核验")
     case_service._transition_locked(case, CaseStatus.READY_FOR_ACTIVATION, "TEST", "准备激活")
-    # person match 解决
-    case_service.resolve_person_match(case, person_id=None, status="EXACT_MATCH")
-    case.hr03_person_id = None  # mock 在激活时才建 person
-    case.save(update_fields=["person_match_status"])
+    # person match 解决。resolve_person_match 会锁行并返回更新后的 authoritative instance；
+    # helper 必须继续使用返回值，不能再用旧对象把状态覆盖回去。
+    case = case_service.resolve_person_match(case, person_id=None, status="EXACT_MATCH")
     case.refresh_from_db()
     return case
 
