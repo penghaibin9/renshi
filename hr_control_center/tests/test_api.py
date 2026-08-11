@@ -84,9 +84,10 @@ class HrBootstrapApiTests(TestCase):
         self.client.force_login(self.admin)
 
     def _login_school(self):
-        """在请求上下文里选中学校。"""
-        self.client.session["selected_company"] = str(self.company.id)
-        self.client.session.save()
+        """在请求上下文里选中学校，并保存同一个 session store。"""
+        session = self.client.session
+        session["selected_company"] = str(self.company.id)
+        session.save()
 
     def test_root_version_contract(self):
         self._login_school()
@@ -107,7 +108,6 @@ class HrBootstrapApiTests(TestCase):
         self.assertEqual(resp.json()["error"]["code"], "TENANT_CONTEXT_REQUIRED")
 
     def test_permission_denied_for_regular_user(self):
-        self._login_school()
         user = HorillaUser.objects.create_user(
             username="plain_user", password="x", email="u@test.local"
         )
@@ -123,6 +123,7 @@ class HrBootstrapApiTests(TestCase):
             company_id_id=self.company.pk,
         )
         self.client.force_login(user)
+        self._login_school()
         resp = self.client.get(BOOTSTRAP_URL)
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["error"]["code"], "PERMISSION_DENIED")
