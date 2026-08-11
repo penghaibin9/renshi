@@ -84,9 +84,16 @@ class PersonCredentialTest(TestCase):
 
     def test_version_increment(self):
         person = HrPerson.objects.create(tenant_id=1, legal_name="模型资格测试人员")
+        catalog = HrCredentialCatalogItem.objects.create(
+            tenant_id=1,
+            code="VERSION-TEST",
+            category=CredentialCategory.TEACHER_QUALIFICATION,
+            name="版本递增测试资格",
+        )
         c = HrPersonCredential.objects.create(
             tenant_id=1,
             person_id=person,
+            catalog_item_id=catalog,
             credential_name_snapshot="V1",
             issuer_name="Issuer",
         )
