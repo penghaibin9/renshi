@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.utils.translation import gettext_lazy as _
 
 from employee.models import Employee, EmployeeWorkInformation
-from base.models import Department, EmployeeType, JobPosition
+from base.models import Company, Department, EmployeeType, JobPosition
 from horilla.horilla_middlewares import tenant_context
 
 from hr_changes.projections.horilla_work_info import project_staff_work_info
@@ -36,18 +36,35 @@ class LegacyProjectionTests(_BackgroundTenantTestCase):
 
     def setUp(self):
         super().setUp()
-        # legacy 对象
+        # legacy 对象必须真实属于当前学校；否则 fail-closed legacy manager
+        # 会正确地把它们从 tenant=1 的投影视图中隐藏。
+        self.company = Company.objects.create(
+            id=TENANT,
+            company="HR06 测试大学",
+            hq=True,
+            address="测试路 6 号",
+            country="CN",
+            state="湖南",
+            city="长沙",
+            zip="410000",
+        )
         self.department = Department.objects.create(department="JSXY")
+        self.department.company_id.add(self.company)
         self.job_position = JobPosition.objects.create(
             job_position="AI-P300", department_id=self.department
         )
+        self.job_position.company_id.add(self.company)
         self.employee_type = EmployeeType.objects.create(employee_type="正式")
+        self.employee_type.company_id.add(self.company)
         self.employee = Employee.objects.create(
             employee_first_name="张",
             employee_last_name="某某",
             email="hr06-proj@example.com",
             phone="13800000001",
             badge_id="B001",
+        )
+        EmployeeWorkInformation._base_manager.filter(employee_id=self.employee).update(
+            company_id_id=self.company.pk
         )
         # HR03 事实
         self.person = make_person(TENANT, "张某某")
