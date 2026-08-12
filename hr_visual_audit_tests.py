@@ -13,6 +13,7 @@ import os
 import tempfile
 from pathlib import Path
 from unittest import skipUnless
+from urllib.parse import urlsplit
 
 from django.apps import apps
 from django.conf import settings
@@ -217,6 +218,7 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
         page_errors: list[str] = []
+        api_failures: list[str] = []
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             try:
@@ -236,6 +238,12 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
                 page = context.new_page()
                 page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
+                def record_api_failure(response):
+                    if "/api/v1/hr/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
+
+                page.on("response", record_api_failure)
+
                 for _app_label, config in targets:
                     code = config["code"]
                     module_dir = self.out_dir / code
@@ -252,6 +260,11 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
                             200,
                             f"{code} {route} returned HTTP {response.status}",
                         )
+                        self.assertEqual(
+                            urlsplit(page.url).path,
+                            route,
+                            f"{code} {route} redirected to {page.url}",
+                        )
                         page.screenshot(
                             path=str(module_dir / f"desktop-{slug}.png"),
                             full_page=True,
@@ -264,6 +277,11 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
                     )
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200)
+                    self.assertEqual(
+                        urlsplit(page.url).path,
+                        overview,
+                        f"{code} mobile overview redirected to {page.url}",
+                    )
                     page.screenshot(
                         path=str(module_dir / "mobile-overview.png"), full_page=True
                     )
@@ -275,4 +293,7 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
 
         self.assertEqual(
             page_errors, [], "Browser page errors: " + " | ".join(page_errors)
+        )
+        self.assertEqual(
+            api_failures, [], "Canonical HR API failures: " + " | ".join(api_failures)
         )
