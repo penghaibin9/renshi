@@ -7,11 +7,17 @@ class Hr14UiContractTests(SimpleTestCase):
     def test_workspace_routes_are_registered(self):
         expected = {
             "hr_appointment:overview": "/hr/appointments/",
-            "hr_appointment:supply": "/hr/appointments/supply/",
+            "hr_appointment:policies": "/hr/appointments/policies/",
+            "hr_appointment:quota": "/hr/appointments/quota/",
+            "hr_appointment:competitions": "/hr/appointments/competitions/",
             "hr_appointment:applications": "/hr/appointments/applications/",
-            "hr_appointment:review": "/hr/appointments/review/",
+            "hr_appointment:ranking": "/hr/appointments/ranking/",
             "hr_appointment:publicity": "/hr/appointments/publicity/",
-            "hr_appointment:terms": "/hr/appointments/terms/",
+            "hr_appointment:appointments": "/hr/appointments/appointments/",
+            "hr_appointment:term_changes": "/hr/appointments/term-changes/",
+            "hr_appointment:supply_compat": "/hr/appointments/supply/",
+            "hr_appointment:review_compat": "/hr/appointments/review/",
+            "hr_appointment:terms_compat": "/hr/appointments/terms/",
         }
         for name, path in expected.items():
             self.assertEqual(reverse(name), path)
