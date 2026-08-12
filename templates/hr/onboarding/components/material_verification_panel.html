@@ -4,7 +4,7 @@
   <div class="hr-material-verification-panel__meta">
     <h3>{{ material.label }}</h3>
     <p class="hr-material-verification-panel__requirement">
-      {{ material.blocking_phase_label|default:material.blocking_phase }} ·
+      {% firstof material.blocking_phase_label material.blocking_phase "—" %} ·
       {% if material.required %}{% trans "必交" %}{% else %}{% trans "选交" %}{% endif %}
     </p>
   </div>
@@ -22,7 +22,7 @@
   {% if material.verifications %}
   <ul class="hr-material-verification-panel__history">
     {% for v in material.verifications %}
-    <li>{{ v.reviewer }} · {{ v.result_label|default:v.result }} · {{ v.verified_at|date:"Y-m-d H:i" }}</li>
+    <li>{{ v.reviewer }} · {% firstof v.result_label v.result "—" %} · {{ v.verified_at|date:"Y-m-d H:i" }}</li>
     {% endfor %}
   </ul>
   {% endif %}
