@@ -1,0 +1,88 @@
+name: HR07 Lifecycle / MySQL Contract
+
+on:
+  push:
+    branches: [agent/renshi-hr07-lifecycle-20260812]
+  pull_request:
+    branches: [agent/renshi-fast-01-hr07-contract]
+
+permissions:
+  contents: read
+
+env:
+  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
+
+jobs:
+  lifecycle-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: horilla_db
+          MYSQL_USER: horilla_user
+          MYSQL_PASSWORD: horilla_pass
+          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install native libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Ensure local settings stub
+        run: |
+          if [ ! -f horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
+          fi
+      - name: Fresh MySQL migrate
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+      - name: Provision isolated test schema
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+          connection = MySQLdb.connect(host="127.0.0.1", user="root", passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"], charset="utf8mb4")
+          try:
+              cursor = connection.cursor()
+              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute("CREATE DATABASE `test_horilla_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+              cursor.execute("GRANT ALL PRIVILEGES ON `test_horilla_db`.* TO 'horilla_user'@'%'")
+              cursor.execute("FLUSH PRIVILEGES")
+          finally:
+              connection.close()
+          PY
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction horilla_db' \
+            | docker exec -i "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' python manage.py migrate --run-syncdb --noinput
+      - name: HR07 lifecycle regression
+        env:
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+        run: python manage.py test hr_contracts.tests.test_lifecycle_service --keepdb --noinput --verbosity 2
