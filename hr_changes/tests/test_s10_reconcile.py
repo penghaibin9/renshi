@@ -55,6 +55,7 @@ class ReconcileProjectionTests(TestCase):
             employment_relationship_id=self.rel, assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1), organization_id=self.org,
             position_id=self.position,
+            source_business_type="MIGRATION_VERIFIED",
         )
 
     def test_reconcile_matched_after_projection(self):
