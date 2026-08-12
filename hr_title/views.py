@@ -19,10 +19,11 @@ SECTIONS = {
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "职称评审")
-    # Screenshot C / production runtime: workspace_d keeps the C visual layer,
-    # but executes its runtime inside the rendered content block so Horilla's
-    # native sidebar toggle and the real dashboard API boot actually run.
-    template_name = "hr_title/workspace_d.html"
+    # Screenshot C runtime chain:
+    # workspace_c = business visual layer;
+    # workspace_d = live dashboard/runtime inside a rendered content block;
+    # workspace_e = mobile Horilla shell state + desktop-hover isolation.
+    template_name = "hr_title/workspace_e.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrTitleAccessError as exc:
