@@ -103,12 +103,11 @@
                     <div class="oh-modal__dialog-footer">
                         <button class="oh-btn oh-btn--success" id="ok">{% trans "Confirm" %}</button>
                         <button class="oh-btn oh-btn--danger oh-modal__cancel" id="cancel">
-                            {% trans "Cancel" %}
-                        </button>
+                            {% trans "Cancel" %}</button>
                     </div>
                 </div>
             </div>
-            <!-- End of Confirm Modal -->
+            <!-- End of Confirmation Modal -->
 
             <!-- Start of Notifications activity bar -->
             <div class="oh-activity-sidebar " id="allNotifications" style="z-index:1000">
@@ -163,30 +162,28 @@
                             <!-- End of settings button in nav bar -->
                         {% endif %}
 
-                        <!-- Start of notifications button in nav bar -->
+                        <!-- Start of notifications button -->
                         {% include 'notification/notification.html' %}
-                        <!-- End of notifications button in nav bar -->
+                        <!-- End of notifications button -->
 
                         {% if show_language_switcher %}
-                            <!-- Start of Languages dropdown in nav bar -->
+                            <!-- Start of Language switcher -->
                             {% include "base/navbar_components/language_settings.html" %}
-                            <!-- End of Languages dropdown in nav bar -->
+                            <!-- End of Language switcher -->
                         {% endif %}
 
                         {% if show_company_switcher %}
-                            <!-- Start of Companies dropdown in nav bar -->
+                            <!-- Start of Company switcher -->
                             {% include "base/navbar_components/company_selection.html" %}
-                            <!-- End of Companies dropdown in nav bar -->
+                            <!-- End of Company switcher -->
                         {% endif %}
 
-                        <!-- Start of profile dropdown in nav bar -->
+                        <!-- Start of Profile -->
                         {% include "navbar_component/profile_section.html" %}
-                        <!-- End of profile dropdown in nav bar -->
+                        <!-- End of Profile -->
                     </div>
                 </div>
-                <!-- Start of quick access in index page -->
                 {% include "floating_button.html" %}
-                <!-- End of quick access in index page -->
             </nav>
             <!-- End of Nav bar -->
 
@@ -330,6 +327,8 @@
             }
         </script>
     {% endif %}
+    {% block scripts %}
+    {% endblock scripts %}
 </body>
 
 </html>
