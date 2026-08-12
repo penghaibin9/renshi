@@ -18,6 +18,7 @@ class AppointmentPolicyVersion(HrVersionedModel):
 
     class Meta:
         db_table = "hr14_appointment_policy_version"
+        permissions = [("hr.appointment.view", "查看 HR14 岗位聘任工作区")]
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "policy_code", "version_no"),
