@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.template.loader import get_template
 from django.test import SimpleTestCase
 from django.urls import resolve, reverse
@@ -26,5 +28,14 @@ class Hr13UiContractTests(SimpleTestCase):
         self.assertEqual(reverse("hr_title_api:dashboard"), path)
         self.assertEqual(resolve(path).view_name, "hr_title_api:dashboard")
 
-    def test_workspace_template_compiles(self):
+    def test_workspace_templates_compile(self):
         self.assertIsNotNone(get_template("hr_title/workspace.html"))
+        self.assertIsNotNone(get_template("hr_title/workspace_d.html"))
+
+    def test_mobile_runtime_uses_horilla_native_sidebar_toggle(self):
+        template = get_template("hr_title/workspace_d.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertIn(".oh-navbar__toggle-link", source)
+        self.assertIn("toggle.click()", source)
+        self.assertIn("window.addEventListener('load', init", source)
+        self.assertNotIn("shell.classList.add('oh-wrapper-main--closed')", source)
