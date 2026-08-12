@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.template.loader import get_template
 from django.test import SimpleTestCase
 from django.urls import resolve, reverse
@@ -30,3 +32,24 @@ class Hr15UiContractTests(SimpleTestCase):
 
     def test_workspace_template_compiles(self):
         self.assertIsNotNone(get_template("hr_payroll/workspace.html"))
+
+    def test_workspace_keeps_system_shell_and_scoped_visual_contract(self):
+        template_path = (
+            Path(__file__).resolve().parents[1]
+            / "templates"
+            / "hr_payroll"
+            / "workspace.html"
+        )
+        source = template_path.read_text(encoding="utf-8")
+        self.assertIn('{% extends "base.html" %}', source)
+        self.assertIn("hr15-workspace", source)
+        self.assertIn("{% if not access_error %}", source)
+        self.assertNotIn("<!doctype html>", source.lower())
+        for forbidden in (
+            "PAYROLL & BENEFITS",
+            "待施工",
+            "旧 payroll 接管",
+            "薪酬 Authority",
+            "支付 / 工资条 Provider",
+        ):
+            self.assertNotIn(forbidden, source)
