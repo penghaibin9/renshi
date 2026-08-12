@@ -39,6 +39,7 @@ class ExitCase(HrTenantScopedModel):
 
     class Meta:
         db_table = "hr16_exit_case"
+        permissions = [("hr.exit.view", "查看 HR16 退休与离校工作区")]
         constraints = [
             models.UniqueConstraint(fields=("tenant_id", "case_no"), name="uq_hr16_case_tenant_no"),
         ]
