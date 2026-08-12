@@ -57,7 +57,8 @@ class HrTimeS1TenantFailClosedTests(TestCase):
             email=cls.admin.email,
             phone="13800001111",
         )
-        EmployeeWorkInformation.objects.filter(employee_id=admin_emp).update(
+        # setUpTestData 阶段没有请求 tenant context；用 base manager 仅初始化夹具绑定。
+        EmployeeWorkInformation._base_manager.filter(employee_id=admin_emp).update(
             company_id_id=cls.company.pk,
         )
 
@@ -73,7 +74,7 @@ class HrTimeS1TenantFailClosedTests(TestCase):
             email=cls.plain_user.email,
             phone="13800002222",
         )
-        EmployeeWorkInformation.objects.filter(employee_id=plain_emp).update(
+        EmployeeWorkInformation._base_manager.filter(employee_id=plain_emp).update(
             company_id_id=cls.company.pk,
         )
 
