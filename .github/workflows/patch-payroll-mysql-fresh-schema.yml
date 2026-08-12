@@ -1,0 +1,110 @@
+name: Patch Payroll MySQL Fresh Schema
+
+on:
+  push:
+    branches:
+      - agent/renshi-shared-quality-20260812
+    paths:
+      - .github/workflows/patch-payroll-mysql-fresh-schema.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-payroll-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/renshi-shared-quality-20260812
+          fetch-depth: 0
+
+      - name: Rewrite impossible Allowance unique index as state-only
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('payroll/migrations/0001_initial.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''            options={
+                "verbose_name": "Allowance",
+                "unique_together": {
+                    (
+                        "title",
+                        "is_taxable",
+                        "is_condition_based",
+                        "field",
+                        "condition",
+                        "value",
+                        "is_fixed",
+                        "amount",
+                        "based_on",
+                        "rate",
+                        "per_attendance_fixed_amount",
+                        "shift_id",
+                        "shift_per_attendance_amount",
+                        "amount_per_one_hr",
+                        "work_type_id",
+                        "work_type_per_attendance_amount",
+                    )
+                },
+            },
+        ),
+        migrations.CreateModel(
+            name="Deduction",'''
+          new = '''            options={
+                "verbose_name": "Allowance",
+            },
+        ),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
+                migrations.AlterUniqueTogether(
+                    name="allowance",
+                    unique_together={
+                        (
+                            "title",
+                            "is_taxable",
+                            "is_condition_based",
+                            "field",
+                            "condition",
+                            "value",
+                            "is_fixed",
+                            "amount",
+                            "based_on",
+                            "rate",
+                            "per_attendance_fixed_amount",
+                            "shift_id",
+                            "shift_per_attendance_amount",
+                            "amount_per_one_hr",
+                            "work_type_id",
+                            "work_type_per_attendance_amount",
+                        )
+                    },
+                ),
+            ],
+        ),
+        migrations.CreateModel(
+            name="Deduction",'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one Allowance unique block, got {text.count(old)}')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          python -m py_compile payroll/migrations/0001_initial.py
+          git diff --check -- payroll/migrations/0001_initial.py
+          git diff -- payroll/migrations/0001_initial.py
+
+      - name: Commit exact migration compatibility patch
+        shell: bash
+        run: |
+          if git diff --quiet -- payroll/migrations/0001_initial.py; then
+            echo 'No payroll migration change needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add payroll/migrations/0001_initial.py
+          git commit -m 'fix(mysql): preserve Allowance state without impossible index'
+          git push origin HEAD:agent/renshi-shared-quality-20260812
