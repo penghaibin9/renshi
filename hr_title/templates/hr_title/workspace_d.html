@@ -21,7 +21,8 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
   const kpis = {
-    policyVersions: '制度版本', applications: '申报总数', awaitingQualification: '待资格审查',
+    policyVersions: '制度版本', applications: '申报总数', materials: '材料快照',
+    acceptedMaterials: '已验收材料', awaitingQualification: '待资格审查',
     underReview: '评审中', inPublicity: '公示中', effectiveResults: '生效结果'
   };
   const caps = {
@@ -35,6 +36,11 @@
     name: x.requested_title_name || x.requested_title_code || '未命名职称',
     sub: [x.case_no, x.batch_no].filter(Boolean).join(' · '), status: x.status,
     date: (x.updated_at || '').slice(0, 10), kind: '职称申报'
+  }));
+  const material = (a) => (a || []).map((x) => ({
+    name: x.display_name || x.material_no || '未命名材料',
+    sub: [x.material_no, x.material_type, x.source_domain, x.source_ref].filter(Boolean).join(' · '),
+    status: x.status, date: (x.updated_at || '').slice(0, 10), kind: '评审材料快照'
   }));
   const res = (a) => (a || []).map((x) => ({
     name: x.title_name || x.title_code || '未命名职称',
@@ -92,6 +98,11 @@
       t.textContent = '资格审查队列'; p.textContent = '优先处理提交、退回补正、资格通过和拒绝状态。';
       setRows(app(d.recentApplications).filter((x) => ['SUBMITTED', 'RETURNED', 'ELIGIBLE', 'REJECTED'].includes(x.status))); return;
     }
+    if (section === 'materials') {
+      t.textContent = '材料与代表性成果';
+      p.textContent = '读取真实评审材料快照；已验收材料冻结，退回补正必须形成新的替代快照。';
+      setRows(material(d.recentMaterials)); return;
+    }
     if (section === 'experts' || section === 'deliberation') {
       t.textContent = section === 'experts' ? '专家评审相关申报' : '评议表决相关申报';
       p.textContent = '只用真实 UNDER_REVIEW 形成队列，不伪造专家、评分或投票。';
@@ -104,10 +115,10 @@
     if (section === 'results') {
       t.textContent = '正式职称结果'; p.textContent = '正式结果与申报过程分开，避免把“评审通过”当成已经生效。'; setRows(res(d.recentResults)); return;
     }
-    if (section === 'materials' || section === 'appeals') {
-      t.textContent = section === 'materials' ? '材料与代表性成果' : '异议与复核';
+    if (section === 'appeals') {
+      t.textContent = '异议与复核';
       p.textContent = '独立 Authority 未接通时不拿申报状态冒充业务事实。';
-      unavailable('该业务事实尚待 Authority 接通；入口保留用于正式施工。'); return;
+      unavailable('异议复核事实尚待 Authority 接通；入口保留用于正式施工。'); return;
     }
     t.textContent = '最近制度版本'; p.textContent = '总览先确认制度口径，再处理资格、评审、公示与正式结果。';
     setRows(pol(d.recentPolicies));
