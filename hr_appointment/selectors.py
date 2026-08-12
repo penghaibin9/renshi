@@ -3,6 +3,7 @@ from collections import Counter
 
 from .models import (
     AppointmentApplicationCase,
+    AppointmentBatch,
     AppointmentPolicyVersion,
     AppointmentQuotaPool,
     PositionAppointmentFact,
@@ -14,6 +15,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         raise ValueError("tenant_id is required")
     tenant_id = int(tenant_id)
     cases = AppointmentApplicationCase.objects.filter(tenant_id=tenant_id)
+    batches = AppointmentBatch.objects.filter(tenant_id=tenant_id)
     policies = AppointmentPolicyVersion.objects.filter(tenant_id=tenant_id)
     facts = PositionAppointmentFact.objects.filter(tenant_id=tenant_id)
     quota_pools = AppointmentQuotaPool.objects.filter(
@@ -25,6 +27,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     return {
         "summary": {
             "policyVersions": policies.count(),
+            "competitionBatches": batches.count(),
             "applications": cases.count(),
             "awaitingReview": counts.get("ELIGIBLE", 0) + counts.get("UNDER_REVIEW", 0),
             "proposed": counts.get("PROPOSED", 0),
@@ -37,6 +40,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             cases.order_by("-updated_at")[:12].values(
                 "id", "case_no", "person_id", "position_instance_id", "batch_no",
                 "requested_level_code", "status", "updated_at"
+            )
+        ),
+        "recentBatches": list(
+            batches.order_by("-updated_at")[:12].values(
+                "id", "batch_no", "name", "business_type", "policy_version_id",
+                "application_from", "application_to", "publicity_from", "publicity_to",
+                "status", "updated_at"
             )
         ),
         "recentAppointments": list(
@@ -73,7 +83,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "application": True,
             "appointmentFact": True,
             "quotaSnapshot": True,
-            "competition": False,
+            "competition": True,
             "reviewRanking": False,
             "publicity": False,
             "termChange": False,
