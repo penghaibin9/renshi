@@ -8,6 +8,8 @@ class Hr18UiContractTests(SimpleTestCase):
         expected = {
             "hr_data:overview": "/hr/data/",
             "hr_data:metrics": "/hr/data/metrics/",
+            "hr_data:population": "/hr/data/population/",
+            "hr_data:asof": "/hr/data/as-of/",
             "hr_data:quality": "/hr/data/quality/",
             "hr_data:exchange": "/hr/data/exchange/",
             "hr_data:submissions": "/hr/data/submissions/",
