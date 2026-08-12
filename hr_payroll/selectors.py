@@ -1,5 +1,6 @@
 """Tenant-scoped read models for the HR15 payroll control center."""
 from django.db.models import Sum
+
 from .models import PayrollPeriod, PayrollProfile, PayrollResultFact
 
 
@@ -26,11 +27,34 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "latestPeriodStatus": getattr(latest, "status", None),
             "latestPeriodNet": net,
         },
-        "recentPeriods": list(periods.order_by("-end_date")[:6].values("id", "period_code", "start_date", "end_date", "status", "finalized_at")),
+        "recentPeriods": list(
+            periods.order_by("-end_date")[:12].values(
+                "id", "period_code", "start_date", "end_date", "status", "finalized_at"
+            )
+        ),
+        "recentResults": list(
+            results.order_by("-created_at")[:12].values(
+                "id", "result_no", "payroll_period_id", "staff_id", "currency_code",
+                "gross_amount", "deduction_amount", "net_amount", "status", "created_at"
+            )
+        ),
+        "recentProfiles": list(
+            profiles.order_by("-effective_from", "-created_at")[:12].values(
+                "id", "staff_id", "payroll_identity_no", "pay_group_code", "currency_code",
+                "effective_from", "effective_to", "status"
+            )
+        ),
         "capabilities": {
-            "profile": True, "period": True, "resultFact": True, "finalization": True,
-            "salaryItemRules": False, "fullCalculation": False, "allowanceBenefits": False,
-            "socialInsuranceHousingFund": False, "payment": False, "financeReconciliation": False,
+            "profile": True,
+            "period": True,
+            "resultFact": True,
+            "finalization": True,
+            "salaryItemRules": False,
+            "fullCalculation": False,
+            "allowanceBenefits": False,
+            "socialInsuranceHousingFund": False,
+            "payment": False,
+            "financeReconciliation": False,
             "legacyTakeover": False,
         },
     }
