@@ -99,6 +99,9 @@ jobs:
             | docker exec -i "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
           DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' python manage.py migrate --run-syncdb --noinput
       - name: HR09 encryption and tenant boundary regression
+        # Point Django at the normal schema. Its test runner will resolve this to
+        # the already-provisioned `test_horilla_db` instead of prefixing `test_`
+        # a second time and trying to create `test_test_horilla_db`.
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
         run: python manage.py test hr_qualification.tests.test_security_regression_hardening --keepdb --noinput --verbosity 2
