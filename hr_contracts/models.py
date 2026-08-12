@@ -10,10 +10,10 @@ from __future__ import annotations
 from django.db import models
 from django.db.models import Q
 
-from horilla.hr_domain_models import HrTenantScopedModel
+from hr_contracts.models_base import HrContractTenantScopedModel
 
 
-class HrContractAgreement(HrTenantScopedModel):
+class HrContractAgreement(HrContractTenantScopedModel):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
         WAITING_SIGNATURE = "WAITING_SIGNATURE", "Waiting signature"
@@ -63,7 +63,7 @@ class HrContractAgreement(HrTenantScopedModel):
         ]
 
 
-class HrContractVersion(HrTenantScopedModel):
+class HrContractVersion(HrContractTenantScopedModel):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
         SIGNED = "SIGNED", "Signed"
@@ -119,7 +119,7 @@ class HrContractVersion(HrTenantScopedModel):
         ]
 
 
-class HrContractCase(HrTenantScopedModel):
+class HrContractCase(HrContractTenantScopedModel):
     class CaseType(models.TextChoices):
         SIGN = "SIGN", "Sign"
         RENEW = "RENEW", "Renew"
