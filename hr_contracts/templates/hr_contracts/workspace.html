@@ -1,0 +1,111 @@
+{% extends "index.html" %}
+{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr07-contracts.css' %}">
+<div class="hr07">
+  {% if access_error %}
+    <div class="hr07-access">{{ access_error }}</div>
+  {% else %}
+    <section class="hr07-hero">
+      <div>
+        <div class="hr07-eyebrow">高校教职工合同管理</div>
+        <h1>{{ section_title }}</h1>
+        <p>合同主档、正式版本和签订/续签/变更/解除案件分开保存。审批通过不等于合同已经生效；签字完成也不等于已经进入履行状态，必须以正式合同版本的生效事实为准。</p>
+      </div>
+      <div class="hr07-guide">
+        <div><strong>先处理到期与生效风险</strong><span>优先看 90 天内到期、待签署、已签待生效和跨域生效失败。</span></div>
+        <div><strong>再进入具体合同案件</strong><span>签订、续签、变更、解除各走自己的案件，不覆盖旧合同历史。</span></div>
+      </div>
+    </section>
+
+    <nav class="hr07-nav" aria-label="合同管理工作区导航">
+      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/contracts/">工作台</a>
+      <a class="{% if section == 'agreements' %}active{% endif %}" href="/hr/contracts/agreements/">合同主档</a>
+      <a class="{% if section == 'signing' %}active{% endif %}" href="/hr/contracts/signing/">合同签订</a>
+      <a class="{% if section == 'renewals' %}active{% endif %}" href="/hr/contracts/renewals/">合同续签</a>
+      <a class="{% if section == 'changes' %}active{% endif %}" href="/hr/contracts/changes/">合同变更</a>
+      <a class="{% if section == 'terminations' %}active{% endif %}" href="/hr/contracts/terminations/">解除与终止</a>
+      <a class="{% if section == 'versions' %}active{% endif %}" href="/hr/contracts/versions/">版本历史</a>
+    </nav>
+    <div class="hr07-mobile-hint">可左右滑动查看更多合同工作区</div>
+
+    <section class="hr07-kpis" aria-label="合同关键指标">
+      <div class="hr07-kpi"><span>合同主档</span><b>{{ summary.total }}</b><small>当前学校全部 HR07 合同主档</small></div>
+      <div class="hr07-kpi"><span>当前履约相关合同</span><b>{{ summary.active }}</b><small>履行中、即将到期、续签中或已签待生效</small></div>
+      <div class="hr07-kpi"><span>办理中合同案件</span><b>{{ summary.pending_cases }}</b><small>已提交、退回、审批通过或待生效</small></div>
+      <div class="hr07-kpi"><span>90 天内到期</span><b>{{ summary.expiring_90 }}</b><small>只按正式生效版本的到期日计算</small></div>
+      <div class="hr07-kpi"><span>待签署合同</span><b>{{ summary.pending_signature }}</b><small>尚未形成签署事实</small></div>
+      <div class="hr07-kpi"><span>已签待生效</span><b>{{ summary.waiting_effect }}</b><small>签署完成但尚未正式生效</small></div>
+      <div class="hr07-kpi"><span>续签办理中</span><b>{{ summary.renewing }}</b><small>续签案件不覆盖旧版本</small></div>
+      <div class="hr07-kpi"><span>生效失败案件</span><b>{{ summary.effect_errors }}</b><small>跨域生效错误必须闭环后再结案</small></div>
+    </section>
+
+    {% if section == 'overview' %}
+      <div class="hr07-section-head"><div><h2>今天优先处理</h2><p>只根据当前学校真实合同状态生成，不造待办。</p></div></div>
+      <section class="hr07-focus-grid">
+        {% if focus_items %}
+          {% for item in focus_items %}
+            <article class="hr07-focus hr07-focus--{{ item.level }}"><h3>{{ item.title }}</h3><p>{{ item.desc }}</p><a href="{{ item.url }}">{{ item.action }} →</a></article>
+          {% endfor %}
+        {% else %}
+          <div class="hr07-focus-empty"><strong>当前没有需要优先处理的合同事项。</strong>这里不会为了填满首屏制造到期待办或生效异常。</div>
+        {% endif %}
+      </section>
+
+      <div class="hr07-section-head"><div><h2>合同真实办理链路</h2><p>老师按业务顺序处理，审批、签署和生效三个阶段严格分开。</p></div></div>
+      <section class="hr07-workflow" aria-label="合同办理流程">
+        <div class="hr07-step"><span class="hr07-step-no">1</span><strong>建立合同案件</strong><span>明确签订/续签/变更/解除类型和对应聘用关系。</span></div>
+        <div class="hr07-step"><span class="hr07-step-no">2</span><strong>形成条款草稿</strong><span>基于模板、合同类型和人员事实生成本次合同版本草稿。</span></div>
+        <div class="hr07-step"><span class="hr07-step-no">3</span><strong>审批合同案件</strong><span>审批只代表业务同意，不能直接把合同当作已生效。</span></div>
+        <div class="hr07-step"><span class="hr07-step-no">4</span><strong>完成合同签署</strong><span>保存签署时间和正式签署文件引用，旧草稿继续留痕。</span></div>
+        <div class="hr07-step"><span class="hr07-step-no">5</span><strong>合同版本生效</strong><span>生成正式 EFFECTIVE 版本，并与聘用关系等跨域事实协同。</span></div>
+        <div class="hr07-step"><span class="hr07-step-no">6</span><strong>到期/变更/解除</strong><span>后续操作都形成新案件和新历史，不原地覆盖旧合同。</span></div>
+      </section>
+
+      <section class="hr07-split">
+        <div class="hr07-card">
+          <div class="hr07-card-head"><div><h2>近期合同主档</h2><p>优先看状态、人员、正式版本与到期日期。</p></div><span class="hr07-count">最多显示 80 条</span></div>
+          <div class="hr07-table-wrap">
+            {% if agreements %}
+              <table class="hr07-table"><thead><tr><th>教职工</th><th>合同</th><th>合同状态</th><th>正式版本</th><th>生效区间</th></tr></thead><tbody>
+                {% for row in agreements|slice:":12" %}<tr>
+                  <td><span class="hr07-primary">{{ row.staff }}</span></td>
+                  <td><span class="hr07-primary">{{ row.title }}</span><span class="hr07-secondary">{{ row.agreement_no }} · {{ row.type }}</span></td>
+                  <td><span class="hr07-pill {% if row.status_code == 'ACTIVE' %}hr07-pill--success{% elif row.status_code == 'EXPIRING' or row.status_code == 'RENEWAL_IN_PROGRESS' or row.status_code == 'WAITING_SIGNATURE' or row.status_code == 'SIGNED_WAITING_EFFECTIVE' %}hr07-pill--warning{% elif row.status_code == 'TERMINATED' or row.status_code == 'EXPIRED' %}hr07-pill--danger{% endif %}">{{ row.status }}</span></td>
+                  <td>第 {{ row.version_no }} 版<span class="hr07-secondary">{{ row.version_status }}</span></td>
+                  <td class="hr07-mono">{% if row.effective_from %}{{ row.effective_from|date:"Y-m-d" }}{% else %}—{% endif %} 至 {% if row.effective_to %}{{ row.effective_to|date:"Y-m-d" }}{% else %}长期/未设置{% endif %}</td>
+                </tr>{% endfor %}
+              </tbody></table>
+            {% else %}<div class="hr07-empty"><strong>当前学校还没有 HR07 合同主档</strong>页面不会从旧 payroll 合同表直接拼接成“已完成”的新合同数据。</div>{% endif %}
+          </div>
+        </div>
+        <aside class="hr07-card"><div class="hr07-card-head"><div><h2>判断口径</h2><p>人事老师最容易混淆的四件事。</p></div></div><div class="hr07-side-list">
+          <div class="hr07-side-item"><strong>审批通过 ≠ 合同已生效</strong><span>审批只是案件状态，必须形成正式合同版本并完成生效协同。</span></div>
+          <div class="hr07-side-item"><strong>签字完成 ≠ 履行中</strong><span>签署事实和正式生效日期分开保存。</span></div>
+          <div class="hr07-side-item"><strong>续签 ≠ 修改旧合同</strong><span>续签形成新版本，上一版本继续可追溯。</span></div>
+          <div class="hr07-side-item"><strong>解除/终止必须保留原因与时间</strong><span>不能把合同直接删除，也不能把历史状态抹掉。</span></div>
+        </div></aside>
+      </section>
+
+    {% elif section == 'agreements' %}
+      <section class="hr07-card"><div class="hr07-card-head"><div><h2>合同主档</h2><p>一名教职工可以有多份历史合同；每份合同再拥有自己的正式版本。</p></div><span class="hr07-count">{{ summary.total }} 份</span></div><div class="hr07-table-wrap">
+      {% if agreements %}<table class="hr07-table"><thead><tr><th>教职工</th><th>合同编号</th><th>合同名称/类型</th><th>状态</th><th>当前版本</th><th>有效期</th></tr></thead><tbody>{% for row in agreements %}<tr>
+        <td><span class="hr07-primary">{{ row.staff }}</span></td><td class="hr07-mono">{{ row.agreement_no }}</td><td><span class="hr07-primary">{{ row.title }}</span><span class="hr07-secondary">{{ row.type }}</span></td><td><span class="hr07-pill {% if row.status_code == 'ACTIVE' %}hr07-pill--success{% elif row.status_code == 'EXPIRING' or row.status_code == 'WAITING_SIGNATURE' or row.status_code == 'SIGNED_WAITING_EFFECTIVE' or row.status_code == 'RENEWAL_IN_PROGRESS' %}hr07-pill--warning{% elif row.status_code == 'TERMINATED' or row.status_code == 'EXPIRED' %}hr07-pill--danger{% endif %}">{{ row.status }}</span></td><td>第 {{ row.version_no }} 版<span class="hr07-secondary">{{ row.version_status }}</span></td><td class="hr07-mono">{% if row.effective_from %}{{ row.effective_from|date:"Y-m-d" }}{% else %}—{% endif %} 至 {% if row.effective_to %}{{ row.effective_to|date:"Y-m-d" }}{% else %}长期/未设置{% endif %}</td>
+      </tr>{% endfor %}</tbody></table>{% else %}<div class="hr07-empty"><strong>暂无合同主档</strong>新合同必须从 HR07 正式合同域产生。</div>{% endif %}
+      </div></section>
+
+    {% elif section == 'versions' %}
+      <section class="hr07-card"><div class="hr07-card-head"><div><h2>合同版本历史</h2><p>正式版本、被替代版本、终止和到期版本全部保留。</p></div><span class="hr07-count">最多显示 80 条</span></div><div class="hr07-table-wrap">
+      {% if versions %}<table class="hr07-table"><thead><tr><th>合同</th><th>版本</th><th>状态</th><th>生效区间</th><th>签署时间</th><th>来源业务</th></tr></thead><tbody>{% for row in versions %}<tr><td><span class="hr07-primary">{{ row.title }}</span><span class="hr07-secondary">{{ row.agreement_no }}</span></td><td>第 {{ row.version_no }} 版</td><td><span class="hr07-pill {% if row.status_code == 'EFFECTIVE' %}hr07-pill--success{% elif row.status_code == 'SIGNED' %}hr07-pill--warning{% endif %}">{{ row.status }}</span></td><td class="hr07-mono">{{ row.effective_from|date:"Y-m-d" }} 至 {% if row.effective_to %}{{ row.effective_to|date:"Y-m-d" }}{% else %}长期/未设置{% endif %}</td><td class="hr07-mono">{% if row.signed_at %}{{ row.signed_at|date:"Y-m-d H:i" }}{% else %}尚未签署{% endif %}</td><td>{{ row.source_business_type|default:"—" }}</td></tr>{% endfor %}</tbody></table>{% else %}<div class="hr07-empty"><strong>暂无正式合同版本</strong>合同版本在真实签订、续签、变更流程中产生。</div>{% endif %}
+      </div></section>
+
+    {% else %}
+      <section class="hr07-card"><div class="hr07-card-head"><div><h2>{% if section == 'signing' %}合同签订案件{% elif section == 'renewals' %}合同续签案件{% elif section == 'changes' %}合同变更案件{% else %}解除与终止案件{% endif %}</h2><p>案件审批状态与合同正式生效状态分开显示。</p></div><span class="hr07-count">{{ cases|length }} 条</span></div><div class="hr07-table-wrap">
+      {% if cases %}<table class="hr07-table"><thead><tr><th>教职工</th><th>案件</th><th>对应合同</th><th>申请生效区间</th><th>当前状态</th><th>原因/异常</th></tr></thead><tbody>{% for row in cases %}<tr><td><span class="hr07-primary">{{ row.staff }}</span></td><td><span class="hr07-primary">{{ row.case_type }}</span><span class="hr07-secondary">{{ row.case_no }}</span></td><td><span class="hr07-primary">{{ row.title }}</span><span class="hr07-secondary">{{ row.agreement_no }}</span></td><td class="hr07-mono">{% if row.requested_effective_from %}{{ row.requested_effective_from|date:"Y-m-d" }}{% else %}—{% endif %} 至 {% if row.requested_effective_to %}{{ row.requested_effective_to|date:"Y-m-d" }}{% else %}未设置{% endif %}</td><td><span class="hr07-pill {% if row.status_code == 'EFFECTIVE' %}hr07-pill--success{% elif row.status_code == 'RETURNED' or row.status_code == 'EFFECT_PENDING' or row.status_code == 'APPROVED' %}hr07-pill--warning{% elif row.status_code == 'REJECTED' or row.status_code == 'CANCELLED' %}hr07-pill--danger{% else %}hr07-pill--info{% endif %}">{{ row.status }}</span></td><td>{% if row.effect_error %}<span style="color:#b42318">{{ row.effect_error }}</span>{% else %}{{ row.reason }}{% endif %}</td></tr>{% endfor %}</tbody></table>{% else %}<div class="hr07-empty"><strong>当前没有此类合同案件</strong>这里只展示 HR07 正式案件，不生成演示流程。</div>{% endif %}
+      </div></section>
+    {% endif %}
+
+    <div class="hr07-truth"><strong>数据原则：</strong>HR07 只把自己的合同主档、版本和案件当作合同真值；旧 payroll.Contract 仅作为迁移来源。任何审批、签署、生效、续签、变更、解除都会留下独立历史，不能用覆盖旧记录换取“看起来简单”。</div>
+  {% endif %}
+</div>
+{% endblock %}
