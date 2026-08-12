@@ -177,20 +177,27 @@ class StaffMasterRowApplier:
             source="MIGRATED",
         )
         effective_from = self._parse_date(row_data.get("effective_from")) or date.today()
+        source_business_id = (
+            f"import-row-{row_data.get('row_no', checkpoint.get('last_committed_row', 0))}"
+        )
         rel = EmploymentService(self.tenant_id).start_relationship(
             staff_id=staff,
             relationship_type=(row_data.get("relationship_type") or "REGULAR_EMPLOYMENT").strip(),
             effective_from=effective_from,
             source_business_type="MIGRATION_VERIFIED",
-            source_business_id=f"import-row-{row_data.get('row_no', checkpoint.get('last_committed_row', 0))}",
+            source_business_id=source_business_id,
         )
         legacy_dept = row_data.get("legacy_department_id")
-        AssignmentService(self.tenant_id).create_assignment(
+        AssignmentService(
+            self.tenant_id, audit_actor_user_id=self.actor_user_id
+        ).create_assignment(
             employment_relationship_id=rel,
             assignment_type=AssignmentType.PRIMARY,
             effective_from=effective_from,
             organization_id=None,
             legacy_department_id=int(legacy_dept) if legacy_dept else None,
+            source_business_type="MIGRATION_VERIFIED",
+            source_business_id=source_business_id,
         )
         return staff
 
