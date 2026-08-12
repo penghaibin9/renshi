@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: hr-visual-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 env:
   DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
   DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
