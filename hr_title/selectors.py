@@ -20,19 +20,6 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     results = ProfessionalTitleResult.objects.filter(tenant_id=tenant_id)
 
     status_counts = Counter(cases.values_list("status", flat=True))
-    recent = list(
-        cases.order_by("-updated_at")[:8].values(
-            "id",
-            "case_no",
-            "person_id",
-            "batch_no",
-            "requested_title_name",
-            "requested_title_code",
-            "status",
-            "submitted_at",
-            "updated_at",
-        )
-    )
     return {
         "summary": {
             "policyVersions": policies.count(),
@@ -43,7 +30,47 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "effectiveResults": results.filter(status="EFFECTIVE").count(),
         },
         "statusBreakdown": dict(status_counts),
-        "recentApplications": recent,
+        "recentApplications": list(
+            cases.order_by("-updated_at")[:12].values(
+                "id",
+                "case_no",
+                "person_id",
+                "batch_no",
+                "requested_title_name",
+                "requested_title_code",
+                "status",
+                "submitted_at",
+                "updated_at",
+            )
+        ),
+        "recentResults": list(
+            results.order_by("-effective_from", "-created_at")[:12].values(
+                "id",
+                "result_no",
+                "person_id",
+                "title_code",
+                "title_name",
+                "title_series_code",
+                "title_level_code",
+                "effective_from",
+                "effective_to",
+                "status",
+                "created_at",
+            )
+        ),
+        "recentPolicies": list(
+            policies.order_by("-effective_from", "-version_no")[:8].values(
+                "id",
+                "policy_code",
+                "name",
+                "version_no",
+                "status",
+                "title_series_code",
+                "title_level_code",
+                "effective_from",
+                "effective_to",
+            )
+        ),
         "capabilities": {
             "policy": True,
             "application": True,
