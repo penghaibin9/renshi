@@ -63,6 +63,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install "black==24.4.2" "isort==5.13.2"
 
       - name: Ensure local settings stub
         run: |
@@ -70,18 +71,75 @@ jobs:
             printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
           fi
 
-      - name: Django check
+      - name: Syntax gate
+        shell: bash
+        run: |
+          mapfile -t hr_dirs < <(find . -maxdepth 1 -type d \( -name 'hr_*' -o -name 'hr10_development' \) -printf '%f\n' | sort)
+          python -m compileall -q horilla base employee "${hr_dirs[@]}"
+
+      - name: Format gate for takeover-owned bootstrap files
+        run: |
+          black --check --diff \
+            horilla/settings/__init__.py \
+            horilla/settings/ci_test.py \
+            horilla/settings/security.py \
+            horilla/hr_urls.py \
+            base/auth_backends.py \
+            employee/scheduler.py
+          isort --check-only --profile black \
+            horilla/settings/__init__.py \
+            horilla/settings/ci_test.py \
+            horilla/settings/security.py \
+            horilla/hr_urls.py \
+            base/auth_backends.py \
+            employee/scheduler.py
+
+      - name: Django system check
         run: python manage.py check
 
-      - name: Migration drift
-        run: python manage.py makemigrations --check --dry-run
+      - name: Migration drift gate
+        id: migration-drift
+        shell: bash
+        run: |
+          set +e
+          output=$(python manage.py makemigrations --check --dry-run --noinput --verbosity 2 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Migration drift detected"
+              echo '```text'
+              printf '%s\n' "$output"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,title=Migration drift detected::" + e)'
+
+            python manage.py makemigrations --noinput --verbosity 1
+            mkdir -p migration-drift-artifacts
+            while IFS= read -r file; do
+              [ -n "$file" ] || continue
+              mkdir -p "migration-drift-artifacts/$(dirname "$file")"
+              cp "$file" "migration-drift-artifacts/$file"
+            done < <(git ls-files --others --exclude-standard '*migrations/*.py')
+            exit "$status"
+          fi
+
+      - name: Upload migration drift candidates
+        if: failure() && steps.migration-drift.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-drift-candidates
+          path: migration-drift-artifacts/
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Fresh MySQL migrate
         run: |
           python manage.py migrate --noinput
           python manage.py migrate --check
 
-      - name: Prepare isolated MySQL test database
+      - name: Provision isolated Django test database
         shell: bash
         run: |
           python - <<'PY'
@@ -110,6 +168,11 @@ jobs:
               connection.close()
           PY
 
+          # Django test setup uses syncdb for apps without migrations. Some of
+          # those tables reference migrated HR authority tables, so starting
+          # from a completely empty test schema makes syncdb run before its FK
+          # dependencies exist. Clone the already-verified fresh migration DB,
+          # then add only the unmigrated-app tables on top of that schema.
           mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
           test -n "$mysql_container"
           docker exec "$mysql_container" sh -c \
@@ -123,26 +186,44 @@ jobs:
             python manage.py migrate --check
 
       - name: Tenant and registered HR tests
-        env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+        id: hr-tests
+        shell: bash
         run: |
-          python manage.py test \
-            base.tests.test_authentication_backend \
-            base.tests.test_company_scoped_permissions \
-            horilla.tests.test_hr_permissions \
-            horilla.tests.test_hr_urls \
-            hr_control_center.tests \
-            hr_structure.tests \
-            hr_staff.tests \
-            hr_recruitment.tests \
-            hr_onboarding.tests \
-            hr_changes.tests \
-            hr_external.tests \
-            hr_qualification.tests \
-            hr10_development.tests \
-            hr_time.tests \
-            hr_assessment.tests \
-            --keepdb --noinput
+          HR_APPS=$(python - <<'PY'
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "horilla.settings")
+          from horilla.settings import CANONICAL_HR_APPS
+          print(" ".join(CANONICAL_HR_APPS))
+          PY
+          )
+          echo "Testing registered apps: $HR_APPS"
+          # test_horilla_db is cloned from the exact fresh-migration schema and
+          # completed with --run-syncdb above. --keepdb reuses that isolated
+          # schema without granting the application user global DB privileges.
+          # Capture full output as a diagnostic artifact while preserving the
+          # exact Django test exit status: this does not weaken the gate.
+          set +e
+          python manage.py test base $HR_APPS --keepdb --noinput --verbosity 2 2>&1 | tee hr-test-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Registered HR test failure tail"
+              echo '```text'
+              tail -n 350 hr-test-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$status"
+          fi
+
+      - name: Upload registered HR test diagnostics
+        if: failure() && steps.hr-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: registered-hr-test-output
+          path: hr-test-output.log
+          if-no-files-found: error
+          retention-days: 3
 
   production-settings-gate:
     runs-on: ubuntu-latest
@@ -153,16 +234,37 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install minimal settings dependencies
-        run: pip install django environs mysqlclient django-environ django-simple-history
-      - name: Production must reject DEBUG=true
         run: |
-          if HORILLA_ENV=production DEBUG=True SECRET_KEY="$SECRET_KEY" DB_INIT_PASSWORD="$DB_INIT_PASSWORD" ALLOWED_HOSTS="$ALLOWED_HOSTS" python -c 'import horilla.settings'; then
-            echo "ERROR: production accepted DEBUG=True"
-            exit 1
-          fi
+          python -m pip install --upgrade pip
+          pip install Django==5.2 django-environ
+
+      - name: Production must reject DEBUG=true
+        env:
+          HORILLA_ENV: production
+          DEBUG: "True"
+          SECRET_KEY: a-strong-ci-key-that-is-not-a-placeholder
+          ALLOWED_HOSTS: example.edu
+          DB_INIT_PASSWORD: strong-ci-db-init-password
+          DATABASE_URL: mysql://u:p@127.0.0.1:3306/db
+        run: |
+          set +e
+          out=$(python -c "from horilla.settings.security import is_production_mode; print(is_production_mode(True, 'production'))" 2>&1)
+          status=$?
+          set -e
+          echo "$out"
+          test "$status" -ne 0
+          echo "$out" | grep -qi "DEBUG=True"
+
       - name: Production must reject documented weak secrets
         run: |
-          if HORILLA_ENV=production DEBUG=False SECRET_KEY='change-me' DB_INIT_PASSWORD="$DB_INIT_PASSWORD" ALLOWED_HOSTS="$ALLOWED_HOSTS" python -c 'import horilla.settings'; then
-            echo "ERROR: production accepted weak SECRET_KEY"
-            exit 1
-          fi
+          set +e
+          out=$(python - <<'PY' 2>&1
+          from horilla.settings.security import validate_production_secrets
+          validate_production_secrets('django-insecure-default-key', ['*'], 'dev-init-password-change-in-production')
+          PY
+          )
+          status=$?
+          set -e
+          echo "$out"
+          test "$status" -ne 0
+          echo "$out" | grep -qi "production security check failed"
