@@ -1,10 +1,10 @@
 """Real-browser visual audit for HR13-HR18 child PRs.
 
-This module is intentionally not part of normal app test discovery. CI runs it
-explicitly with HR_VISUAL_AUDIT=1. It uses a real Django live server, MySQL test
-database, authenticated session, production middleware and the real canonical
-workspace APIs. Screenshots are evidence only; no assertion is weakened to make
-visual runs green.
+CI runs this module explicitly with HR_VISUAL_AUDIT=1. The screenshots use a
+real Django live server, MySQL test database, authenticated session, production
+middleware and canonical workspace APIs. The fixture creates only the technical
+identity needed to enter the application; it does not manufacture business KPI,
+workflow or result rows for prettier screenshots.
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ MODULES = {
 @skipUnless(os.getenv("HR_VISUAL_AUDIT") == "1", "visual audit is CI-explicit")
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="renshi-visual-media-"))
 class HrVisualAuditTests(StaticLiveServerTestCase):
-    """Capture baseline screenshots through real middleware + canonical APIs."""
+    """Capture honest baseline screenshots through real middleware and APIs."""
 
     reset_sequences = True
 
@@ -120,7 +120,7 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
         super().setUpClass()
         try:
             from playwright.sync_api import sync_playwright
-        except ImportError as exc:  # pragma: no cover - explicit CI dependency
+        except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
         cls._playwright = sync_playwright().start()
         cls._browser = cls._playwright.chromium.launch(headless=True)
@@ -146,7 +146,9 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
             state="Hunan",
             city="Changsha",
             zip="410000",
-            icon=SimpleUploadedFile("visual-audit.png", b"visual-audit", content_type="image/png"),
+            icon=SimpleUploadedFile(
+                "visual-audit.png", b"visual-audit", content_type="image/png"
+            ),
         )
         self.user = User.objects.create_superuser(
             username="hr-visual-auditor",
@@ -168,7 +170,6 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
             company_id=self.company,
         )
         self._seed_self_identity_if_needed()
-        self._seed_visible_module_data()
 
         client = Client()
         client.force_login(self.user)
@@ -178,102 +179,55 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
         session.save()
         self.session_cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
 
-        self.out_dir = Path(os.getenv("HR_VISUAL_ARTIFACT_DIR", "artifacts/hr-visual"))
+        self.out_dir = Path(
+            os.getenv("HR_VISUAL_ARTIFACT_DIR", "artifacts/hr-visual")
+        )
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
     def _seed_self_identity_if_needed(self):
+        """Create only the login-to-HR03 identity bridge required by HR17."""
         if not apps.is_installed("hr_self"):
             return
         from hr_staff.models import HrPerson, HrStaffMaster
-        from hr_self.models import SelfServiceCatalogItem, SelfServicePinnedService
 
         person = HrPerson.objects.create(
             tenant_id=self.company.pk,
             legal_name="视觉验收员",
             status="ACTIVE",
         )
-        staff = HrStaffMaster.objects.create(
+        HrStaffMaster.objects.create(
             tenant_id=self.company.pk,
             person_id=person,
             staff_no="VISUAL-001",
             current_employment_status="ACTIVE",
             legacy_employee_id=self.employee.pk,
         )
-        services = [
-            ("PERSONAL_PROFILE", "我的人事档案", "HR03", "查看本人档案", "/hr/self/"),
-            ("PAYSLIP", "我的工资条", "HR15", "查看工资条", "/hr/self/payslips/"),
-            ("CONTRACT", "我的合同", "HR07", "查看合同", "/hr/self/contracts/"),
-            ("TITLE", "职称申报进度", "HR13", "查看职称进度", "/hr/self/progress/"),
-        ]
-        for index, (code, name, domain, action, route) in enumerate(services, start=1):
-            SelfServiceCatalogItem.objects.create(
-                tenant_id=self.company.pk,
-                service_code=code,
-                name=name,
-                source_domain=domain,
-                action_key=action,
-                route=route,
-                sort_order=index * 10,
-            )
-        SelfServicePinnedService.objects.create(
-            tenant_id=self.company.pk,
-            staff_id=staff.pk,
-            service_code="PAYSLIP",
-            sort_order=10,
-        )
-
-    def _seed_visible_module_data(self):
-        """Seed only simple authority roots; failures are test failures, not hidden."""
-        if apps.is_installed("hr_data"):
-            from hr_data.models import DataQualityFinding, MetricDefinitionVersion, SubmissionSnapshot
-
-            MetricDefinitionVersion.objects.create(
-                tenant_id=self.company.pk,
-                metric_code="STAFF_ACTIVE",
-                name="在岗教职工数",
-                version_no=1,
-                status="ACTIVE",
-                value_type="INTEGER",
-                unit="人",
-                population_code="ACTIVE_STAFF",
-                source_domains=["HR03"],
-                as_of_required=True,
-            )
-            DataQualityFinding.objects.create(
-                tenant_id=self.company.pk,
-                finding_no="DQ-VISUAL-001",
-                rule_code="STAFF_ORG_REQUIRED",
-                source_domain="HR03",
-                source_object_ref="VISUAL-001",
-                severity="HIGH",
-                status="OPEN",
-            )
-            SubmissionSnapshot.objects.create(
-                tenant_id=self.company.pk,
-                submission_no="SUB-VISUAL-001",
-                definition_code="EDU-HR-MONTHLY",
-                definition_version=1,
-                as_of_date="2026-08-01",
-                status="DRAFT",
-            )
 
     def _installed_targets(self):
-        targets = []
-        for app_label, config in MODULES.items():
-            if apps.is_installed(app_label):
-                targets.append((app_label, config))
-        return targets
+        return [
+            (app_label, config)
+            for app_label, config in MODULES.items()
+            if apps.is_installed(app_label)
+        ]
 
     def test_capture_real_workspace_screenshots(self):
         targets = self._installed_targets()
-        self.assertTrue(targets, "No HR13-HR18 child module is installed in this PR merge state")
+        self.assertTrue(
+            targets, "No HR13-HR18 child module is installed in this PR merge state"
+        )
 
         context = self._browser.new_context(
             viewport={"width": 1440, "height": 1000},
             device_scale_factor=1,
         )
         context.add_cookies(
-            [{"name": settings.SESSION_COOKIE_NAME, "value": self.session_cookie, "url": self.live_server_url}]
+            [
+                {
+                    "name": settings.SESSION_COOKIE_NAME,
+                    "value": self.session_cookie,
+                    "url": self.live_server_url,
+                }
+            ]
         )
         page = context.new_page()
         page_errors: list[str] = []
@@ -284,18 +238,30 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
             module_dir = self.out_dir / code
             module_dir.mkdir(parents=True, exist_ok=True)
             for slug, route in config["routes"]:
-                response = page.goto(self.live_server_url + route, wait_until="networkidle")
+                response = page.goto(
+                    self.live_server_url + route, wait_until="networkidle"
+                )
                 self.assertIsNotNone(response, f"No HTTP response for {code} {route}")
-                self.assertEqual(response.status, 200, f"{code} {route} returned HTTP {response.status}")
-                page.screenshot(path=str(module_dir / f"desktop-{slug}.png"), full_page=True)
+                self.assertEqual(
+                    response.status, 200, f"{code} {route} returned HTTP {response.status}"
+                )
+                page.screenshot(
+                    path=str(module_dir / f"desktop-{slug}.png"), full_page=True
+                )
 
             overview = config["routes"][0][1]
             page.set_viewport_size({"width": 390, "height": 844})
-            response = page.goto(self.live_server_url + overview, wait_until="networkidle")
+            response = page.goto(
+                self.live_server_url + overview, wait_until="networkidle"
+            )
             self.assertIsNotNone(response)
             self.assertEqual(response.status, 200)
-            page.screenshot(path=str(module_dir / "mobile-overview.png"), full_page=True)
+            page.screenshot(
+                path=str(module_dir / "mobile-overview.png"), full_page=True
+            )
             page.set_viewport_size({"width": 1440, "height": 1000})
 
         context.close()
-        self.assertEqual(page_errors, [], "Browser page errors: " + " | ".join(page_errors))
+        self.assertEqual(
+            page_errors, [], "Browser page errors: " + " | ".join(page_errors)
+        )
