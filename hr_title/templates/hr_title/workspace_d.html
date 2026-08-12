@@ -1,0 +1,165 @@
+{% extends "hr_title/workspace_c.html" %}
+
+{% block content %}
+{{ block.super }}
+<script>
+(() => {
+  const mq = window.matchMedia('(max-width: 767.98px)');
+
+  function closeNativeSidebarOnMobile() {
+    const shell = document.querySelector('.oh-wrapper-main');
+    const toggle = document.querySelector('.oh-navbar__toggle-link');
+    if (!mq.matches || !shell || !toggle) return;
+    if (!shell.classList.contains('oh-wrapper-main--closed')) {
+      // Use Horilla's own sidebar toggle instead of styling the shell away.
+      toggle.click();
+    }
+  }
+
+  const section = '{{ section|escapejs }}';
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+  const kpis = {
+    policyVersions: '制度版本', applications: '申报总数', awaitingQualification: '待资格审查',
+    underReview: '评审中', inPublicity: '公示中', effectiveResults: '生效结果'
+  };
+  const caps = {
+    policy: '制度版本', application: '申报主链路', formalResult: '正式结果',
+    qualificationReview: '资格审查明细', materials: '材料与代表性成果', expertPanel: '专家/评委组',
+    deliberationVote: '评议表决', publicity: '公示记录', appealReview: '异议复核'
+  };
+  let current = [];
+
+  const app = (a) => (a || []).map((x) => ({
+    name: x.requested_title_name || x.requested_title_code || '未命名职称',
+    sub: [x.case_no, x.batch_no].filter(Boolean).join(' · '), status: x.status,
+    date: (x.updated_at || '').slice(0, 10), kind: '职称申报'
+  }));
+  const res = (a) => (a || []).map((x) => ({
+    name: x.title_name || x.title_code || '未命名职称',
+    sub: [x.result_no, x.title_series_code, x.title_level_code].filter(Boolean).join(' · '),
+    status: x.status, date: x.effective_from || '', kind: '正式结果'
+  }));
+  const pol = (a) => (a || []).map((x) => ({
+    name: x.name || x.policy_code,
+    sub: [x.policy_code, 'v' + x.version_no, x.title_series_code, x.title_level_code].filter(Boolean).join(' · '),
+    status: x.status, date: x.effective_from || '', kind: '制度版本'
+  }));
+
+  function render() {
+    const search = document.getElementById('hr13c-search');
+    const select = document.getElementById('hr13c-status');
+    const target = document.getElementById('hr13c-rows');
+    if (!search || !select || !target) return;
+    const q = search.value.trim().toLowerCase();
+    const st = select.value;
+    const rows = current.filter((x) => (!st || x.status === st) && (!q ||
+      [x.name, x.sub, x.status, x.date, x.kind].join(' ').toLowerCase().includes(q)));
+    target.innerHTML = rows.length ? rows.map((x) =>
+      `<div class="hr13c-row"><div><b>${esc(x.name)}</b><small>${esc(x.sub || '—')}</small></div>` +
+      `<div class="kind">${esc(x.kind)}</div><span class="hr13c-badge">${esc(x.status || '—')}</span>` +
+      `<small class="date">${esc(x.date || '—')}</small></div>`
+    ).join('') : '<div class="hr13c-empty">没有符合当前筛选条件的记录</div>';
+  }
+
+  function setRows(rows) {
+    current = rows;
+    const select = document.getElementById('hr13c-status');
+    if (!select) return;
+    const states = [...new Set(rows.map((x) => x.status).filter(Boolean))].sort();
+    select.innerHTML = '<option value="">全部状态</option>' +
+      states.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join('');
+    render();
+  }
+
+  function unavailable(text) {
+    current = [];
+    const select = document.getElementById('hr13c-status');
+    const target = document.getElementById('hr13c-rows');
+    if (select) select.innerHTML = '<option value="">全部状态</option>';
+    if (target) target.innerHTML = `<div class="hr13c-empty">${esc(text)}</div>`;
+  }
+
+  function sectionRows(d) {
+    const t = document.getElementById('hr13c-title');
+    const p = document.getElementById('hr13c-desc');
+    if (!t || !p) return;
+    if (section === 'applications') {
+      t.textContent = '职称申报'; p.textContent = '按编号、批次、拟申报职称和状态快速定位。'; setRows(app(d.recentApplications)); return;
+    }
+    if (section === 'eligibility') {
+      t.textContent = '资格审查队列'; p.textContent = '优先处理提交、退回补正、资格通过和拒绝状态。';
+      setRows(app(d.recentApplications).filter((x) => ['SUBMITTED', 'RETURNED', 'ELIGIBLE', 'REJECTED'].includes(x.status))); return;
+    }
+    if (section === 'experts' || section === 'deliberation') {
+      t.textContent = section === 'experts' ? '专家评审相关申报' : '评议表决相关申报';
+      p.textContent = '只用真实 UNDER_REVIEW 形成队列，不伪造专家、评分或投票。';
+      setRows(app(d.recentApplications).filter((x) => x.status === 'UNDER_REVIEW')); return;
+    }
+    if (section === 'publicity') {
+      t.textContent = '公示相关申报'; p.textContent = '只展示真实 PUBLICITY 状态。';
+      setRows(app(d.recentApplications).filter((x) => x.status === 'PUBLICITY')); return;
+    }
+    if (section === 'results') {
+      t.textContent = '正式职称结果'; p.textContent = '正式结果与申报过程分开，避免把“评审通过”当成已经生效。'; setRows(res(d.recentResults)); return;
+    }
+    if (section === 'materials' || section === 'appeals') {
+      t.textContent = section === 'materials' ? '材料与代表性成果' : '异议与复核';
+      p.textContent = '独立 Authority 未接通时不拿申报状态冒充业务事实。';
+      unavailable('该业务事实尚待 Authority 接通；入口保留用于正式施工。'); return;
+    }
+    t.textContent = '最近制度版本'; p.textContent = '总览先确认制度口径，再处理资格、评审、公示与正式结果。';
+    setRows(pol(d.recentPolicies));
+  }
+
+  function tasks(d) {
+    const s = d.summary || {};
+    const out = [];
+    if (Number(s.awaitingQualification) > 0) out.push({l:'danger',t:`${s.awaitingQualification} 件申报待资格审查`,d:'这是当前最早的阻塞环节。',u:'/hr/titles/eligibility/',a:'去资格审查'});
+    if (Number(s.underReview) > 0) out.push({l:'warning',t:`${s.underReview} 件正在评审`,d:'关注材料补充、专家评审和评议进度。',u:'/hr/titles/experts/',a:'查看评审'});
+    if (Number(s.inPublicity) > 0) out.push({l:'info',t:`${s.inPublicity} 件处于公示阶段`,d:'异议闭环后才能形成正式结果。',u:'/hr/titles/publicity/',a:'查看公示'});
+    if (!out.length) out.push({l:'info',t:'当前没有高优先级积压',d:'可检查制度版本、近期申报与正式结果。',u:'/hr/titles/applications/',a:'查看申报'});
+    const target = document.getElementById('hr13c-tasks');
+    if (target) target.innerHTML = out.map((x) =>
+      `<div class="hr13c-task ${x.l}"><span class="hr13c-dot"></span><div><b>${esc(x.t)}</b>` +
+      `<small>${esc(x.d)}</small></div><a href="${x.u}">${x.a} ›</a></div>`
+    ).join('');
+  }
+
+  async function boot() {
+    const rows = document.getElementById('hr13c-rows');
+    if (!rows) return;
+    try {
+      const r = await fetch('/api/v1/hr/titles/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}});
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const kpiTarget = document.getElementById('hr13c-kpis');
+      if (kpiTarget) kpiTarget.innerHTML = Object.entries(kpis).map(([k,v]) =>
+        `<div class="hr13c-kpi"><span>${v}</span><b>${esc(d.summary?.[k] ?? 0)}</b><em>真实口径</em></div>`
+      ).join('');
+      tasks(d); sectionRows(d);
+      const capTarget = document.getElementById('hr13c-caps');
+      if (capTarget) capTarget.innerHTML = Object.entries(d.capabilities || {}).map(([k,v]) =>
+        `<div class="hr13c-cap"><span>${caps[k] || k}</span><span class="${v ? 'hr13c-on' : 'hr13c-off'}">${v ? '已接通' : '待 Authority'}</span></div>`
+      ).join('');
+    } catch (e) {
+      rows.innerHTML = `<div class="hr13c-empty">真实数据读取失败：${esc(e.message)}</div>`;
+    }
+  }
+
+  function init() {
+    closeNativeSidebarOnMobile();
+    document.getElementById('hr13c-search')?.addEventListener('input', render);
+    document.getElementById('hr13c-status')?.addEventListener('change', render);
+    boot();
+  }
+
+  if (mq.addEventListener) mq.addEventListener('change', (event) => {
+    if (event.matches) closeNativeSidebarOnMobile();
+  });
+  if (document.readyState === 'complete') init();
+  else window.addEventListener('load', init, {once:true});
+})();
+</script>
+{% endblock %}
