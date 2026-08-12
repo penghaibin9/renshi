@@ -2,11 +2,11 @@ from pathlib import Path
 
 from django.conf import settings
 from django.template.loader import get_template
-from django.test import SimpleTestCase
+from django.test import TestCase
 from django.urls import resolve, reverse
 
 
-class Hr13UiContractTests(SimpleTestCase):
+class Hr13UiContractTests(TestCase):
     def test_all_workspace_routes_are_registered(self):
         expected = {
             "hr_title:overview": "/hr/titles/",
