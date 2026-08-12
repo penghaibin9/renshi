@@ -74,17 +74,16 @@ class TaskServiceTests(TestCase):
             self.service.complete_task(completed, note="again")
 
     def test_prerequisite_blocked(self):
-        """前置任务未完成 → TASK_PREREQUISITE_NOT_MET。"""
+        """非法/缺失前置定义在模板实例化阶段即 fail-closed。"""
         case2, version = _prepared_case(tenant_id=2)
         self.service2 = TaskService(tenant_id=2, actor_user_id=9)
-        # 修改定义：让它依赖一个不存在的 code
+        # 修改定义：让它依赖一个不存在的 code。生产规则要求模板 DAG
+        # 在实例化前完整闭合，因此不能等到 complete_task 才发现。
         HrOnboardingTaskDefinition.objects.filter(template_version=version).update(
             prerequisite_codes=["NOT-EXIST"]
         )
-        self.service2.instantiate_tasks(case2)
-        inst = HrOnboardingTaskInstance.objects.get(case=case2)
         with self.assertRaises(TaskPrerequisiteNotMetError):
-            self.service2.complete_task(inst, note="x")
+            self.service2.instantiate_tasks(case2)
 
     def test_waive_requires_reason(self):
         self.service.instantiate_tasks(self.case)

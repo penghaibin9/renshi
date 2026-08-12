@@ -11,7 +11,7 @@
 
 from datetime import date
 
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from hr_external.constants import (
@@ -67,13 +67,15 @@ class ProfileModelTests(TestCase):
             self.service.create_profile(
                 tenant_id=self.tenant, person_id=self.person_a.id
             )
-        # 同 tenant 同 external_no（手工指定冲突）→ 拒绝
-        with self.assertRaises(Exception):
-            HrExternalTeacherProfile.objects.create(
-                tenant_id=self.tenant,
-                person_id=self.person_b,
-                external_teacher_no="EXT2026000001",
-            )
+        # 同 tenant 同 external_no（手工指定冲突）→ DB unique 拒绝；
+        # 用内层 savepoint 隔离预期 IntegrityError，避免污染后续跨 tenant 断言。
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                HrExternalTeacherProfile.objects.create(
+                    tenant_id=self.tenant,
+                    person_id=self.person_b,
+                    external_teacher_no="EXT2026000001",
+                )
         # 不同 tenant 可复用同 person（跨学校不自动关联，§6.2/§138.16）
         p = self.service.create_profile(
             tenant_id=999, person_id=self.other_tenant_person.id

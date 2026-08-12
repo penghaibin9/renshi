@@ -24,11 +24,14 @@ class TenantIsolationTest(TestCase):
         self.assertEqual(result["total"], 0)
 
     def test_tenant_required_on_credential_list(self):
-        """API 层面：无 tenant 返回 400"""
+        """API 层面：无服务端 selected_company 必须 403 fail-closed。"""
         from django.test import Client
+
         client = Client()
-        resp = client.get("/api/v1/hr/qualifications/credentials")
-        self.assertEqual(resp.status_code, 400)
+        # 即使伪造 query tenant 也不能突破 selected-school 边界。
+        resp = client.get("/api/v1/hr/qualifications/credentials?tenant_id=1")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["error"]["code"], "TENANT_CONTEXT_REQUIRED")
 
 
 class ProviderUNAVAILABLEGuardTest(TestCase):
@@ -58,12 +61,15 @@ class AuditTrailTest(TestCase):
             HrPersonCredential,
         )
         from hr_qualification.constants import CredentialStatus
+        from hr_staff.models import HrPerson
 
+        person = HrPerson.objects.create(tenant_id=1, legal_name="审计资格测试人员")
         catalog = HrCredentialCatalogItem.objects.create(
             tenant_id=None, code="AUDIT-TEST", category="OTHER", name="Audit Test"
         )
         cred = HrPersonCredential.objects.create(
             tenant_id=1,
+            person_id=person,
             credential_name_snapshot="Audit Cert",
             catalog_item_id=catalog,
             issuer_name="Issuer",

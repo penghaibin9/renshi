@@ -41,6 +41,7 @@ def make_source_and_temp():
         assignment_type=AssignmentType.PRIMARY,
         effective_from=date(2024, 9, 1),
         organization_id=src_org,
+        source_business_type="MIGRATION_VERIFIED",
     )
     temporary = AssignmentService(TENANT).create_assignment(
         employment_relationship_id=rel,
@@ -48,6 +49,7 @@ def make_source_and_temp():
         effective_from=date(2026, 9, 1),
         effective_to=date(2027, 9, 1),
         organization_id=temp_org,
+        source_business_type="MIGRATION_VERIFIED",
     )
     return staff, source, temporary, rel
 

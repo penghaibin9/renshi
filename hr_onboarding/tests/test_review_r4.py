@@ -170,7 +170,12 @@ class ApiMethodDecoratorTests(TestCase):
 
         User = get_user_model()
         user = User.objects.create_user(username="r5admin", password="x", is_superuser=True)
-        case = _active_case()
+        service = CaseService(tenant_id=1)
+        r = service.create_case_from_handoff(
+            _handoff_request(idem_key=f"k-r5-handoff-{uuid4().hex}"),
+            idempotency_key=f"k-r5-case-{uuid4().hex}",
+        )
+        case = HrOnboardingCase.objects.get(id=r["case_id"])  # CREATED → PREPARING 合法
 
         request = RequestFactory().post(f"/api/hr/v1/onboarding/cases/{case.id}/confirm-intent")
         request.user = user

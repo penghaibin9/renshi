@@ -19,7 +19,7 @@ from base.models import Company, Department, EmployeeType, JobPosition
 from employee.models import Employee, EmployeeWorkInformation
 from horilla_auth.models import HorillaUser
 
-BOOTSTRAP_URL = "/api/hr/v1/home/bootstrap"
+BOOTSTRAP_URL = "/api/v1/hr/home/bootstrap"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
@@ -59,12 +59,13 @@ class HrBootstrapApiTests(TestCase):
             email=cls.admin.email,
             phone="13800009999",
         )
-        # 必须设置 company，否则 middleware 无默认公司会把 session 重置为 "all"
-        EmployeeWorkInformation.objects.filter(employee_id=admin_emp).update(
+        # setUpTestData 尚无 tenant context；使用 base manager 只做测试夹具绑定，
+        # 避免 fail-closed 默认 manager 把 update 变成 0 行。
+        EmployeeWorkInformation._base_manager.filter(employee_id=admin_emp).update(
             company_id_id=cls.company.pk,
         )
 
-        # 创建 3 名员工（官方测试模式：不手动 set_selected_company，用 .update 设置 work_info）
+        # 创建 3 名员工并显式绑定当前学校；同样走 base manager 仅用于夹具初始化。
         for i in range(3):
             emp = Employee.objects.create(
                 employee_first_name=f"教师{i + 1}",
@@ -73,7 +74,7 @@ class HrBootstrapApiTests(TestCase):
                 phone=f"1380000{i + 1:04d}",
                 is_active=True,
             )
-            EmployeeWorkInformation.objects.filter(employee_id=emp).update(
+            EmployeeWorkInformation._base_manager.filter(employee_id=emp).update(
                 company_id_id=cls.company.pk,
                 department_id_id=cls.dept.pk,
                 job_position_id_id=cls.position.pk,
@@ -84,9 +85,10 @@ class HrBootstrapApiTests(TestCase):
         self.client.force_login(self.admin)
 
     def _login_school(self):
-        """在请求上下文里选中学校。"""
-        self.client.session["selected_company"] = str(self.company.id)
-        self.client.session.save()
+        """在请求上下文里选中学校，并保存同一个 session store。"""
+        session = self.client.session
+        session["selected_company"] = str(self.company.id)
+        session.save()
 
     def test_root_version_contract(self):
         self._login_school()
@@ -107,7 +109,6 @@ class HrBootstrapApiTests(TestCase):
         self.assertEqual(resp.json()["error"]["code"], "TENANT_CONTEXT_REQUIRED")
 
     def test_permission_denied_for_regular_user(self):
-        self._login_school()
         user = HorillaUser.objects.create_user(
             username="plain_user", password="x", email="u@test.local"
         )
@@ -119,10 +120,12 @@ class HrBootstrapApiTests(TestCase):
             email=user.email,
             phone="13800008888",
         )
-        EmployeeWorkInformation.objects.filter(employee_id=user_emp).update(
+        # 此时请求尚未进入 CompanyMiddleware，继续用 base manager 完成合法夹具绑定。
+        EmployeeWorkInformation._base_manager.filter(employee_id=user_emp).update(
             company_id_id=self.company.pk,
         )
         self.client.force_login(user)
+        self._login_school()
         resp = self.client.get(BOOTSTRAP_URL)
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["error"]["code"], "PERMISSION_DENIED")
@@ -196,7 +199,7 @@ class HrBootstrapApiTests(TestCase):
 
     def test_metrics_endpoint(self):
         self._login_school()
-        resp = self.client.get("/api/hr/v1/home/overview/metrics")
+        resp = self.client.get("/api/v1/hr/home/overview/metrics")
         self.assertEqual(resp.status_code, 200, resp.content[:300])
         data = resp.json()
         keys = {m["metricKey"] for m in data["metrics"]}

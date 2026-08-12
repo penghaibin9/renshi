@@ -13,6 +13,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from datetime import date
 
 from django.apps import apps
 from django.conf import settings
@@ -128,10 +129,25 @@ class ScopeAuthorizationTests(TestCase):
     """A13：data scope 授权（非 superuser COLLEGE 越权 fail-closed）。"""
 
     def setUp(self):
-        from employee.models import Employee
+        from base.models import Company
+        from employee.models import Employee, EmployeeWorkInformation
+        from horilla.horilla_middlewares import tenant_context
         from horilla_auth.models import HorillaUser
 
         self.tenant = 101
+        self._tenant_ctx = tenant_context(self.tenant)
+        self._tenant_ctx.__enter__()
+        self.addCleanup(self._tenant_ctx.__exit__, None, None, None)
+        self.company = Company.objects.create(
+            id=self.tenant,
+            company="测试大学",
+            hq=True,
+            address="a",
+            country="CN",
+            state="s",
+            city="c",
+            zip="1",
+        )
         self.user = HorillaUser.objects.create_user(
             username="college_hr", email="ch@test.local", password="X!2345678", is_superuser=False
         )
@@ -142,7 +158,11 @@ class ScopeAuthorizationTests(TestCase):
             email=self.user.email,
             phone="13811112222",
         )
-        # 用户属于 department 1（默认无 mapping）
+        # Employee 创建会生成 legacy work-info；显式绑定当前学校，避免测试夹具
+        # 被 fail-closed 的 company manager 误判为跨租户/无租户数据。
+        EmployeeWorkInformation._base_manager.filter(employee_id=self.emp).update(
+            company_id_id=self.company.pk
+        )
 
     def test_superuser_college_scope_allowed(self):
         authorize_external_scope(
@@ -161,7 +181,7 @@ class ScopeAuthorizationTests(TestCase):
         )
 
     def test_college_scope_without_membership_denied(self):
-        # 用户部门 1 无 mapping → 请求 org 42 → fail-closed 403
+        # 用户当前无组织 mapping → 请求 org 42 → fail-closed 403
         with self.assertRaises(HrExternalContextError) as ctx:
             authorize_external_scope(
                 FakeRequest(FakeUser(is_superuser=False)),
@@ -172,19 +192,17 @@ class ScopeAuthorizationTests(TestCase):
         self.assertEqual(ctx.exception.code, "EXTERNAL_SCOPE_DENIED")
 
     def test_college_scope_with_membership_allowed(self):
-        from base.models import Company, Department
+        from base.models import Department
+        from employee.models import EmployeeWorkInformation
         from hr_structure.models import HrLegacyObjectLink
 
         dept = Department.objects.create(department="计算机学院")
-        company = Company.objects.create(
-            company="测试大学", hq=True, address="a", country="CN",
-            state="s", city="c", zip="1",
+        dept.company_id.add(self.company)
+        # 把用户 Employee 的 work-info 绑定到当前 tenant 的 dept。
+        EmployeeWorkInformation._base_manager.filter(employee_id=self.emp).update(
+            department_id_id=dept.pk,
+            company_id_id=self.company.pk,
         )
-        dept.company_id.add(company)
-        # 把用户 Employee 的 department 设为 dept
-        from employee.models import EmployeeWorkInformation
-
-        EmployeeWorkInformation.objects.filter(employee_id=self.emp).update(department_id_id=dept.pk)
         # 建立 legacy link：dept.id → org 42
         HrLegacyObjectLink.objects.create(
             tenant_id=self.tenant,

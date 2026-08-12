@@ -1,0 +1,39 @@
+name: Patch Base MySQL Fresh Schema
+
+on:
+  push:
+    branches: [agent/renshi-shared-quality-20260812]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/renshi-shared-quality-20260812
+      - name: Replace invalid MySQL TEXT unique DDL while preserving migration state
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('base/migrations/0002_initial.py')
+          source = path.read_text(encoding='utf-8')
+          old = '''        migrations.AlterUniqueTogether(\n            name="company",\n            unique_together={("company", "address")},\n        ),\n'''
+          new = '''        # MySQL cannot create an index directly on a TEXT column without a\n        # prefix length (error 1170). The project is MySQL-only, so keep the\n        # canonical Django migration state for legacy model compatibility while\n        # deliberately omitting this impossible database-level constraint.\n        migrations.SeparateDatabaseAndState(\n            database_operations=[],\n            state_operations=[\n                migrations.AlterUniqueTogether(\n                    name="company",\n                    unique_together={("company", "address")},\n                ),\n            ],\n        ),\n'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'expected exactly one company/address unique block, found {count}')
+          path.write_text(source.replace(old, new), encoding='utf-8')
+          PY
+      - name: Commit shared migration compatibility fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- base/migrations/0002_initial.py
+          git diff --cached --check
+          git commit -m 'fix(mysql): preserve state without invalid TEXT unique DDL'
+          git push origin HEAD:agent/renshi-shared-quality-20260812

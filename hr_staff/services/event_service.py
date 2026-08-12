@@ -178,6 +178,8 @@ class BusinessEventService:
             effective_from=effective_from,
             organization_id=self._resolve_org(payload.get("organization_id")),
             legacy_department_id=payload.get("legacy_department_id"),
+            source_business_type="HR05_ONBOARDING",
+            source_business_id=payload.get("source_business_id", ""),
         )
 
     def _on_hr06_transfer(self, payload):

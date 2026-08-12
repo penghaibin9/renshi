@@ -14,6 +14,7 @@ from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
 OTHER_TENANT = 2
+FIXTURE_SOURCE = "AUTHORIZED_CORRECTION"
 
 
 class AssignmentInvariantTests(TestCase):
@@ -37,6 +38,7 @@ class AssignmentInvariantTests(TestCase):
                 assignment_type=AssignmentType.PRIMARY,
                 effective_from=date(2024, 9, 1),
                 organization_id=self.other_org,
+                source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "CROSS_TENANT_REFERENCE")
 
@@ -48,6 +50,7 @@ class AssignmentInvariantTests(TestCase):
                 effective_from=date(2024, 9, 1),
                 organization_id=None,
                 legacy_department_id=None,
+                source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "ORG_MAPPING_MISSING")
 
@@ -58,6 +61,7 @@ class AssignmentInvariantTests(TestCase):
             effective_from=date(2024, 9, 1),
             organization_id=None,
             legacy_department_id=7,
+            source_business_type=FIXTURE_SOURCE,
         )
         self.assertEqual(assignment.legacy_department_id, 7)
 
@@ -67,6 +71,7 @@ class AssignmentInvariantTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2024, 9, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         with self.assertRaises(AssignmentPolicyViolation) as ctx:
             self.service.create_assignment(
@@ -74,6 +79,7 @@ class AssignmentInvariantTests(TestCase):
                 assignment_type=AssignmentType.PRIMARY,
                 effective_from=date(2025, 1, 1),
                 organization_id=self.ai,
+                source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "ASSIGNMENT_OVERLAP")
 
@@ -84,6 +90,7 @@ class AssignmentInvariantTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2024, 9, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
@@ -102,11 +109,13 @@ class AssignmentInvariantTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2024, 9, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         new = self.service.switch_primary(
             employment_relationship_id=self.emp,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
         old.refresh_from_db()
         self.assertEqual(old.effective_to, date(2026, 2, 1))
@@ -129,11 +138,13 @@ class AssignmentInvariantTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2024, 9, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         new = self.service.switch_primary(
             employment_relationship_id=self.emp,
             effective_from=date(2024, 9, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
         old.refresh_from_db()
         self.assertEqual(old.status, "CANCELLED")
@@ -148,11 +159,13 @@ class AssignmentInvariantTests(TestCase):
             effective_from=date(2024, 9, 1),
             effective_to=date(2026, 2, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         with self.assertRaises(AssignmentPolicyViolation) as ctx:
             self.service.switch_primary(
                 employment_relationship_id=self.emp,
                 effective_from=date(2024, 1, 1),
                 organization_id=self.ai,
+                source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "ASSIGNMENT_OVERLAP")

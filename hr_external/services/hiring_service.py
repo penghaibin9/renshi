@@ -69,7 +69,10 @@ _HIRING_TRANSITIONS = {
         ExternalHiringStatus.CANCELLED,
     },
     ExternalHiringStatus.SUBMITTED: {
+        # 产品流程把 SUBMITTED 定义为“已提交、等待学院审批”；学院批准后
+        # 可直接进入 HR 审。UNDER_COLLEGE_REVIEW 仍保留给显式开始学院审的客户端。
         ExternalHiringStatus.UNDER_COLLEGE_REVIEW,
+        ExternalHiringStatus.UNDER_HR_REVIEW,
         ExternalHiringStatus.RETURNED,
         ExternalHiringStatus.WITHDRAWN,
     },

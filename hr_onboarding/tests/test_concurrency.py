@@ -106,6 +106,11 @@ class ProbationDualFinalizeTests(TestCase):
         from uuid import uuid4
 
         self.case = _prepared_case()[0]
+        # open_probation is deliberately fail-closed unless onboarding is
+        # already ACTIVE. This concurrency fixture bypasses HR03 but must still
+        # establish the same authoritative precondition.
+        self.case.status = CaseStatus.ACTIVE
+        self.case.save(update_fields=["status"])
         self.service = ProbationService(tenant_id=1, actor_user_id=9)
         today = date(2026, 9, 1)
         self.probation = self.service.open_probation(
