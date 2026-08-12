@@ -73,10 +73,33 @@ jobs:
             printf '%s\n' '# Ephemeral for CI visual audit' > horilla/settings/local_settings.py
           fi
 
-      - name: Migrate visual audit MySQL schemas
+      - name: Restore migrated MySQL snapshot
+        id: schema-cache
+        uses: actions/cache@v4
+        with:
+          path: .ci-cache/hr-visual-mysql.sql
+          key: hr-visual-mysql-${{ runner.os }}-${{ github.head_ref }}-${{ hashFiles('**/migrations/*.py', 'requirements.txt', 'horilla/settings/__init__.py') }}
+
+      - name: Prepare visual audit MySQL schemas
         shell: bash
         run: |
-          python manage.py migrate --noinput
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          mkdir -p .ci-cache
+
+          if [ "${{ steps.schema-cache.outputs.cache-hit }}" = "true" ]; then
+            docker exec -i "$mysql_container" sh -c \
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" horilla_db' \
+              < .ci-cache/hr-visual-mysql.sql
+          else
+            python manage.py migrate --noinput
+            python manage.py migrate --check
+            docker exec "$mysql_container" sh -c \
+              'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --no-tablespaces horilla_db' \
+              > .ci-cache/hr-visual-mysql.sql
+          fi
+
           python manage.py migrate --check
 
           python - <<'PY'
@@ -105,12 +128,9 @@ jobs:
               connection.close()
           PY
 
-          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
-          test -n "$mysql_container"
-          docker exec "$mysql_container" sh -c \
-            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers horilla_db' \
-            | docker exec -i "$mysql_container" sh -c \
-              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+          docker exec -i "$mysql_container" sh -c \
+            'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db' \
+            < .ci-cache/hr-visual-mysql.sql
 
           DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
             python manage.py migrate --run-syncdb --noinput
