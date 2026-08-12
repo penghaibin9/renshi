@@ -9,6 +9,7 @@
   const sidebar = document.getElementById('sidebar');
   const toggle = document.querySelector('.oh-navbar__toggle-link');
   let explicitMobileOpen = false;
+  let nativeCloseInFlight = false;
   let desktopStoredState = null;
 
   function rememberDesktopState() {
@@ -16,50 +17,80 @@
     desktopStoredState = localStorage.getItem('sidebarOpen');
   }
 
-  function setNativeMobileClosedState() {
-    if (!mq.matches || !shell) return;
-    // These are Horilla's canonical shell flags. Mobile starts collapsed, but
-    // the sidebar DOM remains intact so the system navbar toggle can open it.
-    shell.classList.add('toggle-clicked', 'oh-wrapper-main--closed');
-    localStorage.setItem('sidebarOpen', 'false');
+  function sidebarIsActuallyVisible() {
+    if (!sidebar) return false;
+    const rect = sidebar.getBoundingClientRect();
+    const style = window.getComputedStyle(sidebar);
+    return style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      Number(style.opacity || '1') !== 0 &&
+      rect.width > 40 &&
+      rect.right > 0 &&
+      rect.left < window.innerWidth;
   }
 
-  function initialiseMobileShell() {
-    if (!mq.matches || !shell) return;
+  function persistMeasuredState() {
+    if (!mq.matches) return;
+    const visible = sidebarIsActuallyVisible();
+    localStorage.setItem('sidebarOpen', visible ? 'true' : 'false');
+    if (!nativeCloseInFlight) explicitMobileOpen = visible;
+  }
+
+  function closeThroughHorillaToggle() {
+    if (!mq.matches || !sidebar || !toggle || explicitMobileOpen) return;
+    rememberDesktopState();
+    if (!sidebarIsActuallyVisible()) {
+      localStorage.setItem('sidebarOpen', 'false');
+      return;
+    }
+
+    // Do not invent another sidebar state machine. Click Horilla's own navbar
+    // control after its bundled handlers have loaded, then trust measured DOM
+    // geometry instead of assuming a particular CSS class means "closed".
+    nativeCloseInFlight = true;
+    toggle.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }));
+    setTimeout(() => {
+      nativeCloseInFlight = false;
+      explicitMobileOpen = false;
+      localStorage.setItem('sidebarOpen', sidebarIsActuallyVisible() ? 'true' : 'false');
+    }, 80);
+  }
+
+  function ensureMobileClosed() {
+    if (!mq.matches) return;
     rememberDesktopState();
     explicitMobileOpen = false;
-    setNativeMobileClosedState();
+    closeThroughHorillaToggle();
   }
 
-  function syncAfterSystemToggle() {
-    if (!mq.matches || !shell) return;
-    // Horilla's bundled click handler owns the actual class toggle. Read the
-    // resulting state on the next task instead of replacing that behaviour.
-    setTimeout(() => {
-      explicitMobileOpen = !shell.classList.contains('oh-wrapper-main--closed');
-      localStorage.setItem('sidebarOpen', explicitMobileOpen ? 'true' : 'false');
-    }, 0);
+  function syncAfterUserToggle() {
+    if (!mq.matches || nativeCloseInFlight) return;
+    setTimeout(persistMeasuredState, 80);
   }
 
   function stopDesktopHoverReopen(event) {
-    if (!mq.matches || explicitMobileOpen) return;
-    // Horilla's desktop sidebar has a mouseover-to-reveal handler. A mobile
-    // viewport must not be reopened by synthetic/Chromium hover before the
-    // user explicitly presses the system navbar toggle.
+    if (!mq.matches || explicitMobileOpen || nativeCloseInFlight) return;
     event.stopImmediatePropagation();
-    requestAnimationFrame(setNativeMobileClosedState);
+    requestAnimationFrame(() => {
+      if (sidebarIsActuallyVisible()) closeThroughHorillaToggle();
+    });
   }
 
   function restoreDesktopState() {
     if (mq.matches || !shell) return;
     explicitMobileOpen = false;
+    nativeCloseInFlight = false;
+    if (desktopStoredState === null) return;
     if (desktopStoredState === 'false') {
-      shell.classList.add('toggle-clicked', 'oh-wrapper-main--closed');
       localStorage.setItem('sidebarOpen', 'false');
+    } else if (desktopStoredState === 'true') {
+      localStorage.setItem('sidebarOpen', 'true');
     } else {
-      shell.classList.remove('toggle-clicked', 'oh-wrapper-main--closed');
-      if (desktopStoredState === 'true') localStorage.setItem('sidebarOpen', 'true');
-      else localStorage.removeItem('sidebarOpen');
+      localStorage.removeItem('sidebarOpen');
     }
     desktopStoredState = null;
   }
@@ -68,17 +99,30 @@
     sidebar.addEventListener('mouseover', stopDesktopHoverReopen, true);
     sidebar.addEventListener('mouseenter', stopDesktopHoverReopen, true);
   }
-  if (toggle) toggle.addEventListener('click', syncAfterSystemToggle);
+  if (toggle) toggle.addEventListener('click', syncAfterUserToggle);
 
-  initialiseMobileShell();
-  document.addEventListener('DOMContentLoaded', initialiseMobileShell, {once:true});
-  window.addEventListener('load', initialiseMobileShell, {once:true});
-  requestAnimationFrame(initialiseMobileShell);
+  // Early state prevents the legacy restore from intentionally reopening the
+  // desktop sidebar on narrow screens. The delayed passes are the important
+  // part: they run after Horilla's own navbar/sidebar click handlers exist and
+  // close through that native interaction rather than by hiding DOM with CSS.
+  if (mq.matches) {
+    rememberDesktopState();
+    localStorage.setItem('sidebarOpen', 'false');
+  }
+  document.addEventListener('DOMContentLoaded', () => setTimeout(ensureMobileClosed, 40), {once:true});
+  window.addEventListener('load', () => {
+    setTimeout(ensureMobileClosed, 80);
+    setTimeout(ensureMobileClosed, 240);
+  }, {once:true});
 
   if (mq.addEventListener) {
     mq.addEventListener('change', (event) => {
-      if (event.matches) initialiseMobileShell();
-      else restoreDesktopState();
+      if (event.matches) {
+        localStorage.setItem('sidebarOpen', 'false');
+        setTimeout(ensureMobileClosed, 80);
+      } else {
+        restoreDesktopState();
+      }
     });
   }
 })();
