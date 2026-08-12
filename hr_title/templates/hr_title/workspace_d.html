@@ -8,12 +8,12 @@
 
   function closeNativeSidebarOnMobile() {
     const shell = document.querySelector('.oh-wrapper-main');
-    const toggle = document.querySelector('.oh-navbar__toggle-link');
-    if (!mq.matches || !shell || !toggle) return;
-    if (!shell.classList.contains('oh-wrapper-main--closed')) {
-      // Use Horilla's own sidebar toggle instead of styling the shell away.
-      toggle.click();
-    }
+    if (!mq.matches || !shell) return;
+    // Horilla's own index.js represents the closed shell with this exact
+    // class and persists it as sidebarOpen=false. Initialise that canonical
+    // state directly on mobile; do not hide/remove the sidebar with page CSS.
+    shell.classList.add('oh-wrapper-main--closed');
+    localStorage.setItem('sidebarOpen', 'false');
   }
 
   const section = '{{ section|escapejs }}';
