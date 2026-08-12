@@ -23,6 +23,8 @@ urlpatterns = [
     path("hr/double-teacher/", include("hr_qualification.urls_double_teacher")),
     # HR10 UI owns its internal /hr/development/... route prefixes.
     path("", include("hr10_development.urls")),
+    # HR11 UI
+    path("hr/time/", include("hr_time.urls")),
     # HR12 UI
     path("hr/assessments/", include("hr_assessment.urls")),
     # Canonical APIs for old-root modules HR01/02/03/04/05/06/08/11.

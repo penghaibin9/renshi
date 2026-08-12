@@ -7,7 +7,7 @@ from unittest import mock
 
 from django.test import TestCase
 
-from hr_staff.models import HrExportJob, HrStaffAuditEvent, HrStaffMaster
+from hr_staff.models import HrExportJob, HrStaffAuditEvent
 from hr_staff.services.export_service import (
     ExportContentStore,
     ExportPolicyDenied,

@@ -26,6 +26,7 @@ from hr_staff.services.assignment_service import AssignmentService
 from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx():
@@ -49,6 +50,7 @@ class TransferServiceTests(TestCase):
             assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1),
             organization_id=self.source_org,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def test_create_org_position_transfer(self):
@@ -106,6 +108,7 @@ class TransferServiceTests(TestCase):
             effective_from=date(2024, 9, 1),
             organization_id=self.target_org,
             position_id=self.target_pos,
+            source_business_type=FIXTURE_SOURCE,
         )
         case = TransferService(TENANT, actor_user_id=1).create_transfer(
             staff_master_id=self.staff,
@@ -216,6 +219,7 @@ class TransferApiTests(TestCase):
             assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1),
             organization_id=self.source_org,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def _req(self, method, path, body=None):

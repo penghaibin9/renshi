@@ -34,6 +34,7 @@ from hr_staff.services.assignment_service import AssignmentService
 from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx():
@@ -57,6 +58,7 @@ class ApplyTransferTests(TestCase):
             assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1),
             organization_id=self.source_org,
+            source_business_type=FIXTURE_SOURCE,
         )
         self.action = make_action(TENANT, ChangeActionCode.ORG_POSITION_TRANSFER)
         self.reason = make_reason(TENANT, ChangeActionCode.ORG_POSITION_TRANSFER)
@@ -88,7 +90,6 @@ class ApplyTransferTests(TestCase):
         result = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
         self.assertEqual(result.status, CaseStatus.EFFECTIVE)
 
-        # HR03 事实已更新（当前主岗在目标组织/岗位）
         from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
         qs = EffectiveDatedQueryService(TENANT)
@@ -96,19 +97,16 @@ class ApplyTransferTests(TestCase):
         self.assertEqual(primary.organization_id_id, self.target_org.id)
         self.assertEqual(primary.position_id_id, self.target_pos.id)
 
-        # 生效快照（不可变 + checksum）
         snap = HrChangeEffectiveSnapshot.objects.get(change_case_id=case)
         self.assertTrue(snap.checksum)
         self.assertEqual(snap.effective_at, date.today())
 
-        # Outbox PersonnelChangeEffective
         outbox = HrChangeOutboxEvent.objects.filter(
             tenant_id=TENANT, event_type="PersonnelChangeEffective"
         )
         self.assertEqual(outbox.count(), 1)
         self.assertEqual(outbox.first().payload_json["caseNo"], case.case_no)
 
-        # 下游效果记录（HR15/HR11/HR07）
         effects = HrChangeDownstreamEffect.objects.filter(change_case_id=case)
         domains = {e.target_domain for e in effects}
         self.assertIn("HR15", domains)
@@ -128,7 +126,6 @@ class ApplyTransferTests(TestCase):
         self.assertEqual(cm.exception.code, "CHANGE_INVALID_STATE")
 
     def test_apply_failure_on_blocker(self):
-        # 人员离职后申请生效 → APPLY_FAILED（不静默）
         case = self._approved_case(date.today())
         rel = self.rel
         rel.effective_to = date.today() - __import__("datetime").timedelta(days=1)
@@ -178,8 +175,8 @@ class DueDispatchTests(TestCase):
         AssignmentService(TENANT).create_assignment(
             employment_relationship_id=rel, assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1), organization_id=org,
+            source_business_type=FIXTURE_SOURCE,
         )
-        # 已批准待生效且到期（今天）
         action = make_action(TENANT, ChangeActionCode.ORG_TRANSFER)
         reason = make_reason(TENANT, ChangeActionCode.ORG_TRANSFER)
         svc = ChangeService(TENANT, actor_user_id=1)
@@ -219,6 +216,7 @@ class BulkServiceTests(TestCase):
             AssignmentService(TENANT).create_assignment(
                 employment_relationship_id=rel, assignment_type="PRIMARY",
                 effective_from=date(2024, 9, 1), organization_id=org,
+                source_business_type=FIXTURE_SOURCE,
             )
         action = make_action(TENANT, ChangeActionCode.ORG_TRANSFER)
         make_reason(TENANT, ChangeActionCode.ORG_TRANSFER)
@@ -239,7 +237,6 @@ class BulkServiceTests(TestCase):
 
         result = svc.execute(batch.id)
         self.assertEqual(result["batchStatus"], "COMPLETED")
-        # 每人独立 case 已生效
         cases = HrPersonnelChangeCase.objects.filter(
             tenant_id=TENANT, action_id=action, status=CaseStatus.EFFECTIVE
         )

@@ -4,10 +4,14 @@ on:
   push:
     branches: [main, agent/renshi-takeover-cleanup-20260810]
   pull_request:
-    branches: [main]
+    branches: [main, agent/renshi-takeover-cleanup-20260810]
 
 permissions:
   contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
@@ -17,6 +21,7 @@ env:
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
+  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
 
 jobs:
   django-contract:
@@ -30,6 +35,7 @@ jobs:
           MYSQL_USER: horilla_user
           MYSQL_PASSWORD: horilla_pass
           MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
@@ -66,7 +72,10 @@ jobs:
           fi
 
       - name: Syntax gate
-        run: python -m compileall -q horilla base employee hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment
+        shell: bash
+        run: |
+          mapfile -t hr_dirs < <(find . -maxdepth 1 -type d \( -name 'hr_*' -o -name 'hr10_development' \) -printf '%f\n' | sort)
+          python -m compileall -q horilla base employee "${hr_dirs[@]}"
 
       - name: Format gate for takeover-owned bootstrap files
         run: |
@@ -104,10 +113,8 @@ jobs:
               printf '%s\n' "$output"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,line=78,title=Migration drift detected::" + e)'
+            printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,title=Migration drift detected::" + e)'
 
-            # Generate reproducible candidate files for review. These files are
-            # never used to make this run green: the gate still exits non-zero.
             python manage.py makemigrations --noinput --verbosity 1
             mkdir -p migration-drift-artifacts
             while IFS= read -r file; do
@@ -132,13 +139,91 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
-      - name: Tenant and HR baseline tests
+      - name: Provision isolated Django test database
+        shell: bash
         run: |
-          python manage.py test \
-            base \
-            hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding \
-            hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment \
-            --noinput --verbosity 1
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute(
+                  "CREATE DATABASE `test_horilla_db` "
+                  "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+              )
+              cursor.execute(
+                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
+                  "TO 'horilla_user'@'%'"
+              )
+              cursor.execute("FLUSH PRIVILEGES")
+          finally:
+              connection.close()
+          PY
+
+          # Django test setup uses syncdb for apps without migrations. Some of
+          # those tables reference migrated HR authority tables, so starting
+          # from a completely empty test schema makes syncdb run before its FK
+          # dependencies exist. Clone the already-verified fresh migration DB,
+          # then add only the unmigrated-app tables on top of that schema.
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers horilla_db' \
+            | docker exec -i "$mysql_container" sh -c \
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --run-syncdb --noinput
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --check
+
+      - name: Tenant and registered HR tests
+        id: hr-tests
+        shell: bash
+        run: |
+          HR_APPS=$(python - <<'PY'
+          import os
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "horilla.settings")
+          from horilla.settings import CANONICAL_HR_APPS
+          print(" ".join(CANONICAL_HR_APPS))
+          PY
+          )
+          echo "Testing registered apps: $HR_APPS"
+          # test_horilla_db is cloned from the exact fresh-migration schema and
+          # completed with --run-syncdb above. --keepdb reuses that isolated
+          # schema without granting the application user global DB privileges.
+          # Capture full output as a diagnostic artifact while preserving the
+          # exact Django test exit status: this does not weaken the gate.
+          set +e
+          python manage.py test base $HR_APPS --keepdb --noinput --verbosity 2 2>&1 | tee hr-test-output.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Registered HR test failure tail"
+              echo '```text'
+              tail -n 350 hr-test-output.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$status"
+          fi
+
+      - name: Upload registered HR test diagnostics
+        if: failure() && steps.hr-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: registered-hr-test-output
+          path: hr-test-output.log
+          if-no-files-found: error
+          retention-days: 3
 
   production-settings-gate:
     runs-on: ubuntu-latest

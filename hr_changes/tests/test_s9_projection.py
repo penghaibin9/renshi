@@ -7,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 
 from employee.models import Employee, EmployeeWorkInformation
 from base.models import Department, EmployeeType, JobPosition
+from horilla.horilla_middlewares import tenant_context
 
 from hr_changes.projections.horilla_work_info import project_staff_work_info
 from hr_staff.models import HrStaffMaster
@@ -20,10 +21,21 @@ from hr_changes.tests.factories import make_catalog_version
 TENANT = 1
 
 
-class LegacyProjectionTests(TestCase):
+class _BackgroundTenantTestCase(TestCase):
+    """Run service/projection tests like background work: tenant set, no request user."""
+
+    def setUp(self):
+        self._tenant_ctx = tenant_context(TENANT)
+        self._tenant_ctx.__enter__()
+        self.addCleanup(self._tenant_ctx.__exit__, None, None, None)
+        super().setUp()
+
+
+class LegacyProjectionTests(_BackgroundTenantTestCase):
     """HR03 facts → EmployeeWorkInformation 投影（单向，禁止反向）。"""
 
     def setUp(self):
+        super().setUp()
         # legacy 对象
         self.department = Department.objects.create(department="JSXY")
         self.job_position = JobPosition.objects.create(
@@ -73,7 +85,7 @@ class LegacyProjectionTests(TestCase):
         self.assertEqual(work_info.job_position_id_id, self.job_position.id)
 
     def test_project_employee_type(self):
-        result = project_staff_work_info(TENANT, self.staff.id)
+        project_staff_work_info(TENANT, self.staff.id)
         work_info = EmployeeWorkInformation.objects.get(employee_id=self.employee)
         self.assertEqual(work_info.employee_type_id_id, self.employee_type.id)
 
@@ -94,7 +106,7 @@ class LegacyProjectionTests(TestCase):
         self.assertIn("legacy_employee_id", result["unmapped"])
 
 
-class DirectEditBlockTests(TestCase):
+class DirectEditBlockTests(_BackgroundTenantTestCase):
     """S9 封堵：表单禁用受管字段、bulk 拒绝、delete 拒绝。"""
 
     def test_update_form_managed_fields_disabled(self):

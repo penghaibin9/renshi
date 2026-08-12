@@ -20,6 +20,7 @@ from hr_staff.services.employment_service import EmploymentService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 class ReconciliationServiceTests(TestCase):
@@ -35,10 +36,10 @@ class ReconciliationServiceTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2020, 9, 1),
             organization_id=self.org,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def _legacy_emp(self, badge_id="T001238", is_active=True, joining=date(2020, 9, 1)):
-        """mock legacy Employee 行（占位，不导入全栈）。"""
         return SimpleNamespace(
             id=99,
             badge_id=badge_id,
@@ -74,7 +75,6 @@ class ReconciliationServiceTests(TestCase):
 
 class MigrationServiceTests(TestCase):
     def test_wave1_creates_staff_with_legacy_link(self):
-        """Wave 1：Person + StaffMaster（mock legacy Employee 行）。"""
         emp = SimpleNamespace(
             id=55,
             badge_id="T000999",
@@ -92,8 +92,6 @@ class MigrationServiceTests(TestCase):
         self.assertEqual(staff.person_id.legal_name, "王五")
 
     def test_wave1_review_required_on_likely_match(self):
-        """LIKELY 命中（姓名+生日）→ review_required，不自动建。"""
-        # 先建同姓名同生日 Person
         from hr_staff.services.person_identity_service import PersonIdentityService
 
         PersonIdentityService().create_person_with_identity(

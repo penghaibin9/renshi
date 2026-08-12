@@ -75,11 +75,9 @@ class PrivateStorageTests(TestCase):
 
     def test_upload_writes_private_dir_not_public(self):
         material = self._upload()
-        # storage_ref 是私有目录内相对名，且文件真实存在于私有根
         self.assertTrue(self.storage.exists(material.storage_ref))
         absolute = os.path.join(settings.HR08_PRIVATE_STORAGE_ROOT, material.storage_ref)
         self.assertTrue(os.path.isfile(absolute))
-        # 不进 public /media/ 根路径（MEDIA_ROOT 根下不存在该文件）
         self.assertFalse(os.path.exists(os.path.join(settings.MEDIA_ROOT, material.storage_ref)))
         self.assertEqual(material.size_bytes, len(b"%PDF-1.4 fake pdf content"))
         self.assertEqual(
@@ -95,10 +93,17 @@ class PrivateStorageTests(TestCase):
         self.service.issue_ticket(
             tenant_id=self.tenant, material=self.material, purpose="核验", token=token
         )
-        stream = self.service.open_authorized_stream(self.material, storage=self.storage)
+        authorized_material = self.service.redeem_ticket(
+            token=token,
+            actor_user_id=1,
+            tenant_id=self.tenant,
+        )
+        stream = self.service.open_authorized_stream(
+            authorized_material,
+            storage=self.storage,
+        )
         self.assertEqual(stream.read(), b"%PDF-1.4 fake pdf content")
         stream.close()
-        # 下载审计（§92）
         self.assertTrue(
             HrExternalAuditEvent.objects.filter(
                 action="ExternalMaterialDownload",
@@ -134,7 +139,6 @@ class PrivateStorageTests(TestCase):
             self.service.redeem_ticket(token=token, actor_user_id=1, tenant_id=999)
 
     def test_missing_file_returns_denied(self):
-        # 无文件（storage_ref 空）→ open_authorized_stream 拒绝
         self.material.refresh_from_db()
         self.assertFalse(self.material.storage_ref)
         with self.assertRaises(MaterialAccessDenied):

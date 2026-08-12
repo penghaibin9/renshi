@@ -73,11 +73,17 @@ class PageRoutesTests(TestCase):
 
     def _get(self, url):
         from django.contrib.auth import get_user_model
+        from django.contrib.sessions.middleware import SessionMiddleware
         from django.test import RequestFactory
 
         User = get_user_model()
         user = User.objects.create_user(username="r8tester", password="x", is_superuser=True)
         request = RequestFactory().get(url)
+        # These are direct-view tests, so explicitly run the same session setup
+        # that SessionMiddleware provides before Horilla's base/sidebar context
+        # processors execute. This keeps the request contract production-real.
+        SessionMiddleware(lambda req: None).process_request(request)
+        request.session.save()
         request.user = user
         return request
 

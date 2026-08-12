@@ -39,6 +39,7 @@ from hr_qualification.models import (
     HrPersonCredential,
     HrQualificationRiskCase,
 )
+from hr_staff.models import HrPerson
 
 
 class CredentialCatalogTest(TestCase):
@@ -82,8 +83,17 @@ class PersonCredentialTest(TestCase):
         self.assertEqual(c.masked_no, "")
 
     def test_version_increment(self):
+        person = HrPerson.objects.create(tenant_id=1, legal_name="模型资格测试人员")
+        catalog = HrCredentialCatalogItem.objects.create(
+            tenant_id=1,
+            code="VERSION-TEST",
+            category=CredentialCategory.TEACHER_QUALIFICATION,
+            name="版本递增测试资格",
+        )
         c = HrPersonCredential.objects.create(
             tenant_id=1,
+            person_id=person,
+            catalog_item_id=catalog,
             credential_name_snapshot="V1",
             issuer_name="Issuer",
         )
@@ -137,8 +147,10 @@ class DoubleTeacherRuleTest(TestCase):
 
 class RiskCaseTest(TestCase):
     def test_create_risk(self):
+        person = HrPerson.objects.create(tenant_id=1, legal_name="模型风险测试人员")
         risk = HrQualificationRiskCase.objects.create(
             tenant_id=1,
+            person_id=person,
             risk_type="CREDENTIAL_EXPIRED",
             severity="HIGH",
         )

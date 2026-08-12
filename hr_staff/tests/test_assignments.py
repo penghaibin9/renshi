@@ -12,6 +12,7 @@ from hr_staff.services.employment_service import EmploymentService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx(as_of=None):
@@ -39,11 +40,13 @@ class AssignmentHistoryTests(TestCase):
             effective_from=date(2024, 9, 1),
             effective_to=date(2026, 2, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         AssignmentService(TENANT).switch_primary(
             employment_relationship_id=self.emp,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def test_active_assignment_as_of_today_is_ai(self):

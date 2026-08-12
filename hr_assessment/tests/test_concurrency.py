@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from django.test import TestCase, TransactionTestCase
 from hr_assessment.models.result import HrFinalAssessmentResult
-from hr_assessment.models.case import HrAssessmentCase, HrAssessmentCycle, HrAnnualAssessmentCase
+from hr_assessment.models.case import HrAssessmentCase, HrAnnualAssessmentCase
 from hr_assessment.models.evidence import HrSelfAssessment
 from hr_assessment.models.policy import HrAssessmentPolicyPack
 import uuid

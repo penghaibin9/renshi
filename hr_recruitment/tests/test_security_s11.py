@@ -105,26 +105,26 @@ class TenantIsolationSecurityTests(TestCase):
     def test_tenant_isolation_candidate_list(self):
         """B 校登录后看不到 A 校候选人。"""
         client_b = self._login(self.company_b)
-        resp = client_b.get("/api/hr/v1/recruitment/candidates")
+        resp = client_b.get("/api/v1/hr/recruitment/candidates")
         self.assertEqual(resp.status_code, 200)
         payload = json.loads(resp.content)
         self.assertEqual(payload["data"]["total"], 0)
 
     def test_tenant_isolation_campaign_list(self):
         client_b = self._login(self.company_b)
-        resp = client_b.get("/api/hr/v1/recruitment/campaigns")
+        resp = client_b.get("/api/v1/hr/recruitment/campaigns")
         payload = json.loads(resp.content)
         self.assertEqual(payload["data"]["total"], 0)
 
     def test_idor_candidate_detail(self):
         """B 校访问 A 校候选详情 → 404（不可枚举）。"""
         client_b = self._login(self.company_b)
-        resp = client_b.get(f"/api/hr/v1/recruitment/candidates/{self.candidate_a.id}")
+        resp = client_b.get(f"/api/v1/hr/recruitment/candidates/{self.candidate_a.id}")
         self.assertEqual(resp.status_code, 404)
 
     def test_idor_application_detail(self):
         client_b = self._login(self.company_b)
-        resp = client_b.get(f"/api/hr/v1/recruitment/applications/{self.app_a.id}")
+        resp = client_b.get(f"/api/v1/hr/recruitment/applications/{self.app_a.id}")
         self.assertEqual(resp.status_code, 404)
 
     def test_public_token_not_enumerable(self):
@@ -199,7 +199,7 @@ class PermissionFailClosedTests(TestCase):
         """无 hr04.application.sensitive_view → 403。"""
         client = self._login_no_perm()
         resp = client.post(
-            "/api/hr/v1/recruitment/candidates/identity-match-exact",
+            "/api/v1/hr/recruitment/candidates/identity-match-exact",
             data=json.dumps({"national_id": "110101199001011234"}),
             content_type="application/json",
         )
@@ -208,7 +208,7 @@ class PermissionFailClosedTests(TestCase):
     def test_unlock_score_requires_perm(self):
         client = self._login_no_perm()
         resp = client.post(
-            "/api/hr/v1/recruitment/assessment/score-sheets/00000000-0000-0000-0000-000000000001/reopen",
+            "/api/v1/hr/recruitment/assessment/score-sheets/00000000-0000-0000-0000-000000000001/reopen",
             data=json.dumps({"reason": "x"}),
             content_type="application/json",
         )
@@ -217,7 +217,7 @@ class PermissionFailClosedTests(TestCase):
     def test_handoff_requires_perm(self):
         client = self._login_no_perm()
         resp = client.post(
-            "/api/hr/v1/recruitment/proposed-hires/00000000-0000-0000-0000-000000000001/handoff-to-hr05",
+            "/api/v1/hr/recruitment/proposed-hires/00000000-0000-0000-0000-000000000001/handoff-to-hr05",
             data=json.dumps({}),
             content_type="application/json",
             HTTP_IDEMPOTENCY_KEY="k",
@@ -227,7 +227,7 @@ class PermissionFailClosedTests(TestCase):
     def test_plan_approve_requires_perm(self):
         client = self._login_no_perm()
         resp = client.post(
-            "/api/hr/v1/recruitment/plan-requests/00000000-0000-0000-0000-000000000001/approve",
+            "/api/v1/hr/recruitment/plan-requests/00000000-0000-0000-0000-000000000001/approve",
             data=json.dumps({}),
             content_type="application/json",
         )
@@ -235,5 +235,5 @@ class PermissionFailClosedTests(TestCase):
 
     def test_anonymous_tenant_fail_closed(self):
         """未登录 + 无学校上下文 → 403 TENANT_CONTEXT_REQUIRED。"""
-        resp = self.client.get("/api/hr/v1/recruitment/campaigns")
+        resp = self.client.get("/api/v1/hr/recruitment/campaigns")
         self.assertEqual(resp.status_code, 403)

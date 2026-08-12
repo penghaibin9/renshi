@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv
 import io
 from typing import Callable, Optional
+from zipfile import BadZipFile
 
 from django.db import transaction
 
@@ -28,7 +29,7 @@ from hr_external.integrations.hr03 import PersonProvider
 from hr_external.models import HrExternalImportJob, HrExternalImportRow
 from hr_external.services.profile_service import ProfileService
 
-COMMIT_BATCH_SIZE = 100  # 分批事务大小（HR03 §24.3：checkpoint + 精确失败行）
+COMMIT_BATCH_SIZE = 100
 
 
 class ImportValidationError(Exception):
@@ -65,7 +66,7 @@ class ImportService:
 
     @transaction.atomic
     def parse_csv_to_rows(self, job: HrExternalImportJob, content: bytes) -> int:
-        """解析 CSV 到 staging rows（CSV 原生；XLSX 见 parse_spreadsheet 占位）。"""
+        """解析 CSV 到 staging rows。"""
         try:
             text = content.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
@@ -73,7 +74,7 @@ class ImportService:
 
         reader = csv.DictReader(io.StringIO(text))
         rows = []
-        for idx, raw in enumerate(reader, start=2):  # 第 1 行为表头
+        for idx, raw in enumerate(reader, start=2):
             rows.append(
                 HrExternalImportRow(
                     tenant_id=job.tenant_id,
@@ -90,20 +91,20 @@ class ImportService:
 
     @transaction.atomic
     def parse_spreadsheet_to_rows(self, job: HrExternalImportJob, content: bytes) -> int:
-        """XLSX 解析：openpyxl 读取首个 sheet，首行表头，写入与 CSV 相同的 staging 账本（§110/§33）。
+        """XLSX 解析并写入与 CSV 相同的 staging 账本。
 
-        与 CSV 同链路：同一 HrExternalImportJob/Row 账本 + 逐行校验 + execute_commit。
-        坏文件（非 XLSX/损坏）→ ImportValidationError（不静默）。
+        任何损坏 ZIP/XLSX 都统一转为稳定业务异常 ImportValidationError，
+        不把 openpyxl/zipfile 的实现异常泄漏到 API/worker 边界。
         """
         try:
             from openpyxl import load_workbook
             from openpyxl.utils.exceptions import InvalidFileException
-        except ImportError as exc:  # pragma: no cover —— 依赖已确认存在
+        except ImportError as exc:  # pragma: no cover
             raise ImportValidationError("openpyxl 依赖不可用") from exc
 
         try:
             wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
-        except (InvalidFileException, ValueError, OSError) as exc:
+        except (InvalidFileException, BadZipFile, ValueError, OSError) as exc:
             raise ImportValidationError(f"无法解析 XLSX 文件：{type(exc).__name__}") from exc
 
         sheet = wb.active
@@ -122,7 +123,6 @@ class ImportService:
             for key, value in zip(headers, values):
                 if value is None:
                     continue
-                # 日期/数值转字符串；布尔转 "true"/"false"
                 if hasattr(value, "strftime"):
                     raw[key] = value.strftime("%Y-%m-%d")
                 elif isinstance(value, bool):
@@ -130,7 +130,7 @@ class ImportService:
                 else:
                     raw[key] = str(value)
             if not any(raw.values()):
-                continue  # 空行跳过
+                continue
             new_rows.append(
                 HrExternalImportRow(
                     tenant_id=job.tenant_id,
@@ -151,7 +151,6 @@ class ImportService:
         job: HrExternalImportJob,
         validator: Callable[[dict], list],
     ) -> HrExternalImportJob:
-        """逐行校验（validator(row_raw) -> list[str] issues）。"""
         job.status = ExternalImportJobStatus.VALIDATING
         job.save(update_fields=["status", "updated_at"])
 
@@ -191,17 +190,13 @@ class ImportService:
         return job
 
     def confirm_job(self, job: HrExternalImportJob) -> HrExternalImportJob:
-        """confirm 只把 job 置 COMMITTING 并返回（§110/00 §32）。
-        真正执行由 job runner 调用 execute_commit()；不得在此伪装完成。"""
+        """confirm 只把 job 置 COMMITTING；真正执行由 runner 调用 execute_commit。"""
         job.status = ExternalImportJobStatus.COMMITTING
         job.save(update_fields=["status", "updated_at"])
         return job
 
     def execute_commit(self, job: HrExternalImportJob) -> HrExternalImportJob:
-        """异步执行 commit（PROFILE 类型）：分批事务 + 逐行结果账本（HR03 §24.3）。
-
-        禁止：Excel 直接建账号/开放权限（§110）；本实现只建 Profile（身份根复用 HR03）。
-        """
+        """异步执行 PROFILE commit：分批事务 + 逐行结果账本。"""
         if job.status != ExternalImportJobStatus.COMMITTING:
             raise ImportCommitError("job not in COMMITTING state")
 
@@ -210,11 +205,8 @@ class ImportService:
         profile_service = ProfileService()
         error_summary: dict[str, int] = {}
         committed = 0
-        # 保留 validate 阶段已标记 INVALID 的失败行（§110 精确失败行账本）
         failed = job.rows.filter(status=ExternalImportRowStatus.INVALID).count()
 
-        # 分批事务：每批原子提交，跨批 checkpoint（HR03 §24.3）
-        # 计数只在整批事务成功提交后累计，保证回滚时账本精确。
         for start in range(0, len(rows), COMMIT_BATCH_SIZE):
             batch = rows[start : start + COMMIT_BATCH_SIZE]
             try:
@@ -226,8 +218,7 @@ class ImportService:
                 failed += batch_failed
                 for key, count in batch_errors.items():
                     error_summary[key] = error_summary.get(key, 0) + count
-            except Exception:  # noqa: BLE001 —— 分批原子回滚，跨批 checkpoint 继续
-                # 该批整体失败（行状态随事务回滚为 VALID，未累计计数）
+            except Exception:  # noqa: BLE001
                 failed += len(batch)
                 error_summary["BATCH_ATOMIC_FAILED"] = (
                     error_summary.get("BATCH_ATOMIC_FAILED", 0) + len(batch)
@@ -236,10 +227,11 @@ class ImportService:
         job.success_count = committed
         job.failed_count = failed
         job.error_summary_json = error_summary
-        if failed == 0:
-            job.status = ExternalImportJobStatus.COMPLETED
-        else:
-            job.status = ExternalImportJobStatus.PARTIAL_FAILED
+        job.status = (
+            ExternalImportJobStatus.COMPLETED
+            if failed == 0
+            else ExternalImportJobStatus.PARTIAL_FAILED
+        )
         job.save(
             update_fields=[
                 "status",
@@ -259,7 +251,6 @@ class ImportService:
         person_provider: PersonProvider,
         profile_service: ProfileService,
     ) -> tuple[int, int, dict]:
-        """单批逐行 commit。返回 (committed, failed, error_summary)。整批原子。"""
         committed = failed = 0
         errors: dict[str, int] = {}
         for row in batch:
@@ -284,7 +275,6 @@ class ImportService:
         person_provider: PersonProvider,
         profile_service: ProfileService,
     ) -> tuple[bool, str]:
-        """单行 PROFILE commit：先建/复用 HR03 Person，再建 HR08 Profile（幂等去重）。"""
         raw = row.raw_json
         legal_name = (raw.get("legalName") or "").strip()
         if not legal_name:
@@ -314,11 +304,13 @@ class ImportService:
                 industry_domain=raw.get("industryDomain") or "",
             )
             row.status = ExternalImportRowStatus.COMMITTED
-            # 生产级（A21）：证件号明文只用于交 HR03 加密存储，HR08 staging 不保留明文。
-            # raw_json 仅保留非敏感字段 + profileId 引用。
-            safe_raw = {k: v for k, v in raw.items() if k not in ("documentNumber", "documentType")}
+            safe_raw = {
+                k: v
+                for k, v in raw.items()
+                if k not in ("documentNumber", "documentType")
+            }
             row.raw_json = {**safe_raw, "_profileId": str(profile.id)}
             row.save(update_fields=["status", "raw_json"])
             return True, ""
-        except Exception as exc:  # noqa: BLE001 —— 精确失败行
+        except Exception as exc:  # noqa: BLE001
             return False, f"{getattr(exc, 'code', 'IMPORT_ROW_FAILED')}:{str(exc)[:80]}"

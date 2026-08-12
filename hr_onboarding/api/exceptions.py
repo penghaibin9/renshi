@@ -124,10 +124,16 @@ class PortalTokenExpiredError(Hr05ApiError):
     status_code = 401
     code = "PORTAL_TOKEN_EXPIRED"
 
+    def __init__(self, message: str = "门户访问令牌已过期"):
+        super().__init__(message)
+
 
 class PortalTokenRevokedError(Hr05ApiError):
     status_code = 401
     code = "PORTAL_TOKEN_REVOKED"
+
+    def __init__(self, message: str = "门户访问令牌已撤销"):
+        super().__init__(message)
 
 
 class ProbationAlreadyFinalizedError(Hr05ApiError):

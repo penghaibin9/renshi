@@ -13,6 +13,7 @@ from hr_staff.services.person_identity_service import PersonIdentityService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx(scope_type="SCHOOL", org_id=None, as_of=None, staff_ids=None):
@@ -48,11 +49,13 @@ class ProfileBootstrapTests(TestCase):
             effective_from=date(2024, 9, 1),
             effective_to=date(2026, 2, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         AssignmentService(TENANT).switch_primary(
             employment_relationship_id=rel,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def test_current_profile_shows_ai(self):
