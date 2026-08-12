@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: docker-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   COMPOSE_FILE: docker-compose.yml
 
