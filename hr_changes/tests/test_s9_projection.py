@@ -73,6 +73,7 @@ class LegacyProjectionTests(_BackgroundTenantTestCase):
             effective_from=date(2024, 9, 1),
             organization_id=self.org,
             position_id=self.position,
+            source_business_type="MIGRATION_VERIFIED",
         )
 
     def test_project_department_and_position(self):
@@ -142,7 +143,11 @@ class DirectEditBlockTests(_BackgroundTenantTestCase):
             email="hr06-del@example.com", phone="13800000003",
             badge_id="B003",
         )
-        work_info = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)[0]
+        # Employee save creates the legacy work-info row. The tenant-aware
+        # default manager intentionally hides rows without an assigned company,
+        # so use the base manager here because this test is about delete blocking,
+        # not tenant-manager visibility.
+        work_info = EmployeeWorkInformation._base_manager.get(employee_id=employee)
         from django.test import RequestFactory
 
         from employee import views as employee_views
@@ -163,4 +168,4 @@ class DirectEditBlockTests(_BackgroundTenantTestCase):
         response = employee_views.employee_work_information_delete(request, work_info.id)
         # 302 重定向（不执行删除）
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(EmployeeWorkInformation.objects.filter(id=work_info.id).exists())
+        self.assertTrue(EmployeeWorkInformation._base_manager.filter(id=work_info.id).exists())
