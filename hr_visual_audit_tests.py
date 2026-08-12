@@ -115,24 +115,6 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
 
     reset_sequences = True
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError as exc:  # pragma: no cover
-            raise RuntimeError("playwright must be installed for HR visual audit") from exc
-        cls._playwright = sync_playwright().start()
-        cls._browser = cls._playwright.chromium.launch(headless=True)
-
-    @classmethod
-    def tearDownClass(cls):
-        try:
-            cls._browser.close()
-            cls._playwright.stop()
-        finally:
-            super().tearDownClass()
-
     def setUp(self):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
@@ -211,57 +193,79 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
         ]
 
     def test_capture_real_workspace_screenshots(self):
+        """Keep Playwright entirely inside the test body.
+
+        Django ORM setup/teardown runs outside Playwright's sync event-loop
+        context, so Django's SynchronousOnlyOperation protection remains active
+        instead of being bypassed with DJANGO_ALLOW_ASYNC_UNSAFE.
+        """
         targets = self._installed_targets()
         self.assertTrue(
             targets, "No HR13-HR18 child module is installed in this PR merge state"
         )
 
-        context = self._browser.new_context(
-            viewport={"width": 1440, "height": 1000},
-            device_scale_factor=1,
-        )
-        context.add_cookies(
-            [
-                {
-                    "name": settings.SESSION_COOKIE_NAME,
-                    "value": self.session_cookie,
-                    "url": self.live_server_url,
-                }
-            ]
-        )
-        page = context.new_page()
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+
         page_errors: list[str] = []
-        page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-
-        for _app_label, config in targets:
-            code = config["code"]
-            module_dir = self.out_dir / code
-            module_dir.mkdir(parents=True, exist_ok=True)
-            for slug, route in config["routes"]:
-                response = page.goto(
-                    self.live_server_url + route, wait_until="networkidle"
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                context = browser.new_context(
+                    viewport={"width": 1440, "height": 1000},
+                    device_scale_factor=1,
                 )
-                self.assertIsNotNone(response, f"No HTTP response for {code} {route}")
-                self.assertEqual(
-                    response.status, 200, f"{code} {route} returned HTTP {response.status}"
+                context.add_cookies(
+                    [
+                        {
+                            "name": settings.SESSION_COOKIE_NAME,
+                            "value": self.session_cookie,
+                            "url": self.live_server_url,
+                        }
+                    ]
                 )
-                page.screenshot(
-                    path=str(module_dir / f"desktop-{slug}.png"), full_page=True
-                )
+                page = context.new_page()
+                page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
-            overview = config["routes"][0][1]
-            page.set_viewport_size({"width": 390, "height": 844})
-            response = page.goto(
-                self.live_server_url + overview, wait_until="networkidle"
-            )
-            self.assertIsNotNone(response)
-            self.assertEqual(response.status, 200)
-            page.screenshot(
-                path=str(module_dir / "mobile-overview.png"), full_page=True
-            )
-            page.set_viewport_size({"width": 1440, "height": 1000})
+                for _app_label, config in targets:
+                    code = config["code"]
+                    module_dir = self.out_dir / code
+                    module_dir.mkdir(parents=True, exist_ok=True)
+                    for slug, route in config["routes"]:
+                        response = page.goto(
+                            self.live_server_url + route, wait_until="networkidle"
+                        )
+                        self.assertIsNotNone(
+                            response, f"No HTTP response for {code} {route}"
+                        )
+                        self.assertEqual(
+                            response.status,
+                            200,
+                            f"{code} {route} returned HTTP {response.status}",
+                        )
+                        page.screenshot(
+                            path=str(module_dir / f"desktop-{slug}.png"),
+                            full_page=True,
+                        )
 
-        context.close()
+                    overview = config["routes"][0][1]
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    response = page.goto(
+                        self.live_server_url + overview, wait_until="networkidle"
+                    )
+                    self.assertIsNotNone(response)
+                    self.assertEqual(response.status, 200)
+                    page.screenshot(
+                        path=str(module_dir / "mobile-overview.png"), full_page=True
+                    )
+                    page.set_viewport_size({"width": 1440, "height": 1000})
+
+                context.close()
+            finally:
+                browser.close()
+
         self.assertEqual(
             page_errors, [], "Browser page errors: " + " | ".join(page_errors)
         )
