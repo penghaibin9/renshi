@@ -89,6 +89,22 @@ class PayrollResultFact(HrTenantScopedModel):
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
     supersedes_result_id = models.UUIDField(null=True, blank=True)
 
+    _IMMUTABLE_STATUSES = frozenset(
+        {Status.FINALIZED, Status.ADJUSTED, Status.REVERSED}
+    )
+    _FACT_FIELDS = (
+        "tenant_id",
+        "result_no",
+        "payroll_period_id",
+        "staff_id",
+        "currency_code",
+        "gross_amount",
+        "deduction_amount",
+        "net_amount",
+        "status",
+        "supersedes_result_id",
+    )
+
     class Meta:
         db_table = "hr15_payroll_result_fact"
         constraints = [
@@ -98,3 +114,29 @@ class PayrollResultFact(HrTenantScopedModel):
             models.Index(fields=("tenant_id", "payroll_period_id", "staff_id"), name="idx_hr15_result_period_staff"),
             models.Index(fields=("tenant_id", "staff_id", "status"), name="idx_hr15_result_tenant_staff"),
         ]
+
+    def save(self, *args, **kwargs):
+        """Keep persisted terminal payroll facts append-only.
+
+        ``DRAFT -> FINALIZED`` is the legal finalization boundary. Once a fact
+        has reached a terminal persisted state, its business payload and state
+        cannot be edited in place. Retroactive corrections must append another
+        fact linked through ``supersedes_result_id`` rather than mutate payroll
+        history.
+        """
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted and persisted["status"] in self._IMMUTABLE_STATUSES:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "PAYROLL_FINAL_RESULT_IMMUTABLE: finalized payroll facts "
+                        "must be corrected with an appended adjustment fact"
+                    )
+        return super().save(*args, **kwargs)
