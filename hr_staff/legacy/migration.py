@@ -129,13 +129,14 @@ class MigrationService:
         joining = (legacy_work_info or {}).get("date_joining") or date.today()
         emp_svc = EmploymentService(self.tenant_id)
         assign_svc = AssignmentService(self.tenant_id)
+        source_business_id = f"legacy-employee-{staff.legacy_employee_id}"
         try:
             rel = emp_svc.start_relationship(
                 staff_id=staff,
                 relationship_type="REGULAR_EMPLOYMENT",
                 effective_from=joining,
                 source_business_type="MIGRATION_VERIFIED",
-                source_business_id=f"legacy-employee-{staff.legacy_employee_id}",
+                source_business_id=source_business_id,
             )
             assign_svc.create_assignment(
                 employment_relationship_id=rel,
@@ -143,6 +144,8 @@ class MigrationService:
                 effective_from=joining,
                 organization_id=None,
                 legacy_department_id=legacy_department_id,
+                source_business_type="MIGRATION_VERIFIED",
+                source_business_id=source_business_id,
             )
             return {"status": "created", "relationshipId": str(rel.id)}
         except Exception as exc:
