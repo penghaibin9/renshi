@@ -30,8 +30,15 @@ def encrypt_certificate_no(tenant_id: int, certificate_no: str | bytes | None) -
         return None
     raw = certificate_no if isinstance(certificate_no, bytes) else str(certificate_no).encode("utf-8")
     if raw.startswith(_TOKEN_PREFIX):
-        # Already a Fernet token. Do not double-encrypt on unrelated model saves.
-        return raw
+        # Prefix alone is not proof of encryption: a plaintext certificate can
+        # legitimately start with "gAAAA". Only pass through a token that the
+        # selected tenant key can actually authenticate and decrypt.
+        try:
+            _fernet(tenant_id).decrypt(raw)
+        except InvalidToken:
+            pass
+        else:
+            return raw
     return _fernet(tenant_id).encrypt(raw)
 
 
@@ -46,4 +53,5 @@ def decrypt_certificate_no(tenant_id: int, token: bytes | memoryview | None) -> 
 
 
 def is_encrypted_certificate_no(value: bytes | memoryview | None) -> bool:
+    """Cheap format hint only; authenticated validation requires tenant key/decrypt."""
     return bool(value) and bytes(value).startswith(_TOKEN_PREFIX)
