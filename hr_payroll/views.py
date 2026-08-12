@@ -5,12 +5,16 @@ from .api import HrPayrollAccessError, resolve_request_tenant
 
 SECTIONS = {
     "overview": "薪酬总览",
+    "profiles": "薪酬档案",
     "periods": "工资期间",
     "calculations": "工资核算",
     "rules": "薪资项目与规则",
-    "benefits": "津补贴与五险一金",
+    "allowances": "津贴与补贴",
+    "social_security": "社保公积金与年金",
+    "results": "正式薪酬结果",
     "payments": "支付与工资条",
-    "reconciliation": "财务对账与旧系统接管",
+    "reconciliation": "财务对账",
+    "legacy_takeover": "旧 payroll 接管",
 }
 
 
