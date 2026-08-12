@@ -1,0 +1,39 @@
+{% extends "hr_title/workspace_d.html" %}
+
+{% block content %}
+{{ block.super }}
+<script>
+(() => {
+  const mq = window.matchMedia('(max-width: 767.98px)');
+  const shell = document.querySelector('.oh-wrapper-main');
+  const sidebar = document.getElementById('sidebar');
+
+  function enforceNativeMobileClosedState() {
+    if (!mq.matches || !shell) return;
+    // Horilla uses toggle-clicked to remember an explicit user collapse and
+    // oh-wrapper-main--closed for the actual shell layout state.
+    shell.classList.add('toggle-clicked', 'oh-wrapper-main--closed');
+    localStorage.setItem('sidebarOpen', 'false');
+  }
+
+  function stopDesktopHoverReopen(event) {
+    if (!mq.matches) return;
+    // templates/sidebar.html contains a desktop-only #sidebar mouseover
+    // handler that removes the closed class. Touch/mobile has no useful hover
+    // affordance, so stop that desktop handler before it can reopen the shell.
+    event.stopImmediatePropagation();
+    enforceNativeMobileClosedState();
+  }
+
+  if (sidebar) {
+    sidebar.addEventListener('mouseover', stopDesktopHoverReopen, true);
+    sidebar.addEventListener('mouseenter', stopDesktopHoverReopen, true);
+  }
+  enforceNativeMobileClosedState();
+  window.addEventListener('load', enforceNativeMobileClosedState, {once:true});
+  if (mq.addEventListener) mq.addEventListener('change', (event) => {
+    if (event.matches) enforceNativeMobileClosedState();
+  });
+})();
+</script>
+{% endblock %}
