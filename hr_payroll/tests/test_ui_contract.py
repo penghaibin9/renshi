@@ -8,6 +8,7 @@ class Hr15UiContractTests(SimpleTestCase):
         expected = {
             "hr_payroll:overview": "/hr/payroll/",
             "hr_payroll:periods": "/hr/payroll/periods/",
+            "hr_payroll:calculations": "/hr/payroll/calculations/",
             "hr_payroll:rules": "/hr/payroll/rules/",
             "hr_payroll:benefits": "/hr/payroll/benefits/",
             "hr_payroll:payments": "/hr/payroll/payments/",
