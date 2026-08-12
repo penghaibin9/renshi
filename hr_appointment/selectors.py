@@ -20,6 +20,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         tenant_id=tenant_id, batch__tenant_id=tenant_id
     ).select_related("batch")
     counts = Counter(cases.values_list("status", flat=True))
+    quota_total = sum(row.available for row in quota_pools.iterator())
     quota_rows = list(quota_pools.order_by("-updated_at")[:12])
     return {
         "summary": {
@@ -30,7 +31,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "inPublicity": counts.get("PUBLICITY", 0),
             "effectiveAppointments": facts.filter(status="EFFECTIVE").count(),
             "quotaPools": quota_pools.count(),
-            "availableQuota": sum(row.available for row in quota_rows),
+            "availableQuota": quota_total,
         },
         "recentApplications": list(
             cases.order_by("-updated_at")[:12].values(
@@ -72,7 +73,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "application": True,
             "appointmentFact": True,
             "quotaSnapshot": True,
-            "competition": True,
+            "competition": False,
             "reviewRanking": False,
             "publicity": False,
             "termChange": False,
