@@ -1,7 +1,12 @@
 """Tenant-scoped read models for the HR14 appointment workspace."""
 from collections import Counter
 
-from .models import AppointmentApplicationCase, AppointmentPolicyVersion, PositionAppointmentFact
+from .models import (
+    AppointmentApplicationCase,
+    AppointmentPolicyVersion,
+    AppointmentQuotaPool,
+    PositionAppointmentFact,
+)
 
 
 def dashboard_snapshot(tenant_id: int) -> dict:
@@ -11,7 +16,11 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     cases = AppointmentApplicationCase.objects.filter(tenant_id=tenant_id)
     policies = AppointmentPolicyVersion.objects.filter(tenant_id=tenant_id)
     facts = PositionAppointmentFact.objects.filter(tenant_id=tenant_id)
+    quota_pools = AppointmentQuotaPool.objects.filter(
+        tenant_id=tenant_id, batch__tenant_id=tenant_id
+    ).select_related("batch")
     counts = Counter(cases.values_list("status", flat=True))
+    quota_rows = list(quota_pools.order_by("-updated_at")[:12])
     return {
         "summary": {
             "policyVersions": policies.count(),
@@ -20,6 +29,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "proposed": counts.get("PROPOSED", 0),
             "inPublicity": counts.get("PUBLICITY", 0),
             "effectiveAppointments": facts.filter(status="EFFECTIVE").count(),
+            "quotaPools": quota_pools.count(),
+            "availableQuota": sum(row.available for row in quota_rows),
         },
         "recentApplications": list(
             cases.order_by("-updated_at")[:12].values(
@@ -40,12 +51,28 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "position_category", "level_code", "effective_from", "effective_to"
             )
         ),
+        "recentQuotaPools": [
+            {
+                "id": row.id,
+                "batchNo": row.batch.batch_no,
+                "categoryCode": row.category_code,
+                "levelGroupCode": row.level_group_code,
+                "exactLevelCode": row.exact_level_code,
+                "authorized": row.authorized,
+                "occupied": row.occupied,
+                "reserved": row.reserved,
+                "exceptionQuota": row.exception_quota,
+                "available": row.available,
+                "version": row.version,
+            }
+            for row in quota_rows
+        ],
         "capabilities": {
             "policy": True,
             "application": True,
             "appointmentFact": True,
-            "quotaSnapshot": False,
-            "competition": False,
+            "quotaSnapshot": True,
+            "competition": True,
             "reviewRanking": False,
             "publicity": False,
             "termChange": False,
