@@ -141,6 +141,10 @@ a.hr-home__module:hover {
 .hr-home__module--pending {
   background: #fafbfc;
 }
+.hr-home__module--progress {
+  background: linear-gradient(180deg, #fff 0%, #fbfcff 100%);
+  border-color: #dde5f6;
+}
 .hr-home__module-no {
   display: inline-flex;
   align-items: center;
@@ -159,6 +163,10 @@ a.hr-home__module:hover {
 .hr-home__module--pending .hr-home__module-no {
   background: #fff4e7;
   color: var(--home-warning);
+}
+.hr-home__module--progress .hr-home__module-no {
+  background: #edf2ff;
+  color: #405cc2;
 }
 .hr-home__module h3 {
   margin: 0;
@@ -181,6 +189,9 @@ a.hr-home__module:hover {
 }
 .hr-home__module--pending .hr-home__module-state {
   color: var(--home-warning);
+}
+.hr-home__module--progress .hr-home__module-state {
+  color: #5570c7;
 }
 
 .hr-home .hr-metric-strip {
