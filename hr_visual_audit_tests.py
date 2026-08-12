@@ -148,9 +148,11 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
             is_active=True,
         )
         # Employee creation signals may already create the one-to-one work-info
-        # row. Reuse that real lifecycle record instead of manufacturing a
-        # duplicate test-only row.
-        work_info, _ = EmployeeWorkInformation.objects.get_or_create(
+        # row before a request tenant exists. The production company manager is
+        # intentionally fail-closed in that state, so use Django's base manager
+        # only to locate this lifecycle-owned technical row. Page/API reads still
+        # go through the real tenant-aware managers and middleware below.
+        work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
             employee_id=self.employee,
         )
         if work_info.company_id_id != self.company.pk:
