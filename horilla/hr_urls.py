@@ -13,8 +13,9 @@ urlpatterns = [
     path("", include("hr_recruitment.public.urls")),
     path("hr/onboarding/", include("hr_onboarding.urls")),
     path("hr/changes/", include("hr_changes.urls")),
-    # HR07 remains deliberately unrouted until its missing Authority app,
-    # migrations and tests are recovered.
+    # HR07 contract authority UI/API
+    path("hr/contracts/", include("hr_contracts.urls")),
+    path("", include("hr_contracts.api.urls")),
     # HR08 UI
     path("hr/external-teachers/", include("hr_external.urls")),
     # HR09 UI
