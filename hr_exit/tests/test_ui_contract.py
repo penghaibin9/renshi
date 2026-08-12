@@ -9,9 +9,12 @@ class Hr16UiContractTests(SimpleTestCase):
             "hr_exit:overview": "/hr/exit/",
             "hr_exit:cases": "/hr/exit/cases/",
             "hr_exit:handover": "/hr/exit/handover/",
-            "hr_exit:retirement": "/hr/exit/retirement/",
+            "hr_exit:settlement": "/hr/exit/settlement/",
+            "hr_exit:retirement_precheck": "/hr/exit/retirement-precheck/",
+            "hr_exit:retirement_facts": "/hr/exit/retirement-facts/",
             "hr_exit:effects": "/hr/exit/effects/",
             "hr_exit:archive": "/hr/exit/archive/",
+            "hr_exit:retirement_compat": "/hr/exit/retirement/",
         }
         for name, path in expected.items():
             self.assertEqual(reverse(name), path)
