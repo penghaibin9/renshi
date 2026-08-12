@@ -19,6 +19,7 @@ class MetricDefinitionVersion(HrVersionedModel):
 
     class Meta:
         db_table = "hr18_metric_definition_version"
+        permissions = [("hr.data.view", "查看 HR18 人事数据中心")]
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "metric_code", "version_no"),
