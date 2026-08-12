@@ -11,7 +11,9 @@ class Hr17UiContractTests(SimpleTestCase):
             "hr_self:todos": "/hr/self/todos/",
             "hr_self:progress": "/hr/self/progress/",
             "hr_self:files": "/hr/self/files/",
-            "hr_self:payroll-contracts": "/hr/self/payroll-contracts/",
+            "hr_self:payslips": "/hr/self/payslips/",
+            "hr_self:contracts": "/hr/self/contracts/",
+            "hr_self:payroll_contracts_compat": "/hr/self/payroll-contracts/",
         }
         for name, path in expected.items():
             self.assertEqual(reverse(name), path)
