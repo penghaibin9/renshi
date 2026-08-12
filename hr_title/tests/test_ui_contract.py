@@ -8,10 +8,14 @@ class Hr13UiContractTests(SimpleTestCase):
         expected = {
             "hr_title:overview": "/hr/titles/",
             "hr_title:applications": "/hr/titles/applications/",
+            "hr_title:eligibility": "/hr/titles/eligibility/",
             "hr_title:materials": "/hr/titles/materials/",
-            "hr_title:review": "/hr/titles/review/",
+            "hr_title:experts": "/hr/titles/experts/",
+            "hr_title:deliberation": "/hr/titles/deliberation/",
             "hr_title:publicity": "/hr/titles/publicity/",
+            "hr_title:appeals": "/hr/titles/appeals/",
             "hr_title:results": "/hr/titles/results/",
+            "hr_title:review": "/hr/titles/review/",
         }
         for name, path in expected.items():
             self.assertEqual(reverse(name), path)
