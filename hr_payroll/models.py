@@ -30,7 +30,10 @@ class PayrollProfile(HrTenantScopedModel):
 
     class Meta:
         db_table = "hr15_payroll_profile"
-        permissions = [("hr.payroll.view", "查看 HR15 薪酬福利工作区")]
+        permissions = [
+            ("hr.payroll.view", "查看 HR15 薪酬福利工作区"),
+            ("hr.payroll.adjust", "执行 HR15 薪资追溯调整"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "payroll_identity_no"),
