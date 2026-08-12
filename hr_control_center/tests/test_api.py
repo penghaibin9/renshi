@@ -19,7 +19,7 @@ from base.models import Company, Department, EmployeeType, JobPosition
 from employee.models import Employee, EmployeeWorkInformation
 from horilla_auth.models import HorillaUser
 
-BOOTSTRAP_URL = "/api/hr/v1/home/bootstrap"
+BOOTSTRAP_URL = "/api/v1/hr/home/bootstrap"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
@@ -84,9 +84,10 @@ class HrBootstrapApiTests(TestCase):
         self.client.force_login(self.admin)
 
     def _login_school(self):
-        """在请求上下文里选中学校。"""
-        self.client.session["selected_company"] = str(self.company.id)
-        self.client.session.save()
+        """在请求上下文里选中学校，并保存同一个 session store。"""
+        session = self.client.session
+        session["selected_company"] = str(self.company.id)
+        session.save()
 
     def test_root_version_contract(self):
         self._login_school()
@@ -107,7 +108,6 @@ class HrBootstrapApiTests(TestCase):
         self.assertEqual(resp.json()["error"]["code"], "TENANT_CONTEXT_REQUIRED")
 
     def test_permission_denied_for_regular_user(self):
-        self._login_school()
         user = HorillaUser.objects.create_user(
             username="plain_user", password="x", email="u@test.local"
         )
@@ -123,6 +123,7 @@ class HrBootstrapApiTests(TestCase):
             company_id_id=self.company.pk,
         )
         self.client.force_login(user)
+        self._login_school()
         resp = self.client.get(BOOTSTRAP_URL)
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["error"]["code"], "PERMISSION_DENIED")
@@ -196,7 +197,7 @@ class HrBootstrapApiTests(TestCase):
 
     def test_metrics_endpoint(self):
         self._login_school()
-        resp = self.client.get("/api/hr/v1/home/overview/metrics")
+        resp = self.client.get("/api/v1/hr/home/overview/metrics")
         self.assertEqual(resp.status_code, 200, resp.content[:300])
         data = resp.json()
         keys = {m["metricKey"] for m in data["metrics"]}

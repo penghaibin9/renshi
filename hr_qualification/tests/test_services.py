@@ -32,15 +32,18 @@ from hr_qualification.models import (
 from hr_qualification.services.application_service import ApplicationError, ApplicationService
 from hr_qualification.services.credential_service import CredentialError, CredentialService
 from hr_qualification.services.risk_service import RiskService
+from hr_staff.models import HrPerson
 
 
 class CredentialServiceTest(TestCase):
     def setUp(self):
+        self.person = HrPerson.objects.create(tenant_id=1, legal_name="资格测试人员")
         self.catalog = HrCredentialCatalogItem.objects.create(
             tenant_id=None, code="TEST-CRED", category="OTHER", name="Test Credential"
         )
         self.cred = HrPersonCredential.objects.create(
             tenant_id=1,
+            person_id=self.person,
             credential_name_snapshot="Test Cert",
             catalog_item_id=self.catalog,
             issuer_name="Test Issuer",
@@ -94,6 +97,7 @@ class CredentialServiceTest(TestCase):
 
 class ApplicationServiceTest(TestCase):
     def setUp(self):
+        self.person = HrPerson.objects.create(tenant_id=1, legal_name="双师申请测试人员")
         self.pack = HrDoubleTeacherRulePack.objects.create(
             tenant_id=1, code="TEST-APP-PACK", name="App Pack"
         )
@@ -108,6 +112,7 @@ class ApplicationServiceTest(TestCase):
         )
         self.app = HrDoubleTeacherApplication.objects.create(
             tenant_id=1,
+            person_id=self.person,
             application_no="APP-TEST-001",
             batch_id=self.batch,
             target_level=RecognitionLevel.DOUBLE_TEACHER_JUNIOR,
@@ -134,6 +139,7 @@ class ApplicationServiceTest(TestCase):
 
 class RiskServiceTest(TestCase):
     def setUp(self):
+        self.person = HrPerson.objects.create(tenant_id=1, legal_name="风险测试人员")
         self.catalog = HrCredentialCatalogItem.objects.create(
             tenant_id=None, code="TEST-RISK", category="OTHER", name="Risk Cert"
         )
@@ -142,6 +148,7 @@ class RiskServiceTest(TestCase):
         """同类型 OPEN 风险不重复创建"""
         cred = HrPersonCredential.objects.create(
             tenant_id=1,
+            person_id=self.person,
             credential_name_snapshot="Exp Cert",
             catalog_item_id=self.catalog,
             issuer_name="I",

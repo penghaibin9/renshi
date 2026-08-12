@@ -33,6 +33,7 @@ from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
 TENANT_B = 2
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx(tenant=TENANT):
@@ -44,7 +45,6 @@ class TenantIsolationTests(TestCase):
 
     def test_detail_cross_tenant_returns_none(self):
         case_a = make_case(TENANT, status=CaseStatus.EFFECTIVE)
-        # tenant B 查 tenant A 的案件 → None（不泄露）
         self.assertIsNone(CaseDetailSelector(TENANT_B).get(case_a.id))
 
     def test_list_tenant_scoped(self):
@@ -82,10 +82,10 @@ class ConcurrencyTests(TestCase):
         AssignmentService(TENANT).create_assignment(
             employment_relationship_id=self.rel, assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1), organization_id=org,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def test_same_day_two_transfers_hard_conflict(self):
-        # 同一人 9 月 1 日两个调动 → HARD_CONFLICT（总册 §12）
         c1 = make_case(TENANT, requested_effective_at=date(2026, 9, 1))
         c2 = make_case(TENANT, requested_effective_at=date(2026, 9, 1))
         for c in (c1, c2):
@@ -102,7 +102,6 @@ class ConcurrencyTests(TestCase):
         case = svc.start_approval(case.id)
         case = svc.approve_all(case.id)
         self.assertEqual(case.status, CaseStatus.APPROVED_WAITING_EFFECTIVE)
-        # 再次 approve → CHANGE_INVALID_STATE（已不在审批中）
         with self.assertRaises(ChangeServiceError) as cm:
             svc.approve(case.id)
         self.assertEqual(cm.exception.code, "CHANGE_INVALID_STATE")
@@ -117,7 +116,6 @@ class ConcurrencyTests(TestCase):
         case = svc.start_approval(case.id)
         snap = ApprovalService(TENANT).get_current_snapshot(case)
         steps_before = [s["approver_scope"] for s in snap.steps_json]
-        # 配置变化不影响已提交案件（快照冻结）
         self.assertEqual(steps_before, ["SOURCE_ORG", "TARGET_ORG", "SCHOOL_HR"])
 
 
@@ -136,7 +134,6 @@ class EffectiveSnapshotInvariantTests(TestCase):
         )
         snap = HrChangeEffectiveSnapshot.objects.get(change_case_id=case)
         self.assertEqual(snap.checksum, "sum-1")
-        # 新纠错必须生成新记录而非改旧快照（S7 已保证：apply 创建 correction 记录）
         self.assertEqual(HrChangeEffectiveSnapshot.objects.filter(change_case_id=case).count(), 1)
 
 
@@ -146,12 +143,9 @@ class DataQualityTests(TestCase):
     def test_effective_requires_snapshot(self):
         from hr_changes.models import HrChangeEffectiveSnapshot
 
-        # 通过 ApplyService 生效的案件必有快照（S8 已测）；此处验证无快照的 EFFECTIVE 可被检测
         case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
         has_snapshot = HrChangeEffectiveSnapshot.objects.filter(change_case_id=case).exists()
-        # 手工造出的 EFFECTIVE 无快照 → 质量缺陷（对账项）
         self.assertFalse(has_snapshot)
-        # 真实路径经 ApplyService 会生成快照（契约在 test_s8 覆盖）
 
 
 class PermissionContractTests(TestCase):

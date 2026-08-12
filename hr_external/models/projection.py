@@ -47,6 +47,8 @@ class HrExternalProjectionState(models.Model):
     last_projected_at = models.DateTimeField(null=True, blank=True)
     last_reconciled_at = models.DateTimeField(null=True, blank=True)
     mismatch_count = models.PositiveIntegerField(default=0)
+    # 权威投影同样遵守 HR08 的 optimistic-version 治理合同（§118）。
+    version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -57,6 +59,10 @@ class HrExternalProjectionState(models.Model):
             models.UniqueConstraint(
                 fields=["tenant_id", "external_profile_id"],
                 name="uniq_hr_external_projection_profile",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="hex_projection_version_gte_1",
             ),
         ]
         indexes = [

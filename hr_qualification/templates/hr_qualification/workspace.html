@@ -1,0 +1,210 @@
+{% extends "index.html" %}
+{% load static %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr09-qualification.css' %}">
+<div class="hr09">
+  {% if access_error %}
+    <div class="hr09-access">{{ access_error }}</div>
+  {% else %}
+    <section class="hr09-hero">
+      <div>
+        <div class="hr09-eyebrow">高校教师资格与双师型管理</div>
+        <h1>{{ section_title }}</h1>
+        <p>资格证书解决“这个人是否具备真实、有效、可核验的任职资格”；双师认定解决“在指定规则和证据下，是否达到学校当前双师型认定标准”。两条线共享人员事实，但证书有效不自动等于双师认定通过。</p>
+      </div>
+      <div class="hr09-hero-guide">
+        <div><strong>证书先核验，再用于业务判断</strong><span>证号默认脱敏；有效期、核验结果、撤销和续证历史都保留。</span></div>
+        <div><strong>双师认定按批次完整流转</strong><span>规则版本 → 申报 → 形式审查 → 专家评审 → 正式认定 → 到期复核。</span></div>
+      </div>
+    </section>
+
+    <nav class="hr09-nav" aria-label="资格与双师型工作区导航">
+      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/qualifications/">工作台</a>
+      <a class="{% if section == 'credentials' %}active{% endif %}" href="/hr/qualifications/credentials/">资格证书台账</a>
+      <a class="{% if section == 'batches' %}active{% endif %}" href="/hr/double-teacher/">双师认定批次</a>
+      <a class="{% if section == 'applications' %}active{% endif %}" href="/hr/double-teacher/applications/">申报审核</a>
+      <a class="{% if section == 'recognitions' %}active{% endif %}" href="/hr/double-teacher/recognitions/">认定结果</a>
+      <a class="{% if section == 'risks' %}active{% endif %}" href="/hr/qualifications/risks/">风险中心</a>
+    </nav>
+    <div class="hr09-mobile-hint">可左右滑动查看更多工作区</div>
+
+    <section class="hr09-kpis" aria-label="资格与双师关键指标">
+      <div class="hr09-kpi"><div class="hr09-kpi-label">有效资格证书</div><div class="hr09-kpi-value">{{ summary.active_credentials }}</div><div class="hr09-kpi-note">当前学校状态为“有效”的正式证书事实</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">待核验证书</div><div class="hr09-kpi-value">{{ summary.pending_verification }}</div><div class="hr09-kpi-note">待核验、核验中或需要人工复核</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">90 天内到期</div><div class="hr09-kpi-value">{{ summary.expiring_90 }}</div><div class="hr09-kpi-note">提前续证，避免影响岗位或认定依据</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">未关闭资格风险</div><div class="hr09-kpi-value">{{ summary.open_risks }}</div><div class="hr09-kpi-note">待处理、已确认或正在处理的风险</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">进行中认定批次</div><div class="hr09-kpi-value">{{ summary.active_batches }}</div><div class="hr09-kpi-note">已发布、申报、评审或待发结果批次</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">办理中双师申报</div><div class="hr09-kpi-value">{{ summary.pending_applications }}</div><div class="hr09-kpi-note">从提交到结果审定期间的真实申请</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">当前有效双师认定</div><div class="hr09-kpi-value">{{ summary.active_recognitions }}</div><div class="hr09-kpi-note">只统计正式生效且未被替代的认定</div></div>
+      <div class="hr09-kpi"><div class="hr09-kpi-label">90 天内需复核</div><div class="hr09-kpi-value">{{ summary.review_due_90 }}</div><div class="hr09-kpi-note">复核前重新检查资格和证据有效性</div></div>
+    </section>
+
+    {% if section == 'overview' %}
+      <div class="hr09-section-head">
+        <div><h2>今天优先处理</h2><p>只根据当前学校真实未完成事项生成，不造待办。</p></div>
+      </div>
+      <section class="hr09-focus-grid">
+        {% if focus_items %}
+          {% for item in focus_items %}
+            <article class="hr09-focus hr09-focus--{{ item.level }}">
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.desc }}</p>
+              <a href="{{ item.url }}">{{ item.action }} →</a>
+            </article>
+          {% endfor %}
+        {% else %}
+          <div class="hr09-focus-empty"><strong>当前没有需要优先处理的资格或双师事项。</strong>页面不会为了填满首屏制造风险、待核验或待评审数量。</div>
+        {% endif %}
+      </section>
+
+      <div class="hr09-section-head">
+        <div><h2>双师认定真实办理链路</h2><p>老师按业务顺序处理，不需要理解底层状态机名称。</p></div>
+      </div>
+      <section class="hr09-workflow" aria-label="双师认定办理流程">
+        <div class="hr09-step"><span class="hr09-step-no">1</span><strong>发布认定批次</strong><span>冻结本批次使用的规则版本、申报时间和可申报范围。</span></div>
+        <div class="hr09-step"><span class="hr09-step-no">2</span><strong>教师提交申报</strong><span>系统汇集资格、实践、培训等证据；缺失来源明确提示。</span></div>
+        <div class="hr09-step"><span class="hr09-step-no">3</span><strong>形式审查</strong><span>核材料完整性和硬性条件；退回补正不等于直接否决。</span></div>
+        <div class="hr09-step"><span class="hr09-step-no">4</span><strong>专家评审与审定</strong><span>处理评分、表决和利益冲突，最终结果由正式审定产生。</span></div>
+        <div class="hr09-step"><span class="hr09-step-no">5</span><strong>认定生效与复核</strong><span>认定结果保留有效期、依赖规则与证据，后续按期复核。</span></div>
+      </section>
+
+      <section class="hr09-split">
+        <div class="hr09-card">
+          <div class="hr09-card-head"><div><h2>近期资格证书</h2><p>优先关注核验状态和有效期，不展示证号明文。</p></div><span class="hr09-count-chip">最多显示 30 条</span></div>
+          <div class="hr09-table-wrap">
+            {% if credential_rows %}
+              <table class="hr09-table">
+                <thead><tr><th>教职工</th><th>资格证书</th><th>核验状态</th><th>有效期至</th><th>证号</th></tr></thead>
+                <tbody>
+                  {% for row in credential_rows|slice:":10" %}
+                    <tr>
+                      <td><span class="hr09-primary-text">{{ row.person }}</span></td>
+                      <td><span class="hr09-primary-text">{{ row.name }}</span><span class="hr09-secondary-text">{{ row.issuer }}</span></td>
+                      <td><span class="hr09-pill {% if row.verify == '已核验' %}hr09-pill--success{% elif row.verify == '核验中' or row.verify == '待核验' %}hr09-pill--warning{% endif %}">{{ row.verify }}</span></td>
+                      <td class="hr09-mono">{% if row.valid_to %}{{ row.valid_to|date:"Y-m-d" }}{% else %}长期/未设置{% endif %}{% if row.is_expiring %}<span class="hr09-secondary-text" style="color:#a15c09">90 天内到期</span>{% endif %}</td>
+                      <td class="hr09-mono">{{ row.masked_no|default:"—" }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            {% else %}<div class="hr09-empty"><strong>当前学校暂无资格证书记录</strong>这是 Authority 数据的真实空状态。</div>{% endif %}
+          </div>
+        </div>
+        <aside class="hr09-card">
+          <div class="hr09-card-head"><div><h2>判断口径</h2><p>避免老师把几个相近概念混在一起。</p></div></div>
+          <div class="hr09-side-list">
+            <div class="hr09-side-item"><strong>有证书 ≠ 证书已核验</strong><span>证书必须经过权威来源或人工原件核验后，才能作为关键业务判断依据。</span></div>
+            <div class="hr09-side-item"><strong>证书有效 ≠ 双师认定有效</strong><span>双师认定还依赖批次规则、企业实践、教学能力等证据。</span></div>
+            <div class="hr09-side-item"><strong>退回补正 ≠ 认定不通过</strong><span>材料缺失可退回补齐；正式不通过必须保留评审与审定依据。</span></div>
+            <div class="hr09-side-item"><strong>旧认定不能原地升级</strong><span>升级后保留旧认定历史，新认定作为新的正式结果生效。</span></div>
+          </div>
+        </aside>
+      </section>
+
+    {% elif section == 'credentials' %}
+      <section class="hr09-card">
+        <div class="hr09-card-head"><div><h2>资格证书台账</h2><p>按人员查看证书、签发机构、核验结论、有效期和风险。证号只显示掩码。</p></div><span class="hr09-count-chip">当前最多显示 30 条</span></div>
+        <div class="hr09-table-wrap">
+          {% if credential_rows %}
+            <table class="hr09-table">
+              <thead><tr><th>教职工</th><th>资格证书</th><th>签发机构</th><th>业务状态</th><th>核验状态</th><th>有效期至</th><th>证号</th></tr></thead>
+              <tbody>{% for row in credential_rows %}<tr>
+                <td><span class="hr09-primary-text">{{ row.person }}</span></td>
+                <td><span class="hr09-primary-text">{{ row.name }}</span></td>
+                <td>{{ row.issuer }}</td>
+                <td><span class="hr09-pill {% if row.status == '有效' %}hr09-pill--success{% elif row.status == '已过期' or row.status == '已撤销' or row.status == '无效' %}hr09-pill--danger{% endif %}">{{ row.status }}</span></td>
+                <td><span class="hr09-pill {% if row.verify == '已核验' %}hr09-pill--success{% elif row.verify == '待核验' or row.verify == '核验中' or row.verify == '需人工复核' %}hr09-pill--warning{% endif %}">{{ row.verify }}</span></td>
+                <td class="hr09-mono">{% if row.valid_to %}{{ row.valid_to|date:"Y-m-d" }}{% else %}长期/未设置{% endif %}{% if row.is_expiring %}<span class="hr09-secondary-text" style="color:#a15c09">即将到期</span>{% endif %}</td>
+                <td class="hr09-mono">{{ row.masked_no|default:"—" }}</td>
+              </tr>{% endfor %}</tbody>
+            </table>
+          {% else %}<div class="hr09-empty"><strong>暂无资格证书记录</strong>新录入、迁移或核验后的资格事实会出现在这里。</div>{% endif %}
+        </div>
+      </section>
+
+    {% elif section == 'batches' %}
+      <section class="hr09-card">
+        <div class="hr09-card-head"><div><h2>双师认定批次</h2><p>一个批次冻结一套认定规则、申报窗口和可申报层级，避免评审过程中口径变化。</p></div><span class="hr09-count-chip">最多显示 20 个批次</span></div>
+        <div class="hr09-table-wrap">
+          {% if batch_rows %}
+            <table class="hr09-table">
+              <thead><tr><th>批次</th><th>学年</th><th>申报时间</th><th>可申报层级</th><th>当前状态</th></tr></thead>
+              <tbody>{% for row in batch_rows %}<tr>
+                <td><span class="hr09-primary-text">{{ row.name }}</span><span class="hr09-secondary-text">{{ row.no }}</span></td>
+                <td>{{ row.year }}</td>
+                <td class="hr09-mono">{% if row.start %}{{ row.start|date:"Y-m-d" }}{% else %}—{% endif %} 至 {% if row.end %}{{ row.end|date:"Y-m-d" }}{% else %}—{% endif %}</td>
+                <td>{% if row.target_levels %}{{ row.target_levels|join:"、" }}{% else %}按规则配置{% endif %}</td>
+                <td><span class="hr09-pill hr09-pill--info">{{ row.status }}</span></td>
+              </tr>{% endfor %}</tbody>
+            </table>
+          {% else %}<div class="hr09-empty"><strong>暂无双师认定批次</strong>没有批次时不会制造“进行中认定”数据。</div>{% endif %}
+        </div>
+      </section>
+
+    {% elif section == 'applications' %}
+      <section class="hr09-card">
+        <div class="hr09-card-head"><div><h2>双师申报审核</h2><p>按批次、人员、申报层级和真实审核状态查看；退回补正与正式不通过分开显示。</p></div><span class="hr09-count-chip">最多显示 30 份</span></div>
+        <div class="hr09-table-wrap">
+          {% if application_rows %}
+            <table class="hr09-table">
+              <thead><tr><th>申请人</th><th>申报批次</th><th>目标层级</th><th>申报路线</th><th>提交时间</th><th>当前状态</th></tr></thead>
+              <tbody>{% for row in application_rows %}<tr>
+                <td><span class="hr09-primary-text">{{ row.person }}</span><span class="hr09-secondary-text">{{ row.no }}</span></td>
+                <td>{{ row.batch }}</td>
+                <td>{{ row.level }}</td>
+                <td>{{ row.route }}</td>
+                <td class="hr09-mono">{% if row.submitted_at %}{{ row.submitted_at|date:"Y-m-d H:i" }}{% else %}尚未提交{% endif %}</td>
+                <td><span class="hr09-pill {% if row.status == '退回补正' %}hr09-pill--warning{% elif row.status == '认定通过' %}hr09-pill--success{% elif row.status == '未通过认定' %}hr09-pill--danger{% else %}hr09-pill--info{% endif %}">{{ row.status }}</span></td>
+              </tr>{% endfor %}</tbody>
+            </table>
+          {% else %}<div class="hr09-empty"><strong>当前没有双师申报记录</strong>申报必须来自真实认定批次，不会创建演示申请。</div>{% endif %}
+        </div>
+      </section>
+
+    {% elif section == 'recognitions' %}
+      <section class="hr09-card">
+        <div class="hr09-card-head"><div><h2>双师认定结果</h2><p>认定结果按历史版本保存；升级、暂停、撤销和复核不会抹掉旧记录。</p></div><span class="hr09-count-chip">最多显示 30 条</span></div>
+        <div class="hr09-table-wrap">
+          {% if recognition_rows %}
+            <table class="hr09-table">
+              <thead><tr><th>教职工</th><th>认定层级</th><th>认定编号</th><th>生效区间</th><th>下次复核</th><th>认定机构</th><th>状态</th></tr></thead>
+              <tbody>{% for row in recognition_rows %}<tr>
+                <td><span class="hr09-primary-text">{{ row.person }}</span></td>
+                <td>{{ row.level }}</td>
+                <td class="hr09-mono">{{ row.no }}</td>
+                <td class="hr09-mono">{{ row.effective_from|date:"Y-m-d" }} 至 {% if row.effective_to %}{{ row.effective_to|date:"Y-m-d" }}{% else %}长期/待复核{% endif %}</td>
+                <td class="hr09-mono">{% if row.review_due_at %}{{ row.review_due_at|date:"Y-m-d" }}{% else %}未设置{% endif %}{% if row.review_due_soon %}<span class="hr09-secondary-text" style="color:#a15c09">90 天内需关注</span>{% endif %}</td>
+                <td>{{ row.authority }}</td>
+                <td><span class="hr09-pill {% if row.status == '有效' %}hr09-pill--success{% elif row.status == '到期复核' or row.status == '复核中' %}hr09-pill--warning{% elif row.status == '已撤销' or row.status == '无效' %}hr09-pill--danger{% endif %}">{{ row.status }}</span></td>
+              </tr>{% endfor %}</tbody>
+            </table>
+          {% else %}<div class="hr09-empty"><strong>暂无正式双师认定结果</strong>只有完成正式审定并生成 Authority 结果后才会出现在这里。</div>{% endif %}
+        </div>
+      </section>
+
+    {% elif section == 'risks' %}
+      <section class="hr09-card">
+        <div class="hr09-card-head"><div><h2>资格风险中心</h2><p>把证书缺失、未核验、到期、撤销、材料缺失和双师证据失效集中闭环处理。</p></div><span class="hr09-count-chip">最多显示 30 条</span></div>
+        <div class="hr09-table-wrap">
+          {% if risk_rows %}
+            <table class="hr09-table">
+              <thead><tr><th>涉及人员</th><th>风险</th><th>严重度</th><th>责任人</th><th>要求完成时间</th><th>状态</th></tr></thead>
+              <tbody>{% for row in risk_rows %}<tr>
+                <td><span class="hr09-primary-text">{{ row.person }}</span></td>
+                <td>{{ row.risk }}</td>
+                <td><span class="hr09-pill {% if row.severity == '严重' or row.severity == '高' %}hr09-pill--danger{% elif row.severity == '中' %}hr09-pill--warning{% endif %}">{{ row.severity }}</span></td>
+                <td>{{ row.owner }}</td>
+                <td class="hr09-mono">{% if row.due_at %}{{ row.due_at|date:"Y-m-d" }}{% else %}未设置{% endif %}</td>
+                <td><span class="hr09-pill {% if row.status == '已解决' or row.status == '已关闭' %}hr09-pill--success{% elif row.status == '待处理' %}hr09-pill--danger{% else %}hr09-pill--warning{% endif %}">{{ row.status }}</span></td>
+              </tr>{% endfor %}</tbody>
+            </table>
+          {% else %}<div class="hr09-empty"><strong>当前没有资格风险记录</strong>风险中心只展示真实风险案例，不根据空数据自动判定“0 风险”。</div>{% endif %}
+        </div>
+      </section>
+    {% endif %}
+
+    <div class="hr09-truth"><strong>数据边界：</strong>本工作区直接读取当前学校 HR09 Authority 模型，并按当前登录账号权限进入；旧的 query-param tenant API 仍在单独做安全收口，因此本页暂不调用那些接口。</div>
+  {% endif %}
+</div>
+{% endblock %}

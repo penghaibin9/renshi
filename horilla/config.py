@@ -31,56 +31,68 @@ ALL_MENUS = {}
 def sidebar(request):
 
     base_dir_apps = get_apps_in_base_dir()
+    user = getattr(request, "user", None)
 
-    if not request.user.is_anonymous:
-        request.MENUS = []
-        MENUS = request.MENUS
+    # Normal Django requests get user/session from middleware. Direct view
+    # calls (management commands and focused RequestFactory tests) may not.
+    # A context processor should degrade to an empty sidebar instead of making
+    # template rendering crash merely because middleware was intentionally
+    # bypassed.
+    if user is None or user.is_anonymous:
+        return []
 
-        for app in base_dir_apps:
-            if apps.is_installed(app):
-                try:
-                    sidebar = importlib.import_module(app + ".sidebar")
+    request.MENUS = []
+    MENUS = request.MENUS
 
-                except Exception as e:
-                    logger.error(e)
-                    continue
+    for app in base_dir_apps:
+        if apps.is_installed(app):
+            try:
+                sidebar = importlib.import_module(app + ".sidebar")
 
-                if sidebar:
-                    accessibility = None
-                    if getattr(sidebar, "ACCESSIBILITY", None):
-                        accessibility = import_method(sidebar.ACCESSIBILITY)
+            except Exception as e:
+                logger.error(e)
+                continue
 
-                    if hasattr(sidebar, "MENU") and (
-                        not accessibility
-                        or accessibility(
+            if sidebar:
+                accessibility = None
+                if getattr(sidebar, "ACCESSIBILITY", None):
+                    accessibility = import_method(sidebar.ACCESSIBILITY)
+
+                if hasattr(sidebar, "MENU") and (
+                    not accessibility
+                    or accessibility(
+                        request,
+                        sidebar.MENU,
+                        PermWrapper(user),
+                    )
+                ):
+                    MENU = {}
+                    MENU["menu"] = sidebar.MENU
+                    MENU["app"] = app
+                    MENU["img_src"] = sidebar.IMG_SRC
+                    MENU["submenu"] = []
+                    MENUS.append(MENU)
+                    for submenu in sidebar.SUBMENUS:
+
+                        accessibility = None
+
+                        if submenu.get("accessibility"):
+                            accessibility = import_method(submenu["accessibility"])
+                        redirect: str = submenu["redirect"]
+                        redirect = redirect.split("?")
+                        submenu["redirect"] = redirect[0]
+
+                        if not accessibility or accessibility(
                             request,
-                            sidebar.MENU,
-                            PermWrapper(request.user),
-                        )
-                    ):
-                        MENU = {}
-                        MENU["menu"] = sidebar.MENU
-                        MENU["app"] = app
-                        MENU["img_src"] = sidebar.IMG_SRC
-                        MENU["submenu"] = []
-                        MENUS.append(MENU)
-                        for submenu in sidebar.SUBMENUS:
+                            submenu,
+                            PermWrapper(user),
+                        ):
+                            MENU["submenu"].append(submenu)
 
-                            accessibility = None
-
-                            if submenu.get("accessibility"):
-                                accessibility = import_method(submenu["accessibility"])
-                            redirect: str = submenu["redirect"]
-                            redirect = redirect.split("?")
-                            submenu["redirect"] = redirect[0]
-
-                            if not accessibility or accessibility(
-                                request,
-                                submenu,
-                                PermWrapper(request.user),
-                            ):
-                                MENU["submenu"].append(submenu)
-        ALL_MENUS[request.session.session_key] = MENUS
+    session = getattr(request, "session", None)
+    if session is not None:
+        ALL_MENUS[session.session_key] = MENUS
+    return MENUS
 
 
 def get_MENUS(request):
@@ -88,9 +100,16 @@ def get_MENUS(request):
     cached = getattr(request, "_horilla_menus", None)
     if cached is not None:
         return {"sidebar": cached}
-    ALL_MENUS[request.session.session_key] = []
-    sidebar(request)
-    menus = ALL_MENUS.get(request.session.session_key)
+
+    session = getattr(request, "session", None)
+    if session is not None:
+        ALL_MENUS[session.session_key] = []
+
+    menus = sidebar(request)
+    if session is not None:
+        menus = ALL_MENUS.get(session.session_key, menus)
+
+    menus = menus or []
     request._horilla_menus = menus
     return {"sidebar": menus}
 

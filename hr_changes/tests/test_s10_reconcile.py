@@ -1,30 +1,33 @@
 """S10/S11/S12 契约测试：对账/授权模式切换。"""
 
 from datetime import date
-from unittest import mock
 
 from django.test import TestCase
 
+from base.models import Department, JobPosition
+from employee.models import Employee, EmployeeWorkInformation
+from horilla.horilla_middlewares import tenant_context
 from hr_changes.jobs.reconcile_projection import reconcile_staff_projection, run_reconcile
 from hr_changes.models import HrChangeAuthorityMode
-from hr_changes.services.authority_mode_service import (
-    AuthorityModeError,
-    AuthorityModeService,
-)
-from hr_changes.tests.factories import make_org, make_person
+from hr_changes.services.authority_mode_service import AuthorityModeError, AuthorityModeService
+from hr_changes.tests.factories import make_catalog_version, make_org, make_person
 from hr_staff.services.assignment_service import AssignmentService
 from hr_staff.services.employment_service import EmploymentService
 from hr_staff.services.staff_master_service import StaffMasterService
 from hr_structure.models import HrPosition
-from hr_changes.tests.factories import make_catalog_version
-from employee.models import Employee, EmployeeWorkInformation
-from base.models import Department, JobPosition
 
 TENANT = 1
 
 
 class ReconcileProjectionTests(TestCase):
     def setUp(self):
+        # Reconcile is a background/job boundary. Establish the tenant explicitly
+        # and clear any request user that a previous web-oriented test may have
+        # installed in the ContextVar-backed Horilla request context.
+        self._tenant_ctx = tenant_context(TENANT)
+        self._tenant_ctx.__enter__()
+        self.addCleanup(self._tenant_ctx.__exit__, None, None, None)
+
         self.department = Department.objects.create(department="JSXY")
         self.job_position = JobPosition.objects.create(
             job_position="AI-P300", department_id=self.department

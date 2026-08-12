@@ -36,7 +36,7 @@ CORE_HR_APPS = [
     "hr_recruitment",  # HR04
     "hr_onboarding",  # HR05
     "hr_changes",  # HR06
-    "hr_contracts",  # HR07
+    "hr_contracts",  # HR07 (currently recovery/acceptance workstream)
     "hr_external",  # HR08
     "hr_qualification",  # HR09
     "hr10_development",  # HR10
@@ -62,7 +62,8 @@ for _app in CANONICAL_HR_APPS:
         INSTALLED_APPS.append(_app)  # noqa: F405
 
 # PATCH-00 / takeover contract: MySQL is the one signing database for dev,
-# CI, migrations and production. Failing here is intentional.
+# CI, migrations and production. Failing here is intentional: a developer must
+# not unknowingly run the HR system on SQLite/PostgreSQL and call it accepted.
 _db = DATABASES.get("default", {})  # noqa: F405
 _engine = _db.get("ENGINE", "")
 if _engine != "django.db.backends.mysql":

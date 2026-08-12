@@ -64,22 +64,36 @@ class AccessibilityTest(TestCase):
 
 
 class PerformanceTargetTest(TestCase):
+    @staticmethod
+    def _indexed_fields(model):
+        return [tuple(index.fields) for index in model._meta.indexes]
+
     def test_policy_resolve_uses_indexed_fields(self):
         from hr_assessment.models.policy import HrAssessmentPolicyVersion
-        indexes = [idx.name for idx in HrAssessmentPolicyVersion._meta.indexes]
-        self.assertTrue(any("status" in name for name in indexes))
+        indexes = self._indexed_fields(HrAssessmentPolicyVersion)
+        self.assertTrue(any("status" in fields for fields in indexes))
 
     def test_case_query_uses_indexed_fields(self):
         from hr_assessment.models.case import HrAssessmentCase
-        indexes = [idx.name for idx in HrAssessmentCase._meta.indexes]
-        self.assertTrue(any("staff_id" in name for name in indexes))
+        indexes = self._indexed_fields(HrAssessmentCase)
+        self.assertTrue(any("staff_id" in fields for fields in indexes))
 
     def test_result_ledger_uses_indexed_fields(self):
         from hr_assessment.models.result import HrFinalAssessmentResult
-        indexes = [idx.name for idx in HrFinalAssessmentResult._meta.indexes]
-        self.assertTrue(any("status" in name for name in indexes))
+        indexes = self._indexed_fields(HrFinalAssessmentResult)
+        self.assertTrue(any("status" in fields for fields in indexes))
 
     def test_population_uses_cycle_staff_unique(self):
         from hr_assessment.models.cycle import HrAssessmentPopulationSnapshot
-        constraints = HrAssessmentPopulationSnapshot._meta.constraints
-        self.assertGreater(len(constraints), 0)
+
+        meta = HrAssessmentPopulationSnapshot._meta
+        constraint_fields = {
+            tuple(constraint.fields)
+            for constraint in meta.constraints
+            if getattr(constraint, "fields", None)
+        }
+        legacy_unique = {tuple(fields) for fields in meta.unique_together}
+        self.assertTrue(
+            ("cycle", "staff_id") in constraint_fields
+            or ("cycle", "staff_id") in legacy_unique
+        )
