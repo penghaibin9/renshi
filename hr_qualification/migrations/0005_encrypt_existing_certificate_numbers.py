@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 from django.db import migrations
 
@@ -21,9 +21,18 @@ def encrypt_existing(apps, schema_editor):
         if not row.certificate_no_cipher:
             continue
         raw = bytes(row.certificate_no_cipher)
+        tenant_fernet = _fernet(row.tenant_id)
         if raw.startswith(b"gAAAA"):
-            continue
-        row.certificate_no_cipher = _fernet(row.tenant_id).encrypt(raw)
+            # Do not trust the Fernet-looking prefix by itself. Legacy plaintext
+            # can start with the same characters; skip only authenticated tokens
+            # that are already decryptable with this tenant's key.
+            try:
+                tenant_fernet.decrypt(raw)
+            except InvalidToken:
+                pass
+            else:
+                continue
+        row.certificate_no_cipher = tenant_fernet.encrypt(raw)
         row.save(update_fields=["certificate_no_cipher"])
 
 
