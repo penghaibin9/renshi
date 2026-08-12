@@ -41,6 +41,26 @@ class CertificateEncryptionRegressionTests(TestCase):
         self.assertTrue(is_encrypted_certificate_no(stored))
         self.assertEqual(decrypt_certificate_no(1, stored), raw_no)
 
+    def test_fernet_prefix_plaintext_cannot_bypass_encryption(self):
+        # Fernet tokens normally start with gAAAA, but a real certificate number
+        # may also start with those characters. Prefix-only detection must never
+        # allow such plaintext to be stored as if it were authenticated ciphertext.
+        raw_no = "gAAAA-PLAINTEXT-CERT-2026"
+        item = HrPersonCredential.objects.create(
+            tenant_id=1,
+            person_id=self.person,
+            catalog_item_id=self.catalog,
+            credential_name_snapshot=self.catalog.name,
+            certificate_no_cipher=raw_no.encode("utf-8"),
+            certificate_no_hash=hashlib.sha256(raw_no.encode()).hexdigest(),
+            issuer_name="Issuer",
+        )
+        item.refresh_from_db()
+
+        stored = bytes(item.certificate_no_cipher)
+        self.assertNotEqual(stored, raw_no.encode("utf-8"))
+        self.assertEqual(decrypt_certificate_no(1, stored), raw_no)
+
     def test_ciphertext_is_tenant_bound(self):
         raw_no = "CERT-998877"
         item = HrPersonCredential.objects.create(
