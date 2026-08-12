@@ -91,9 +91,9 @@ _ALLOWED_TRANSITIONS = {
 @dataclass
 class EngagementCreateInput:
     tenant_id: int
-    person_id
-    profile_id
-    category_id
+    person_id: object
+    profile_id: object
+    category_id: object
     host_organization_id: int
     start_at: date
     end_at: Optional[date] = None

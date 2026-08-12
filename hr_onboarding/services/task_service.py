@@ -35,6 +35,67 @@ class TaskService:
         self.actor_user_id = actor_user_id
 
     # ------------------------------------------------------------------
+    # 模板 DAG 校验
+    # ------------------------------------------------------------------
+    def validate_no_cycles(self, template_version_id) -> None:
+        """校验一个模板版本的任务依赖图必须是闭合 DAG。
+
+        依赖只允许引用同 tenant、同 template_version 下的任务 code。检测到
+        不存在的前置任务或任意环（自环/互环/长环）均 fail-closed，避免模板
+        被激活后出现永远无法完成的 onboarding task chain。
+        """
+        definitions = list(
+            HrOnboardingTaskDefinition.objects.filter(
+                tenant_id=self.tenant_id,
+                template_version_id=template_version_id,
+            ).only("code", "prerequisite_codes")
+        )
+        graph = {
+            definition.code: list(definition.prerequisite_codes or [])
+            for definition in definitions
+        }
+
+        unknown = sorted(
+            {
+                prerequisite
+                for prerequisites in graph.values()
+                for prerequisite in prerequisites
+                if prerequisite not in graph
+            }
+        )
+        if unknown:
+            raise TaskPrerequisiteNotMetError(
+                f"前置任务不存在: {unknown}",
+                details={"missingDefinitions": unknown},
+            )
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+        path: list[str] = []
+
+        def visit(code: str) -> None:
+            if code in visited:
+                return
+            if code in visiting:
+                start = path.index(code) if code in path else 0
+                cycle = path[start:] + [code]
+                raise TaskPrerequisiteNotMetError(
+                    f"任务前置关系存在环: {' -> '.join(cycle)}",
+                    details={"cycle": cycle},
+                )
+
+            visiting.add(code)
+            path.append(code)
+            for prerequisite in graph[code]:
+                visit(prerequisite)
+            path.pop()
+            visiting.remove(code)
+            visited.add(code)
+
+        for code in graph:
+            visit(code)
+
+    # ------------------------------------------------------------------
     # 实例化
     # ------------------------------------------------------------------
     @transaction.atomic
@@ -42,6 +103,7 @@ class TaskService:
         """按 case.template_version 的任务定义实例化（幂等）。返回新建数。"""
         if case.template_version is None:
             return 0
+        self.validate_no_cycles(case.template_version_id)
         created = 0
         definitions = HrOnboardingTaskDefinition.objects.filter(
             tenant_id=self.tenant_id, template_version=case.template_version
@@ -77,6 +139,7 @@ class TaskService:
         missing = []
         for code in prereq_codes:
             dep = HrOnboardingTaskInstance.objects.filter(
+                tenant_id=self.tenant_id,
                 case=instance.case,
                 definition__code=code,
                 cycle=instance.cycle,
@@ -89,11 +152,35 @@ class TaskService:
                 details={"missing": missing},
             )
 
+    def _promote_ready_if_possible(
+        self, instance: HrOnboardingTaskInstance
+    ) -> HrOnboardingTaskInstance:
+        """Resolve NOT_STARTED lazily once prerequisites are satisfied.
+
+        Instances intentionally start as NOT_STARTED. The first actionable
+        operation may therefore need to pass through READY before entering the
+        public action state. Keeping that promotion inside the service avoids
+        weakening the state machine with direct NOT_STARTED -> action edges.
+        """
+        if instance.status != TaskStatus.NOT_STARTED:
+            return instance
+        self._check_prerequisites(instance)
+        assert_task_transition(instance.status, TaskStatus.READY)
+        instance.status = TaskStatus.READY
+        instance.version += 1
+        instance.save(update_fields=["status", "version", "updated_at"])
+        return instance
+
     @transaction.atomic
     def start_task(self, instance: HrOnboardingTaskInstance) -> HrOnboardingTaskInstance:
-        instance = HrOnboardingTaskInstance.objects.select_for_update().get(id=instance.id)
+        instance = HrOnboardingTaskInstance.objects.select_for_update().get(
+            tenant_id=self.tenant_id,
+            id=instance.id,
+        )
         if instance.status == TaskStatus.COMPLETED:
             raise TaskAlreadyCompletedError("任务已完成")
+        instance = self._promote_ready_if_possible(instance)
+        self._check_prerequisites(instance)
         assert_task_transition(instance.status, TaskStatus.IN_PROGRESS)
         instance.status = TaskStatus.IN_PROGRESS
         instance.started_at = timezone.now()
@@ -109,7 +196,10 @@ class TaskService:
         note: str = "",
         evidence: Optional[dict] = None,
     ) -> HrOnboardingTaskInstance:
-        instance = HrOnboardingTaskInstance.objects.select_for_update().get(id=instance.id)
+        instance = HrOnboardingTaskInstance.objects.select_for_update().get(
+            tenant_id=self.tenant_id,
+            id=instance.id,
+        )
         self._check_prerequisites(instance)
         if instance.status == TaskStatus.COMPLETED:
             raise TaskAlreadyCompletedError("任务已完成")
@@ -130,11 +220,15 @@ class TaskService:
 
     @transaction.atomic
     def waive_task(self, instance: HrOnboardingTaskInstance, *, reason: str) -> HrOnboardingTaskInstance:
-        instance = HrOnboardingTaskInstance.objects.select_for_update().get(id=instance.id)
+        instance = HrOnboardingTaskInstance.objects.select_for_update().get(
+            tenant_id=self.tenant_id,
+            id=instance.id,
+        )
         if not reason:
             raise Hr05ApiError("豁免必须填写 reason（WAIVED 语义：reason+authority+audit）")
         if instance.status == TaskStatus.COMPLETED:
             raise TaskAlreadyCompletedError("任务已完成")
+        instance = self._promote_ready_if_possible(instance)
         assert_task_transition(instance.status, TaskStatus.WAIVED)
         instance.status = TaskStatus.WAIVED
         instance.completion_payload = {

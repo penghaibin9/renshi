@@ -1,37 +1,55 @@
 """S10/S11/S12 契约测试：对账/授权模式切换。"""
 
 from datetime import date
-from unittest import mock
 
 from django.test import TestCase
 
+from base.models import Company, Department, JobPosition
+from employee.models import Employee, EmployeeWorkInformation
+from horilla.horilla_middlewares import tenant_context
 from hr_changes.jobs.reconcile_projection import reconcile_staff_projection, run_reconcile
 from hr_changes.models import HrChangeAuthorityMode
-from hr_changes.services.authority_mode_service import (
-    AuthorityModeError,
-    AuthorityModeService,
-)
-from hr_changes.tests.factories import make_org, make_person
+from hr_changes.services.authority_mode_service import AuthorityModeError, AuthorityModeService
+from hr_changes.tests.factories import make_catalog_version, make_org, make_person
 from hr_staff.services.assignment_service import AssignmentService
 from hr_staff.services.employment_service import EmploymentService
 from hr_staff.services.staff_master_service import StaffMasterService
 from hr_structure.models import HrPosition
-from hr_changes.tests.factories import make_catalog_version
-from employee.models import Employee, EmployeeWorkInformation
-from base.models import Department, JobPosition
 
 TENANT = 1
 
 
 class ReconcileProjectionTests(TestCase):
     def setUp(self):
+        # Reconcile is a background/job boundary. Establish the tenant explicitly
+        # and clear any request user that a previous web-oriented test may have
+        # installed in the ContextVar-backed Horilla request context.
+        self._tenant_ctx = tenant_context(TENANT)
+        self._tenant_ctx.__enter__()
+        self.addCleanup(self._tenant_ctx.__exit__, None, None, None)
+
+        self.company = Company.objects.create(
+            id=TENANT,
+            company="HR06 对账测试大学",
+            hq=True,
+            address="测试路 6 号",
+            country="CN",
+            state="湖南",
+            city="长沙",
+            zip="410000",
+        )
         self.department = Department.objects.create(department="JSXY")
+        self.department.company_id.add(self.company)
         self.job_position = JobPosition.objects.create(
             job_position="AI-P300", department_id=self.department
         )
+        self.job_position.company_id.add(self.company)
         self.employee = Employee.objects.create(
             employee_first_name="张", employee_last_name="某某",
             email="hr06-rec@example.com", phone="13800000011", badge_id="R001",
+        )
+        EmployeeWorkInformation._base_manager.filter(employee_id=self.employee).update(
+            company_id_id=self.company.pk
         )
         self.staff = StaffMasterService().create_staff(
             tenant_id=TENANT, person_id=make_person(TENANT, "张某某"),
@@ -52,6 +70,7 @@ class ReconcileProjectionTests(TestCase):
             employment_relationship_id=self.rel, assignment_type="PRIMARY",
             effective_from=date(2024, 9, 1), organization_id=self.org,
             position_id=self.position,
+            source_business_type="MIGRATION_VERIFIED",
         )
 
     def test_reconcile_matched_after_projection(self):

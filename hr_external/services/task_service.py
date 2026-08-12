@@ -144,20 +144,25 @@ class TaskService:
         self._transition(task, ExternalTaskStatus.ASSIGNED)
 
     def accept(self, task: HrExternalServiceTask, action: str, reason: str = ""):
-        """Task Acceptance（§56）。拒绝不删除任务。"""
+        """Task Acceptance（§56）。拒绝不删除任务。
+
+        兼容早期客户端发出的 ``DECLINE_WITH_REASON``，落库始终规范化为
+        ``DECLINED_WITH_REASON``，避免线上旧客户端因枚举文字升级失效。
+        """
         if action == TaskAcceptance.ACCEPTED:
             task.acceptance = TaskAcceptance.ACCEPTED
             self._transition(task, ExternalTaskStatus.ACCEPTED)
         elif action == TaskAcceptance.REQUEST_CLARIFICATION:
             task.acceptance = TaskAcceptance.REQUEST_CLARIFICATION
             task.save(update_fields=["acceptance", "updated_at"])
-        elif action == TaskAcceptance.DECLINED_WITH_REASON:
+        elif action in (TaskAcceptance.DECLINED_WITH_REASON, "DECLINE_WITH_REASON"):
             task.acceptance = TaskAcceptance.DECLINED_WITH_REASON
             task.save(update_fields=["acceptance", "updated_at"])
 
     def start(self, task: HrExternalServiceTask):
-        if task.status == ExternalTaskStatus.ASSIGNED:
-            self._transition(task, ExternalTaskStatus.IN_PROGRESS)
+        # ASSIGNED 和 ACCEPTED 都是状态机允许的启动来源。之前只处理 ASSIGNED，
+        # 导致标准“先接受再开始”流程停在 ACCEPTED。
+        self._transition(task, ExternalTaskStatus.IN_PROGRESS)
 
     def submit(self, task: HrExternalServiceTask):
         self._transition(task, ExternalTaskStatus.SUBMITTED)
@@ -196,6 +201,15 @@ class TaskService:
             status="UPLOADED",
         )
 
+    @staticmethod
+    def _verified_total(eng: HrExternalEngagement, *, exclude_record_id=None):
+        records = eng.workload_records.filter(
+            verification_status=WorkloadVerificationStatus.VERIFIED
+        )
+        if exclude_record_id is not None:
+            records = records.exclude(id=exclude_record_id)
+        return sum((r.quantity for r in records), 0)
+
     @transaction.atomic
     def add_workload(
         self,
@@ -215,12 +229,10 @@ class TaskService:
         if eng is None:
             raise TaskOutsideEngagement("engagement not found in tenant")
 
-        # 工作量 cap 校验（§35/§121）
-        if eng.workload_cap is not None:
-            total = sum(
-                (r.quantity for r in eng.workload_records.all() if r.verification_status == "VERIFIED"),
-                0,
-            )
+        # cap 只约束“已核验的正式工作量”。未核验 staging 事实可以先录入，
+        # 但在学院核验转为 VERIFIED 时必须再次做同一硬门校验。
+        if verified and eng.workload_cap is not None:
+            total = self._verified_total(eng)
             if total + quantity > eng.workload_cap:
                 raise WorkloadOverCap("workload exceeds engagement cap")
 
@@ -243,10 +255,22 @@ class TaskService:
         )
         return record
 
+    @transaction.atomic
     def verify_workload(self, record: HrExternalWorkloadRecord, *, verified: bool, by=None):
-        """学院验证（§52）。VERIFIED 后不可原地改。"""
+        """学院验证（§52）。VERIFIED 后不可原地改，且正式工作量不得突破 cap。"""
+        record = HrExternalWorkloadRecord.objects.select_for_update().select_related(
+            "engagement_id"
+        ).get(id=record.id)
         if record.verification_status == WorkloadVerificationStatus.VERIFIED:
             raise TaskAlreadyFinalized("workload already verified")
+
+        if verified:
+            eng = record.engagement_id
+            if eng.workload_cap is not None:
+                total = self._verified_total(eng, exclude_record_id=record.id)
+                if total + record.quantity > eng.workload_cap:
+                    raise WorkloadOverCap("workload exceeds engagement cap")
+
         record.verification_status = (
             WorkloadVerificationStatus.VERIFIED if verified else WorkloadVerificationStatus.REJECTED
         )
@@ -264,6 +288,9 @@ class TaskService:
                 "updated_at",
             ]
         )
+        # 保持调用方实例与锁内权威实例一致，避免后续同一 request 读取陈旧状态。
+        record.refresh_from_db()
+        return record
 
     @transaction.atomic
     def build_settlement_basis(

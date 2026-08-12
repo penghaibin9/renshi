@@ -17,6 +17,7 @@ from hr_staff.tests.factories import make_org, make_person, make_staff
 
 User = get_user_model()
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx(scope_type="SCHOOL", as_of=None):
@@ -50,6 +51,7 @@ class StaffApiTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2026, 2, 1),
             organization_id=self.org,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def _get(self, path):

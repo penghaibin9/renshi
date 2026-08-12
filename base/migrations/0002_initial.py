@@ -1738,9 +1738,18 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.CASCADE, to="base.worktyperequest"
             ),
         ),
-        migrations.AlterUniqueTogether(
-            name="company",
-            unique_together={("company", "address")},
+        # MySQL cannot create an index directly on a TEXT column without a
+        # prefix length (error 1170). The project is MySQL-only, so keep the
+        # canonical Django migration state for legacy model compatibility while
+        # deliberately omitting this impossible database-level constraint.
+        migrations.SeparateDatabaseAndState(
+            database_operations=[],
+            state_operations=[
+                migrations.AlterUniqueTogether(
+                    name="company",
+                    unique_together={("company", "address")},
+                ),
+            ],
         ),
         migrations.AlterUniqueTogether(
             name="companyleaves",

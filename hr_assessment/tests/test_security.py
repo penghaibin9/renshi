@@ -46,7 +46,8 @@ class CollegeScopeTest(TestCase):
     def test_cases_filter_by_org_scope(self):
         """组织范围过滤：只返回指定 org 的数据"""
         tenant_id = 10001
-        from hr_assessment.models.case import HrAssessmentCycle, HrAssessmentCase
+        from hr_assessment.models.case import HrAssessmentCase
+        from hr_assessment.models.cycle import HrAssessmentCycle
         cycle = HrAssessmentCycle.objects.create(
             tenant_id=tenant_id, cycle_no="2026-ANNUAL-01", assessment_type="ANNUAL",
             name="2026年度", start_at="2026-01-01", end_at="2026-12-31",

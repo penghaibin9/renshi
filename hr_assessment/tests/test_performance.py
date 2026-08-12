@@ -4,6 +4,10 @@ from django.test import TestCase
 
 
 class PerformanceTargetTest(TestCase):
+    @staticmethod
+    def _indexed_fields(model):
+        return [tuple(index.fields) for index in model._meta.indexes]
+
     def test_policy_resolve_uses_orm_not_raw(self):
         from hr_assessment.service import PolicyVersionService
         svc = PolicyVersionService()
@@ -11,14 +15,13 @@ class PerformanceTargetTest(TestCase):
 
     def test_case_table_has_staff_id_index(self):
         from hr_assessment.models.case import HrAssessmentCase
-        meta = HrAssessmentCase._meta
-        indexes = [idx.name for idx in meta.indexes]
-        self.assertTrue(any("staff_id" in name for name in indexes))
+        indexes = self._indexed_fields(HrAssessmentCase)
+        self.assertTrue(any("staff_id" in fields for fields in indexes))
 
     def test_result_table_has_status_index(self):
         from hr_assessment.models.result import HrFinalAssessmentResult
-        indexes = [idx.name for idx in HrFinalAssessmentResult._meta.indexes]
-        self.assertTrue(any("status" in name for name in indexes))
+        indexes = self._indexed_fields(HrFinalAssessmentResult)
+        self.assertTrue(any("status" in fields for fields in indexes))
 
     def test_evidence_table_has_case_indicator_index(self):
         from hr_assessment.models.evidence import HrAssessmentEvidenceRef
@@ -27,8 +30,8 @@ class PerformanceTargetTest(TestCase):
 
     def test_cycle_table_has_type_status_index(self):
         from hr_assessment.models.cycle import HrAssessmentCycle
-        indexes = [idx.name for idx in HrAssessmentCycle._meta.indexes]
-        self.assertTrue(any("lifecycle_status" in name for name in indexes))
+        indexes = self._indexed_fields(HrAssessmentCycle)
+        self.assertTrue(any("lifecycle_status" in fields for fields in indexes))
 
     def test_async_job_status_enum_defined(self):
         from hr_assessment.constants import JobStatus

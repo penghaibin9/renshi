@@ -39,7 +39,10 @@ class ReportService:
         source: str = HrReportCheckin.Source.MANUAL,
         now: Optional[datetime] = None,
     ) -> HrReportCheckin:
-        case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
+        case = HrOnboardingCase.objects.select_for_update().get(
+            tenant_id=self.tenant_id,
+            id=case.id,
+        )
 
         # 报到是已发生事件：拒绝明显未来的实际报到时间。
         # now 由调用方（API 层按学校时区 context.now()）注入；缺省退化为服务器时间。
@@ -51,12 +54,14 @@ class ReportService:
 
         # 幂等：同 case 同实际报到时间已存在 → 返回原记录
         existing = HrReportCheckin.objects.filter(
-            case=case, actual_report_at=actual_report_at
+            tenant_id=self.tenant_id,
+            case=case,
+            actual_report_at=actual_report_at,
         ).first()
         if existing is not None:
             return existing
 
-        # 仅从可报到状态进入（REPORT_DELAYED 需先经 approve_delay 回到 READY_TO_REPORT）
+        # READY_TO_REPORT 表示可直接现场报到；REPORT_SCHEDULED 表示已排期后报到。
         if case.status not in (
             CaseStatus.READY_TO_REPORT,
             CaseStatus.REPORT_SCHEDULED,
