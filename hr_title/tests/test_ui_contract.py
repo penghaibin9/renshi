@@ -31,6 +31,7 @@ class Hr13UiContractTests(SimpleTestCase):
     def test_workspace_templates_compile(self):
         self.assertIsNotNone(get_template("hr_title/workspace.html"))
         self.assertIsNotNone(get_template("hr_title/workspace_d.html"))
+        self.assertIsNotNone(get_template("hr_title/workspace_e.html"))
 
     def test_mobile_runtime_initializes_horilla_canonical_closed_state(self):
         template = get_template("hr_title/workspace_d.html")
@@ -40,3 +41,12 @@ class Hr13UiContractTests(SimpleTestCase):
         self.assertIn("window.addEventListener('load', init", source)
         self.assertNotIn("style.display = 'none'", source)
         self.assertNotIn("shell.remove()", source)
+
+    def test_mobile_runtime_blocks_desktop_hover_reopen(self):
+        template = get_template("hr_title/workspace_e.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertIn("'toggle-clicked', 'oh-wrapper-main--closed'", source)
+        self.assertIn("event.stopImmediatePropagation()", source)
+        self.assertIn("sidebar.addEventListener('mouseover'", source)
+        self.assertIn("localStorage.setItem('sidebarOpen', 'false')", source)
+        self.assertNotIn("sidebar.style.display", source)
