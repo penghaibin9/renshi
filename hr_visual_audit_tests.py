@@ -147,10 +147,15 @@ class HrVisualAuditTests(StaticLiveServerTestCase):
             phone="13800000000",
             is_active=True,
         )
-        EmployeeWorkInformation.objects.create(
+        # Employee creation signals may already create the one-to-one work-info
+        # row. Reuse that real lifecycle record instead of manufacturing a
+        # duplicate test-only row.
+        work_info, _ = EmployeeWorkInformation.objects.get_or_create(
             employee_id=self.employee,
-            company_id=self.company,
         )
+        if work_info.company_id_id != self.company.pk:
+            work_info.company_id = self.company
+            work_info.save(update_fields=["company_id"])
         self._seed_self_identity_if_needed()
 
         client = Client()
