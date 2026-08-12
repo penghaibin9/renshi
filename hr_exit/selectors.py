@@ -17,6 +17,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         "summary": {
             "cases": cases.count(),
             "awaitingApproval": counts.get("SUBMITTED", 0),
+            "approved": counts.get("APPROVED", 0),
+            "returned": counts.get("RETURNED", 0),
+            "rejected": counts.get("REJECTED", 0),
             "handover": counts.get("HANDOVER", 0),
             "settlement": counts.get("SETTLEMENT", 0),
             "effectExceptions": effects.filter(status__in=["PARTIAL_FAILED", "FAILED"]).count(),
@@ -53,7 +56,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "effectSaga": True,
             "exitFact": True,
             "retirementFact": True,
-            "approvalWorkflow": False,
+            "approvalWorkflow": True,
             "handoverChecklist": False,
             "retirementPolicy": False,
             "retirementPrecheck": False,
