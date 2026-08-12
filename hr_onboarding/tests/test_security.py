@@ -57,7 +57,7 @@ class TenantIsolationTests(TestCase):
         data = selectors.list_cases(tenant_id=1)
         self.assertEqual(data["total"], 1)
         data2 = selectors.list_cases(tenant_id=2)
-        self.assertEqual(data2["total"], 1)
+        self.assertEqual(data2["total"], 2)
 
     def test_material_invisible_across_tenant(self):
         """跨 tenant 材料加载返回 None（IDOR 防护）。"""

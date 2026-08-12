@@ -85,12 +85,16 @@ class ImportService:
         """
         row_applier(row_data, checkpoint) → dict 或抛错（多表写在内部 atomic）。
         P2-3：外层不包大事务；每行独立 atomic + checkpoint 落库，进程崩溃可精确续跑。
+
+        返回的 failed 是整个导入作业的失败行总数：既包括 validate 阶段已经
+        判定无效的行，也包括 commit 阶段真实写入失败的有效行。否则一个“1 行
+        成功 + 1 行校验失败”的作业会被错误报告为 failed=0 / COMPLETED。
         """
         job.status = ImportJobStatus.COMMITTING
         job.save(update_fields=["status"])
 
         committed = 0
-        failed = 0
+        failed = job.rows.filter(is_valid=False).count()
         checkpoint = dict(job.checkpoint or {})
 
         valid_rows = list(job.rows.filter(is_valid=True).order_by("row_no"))
@@ -177,20 +181,27 @@ class StaffMasterRowApplier:
             source="MIGRATED",
         )
         effective_from = self._parse_date(row_data.get("effective_from")) or date.today()
+        source_business_id = (
+            f"import-row-{row_data.get('row_no', checkpoint.get('last_committed_row', 0))}"
+        )
         rel = EmploymentService(self.tenant_id).start_relationship(
             staff_id=staff,
             relationship_type=(row_data.get("relationship_type") or "REGULAR_EMPLOYMENT").strip(),
             effective_from=effective_from,
             source_business_type="MIGRATION_VERIFIED",
-            source_business_id=f"import-row-{row_data.get('row_no', checkpoint.get('last_committed_row', 0))}",
+            source_business_id=source_business_id,
         )
         legacy_dept = row_data.get("legacy_department_id")
-        AssignmentService(self.tenant_id).create_assignment(
+        AssignmentService(
+            self.tenant_id, audit_actor_user_id=self.actor_user_id
+        ).create_assignment(
             employment_relationship_id=rel,
             assignment_type=AssignmentType.PRIMARY,
             effective_from=effective_from,
             organization_id=None,
             legacy_department_id=int(legacy_dept) if legacy_dept else None,
+            source_business_type="MIGRATION_VERIFIED",
+            source_business_id=source_business_id,
         )
         return staff
 
@@ -198,11 +209,11 @@ class StaffMasterRowApplier:
     def _parse_date(value):
         if not value:
             return None
-        from datetime import date
+        from datetime import datetime
 
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
             try:
-                return date.strptime(str(value).strip(), fmt)
+                return datetime.strptime(str(value).strip(), fmt).date()
             except ValueError:
                 continue
         raise ValueError(f"无效日期: {value}")

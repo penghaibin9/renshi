@@ -17,7 +17,7 @@ from base.models import Company
 from employee.models import Employee, EmployeeWorkInformation
 from horilla_auth.models import HorillaUser
 
-HEALTH_URL = "/api/hr/v1/time/health"
+HEALTH_URL = "/api/v1/hr/time/health"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
@@ -57,7 +57,8 @@ class HrTimeS1TenantFailClosedTests(TestCase):
             email=cls.admin.email,
             phone="13800001111",
         )
-        EmployeeWorkInformation.objects.filter(employee_id=admin_emp).update(
+        # setUpTestData 阶段没有请求 tenant context；用 base manager 仅初始化夹具绑定。
+        EmployeeWorkInformation._base_manager.filter(employee_id=admin_emp).update(
             company_id_id=cls.company.pk,
         )
 
@@ -73,7 +74,7 @@ class HrTimeS1TenantFailClosedTests(TestCase):
             email=cls.plain_user.email,
             phone="13800002222",
         )
-        EmployeeWorkInformation.objects.filter(employee_id=plain_emp).update(
+        EmployeeWorkInformation._base_manager.filter(employee_id=plain_emp).update(
             company_id_id=cls.company.pk,
         )
 
@@ -160,8 +161,10 @@ class HrTimeS1TenantFailClosedTests(TestCase):
     # ── 权限（总册 §151）────────────────────────────────────────────
 
     def test_permission_denied_for_regular_user(self):
-        self._login_school()
+        # force_login 会轮换/重建 session；先完成登录，再建立学校上下文，
+        # 才能真正测试 permission gate，而不是被 tenant gate 提前拦截。
         self.client.force_login(self.plain_user)
+        self._login_school()
         resp = self.client.get(HEALTH_URL)
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["error"]["code"], "PERMISSION_DENIED")

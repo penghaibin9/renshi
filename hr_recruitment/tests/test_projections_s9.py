@@ -12,6 +12,7 @@ from datetime import date
 from django.test import TestCase
 
 from base.models import Company, Department, JobPosition
+from horilla.horilla_middlewares import tenant_context
 
 from hr_recruitment.projections.horilla_candidate import project_candidate
 from hr_recruitment.projections.horilla_recruitment import project_recruitment_to_campaign
@@ -24,7 +25,11 @@ class HorillaRecruitmentProjectionTests(TestCase):
     def setUp(self):
         from recruitment.models import Recruitment
 
+        self._tenant_ctx = tenant_context(TENANT)
+        self._tenant_ctx.__enter__()
+        self.addCleanup(self._tenant_ctx.__exit__, None, None, None)
         self.company = Company.objects.create(
+            id=TENANT,
             company="测试大学", hq=True, address="x", country="CN", state="S", city="C", zip="1"
         )
         self.dept = Department.objects.create(department="计算机学院")
