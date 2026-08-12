@@ -1,6 +1,7 @@
+import uuid
 from decimal import Decimal
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from hr_payroll.models import PayrollPeriod, PayrollProfile, PayrollResultFact
 
@@ -30,3 +31,46 @@ class Hr15ModelContractTests(SimpleTestCase):
         )
         with self.assertRaisesRegex(ValueError, "tenant_id is required"):
             period.save()
+
+
+class Hr15FinalFactImmutabilityTests(TestCase):
+    def _draft_fact(self):
+        return PayrollResultFact.objects.create(
+            tenant_id=1,
+            result_no="PAY-202608-T001",
+            payroll_period_id=uuid.uuid4(),
+            staff_id=uuid.uuid4(),
+            currency_code="CNY",
+            gross_amount=Decimal("10000.00"),
+            deduction_amount=Decimal("2000.00"),
+            net_amount=Decimal("8000.00"),
+            status=PayrollResultFact.Status.DRAFT,
+        )
+
+    def test_draft_can_cross_finalization_boundary_once(self):
+        fact = self._draft_fact()
+        fact.status = PayrollResultFact.Status.FINALIZED
+        fact.save(update_fields=["status", "updated_at"])
+        fact.refresh_from_db()
+        self.assertEqual(fact.status, PayrollResultFact.Status.FINALIZED)
+
+    def test_finalized_fact_amount_cannot_be_overwritten(self):
+        fact = self._draft_fact()
+        fact.status = PayrollResultFact.Status.FINALIZED
+        fact.save(update_fields=["status", "updated_at"])
+
+        fact.net_amount = Decimal("7999.99")
+        with self.assertRaisesRegex(ValueError, "PAYROLL_FINAL_RESULT_IMMUTABLE"):
+            fact.save(update_fields=["net_amount", "updated_at"])
+
+        persisted = PayrollResultFact.objects.get(pk=fact.pk)
+        self.assertEqual(persisted.net_amount, Decimal("8000.00"))
+
+    def test_finalized_fact_cannot_be_relabelled_as_adjusted(self):
+        fact = self._draft_fact()
+        fact.status = PayrollResultFact.Status.FINALIZED
+        fact.save(update_fields=["status", "updated_at"])
+
+        fact.status = PayrollResultFact.Status.ADJUSTED
+        with self.assertRaisesRegex(ValueError, "PAYROLL_FINAL_RESULT_IMMUTABLE"):
+            fact.save(update_fields=["status", "updated_at"])
