@@ -1,12 +1,9 @@
 """HR13 title evaluation authority models.
 
-The first slice intentionally owns only three facts:
-- frozen policy versions,
-- title application cases,
-- effective title result facts.
-
-Expert reviews, evidence, publicity and appeal tables will attach to these
-roots; they must not replace them or write HR03/HR14/HR15 authority directly.
+HR13 owns the frozen evaluation policy, application workflow, evidence snapshots
+used by the review, and formal title result history.  Upstream HR03/09/10/12
+facts are referenced through provider metadata and copied only as review-time
+snapshots; HR13 never becomes their source of truth.
 """
 
 from __future__ import annotations
@@ -77,6 +74,87 @@ class TitleApplicationCase(HrTenantScopedModel):
             models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr13_case_tenant_person"),
             models.Index(fields=("tenant_id", "batch_no", "status"), name="idx_hr13_case_tenant_batch"),
         ]
+
+
+class TitleMaterialSnapshot(HrTenantScopedModel):
+    """Immutable review-time evidence snapshot for one title application.
+
+    ``source_domain``/``source_ref`` point back to the upstream provider fact;
+    ``snapshot_json`` and ``content_hash`` preserve exactly what reviewers saw.
+    HR13 does not edit the upstream authority record through this model.
+    """
+
+    class Status(models.TextChoices):
+        ATTACHED = "ATTACHED", "Attached"
+        RETURNED = "RETURNED", "Returned for correction"
+        ACCEPTED = "ACCEPTED", "Accepted"
+        WITHDRAWN = "WITHDRAWN", "Withdrawn"
+
+    material_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField()
+    material_type = models.CharField(max_length=64)
+    display_name = models.CharField(max_length=200)
+    source_domain = models.CharField(max_length=32, default="SELF")
+    source_ref = models.CharField(max_length=128, blank=True, default="")
+    source_version = models.CharField(max_length=64, blank=True, default="")
+    content_hash = models.CharField(max_length=64)
+    snapshot_json = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.ATTACHED, db_index=True
+    )
+    supersedes_snapshot_id = models.UUIDField(null=True, blank=True)
+
+    _IMMUTABLE_STATUSES = frozenset({Status.ACCEPTED, Status.WITHDRAWN})
+    _SNAPSHOT_FIELDS = (
+        "tenant_id",
+        "material_no",
+        "application_case_id",
+        "material_type",
+        "display_name",
+        "source_domain",
+        "source_ref",
+        "source_version",
+        "content_hash",
+        "snapshot_json",
+        "status",
+        "supersedes_snapshot_id",
+    )
+
+    class Meta:
+        db_table = "hr13_title_material_snapshot"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "material_no"), name="uq_hr13_material_tenant_no"
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "application_case_id", "status"),
+                name="idx_hr13_material_case_status",
+            ),
+            models.Index(
+                fields=("tenant_id", "source_domain", "source_ref"),
+                name="idx_hr13_material_source",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._SNAPSHOT_FIELDS
+            ).first()
+            if persisted and persisted["status"] in self._IMMUTABLE_STATUSES:
+                changed = [
+                    field
+                    for field in self._SNAPSHOT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "TITLE_MATERIAL_SNAPSHOT_IMMUTABLE: accepted/withdrawn review evidence "
+                        "must not be edited in place"
+                    )
+        return super().save(*args, **kwargs)
 
 
 class ProfessionalTitleResult(HrTenantScopedModel):
