@@ -4,7 +4,7 @@ from datetime import date
 
 from django.test import TestCase
 
-from base.models import Department, JobPosition
+from base.models import Company, Department, JobPosition
 from employee.models import Employee, EmployeeWorkInformation
 from horilla.horilla_middlewares import tenant_context
 from hr_changes.jobs.reconcile_projection import reconcile_staff_projection, run_reconcile
@@ -28,13 +28,28 @@ class ReconcileProjectionTests(TestCase):
         self._tenant_ctx.__enter__()
         self.addCleanup(self._tenant_ctx.__exit__, None, None, None)
 
+        self.company = Company.objects.create(
+            id=TENANT,
+            company="HR06 对账测试大学",
+            hq=True,
+            address="测试路 6 号",
+            country="CN",
+            state="湖南",
+            city="长沙",
+            zip="410000",
+        )
         self.department = Department.objects.create(department="JSXY")
+        self.department.company_id.add(self.company)
         self.job_position = JobPosition.objects.create(
             job_position="AI-P300", department_id=self.department
         )
+        self.job_position.company_id.add(self.company)
         self.employee = Employee.objects.create(
             employee_first_name="张", employee_last_name="某某",
             email="hr06-rec@example.com", phone="13800000011", badge_id="R001",
+        )
+        EmployeeWorkInformation._base_manager.filter(employee_id=self.employee).update(
+            company_id_id=self.company.pk
         )
         self.staff = StaffMasterService().create_staff(
             tenant_id=TENANT, person_id=make_person(TENANT, "张某某"),
