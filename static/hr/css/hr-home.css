@@ -1,0 +1,256 @@
+/* HR01 中文人事首页专用样式。只作用于 .hr-home，避免污染 Horilla 其它页面。 */
+.hr-home {
+  --home-primary: #2457d6;
+  --home-primary-strong: #173f9f;
+  --home-cyan: #0f8b8d;
+  --home-ink: #172033;
+  --home-muted: #667085;
+  --home-line: #e5eaf2;
+  --home-surface: #ffffff;
+  --home-canvas: #f5f8fc;
+  --home-success: #087a55;
+  --home-warning: #b26a13;
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 24px 28px 40px;
+  color: var(--home-ink);
+}
+
+.hr-home__hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, .65fr);
+  gap: 24px;
+  align-items: stretch;
+  padding: 30px 32px;
+  margin-bottom: 20px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 86% 18%, rgba(255,255,255,.18), transparent 28%),
+    linear-gradient(135deg, #173a86 0%, #2457d6 54%, #2f7fe8 100%);
+  box-shadow: 0 18px 48px rgba(36, 87, 214, .18);
+  color: #fff;
+}
+.hr-home__hero::after {
+  content: "人事";
+  position: absolute;
+  right: 26px;
+  bottom: -48px;
+  font-size: 150px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -.08em;
+  color: rgba(255,255,255,.055);
+  pointer-events: none;
+}
+.hr-home__eyebrow {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .18em;
+  color: #dbe8ff;
+}
+.hr-home__title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  color: #fff;
+}
+.hr-home__subtitle {
+  max-width: 780px;
+  margin: 10px 0 0;
+  color: #e7efff;
+  font-size: 14px;
+  line-height: 1.75;
+}
+.hr-home__hero-side {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+  align-content: center;
+}
+.hr-home__hero-tip {
+  padding: 13px 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 14px;
+  background: rgba(255,255,255,.09);
+  backdrop-filter: blur(8px);
+}
+.hr-home__hero-tip strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+.hr-home__hero-tip span {
+  color: #dbe8ff;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.hr-home__section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 22px 0 12px;
+}
+.hr-home__section-head h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+}
+.hr-home__section-head p {
+  margin: 3px 0 0;
+  color: var(--home-muted);
+  font-size: 12px;
+}
+.hr-home__section-note {
+  color: var(--home-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.hr-home__modules {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.hr-home__module {
+  position: relative;
+  min-height: 118px;
+  padding: 16px;
+  border: 1px solid var(--home-line);
+  border-radius: 16px;
+  background: var(--home-surface);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: 0 6px 18px rgba(30, 50, 86, .04);
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+a.hr-home__module:hover {
+  transform: translateY(-2px);
+  border-color: #b9caf2;
+  box-shadow: 0 12px 28px rgba(36, 87, 214, .10);
+  color: inherit;
+  text-decoration: none;
+}
+.hr-home__module--pending {
+  background: #fafbfc;
+}
+.hr-home__module--progress {
+  background: linear-gradient(180deg, #fff 0%, #fbfcff 100%);
+  border-color: #dde5f6;
+}
+.hr-home__module-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 24px;
+  margin-bottom: 10px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef3ff;
+  color: var(--home-primary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+.hr-home__module--pending .hr-home__module-no {
+  background: #fff4e7;
+  color: var(--home-warning);
+}
+.hr-home__module--progress .hr-home__module-no {
+  background: #edf2ff;
+  color: #405cc2;
+}
+.hr-home__module h3 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.hr-home__module p {
+  margin: 7px 0 0;
+  color: var(--home-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.hr-home__module-state {
+  position: absolute;
+  top: 15px;
+  right: 14px;
+  color: var(--home-success);
+  font-size: 11px;
+  font-weight: 700;
+}
+.hr-home__module--pending .hr-home__module-state {
+  color: var(--home-warning);
+}
+.hr-home__module--progress .hr-home__module-state {
+  color: #5570c7;
+}
+
+.hr-home .hr-metric-strip {
+  margin-bottom: 16px;
+}
+.hr-home .hr-metric-card,
+.hr-home .hr-section-card,
+.hr-home .hr-chart-card {
+  border-color: var(--home-line);
+  box-shadow: 0 6px 20px rgba(30, 50, 86, .045);
+}
+.hr-home .hr-metric-card {
+  min-height: 116px;
+  border-radius: 16px;
+}
+.hr-home .hr-overview-grid {
+  gap: 14px;
+}
+
+.hr-home__truth-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #dce6f7;
+  border-radius: 14px;
+  background: #f7faff;
+  color: #53627a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.hr-home__truth-note strong { color: #274b91; }
+
+@media (max-width: 1320px) {
+  .hr-home__modules { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 980px) {
+  .hr-home { padding: 20px; }
+  .hr-home__hero { grid-template-columns: 1fr; padding: 26px; }
+  .hr-home__hero-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hr-home__modules { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .hr-home { padding: 12px 12px 28px; }
+  .hr-home__hero { padding: 22px 20px; border-radius: 18px; }
+  .hr-home__title { font-size: 25px; }
+  .hr-home__hero-side { grid-template-columns: 1fr; }
+  .hr-home__section-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .hr-home__section-note { white-space: normal; }
+  .hr-home__modules { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .hr-home__module { min-height: 126px; padding: 14px; }
+}
+@media (max-width: 420px) {
+  .hr-home__modules { grid-template-columns: 1fr 1fr; }
+  .hr-home__module p { display: none; }
+  .hr-home__module { min-height: 94px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hr-home__module { transition: none; }
+}

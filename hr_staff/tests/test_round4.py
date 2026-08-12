@@ -15,6 +15,7 @@ from hr_staff.services.staff_master_service import StaffMasterService, StaffNumb
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 class EventOrgResolutionTests(TestCase):
@@ -76,6 +77,7 @@ class EventOrgResolutionTests(TestCase):
             effective_from=date(2024, 9, 1),
             organization_id=self.org,
             position_id=position,
+            source_business_type=FIXTURE_SOURCE,
         )
         qs = EffectiveDatedQueryService(TENANT)
         self.assertEqual(qs.position_occupancy_as_of(position.id, date(2025, 1, 1)), 1)
@@ -115,7 +117,7 @@ class StaffNumberSequenceTests(TestCase):
     def test_sequence_initializes_from_existing_max(self):
         """P1-j：已有工号时序列从 max+1 初始化。"""
         person = make_person(TENANT, "赵六")
-        staff = StaffMasterService().create_staff(
+        StaffMasterService().create_staff(
             tenant_id=TENANT, person_id=person, staff_no="T000010"
         )
         svc = StaffNumberService(prefix="T", width=6)

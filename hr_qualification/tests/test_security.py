@@ -58,12 +58,15 @@ class AuditTrailTest(TestCase):
             HrPersonCredential,
         )
         from hr_qualification.constants import CredentialStatus
+        from hr_staff.models import HrPerson
 
+        person = HrPerson.objects.create(tenant_id=1, legal_name="审计资格测试人员")
         catalog = HrCredentialCatalogItem.objects.create(
             tenant_id=None, code="AUDIT-TEST", category="OTHER", name="Audit Test"
         )
         cred = HrPersonCredential.objects.create(
             tenant_id=1,
+            person_id=person,
             credential_name_snapshot="Audit Cert",
             catalog_item_id=catalog,
             issuer_name="Issuer",

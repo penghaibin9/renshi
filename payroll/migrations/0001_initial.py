@@ -494,38 +494,27 @@ class Migration(migrations.Migration):
             ],
             options={
                 "verbose_name": "Allowance",
+                "unique_together": {
+                    (
+                        "title",
+                        "is_taxable",
+                        "is_condition_based",
+                        "field",
+                        "condition",
+                        "value",
+                        "is_fixed",
+                        "amount",
+                        "based_on",
+                        "rate",
+                        "per_attendance_fixed_amount",
+                        "shift_id",
+                        "shift_per_attendance_amount",
+                        "amount_per_one_hr",
+                        "work_type_id",
+                        "work_type_per_attendance_amount",
+                    )
+                },
             },
-        ),
-        # MySQL 8 / utf8mb4 cannot create the legacy 16-column unique index:
-        # it exceeds InnoDB's 3072-byte key limit. Preserve Django's canonical
-        # migration state, but deliberately omit only that impossible DDL.
-        migrations.SeparateDatabaseAndState(
-            database_operations=[],
-            state_operations=[
-                migrations.AlterUniqueTogether(
-                    name="allowance",
-                    unique_together={
-                        (
-                            "title",
-                            "is_taxable",
-                            "is_condition_based",
-                            "field",
-                            "condition",
-                            "value",
-                            "is_fixed",
-                            "amount",
-                            "based_on",
-                            "rate",
-                            "per_attendance_fixed_amount",
-                            "shift_id",
-                            "shift_per_attendance_amount",
-                            "amount_per_one_hr",
-                            "work_type_id",
-                            "work_type_per_attendance_amount",
-                        )
-                    },
-                ),
-            ],
         ),
         migrations.CreateModel(
             name="Deduction",

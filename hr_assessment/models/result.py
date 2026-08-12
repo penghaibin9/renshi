@@ -11,6 +11,8 @@
 - HrResultApplicationLedger
 """
 
+import uuid
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -36,7 +38,7 @@ class HrCalibrationSession(TenantScopedModel):
 
 class HrCalibrationRevision(models.Model):
     """校准修订记录 —— 总册 §88。"""
-    id = models.UUIDField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session = models.ForeignKey(HrCalibrationSession, on_delete=models.PROTECT, related_name="revisions", verbose_name=_("所属会话"))
     case_id = models.UUIDField(verbose_name=_("Case ID"))
     before_rating_json = models.JSONField(default=dict, verbose_name=_("校准前评分"))

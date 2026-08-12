@@ -49,12 +49,15 @@ class ResourceEndpointTest(TestCase):
 
     def test_credential_list_with_tenant(self):
         from hr_qualification.models import HrCredentialCatalogItem, HrPersonCredential
+        from hr_staff.models import HrPerson
 
+        person = HrPerson.objects.create(tenant_id=1, legal_name="API资格测试人员")
         catalog = HrCredentialCatalogItem.objects.create(
             tenant_id=None, code="API-TEST", category="OTHER", name="API Test"
         )
         HrPersonCredential.objects.create(
             tenant_id=1,
+            person_id=person,
             credential_name_snapshot="API Cert",
             catalog_item_id=catalog,
             issuer_name="Issuer",
