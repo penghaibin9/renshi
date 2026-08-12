@@ -5,8 +5,8 @@ horilla/settings/__init__.py
 
 规则：
 1. base 是上游基础设置；addons/local_settings 只能做受控覆盖。
-2. HR Authority 必须在这里显式注册，不能依赖 AppConfig.ready() 修改根 URL。
-3. HR13~HR18 并行施工时，只注册当前代码树真实存在的 Authority app；合流后自动形成完整有序注册表。
+2. HR Authority 必须显式注册，不能依赖 AppConfig.ready() 偷改根 URL。
+3. HR13~HR18 并行施工时只注册当前代码树真实存在的 Authority app。
 4. 开发、CI、迁移验收、生产统一 MySQL；非 MySQL 配置直接 fail-closed。
 """
 

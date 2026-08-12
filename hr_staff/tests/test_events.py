@@ -17,6 +17,7 @@ from hr_staff.services.event_service import BusinessEventService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 class BusinessEventTests(TestCase):
@@ -75,6 +76,7 @@ class BusinessEventTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2020, 9, 1),
             organization_id=self.org,
+            source_business_type=FIXTURE_SOURCE,
         )
         inbox = self.svc.receive(
             event_type="HR16_EXIT",
@@ -89,7 +91,6 @@ class BusinessEventTests(TestCase):
         self.svc.consume(inbox.id)
         rel.refresh_from_db()
         self.assertEqual(rel.status, "ENDED")
-        # 人员与事实不删除
         self.assertTrue(HrStaffAssignment.objects.filter(tenant_id=TENANT).exists())
         self.staff.refresh_from_db()
         self.assertIsNotNone(self.staff.id)
@@ -142,12 +143,10 @@ class BusinessEventTests(TestCase):
         )
         self.assertEqual(event.event_type, "PrimaryAssignmentChanged")
         self.assertEqual(event.status, "PENDING")
-        # 事件 payload 不含敏感值
         self.assertNotIn("identity", event.payload_json)
 
     def test_consume_canonical_event_names(self):
         """99 总册 PATCH-05：canonical 事件名（StaffActivated/ProfessionalTitleResultEffective 等）可被消费。"""
-        # StaffActivated（HR05 生产方 canonical 名）→ 建关系+任职
         inbox = self.svc.receive(
             event_type="StaffActivated",
             payload={
@@ -165,7 +164,6 @@ class BusinessEventTests(TestCase):
             HrEmploymentRelationship.objects.filter(tenant_id=TENANT, staff_id=self.staff).count(), 1
         )
 
-        # ProfessionalTitleResultEffective（HR13 canonical 名）→ 职称投影
         inbox2 = self.svc.receive(
             event_type="ProfessionalTitleResultEffective",
             payload={
@@ -182,7 +180,6 @@ class BusinessEventTests(TestCase):
         cred = HrCredential.objects.filter(tenant_id=TENANT, staff_id=self.staff).first()
         self.assertEqual(cred.credential_name, "教授")
 
-        # 未知事件 → UNSUPPORTED_EVENT
         unknown = self.svc.receive(
             event_type="NotARealEvent",
             payload={"source_business_id": "X", "staff_id": self.staff.id},

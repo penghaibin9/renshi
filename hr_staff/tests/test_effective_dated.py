@@ -11,6 +11,7 @@ from hr_staff.services.employment_service import EmploymentService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 class EffectiveDatedTests(TestCase):
@@ -34,6 +35,7 @@ class EffectiveDatedTests(TestCase):
             effective_from=date(2024, 9, 1),
             effective_to=date(2026, 2, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
 
     def test_as_of_historical_computer(self):
@@ -47,6 +49,7 @@ class EffectiveDatedTests(TestCase):
             employment_relationship_id=self.emp,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
         qs = EffectiveDatedQueryService(TENANT)
         today_primary = qs.primary_assignment_as_of(self.staff.id, date(2026, 8, 1))
@@ -71,6 +74,7 @@ class EffectiveDatedTests(TestCase):
             employment_relationship_id=self.emp,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
         qs = EffectiveDatedQueryService(TENANT)
         events = qs.timeline(self.staff.id)
@@ -103,6 +107,7 @@ class EffectiveDatedTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2025, 1, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         qs = EffectiveDatedQueryService(TENANT)
         # 2026-02 调到 AI：关闭开放段 → ENDED
@@ -110,6 +115,7 @@ class EffectiveDatedTests(TestCase):
             employment_relationship_id=emp,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
         open_assign.refresh_from_db()
         self.assertEqual(open_assign.status, "ENDED")

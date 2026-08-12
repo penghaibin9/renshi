@@ -81,7 +81,11 @@ class ProbationServiceTests(TestCase):
         """试用仅在 case ACTIVE 后开启。"""
         from hr_onboarding.api.exceptions import Hr05ApiError as _E
 
-        case = _case()  # CREATED 状态
+        # setUp 已创建独立 case；直接回退其状态即可验证 fail-closed，
+        # 不再额外创建同 HR04 source 的第二个 case 触发无关 unique 冲突。
+        case = self.case
+        case.status = "CREATED"
+        case.save(update_fields=["status"])
         with self.assertRaises(_E):
             self.service.open_probation(
                 case,

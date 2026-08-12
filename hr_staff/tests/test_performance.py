@@ -24,6 +24,7 @@ from hr_staff.services.employment_service import EmploymentService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx():
@@ -48,6 +49,7 @@ class PerformanceBaselineTests(TestCase):
                 assignment_type=AssignmentType.PRIMARY,
                 effective_from=date(2024, 9, 1),
                 organization_id=self.org,
+                source_business_type=FIXTURE_SOURCE,
             )
 
     def test_staff_list_50_rows_p95(self):

@@ -1,11 +1,12 @@
-"""
-hr_qualification/services/credential_service.py —— PersonCredential CRUD + 状态流转。
+"""hr_qualification/services/credential_service.py —— PersonCredential CRUD + 状态流转。
 
 总册 §107：
 - submit-verification → 变更状态为 UNDER_VERIFICATION
 - verify → 创建 Verification 记录，更新 current_verification_status
 - renew → 新建 PersonCredential（不覆盖原记录）→ 创建 Renewal 链
 - suspend/revoke → 状态变更为 SUSPENDED/REVOKED + StatusEvent 记录
+
+所有 select_for_update 都必须位于 transaction.atomic 内，保证 MySQL 真实行锁语义。
 """
 
 from __future__ import annotations
@@ -13,25 +14,20 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from django.db import transaction
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 
+from hr_qualification.constants import CredentialStatus, RenewalType, VerificationResult
 from hr_qualification.models import (
+    HrCredentialRenewal,
     HrCredentialStatusEvent,
     HrCredentialVerification,
-    HrCredentialRenewal,
     HrPersonCredential,
-)
-from hr_qualification.constants import (
-    CredentialStatus,
-    RenewalType,
-    VerificationResult,
 )
 
 
 class CredentialError(Exception):
     """证书操作异常。"""
-    pass
 
 
 class CredentialService:
@@ -42,26 +38,26 @@ class CredentialService:
         credential_id: uuid.UUID,
         actor_id: int | None = None,
     ) -> HrPersonCredential:
-        try:
-            credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-        except ObjectDoesNotExist:
-            raise CredentialError(f"Credential {credential_id} not found.")
+        with transaction.atomic():
+            try:
+                credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
+            except ObjectDoesNotExist:
+                raise CredentialError(f"Credential {credential_id} not found.")
 
-        _assert_can_transition(credential, CredentialStatus.UNDER_VERIFICATION)
+            _assert_can_transition(credential, CredentialStatus.UNDER_VERIFICATION)
+            old_status = credential.status
+            credential.status = CredentialStatus.UNDER_VERIFICATION
+            credential.version += 1
+            credential.save()
 
-        old_status = credential.status
-        credential.status = CredentialStatus.UNDER_VERIFICATION
-        credential.version += 1
-        credential.save()
-
-        HrCredentialStatusEvent.objects.create(
-            credential_id=credential,
-            from_status=old_status,
-            to_status=CredentialStatus.UNDER_VERIFICATION,
-            reason="Submitted for verification",
-            actor_id=actor_id,
-        )
-        return credential
+            HrCredentialStatusEvent.objects.create(
+                credential_id=credential,
+                from_status=old_status,
+                to_status=CredentialStatus.UNDER_VERIFICATION,
+                reason="Submitted for verification",
+                actor_id=actor_id,
+            )
+            return credential
 
     @staticmethod
     def verify(
@@ -73,30 +69,30 @@ class CredentialService:
         provider_reference: str = "",
         notes: str = "",
     ) -> HrCredentialVerification:
-        try:
-            credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-        except ObjectDoesNotExist:
-            raise CredentialError(f"Credential {credential_id} not found.")
+        with transaction.atomic():
+            try:
+                credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
+            except ObjectDoesNotExist:
+                raise CredentialError(f"Credential {credential_id} not found.")
 
-        now = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            verification = HrCredentialVerification.objects.create(
+                credential_id=credential,
+                verification_type=verification_type,
+                provider=provider,
+                provider_reference=provider_reference,
+                result=result.value,
+                verified_by=verified_by,
+                verified_at=now,
+                notes=notes,
+            )
 
-        verification = HrCredentialVerification.objects.create(
-            credential_id=credential,
-            verification_type=verification_type,
-            provider=provider,
-            provider_reference=provider_reference,
-            result=result.value,
-            verified_by=verified_by,
-            verified_at=now,
-            notes=notes,
-        )
-
-        # 更新快照（存字符串值，不存枚举成员）
-        credential.current_verification_status = result.value
-        credential.last_verified_at = now
-
-        if result == VerificationResult.VERIFIED:
-            if credential.status in (CredentialStatus.DRAFT, CredentialStatus.UNDER_VERIFICATION):
+            credential.current_verification_status = result.value
+            credential.last_verified_at = now
+            if result == VerificationResult.VERIFIED and credential.status in (
+                CredentialStatus.DRAFT,
+                CredentialStatus.UNDER_VERIFICATION,
+            ):
                 old_status = credential.status
                 credential.status = CredentialStatus.ACTIVE
                 HrCredentialStatusEvent.objects.create(
@@ -107,9 +103,9 @@ class CredentialService:
                     actor_id=verified_by,
                 )
 
-        credential.version += 1
-        credential.save()
-        return verification
+            credential.version += 1
+            credential.save()
+            return verification
 
     @staticmethod
     def renew(
@@ -137,7 +133,6 @@ class CredentialService:
                 reason=f"Superseded by renewal ({renewal_type})",
             )
 
-            # 确保 issuer_name 不为空（HrPersonCredential 必填字段）
             base_data = {
                 "tenant_id": original.tenant_id,
                 "person_id": original.person_id,
@@ -150,7 +145,6 @@ class CredentialService:
                 "source": original.source,
             }
             base_data.update(new_credential_data)
-
             new_credential = HrPersonCredential.objects.create(**base_data)
 
             renewal = HrCredentialRenewal.objects.create(
@@ -159,7 +153,6 @@ class CredentialService:
                 renewal_type=renewal_type,
                 reason=reason,
             )
-
             return new_credential, renewal
 
     @staticmethod
@@ -180,7 +173,6 @@ class CredentialService:
 
 
 def _assert_can_transition(credential: HrPersonCredential, target: str) -> None:
-    """正式 EFFECTIVE 后不可原地改；需走 Renewal/StatusEvent。"""
     if credential.status in (
         CredentialStatus.ACTIVE,
         CredentialStatus.EXPIRED,
@@ -200,21 +192,21 @@ def _change_status(
     actor_id: int | None = None,
     reason: str = "",
 ) -> HrPersonCredential:
-    try:
-        credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-    except ObjectDoesNotExist:
-        raise CredentialError(f"Credential {credential_id} not found.")
+    with transaction.atomic():
+        try:
+            credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
+        except ObjectDoesNotExist:
+            raise CredentialError(f"Credential {credential_id} not found.")
 
-    old_status = credential.status
-    credential.status = target_status
-    credential.version += 1
-    credential.save()
-
-    HrCredentialStatusEvent.objects.create(
-        credential_id=credential,
-        from_status=old_status,
-        to_status=target_status,
-        reason=reason,
-        actor_id=actor_id,
-    )
-    return credential
+        old_status = credential.status
+        credential.status = target_status
+        credential.version += 1
+        credential.save()
+        HrCredentialStatusEvent.objects.create(
+            credential_id=credential,
+            from_status=old_status,
+            to_status=target_status,
+            reason=reason,
+            actor_id=actor_id,
+        )
+        return credential

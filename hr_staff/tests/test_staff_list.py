@@ -14,6 +14,7 @@ from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
 OTHER_TENANT = 2
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 def ctx(scope_type="SCHOOL", org_id=None, as_of=None):
@@ -42,11 +43,13 @@ class StaffListSelectorTests(TestCase):
             effective_from=date(2024, 9, 1),
             effective_to=date(2026, 2, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         AssignmentService(TENANT).switch_primary(
             employment_relationship_id=rel_a,
             effective_from=date(2026, 2, 1),
             organization_id=self.ai,
+            source_business_type=FIXTURE_SOURCE,
         )
         # 老师 B：仍在计算机学院
         self.person_b = make_person(TENANT, "李四")
@@ -61,6 +64,7 @@ class StaffListSelectorTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2020, 9, 1),
             organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
         )
         # 老师 C：B 校（跨租户，必须不可见）
         self.person_c = make_person(OTHER_TENANT, "王五")

@@ -79,6 +79,12 @@ class HrAssessmentCase(TenantScopedModel):
                 name="uniq_case_cycle_staff",
             ),
         ]
+        indexes = [
+            models.Index(
+                fields=["tenant_id", "staff_id"],
+                name="hr12_case_staff_id_idx",
+            ),
+        ]
 
 
 class _AssessmentCaseParentLink(models.OneToOneField):

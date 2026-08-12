@@ -11,6 +11,7 @@ from hr_staff.services.employment_service import EmploymentService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 
 TENANT = 1
+FIXTURE_SOURCE = "MIGRATION_VERIFIED"
 
 
 class DataQualityServiceTests(TestCase):
@@ -40,6 +41,7 @@ class DataQualityServiceTests(TestCase):
             effective_from=date(2024, 9, 1),
             organization_id=None,
             legacy_department_id=7,
+            source_business_type=FIXTURE_SOURCE,
         )
         result = DataQualityService(TENANT).scan()
         rules = {i["rule"] for i in result["issues"]}
@@ -58,6 +60,7 @@ class DataQualityServiceTests(TestCase):
             assignment_type=AssignmentType.PRIMARY,
             effective_from=date(2024, 9, 1),
             organization_id=org,
+            source_business_type=FIXTURE_SOURCE,
         )
         result = DataQualityService(TENANT).scan()
         staff_rules = [i for i in result["issues"] if i["staffNo"] == "T100003"]

@@ -1,7 +1,7 @@
 """
 context_processor.py
 
-This module is used to register context processor`
+This module is used to register context processors.
 """
 
 from employee.models import Employee
@@ -10,34 +10,33 @@ from payroll.models.models import Deduction
 
 
 def default_currency(request):
+    """Return display currency without creating database state during rendering.
+
+    Public pages and fresh tenants may legitimately have no PayrollSettings yet.
+    A context processor must remain read-only; creating a tenant-less settings row
+    during template rendering can fail and makes unrelated public recruitment pages
+    depend on payroll bootstrap state.
     """
-    This method will return the currency
-    """
-    if models.PayrollSettings.objects.first() is None:
-        settings = models.PayrollSettings()
-        settings.currency_symbol = "$"
-        settings.company_id = getattr(request, "selected_company_instance", None)
-        settings.save()
-    symbol = models.PayrollSettings.objects.first().currency_symbol
-    position = models.PayrollSettings.objects.first().position
+    payroll_settings = models.PayrollSettings.objects.first()
+    symbol = payroll_settings.currency_symbol if payroll_settings else "$"
+    position = payroll_settings.position if payroll_settings else "prefix"
+    session = getattr(request, "session", None)
+    if session is None:
+        return {"currency": symbol, "position": position}
     return {
-        "currency": request.session.get("currency", symbol),
-        "position": request.session.get("position", position),
+        "currency": session.get("currency", symbol),
+        "position": session.get("position", position),
     }
 
 
 def host(request):
-    """
-    This method will return the host
-    """
+    """Return current request host and protocol."""
     protocol = "https" if request.is_secure() else "http"
     return {"host": request.get_host(), "protocol": protocol}
 
 
 def get_deductions(request):
-    """
-    This method used to return the deduction
-    """
+    """Return deductions visible under employee pages."""
     deductions = Deduction.objects.filter(
         only_show_under_employee=False, employer_rate__gt=0
     )
@@ -45,9 +44,7 @@ def get_deductions(request):
 
 
 def get_active_employees(request):
-    """
-    This method used to return the deduction
-    """
+    """Return active employees that already participate in payroll."""
     employees = Employee.objects.filter(
         is_active=True, contract_set__isnull=False, payslip__isnull=False
     ).distinct()

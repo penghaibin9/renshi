@@ -23,6 +23,8 @@ urlpatterns = [
     path("hr/double-teacher/", include("hr_qualification.urls_double_teacher")),
     # HR10 UI owns its internal /hr/development/... route prefixes.
     path("", include("hr10_development.urls")),
+    # HR11 UI
+    path("hr/time/", include("hr_time.urls")),
     # HR12 UI
     path("hr/assessments/", include("hr_assessment.urls")),
     # Canonical APIs for old-root modules HR01/02/03/04/05/06/08/11.
@@ -33,10 +35,9 @@ urlpatterns = [
     path("", include("hr_assessment.api.urls")),
 ]
 
-# HR13~HR18 are isolated parallel construction lines. Registration remains
-# explicit and ordered, while missing sibling apps are not imported on an
-# individual child branch. Once branches are recovered together, every present
-# Authority is registered by the same table without merge-conflict edits.
+# HR13~HR18 are isolated parallel construction lines. Registration stays
+# explicit while child branches are developed independently; every Authority
+# that is physically present in the integrated code tree is registered here.
 PARALLEL_HR_ROUTES = [
     ("hr_title", "hr/titles/", "api/v1/hr/titles/"),  # HR13
     ("hr_appointment", "hr/appointments/", "api/v1/hr/appointments/"),  # HR14
