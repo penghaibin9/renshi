@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .models import ProfessionalTitleResult, TitleApplicationCase, TitlePolicyVersion
+from .models import (
+    ProfessionalTitleResult,
+    TitleApplicationCase,
+    TitleMaterialSnapshot,
+    TitlePolicyVersion,
+)
 
 
 def _tenant(tenant_id: int) -> int:
@@ -17,6 +22,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     tenant_id = _tenant(tenant_id)
     cases = TitleApplicationCase.objects.filter(tenant_id=tenant_id)
     policies = TitlePolicyVersion.objects.filter(tenant_id=tenant_id)
+    materials = TitleMaterialSnapshot.objects.filter(tenant_id=tenant_id)
     results = ProfessionalTitleResult.objects.filter(tenant_id=tenant_id)
 
     status_counts = Counter(cases.values_list("status", flat=True))
@@ -24,6 +30,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         "summary": {
             "policyVersions": policies.count(),
             "applications": cases.count(),
+            "materials": materials.count(),
+            "acceptedMaterials": materials.filter(status=TitleMaterialSnapshot.Status.ACCEPTED).count(),
             "awaitingQualification": status_counts.get("SUBMITTED", 0),
             "underReview": status_counts.get("UNDER_REVIEW", 0),
             "inPublicity": status_counts.get("PUBLICITY", 0),
@@ -40,6 +48,22 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "requested_title_code",
                 "status",
                 "submitted_at",
+                "updated_at",
+            )
+        ),
+        "recentMaterials": list(
+            materials.order_by("-updated_at")[:12].values(
+                "id",
+                "material_no",
+                "application_case_id",
+                "material_type",
+                "display_name",
+                "source_domain",
+                "source_ref",
+                "source_version",
+                "content_hash",
+                "status",
+                "supersedes_snapshot_id",
                 "updated_at",
             )
         ),
@@ -76,7 +100,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "application": True,
             "formalResult": True,
             "qualificationReview": False,
-            "materials": False,
+            "materials": True,
             "expertPanel": False,
             "deliberationVote": False,
             "publicity": False,
