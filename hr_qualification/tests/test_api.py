@@ -41,9 +41,16 @@ class ResourceEndpointTest(TestCase):
     def setUp(self):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
+        from horilla.horilla_middlewares import _thread_locals
         from horilla_auth.models import HorillaUser
 
         self.client = Client()
+        # A previous request-style test may have installed a user object that is
+        # rolled back with its TestCase transaction. Company is a HorillaModel,
+        # so carrying that stale actor into this new fixture would create an FK
+        # to a user row that no longer exists. This setup is intentionally a
+        # background/no-request boundary until _login_school() starts a request.
+        _thread_locals.request = None
         self.company = Company.objects.create(
             company="HR09 API 测试大学",
             hq=True,
