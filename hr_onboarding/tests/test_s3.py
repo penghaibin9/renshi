@@ -174,19 +174,29 @@ class ReportDelayHistoryTests(TestCase):
 
 class DeclineReleaseReservationTests(TestCase):
     def test_decline_releases_reservation(self):
+        from hr_structure.models import HrPositionReservation
+
         service = CaseService(tenant_id=1)
-        # 不携带 reservation 建 case（避免 FK=100 无记录崩溃），随后手动绑定底层列
+        reservation = HrPositionReservation.objects.create(
+            tenant_id=1,
+            reservation_no="RES-S3-001",
+            source_domain="HR04",
+            source_business_type="PROPOSED_HIRE",
+            source_business_id="ph-003",
+            expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            idempotency_key="k-reservation-s3-1",
+        )
         req = _handoff_request()
         r = service.create_case_from_handoff(req, idempotency_key="k-decline-1")
         case = HrOnboardingCase.objects.get(id=r["case_id"])
-        case.position_reservation_id_id = 100  # 直接写底层列，绕过 FK 解析
-        case.save(update_fields=["position_reservation_id_id"])
+        case.position_reservation_id = reservation
+        case.save(update_fields=["position_reservation_id"])
 
         with mock.patch(
             "hr_onboarding.integrations.hr02.Hr02PositionProvider.release"
         ) as mock_release:
             service.decline(case, reason="个人原因")
-            mock_release.assert_called_once_with(100)
+            mock_release.assert_called_once_with(reservation.pk)
 
         case.refresh_from_db()
         self.assertEqual(case.status, "DECLINED")

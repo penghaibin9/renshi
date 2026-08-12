@@ -283,6 +283,7 @@ class ExitTests(TestCase):
         )
         case.status = "READY_TO_EXIT"
         case.save(update_fields=["status", "updated_at"])
+        self.service.start_exit(case)
         self.service.finalize_exit(case, tenant_id=self.tenant)
 
         # eng 的 grant 被回收请求，eng2 的 grant 保持（§138.14/§99）

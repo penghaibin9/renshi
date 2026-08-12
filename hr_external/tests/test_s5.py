@@ -139,6 +139,8 @@ class HiringFlowTests(TestCase):
         self.category.agreement_requirement = "NOT_REQUIRED"
         self.category.save()
         eng = self.service.activate(self.case)
+        # activate 为并发安全会 select_for_update 重新读取 case；刷新调用方实例再断言终态。
+        self.case.refresh_from_db()
         self.assertEqual(self.case.status, ExternalHiringStatus.ACTIVATED)
         self.assertEqual(eng.status, ExternalEngagementStatus.ACTIVE)
         self.assertTrue(HrExternalEngagementAssignment.objects.filter(engagement_id=eng).exists())

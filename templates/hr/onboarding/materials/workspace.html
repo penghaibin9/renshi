@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "index.html" %}
 {% load i18n %}
 {% block title %}{% trans "入职材料核验" %}{% endblock %}
 {% block content %}
@@ -20,8 +20,8 @@
         <li class="hr-checklist__item {% if item.status == 'VERIFIED' or item.status == 'WAIVED' %}hr-checklist__item--ok{% else %}hr-checklist__item--no{% endif %}"
             data-material-id="{{ item.id }}" role="button" tabindex="0">
           <span class="hr-checklist__label">{{ item.label }}</span>
-          <span class="hr-checklist__phase">{{ item.blocking_phase_label|default:item.blocking_phase }}</span>
-          <span class="hr-checklist__status">{{ item.status_label|default:item.status }}</span>
+          <span class="hr-checklist__phase">{% firstof item.blocking_phase_label item.blocking_phase "—" %}</span>
+          <span class="hr-checklist__status">{% firstof item.status_label item.status "—" %}</span>
         </li>
         {% empty %}
         <li class="hr-empty">{% trans "暂无材料要求" %}</li>
