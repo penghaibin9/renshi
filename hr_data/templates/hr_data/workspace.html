@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{ section_title }} · HR18</title>
   <style>
-    :root{--bg:#f4f7fb;--card:#fff;--ink:#172033;--muted:#6b7588;--line:#e6ebf2;--blue:#2457d6;--blue2:#5c7cfa;--soft:#eef4ff;--good:#17875d;--warn:#b86b16;--bad:#c53f4a;--shadow:0 12px 34px rgba(35,55,90,.08);--r:18px}
-    *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#eef4ff 0,#f7f9fc 220px,var(--bg) 100%);font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink)}
+    :root{--bg:#f4f7fb;--card:#fff;--ink:#172033;--muted:#6b7588;--line:#e6ebf2;--blue:#2457d6;--good:#17875d;--warn:#b86b16;--bad:#c53f4a;--shadow:0 12px 34px rgba(35,55,90,.08);--r:18px}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef4ff 0,#f7f9fc 220px,var(--bg) 100%);font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--ink)}
     .shell{max-width:1540px;margin:auto;padding:28px}.hero{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:18px}.eyebrow{font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--blue);text-transform:uppercase}.hero h1{margin:7px 0 6px;font-size:30px;letter-spacing:-.02em}.hero p{margin:0;color:var(--muted);max-width:820px;line-height:1.7}.asof{padding:10px 14px;border:1px solid #dbe4f3;background:rgba(255,255,255,.72);border-radius:14px;color:var(--muted);font-size:12px;white-space:nowrap}
     .nav{display:flex;gap:8px;overflow:auto;padding:6px;background:rgba(255,255,255,.72);border:1px solid var(--line);border-radius:16px;margin-bottom:18px}.nav a{color:#536078;text-decoration:none;padding:10px 14px;border-radius:11px;font-size:13px;font-weight:700;white-space:nowrap}.nav a.active{background:#172033;color:#fff;box-shadow:0 8px 20px rgba(23,32,51,.16)}
     .notice{display:none;border-radius:14px;padding:13px 15px;margin-bottom:16px;background:#fff1f2;color:#9f2331;border:1px solid #ffd9de;font-size:13px}.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:18px}.kpi{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:16px;padding:16px 17px;box-shadow:0 5px 18px rgba(40,58,90,.04)}.kpi .label{font-size:12px;color:var(--muted);font-weight:700}.kpi .value{font-size:25px;font-weight:850;margin-top:8px;letter-spacing:-.03em}.kpi .hint{font-size:11px;color:#929aac;margin-top:5px}
@@ -18,52 +18,35 @@
 </head>
 <body>
 <div class="shell">
-  <section class="hero">
-    <div><div class="eyebrow">HR18 · Data Governance</div><h1>{{ section_title }}</h1><p>统一管理指标口径、数据质量、历史时点与正式报送。所有数字均来自当前学校 Authority；Provider 未接通或数据不完整时明确显示状态，不把未知值当作 0。</p></div>
-    <div class="asof">数据生成：<span id="generatedAt">加载中…</span></div>
-  </section>
-  <nav class="nav">
-    <a href="/hr/data/" data-section="overview">总览</a><a href="/hr/data/metrics/" data-section="metrics">指标口径</a><a href="/hr/data/quality/" data-section="quality">数据质量</a><a href="/hr/data/exchange/" data-section="exchange">数据交换</a><a href="/hr/data/submissions/" data-section="submissions">正式报送</a><a href="/hr/data/corrections/" data-section="corrections">回执与更正</a>
-  </nav>
+  <section class="hero"><div><div class="eyebrow">HR18 · Data Governance</div><h1>{{ section_title }}</h1><p>统一管理指标口径、数据质量、历史时点与正式报送。所有数字均来自当前学校 Authority；Provider 未接通或数据不完整时明确显示状态，不把未知值当作 0。</p></div><div class="asof">数据生成：<span id="generatedAt">加载中…</span></div></section>
+  <nav class="nav"><a href="/hr/data/" data-section="overview">总览</a><a href="/hr/data/metrics/" data-section="metrics">指标口径</a><a href="/hr/data/quality/" data-section="quality">数据质量</a><a href="/hr/data/exchange/" data-section="exchange">数据交换</a><a href="/hr/data/submissions/" data-section="submissions">正式报送</a><a href="/hr/data/corrections/" data-section="corrections">回执与更正</a></nav>
   <div class="notice" id="accessError">{% if access_error %}{{ access_error }}{% endif %}</div>
   <section class="kpis">
     <div class="kpi"><div class="label">指标定义版本</div><div class="value" id="metricVersions">—</div><div class="hint">保留全部历史版本</div></div>
-    <div class="kpi"><div class="label">指标代码数</div><div class="value" id="currentMetrics">—</div><div class="hint">按 metric_code 去重</div></div>
+    <div class="kpi"><div class="label">指标代码数</div><div class="value" id="metricCodes">—</div><div class="hint">按 metric_code 去重</div></div>
     <div class="kpi"><div class="label">待处理质量问题</div><div class="value" id="openFindings">—</div><div class="hint">OPEN + ACKNOWLEDGED</div></div>
     <div class="kpi"><div class="label">严重质量问题</div><div class="value" id="criticalFindings">—</div><div class="hint">仅当前未关闭 CRITICAL</div></div>
     <div class="kpi"><div class="label">正式报送快照</div><div class="value" id="submissions">—</div><div class="hint">不可用临时报表替代</div></div>
     <div class="kpi"><div class="label">待回执报送</div><div class="value" id="awaitingReceipt">—</div><div class="hint">已提交且无 receipt</div></div>
   </section>
   <section class="grid">
-    <div class="card"><div class="card-head"><h2>数据质量异常</h2><span>必须回源修复业务事实</span></div><div class="rows" id="findings"><div class="empty">正在读取质量发现…</div></div></div>
+    <div class="card"><div class="card-head"><h2 id="primaryTitle">当前工作区</h2><span id="primaryHint">真实 Authority 数据</span></div><div class="rows" id="primaryRows"><div class="empty">正在读取数据…</div></div></div>
     <div class="card"><div class="card-head"><h2>能力接通状态</h2><span>不伪装未完成能力</span></div><div class="cap-grid" id="capabilities"></div><div class="legend">绿色表示已有 Authority/模型底座；灰色表示仍需补齐 Provider、执行引擎或异步链路。</div></div>
-    <div class="card"><div class="card-head"><h2>最近正式报送</h2><span>快照 · 版本 · as-of · 回执</span></div><div class="rows" id="submissionsList"><div class="empty">正在读取报送快照…</div></div></div>
-    <div class="card"><div class="card-head"><h2>当前工作区</h2><span>本页定位</span></div><div class="cap-grid"><div class="cap ready"><b>{{ section_title }}</b><span id="sectionHelp">正在读取工作区说明…</span></div><div class="cap pending"><b>数据原则</b><span>UNAVAILABLE ≠ 0；PARTIAL ≠ COMPLETE；正式事实错误只能回源修复。</span></div></div></div>
+    <div class="card"><div class="card-head"><h2>治理风险与报送</h2><span>质量问题 / 快照 / 回执</span></div><div class="rows" id="secondaryRows"><div class="empty">正在读取治理状态…</div></div></div>
+    <div class="card"><div class="card-head"><h2>当前工作区说明</h2><span>数据治理原则</span></div><div class="cap-grid"><div class="cap ready"><b>{{ section_title }}</b><span id="sectionHelp">正在读取工作区说明…</span></div><div class="cap pending"><b>数据原则</b><span>UNAVAILABLE ≠ 0；PARTIAL ≠ COMPLETE；正式事实错误只能回源修复。</span></div></div></div>
   </section>
 </div>
 <script>
-  const section = "{{ section|escapejs }}";
-  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('active',a.dataset.section===section));
-  const help={overview:'看学校人事数据治理总体健康度与报送风险。',metrics:'管理指标定义、版本与人口口径；历史版本不可静默覆盖。',quality:'跟踪跨域数据质量发现，并回到事实源修复。',exchange:'建设真实异步数据交换任务、进度、失败和下载链路。',submissions:'管理正式报送快照、审批、提交与回执。',corrections:'跟踪拒收、更正链和重新报送历史。'};
-  document.getElementById('sectionHelp').textContent=help[section]||help.overview;
-  const access=document.getElementById('accessError'); if(access.textContent.trim()) access.style.display='block';
-  const text=(id,v)=>{document.getElementById(id).textContent=(v===null||v===undefined)?'—':String(v)};
-  const fmt=d=>d?new Date(d).toLocaleString('zh-CN',{hour12:false}):'—';
-  function statusClass(v){v=String(v||'').toLowerCase();return v.includes('critical')?'critical':v.includes('error')||v.includes('rejected')?'error':v.includes('accepted')||v.includes('fixed')?'accepted':''}
-  async function load(){
-    if(access.textContent.trim()) return;
-    const r=await fetch('/api/v1/hr/data/dashboard/',{headers:{'X-Requested-With':'XMLHttpRequest'}});
-    if(!r.ok){access.textContent=`数据中心读取失败（${r.status}）`;access.style.display='block';return}
-    const b=await r.json(); const s=b.summary||{};
-    ['metricVersions','currentMetrics','openFindings','criticalFindings','submissions','awaitingReceipt'].forEach(k=>text(k,s[k])); text('generatedAt',fmt(b.generatedAt));
-    const fs=document.getElementById('findings'); fs.replaceChildren();
-    if(!(b.recentFindings||[]).length){fs.innerHTML='<div class="empty">当前没有质量发现记录</div>'}else (b.recentFindings||[]).forEach(x=>{const row=document.createElement('div');row.className='row';const a=document.createElement('div'),c=document.createElement('div'),d=document.createElement('div');const st=document.createElement('strong');st.textContent=x.finding_no||'未编号';const sm=document.createElement('small');sm.textContent=`${x.rule_code||'—'} · ${x.source_domain||'—'}`;a.append(st,sm);c.textContent=fmt(x.detected_at);const p=document.createElement('span');p.className='pill '+statusClass(x.severity);p.textContent=`${x.severity||'—'} / ${x.status||'—'}`;d.appendChild(p);row.append(a,c,d);fs.appendChild(row)});
-    const ss=document.getElementById('submissionsList'); ss.replaceChildren();
-    if(!(b.recentSubmissions||[]).length){ss.innerHTML='<div class="empty">当前没有正式报送快照</div>'}else (b.recentSubmissions||[]).forEach(x=>{const row=document.createElement('div');row.className='row';const a=document.createElement('div'),c=document.createElement('div'),d=document.createElement('div');const st=document.createElement('strong');st.textContent=x.submission_no||'未编号';const sm=document.createElement('small');sm.textContent=`${x.definition_code||'—'} · v${x.definition_version??'—'} · as-of ${x.as_of_date||'—'}`;a.append(st,sm);c.textContent=x.receipt_ref?'已有回执':'等待/无需回执';const p=document.createElement('span');p.className='pill '+statusClass(x.status);p.textContent=x.status||'—';d.appendChild(p);row.append(a,c,d);ss.appendChild(row)});
-    const names={metricDefinition:'指标定义',dataQualityFinding:'质量发现',submissionSnapshot:'报送快照',sourceGate:'来源闸门',populationDimension:'Population / Dimension',asOfEngine:'as-of 引擎',qualityRuleExecution:'质量规则执行',asyncExchange:'异步数据交换',submissionReceipt:'报送回执',correctionWorkflow:'更正流程',legacyReportTakeover:'旧 report 接管'};
-    const cg=document.getElementById('capabilities'); cg.replaceChildren(); Object.entries(b.capabilities||{}).forEach(([k,v])=>{const el=document.createElement('div');el.className='cap '+(v?'ready':'pending');const strong=document.createElement('b');strong.textContent=names[k]||k;const span=document.createElement('span');span.textContent=v?'底座已接通':'待继续施工';el.append(strong,span);cg.appendChild(el)});
-  }
-  load().catch(()=>{access.textContent='数据中心读取异常，请检查服务状态。';access.style.display='block'});
+const section="{{ section|escapejs }}";document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('active',a.dataset.section===section));
+const help={overview:'看学校人事数据治理总体健康度与报送风险。',metrics:'管理指标定义与版本；Population/Dimension 和历史 as-of 引擎仍需独立 Authority。',quality:'跟踪跨域数据质量发现，并回到事实源修复。',exchange:'真实异步交换任务尚未接通；不会用同步导出伪装任务。',submissions:'管理正式报送快照、审批、提交与回执。',corrections:'跟踪拒收、更正链和重新报送历史；原快照不原地覆盖。'};document.getElementById('sectionHelp').textContent=help[section]||help.overview;
+const access=document.getElementById('accessError');if(access.textContent.trim())access.style.display='block';const text=(id,v)=>{document.getElementById(id).textContent=(v===null||v===undefined)?'—':String(v)};const fmt=d=>d?new Date(d).toLocaleString('zh-CN',{hour12:false}):'—';function statusClass(v){v=String(v||'').toLowerCase();return v.includes('critical')?'critical':v.includes('error')||v.includes('rejected')?'error':v.includes('accepted')||v.includes('fixed')?'accepted':''}
+function clear(id){const el=document.getElementById(id);el.replaceChildren();return el}function empty(el,msg){const d=document.createElement('div');d.className='empty';d.textContent=msg;el.appendChild(d)}function row(title,sub,middle,status,cls=''){const r=document.createElement('div');r.className='row';const a=document.createElement('div'),b=document.createElement('div'),c=document.createElement('div'),s=document.createElement('strong'),sm=document.createElement('small'),p=document.createElement('span');s.textContent=title||'—';sm.textContent=sub||'—';a.append(s,sm);b.textContent=middle||'—';p.className='pill '+cls;p.textContent=status||'—';c.appendChild(p);r.append(a,b,c);return r}
+function renderMetrics(items,el){if(!items.length){empty(el,'当前没有指标定义版本');return}items.forEach(x=>el.appendChild(row(x.name||x.metric_code,`${x.metric_code||'—'} · v${x.version_no??'—'} · ${x.population_code||'—'}`,`${x.value_type||'—'} ${x.unit||''}`,x.status)))}
+function renderFindings(items,el){if(!items.length){empty(el,'当前没有数据质量发现');return}items.forEach(x=>el.appendChild(row(x.finding_no,`${x.rule_code||'—'} · ${x.source_domain||'—'}`,fmt(x.detected_at),`${x.severity||'—'} / ${x.status||'—'}`,statusClass(x.severity))))}
+function renderSubmissions(items,el){if(!items.length){empty(el,'当前没有正式报送快照');return}items.forEach(x=>el.appendChild(row(x.submission_no,`${x.definition_code||'—'} · v${x.definition_version??'—'} · as-of ${x.as_of_date||'—'}`,x.receipt_ref?'已有回执':'等待/无需回执',x.status,statusClass(x.status))))}
+function renderPrimary(b){const el=clear('primaryRows'),title=document.getElementById('primaryTitle'),hint=document.getElementById('primaryHint');if(section==='metrics'){title.textContent='指标口径版本';hint.textContent='MetricDefinition Authority';renderMetrics(b.recentMetrics||[],el);return}if(section==='quality'){title.textContent='数据质量异常';hint.textContent='必须回源修复';renderFindings(b.recentFindings||[],el);return}if(section==='submissions'||section==='corrections'){title.textContent=section==='submissions'?'正式报送快照':'回执与更正链';hint.textContent='快照不可原地覆盖';let items=b.recentSubmissions||[];if(section==='corrections')items=items.filter(x=>['REJECTED','CORRECTED'].includes(x.status)||x.parent_submission_id);renderSubmissions(items,el);return}if(section==='exchange'){title.textContent='数据交换';hint.textContent='异步任务尚待 Authority';empty(el,'异步交换任务、进度、失败、下载链尚未接通；不会用同步导出冒充完成任务。');return}title.textContent='最新指标定义';hint.textContent='口径版本 + 治理状态';renderMetrics(b.recentMetrics||[],el)}
+function renderSecondary(b){const el=clear('secondaryRows');if(section==='quality'){renderSubmissions(b.recentSubmissions||[],el)}else{renderFindings(b.recentFindings||[],el)}}
+async function load(){if(access.textContent.trim())return;const r=await fetch('/api/v1/hr/data/dashboard/',{headers:{'X-Requested-With':'XMLHttpRequest'}});if(!r.ok){access.textContent=`数据中心读取失败（${r.status}）`;access.style.display='block';return}const b=await r.json(),s=b.summary||{};['metricVersions','metricCodes','openFindings','criticalFindings','submissions','awaitingReceipt'].forEach(k=>text(k,s[k]));text('generatedAt',fmt(b.generatedAt));renderPrimary(b);renderSecondary(b);const names={metricDefinition:'指标定义',dataQualityFinding:'质量发现',submissionSnapshot:'报送快照',sourceGate:'来源闸门',populationDimension:'Population / Dimension',asOfEngine:'as-of 引擎',qualityRuleExecution:'质量规则执行',asyncExchange:'异步数据交换',submissionReceipt:'报送回执',correctionWorkflow:'更正流程',legacyReportTakeover:'旧 report 接管'};const cg=document.getElementById('capabilities');cg.replaceChildren();Object.entries(b.capabilities||{}).forEach(([k,v])=>{const el=document.createElement('div');el.className='cap '+(v?'ready':'pending');const strong=document.createElement('b'),span=document.createElement('span');strong.textContent=names[k]||k;span.textContent=v?'底座已接通':'待继续施工';el.append(strong,span);cg.appendChild(el)})}
+load().catch(()=>{access.textContent='数据中心读取异常，请检查服务状态。';access.style.display='block'});
 </script>
-</body>
-</html>
+</body></html>
