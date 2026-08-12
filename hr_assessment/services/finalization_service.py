@@ -8,7 +8,7 @@ Finalization is fail-closed over the currently modeled gates:
 - Case is PROPOSED or PUBLICITY inside tenant;
 - all attached evidence/metrics are resolved enough for finalization;
 - every assigned reviewer has a submitted evaluation;
-- collective decision session is completed;
+- collective decision session is completed and explicitly contains the Case;
 - a PUBLICITY case has a completed cycle publicity record.
 
 Unknown/unavailable/conflicting provider states never become PASS.
@@ -144,6 +144,18 @@ class AssessmentFinalizationService:
                     "status": decision.status,
                 }
             )
+        else:
+            # A completed meeting in the same cycle is not sufficient.  The
+            # current case must have been part of that exact decision agenda;
+            # otherwise Case A's meeting could incorrectly finalize Case B.
+            case_refs = {str(value) for value in (decision.case_refs_json or [])}
+            if str(case.id) not in case_refs:
+                blockers.append(
+                    {
+                        "code": "ASSESSMENT_DECISION_CASE_NOT_INCLUDED",
+                        "decisionSessionId": str(decision.id),
+                    }
+                )
 
         if case.status == "PUBLICITY":
             publicity_done = HrAssessmentPublicityCase.objects.filter(
