@@ -42,11 +42,24 @@ class Hr13UiContractTests(SimpleTestCase):
         self.assertNotIn("style.display = 'none'", source)
         self.assertNotIn("shell.remove()", source)
 
-    def test_mobile_runtime_blocks_desktop_hover_reopen(self):
+    def test_mobile_runtime_blocks_desktop_hover_until_system_toggle(self):
         template = get_template("hr_title/workspace_e.html")
         source = Path(template.origin.name).read_text(encoding="utf-8")
         self.assertIn("'toggle-clicked', 'oh-wrapper-main--closed'", source)
+        self.assertIn("let explicitMobileOpen = false", source)
+        self.assertIn("document.querySelector('.oh-navbar__toggle-link')", source)
+        self.assertIn("if (!mq.matches || explicitMobileOpen) return", source)
         self.assertIn("event.stopImmediatePropagation()", source)
         self.assertIn("sidebar.addEventListener('mouseover'", source)
-        self.assertIn("localStorage.setItem('sidebarOpen', 'false')", source)
+        self.assertIn("toggle.addEventListener('click', syncAfterSystemToggle)", source)
+        self.assertIn("explicitMobileOpen = !shell.classList.contains", source)
+        self.assertIn("localStorage.setItem('sidebarOpen', explicitMobileOpen ? 'true' : 'false')", source)
+        self.assertNotIn("new MutationObserver", source)
         self.assertNotIn("sidebar.style.display", source)
+
+    def test_mobile_runtime_restores_desktop_sidebar_state_after_resize(self):
+        template = get_template("hr_title/workspace_e.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertIn("desktopStoredState = localStorage.getItem('sidebarOpen')", source)
+        self.assertIn("else restoreDesktopState()", source)
+        self.assertIn("localStorage.removeItem('sidebarOpen')", source)
