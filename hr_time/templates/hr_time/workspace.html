@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ section_title }}{% endblock %}
+{% block content %}
+<style>
+.hr11{--p:#0d7b73;--p2:#21a39a;--ink:#183033;--muted:#687d80;--line:#dfe9e8;--bg:#f4f9f8;--good:#087a55;--warn:#ac6513;max-width:1500px;margin:0 auto;padding:24px 28px 40px;color:var(--ink);font-family:Inter,"Microsoft YaHei",sans-serif}.hr11 *{box-sizing:border-box}.hr11-hero{position:relative;overflow:hidden;padding:28px 30px;border-radius:22px;background:linear-gradient(135deg,#123a3e,#0d7b73 58%,#35aaa0);color:#fff;box-shadow:0 16px 42px rgba(13,123,115,.16)}.hr11-hero:after{content:"时间";position:absolute;right:24px;bottom:-38px;font-size:112px;font-weight:900;color:rgba(255,255,255,.06)}.hr11-eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;color:#d9fffb}.hr11-hero h1{margin:7px 0 5px;font-size:29px;letter-spacing:-.02em}.hr11-hero p{max-width:920px;margin:0;color:#e1fffb;line-height:1.7}.hr11-nav{display:flex;gap:8px;overflow:auto;margin:17px 0;padding:5px;border:1px solid var(--line);border-radius:14px;background:#fff;scrollbar-width:thin}.hr11-nav a{flex:0 0 auto;padding:9px 13px;border-radius:10px;color:#52696a;text-decoration:none;font-size:13px;font-weight:700;white-space:nowrap}.hr11-nav a:hover{background:#f1f8f7}.hr11-nav a.active{background:var(--p);color:#fff}.hr11-mobile-hint{display:none;color:var(--muted);font-size:11px;margin:-9px 4px 12px}.hr11-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.hr11-kpi{min-height:104px;padding:16px 17px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 5px 18px rgba(23,70,72,.04)}.hr11-kpi span{display:block;color:var(--muted);font-size:12px}.hr11-kpi b{display:block;margin-top:8px;font-size:24px;line-height:1.15}.hr11-kpi small{display:block;margin-top:5px;color:#8b9a9c;font-size:11px}.hr11-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,.72fr);gap:16px}.hr11-card{border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 6px 20px rgba(23,70,72,.045);overflow:hidden}.hr11-card-head{display:flex;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line)}.hr11-card-head h2{margin:0;font-size:16px}.hr11-card-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.hr11-list{padding:6px 20px}.hr11-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(130px,.8fr) minmax(100px,.55fr);gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid #edf3f2}.hr11-row:last-child{border:0}.hr11-row strong{display:block;font-size:13px}.hr11-row small{display:block;margin-top:3px;color:var(--muted);font-size:11px}.hr11-pill{justify-self:start;padding:4px 9px;border-radius:999px;background:#e9f7f5;color:#0b6d66;font-size:11px;font-weight:700}.hr11-empty{padding:34px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.7}.hr11-empty strong{display:block;margin-bottom:5px;color:#385456}.hr11-guide{padding:14px 18px}.hr11-guide-item{padding:11px 0;border-bottom:1px dashed var(--line)}.hr11-guide-item:last-child{border:0}.hr11-guide-item strong{display:block;font-size:12px}.hr11-guide-item span{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.55}.hr11-access{margin:14px 0;padding:14px 16px;border:1px solid #ffd7dc;border-radius:14px;background:#fff2f4;color:#a52c39}.hr11-principle{margin-top:16px;padding:13px 15px;border:1px solid #d7ebe8;border-radius:14px;background:#f5fbfa;color:#526e70;font-size:12px;line-height:1.65}.hr11-principle strong{color:#126a64}@media(max-width:1050px){.hr11-summary{grid-template-columns:repeat(2,1fr)}.hr11-grid{grid-template-columns:1fr}}@media(max-width:680px){.hr11{padding:12px 12px 28px}.hr11-hero{padding:22px 20px;border-radius:18px}.hr11-hero h1{font-size:24px}.hr11-mobile-hint{display:block}.hr11-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.hr11-kpi{min-height:96px;padding:14px}.hr11-kpi b{font-size:21px}.hr11-row{grid-template-columns:1fr 1fr}.hr11-row>*:last-child{grid-column:1/-1}.hr11-card-head{padding:16px}.hr11-list{padding:6px 16px}}
+</style>
+<div class="hr11">
+{% if access_error %}<div class="hr11-access">{{ access_error }}</div>{% else %}
+<section class="hr11-hero"><div class="hr11-eyebrow">高校考勤与时间管理</div><h1>{{ section_title }}</h1><p>统一管理工作日历、排班、日考勤、异常更正、请假、加班调休和月结。原始打卡不直接等于正式考勤结果，已经月结的事实不能被普通编辑覆盖。</p></section>
+<nav class="hr11-nav" aria-label="考勤时间导航">
+<a class="{% if section == 'overview' %}active{% endif %}" href="/hr/time/">总览</a><a class="{% if section == 'attendance' %}active{% endif %}" href="/hr/time/attendance/">日考勤与异常</a><a class="{% if section == 'schedule' %}active{% endif %}" href="/hr/time/schedule/">日历与排班</a><a class="{% if section == 'leave' %}active{% endif %}" href="/hr/time/leave/">请假与销假</a><a class="{% if section == 'overtime' %}active{% endif %}" href="/hr/time/overtime/">加班与调休</a><a class="{% if section == 'close' %}active{% endif %}" href="/hr/time/close/">月结与结算</a><a class="{% if section == 'risks' %}active{% endif %}" href="/hr/time/risks/">风险中心</a>
+</nav><div class="hr11-mobile-hint">可左右滑动查看更多时间管理工作区</div>
+<section class="hr11-summary">
+<div class="hr11-kpi"><span>今日考勤事实</span><b>{{ summary.today_facts }}</b><small>{{ today }} 当前学校正式日考勤</small></div>
+<div class="hr11-kpi"><span>待处理考勤异常</span><b>{{ summary.open_exceptions }}</b><small>待处理与复核中的异常</small></div>
+<div class="hr11-kpi"><span>待处理请假</span><b>{{ summary.pending_leave }}</b><small>已提交或退回修改的申请</small></div>
+<div class="hr11-kpi"><span>待审批加班</span><b>{{ summary.pending_overtime }}</b><small>批准不等于实际加班时长</small></div>
+<div class="hr11-kpi"><span>当前生效排班</span><b>{{ summary.active_schedules }}</b><small>按学校日期判断当前排班</small></div>
+<div class="hr11-kpi"><span>待完成月结</span><b>{{ summary.open_close_periods }}</b><small>开启、预关闭或重开期间</small></div>
+<div class="hr11-kpi"><span>未关闭风险</span><b>{{ summary.open_risks }}</b><small>风险事实单独跟踪处理</small></div>
+<div class="hr11-kpi"><span>已核验加班事实</span><b>{{ summary.verified_overtime }}</b><small>只统计已经核验的实际加班</small></div>
+</section>
+<section class="hr11-grid">
+<div class="hr11-card"><div class="hr11-card-head"><div><h2>{% if section == 'attendance' %}最近日考勤事实{% elif section == 'schedule' %}最近排班{% elif section == 'leave' %}最近请假申请{% elif section == 'overtime' %}最近加班申请{% elif section == 'close' %}最近月结期间{% elif section == 'risks' %}最近考勤风险{% else %}最近日考勤事实{% endif %}</h2><p>以下内容均来自当前学校 HR11 正式数据表，不使用演示记录。</p></div></div><div class="hr11-list">
+{% if recent %}
+{% for item in recent %}
+<div class="hr11-row">
+<div>
+<strong>{% if section == 'close' %}{{ item.date }}{% elif section == 'risks' %}{{ item.risk }}{% elif section == 'leave' %}{{ item.type }} · 人员 {{ item.staff }}{% else %}人员 {{ item.staff|default:"—" }}{% endif %}</strong>
+<small>{% if section == 'attendance' or section == 'overview' %}{{ item.date }} · 记入工时 {{ item.minutes }} 分钟{% elif section == 'schedule' %}{{ item.date }}{% elif section == 'leave' %}{{ item.date }} · {{ item.amount }}{% elif section == 'overtime' %}{{ item.date|date:"Y-m-d H:i" }} · 计划 {{ item.minutes }} 分钟{% elif section == 'close' %}月结期间{% elif section == 'risks' %}{{ item.date|date:"Y-m-d H:i" }}{% endif %}</small>
+</div>
+<div>{% if section == 'overtime' %}{{ item.reason|default:"—" }}{% elif section == 'schedule' %}来源 {{ item.source|default:"—" }}{% elif section == 'attendance' or section == 'overview' %}{% if item.finalized %}已冻结{% else %}未冻结{% endif %}{% elif section == 'close' %}{% if item.closed_at %}{{ item.closed_at|date:"Y-m-d H:i" }}{% else %}尚未关闭{% endif %}{% else %}当前学校{% endif %}</div>
+<span class="hr11-pill">{{ item.status }}</span>
+</div>
+{% endfor %}
+{% else %}<div class="hr11-empty"><strong>当前没有可展示的正式记录</strong>这是当前学校真实空状态，不会为了页面好看生成考勤、请假或加班数据。</div>{% endif %}
+</div></div>
+<aside class="hr11-card"><div class="hr11-card-head"><div><h2>业务规则说明</h2><p>老师办理时最容易混淆的几个关键点。</p></div></div><div class="hr11-guide">
+<div class="hr11-guide-item"><strong>打卡记录 ≠ 正式考勤</strong><span>设备打卡先经过排班、日历、规则与异常评估，最终形成日考勤事实。</span></div>
+<div class="hr11-guide-item"><strong>批准加班 ≠ 实际加班</strong><span>实际加班还要与真实工作时间和适用规则核验，避免把申请时长直接用于结算。</span></div>
+<div class="hr11-guide-item"><strong>退回 ≠ 拒绝</strong><span>请假退回后允许按原申请链修改；拒绝是终局处理，二者保留不同历史。</span></div>
+<div class="hr11-guide-item"><strong>月结后不能直接改</strong><span>已关闭期间需要走更正批次并生成新快照，旧结论继续可追溯。</span></div>
+</div></aside>
+</section>
+<div class="hr11-principle"><strong>时间数据原则：</strong>所有“今天、本月、历史时点”按当前学校时区计算；没有明确学校上下文时拒绝读取，不跨学校自动兜底。</div>
+{% endif %}</div>
+{% endblock %}
