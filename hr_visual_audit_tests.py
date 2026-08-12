@@ -1,0 +1,301 @@
+"""Real-browser visual audit for HR13-HR18 child PRs.
+
+This module is intentionally not part of normal app test discovery. CI runs it
+explicitly with HR_VISUAL_AUDIT=1. It uses a real Django live server, MySQL test
+database, authenticated session, production middleware and the real canonical
+workspace APIs. Screenshots are evidence only; no assertion is weakened to make
+visual runs green.
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+from pathlib import Path
+from unittest import skipUnless
+
+from django.apps import apps
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client, override_settings
+
+
+MODULES = {
+    "hr_title": {
+        "code": "HR13",
+        "routes": [
+            ("overview", "/hr/titles/"),
+            ("applications", "/hr/titles/applications/"),
+            ("eligibility", "/hr/titles/eligibility/"),
+            ("materials", "/hr/titles/materials/"),
+            ("experts", "/hr/titles/experts/"),
+            ("deliberation", "/hr/titles/deliberation/"),
+            ("publicity", "/hr/titles/publicity/"),
+            ("appeals", "/hr/titles/appeals/"),
+            ("results", "/hr/titles/results/"),
+        ],
+    },
+    "hr_appointment": {
+        "code": "HR14",
+        "routes": [
+            ("overview", "/hr/appointments/"),
+            ("policies", "/hr/appointments/policies/"),
+            ("quota", "/hr/appointments/quota/"),
+            ("competitions", "/hr/appointments/competitions/"),
+            ("applications", "/hr/appointments/applications/"),
+            ("ranking", "/hr/appointments/ranking/"),
+            ("publicity", "/hr/appointments/publicity/"),
+            ("appointments", "/hr/appointments/appointments/"),
+            ("term-changes", "/hr/appointments/term-changes/"),
+        ],
+    },
+    "hr_payroll": {
+        "code": "HR15",
+        "routes": [
+            ("overview", "/hr/payroll/"),
+            ("profiles", "/hr/payroll/profiles/"),
+            ("periods", "/hr/payroll/periods/"),
+            ("calculations", "/hr/payroll/calculations/"),
+            ("rules", "/hr/payroll/rules/"),
+            ("allowances", "/hr/payroll/allowances/"),
+            ("social-security", "/hr/payroll/social-security/"),
+            ("results", "/hr/payroll/results/"),
+            ("payments", "/hr/payroll/payments/"),
+            ("reconciliation", "/hr/payroll/reconciliation/"),
+            ("legacy-takeover", "/hr/payroll/legacy-takeover/"),
+        ],
+    },
+    "hr_exit": {
+        "code": "HR16",
+        "routes": [
+            ("overview", "/hr/exit/"),
+            ("cases", "/hr/exit/cases/"),
+            ("handover", "/hr/exit/handover/"),
+            ("settlement", "/hr/exit/settlement/"),
+            ("retirement-precheck", "/hr/exit/retirement-precheck/"),
+            ("retirement-facts", "/hr/exit/retirement-facts/"),
+            ("effects", "/hr/exit/effects/"),
+            ("archive", "/hr/exit/archive/"),
+        ],
+    },
+    "hr_self": {
+        "code": "HR17",
+        "routes": [
+            ("overview", "/hr/self/"),
+            ("services", "/hr/self/services/"),
+            ("todos", "/hr/self/todos/"),
+            ("progress", "/hr/self/progress/"),
+            ("files", "/hr/self/files/"),
+            ("payslips", "/hr/self/payslips/"),
+            ("contracts", "/hr/self/contracts/"),
+        ],
+    },
+    "hr_data": {
+        "code": "HR18",
+        "routes": [
+            ("overview", "/hr/data/"),
+            ("metrics", "/hr/data/metrics/"),
+            ("population", "/hr/data/population/"),
+            ("as-of", "/hr/data/as-of/"),
+            ("quality", "/hr/data/quality/"),
+            ("exchange", "/hr/data/exchange/"),
+            ("submissions", "/hr/data/submissions/"),
+            ("corrections", "/hr/data/corrections/"),
+        ],
+    },
+}
+
+
+@skipUnless(os.getenv("HR_VISUAL_AUDIT") == "1", "visual audit is CI-explicit")
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="renshi-visual-media-"))
+class HrVisualAuditTests(StaticLiveServerTestCase):
+    """Capture baseline screenshots through real middleware + canonical APIs."""
+
+    reset_sequences = True
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover - explicit CI dependency
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+        cls._playwright = sync_playwright().start()
+        cls._browser = cls._playwright.chromium.launch(headless=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls._browser.close()
+            cls._playwright.stop()
+        finally:
+            super().tearDownClass()
+
+    def setUp(self):
+        from base.models import Company
+        from employee.models import Employee, EmployeeWorkInformation
+
+        User = get_user_model()
+        self.company = Company.objects.create(
+            company="跃科视觉验收学校",
+            hq=True,
+            address="长沙市视觉验收路 1 号",
+            country="CN",
+            state="Hunan",
+            city="Changsha",
+            zip="410000",
+            icon=SimpleUploadedFile("visual-audit.png", b"visual-audit", content_type="image/png"),
+        )
+        self.user = User.objects.create_superuser(
+            username="hr-visual-auditor",
+            email="visual-audit@example.invalid",
+            password="visual-audit-only-password",
+        )
+        self.user.is_new_employee = False
+        self.user.save(update_fields=["is_new_employee"])
+        self.employee = Employee.objects.create(
+            employee_user_id=self.user,
+            employee_first_name="视觉",
+            employee_last_name="验收员",
+            email="visual-employee@example.invalid",
+            phone="13800000000",
+            is_active=True,
+        )
+        EmployeeWorkInformation.objects.create(
+            employee_id=self.employee,
+            company_id=self.company,
+        )
+        self._seed_self_identity_if_needed()
+        self._seed_visible_module_data()
+
+        client = Client()
+        client.force_login(self.user)
+        session = client.session
+        session["selected_company"] = str(self.company.pk)
+        session["otp_code_verified"] = True
+        session.save()
+        self.session_cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
+
+        self.out_dir = Path(os.getenv("HR_VISUAL_ARTIFACT_DIR", "artifacts/hr-visual"))
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+
+    def _seed_self_identity_if_needed(self):
+        if not apps.is_installed("hr_self"):
+            return
+        from hr_staff.models import HrPerson, HrStaffMaster
+        from hr_self.models import SelfServiceCatalogItem, SelfServicePinnedService
+
+        person = HrPerson.objects.create(
+            tenant_id=self.company.pk,
+            legal_name="视觉验收员",
+            status="ACTIVE",
+        )
+        staff = HrStaffMaster.objects.create(
+            tenant_id=self.company.pk,
+            person_id=person,
+            staff_no="VISUAL-001",
+            current_employment_status="ACTIVE",
+            legacy_employee_id=self.employee.pk,
+        )
+        services = [
+            ("PERSONAL_PROFILE", "我的人事档案", "HR03", "查看本人档案", "/hr/self/"),
+            ("PAYSLIP", "我的工资条", "HR15", "查看工资条", "/hr/self/payslips/"),
+            ("CONTRACT", "我的合同", "HR07", "查看合同", "/hr/self/contracts/"),
+            ("TITLE", "职称申报进度", "HR13", "查看职称进度", "/hr/self/progress/"),
+        ]
+        for index, (code, name, domain, action, route) in enumerate(services, start=1):
+            SelfServiceCatalogItem.objects.create(
+                tenant_id=self.company.pk,
+                service_code=code,
+                name=name,
+                source_domain=domain,
+                action_key=action,
+                route=route,
+                sort_order=index * 10,
+            )
+        SelfServicePinnedService.objects.create(
+            tenant_id=self.company.pk,
+            staff_id=staff.pk,
+            service_code="PAYSLIP",
+            sort_order=10,
+        )
+
+    def _seed_visible_module_data(self):
+        """Seed only simple authority roots; failures are test failures, not hidden."""
+        if apps.is_installed("hr_data"):
+            from hr_data.models import DataQualityFinding, MetricDefinitionVersion, SubmissionSnapshot
+
+            MetricDefinitionVersion.objects.create(
+                tenant_id=self.company.pk,
+                metric_code="STAFF_ACTIVE",
+                name="在岗教职工数",
+                version_no=1,
+                status="ACTIVE",
+                value_type="INTEGER",
+                unit="人",
+                population_code="ACTIVE_STAFF",
+                source_domains=["HR03"],
+                as_of_required=True,
+            )
+            DataQualityFinding.objects.create(
+                tenant_id=self.company.pk,
+                finding_no="DQ-VISUAL-001",
+                rule_code="STAFF_ORG_REQUIRED",
+                source_domain="HR03",
+                source_object_ref="VISUAL-001",
+                severity="HIGH",
+                status="OPEN",
+            )
+            SubmissionSnapshot.objects.create(
+                tenant_id=self.company.pk,
+                submission_no="SUB-VISUAL-001",
+                definition_code="EDU-HR-MONTHLY",
+                definition_version=1,
+                as_of_date="2026-08-01",
+                status="DRAFT",
+            )
+
+    def _installed_targets(self):
+        targets = []
+        for app_label, config in MODULES.items():
+            if apps.is_installed(app_label):
+                targets.append((app_label, config))
+        return targets
+
+    def test_capture_real_workspace_screenshots(self):
+        targets = self._installed_targets()
+        self.assertTrue(targets, "No HR13-HR18 child module is installed in this PR merge state")
+
+        context = self._browser.new_context(
+            viewport={"width": 1440, "height": 1000},
+            device_scale_factor=1,
+        )
+        context.add_cookies(
+            [{"name": settings.SESSION_COOKIE_NAME, "value": self.session_cookie, "url": self.live_server_url}]
+        )
+        page = context.new_page()
+        page_errors: list[str] = []
+        page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+
+        for _app_label, config in targets:
+            code = config["code"]
+            module_dir = self.out_dir / code
+            module_dir.mkdir(parents=True, exist_ok=True)
+            for slug, route in config["routes"]:
+                response = page.goto(self.live_server_url + route, wait_until="networkidle")
+                self.assertIsNotNone(response, f"No HTTP response for {code} {route}")
+                self.assertEqual(response.status, 200, f"{code} {route} returned HTTP {response.status}")
+                page.screenshot(path=str(module_dir / f"desktop-{slug}.png"), full_page=True)
+
+            overview = config["routes"][0][1]
+            page.set_viewport_size({"width": 390, "height": 844})
+            response = page.goto(self.live_server_url + overview, wait_until="networkidle")
+            self.assertIsNotNone(response)
+            self.assertEqual(response.status, 200)
+            page.screenshot(path=str(module_dir / "mobile-overview.png"), full_page=True)
+            page.set_viewport_size({"width": 1440, "height": 1000})
+
+        context.close()
+        self.assertEqual(page_errors, [], "Browser page errors: " + " | ".join(page_errors))
