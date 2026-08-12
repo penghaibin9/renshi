@@ -85,12 +85,16 @@ class ImportService:
         """
         row_applier(row_data, checkpoint) → dict 或抛错（多表写在内部 atomic）。
         P2-3：外层不包大事务；每行独立 atomic + checkpoint 落库，进程崩溃可精确续跑。
+
+        返回的 failed 是整个导入作业的失败行总数：既包括 validate 阶段已经
+        判定无效的行，也包括 commit 阶段真实写入失败的有效行。否则一个“1 行
+        成功 + 1 行校验失败”的作业会被错误报告为 failed=0 / COMPLETED。
         """
         job.status = ImportJobStatus.COMMITTING
         job.save(update_fields=["status"])
 
         committed = 0
-        failed = 0
+        failed = job.rows.filter(is_valid=False).count()
         checkpoint = dict(job.checkpoint or {})
 
         valid_rows = list(job.rows.filter(is_valid=True).order_by("row_no"))
