@@ -24,6 +24,7 @@ class SelfServiceCatalogItem(HrTenantScopedModel):
 
     class Meta:
         db_table = "hr17_self_service_catalog"
+        permissions = [("hr.self.view", "访问 HR17 教职工本人服务")]
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "service_code"),
