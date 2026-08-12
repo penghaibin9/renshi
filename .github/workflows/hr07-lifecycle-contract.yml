@@ -99,6 +99,9 @@ jobs:
             | docker exec -i "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
           DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' python manage.py migrate --run-syncdb --noinput
       - name: HR07 lifecycle regression
+        # Point Django at the normal schema. Its test runner will deterministically
+        # resolve that to the already-provisioned `test_horilla_db` instead of
+        # accidentally prefixing our test schema a second time.
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
         run: python manage.py test hr_contracts.tests.test_lifecycle_service --keepdb --noinput --verbosity 2
