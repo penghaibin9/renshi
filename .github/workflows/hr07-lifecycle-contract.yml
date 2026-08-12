@@ -58,9 +58,25 @@ jobs:
             printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
           fi
       - name: Fresh MySQL migrate
+        id: fresh-migrate
+        shell: bash
         run: |
-          python manage.py migrate --noinput
-          python manage.py migrate --check
+          set +e
+          python manage.py migrate --noinput 2>&1 | tee hr07-migrate.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            python manage.py migrate --check 2>&1 | tee -a hr07-migrate.log
+            status=${PIPESTATUS[0]}
+          fi
+          exit "$status"
+      - name: Upload migration diagnostics
+        if: failure() && steps.fresh-migrate.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr07-migration-diagnostics
+          path: hr07-migrate.log
+          if-no-files-found: error
+          retention-days: 3
       - name: Provision isolated test schema
         shell: bash
         run: |
