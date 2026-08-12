@@ -18,6 +18,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "criticalFindings": open_findings.filter(severity="CRITICAL").count(),
             "submissions": submissions.count(),
             "awaitingReceipt": submissions.filter(status="SUBMITTED", receipt_ref="").count(),
+            "acceptedReceipts": submissions.filter(status="ACCEPTED").exclude(receipt_ref="").count(),
+            "rejectedReceipts": submissions.filter(status="REJECTED").exclude(receipt_ref="").count(),
             "corrections": submissions.filter(status="CORRECTED").count(),
         },
         "recentMetrics": list(
@@ -47,7 +49,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "asOfEngine": False,
             "qualityRuleExecution": False,
             "asyncExchange": False,
-            "submissionReceipt": False,
+            "submissionReceipt": True,
             "correctionWorkflow": False,
             "legacyReportTakeover": False,
         },
