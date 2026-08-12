@@ -24,9 +24,9 @@
     <div class="hr-card">
       <h3>{% trans "组织与岗位" %}</h3>
       <dl class="hr-dl">
-        <dt>{% trans "组织" %}</dt><dd>{{ case.employment_type_label|default:case.employment_type }} · {{ case.staff_category_label|default:case.staff_category }}</dd>
+        <dt>{% trans "组织" %}</dt><dd>{% firstof case.employment_type_label case.employment_type "—" %} · {% firstof case.staff_category_label case.staff_category "—" %}</dd>
         <dt>{% trans "计划岗位" %}</dt><dd>{{ case.planned_position_id|default:"—" }}</dd>
-        <dt>{% trans "人员类别" %}</dt><dd>{{ case.staff_category_label|default:case.staff_category }}</dd>
+        <dt>{% trans "人员类别" %}</dt><dd>{% firstof case.staff_category_label case.staff_category "—" %}</dd>
       </dl>
       {% include "hr/onboarding/components/position_reservation_card.html" with reservation=reservation %}
     </div>

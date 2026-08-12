@@ -59,12 +59,13 @@ class HrBootstrapApiTests(TestCase):
             email=cls.admin.email,
             phone="13800009999",
         )
-        # 必须设置 company，否则 middleware 无默认公司会把 session 重置为 "all"
-        EmployeeWorkInformation.objects.filter(employee_id=admin_emp).update(
+        # setUpTestData 尚无 tenant context；使用 base manager 只做测试夹具绑定，
+        # 避免 fail-closed 默认 manager 把 update 变成 0 行。
+        EmployeeWorkInformation._base_manager.filter(employee_id=admin_emp).update(
             company_id_id=cls.company.pk,
         )
 
-        # 创建 3 名员工（官方测试模式：不手动 set_selected_company，用 .update 设置 work_info）
+        # 创建 3 名员工并显式绑定当前学校；同样走 base manager 仅用于夹具初始化。
         for i in range(3):
             emp = Employee.objects.create(
                 employee_first_name=f"教师{i + 1}",
@@ -73,7 +74,7 @@ class HrBootstrapApiTests(TestCase):
                 phone=f"1380000{i + 1:04d}",
                 is_active=True,
             )
-            EmployeeWorkInformation.objects.filter(employee_id=emp).update(
+            EmployeeWorkInformation._base_manager.filter(employee_id=emp).update(
                 company_id_id=cls.company.pk,
                 department_id_id=cls.dept.pk,
                 job_position_id_id=cls.position.pk,
@@ -119,7 +120,8 @@ class HrBootstrapApiTests(TestCase):
             email=user.email,
             phone="13800008888",
         )
-        EmployeeWorkInformation.objects.filter(employee_id=user_emp).update(
+        # 此时请求尚未进入 CompanyMiddleware，继续用 base manager 完成合法夹具绑定。
+        EmployeeWorkInformation._base_manager.filter(employee_id=user_emp).update(
             company_id_id=self.company.pk,
         )
         self.client.force_login(user)
