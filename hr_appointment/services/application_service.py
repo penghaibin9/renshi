@@ -100,6 +100,20 @@ class AppointmentApplicationService:
             )
         return supply
 
+    def _require_population_member(self, batch: AppointmentBatch, person_id):
+        from hr_appointment.services.population_service import (
+            AppointmentPopulationError,
+            AppointmentPopulationService,
+        )
+
+        try:
+            return AppointmentPopulationService(
+                self.tenant_id,
+                actor_user_id=self.actor_user_id,
+            ).require_member(batch=batch, person_id=person_id)
+        except AppointmentPopulationError as exc:
+            raise AppointmentApplicationError(exc.code, str(exc)) from exc
+
     def _transition(self, case: AppointmentApplicationCase, *, allowed_from, target: str):
         if case.status not in allowed_from:
             raise AppointmentApplicationError(
@@ -130,6 +144,7 @@ class AppointmentApplicationService:
                 "APPOINTMENT_POLICY_VERSION_MISMATCH",
                 "application policy version must match the frozen appointment batch policy",
             )
+        self._require_population_member(batch, payload.person_id)
         supply = self._position_supply(batch, payload.position_instance_id)
         requested_level = str(payload.requested_level_code or "").strip()
         frozen_level = str(supply.level_code or "").strip()
