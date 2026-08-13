@@ -1,6 +1,5 @@
 import uuid
 from datetime import date
-from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
@@ -62,6 +61,7 @@ class SubmissionDispatchServiceTests(TestCase):
         result = SubmissionDispatchService(77, actor_user_id=9).queue(snapshot.id)
 
         self.assertTrue(result.queued)
+        self.assertEqual(result.error, "")
         self.assertTrue(result.dispatch_ref.startswith("dispatch-"))
         snapshot.refresh_from_db()
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DISPATCH_QUEUED)
@@ -75,6 +75,7 @@ class SubmissionDispatchServiceTests(TestCase):
 
         replay = SubmissionDispatchService(77, actor_user_id=99).queue(snapshot.id)
         self.assertFalse(replay.queued)
+        self.assertEqual(replay.error, "")
         self.assertEqual(replay.dispatch_ref, result.dispatch_ref)
         self.assertEqual(len(DISPATCH_CALLS), 1)
 
@@ -85,9 +86,10 @@ class SubmissionDispatchServiceTests(TestCase):
     )
     def test_provider_exception_becomes_retryable_dispatch_failed(self):
         snapshot = self._snapshot()
-        with self.assertRaises(SubmissionDispatchError) as ctx:
-            SubmissionDispatchService(77).queue(snapshot.id)
-        self.assertEqual(ctx.exception.code, "SUBMISSION_DISPATCH_FAILED")
+        result = SubmissionDispatchService(77).queue(snapshot.id)
+
+        self.assertFalse(result.queued)
+        self.assertIn("message broker unavailable", result.error)
         snapshot.refresh_from_db()
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DISPATCH_FAILED)
         self.assertIn("message broker unavailable", snapshot.dispatch_error)
