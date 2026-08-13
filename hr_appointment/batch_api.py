@@ -34,8 +34,12 @@ def _status(code: str) -> int:
         "APPOINTMENT_BATCH_INVALID_STATE",
         "APPOINTMENT_BATCH_POPULATION_REQUIRED",
         "APPOINTMENT_BATCH_SUPPLY_REQUIRED",
+        "APPOINTMENT_BATCH_SUPPLY_TARGET_MISMATCH",
         "APPOINTMENT_BATCH_QUOTA_REQUIRED",
         "APPOINTMENT_BATCH_QUOTA_EMPTY",
+        "APPOINTMENT_APPLICATION_WINDOW_REQUIRED",
+        "APPOINTMENT_PUBLICITY_WINDOW_REQUIRED",
+        "APPOINTMENT_POLICY_HASH_MISMATCH",
         "APPOINTMENT_APPLICATION_WINDOW_NOT_STARTED",
         "APPOINTMENT_APPLICATION_WINDOW_ENDED",
         "APPOINTMENT_ELIGIBILITY_INCOMPLETE",
@@ -55,6 +59,9 @@ def _serialize(batch):
         "targetLevels": batch.target_levels_json,
         "applicationFrom": batch.application_from.isoformat() if batch.application_from else None,
         "applicationTo": batch.application_to.isoformat() if batch.application_to else None,
+        "publicityFrom": batch.publicity_from.isoformat() if batch.publicity_from else None,
+        "publicityTo": batch.publicity_to.isoformat() if batch.publicity_to else None,
+        "contentHash": batch.content_hash,
         "status": batch.status,
     }
 
@@ -82,6 +89,12 @@ def create_batch(request):
         application_to = _optional_datetime(
             payload.get("applicationTo"), field="applicationTo"
         )
+        publicity_from = _optional_datetime(
+            payload.get("publicityFrom"), field="publicityFrom"
+        )
+        publicity_to = _optional_datetime(
+            payload.get("publicityTo"), field="publicityTo"
+        )
     except ValueError as exc:
         field = str(exc)
         if field == "INVALID_JSON":
@@ -100,6 +113,8 @@ def create_batch(request):
                 target_levels=payload.get("targetLevels") or (),
                 application_from=application_from,
                 application_to=application_to,
+                publicity_from=publicity_from,
+                publicity_to=publicity_to,
             )
         )
     except AppointmentBatchError as exc:
@@ -108,7 +123,7 @@ def create_batch(request):
         {
             "data": _serialize(batch),
             "apiVersion": "1.0",
-            "schemaVersion": "hr14.batch.1",
+            "schemaVersion": "hr14.batch.2",
         },
         status=201,
     )
@@ -131,7 +146,7 @@ def _transition(request, batch_id, method_name):
         {
             "data": _serialize(batch),
             "apiVersion": "1.0",
-            "schemaVersion": "hr14.batch.1",
+            "schemaVersion": "hr14.batch.2",
         }
     )
     response["Cache-Control"] = "no-store"
