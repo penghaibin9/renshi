@@ -9,15 +9,16 @@ successful provider call returning a mapping can become SUCCESS.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
 from django.utils.module_loading import import_string
 
 from hr_exit.models import ExitCase, ExitEffect
-from hr_exit.services.saga_service import ExitEffectSagaService, ExitSagaError
+from hr_exit.services.saga_service import ExitEffectSagaService
 
 
 class ExitParticipantError(Exception):
