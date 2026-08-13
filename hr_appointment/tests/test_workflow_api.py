@@ -49,6 +49,7 @@ class Hr14WorkflowApiTests(SimpleTestCase):
             application_to=now + timedelta(days=5),
             publicity_from=now + timedelta(days=10),
             publicity_to=now + timedelta(days=15),
+            version_no=1,
             content_hash="",
             status="DRAFT",
         )
@@ -83,6 +84,8 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         self.assertEqual(payload.batch_no, "B-2026-01")
         self.assertEqual(payload.application_from, now)
         self.assertEqual(payload.publicity_from, now + timedelta(days=10))
+        self.assertEqual(json.loads(response.content)["data"]["versionNo"], 1)
+        self.assertEqual(response["ETag"], '"hr14-batch-v1"')
         self.assertEqual(response["Cache-Control"], "no-store")
 
     @patch("hr_appointment.batch_api.resolve_request_tenant", return_value=7)
