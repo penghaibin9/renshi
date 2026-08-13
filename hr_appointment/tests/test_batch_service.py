@@ -34,7 +34,7 @@ class AppointmentBatchServiceTests(TestCase):
         self.service = AppointmentBatchService(self.tenant, actor_user_id=9)
         self.now = timezone.now().replace(microsecond=0)
 
-    def _draft(self, *, batch_no="B-2026-01"):
+    def _draft(self, *, batch_no="B-2026-01", with_publicity=True):
         return self.service.create_draft(
             AppointmentBatchInput(
                 batch_no=batch_no,
@@ -44,6 +44,8 @@ class AppointmentBatchServiceTests(TestCase):
                 target_levels=("PT-7",),
                 application_from=self.now - timedelta(hours=1),
                 application_to=self.now + timedelta(days=5),
+                publicity_from=(self.now + timedelta(days=10)) if with_publicity else None,
+                publicity_to=(self.now + timedelta(days=15)) if with_publicity else None,
             )
         )
 
@@ -66,14 +68,14 @@ class AppointmentBatchServiceTests(TestCase):
         )
         return snapshot
 
-    def _supply(self, batch):
+    def _supply(self, batch, *, category="PROFESSIONAL_TECHNICAL", level="PT-7"):
         return AppointmentPositionSupplySnapshot.objects.create(
             tenant_id=self.tenant,
             batch=batch,
             position_instance_id=1001,
             organization_id=11,
-            category_code="PROFESSIONAL_TECHNICAL",
-            level_code="PT-7",
+            category_code=category,
+            level_code=level,
             authorized_fte=1,
             occupied_fte=0,
             reserved_fte=0,
@@ -119,6 +121,12 @@ class AppointmentBatchServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_TARGETS_INVALID")
 
+    def test_publish_requires_application_and_publicity_windows(self):
+        batch = self._draft(with_publicity=False)
+        with self.assertRaises(AppointmentBatchError) as ctx:
+            self.service.publish(batch.id)
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_PUBLICITY_WINDOW_REQUIRED")
+
     def test_publish_requires_frozen_population_supply_and_positive_quota(self):
         batch = self._draft()
         with self.assertRaises(AppointmentBatchError) as ctx:
@@ -144,6 +152,22 @@ class AppointmentBatchServiceTests(TestCase):
         pool.save(update_fields=["authorized", "updated_at"])
         published = self.service.publish(batch.id)
         self.assertEqual(published.status, published.Status.PUBLISHED)
+        self.assertEqual(len(published.content_hash), 64)
+        self.policy.refresh_from_db()
+        self.assertEqual(len(self.policy.content_hash), 64)
+
+    def test_publish_rejects_supply_outside_frozen_target_scope(self):
+        batch = self._draft(batch_no="B-TARGET-MISMATCH")
+        self._population(batch)
+        self._supply(batch, level="PT-6")
+        self._pool(batch)
+
+        with self.assertRaises(AppointmentBatchError) as ctx:
+            self.service.publish(batch.id)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_SUPPLY_TARGET_MISMATCH")
+        batch.refresh_from_db()
+        self.assertEqual(batch.status, batch.Status.DRAFT)
 
     def test_application_window_and_batch_phases_are_explicit(self):
         batch = self._draft()
