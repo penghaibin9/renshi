@@ -11,6 +11,7 @@ from .models import (
     AppointmentRankingResult,
     PositionAppointmentFact,
 )
+from .term_models import AppointmentChangeCase, AppointmentRenewalCase, AppointmentTerm
 
 
 def dashboard_snapshot(tenant_id: int) -> dict:
@@ -24,6 +25,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     rankings = AppointmentRankingResult.objects.filter(tenant_id=tenant_id)
     publicities = AppointmentPublicityRecord.objects.filter(tenant_id=tenant_id)
     objections = AppointmentPublicityObjection.objects.filter(tenant_id=tenant_id)
+    terms = AppointmentTerm.objects.filter(tenant_id=tenant_id)
+    renewals = AppointmentRenewalCase.objects.filter(tenant_id=tenant_id)
+    changes = AppointmentChangeCase.objects.filter(tenant_id=tenant_id)
     quota_pools = AppointmentQuotaPool.objects.filter(
         tenant_id=tenant_id, batch__tenant_id=tenant_id
     ).select_related("batch")
@@ -36,6 +40,21 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             AppointmentPublicityObjection.Status.UNDER_REVIEW,
         ]
     )
+    active_term_statuses = [
+        AppointmentTerm.Status.ACTIVE,
+        AppointmentTerm.Status.EXPIRING,
+        AppointmentTerm.Status.RENEWAL_IN_PROGRESS,
+    ]
+    pending_renewal_statuses = [
+        AppointmentRenewalCase.Status.READY,
+        AppointmentRenewalCase.Status.APPROVED,
+        AppointmentRenewalCase.Status.REAPPOINTMENT_REQUIRED,
+    ]
+    pending_change_statuses = [
+        AppointmentChangeCase.Status.REVIEW_REQUIRED,
+        AppointmentChangeCase.Status.APPROVED,
+        AppointmentChangeCase.Status.REAPPOINTMENT_REQUIRED,
+    ]
     return {
         "summary": {
             "policyVersions": policies.count(),
@@ -52,6 +71,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "unresolvedObjections": unresolved_objections.count(),
             "upheldObjections": objections.filter(status=AppointmentPublicityObjection.Status.UPHELD).count(),
             "effectiveAppointments": facts.filter(status="EFFECTIVE").count(),
+            "appointmentTerms": terms.count(),
+            "activeTerms": terms.filter(status__in=active_term_statuses).count(),
+            "expiringTerms": terms.filter(status=AppointmentTerm.Status.EXPIRING).count(),
+            "renewalCases": renewals.count(),
+            "pendingRenewals": renewals.filter(status__in=pending_renewal_statuses).count(),
+            "changeCases": changes.count(),
+            "pendingTermChanges": changes.filter(status__in=pending_change_statuses).count(),
             "quotaPools": quota_pools.count(),
             "availableQuota": quota_total,
         },
@@ -97,6 +123,30 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "status", "created_at"
             )
         ),
+        "recentTerms": list(
+            terms.order_by("-effective_from", "-created_at")[:16].values(
+                "id", "term_no", "appointment_fact_id", "person_id", "position_instance_id",
+                "level_code", "policy_version_id", "effective_from", "effective_to", "status",
+                "renewal_due_at", "supersedes_term_id", "version", "created_at", "updated_at"
+            )
+        ),
+        "recentRenewals": list(
+            renewals.order_by("-created_at")[:16].values(
+                "id", "renewal_no", "source_term_id", "attempt_no", "policy_version_id",
+                "route", "hr12_term_result_ref", "proposed_effective_from",
+                "proposed_effective_to", "proposed_level_code", "status",
+                "decision_snapshot_json", "successor_fact_id", "successor_term_id",
+                "decided_at", "created_at"
+            )
+        ),
+        "recentTermChanges": list(
+            changes.order_by("-created_at")[:16].values(
+                "id", "change_no", "source_term_id", "attempt_no", "change_type",
+                "policy_version_id", "target_position_instance_id", "target_level_code",
+                "effective_date", "reason", "status", "decision_snapshot_json",
+                "successor_fact_id", "successor_term_id", "decided_at", "created_at"
+            )
+        ),
         "recentPolicies": list(
             policies.order_by("-effective_from", "-version_no")[:8].values(
                 "id", "policy_code", "name", "version_no", "status",
@@ -128,6 +178,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "reviewRanking": True,
             "publicity": True,
             "publicityObjection": True,
-            "termChange": False,
+            "termChange": True,
+            "termEffect": False,
         },
     }
