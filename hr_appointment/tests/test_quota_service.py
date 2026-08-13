@@ -98,6 +98,19 @@ class AppointmentQuotaServiceTests(TestCase):
         self.pool.refresh_from_db()
         self.assertEqual(self.pool.reserved, 1)
 
+    def test_publicity_case_can_retry_existing_or_late_capacity_reservation(self):
+        self.case.status = AppointmentApplicationCase.Status.PUBLICITY
+        self.case.save(update_fields=["status", "updated_at"])
+
+        reservation = self.service.reserve(
+            application_case_id=self.case.id,
+            quota_pool_id=self.pool.id,
+        )
+
+        self.assertEqual(reservation.status, AppointmentQuotaReservation.Status.ACTIVE)
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.reserved, 1)
+
     def test_consume_moves_reserved_to_occupied_once(self):
         reservation = self.service.reserve(
             application_case_id=self.case.id, quota_pool_id=self.pool.id
@@ -132,3 +145,31 @@ class AppointmentQuotaServiceTests(TestCase):
                 application_case_id=self.case.id, quota_pool_id=other_pool.id
             )
         self.assertEqual(cm.exception.code, "APPOINTMENT_QUOTA_BATCH_MISMATCH")
+
+    def test_exact_level_pool_cannot_be_used_for_different_requested_level(self):
+        self.case.requested_level_code = "PT-6"
+        self.case.save(update_fields=["requested_level_code", "updated_at"])
+
+        with self.assertRaises(AppointmentQuotaError) as cm:
+            self.service.reserve(
+                application_case_id=self.case.id,
+                quota_pool_id=self.pool.id,
+            )
+
+        self.assertEqual(cm.exception.code, "APPOINTMENT_QUOTA_LEVEL_MISMATCH")
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.reserved, 0)
+
+    def test_case_policy_must_match_frozen_batch_policy(self):
+        self.case.policy_version_id = uuid.uuid4()
+        self.case.save(update_fields=["policy_version_id", "updated_at"])
+
+        with self.assertRaises(AppointmentQuotaError) as cm:
+            self.service.reserve(
+                application_case_id=self.case.id,
+                quota_pool_id=self.pool.id,
+            )
+
+        self.assertEqual(cm.exception.code, "APPOINTMENT_QUOTA_POLICY_MISMATCH")
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.reserved, 0)
