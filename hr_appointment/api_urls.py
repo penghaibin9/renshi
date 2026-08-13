@@ -16,6 +16,11 @@ urlpatterns = [
         name="publicity-open",
     ),
     path(
+        "applications/<uuid:case_id>/apply-effect/",
+        api.apply_effect,
+        name="appointment-effect-apply",
+    ),
+    path(
         "publicities/<uuid:publicity_id>/objections/",
         api.submit_publicity_objection,
         name="publicity-objection-submit",
