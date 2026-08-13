@@ -10,4 +10,9 @@ class HrAppointmentConfig(AppConfig):
         # Large authority subdomains stay split into focused model modules.
         # Importing here registers model classes and runtime immutability guards;
         # it performs no database queries or startup writes.
-        from . import freeze_guards, population_models, term_models  # noqa: F401
+        from . import (  # noqa: F401
+            decision_models,
+            freeze_guards,
+            population_models,
+            term_models,
+        )
