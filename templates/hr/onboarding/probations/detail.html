@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "index.html" %}
 {% load i18n %}
 {% block title %}{% trans "试用与转正" %} — {{ probation.case_no|default:_("未编号") }}{% endblock %}
 {% block content %}
@@ -20,9 +20,9 @@
         <dt>{% trans "入职单" %}</dt><dd>{{ probation.case_no|default:"—" }}</dd>
         <dt>{% trans "开始日期" %}</dt><dd>{{ probation.start_date|date:"Y-m-d" }}</dd>
         <dt>{% trans "计划转正日" %}</dt><dd>{{ probation.planned_end_date|date:"Y-m-d" }}</dd>
-        <dt>{% trans "当前状态" %}</dt><dd><span class="hr-badge hr-badge--{{ probation.status_class }}">{{ probation.status_label|default:probation.status }}</span></dd>
-        <dt>{% trans "试用结果" %}</dt><dd>{{ probation.result_label|default:probation.result }}</dd>
-        <dt>{% trans "延长次数" %}</dt><dd>{{ probation.extension_count }}</dd>
+        <dt>{% trans "当前状态" %}</dt><dd><span class="hr-badge hr-badge--{{ probation.status_class }}">{% firstof probation.status_label probation.status "—" %}</span></dd>
+        <dt>{% trans "试用结果" %}</dt><dd>{% firstof probation.result_label probation.result "—" %}</dd>
+        <dt>{% trans "延长次数" %}</dt><dd>{{ probation.extension_count|default:0 }}</dd>
       </dl>
     </div>
     <div class="hr-card">

@@ -177,8 +177,12 @@ class ProbationService:
         as_of: Optional[date] = None,
     ) -> HrProbationCase:
         probation = HrProbationCase.objects.select_for_update().get(id=probation.id)
-        if probation.status == ProbationStatus.CONFIRMED:
-            raise ProbationAlreadyFinalizedError("试用已确认")
+        if probation.status in (
+            ProbationStatus.CONFIRMED,
+            ProbationStatus.FAILED,
+            ProbationStatus.CANCELLED,
+        ):
+            raise ProbationAlreadyFinalizedError("试用已终局，不可转正")
         assert_probation_transition(probation.status, ProbationStatus.CONFIRMED)
         probation.status = ProbationStatus.CONFIRMED
         probation.result = ProbationResult.CONFIRMED

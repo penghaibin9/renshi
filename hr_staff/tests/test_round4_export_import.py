@@ -7,7 +7,7 @@ from unittest import mock
 
 from django.test import TestCase
 
-from hr_staff.models import HrExportJob, HrStaffAuditEvent
+from hr_staff.models import HrExportJob, HrStaffAuditEvent, HrStaffMaster
 from hr_staff.services.export_service import (
     ExportContentStore,
     ExportPolicyDenied,
@@ -102,7 +102,12 @@ class ImportApplierTests(TestCase):
         svc.parse_rows(
             job,
             [
-                {"staff_no": "T600001", "legal_name": "孙八", "effective_from": "2024-09-01"},
+                {
+                    "staff_no": "T600001",
+                    "legal_name": "孙八",
+                    "effective_from": "2024-09-01",
+                    "legacy_department_id": "7",
+                },
                 {"legal_name": ""},  # 缺姓名 → 校验失败
             ],
         )

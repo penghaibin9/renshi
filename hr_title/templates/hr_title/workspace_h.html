@@ -1,0 +1,91 @@
+{% extends "hr_title/workspace_g.html" %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(() => {
+  const section = '{{ section|escapejs }}';
+  if (!['publicity', 'appeals'].includes(section)) return;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+  let snapshot = null;
+
+  const caseLabel = (caseId) => {
+    const row = (snapshot?.recentApplications || []).find((x) => String(x.id) === String(caseId));
+    return row ? `${row.case_no} · ${row.requested_title_name || row.requested_title_code}` : '关联职称申报';
+  };
+  const publicityLabel = (publicityId) => {
+    const row = (snapshot?.recentPublicities || []).find((x) => String(x.id) === String(publicityId));
+    return row ? row.publicity_no : '关联公示';
+  };
+
+  function publicitiesHtml() {
+    const rows = snapshot?.recentPublicities || [];
+    return rows.length ? rows.map((x) =>
+      `<div class="hr13g-row"><div><b>${esc(x.publicity_no)}</b><small>${esc(caseLabel(x.application_case_id))}</small></div>` +
+      `<small class="detail">${esc(String(x.start_at || '').slice(0,16))} → ${esc(String(x.end_at || '').slice(0,16))}</small>` +
+      `<span class="hr13g-badge ${x.status === 'CLOSED' ? 'good' : x.status === 'CANCELLED' ? 'warn' : ''}">${esc(x.status)}</span>` +
+      `<small class="date">${esc(String(x.created_at || '').slice(0,10))}</small></div>`
+    ).join('') : '<div class="hr13g-empty">当前没有公示记录</div>';
+  }
+
+  function appealsHtml() {
+    const rows = snapshot?.recentAppeals || [];
+    return rows.length ? rows.map((x) =>
+      `<div class="hr13g-row"><div><b>${esc(x.appeal_no)}</b><small>${esc(publicityLabel(x.publicity_id))} · ${esc(x.appellant_ref || '未标注异议人')}</small></div>` +
+      `<small class="detail">${esc(x.reason || '—')}${x.resolution ? ' · ' + esc(x.resolution) : ''}</small>` +
+      `<span class="hr13g-badge ${x.status === 'UPHELD' ? 'warn' : x.status === 'REJECTED' || x.status === 'WITHDRAWN' ? 'good' : ''}">${esc(x.status)}</span>` +
+      `<small class="date">${esc(String(x.created_at || '').slice(0,10))}</small></div>`
+    ).join('') : '<div class="hr13g-empty">当前没有异议记录</div>';
+  }
+
+  function alignLegacyWorkspace() {
+    if (!snapshot) return;
+    const title = document.getElementById('hr13c-title');
+    const desc = document.getElementById('hr13c-desc');
+    const rows = document.getElementById('hr13c-rows');
+    const toolbar = document.querySelector('.hr13c-toolbar');
+    if (toolbar) toolbar.style.display = 'none';
+    if (!title || !desc || !rows) return;
+    if (section === 'publicity') {
+      title.textContent = '真实结果公示';
+      desc.textContent = '公示窗口、状态和关单均来自 TitlePublicityRecord；仅 CLOSED 且无阻断异议才允许形成正式职称结果。';
+      rows.innerHTML = publicitiesHtml();
+    } else {
+      title.textContent = '异议与复核';
+      desc.textContent = '每条异议独立留痕；OPEN 或 UPHELD 会阻断公示关单或正式结果，不再用申报状态冒充复核事实。';
+      rows.innerHTML = appealsHtml();
+    }
+  }
+
+  function removeOpaqueIds() {
+    if (!snapshot) return;
+    const pubs = document.getElementById('hr13g-pubs');
+    const appealList = document.getElementById('hr13g-appeals');
+    if (pubs) pubs.innerHTML = publicitiesHtml();
+    if (appealList) appealList.innerHTML = appealsHtml();
+  }
+
+  async function loadTruth() {
+    const response = await fetch('/api/v1/hr/titles/dashboard/', {
+      headers:{'X-Requested-With':'XMLHttpRequest'}, credentials:'same-origin'
+    });
+    if (!response.ok) return;
+    snapshot = await response.json();
+    alignLegacyWorkspace();
+    removeOpaqueIds();
+    [220, 650, 1300].forEach((delay) => setTimeout(() => {
+      alignLegacyWorkspace();
+      removeOpaqueIds();
+    }, delay));
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadTruth, {once:true});
+  } else {
+    loadTruth();
+  }
+})();
+</script>
+{% endblock %}
