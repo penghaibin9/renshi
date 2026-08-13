@@ -18,6 +18,7 @@ class AppointmentTerm(HrTenantScopedModel):
         EXPIRING = "EXPIRING", "Expiring"
         RENEWAL_IN_PROGRESS = "RENEWAL_IN_PROGRESS", "Renewal in progress"
         RENEWED = "RENEWED", "Renewed"
+        SUPERSEDED = "SUPERSEDED", "Superseded by successor term"
         EXPIRED = "EXPIRED", "Expired"
         TERMINATED = "TERMINATED", "Terminated"
         REAPPOINTMENT_REQUIRED = "REAPPOINTMENT_REQUIRED", "Reappointment required"
