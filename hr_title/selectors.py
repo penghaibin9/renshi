@@ -6,9 +6,11 @@ from collections import Counter
 
 from .models import (
     ProfessionalTitleResult,
+    TitleAppealRecord,
     TitleApplicationCase,
     TitleMaterialSnapshot,
     TitlePolicyVersion,
+    TitlePublicityRecord,
     TitleQualificationDecision,
     TitleReviewAssignment,
     TitleReviewBallot,
@@ -31,6 +33,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     review_rounds = TitleReviewRound.objects.filter(tenant_id=tenant_id)
     assignments = TitleReviewAssignment.objects.filter(tenant_id=tenant_id)
     ballots = TitleReviewBallot.objects.filter(tenant_id=tenant_id)
+    publicities = TitlePublicityRecord.objects.filter(tenant_id=tenant_id)
+    appeals = TitleAppealRecord.objects.filter(tenant_id=tenant_id)
     results = ProfessionalTitleResult.objects.filter(tenant_id=tenant_id)
 
     status_counts = Counter(cases.values_list("status", flat=True))
@@ -49,6 +53,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             ).count(),
             "reviewAssignments": assignments.count(),
             "reviewBallots": ballots.count(),
+            "publicityRecords": publicities.count(),
+            "openPublicities": publicities.filter(
+                status=TitlePublicityRecord.Status.OPEN
+            ).count(),
+            "appeals": appeals.count(),
+            "openAppeals": appeals.filter(status=TitleAppealRecord.Status.OPEN).count(),
+            "upheldAppeals": appeals.filter(status=TitleAppealRecord.Status.UPHELD).count(),
             "awaitingQualification": status_counts.get("SUBMITTED", 0),
             "underReview": status_counts.get("UNDER_REVIEW", 0),
             "inPublicity": status_counts.get("PUBLICITY", 0),
@@ -141,6 +152,38 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "submitted_at",
             )
         ),
+        "recentPublicities": list(
+            publicities.order_by("-created_at")[:12].values(
+                "id",
+                "publicity_no",
+                "application_case_id",
+                "start_at",
+                "end_at",
+                "content_snapshot_json",
+                "status",
+                "opened_by",
+                "closed_by",
+                "closed_at",
+                "cancelled_at",
+                "created_at",
+            )
+        ),
+        "recentAppeals": list(
+            appeals.order_by("-created_at")[:24].values(
+                "id",
+                "appeal_no",
+                "publicity_id",
+                "application_case_id",
+                "appellant_ref",
+                "reason",
+                "evidence_json",
+                "status",
+                "resolution",
+                "resolved_by",
+                "resolved_at",
+                "created_at",
+            )
+        ),
         "recentResults": list(
             results.order_by("-effective_from", "-created_at")[:12].values(
                 "id",
@@ -177,7 +220,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "materials": True,
             "expertPanel": True,
             "deliberationVote": True,
-            "publicity": False,
-            "appealReview": False,
+            "publicity": True,
+            "appealReview": True,
         },
     }
