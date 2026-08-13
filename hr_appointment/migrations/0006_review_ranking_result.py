@@ -76,7 +76,7 @@ class Migration(migrations.Migration):
             model_name="appointmentrankingresult",
             index=models.Index(
                 fields=["tenant_id", "batch_no", "position_instance_id", "rank_no"],
-                name="idx_hr14_ranking_batch_position",
+                name="idx_hr14_rank_batch_pos",
             ),
         ),
     ]
