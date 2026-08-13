@@ -11,6 +11,7 @@ from django.db.models import Max
 from hr_appointment.models import (
     AppointmentApplicationCase,
     AppointmentBatch,
+    AppointmentQuotaReservation,
     AppointmentRankingResult,
 )
 
@@ -84,6 +85,25 @@ class AppointmentRankingService:
                 "APPOINTMENT_CASE_NOT_FOUND", "appointment application case not found"
             )
         return AppointmentRankingOutcome(existing, case, False)
+
+    def _release_non_selected_quota(self, case: AppointmentApplicationCase) -> None:
+        quota = (
+            AppointmentQuotaReservation.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, application_case=case)
+            .first()
+        )
+        if quota is None or quota.status == AppointmentQuotaReservation.Status.RELEASED:
+            return
+        if quota.status == AppointmentQuotaReservation.Status.CONSUMED:
+            raise AppointmentRankingError(
+                "APPOINTMENT_RANKING_QUOTA_ALREADY_CONSUMED",
+                "a non-selected application cannot already have consumed appointment quota",
+            )
+        from hr_appointment.services.quota_service import AppointmentQuotaService
+
+        AppointmentQuotaService(
+            self.tenant_id, actor_user_id=self.actor_user_id
+        ).release(quota.id)
 
     @transaction.atomic
     def finalize(
@@ -191,6 +211,12 @@ class AppointmentRankingService:
         )
         if outcome == AppointmentRankingResult.Outcome.SELECTED:
             case.status = AppointmentApplicationCase.Status.PROPOSED
-            case.updated_by = self.actor_user_id
-            case.save(update_fields=["status", "updated_by", "updated_at"])
+        elif outcome == AppointmentRankingResult.Outcome.WAITLIST:
+            self._release_non_selected_quota(case)
+            case.status = AppointmentApplicationCase.Status.WAITLIST
+        else:
+            self._release_non_selected_quota(case)
+            case.status = AppointmentApplicationCase.Status.NOT_SELECTED
+        case.updated_by = self.actor_user_id
+        case.save(update_fields=["status", "updated_by", "updated_at"])
         return AppointmentRankingOutcome(ranking, case, True)
