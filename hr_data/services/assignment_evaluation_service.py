@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from django.db.models import Q
 
@@ -38,6 +40,17 @@ _ASSIGNMENT_FIELD_MAP = {
 }
 
 
+def _coerce_assignment(value, value_type: str):
+    if value_type != "DECIMAL":
+        return _coerce_scalar(value, value_type)
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise AsOfEvaluationError(
+            "ASOF_EVALUATION_VALUE_INVALID", "decimal predicate value is invalid"
+        ) from exc
+
+
 def _assignment_leaf(node: dict) -> Q:
     path = _normalize_path(node.get("field"))
     mapping = _ASSIGNMENT_FIELD_MAP.get(path)
@@ -49,16 +62,6 @@ def _assignment_leaf(node: dict) -> Q:
     field_name, value_type = mapping
     op = str(node.get("op") or "").strip().lower()
     value = node.get("value")
-    if value_type == "DECIMAL":
-        try:
-            from decimal import Decimal, InvalidOperation
-
-            value = Decimal(str(value))
-        except (InvalidOperation, TypeError, ValueError) as exc:
-            raise AsOfEvaluationError(
-                "ASOF_EVALUATION_VALUE_INVALID", "decimal predicate value is invalid"
-            ) from exc
-        value_type = "STRING"
     if op == "is_null":
         if not isinstance(value, bool):
             raise AsOfEvaluationError(
@@ -70,10 +73,10 @@ def _assignment_leaf(node: dict) -> Q:
             raise AsOfEvaluationError(
                 "ASOF_EVALUATION_VALUE_INVALID", f"{op} requires a list value"
             )
-        values = [_coerce_scalar(item, value_type) for item in value]
+        values = [_coerce_assignment(item, value_type) for item in value]
         query = Q(**{f"{field_name}__in": values})
         return ~query if op == "not_in" else query
-    coerced = _coerce_scalar(value, value_type)
+    coerced = _coerce_assignment(value, value_type)
     if op == "eq":
         return Q(**{field_name: coerced})
     if op == "ne":
@@ -134,8 +137,6 @@ class Hr03AssignmentAsOfEvaluationService(Hr03AsOfEvaluationService):
                 "ASOF_EVALUATION_POPULATION_NOT_FOUND",
                 "population definition version does not exist in current tenant",
             )
-        import re
-
         if not re.fullmatch(r"[0-9a-fA-F]{64}", str(population.content_hash or "")):
             raise AsOfEvaluationError(
                 "ASOF_EVALUATION_DEFINITION_HASH_INVALID",
