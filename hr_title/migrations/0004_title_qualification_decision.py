@@ -7,6 +7,15 @@ class Migration(migrations.Migration):
     dependencies = [("hr_title", "0003_title_material_snapshot")]
 
     operations = [
+        migrations.AlterModelOptions(
+            name="titlepolicyversion",
+            options={
+                "permissions": [
+                    ("hr.title.view", "查看 HR13 职称评审工作区"),
+                    ("hr.title.review", "执行 HR13 资格审查"),
+                ],
+            },
+        ),
         migrations.CreateModel(
             name="TitleQualificationDecision",
             fields=[
