@@ -22,6 +22,7 @@ class AppointmentPolicyVersion(HrVersionedModel):
             ("hr.appointment.view", "查看 HR14 岗位聘任工作区"),
             ("hr.appointment.review", "执行 HR14 评议排序"),
             ("hr.appointment.publicity", "维护 HR14 拟聘公示与异议"),
+            ("hr.appointment.effect", "执行 HR14 正式聘任生效"),
         ]
         constraints = [
             models.UniqueConstraint(
