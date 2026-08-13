@@ -1,7 +1,7 @@
 import json
 import uuid
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from django.http import HttpRequest
 from django.test import SimpleTestCase
@@ -52,13 +52,14 @@ class Hr13PublicityApiContractTests(SimpleTestCase):
 
     @patch("hr_title.publicity_api.resolve_request_tenant")
     def test_publicity_write_requires_dedicated_permission(self, resolve_tenant):
+        request = self._request()
         resolve_tenant.side_effect = HrTitleAccessError(
             "PERMISSION_DENIED", "missing publicity permission"
         )
-        response = publicity_api.close_publicity(self._request(), uuid.uuid4())
+        response = publicity_api.close_publicity(request, uuid.uuid4())
         self.assertEqual(response.status_code, 403)
         resolve_tenant.assert_called_once_with(
-            self._request().__class__.__mro__[0] if False else resolve_tenant.call_args.args[0],
+            request,
             required_permission="hr.title.publicity",
         )
 
