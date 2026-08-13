@@ -36,26 +36,28 @@ def _status(code: str) -> int:
 
 
 def _serialize(snapshot):
+    dispatch_requested_at = getattr(snapshot, "dispatch_requested_at", None)
+    submitted_at = getattr(snapshot, "submitted_at", None)
+    parent_submission_id = getattr(snapshot, "parent_submission_id", None)
     return {
         "id": str(snapshot.id),
         "submissionNo": snapshot.submission_no,
+        "definitionKind": getattr(snapshot, "definition_kind", "UNKNOWN"),
         "definitionCode": snapshot.definition_code,
         "definitionVersion": snapshot.definition_version,
         "asOfDate": snapshot.as_of_date.isoformat(),
         "scope": snapshot.scope_json,
         "payloadHash": snapshot.payload_hash,
         "status": snapshot.status,
-        "dispatchRef": snapshot.dispatch_ref or None,
+        "dispatchRef": getattr(snapshot, "dispatch_ref", "") or None,
         "dispatchRequestedAt": (
-            snapshot.dispatch_requested_at.isoformat()
-            if snapshot.dispatch_requested_at
-            else None
+            dispatch_requested_at.isoformat() if dispatch_requested_at else None
         ),
-        "dispatchError": snapshot.dispatch_error or None,
-        "submittedAt": snapshot.submitted_at.isoformat() if snapshot.submitted_at else None,
-        "receiptRef": snapshot.receipt_ref or None,
+        "dispatchError": getattr(snapshot, "dispatch_error", "") or None,
+        "submittedAt": submitted_at.isoformat() if submitted_at else None,
+        "receiptRef": getattr(snapshot, "receipt_ref", "") or None,
         "parentSubmissionId": (
-            str(snapshot.parent_submission_id) if snapshot.parent_submission_id else None
+            str(parent_submission_id) if parent_submission_id else None
         ),
     }
 
