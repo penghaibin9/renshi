@@ -62,6 +62,9 @@ class AsOfReconstructionService:
     }
     _BUILTIN_PROVIDERS = {
         "HR03": "hr_data.providers.hr03.asof_provider",
+        "HR13": "hr_data.providers.formal_facts.hr13_asof_provider",
+        "HR14": "hr_data.providers.formal_facts.hr14_asof_provider",
+        "HR16": "hr_data.providers.formal_facts.hr16_asof_provider",
     }
 
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
