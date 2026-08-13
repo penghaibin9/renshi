@@ -33,39 +33,49 @@ class Hr13UiContractTests(TestCase):
         case_id = "00000000-0000-0000-0000-000000000101"
         round_id = "00000000-0000-0000-0000-000000000201"
         assignment_id = "00000000-0000-0000-0000-000000000301"
-        expected = {
-            "hr_title_api:review-round-open": f"/api/v1/hr/titles/applications/{case_id}/review-rounds/",
-            "hr_title_api:review-assignment-create": f"/api/v1/hr/titles/review-rounds/{round_id}/assignments/",
-            "hr_title_api:review-assignment-respond": f"/api/v1/hr/titles/review-assignments/{assignment_id}/respond/",
-            "hr_title_api:review-ballot-submit": f"/api/v1/hr/titles/review-assignments/{assignment_id}/ballots/",
-            "hr_title_api:review-round-close": f"/api/v1/hr/titles/review-rounds/{round_id}/close/",
-        }
-        for name, path in expected.items():
-            self.assertEqual(reverse(name, kwargs={"case_id": case_id}) if "round-open" in name else reverse(name, kwargs={"round_id": round_id}) if "assignment-create" in name or "round-close" in name else reverse(name, kwargs={"assignment_id": assignment_id}), path)
+        paths = [
+            ("hr_title_api:review-round-open", {"case_id": case_id}, f"/api/v1/hr/titles/applications/{case_id}/review-rounds/"),
+            ("hr_title_api:review-assignment-create", {"round_id": round_id}, f"/api/v1/hr/titles/review-rounds/{round_id}/assignments/"),
+            ("hr_title_api:review-assignment-respond", {"assignment_id": assignment_id}, f"/api/v1/hr/titles/review-assignments/{assignment_id}/respond/"),
+            ("hr_title_api:review-ballot-submit", {"assignment_id": assignment_id}, f"/api/v1/hr/titles/review-assignments/{assignment_id}/ballots/"),
+            ("hr_title_api:review-round-close", {"round_id": round_id}, f"/api/v1/hr/titles/review-rounds/{round_id}/close/"),
+        ]
+        for name, kwargs, path in paths:
+            self.assertEqual(reverse(name, kwargs=kwargs), path)
+            self.assertEqual(resolve(path).view_name, name)
+
+    def test_publicity_canonical_apis_are_registered(self):
+        case_id = "00000000-0000-0000-0000-000000000101"
+        publicity_id = "00000000-0000-0000-0000-000000000401"
+        appeal_id = "00000000-0000-0000-0000-000000000501"
+        paths = [
+            ("hr_title_api:publicity-open", {"case_id": case_id}, f"/api/v1/hr/titles/applications/{case_id}/publicities/"),
+            ("hr_title_api:appeal-lodge", {"publicity_id": publicity_id}, f"/api/v1/hr/titles/publicities/{publicity_id}/appeals/"),
+            ("hr_title_api:appeal-resolve", {"appeal_id": appeal_id}, f"/api/v1/hr/titles/appeals/{appeal_id}/resolve/"),
+            ("hr_title_api:publicity-close", {"publicity_id": publicity_id}, f"/api/v1/hr/titles/publicities/{publicity_id}/close/"),
+            ("hr_title_api:publicity-cancel", {"publicity_id": publicity_id}, f"/api/v1/hr/titles/publicities/{publicity_id}/cancel/"),
+        ]
+        for name, kwargs, path in paths:
+            self.assertEqual(reverse(name, kwargs=kwargs), path)
             self.assertEqual(resolve(path).view_name, name)
 
     def test_workspace_templates_compile(self):
-        self.assertIsNotNone(get_template("hr_title/workspace.html"))
-        self.assertIsNotNone(get_template("hr_title/workspace_d.html"))
-        self.assertIsNotNone(get_template("hr_title/workspace_e.html"))
-        self.assertIsNotNone(get_template("hr_title/workspace_f.html"))
+        for name in ("workspace.html", "workspace_d.html", "workspace_e.html", "workspace_f.html", "workspace_g.html"):
+            self.assertIsNotNone(get_template(f"hr_title/{name}"))
 
     def test_workspace_f_contains_real_panel_authority_actions(self):
-        template = get_template("hr_title/workspace_f.html")
-        source = Path(template.origin.name).read_text(encoding="utf-8")
-        self.assertIn("/review-rounds/", source)
-        self.assertIn("/assignments/", source)
-        self.assertIn("/respond/", source)
-        self.assertIn("/ballots/", source)
-        self.assertIn("/close/", source)
-        self.assertIn("requiredBallots", source)
-        self.assertIn("requiredPassVotes", source)
-        self.assertIn("conflictDeclared", source)
+        source = Path(get_template("hr_title/workspace_f.html").origin.name).read_text(encoding="utf-8")
+        for token in ("/review-rounds/", "/assignments/", "/respond/", "/ballots/", "/close/", "requiredBallots", "requiredPassVotes", "conflictDeclared"):
+            self.assertIn(token, source)
+
+    def test_workspace_g_contains_real_publicity_and_appeal_actions(self):
+        source = Path(get_template("hr_title/workspace_g.html").origin.name).read_text(encoding="utf-8")
+        for token in ("/publicities/", "/appeals/", "/resolve/", "/close/", "/cancel/", "publicityNo", "appealNo", "outcome"):
+            self.assertIn(token, source)
+        self.assertIn("Case=PUBLICITY 不是充分条件", source)
 
     def _global_mobile_shell_source(self):
-        return (Path(settings.BASE_DIR) / "static/src/js/customHeaderScripts.js").read_text(
-            encoding="utf-8"
-        )
+        return (Path(settings.BASE_DIR) / "static/src/js/customHeaderScripts.js").read_text(encoding="utf-8")
 
     def test_global_mobile_shell_initializes_native_horilla_closed_state(self):
         source = self._global_mobile_shell_source()
@@ -96,7 +106,6 @@ class Hr13UiContractTests(TestCase):
         self.assertIn("sessionStorage.removeItem(DESKTOP_STATE_KEY)", source)
 
     def test_hr13_does_not_hide_or_remove_sidebar_with_page_css(self):
-        template = get_template("hr_title/workspace_f.html")
-        source = Path(template.origin.name).read_text(encoding="utf-8")
+        source = Path(get_template("hr_title/workspace_g.html").origin.name).read_text(encoding="utf-8")
         self.assertNotIn("sidebar.style.display", source)
         self.assertNotIn("shell.remove()", source)
