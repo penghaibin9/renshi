@@ -8,6 +8,7 @@ from hr_control_center.context import resolve_tenant_from_request
 
 from .selectors import dashboard_snapshot
 from .services.adjustment_service import PayrollAdjustmentError, PayrollAdjustmentService
+from .services.legacy_reconciliation_service import LegacyPayrollReconciliationService
 
 READ_PERMISSION = "hr.payroll.view"
 ADJUST_PERMISSION = "hr.payroll.adjust"
@@ -56,6 +57,34 @@ def dashboard(request):
         {
             "apiVersion": "1.0",
             "schemaVersion": "hr15.workspace.1",
+            "generatedAt": timezone.now().isoformat(),
+        }
+    )
+    response = JsonResponse(data)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def legacy_reconciliation(request):
+    """Read-only double-read report; legacy payroll is never promoted to authority."""
+    if request.method != "GET":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(request)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+
+    raw_limit = request.GET.get("limit", "200")
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        return _error("INVALID_LIMIT", "limit 必须是整数", status=400)
+
+    data = LegacyPayrollReconciliationService(tenant_id).snapshot(limit=limit)
+    data.update(
+        {
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.legacy-reconciliation.1",
             "generatedAt": timezone.now().isoformat(),
         }
     )
