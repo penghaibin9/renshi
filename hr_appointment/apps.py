@@ -9,5 +9,5 @@ class HrAppointmentConfig(AppConfig):
     def ready(self):
         # HR14 term-governance models are split from the already-large initial
         # appointment authority module. Importing here only registers model
-        # classes; it performs no database queries or startup writes.
-        from . import term_models  # noqa: F401
+        # classes and runtime immutability guards; it performs no startup writes.
+        from . import freeze_guards, term_models  # noqa: F401
