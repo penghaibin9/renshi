@@ -23,6 +23,9 @@ class ExitCaseError(Exception):
         super().__init__(message)
 
 
+_UNSET = object()
+
+
 @dataclass(frozen=True)
 class ExitCaseInput:
     case_no: str
@@ -33,6 +36,14 @@ class ExitCaseInput:
     last_working_date: Optional[date] = None
     planned_employment_end_date: Optional[date] = None
     planned_access_end_at: Optional[datetime] = None
+
+
+@dataclass(frozen=True)
+class ExitCasePatch:
+    requested_date: object = _UNSET
+    last_working_date: object = _UNSET
+    planned_employment_end_date: object = _UNSET
+    planned_access_end_at: object = _UNSET
 
 
 class ExitCaseService:
@@ -102,6 +113,18 @@ class ExitCaseService:
         case.save(update_fields=["status", "updated_by", "updated_at"])
         return case
 
+    @staticmethod
+    def _validate_plan_dates(last_working_date, planned_employment_end_date) -> None:
+        if (
+            last_working_date
+            and planned_employment_end_date
+            and last_working_date > planned_employment_end_date
+        ):
+            raise ExitCaseError(
+                "EXIT_WORKING_DATE_AFTER_END_DATE",
+                "last working date cannot be later than planned employment end date",
+            )
+
     @transaction.atomic
     def create_draft(self, payload: ExitCaseInput) -> ExitCase:
         case_no = str(payload.case_no or "").strip()
@@ -116,15 +139,10 @@ class ExitCaseService:
             raise ExitCaseError(
                 "EXIT_RELATIONSHIP_REQUIRED", "employment_relationship_id is required"
             )
-        if (
-            payload.last_working_date
-            and payload.planned_employment_end_date
-            and payload.last_working_date > payload.planned_employment_end_date
-        ):
-            raise ExitCaseError(
-                "EXIT_WORKING_DATE_AFTER_END_DATE",
-                "last working date cannot be later than planned employment end date",
-            )
+        self._validate_plan_dates(
+            payload.last_working_date,
+            payload.planned_employment_end_date,
+        )
 
         self._lock_relationship(payload.employment_relationship_id, payload.person_id)
         existing = (
@@ -162,6 +180,53 @@ class ExitCaseService:
         )
 
     @transaction.atomic
+    def update_draft(self, case_id, patch: ExitCasePatch) -> ExitCase:
+        case = self._lock_case(case_id)
+        if case.status not in {ExitCase.Status.DRAFT, ExitCase.Status.RETURNED}:
+            raise ExitCaseError(
+                "EXIT_CASE_NOT_EDITABLE",
+                f"case status {case.status} cannot be amended",
+            )
+
+        requested_date = (
+            case.requested_date if patch.requested_date is _UNSET else patch.requested_date
+        )
+        last_working_date = (
+            case.last_working_date
+            if patch.last_working_date is _UNSET
+            else patch.last_working_date
+        )
+        planned_end = (
+            case.planned_employment_end_date
+            if patch.planned_employment_end_date is _UNSET
+            else patch.planned_employment_end_date
+        )
+        planned_access_end = (
+            case.planned_access_end_at
+            if patch.planned_access_end_at is _UNSET
+            else patch.planned_access_end_at
+        )
+        self._validate_plan_dates(last_working_date, planned_end)
+
+        updates = []
+        values = {
+            "requested_date": requested_date,
+            "last_working_date": last_working_date,
+            "planned_employment_end_date": planned_end,
+            "planned_access_end_at": planned_access_end,
+        }
+        for field, value in values.items():
+            if getattr(case, field) != value:
+                setattr(case, field, value)
+                updates.append(field)
+        if not updates:
+            return case
+        case.updated_by = self.actor_user_id
+        updates.extend(["updated_by", "updated_at"])
+        case.save(update_fields=updates)
+        return case
+
+    @transaction.atomic
     def submit(self, case_id) -> ExitCase:
         case = self._lock_case(case_id)
         if case.requested_date is None:
@@ -192,11 +257,7 @@ class ExitCaseService:
                 "EXIT_EMPLOYMENT_END_DATE_REQUIRED",
                 "planned employment end date is required before approval",
             )
-        if case.last_working_date and case.last_working_date > case.planned_employment_end_date:
-            raise ExitCaseError(
-                "EXIT_WORKING_DATE_AFTER_END_DATE",
-                "last working date cannot be later than planned employment end date",
-            )
+        self._validate_plan_dates(case.last_working_date, case.planned_employment_end_date)
         return self._transition(
             case,
             allowed_from={ExitCase.Status.SUBMITTED},
