@@ -166,6 +166,26 @@ class AppointmentEffectServiceTests(TestCase):
         self.assertIs(locked_reservation, reservation)
         self.assertIs(locked_position, position)
 
+    def test_formal_effect_cannot_change_frozen_application_level(self):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, fact, *_ = self._fixtures()
+        service._lock_case = MagicMock(return_value=case)
+        service._lock_batch_quota_receipt = MagicMock()
+        service._get_or_create_pending_fact = MagicMock(return_value=fact)
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service.apply(
+                case_id=case.id,
+                appointment_no="APT-LEVEL-BYPASS",
+                reservation_id=41,
+                effective_from=date(2026, 9, 1),
+                level_code="PRO_LEVEL_6",
+            )
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_EFFECT_LEVEL_MISMATCH")
+        service._lock_batch_quota_receipt.assert_not_called()
+        service._get_or_create_pending_fact.assert_not_called()
+
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
     @patch("hr_appointment.services.quota_service.AppointmentQuotaService")
     @patch("hr_structure.services.position.PositionService")
@@ -300,7 +320,7 @@ class AppointmentEffectServiceTests(TestCase):
         service._get_or_create_pending_fact.assert_not_called()
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
-    def test_already_effective_fact_requires_quota_receipt_but_skips_provider_effect(
+    def test_already_effective_fact_requires_consumed_quota_and_skips_provider_effect(
         self, publicity_gate
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
@@ -315,6 +335,7 @@ class AppointmentEffectServiceTests(TestCase):
             publicity,
         ) = self._fixtures()
         publicity_gate.return_value = publicity
+        case.status = AppointmentApplicationCase.Status.EFFECTIVE
         fact.status = PositionAppointmentFact.Status.EFFECTIVE
         quota_reservation.status = AppointmentQuotaReservation.Status.CONSUMED
         service._lock_case = MagicMock(return_value=case)
@@ -332,4 +353,37 @@ class AppointmentEffectServiceTests(TestCase):
         self.assertTrue(result.effective)
         publicity_gate.assert_called_once_with(case.id)
         service._lock_batch_quota_receipt.assert_called_once_with(case)
+        service._lock_capacity_receipt.assert_not_called()
+
+    @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    def test_effective_fact_with_unconsumed_quota_fails_closed(self, publicity_gate):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        (
+            case,
+            fact,
+            _,
+            quota_reservation,
+            _,
+            _,
+            _,
+            publicity,
+        ) = self._fixtures()
+        publicity_gate.return_value = publicity
+        case.status = AppointmentApplicationCase.Status.EFFECTIVE
+        fact.status = PositionAppointmentFact.Status.EFFECTIVE
+        quota_reservation.status = AppointmentQuotaReservation.Status.ACTIVE
+        service._lock_case = MagicMock(return_value=case)
+        service._lock_batch_quota_receipt = MagicMock(return_value=quota_reservation)
+        service._get_or_create_pending_fact = MagicMock(return_value=fact)
+        service._lock_capacity_receipt = MagicMock()
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service.apply(
+                case_id=case.id,
+                appointment_no="APT-001",
+                reservation_id=41,
+                effective_from=date(2026, 9, 1),
+            )
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_EFFECT_QUOTA_RECEIPT_INCONSISTENT")
         service._lock_capacity_receipt.assert_not_called()
