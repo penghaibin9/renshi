@@ -8,18 +8,22 @@ from hr_data.services.metric_service import HrMetricDefinitionService
 
 
 class HrMetricDefinitionServiceTests(TestCase):
-    def test_count_metric_is_canonical_and_freezes_population_version(self):
-        population = PopulationDefinitionVersion.objects.create(
-            tenant_id=77,
-            population_code="ACTIVE_STAFF",
-            name="在职教职工",
+    @staticmethod
+    def _population(*, tenant_id=77, code="ACTIVE_STAFF", sources=None, grain="STAFF", content_hash="a" * 64):
+        return PopulationDefinitionVersion.objects.create(
+            tenant_id=tenant_id,
+            population_code=code,
+            name=code,
             root_domain="HR03",
+            grain=grain,
             predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=["HR03"],
-            as_of_required=True,
+            source_domains=sources or ["HR03"],
             version_no=1,
-            content_hash="a" * 64,
+            content_hash=content_hash,
         )
+
+    def test_count_metric_is_canonical_and_freezes_population_version(self):
+        population = self._population()
         service = HrMetricDefinitionService(77, actor_user_id=9)
 
         outcome = service.create_metric_version(
@@ -58,16 +62,7 @@ class HrMetricDefinitionServiceTests(TestCase):
         self.assertEqual(replay.definition.id, definition.id)
 
     def test_changed_metric_content_creates_next_version(self):
-        PopulationDefinitionVersion.objects.create(
-            tenant_id=77,
-            population_code="ACTIVE_STAFF",
-            name="在职教职工",
-            root_domain="HR03",
-            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=["HR03"],
-            version_no=1,
-            content_hash="a" * 64,
-        )
+        self._population()
         service = HrMetricDefinitionService(77)
         first = service.create_metric_version(
             metric_code="HEADCOUNT",
@@ -91,16 +86,7 @@ class HrMetricDefinitionServiceTests(TestCase):
         self.assertEqual(second.version_no, 2)
 
     def test_arbitrary_or_unsupported_expression_is_rejected(self):
-        PopulationDefinitionVersion.objects.create(
-            tenant_id=77,
-            population_code="ACTIVE_STAFF",
-            name="在职教职工",
-            root_domain="HR03",
-            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=["HR03"],
-            version_no=1,
-            content_hash="a" * 64,
-        )
+        self._population()
         service = HrMetricDefinitionService(77)
         for expression in (
             "SELECT COUNT(*) FROM employee",
@@ -119,17 +105,23 @@ class HrMetricDefinitionServiceTests(TestCase):
                 )
         self.assertFalse(MetricDefinitionVersion.objects.filter(tenant_id=77).exists())
 
+    def test_new_metric_rejects_legacy_unspecified_population_grain(self):
+        self._population(code="LEGACY_POP", grain="UNSPECIFIED")
+        with self.assertRaises(HrDataDefinitionError) as ctx:
+            HrMetricDefinitionService(77).create_metric_version(
+                metric_code="LEGACY_HEADCOUNT",
+                name="旧口径人数",
+                value_type="INTEGER",
+                population_code="LEGACY_POP",
+                population_version=1,
+                expression={"op": "COUNT"},
+                source_domains=["HR03"],
+            )
+        self.assertEqual(ctx.exception.code, "HR18_POPULATION_GRAIN_REQUIRED")
+        self.assertFalse(MetricDefinitionVersion.objects.filter(tenant_id=77).exists())
+
     def test_cross_tenant_population_and_missing_sources_fail_closed(self):
-        PopulationDefinitionVersion.objects.create(
-            tenant_id=88,
-            population_code="ACTIVE_STAFF",
-            name="外校人口",
-            root_domain="HR03",
-            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=["HR03", "HR14"],
-            version_no=1,
-            content_hash="a" * 64,
-        )
+        self._population(tenant_id=88, sources=["HR03", "HR14"])
         service = HrMetricDefinitionService(77)
         with self.assertRaises(HrDataDefinitionError) as ctx:
             service.create_metric_version(
@@ -143,16 +135,7 @@ class HrMetricDefinitionServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "HR18_POPULATION_VERSION_NOT_FOUND")
 
-        PopulationDefinitionVersion.objects.create(
-            tenant_id=77,
-            population_code="ACTIVE_STAFF",
-            name="本校人口",
-            root_domain="HR03",
-            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=["HR03", "HR14"],
-            version_no=1,
-            content_hash="b" * 64,
-        )
+        self._population(tenant_id=77, sources=["HR03", "HR14"], content_hash="b" * 64)
         with self.assertRaises(HrDataDefinitionError) as ctx:
             service.create_metric_version(
                 metric_code="HEADCOUNT",
@@ -166,14 +149,9 @@ class HrMetricDefinitionServiceTests(TestCase):
         self.assertEqual(ctx.exception.code, "HR18_METRIC_SOURCE_DOMAINS_INCOMPLETE")
 
     def test_aggregate_field_path_and_value_type_are_typed(self):
-        PopulationDefinitionVersion.objects.create(
-            tenant_id=77,
-            population_code="PAYROLL_POP",
-            name="工资人口",
-            root_domain="HR03",
-            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=["HR03", "HR15"],
-            version_no=1,
+        self._population(
+            code="PAYROLL_POP",
+            sources=["HR03", "HR15"],
             content_hash="c" * 64,
         )
         service = HrMetricDefinitionService(77)
