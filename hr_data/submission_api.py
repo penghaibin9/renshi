@@ -160,6 +160,12 @@ def submit_submission(request, submission_id):
         ).queue(submission_id)
     except SubmissionDispatchError as exc:
         return _error(exc.code, str(exc), status=_status(exc.code))
+    if result.error:
+        return _error(
+            "SUBMISSION_DISPATCH_FAILED",
+            result.error,
+            status=502,
+        )
     response = JsonResponse(
         {
             "data": {
