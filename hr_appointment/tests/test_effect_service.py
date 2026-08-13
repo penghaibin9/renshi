@@ -1,11 +1,15 @@
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 from django.utils import timezone
 
-from hr_appointment.models import AppointmentApplicationCase, PositionAppointmentFact
+from hr_appointment.models import (
+    AppointmentApplicationCase,
+    AppointmentQuotaReservation,
+    PositionAppointmentFact,
+)
 from hr_appointment.services.effect_service import AppointmentEffectError, AppointmentEffectService
 from hr_appointment.services.publicity_service import AppointmentPublicityError
 
@@ -15,6 +19,7 @@ class AppointmentEffectServiceTests(TestCase):
         case = MagicMock()
         case.id = "00000000-0000-0000-0000-000000000101"
         case.case_no = "CASE-000101"
+        case.batch_no = "B-2026"
         case.person_id = "00000000-0000-0000-0000-000000000201"
         case.position_instance_id = 31
         case.requested_level_code = "PRO_LEVEL_7"
@@ -27,6 +32,10 @@ class AppointmentEffectServiceTests(TestCase):
         fact.effect_receipt_json = {}
 
         reservation = SimpleNamespace(id=41)
+        quota_reservation = SimpleNamespace(
+            id="00000000-0000-0000-0000-000000000801",
+            status=AppointmentQuotaReservation.Status.ACTIVE,
+        )
         position = SimpleNamespace(
             id=31,
             organization_id=SimpleNamespace(id=11),
@@ -35,7 +44,57 @@ class AppointmentEffectServiceTests(TestCase):
         staff = SimpleNamespace(id="00000000-0000-0000-0000-000000000401")
         relationship = SimpleNamespace(id="00000000-0000-0000-0000-000000000501")
         publicity = SimpleNamespace(id="00000000-0000-0000-0000-000000000701")
-        return case, fact, reservation, position, staff, relationship, publicity
+        return (
+            case,
+            fact,
+            reservation,
+            quota_reservation,
+            position,
+            staff,
+            relationship,
+            publicity,
+        )
+
+    @patch("hr_appointment.services.effect_service.AppointmentQuotaReservation.objects")
+    def test_batch_quota_receipt_is_required(self, reservation_objects):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, *_ = self._fixtures()
+        reservation_objects.select_for_update.return_value.select_related.return_value.filter.return_value.first.return_value = None
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service._lock_batch_quota_receipt(case)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_QUOTA_RESERVATION_REQUIRED")
+
+    @patch("hr_appointment.services.effect_service.AppointmentQuotaReservation.objects")
+    def test_released_batch_quota_cannot_enter_effect(self, reservation_objects):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, *_ = self._fixtures()
+        quota = SimpleNamespace(
+            status=AppointmentQuotaReservation.Status.RELEASED,
+            quota_pool=SimpleNamespace(batch=SimpleNamespace(batch_no=case.batch_no)),
+        )
+        reservation_objects.select_for_update.return_value.select_related.return_value.filter.return_value.first.return_value = quota
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service._lock_batch_quota_receipt(case)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_QUOTA_NOT_ACTIVE")
+
+    @patch("hr_appointment.services.effect_service.AppointmentQuotaReservation.objects")
+    def test_batch_quota_must_belong_to_current_batch(self, reservation_objects):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, *_ = self._fixtures()
+        quota = SimpleNamespace(
+            status=AppointmentQuotaReservation.Status.ACTIVE,
+            quota_pool=SimpleNamespace(batch=SimpleNamespace(batch_no="B-OTHER")),
+        )
+        reservation_objects.select_for_update.return_value.select_related.return_value.filter.return_value.first.return_value = quota
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service._lock_batch_quota_receipt(case)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_QUOTA_BATCH_MISMATCH")
 
     @patch("hr_structure.models.HrPosition.objects")
     @patch("hr_structure.models.HrPositionReservation.objects")
@@ -47,7 +106,7 @@ class AppointmentEffectServiceTests(TestCase):
         reservation = SimpleNamespace(
             id=41,
             status="HELD",
-            expires_at=timezone.now() + __import__("datetime").timedelta(days=1),
+            expires_at=timezone.now() + timedelta(days=1),
             position_id_id=case.position_instance_id,
             source_domain="",
             source_business_id=str(case.id),
@@ -70,7 +129,7 @@ class AppointmentEffectServiceTests(TestCase):
         reservation = SimpleNamespace(
             id=41,
             status="HELD",
-            expires_at=timezone.now() + __import__("datetime").timedelta(days=1),
+            expires_at=timezone.now() + timedelta(days=1),
             position_id_id=case.position_instance_id,
             source_domain="HR14",
             source_business_id="CASE-OTHER",
@@ -93,7 +152,7 @@ class AppointmentEffectServiceTests(TestCase):
         reservation = SimpleNamespace(
             id=41,
             status="HELD",
-            expires_at=timezone.now() + __import__("datetime").timedelta(days=1),
+            expires_at=timezone.now() + timedelta(days=1),
             position_id_id=case.position_instance_id,
             source_domain="HR14",
             source_business_id=str(case.id),
@@ -108,15 +167,30 @@ class AppointmentEffectServiceTests(TestCase):
         self.assertIs(locked_position, position)
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    @patch("hr_appointment.services.quota_service.AppointmentQuotaService")
     @patch("hr_structure.services.position.PositionService")
     @patch("hr_staff.services.assignment_service.AssignmentService")
-    def test_provider_failure_keeps_effect_pending_and_does_not_commit_reservation(
-        self, assignment_service_cls, position_service_cls, publicity_gate
+    def test_provider_failure_keeps_effect_pending_and_does_not_consume_capacity(
+        self,
+        assignment_service_cls,
+        position_service_cls,
+        quota_service_cls,
+        publicity_gate,
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
-        case, fact, reservation, position, staff, relationship, publicity = self._fixtures()
+        (
+            case,
+            fact,
+            reservation,
+            quota_reservation,
+            position,
+            staff,
+            relationship,
+            publicity,
+        ) = self._fixtures()
         publicity_gate.return_value = publicity
         service._lock_case = MagicMock(return_value=case)
+        service._lock_batch_quota_receipt = MagicMock(return_value=quota_reservation)
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
         service._lock_capacity_receipt = MagicMock(return_value=(reservation, position))
         service._active_staff_relationship = MagicMock(return_value=(staff, relationship))
@@ -137,17 +211,33 @@ class AppointmentEffectServiceTests(TestCase):
         self.assertIn("HR03 write failed", fact.last_effect_error)
         self.assertEqual(case.status, AppointmentApplicationCase.Status.EFFECT_PENDING)
         position_service_cls.return_value.commit.assert_not_called()
+        quota_service_cls.return_value.consume.assert_not_called()
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    @patch("hr_appointment.services.quota_service.AppointmentQuotaService")
     @patch("hr_structure.services.position.PositionService")
     @patch("hr_staff.services.assignment_service.AssignmentService")
-    def test_success_requires_closed_publicity_then_provider_effect(
-        self, assignment_service_cls, position_service_cls, publicity_gate
+    def test_success_consumes_hr02_and_hr14_capacity_in_same_effect_path(
+        self,
+        assignment_service_cls,
+        position_service_cls,
+        quota_service_cls,
+        publicity_gate,
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
-        case, fact, reservation, position, staff, relationship, publicity = self._fixtures()
+        (
+            case,
+            fact,
+            reservation,
+            quota_reservation,
+            position,
+            staff,
+            relationship,
+            publicity,
+        ) = self._fixtures()
         publicity_gate.return_value = publicity
         service._lock_case = MagicMock(return_value=case)
+        service._lock_batch_quota_receipt = MagicMock(return_value=quota_reservation)
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
         service._lock_capacity_receipt = MagicMock(return_value=(reservation, position))
         service._active_staff_relationship = MagicMock(return_value=(staff, relationship))
@@ -174,17 +264,23 @@ class AppointmentEffectServiceTests(TestCase):
             source_business_id=str(fact.id),
         )
         position_service_cls.return_value.commit.assert_called_once_with(41)
+        quota_service_cls.return_value.consume.assert_called_once_with(quota_reservation.id)
         self.assertEqual(fact.status, PositionAppointmentFact.Status.EFFECTIVE)
         self.assertEqual(case.status, AppointmentApplicationCase.Status.EFFECTIVE)
         self.assertEqual(fact.effect_receipt_json["hr14PublicityId"], str(publicity.id))
+        self.assertEqual(
+            fact.effect_receipt_json["hr14QuotaReservationId"],
+            str(quota_reservation.id),
+        )
         self.assertEqual(fact.effect_receipt_json["hr02ReservationId"], 41)
         self.assertEqual(fact.effect_receipt_json["hr02PositionId"], 31)
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
-    def test_publicity_gate_failure_prevents_pending_fact_creation(self, publicity_gate):
+    def test_publicity_gate_failure_prevents_capacity_or_pending_fact_work(self, publicity_gate):
         service = AppointmentEffectService(77, actor_user_id=9)
         case, fact, *_ = self._fixtures()
         service._lock_case = MagicMock(return_value=case)
+        service._lock_batch_quota_receipt = MagicMock()
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
         publicity_gate.side_effect = AppointmentPublicityError(
             "APPOINTMENT_PUBLICITY_NOT_CLOSED",
@@ -200,17 +296,29 @@ class AppointmentEffectServiceTests(TestCase):
             )
 
         self.assertEqual(ctx.exception.code, "APPOINTMENT_PUBLICITY_NOT_CLOSED")
+        service._lock_batch_quota_receipt.assert_not_called()
         service._get_or_create_pending_fact.assert_not_called()
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
-    def test_already_effective_fact_still_requires_publicity_receipt_but_skips_providers(
+    def test_already_effective_fact_requires_quota_receipt_but_skips_provider_effect(
         self, publicity_gate
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
-        case, fact, *_, publicity = self._fixtures()
+        (
+            case,
+            fact,
+            _,
+            quota_reservation,
+            _,
+            _,
+            _,
+            publicity,
+        ) = self._fixtures()
         publicity_gate.return_value = publicity
         fact.status = PositionAppointmentFact.Status.EFFECTIVE
+        quota_reservation.status = AppointmentQuotaReservation.Status.CONSUMED
         service._lock_case = MagicMock(return_value=case)
+        service._lock_batch_quota_receipt = MagicMock(return_value=quota_reservation)
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
         service._lock_capacity_receipt = MagicMock()
 
@@ -223,4 +331,5 @@ class AppointmentEffectServiceTests(TestCase):
 
         self.assertTrue(result.effective)
         publicity_gate.assert_called_once_with(case.id)
+        service._lock_batch_quota_receipt.assert_called_once_with(case)
         service._lock_capacity_receipt.assert_not_called()
