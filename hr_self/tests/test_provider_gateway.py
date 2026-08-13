@@ -1,15 +1,23 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from hr_self.services.identity_service import SelfIdentityContext
 from hr_self.services.provider_gateway import (
     ProviderStatus,
     SelfProviderRegistry,
     SelfProviderResult,
+    default_self_provider_registry,
     hr03_self_provider,
 )
+
+
+def configured_hr04_provider(context):
+    return SelfProviderResult.ok(
+        {"source": "HR04", "staffId": str(context.staff_id)},
+        provider_version="hr04.self-test.1",
+    )
 
 
 class Hr17ProviderGatewayTests(SimpleTestCase):
@@ -67,6 +75,49 @@ class Hr17ProviderGatewayTests(SimpleTestCase):
         self.assertEqual(result.status, ProviderStatus.ERROR)
         self.assertEqual(result.error_code, "SOURCE_PROVIDER_CONTRACT_INVALID")
         self.assertIsNone(result.data)
+
+    @override_settings(
+        HR17_SELF_PROVIDER_PATHS={
+            "HR04": "hr_self.tests.test_provider_gateway.configured_hr04_provider"
+        }
+    )
+    def test_default_registry_loads_explicit_integration_provider(self):
+        registry = default_self_provider_registry()
+        self.assertIn("HR03", registry.registered_domains())
+        self.assertIn("HR04", registry.registered_domains())
+
+        result = registry.call("HR04", self.context)
+        self.assertEqual(result.status, ProviderStatus.OK)
+        self.assertEqual(result.data["source"], "HR04")
+        self.assertEqual(result.provider_version, "hr04.self-test.1")
+
+    @override_settings(
+        HR17_SELF_PROVIDER_PATHS={
+            "HR04": "missing.module.provider",
+            "HR99": "hr_self.tests.test_provider_gateway.configured_hr04_provider",
+        }
+    )
+    def test_invalid_or_unsupported_config_does_not_fake_registration(self):
+        registry = default_self_provider_registry()
+        self.assertNotIn("HR04", registry.registered_domains())
+        result = registry.call("HR04", self.context)
+        self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
+        self.assertIsNone(result.data)
+
+    @override_settings(
+        HR17_SELF_PROVIDER_PATHS={
+            "HR03": "hr_self.tests.test_provider_gateway.configured_hr04_provider"
+        }
+    )
+    @patch("hr_self.services.provider_gateway.hr03_self_provider")
+    def test_runtime_configuration_cannot_override_foundational_hr03(self, hr03_provider):
+        hr03_provider.return_value = SelfProviderResult.ok({"source": "canonical-HR03"})
+        registry = default_self_provider_registry()
+
+        result = registry.call("HR03", self.context)
+
+        self.assertEqual(result.status, ProviderStatus.OK)
+        self.assertEqual(result.data["source"], "canonical-HR03")
 
     @patch("hr_staff.selectors.profile.ProfileSelector")
     @patch("hr_staff.context.build_staff_context")
