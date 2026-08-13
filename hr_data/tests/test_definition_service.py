@@ -14,10 +14,11 @@ class Hr18DefinitionServiceTests(TestCase):
             "population_code": "ACTIVE_STAFF",
             "name": "在职教职工",
             "root_domain": "HR03",
+            "grain": "STAFF",
             "predicate": {
                 "and": [
                     {"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-                    {"field": "employment.end_date", "op": "is_null", "value": True},
+                    {"field": "employment.effectiveTo", "op": "is_null", "value": True},
                 ]
             },
             "source_domains": ["HR03"],
@@ -31,6 +32,7 @@ class Hr18DefinitionServiceTests(TestCase):
         self.assertEqual(replay.definition.id, first.definition.id)
         self.assertEqual(first.definition.version_no, 1)
         self.assertEqual(first.definition.status, "DRAFT")
+        self.assertEqual(first.definition.grain, PopulationDefinitionVersion.Grain.STAFF)
         self.assertEqual(
             PopulationDefinitionVersion.objects.filter(
                 tenant_id=7, population_code="ACTIVE_STAFF"
@@ -38,29 +40,56 @@ class Hr18DefinitionServiceTests(TestCase):
             1,
         )
 
-    def test_changed_population_content_appends_next_version(self):
+    def test_changed_population_content_or_grain_appends_next_version(self):
         service = HrDataDefinitionService(7)
         first = service.create_population_version(
             population_code="ACTIVE_STAFF",
             name="在职教职工",
             root_domain="HR03",
+            grain="STAFF",
             predicate={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
             source_domains=["HR03"],
         )
         second = service.create_population_version(
             population_code="ACTIVE_STAFF",
-            name="在职教职工（含借调）",
+            name="在职教职工",
             root_domain="HR03",
-            predicate={
-                "field": "employment.status",
-                "op": "in",
-                "value": ["ACTIVE", "SECONDMENT"],
-            },
+            grain="EMPLOYMENT_RELATIONSHIP",
+            predicate={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
             source_domains=["HR03"],
         )
         self.assertEqual(first.definition.version_no, 1)
         self.assertEqual(second.definition.version_no, 2)
         self.assertNotEqual(first.definition.content_hash, second.definition.content_hash)
+        self.assertEqual(second.definition.grain, "EMPLOYMENT_RELATIONSHIP")
+
+    def test_new_population_requires_explicit_non_legacy_grain(self):
+        service = HrDataDefinitionService(7)
+        for grain in (None, "", "UNSPECIFIED", "EMPLOYEE"):
+            with self.assertRaises(HrDataDefinitionError) as ctx:
+                service.create_population_version(
+                    population_code="ACTIVE_STAFF",
+                    name="在职教职工",
+                    root_domain="HR03",
+                    grain=grain,
+                    predicate={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
+                    source_domains=["HR03"],
+                )
+            self.assertEqual(ctx.exception.code, "HR18_POPULATION_GRAIN_INVALID")
+        self.assertFalse(PopulationDefinitionVersion.objects.filter(tenant_id=7).exists())
+
+    def test_legacy_rows_can_remain_unspecified_without_becoming_new_authoring_default(self):
+        legacy = PopulationDefinitionVersion.objects.create(
+            tenant_id=7,
+            population_code="LEGACY_POP",
+            name="历史定义",
+            root_domain="HR03",
+            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
+            source_domains=["HR03"],
+            version_no=1,
+            content_hash="a" * 64,
+        )
+        self.assertEqual(legacy.grain, PopulationDefinitionVersion.Grain.UNSPECIFIED)
 
     def test_population_predicate_rejects_executable_or_unscoped_syntax(self):
         service = HrDataDefinitionService(7)
@@ -69,6 +98,7 @@ class Hr18DefinitionServiceTests(TestCase):
                 population_code="ACTIVE_STAFF",
                 name="在职教职工",
                 root_domain="HR03",
+                grain="STAFF",
                 predicate={
                     "field": "employment.status; DROP TABLE staff",
                     "op": "eq",
@@ -84,6 +114,7 @@ class Hr18DefinitionServiceTests(TestCase):
                 population_code="ACTIVE_STAFF",
                 name="在职教职工",
                 root_domain="HR03",
+                grain="STAFF",
                 predicate={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
                 source_domains=["HR02"],
             )
