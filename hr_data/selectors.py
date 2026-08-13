@@ -2,6 +2,8 @@
 from .models import (
     AsOfEvidenceSnapshot,
     DataQualityFinding,
+    DataQualityRuleVersion,
+    DataQualityRun,
     DimensionDefinitionVersion,
     MetricDefinitionVersion,
     PopulationDefinitionVersion,
@@ -16,6 +18,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     populations = PopulationDefinitionVersion.objects.filter(tenant_id=tenant_id)
     dimensions = DimensionDefinitionVersion.objects.filter(tenant_id=tenant_id)
     metrics = MetricDefinitionVersion.objects.filter(tenant_id=tenant_id)
+    quality_rules = DataQualityRuleVersion.objects.filter(tenant_id=tenant_id)
+    quality_runs = DataQualityRun.objects.filter(tenant_id=tenant_id)
     findings = DataQualityFinding.objects.filter(tenant_id=tenant_id)
     evidences = AsOfEvidenceSnapshot.objects.filter(tenant_id=tenant_id)
     submissions = SubmissionSnapshot.objects.filter(tenant_id=tenant_id)
@@ -28,6 +32,11 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "dimensionCodes": dimensions.values("dimension_code").distinct().count(),
             "metricVersions": metrics.count(),
             "metricCodes": metrics.values("metric_code").distinct().count(),
+            "qualityRuleVersions": quality_rules.count(),
+            "qualityRuleCodes": quality_rules.values("rule_code").distinct().count(),
+            "qualityRuns": quality_runs.count(),
+            "qualityUnavailableRuns": quality_runs.filter(status=DataQualityRun.Status.UNAVAILABLE).count(),
+            "qualityErrorRuns": quality_runs.filter(status=DataQualityRun.Status.ERROR).count(),
             "asOfEvidence": evidences.count(),
             "completeAsOfEvidence": evidences.filter(status=AsOfEvidenceSnapshot.Status.COMPLETE).count(),
             "blockedAsOfEvidence": evidences.exclude(status=AsOfEvidenceSnapshot.Status.COMPLETE).count(),
@@ -59,6 +68,19 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "population_code", "source_domains", "as_of_required", "updated_at"
             )
         ),
+        "recentQualityRules": list(
+            quality_rules.order_by("rule_code", "-version_no")[:12].values(
+                "id", "rule_code", "name", "version_no", "status", "source_domain",
+                "severity", "parameters_json", "as_of_required", "content_hash", "updated_at"
+            )
+        ),
+        "recentQualityRuns": list(
+            quality_runs.order_by("-executed_at")[:16].values(
+                "id", "run_no", "rule_code", "rule_version", "source_domain", "as_of_date",
+                "status", "provider_version", "evidence_hash", "finding_count", "error_message",
+                "executed_at"
+            )
+        ),
         "recentAsOfEvidence": list(
             evidences.order_by("-generated_at")[:16].values(
                 "id", "evidence_no", "definition_kind", "definition_code", "definition_version",
@@ -68,8 +90,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         ),
         "recentFindings": list(
             findings.order_by("-detected_at")[:12].values(
-                "id", "finding_no", "rule_code", "source_domain", "source_object_ref",
-                "severity", "status", "detected_at", "resolved_at"
+                "id", "finding_no", "quality_run_id", "rule_code", "rule_version", "source_domain",
+                "source_object_ref", "finding_fingerprint", "severity", "details_json", "status",
+                "detected_at", "resolved_at"
             )
         ),
         "recentSubmissions": list(
@@ -87,7 +110,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "populationDimension": True,
             "submissionAsOfGate": True,
             "asOfEngine": True,
-            "qualityRuleExecution": False,
+            "qualityRuleExecution": True,
             "asyncSubmissionDispatch": True,
             "asyncExchange": False,
             "submissionReceipt": True,
