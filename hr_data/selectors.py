@@ -1,5 +1,6 @@
 """Tenant-scoped read models for the HR18 data governance center."""
 from .models import (
+    AsOfEvidenceSnapshot,
     DataQualityFinding,
     DimensionDefinitionVersion,
     MetricDefinitionVersion,
@@ -16,6 +17,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     dimensions = DimensionDefinitionVersion.objects.filter(tenant_id=tenant_id)
     metrics = MetricDefinitionVersion.objects.filter(tenant_id=tenant_id)
     findings = DataQualityFinding.objects.filter(tenant_id=tenant_id)
+    evidences = AsOfEvidenceSnapshot.objects.filter(tenant_id=tenant_id)
     submissions = SubmissionSnapshot.objects.filter(tenant_id=tenant_id)
     open_findings = findings.filter(status__in=["OPEN", "ACKNOWLEDGED"])
     return {
@@ -26,6 +28,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "dimensionCodes": dimensions.values("dimension_code").distinct().count(),
             "metricVersions": metrics.count(),
             "metricCodes": metrics.values("metric_code").distinct().count(),
+            "asOfEvidence": evidences.count(),
+            "completeAsOfEvidence": evidences.filter(status=AsOfEvidenceSnapshot.Status.COMPLETE).count(),
+            "blockedAsOfEvidence": evidences.exclude(status=AsOfEvidenceSnapshot.Status.COMPLETE).count(),
             "openFindings": open_findings.count(),
             "criticalFindings": open_findings.filter(severity="CRITICAL").count(),
             "submissions": submissions.count(),
@@ -52,6 +57,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "population_code", "source_domains", "as_of_required", "updated_at"
             )
         ),
+        "recentAsOfEvidence": list(
+            evidences.order_by("-generated_at")[:16].values(
+                "id", "evidence_no", "definition_code", "definition_version", "as_of_date",
+                "status", "source_statuses_json", "blocked_domains_json", "provider_versions_json",
+                "evidence_hash", "generated_at"
+            )
+        ),
         "recentFindings": list(
             findings.order_by("-detected_at")[:12].values(
                 "id", "finding_no", "rule_code", "source_domain", "source_object_ref",
@@ -61,7 +73,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         "recentSubmissions": list(
             submissions.order_by("-created_at")[:12].values(
                 "id", "submission_no", "definition_code", "definition_version", "as_of_date",
-                "status", "receipt_ref", "submitted_at", "parent_submission_id", "created_at"
+                "scope_json", "status", "receipt_ref", "submitted_at", "parent_submission_id", "created_at"
             )
         ),
         "capabilities": {
@@ -70,6 +82,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "submissionSnapshot": True,
             "sourceGate": True,
             "populationDimension": True,
+            "submissionAsOfGate": True,
             "asOfEngine": False,
             "qualityRuleExecution": False,
             "asyncExchange": False,
