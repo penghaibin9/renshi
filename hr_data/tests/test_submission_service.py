@@ -20,6 +20,8 @@ class SubmissionLifecycleServiceTests(TestCase):
         snapshot.definition_version = 1
         snapshot.as_of_date = date(2026, 8, 1)
         snapshot.scope_json = {"asOfEvidenceId": "evidence-1"}
+        snapshot.dispatch_ref = ""
+        snapshot.dispatch_error = ""
         snapshot.receipt_ref = ""
         return snapshot
 
@@ -96,25 +98,68 @@ class SubmissionLifecycleServiceTests(TestCase):
         snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
-    def test_draft_cannot_skip_approval_and_submit(self, objects):
-        snapshot = self._snapshot(SubmissionSnapshot.Status.DRAFT)
+    def test_direct_submit_is_disabled_even_after_approval(self, objects):
+        snapshot = self._snapshot(SubmissionSnapshot.Status.APPROVED)
         objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
-        with self.assertRaisesRegex(SubmissionLifecycleError, "cannot transition to SUBMITTED"):
+        with self.assertRaises(SubmissionLifecycleError) as ctx:
             SubmissionLifecycleService(77).submit("submission-1")
+        self.assertEqual(ctx.exception.code, "SUBMISSION_ASYNC_DISPATCH_REQUIRED")
         snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
-    def test_submit_records_submission_time_without_mutating_payload_identity(self, objects):
-        snapshot = self._snapshot(SubmissionSnapshot.Status.APPROVED)
+    def test_matching_async_dispatch_confirmation_marks_submitted(self, objects):
+        snapshot = self._snapshot(SubmissionSnapshot.Status.DISPATCH_QUEUED)
+        snapshot.dispatch_ref = "dispatch-001"
         payload_hash = snapshot.payload_hash
         objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
-        SubmissionLifecycleService(77).submit("submission-1")
+
+        SubmissionLifecycleService(77, actor_user_id=9).confirm_dispatched(
+            "submission-1",
+            dispatch_ref="dispatch-001",
+        )
+
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.SUBMITTED)
         self.assertEqual(snapshot.payload_hash, payload_hash)
         self.assertIsNotNone(snapshot.submitted_at)
+        self.assertEqual(snapshot.dispatch_error, "")
         snapshot.save.assert_called_once_with(
-            update_fields=["status", "submitted_at", "updated_by", "updated_at"]
+            update_fields=[
+                "status",
+                "submitted_at",
+                "dispatch_error",
+                "updated_by",
+                "updated_at",
+            ]
         )
+
+    @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
+    def test_dispatch_confirmation_requires_exact_persisted_ref(self, objects):
+        snapshot = self._snapshot(SubmissionSnapshot.Status.DISPATCH_QUEUED)
+        snapshot.dispatch_ref = "dispatch-001"
+        objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
+
+        with self.assertRaises(SubmissionLifecycleError) as ctx:
+            SubmissionLifecycleService(77).confirm_dispatched(
+                "submission-1",
+                dispatch_ref="dispatch-other",
+            )
+        self.assertEqual(ctx.exception.code, "SUBMISSION_DISPATCH_REF_MISMATCH")
+        snapshot.save.assert_not_called()
+
+    @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
+    def test_worker_dispatch_failure_is_retryable_fact(self, objects):
+        snapshot = self._snapshot(SubmissionSnapshot.Status.DISPATCH_QUEUED)
+        snapshot.dispatch_ref = "dispatch-001"
+        objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
+
+        SubmissionLifecycleService(77).record_dispatch_failure(
+            "submission-1",
+            dispatch_ref="dispatch-001",
+            error="upstream network timeout",
+        )
+
+        self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DISPATCH_FAILED)
+        self.assertIn("network timeout", snapshot.dispatch_error)
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
     def test_receipt_requires_submitted_state_and_reference(self, objects):
