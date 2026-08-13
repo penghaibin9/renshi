@@ -19,11 +19,12 @@ SECTIONS = {
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "职称评审")
-    # Screenshot C runtime chain:
+    # Progressive live workspace chain:
     # workspace_c = business visual layer;
-    # workspace_d = live dashboard/runtime inside a rendered content block;
-    # workspace_e = mobile Horilla shell state + desktop-hover isolation.
-    template_name = "hr_title/workspace_e.html"
+    # workspace_d = live dashboard/runtime;
+    # workspace_e = native Horilla responsive shell + qualification history;
+    # workspace_f = real expert-panel / conflict / ballot authority UI.
+    template_name = "hr_title/workspace_f.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrTitleAccessError as exc:
