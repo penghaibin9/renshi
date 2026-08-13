@@ -32,6 +32,8 @@ class AppointmentQuotaService:
             AppointmentApplicationCase.Status.ELIGIBLE,
             AppointmentApplicationCase.Status.UNDER_REVIEW,
             AppointmentApplicationCase.Status.PROPOSED,
+            AppointmentApplicationCase.Status.PUBLICITY,
+            AppointmentApplicationCase.Status.EFFECT_PENDING,
         }
     )
 
@@ -79,6 +81,16 @@ class AppointmentQuotaService:
             raise AppointmentQuotaError(
                 "APPOINTMENT_QUOTA_BATCH_MISMATCH",
                 "application case and quota pool belong to different appointment batches",
+            )
+        if case.policy_version_id != pool.batch.policy_version_id:
+            raise AppointmentQuotaError(
+                "APPOINTMENT_QUOTA_POLICY_MISMATCH",
+                "application policy version does not match the frozen appointment batch",
+            )
+        if pool.exact_level_code and case.requested_level_code != pool.exact_level_code:
+            raise AppointmentQuotaError(
+                "APPOINTMENT_QUOTA_LEVEL_MISMATCH",
+                "application requested level does not match the exact-level quota pool",
             )
 
         existing = (
