@@ -170,7 +170,7 @@ class TitleApplicationService:
         )
         if latest_round is None or latest_round.status != TitleReviewRound.Status.PASSED:
             raise TitleApplicationError(
-                "TITLE_REVIEW_PASSED_REQUIRED",
+                "TITLE_REVIEW_GATE_REQUIRED",
                 "a passed expert-review round is required before proposal",
             )
         return self._transition(
