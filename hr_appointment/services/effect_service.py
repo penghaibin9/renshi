@@ -1,14 +1,15 @@
 """HR14 formal appointment effect orchestration.
 
 A collective/publicity result is not yet an effective personnel fact.  HR14
-first records an ``EFFECT_PENDING`` result tied to the exact HR02 reservation,
-then asks HR03 to switch the primary assignment.  Only when the HR03 write and
-HR02 reservation commit succeed in the same savepoint may HR14 expose the
-result as ``EFFECTIVE``.
+requires the latest publicity window to be CLOSED with no blocking objection,
+then records an ``EFFECT_PENDING`` result tied to the exact HR02 reservation and
+closed publicity receipt before asking HR03 to switch the primary assignment.
+Only when the HR03 write and HR02 reservation commit succeed in the same
+savepoint may HR14 expose the result as ``EFFECTIVE``.
 
 If the provider write fails, the pending fact and reservation receipt remain so
 reconciliation can retry.  No caller should infer appointment effectiveness
-from a FINAL/publicity decision alone.
+from a proposed/publicity decision alone.
 """
 
 from __future__ import annotations
@@ -143,7 +144,6 @@ class AppointmentEffectService:
                 "reservation is not owned by HR14",
             )
 
-        # Capacity-sensitive writers serialize on the HR02 position row.
         position = (
             HrPosition.objects.select_for_update()
             .filter(
@@ -204,6 +204,19 @@ class AppointmentEffectService:
     ) -> AppointmentEffectResult:
         """Create/retry a formal appointment and apply it to HR03 atomically."""
         case = self._lock_case(case_id)
+
+        from hr_appointment.services.publicity_service import (
+            AppointmentPublicityError,
+            AppointmentPublicityService,
+        )
+
+        try:
+            publicity = AppointmentPublicityService(
+                self.tenant_id, actor_user_id=self.actor_user_id
+            ).assert_ready_for_effect(case.id)
+        except AppointmentPublicityError as exc:
+            raise AppointmentEffectError(exc.code, str(exc)) from exc
+
         fact = self._get_or_create_pending_fact(
             case=case,
             appointment_no=appointment_no,
@@ -217,7 +230,6 @@ class AppointmentEffectService:
         reservation, position = self._lock_capacity_receipt(case, reservation_id)
         staff, relationship = self._active_staff_relationship(case.person_id, effective_from)
 
-        # Persist the recoverable business state before invoking provider writes.
         case.status = AppointmentApplicationCase.Status.EFFECT_PENDING
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
@@ -229,8 +241,6 @@ class AppointmentEffectService:
         )
 
         try:
-            # One inner savepoint covers both Authority write and reservation
-            # consumption. If either fails, HR03 must not be half-effective.
             with transaction.atomic():
                 from hr_staff.services.assignment_service import AssignmentService
                 from hr_structure.scope import Hr02Scope
@@ -252,8 +262,6 @@ class AppointmentEffectService:
                     actor=str(self.actor_user_id or ""),
                 ).commit(reservation.id)
         except Exception as exc:
-            # Do not re-raise: the outer transaction must retain EFFECT_PENDING
-            # and the receipt so a reconciliation worker can retry later.
             fact.last_effect_error = str(exc)[:2000]
             fact.save(update_fields=["last_effect_error", "updated_at"])
             return AppointmentEffectResult(
@@ -264,6 +272,7 @@ class AppointmentEffectService:
 
         fact.status = PositionAppointmentFact.Status.EFFECTIVE
         fact.effect_receipt_json = {
+            "hr14PublicityId": str(publicity.id),
             "hr03AssignmentId": str(assignment.id),
             "hr03RelationshipId": str(relationship.id),
             "hr02ReservationId": reservation.id,
