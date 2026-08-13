@@ -12,7 +12,11 @@ from typing import Optional
 
 from django.db import transaction
 
-from hr_appointment.models import AppointmentApplicationCase
+from hr_appointment.models import (
+    AppointmentApplicationCase,
+    AppointmentBatch,
+    AppointmentPositionSupplySnapshot,
+)
 
 
 class AppointmentApplicationError(Exception):
@@ -50,6 +54,39 @@ class AppointmentApplicationService:
             )
         return case
 
+    def _lock_open_batch(self, batch_no: str) -> AppointmentBatch:
+        batch = (
+            AppointmentBatch.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, batch_no=batch_no)
+            .first()
+        )
+        if batch is None:
+            raise AppointmentApplicationError(
+                "APPOINTMENT_BATCH_NOT_FOUND", "appointment batch not found"
+            )
+        if batch.status != AppointmentBatch.Status.APPLICATION_OPEN:
+            raise AppointmentApplicationError(
+                "APPOINTMENT_BATCH_NOT_OPEN",
+                f"batch status {batch.status} does not accept applications",
+            )
+        return batch
+
+    def _position_supply(self, batch: AppointmentBatch, position_instance_id: int):
+        supply = (
+            AppointmentPositionSupplySnapshot.objects.filter(
+                tenant_id=self.tenant_id,
+                batch=batch,
+                position_instance_id=position_instance_id,
+            )
+            .first()
+        )
+        if supply is None:
+            raise AppointmentApplicationError(
+                "APPOINTMENT_POSITION_NOT_IN_FROZEN_SUPPLY",
+                "target position is not part of the frozen appointment batch supply",
+            )
+        return supply
+
     def _transition(self, case: AppointmentApplicationCase, *, allowed_from, target: str):
         if case.status not in allowed_from:
             raise AppointmentApplicationError(
@@ -63,7 +100,9 @@ class AppointmentApplicationService:
 
     @transaction.atomic
     def create_draft(self, payload: AppointmentApplicationInput) -> AppointmentApplicationCase:
-        if not payload.case_no.strip() or not payload.batch_no.strip():
+        case_no = str(payload.case_no or "").strip()
+        batch_no = str(payload.batch_no or "").strip()
+        if not case_no or not batch_no:
             raise AppointmentApplicationError(
                 "APPOINTMENT_CASE_IDENTITY_REQUIRED", "case_no and batch_no are required"
             )
@@ -71,14 +110,31 @@ class AppointmentApplicationService:
             raise AppointmentApplicationError(
                 "APPOINTMENT_POSITION_REQUIRED", "position_instance_id is required"
             )
+
+        batch = self._lock_open_batch(batch_no)
+        if payload.policy_version_id != batch.policy_version_id:
+            raise AppointmentApplicationError(
+                "APPOINTMENT_POLICY_VERSION_MISMATCH",
+                "application policy version must match the frozen appointment batch policy",
+            )
+        supply = self._position_supply(batch, payload.position_instance_id)
+        requested_level = str(payload.requested_level_code or "").strip()
+        frozen_level = str(supply.level_code or "").strip()
+        if frozen_level and requested_level and requested_level != frozen_level:
+            raise AppointmentApplicationError(
+                "APPOINTMENT_APPLICATION_LEVEL_MISMATCH",
+                "requested appointment level does not match the frozen position supply",
+            )
+        requested_level = frozen_level or requested_level
+
         return AppointmentApplicationCase.objects.create(
             tenant_id=self.tenant_id,
-            case_no=payload.case_no.strip(),
+            case_no=case_no,
             person_id=payload.person_id,
-            policy_version_id=payload.policy_version_id,
+            policy_version_id=batch.policy_version_id,
             position_instance_id=payload.position_instance_id,
-            batch_no=payload.batch_no.strip(),
-            requested_level_code=payload.requested_level_code.strip(),
+            batch_no=batch.batch_no,
+            requested_level_code=requested_level,
             status=AppointmentApplicationCase.Status.DRAFT,
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
@@ -87,6 +143,7 @@ class AppointmentApplicationService:
     @transaction.atomic
     def submit(self, case_id) -> AppointmentApplicationCase:
         case = self._lock_case(case_id)
+        self._lock_open_batch(case.batch_no)
         return self._transition(
             case,
             allowed_from={
