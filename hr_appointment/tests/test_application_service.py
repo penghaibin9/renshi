@@ -9,6 +9,10 @@ from hr_appointment.models import (
     AppointmentBatch,
     AppointmentPositionSupplySnapshot,
 )
+from hr_appointment.population_models import (
+    AppointmentPopulationMemberSnapshot,
+    AppointmentPopulationSnapshot,
+)
 from hr_appointment.services.application_service import (
     AppointmentApplicationError,
     AppointmentApplicationInput,
@@ -45,13 +49,30 @@ class AppointmentApplicationServiceTests(TestCase):
             available_fte=1,
             snapshot_at=timezone.now(),
         )
+        population_person_id = uuid.uuid4()
+        snapshot = AppointmentPopulationSnapshot.objects.create(
+            tenant_id=77,
+            batch=batch,
+            as_of_date=timezone.localdate(),
+            snapshot_at=timezone.now(),
+            member_count=1,
+            content_hash="a" * 64,
+        )
+        AppointmentPopulationMemberSnapshot.objects.create(
+            tenant_id=77,
+            snapshot=snapshot,
+            person_id=population_person_id,
+            staff_id=uuid.uuid4(),
+            member_hash="b" * 64,
+        )
+        batch._population_person_id = population_person_id
         return batch
 
     def test_create_draft_uses_frozen_batch_policy_position_and_level(self):
         batch = self._open_batch_with_supply(level="PT-7")
         payload = AppointmentApplicationInput(
             case_no=" CASE-001 ",
-            person_id=uuid.uuid4(),
+            person_id=batch._population_person_id,
             policy_version_id=batch.policy_version_id,
             position_instance_id=1001,
             batch_no=batch.batch_no,
@@ -61,18 +82,19 @@ class AppointmentApplicationServiceTests(TestCase):
         case = AppointmentApplicationService(77, actor_user_id=9).create_draft(payload)
 
         self.assertEqual(case.case_no, "CASE-001")
+        self.assertEqual(case.person_id, batch._population_person_id)
         self.assertEqual(case.policy_version_id, batch.policy_version_id)
         self.assertEqual(case.position_instance_id, 1001)
         self.assertEqual(case.batch_no, batch.batch_no)
         self.assertEqual(case.requested_level_code, "PT-7")
         self.assertEqual(case.status, AppointmentApplicationCase.Status.DRAFT)
 
-    def test_create_draft_rejects_policy_level_and_supply_spoofing(self):
+    def test_create_draft_rejects_policy_level_supply_and_population_spoofing(self):
         batch = self._open_batch_with_supply(level="PT-7")
         service = AppointmentApplicationService(77)
         base = dict(
             case_no="CASE-002",
-            person_id=uuid.uuid4(),
+            person_id=batch._population_person_id,
             policy_version_id=batch.policy_version_id,
             position_instance_id=1001,
             batch_no=batch.batch_no,
@@ -84,6 +106,12 @@ class AppointmentApplicationServiceTests(TestCase):
                 AppointmentApplicationInput(**{**base, "policy_version_id": uuid.uuid4()})
             )
         self.assertEqual(ctx.exception.code, "APPOINTMENT_POLICY_VERSION_MISMATCH")
+
+        with self.assertRaises(AppointmentApplicationError) as ctx:
+            service.create_draft(
+                AppointmentApplicationInput(**{**base, "person_id": uuid.uuid4()})
+            )
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_PERSON_NOT_IN_FROZEN_POPULATION")
 
         with self.assertRaises(AppointmentApplicationError) as ctx:
             service.create_draft(
@@ -107,7 +135,7 @@ class AppointmentApplicationServiceTests(TestCase):
             AppointmentApplicationService(77).create_draft(
                 AppointmentApplicationInput(
                     case_no="CASE-CLOSED",
-                    person_id=uuid.uuid4(),
+                    person_id=batch._population_person_id,
                     policy_version_id=batch.policy_version_id,
                     position_instance_id=1001,
                     batch_no=batch.batch_no,
