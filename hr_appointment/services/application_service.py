@@ -54,7 +54,7 @@ class AppointmentApplicationService:
             )
         return case
 
-    def _lock_open_batch(self, batch_no: str) -> AppointmentBatch:
+    def _lock_batch(self, batch_no: str) -> AppointmentBatch:
         batch = (
             AppointmentBatch.objects.select_for_update()
             .filter(tenant_id=self.tenant_id, batch_no=batch_no)
@@ -64,10 +64,23 @@ class AppointmentApplicationService:
             raise AppointmentApplicationError(
                 "APPOINTMENT_BATCH_NOT_FOUND", "appointment batch not found"
             )
+        return batch
+
+    def _lock_open_batch(self, batch_no: str) -> AppointmentBatch:
+        batch = self._lock_batch(batch_no)
         if batch.status != AppointmentBatch.Status.APPLICATION_OPEN:
             raise AppointmentApplicationError(
                 "APPOINTMENT_BATCH_NOT_OPEN",
-                f"batch status {batch.status} does not accept applications",
+                f"batch status {batch.status} does not accept new applications",
+            )
+        return batch
+
+    def _require_batch_phase(self, case: AppointmentApplicationCase, allowed, code: str):
+        batch = self._lock_batch(case.batch_no)
+        if batch.status not in allowed:
+            raise AppointmentApplicationError(
+                code,
+                f"case action is not allowed while batch status is {batch.status}",
             )
         return batch
 
@@ -112,7 +125,7 @@ class AppointmentApplicationService:
             )
 
         batch = self._lock_open_batch(batch_no)
-        if payload.policy_version_id != batch.policy_version_id:
+        if str(payload.policy_version_id) != str(batch.policy_version_id):
             raise AppointmentApplicationError(
                 "APPOINTMENT_POLICY_VERSION_MISMATCH",
                 "application policy version must match the frozen appointment batch policy",
@@ -143,7 +156,23 @@ class AppointmentApplicationService:
     @transaction.atomic
     def submit(self, case_id) -> AppointmentApplicationCase:
         case = self._lock_case(case_id)
-        self._lock_open_batch(case.batch_no)
+        if case.status == AppointmentApplicationCase.Status.DRAFT:
+            self._require_batch_phase(
+                case,
+                {AppointmentBatch.Status.APPLICATION_OPEN},
+                "APPOINTMENT_BATCH_NOT_OPEN",
+            )
+        elif case.status == AppointmentApplicationCase.Status.RETURNED:
+            # A correction returned during eligibility review must be able to
+            # come back without reopening the public application window.
+            self._require_batch_phase(
+                case,
+                {
+                    AppointmentBatch.Status.APPLICATION_OPEN,
+                    AppointmentBatch.Status.ELIGIBILITY_REVIEW,
+                },
+                "APPOINTMENT_APPLICATION_CORRECTION_WINDOW_CLOSED",
+            )
         return self._transition(
             case,
             allowed_from={
@@ -156,6 +185,11 @@ class AppointmentApplicationService:
     @transaction.atomic
     def return_for_correction(self, case_id) -> AppointmentApplicationCase:
         case = self._lock_case(case_id)
+        self._require_batch_phase(
+            case,
+            {AppointmentBatch.Status.ELIGIBILITY_REVIEW},
+            "APPOINTMENT_ELIGIBILITY_REVIEW_NOT_OPEN",
+        )
         return self._transition(
             case,
             allowed_from={AppointmentApplicationCase.Status.SUBMITTED},
@@ -165,6 +199,11 @@ class AppointmentApplicationService:
     @transaction.atomic
     def pass_eligibility(self, case_id) -> AppointmentApplicationCase:
         case = self._lock_case(case_id)
+        self._require_batch_phase(
+            case,
+            {AppointmentBatch.Status.ELIGIBILITY_REVIEW},
+            "APPOINTMENT_ELIGIBILITY_REVIEW_NOT_OPEN",
+        )
         return self._transition(
             case,
             allowed_from={AppointmentApplicationCase.Status.SUBMITTED},
@@ -174,6 +213,11 @@ class AppointmentApplicationService:
     @transaction.atomic
     def reject_eligibility(self, case_id) -> AppointmentApplicationCase:
         case = self._lock_case(case_id)
+        self._require_batch_phase(
+            case,
+            {AppointmentBatch.Status.ELIGIBILITY_REVIEW},
+            "APPOINTMENT_ELIGIBILITY_REVIEW_NOT_OPEN",
+        )
         return self._transition(
             case,
             allowed_from={AppointmentApplicationCase.Status.SUBMITTED},
@@ -196,6 +240,11 @@ class AppointmentApplicationService:
     @transaction.atomic
     def start_review(self, case_id) -> AppointmentApplicationCase:
         case = self._lock_case(case_id)
+        self._require_batch_phase(
+            case,
+            {AppointmentBatch.Status.REVIEWING},
+            "APPOINTMENT_REVIEW_NOT_OPEN",
+        )
         return self._transition(
             case,
             allowed_from={AppointmentApplicationCase.Status.ELIGIBLE},
