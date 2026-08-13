@@ -3,9 +3,10 @@
 {% block content %}
 {{ block.super }}
 <style>
-.hr14live-history{margin-top:14px}.hr14live-list{display:grid;gap:8px;margin-top:12px}.hr14live-row{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(190px,1.35fr) 108px 96px;gap:10px;align-items:center;padding:12px;border:1px solid #efedf7;border-radius:12px;background:#fff}.hr14live-row b,.hr14live-row small{display:block;overflow-wrap:anywhere}.hr14live-row small{color:#6b7280}.hr14live-badge{justify-self:start;padding:4px 9px;border-radius:999px;background:#f0edff;color:#5141b5;font-size:12px;font-weight:700}.hr14live-empty{padding:24px 14px;text-align:center;color:#6b7280;border:1px dashed #d9d8e5;border-radius:12px;background:#fcfcfe}
+.hr14live-history{margin-top:14px}.hr14live-list{display:grid;gap:8px;margin-top:12px}.hr14live-row{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(190px,1.35fr) 108px 96px;gap:10px;align-items:center;padding:12px;border:1px solid #efedf7;border-radius:12px;background:#fff}.hr14live-row b,.hr14live-row small{display:block;overflow-wrap:anywhere}.hr14live-row small{color:#6b7280}.hr14live-badge{justify-self:start;padding:4px 9px;border-radius:999px;background:#f0edff;color:#5141b5;font-size:12px;font-weight:700}.hr14live-badge.warn{background:#fff4e8;color:#a45118}.hr14live-badge.good{background:#eaf8f0;color:#176a43}.hr14live-empty{padding:24px 14px;text-align:center;color:#6b7280;border:1px dashed #d9d8e5;border-radius:12px;background:#fcfcfe}.hr14live-summary{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.hr14live-chip{padding:6px 9px;border-radius:999px;border:1px solid #ded9f3;background:#faf9ff;color:#625a79;font-size:12px}.hr14live-chip strong{color:#241c49}.hr14live-forms{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.hr14live-form{border:1px solid #e7e3f3;border-radius:14px;background:#fcfbff;padding:14px}.hr14live-form h3{margin:0 0 4px;font-size:15px}.hr14live-form p{margin:0 0 12px;color:#6b7280;font-size:12px;line-height:1.6}.hr14live-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.hr14live-field{display:grid;gap:5px}.hr14live-field.full{grid-column:1/-1}.hr14live-field label{font-size:12px;font-weight:700;color:#4d4860}.hr14live-input,.hr14live-select,.hr14live-textarea{width:100%;border:1px solid #d9d5e7;border-radius:10px;background:#fff;color:#262234;padding:9px 10px;font:inherit}.hr14live-input,.hr14live-select{height:40px}.hr14live-textarea{min-height:74px;resize:vertical}.hr14live-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.hr14live-btn{border:0;border-radius:10px;padding:9px 13px;background:#5546b7;color:#fff;font-weight:700;cursor:pointer}.hr14live-btn.secondary{background:#eeeafd;color:#4b3fa5}.hr14live-btn.danger{background:#fff0ea;color:#a34321}.hr14live-btn:disabled{opacity:.55;cursor:not-allowed}.hr14live-message{font-size:12px;color:#6b7280}.hr14live-rule{margin-top:12px;padding:12px;border-radius:12px;background:#fff7ed;color:#8b5b24;font-size:12px;line-height:1.7}.hr14live-publicity-row{grid-template-columns:minmax(160px,1.2fr) minmax(190px,1.15fr) 104px minmax(120px,.8fr)}.hr14live-objection-row{grid-template-columns:minmax(160px,1.1fr) minmax(220px,1.35fr) 110px minmax(120px,.8fr)}
+@media(max-width:840px){.hr14live-forms{grid-template-columns:1fr}.hr14live-fields{grid-template-columns:1fr}.hr14live-field.full{grid-column:1}.hr14live-publicity-row,.hr14live-objection-row{grid-template-columns:minmax(0,1fr) auto}.hr14live-publicity-row .hr14live-detail,.hr14live-objection-row .hr14live-detail{grid-column:1}.hr14live-publicity-row .hr14live-date,.hr14live-objection-row .hr14live-date{grid-column:2;grid-row:2}}
 @media(max-width:720px){.hr14live-row{grid-template-columns:minmax(0,1fr) auto}.hr14live-row .hr14live-detail{grid-column:1}.hr14live-row .hr14live-date{grid-column:2;grid-row:2}}
-@media(max-width:390px){.hr14live-row{grid-template-columns:1fr}.hr14live-row .hr14live-detail,.hr14live-row .hr14live-date{grid-column:1;grid-row:auto}.hr14live-badge{justify-self:start}}
+@media(max-width:390px){.hr14live-row,.hr14live-publicity-row,.hr14live-objection-row{grid-template-columns:1fr}.hr14live-row .hr14live-detail,.hr14live-row .hr14live-date,.hr14live-publicity-row .hr14live-detail,.hr14live-publicity-row .hr14live-date,.hr14live-objection-row .hr14live-detail,.hr14live-objection-row .hr14live-date{grid-column:1;grid-row:auto}.hr14live-badge{justify-self:start}}
 </style>
 {% endblock %}
 
@@ -19,49 +20,241 @@
   document.body.classList.remove('hr14-page');
 
   const section = '{{ section|escapejs }}';
-  if (section !== 'ranking') return;
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
-
-  const desc = document.getElementById('hr14-desc');
-  if (desc) {
-    const observer = new MutationObserver(() => {
-      observer.disconnect();
-      desc.textContent = '上方保留待评议申请队列；下方读取真实 AppointmentRankingResult，名次、分数、入选/候补/未入选均独立留痕。';
+  const csrf = () => (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || '');
+  const api = async (url, body={}) => {
+    const response = await fetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf(),'X-Requested-With':'XMLHttpRequest'},
+      body:JSON.stringify(body),
     });
-    observer.observe(desc, {childList:true, characterData:true, subtree:true});
-  }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error?.message || data?.error?.code || `HTTP ${response.status}`);
+    return data;
+  };
 
-  async function renderRankingHistory() {
-    const work = document.querySelector('.hr14-layout > div');
-    if (!work || document.getElementById('hr14live-ranking-history')) return;
-    const card = document.createElement('article');
-    card.id = 'hr14live-ranking-history';
-    card.className = 'hr14-card hr14live-history';
-    card.innerHTML = '<h2>已固化评议排序</h2><p>排序事实 append-only；入选才进入拟聘，候补与未入选不会被改写成资格驳回。</p><div class="hr14live-list"><div class="hr14live-empty">正在读取真实排序结果…</div></div>';
-    work.appendChild(card);
-    try {
-      const response = await fetch('/api/v1/hr/appointments/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}});
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      const data = await response.json();
-      const rows = data.recentRankings || [];
-      const target = card.querySelector('.hr14live-list');
-      target.innerHTML = rows.length ? rows.map((x) => {
-        const title = x.ranking_no || '未编号排序';
-        const score = x.total_score ?? '—';
-        const rank = x.rank_no ?? '—';
-        const detail = [x.batch_no, `岗位 ${x.position_instance_id ?? '—'}`, `第 ${x.attempt_no ?? '—'} 轮`, `得分 ${score}`].filter(Boolean).join(' · ');
-        const date = (x.finalized_at || '').slice(0, 10) || '—';
-        return `<div class="hr14live-row"><div><b>${esc(title)}</b><small>名次 ${esc(rank)}</small></div><small class="hr14live-detail">${esc(detail)}</small><span class="hr14live-badge">${esc(x.outcome || '—')}</span><small class="hr14live-date">${esc(date)}</small></div>`;
-      }).join('') : '<div class="hr14live-empty">当前尚无已固化排序结果；待评议申请仍显示在上方队列。</div>';
-    } catch (error) {
-      const target = card.querySelector('.hr14live-list');
-      if (target) target.innerHTML = `<div class="hr14live-empty">排序结果读取失败：${esc(error.message)}</div>`;
+  if (section === 'ranking') {
+    const desc = document.getElementById('hr14-desc');
+    if (desc) {
+      const observer = new MutationObserver(() => {
+        observer.disconnect();
+        desc.textContent = '上方保留待评议申请队列；下方读取真实 AppointmentRankingResult，名次、分数、入选/候补/未入选均独立留痕。';
+      });
+      observer.observe(desc, {childList:true, characterData:true, subtree:true});
     }
+
+    const renderRankingHistory = async () => {
+      const work = document.querySelector('.hr14-layout > div');
+      if (!work || document.getElementById('hr14live-ranking-history')) return;
+      const card = document.createElement('article');
+      card.id = 'hr14live-ranking-history';
+      card.className = 'hr14-card hr14live-history';
+      card.innerHTML = '<h2>已固化评议排序</h2><p>排序事实 append-only；入选才进入拟聘，候补与未入选不会被改写成资格驳回。</p><div class="hr14live-list"><div class="hr14live-empty">正在读取真实排序结果…</div></div>';
+      work.appendChild(card);
+      try {
+        const response = await fetch('/api/v1/hr/appointments/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}});
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const data = await response.json();
+        const rows = data.recentRankings || [];
+        const target = card.querySelector('.hr14live-list');
+        target.innerHTML = rows.length ? rows.map((x) => {
+          const title = x.ranking_no || '未编号排序';
+          const score = x.total_score ?? '—';
+          const rank = x.rank_no ?? '—';
+          const detail = [x.batch_no, `岗位 ${x.position_instance_id ?? '—'}`, `第 ${x.attempt_no ?? '—'} 轮`, `得分 ${score}`].filter(Boolean).join(' · ');
+          const date = (x.finalized_at || '').slice(0, 10) || '—';
+          return `<div class="hr14live-row"><div><b>${esc(title)}</b><small>名次 ${esc(rank)}</small></div><small class="hr14live-detail">${esc(detail)}</small><span class="hr14live-badge">${esc(x.outcome || '—')}</span><small class="hr14live-date">${esc(date)}</small></div>`;
+        }).join('') : '<div class="hr14live-empty">当前尚无已固化排序结果；待评议申请仍显示在上方队列。</div>';
+      } catch (error) {
+        const target = card.querySelector('.hr14live-list');
+        if (target) target.innerHTML = `<div class="hr14live-empty">排序结果读取失败：${esc(error.message)}</div>`;
+      }
+    };
+    renderRankingHistory();
+    return;
   }
 
-  renderRankingHistory();
+  if (section !== 'publicity') return;
+
+  const stale = document.getElementById('hr14-title')?.closest('.hr14-card');
+  if (stale) stale.hidden = true;
+  const work = document.querySelector('.hr14-layout > div');
+  if (!work || document.getElementById('hr14live-publicity')) return;
+
+  const card = document.createElement('article');
+  card.id = 'hr14live-publicity';
+  card.className = 'hr14-card hr14live-history';
+  card.innerHTML = `
+    <h2>拟聘公示与异议</h2>
+    <p>公示不是装饰状态：只有 SELECTED 排序可进入公示；公示期结束且所有异议处理完成后，正式聘任生效 Gate 才会放行。</p>
+    <div class="hr14live-summary">
+      <span class="hr14live-chip">公示中 <strong id="hr14live-open">—</strong></span>
+      <span class="hr14live-chip">已关闭 <strong id="hr14live-closed">—</strong></span>
+      <span class="hr14live-chip">未处理异议 <strong id="hr14live-pending-obj">—</strong></span>
+      <span class="hr14live-chip">成立异议 <strong id="hr14live-upheld">—</strong></span>
+    </div>
+    <div class="hr14live-forms">
+      <form id="hr14live-open-form" class="hr14live-form">
+        <h3>发起拟聘公示</h3><p>选择已入选且处于 PROPOSED 的申请，冻结本轮公示时间与公示快照。</p>
+        <div class="hr14live-fields">
+          <div class="hr14live-field full"><label>拟聘申请</label><select id="hr14live-case" class="hr14live-select" required></select></div>
+          <div class="hr14live-field"><label>公示编号</label><input id="hr14live-pub-no" class="hr14live-input" required placeholder="PUB-2026-001"></div>
+          <div class="hr14live-field"><label>排序结果</label><select id="hr14live-ranking" class="hr14live-select" required></select></div>
+          <div class="hr14live-field"><label>开始时间</label><input id="hr14live-start" class="hr14live-input" type="datetime-local" required></div>
+          <div class="hr14live-field"><label>结束时间</label><input id="hr14live-end" class="hr14live-input" type="datetime-local" required></div>
+        </div>
+        <div class="hr14live-actions"><button class="hr14live-btn" type="submit">发起公示</button><span id="hr14live-open-msg" class="hr14live-message"></span></div>
+      </form>
+      <form id="hr14live-objection-form" class="hr14live-form">
+        <h3>登记公示异议</h3><p>异议只允许在 OPEN 公示时间窗内登记，材料引用与提交人一起留痕。</p>
+        <div class="hr14live-fields">
+          <div class="hr14live-field full"><label>公示记录</label><select id="hr14live-objection-pub" class="hr14live-select" required></select></div>
+          <div class="hr14live-field"><label>异议编号</label><input id="hr14live-objection-no" class="hr14live-input" required placeholder="OBJ-2026-001"></div>
+          <div class="hr14live-field"><label>提交人引用</label><input id="hr14live-submitter" class="hr14live-input" placeholder="工号/外部登记号"></div>
+          <div class="hr14live-field full"><label>异议摘要</label><textarea id="hr14live-objection-summary" class="hr14live-textarea" required placeholder="说明异议事实与需要复核的内容"></textarea></div>
+          <div class="hr14live-field full"><label>证据引用（逗号分隔）</label><input id="hr14live-evidence" class="hr14live-input" placeholder="file:proof-1, file:proof-2"></div>
+        </div>
+        <div class="hr14live-actions"><button class="hr14live-btn secondary" type="submit">登记异议</button><span id="hr14live-obj-msg" class="hr14live-message"></span></div>
+      </form>
+      <form id="hr14live-resolve-form" class="hr14live-form">
+        <h3>处理异议</h3><p>成立异议会阻断公示关闭；不成立/撤回后仍需等待公示期结束。</p>
+        <div class="hr14live-fields">
+          <div class="hr14live-field full"><label>待处理异议</label><select id="hr14live-resolve-id" class="hr14live-select" required></select></div>
+          <div class="hr14live-field"><label>处理结果</label><select id="hr14live-outcome" class="hr14live-select"><option value="NOT_UPHELD">不成立</option><option value="UPHELD">成立</option><option value="WITHDRAWN">撤回</option></select></div>
+          <div class="hr14live-field"><label>处理说明</label><input id="hr14live-resolution" class="hr14live-input" placeholder="复核依据与结论"></div>
+        </div>
+        <div class="hr14live-actions"><button class="hr14live-btn secondary" type="submit">保存处理结果</button><span id="hr14live-resolve-msg" class="hr14live-message"></span></div>
+      </form>
+      <form id="hr14live-close-form" class="hr14live-form">
+        <h3>关闭公示</h3><p>后端会再次检查公示期是否结束、异议是否全部处理；任何一项不满足都不会进入正式生效。</p>
+        <div class="hr14live-fields"><div class="hr14live-field full"><label>待关闭公示</label><select id="hr14live-close-id" class="hr14live-select" required></select></div></div>
+        <div class="hr14live-actions"><button class="hr14live-btn" type="submit">校验并关闭</button><span id="hr14live-close-msg" class="hr14live-message"></span></div>
+      </form>
+    </div>
+    <div class="hr14live-rule">生效硬门禁：Case 仅处于 PUBLICITY 不够；必须存在最新 CLOSED 公示记录，且没有 RECEIVED / UNDER_REVIEW / UPHELD 异议，才允许创建或重试 PositionAppointmentFact。</div>
+    <h3 style="margin-top:18px">公示记录</h3><div id="hr14live-publicities" class="hr14live-list"><div class="hr14live-empty">正在读取真实公示记录…</div></div>
+    <h3 style="margin-top:18px">异议记录</h3><div id="hr14live-objections" class="hr14live-list"><div class="hr14live-empty">正在读取真实异议记录…</div></div>`;
+  work.appendChild(card);
+
+  let snapshot = null;
+  const localInput = (date) => {
+    const pad = (v) => String(v).padStart(2,'0');
+    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+  const now = new Date();
+  document.getElementById('hr14live-start').value = localInput(now);
+  document.getElementById('hr14live-end').value = localInput(new Date(now.getTime()+5*24*60*60*1000));
+
+  const setOptions = (el, rows, value, label, emptyLabel) => {
+    el.innerHTML = rows.length ? rows.map((x) => `<option value="${esc(value(x))}">${esc(label(x))}</option>`).join('') : `<option value="">${esc(emptyLabel)}</option>`;
+  };
+
+  const render = () => {
+    if (!snapshot) return;
+    const summary = snapshot.summary || {};
+    document.getElementById('hr14live-open').textContent = summary.openPublicities ?? 0;
+    document.getElementById('hr14live-closed').textContent = summary.closedPublicities ?? 0;
+    document.getElementById('hr14live-pending-obj').textContent = summary.unresolvedObjections ?? 0;
+    document.getElementById('hr14live-upheld').textContent = summary.upheldObjections ?? 0;
+
+    const cases = (snapshot.recentApplications || []).filter((x) => x.status === 'PROPOSED');
+    const selected = (snapshot.recentRankings || []).filter((x) => x.outcome === 'SELECTED');
+    const openPublicities = (snapshot.recentPublicities || []).filter((x) => x.status === 'OPEN');
+    const pendingObjections = (snapshot.recentObjections || []).filter((x) => x.status === 'RECEIVED' || x.status === 'UNDER_REVIEW');
+    setOptions(document.getElementById('hr14live-case'), cases, (x) => x.id, (x) => `${x.case_no} · 岗位 ${x.position_instance_id}`, '当前没有待公示的 PROPOSED 申请');
+    setOptions(document.getElementById('hr14live-ranking'), selected, (x) => x.id, (x) => `${x.ranking_no} · #${x.rank_no} · ${x.total_score}`, '当前没有 SELECTED 排序结果');
+    setOptions(document.getElementById('hr14live-objection-pub'), openPublicities, (x) => x.id, (x) => `${x.publicity_no} · ${x.batch_no}`, '当前没有开放中的公示');
+    setOptions(document.getElementById('hr14live-close-id'), openPublicities, (x) => x.id, (x) => `${x.publicity_no} · 截止 ${(x.end_at || '').slice(0,16).replace('T',' ')}`, '当前没有开放中的公示');
+    setOptions(document.getElementById('hr14live-resolve-id'), pendingObjections, (x) => x.id, (x) => `${x.objection_no} · ${x.content_summary}`, '当前没有待处理异议');
+
+    const pubs = document.getElementById('hr14live-publicities');
+    const publicityRows = snapshot.recentPublicities || [];
+    pubs.innerHTML = publicityRows.length ? publicityRows.map((x) => {
+      const cls = x.status === 'CLOSED' ? ' good' : x.status === 'CANCELLED' ? ' warn' : '';
+      const detail = [`批次 ${x.batch_no}`, `岗位 ${x.position_instance_id}`, `第 ${x.attempt_no} 次公示`].join(' · ');
+      return `<div class="hr14live-row hr14live-publicity-row"><div><b>${esc(x.publicity_no)}</b><small>${esc(detail)}</small></div><small class="hr14live-detail">${esc((x.start_at || '').slice(0,16).replace('T',' '))} → ${esc((x.end_at || '').slice(0,16).replace('T',' '))}</small><span class="hr14live-badge${cls}">${esc(x.status)}</span><small class="hr14live-date">${esc((x.closed_at || x.opened_at || '').slice(0,10))}</small></div>`;
+    }).join('') : '<div class="hr14live-empty">当前没有公示记录。</div>';
+
+    const objections = document.getElementById('hr14live-objections');
+    const objectionRows = snapshot.recentObjections || [];
+    objections.innerHTML = objectionRows.length ? objectionRows.map((x) => {
+      const cls = x.status === 'UPHELD' ? ' warn' : ['NOT_UPHELD','WITHDRAWN'].includes(x.status) ? ' good' : '';
+      const detail = [x.submitter_ref || '匿名/未记录提交人', x.resolution_note || '待形成处理结论'].join(' · ');
+      return `<div class="hr14live-row hr14live-objection-row"><div><b>${esc(x.objection_no)}</b><small>${esc(x.content_summary)}</small></div><small class="hr14live-detail">${esc(detail)}</small><span class="hr14live-badge${cls}">${esc(x.status)}</span><small class="hr14live-date">${esc((x.resolved_at || x.submitted_at || '').slice(0,10))}</small></div>`;
+    }).join('') : '<div class="hr14live-empty">当前没有异议记录。</div>';
+  };
+
+  const reload = async () => {
+    const response = await fetch('/api/v1/hr/appointments/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    snapshot = await response.json();
+    render();
+  };
+
+  const runForm = async (form, messageId, fn) => {
+    const message = document.getElementById(messageId);
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true; message.textContent = '正在提交…';
+    try { await fn(); message.textContent = '已保存'; await reload(); }
+    catch (error) { message.textContent = error.message; }
+    finally { button.disabled = false; }
+  };
+
+  document.getElementById('hr14live-open-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    runForm(event.currentTarget, 'hr14live-open-msg', async () => {
+      const caseId = document.getElementById('hr14live-case').value;
+      const rankingResultId = document.getElementById('hr14live-ranking').value;
+      if (!caseId || !rankingResultId) throw new Error('当前没有可发起公示的入选申请');
+      const start = new Date(document.getElementById('hr14live-start').value);
+      const end = new Date(document.getElementById('hr14live-end').value);
+      await api(`/api/v1/hr/appointments/applications/${caseId}/publicity/`, {
+        rankingResultId,
+        publicityNo:document.getElementById('hr14live-pub-no').value.trim(),
+        startAt:start.toISOString(), endAt:end.toISOString(),
+        noticeSnapshot:{source:'HR14_UI', capturedAt:new Date().toISOString()},
+      });
+    });
+  });
+  document.getElementById('hr14live-objection-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    runForm(event.currentTarget, 'hr14live-obj-msg', async () => {
+      const publicityId = document.getElementById('hr14live-objection-pub').value;
+      if (!publicityId) throw new Error('当前没有开放中的公示');
+      const refs = document.getElementById('hr14live-evidence').value.split(',').map((x) => x.trim()).filter(Boolean);
+      await api(`/api/v1/hr/appointments/publicities/${publicityId}/objections/`, {
+        objectionNo:document.getElementById('hr14live-objection-no').value.trim(),
+        contentSummary:document.getElementById('hr14live-objection-summary').value.trim(),
+        submitterRef:document.getElementById('hr14live-submitter').value.trim(), evidenceRefs:refs,
+      });
+    });
+  });
+  document.getElementById('hr14live-resolve-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    runForm(event.currentTarget, 'hr14live-resolve-msg', async () => {
+      const objectionId = document.getElementById('hr14live-resolve-id').value;
+      if (!objectionId) throw new Error('当前没有待处理异议');
+      await api(`/api/v1/hr/appointments/publicity-objections/${objectionId}/resolve/`, {
+        outcome:document.getElementById('hr14live-outcome').value,
+        resolutionNote:document.getElementById('hr14live-resolution').value.trim(),
+      });
+    });
+  });
+  document.getElementById('hr14live-close-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    runForm(event.currentTarget, 'hr14live-close-msg', async () => {
+      const publicityId = document.getElementById('hr14live-close-id').value;
+      if (!publicityId) throw new Error('当前没有开放中的公示');
+      await api(`/api/v1/hr/appointments/publicities/${publicityId}/close/`);
+    });
+  });
+
+  reload().catch((error) => {
+    document.getElementById('hr14live-publicities').innerHTML = `<div class="hr14live-empty">公示工作区读取失败：${esc(error.message)}</div>`;
+    document.getElementById('hr14live-objections').innerHTML = '<div class="hr14live-empty">暂无法读取异议台账。</div>';
+  });
 })();
 </script>
 {% endblock %}
