@@ -5,6 +5,7 @@ from . import (
     application_api,
     batch_api,
     capacity_api,
+    population_api,
     term_api,
     term_effect_api,
 )
@@ -13,6 +14,11 @@ app_name = "hr_appointment_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
     path("batches/", batch_api.create_batch, name="batch-create"),
+    path(
+        "batches/<uuid:batch_id>/population/freeze/",
+        population_api.freeze_population,
+        name="batch-population-freeze",
+    ),
     path(
         "batches/<uuid:batch_id>/publish/",
         batch_api.publish_batch,
