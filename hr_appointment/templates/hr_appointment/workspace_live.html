@@ -13,6 +13,11 @@
 {{ block.super }}
 <script>
 (() => {
+  // The base HR14 template predates the shared Horilla mobile-shell state
+  // machine and hides #sidebar with page CSS. Disable only that page marker so
+  // the global responsive shell keeps the real toggle/state semantics.
+  document.body.classList.remove('hr14-page');
+
   const section = '{{ section|escapejs }}';
   if (section !== 'ranking') return;
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
