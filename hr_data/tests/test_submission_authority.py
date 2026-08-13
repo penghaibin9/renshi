@@ -144,7 +144,7 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         self.evidence_id = uuid.uuid4()
 
     @staticmethod
-    def _snapshot(submission_id, *, status="DRAFT", receipt_ref=""):
+    def _snapshot(submission_id, *, status="DRAFT", receipt_ref="", dispatch_ref=""):
         return SimpleNamespace(
             id=submission_id,
             submission_no="SUB-2026-001",
@@ -154,6 +154,9 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
             scope_json={"asOfEvidenceId": "evidence"},
             payload_hash="a" * 64,
             status=status,
+            dispatch_ref=dispatch_ref,
+            dispatch_requested_at=None,
+            dispatch_error="",
             submitted_at=None,
             receipt_ref=receipt_ref,
             parent_submission_id=None,
@@ -200,11 +203,12 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
 
     @patch("hr_data.submission_api.SubmissionLifecycleService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
-    def test_lifecycle_transitions_use_canonical_service(self, _tenant, service_cls):
+    def test_validate_and_approve_use_canonical_lifecycle_service(
+        self, _tenant, service_cls
+    ):
         for function, method_name, status in (
             (submission_api.validate_submission, "validate", "VALIDATED"),
             (submission_api.approve_submission, "approve", "APPROVED"),
-            (submission_api.submit_submission, "submit", "SUBMITTED"),
         ):
             snapshot = self._snapshot(self.submission_id, status=status)
             method = getattr(service_cls.return_value, method_name)
@@ -215,6 +219,35 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
             self.assertEqual(response.status_code, 200)
             method.assert_called_once_with(self.submission_id)
             method.reset_mock()
+
+    @patch("hr_data.submission_api.SubmissionDispatchService")
+    @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
+    def test_submit_endpoint_only_queues_async_dispatch(
+        self, tenant_resolver, dispatch_cls
+    ):
+        snapshot = self._snapshot(
+            self.submission_id,
+            status="DISPATCH_QUEUED",
+            dispatch_ref="dispatch-1",
+        )
+        dispatch_cls.return_value.queue.return_value = SimpleNamespace(
+            snapshot=snapshot,
+            queued=True,
+            dispatch_ref="dispatch-1",
+        )
+        request = self.factory.post("/submit")
+        request.user = UserStub()
+
+        response = submission_api.submit_submission(request, self.submission_id)
+
+        self.assertEqual(response.status_code, 202)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=submission_api.SUBMIT_PERMISSION
+        )
+        dispatch_cls.assert_called_once_with(77, actor_user_id=88)
+        dispatch_cls.return_value.queue.assert_called_once_with(self.submission_id)
+        self.assertIn(b"DISPATCH_QUEUED", response.content)
+        self.assertIn(b"dispatch-1", response.content)
 
     @patch("hr_data.submission_api.SubmissionLifecycleService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
@@ -235,6 +268,7 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
             self.submission_id,
             status="ACCEPTED",
             receipt_ref="UPSTREAM-RECEIPT-9",
+            dispatch_ref="dispatch-1",
         )
         service_cls.return_value.record_receipt.return_value = snapshot
         request = self.factory.post(
