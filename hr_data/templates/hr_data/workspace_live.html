@@ -1,0 +1,70 @@
+{% extends "hr_data/workspace.html" %}
+
+{% block content %}
+{{ block.super }}
+<style>
+.hr18live-definitions{margin-top:14px}.hr18live-summary{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hr18live-chip{padding:6px 9px;border-radius:999px;border:1px solid #dbe4f1;background:#f8fbff;color:#5a6679;font-size:12px}.hr18live-chip strong{color:#172033}.hr18live-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px}.hr18live-search,.hr18live-select{height:38px;border:1px solid #d7dfeb;border-radius:10px;background:#fff;padding:0 11px;color:#172033}.hr18live-search{flex:1;min-width:220px}.hr18live-select{min-width:145px}.hr18live-list{display:grid;gap:8px}.hr18live-row{display:grid;grid-template-columns:minmax(170px,1.3fr) minmax(170px,1fr) 104px 116px;gap:10px;align-items:center;padding:12px;border:1px solid #e9edf4;border-radius:12px;background:#fff}.hr18live-row b,.hr18live-row small{display:block;overflow-wrap:anywhere}.hr18live-row small{color:#687386}.hr18live-pill{justify-self:start;padding:4px 9px;border-radius:999px;background:#eef3ff;color:#3657a2;font-size:12px;font-weight:700}.hr18live-empty{padding:24px 14px;text-align:center;color:#687386;border:1px dashed #d8dfeb;border-radius:12px;background:#fcfdff}.hr18live-rule{margin-top:12px;padding:12px;border-radius:12px;background:#fff7ed;color:#8b5b24;font-size:12px;line-height:1.7}
+@media(max-width:720px){.hr18live-toolbar{display:grid;grid-template-columns:1fr}.hr18live-search,.hr18live-select{width:100%;min-width:0}.hr18live-row{grid-template-columns:minmax(0,1fr) auto}.hr18live-row .hr18live-source{grid-column:1}.hr18live-row .hr18live-version{grid-column:2;grid-row:2}}
+@media(max-width:390px){.hr18live-row{grid-template-columns:1fr}.hr18live-row .hr18live-source,.hr18live-row .hr18live-version{grid-column:1;grid-row:auto}.hr18live-pill{justify-self:start}}
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(() => {
+  const section = '{{ section|escapejs }}';
+  if (section !== 'population') return;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+  const legacyCard = document.getElementById('hr18-title')?.closest('.hr18-card');
+  if (legacyCard) legacyCard.hidden = true;
+  const work = document.querySelector('.hr18-layout > div');
+  if (!work || document.getElementById('hr18live-definitions')) return;
+
+  const card = document.createElement('article');
+  card.id = 'hr18live-definitions';
+  card.className = 'hr18-card hr18live-definitions';
+  card.innerHTML = '<h2>Population / Dimension 定义</h2><p>人口与维度使用版本化声明式口径；不保存可执行 Python/SQL。修改口径形成新版本，不覆盖历史。</p><div class="hr18live-summary"><span class="hr18live-chip">人口代码 <strong id="hr18live-pop-count">—</strong></span><span class="hr18live-chip">维度代码 <strong id="hr18live-dim-count">—</strong></span></div><div class="hr18live-toolbar"><input id="hr18live-search" class="hr18live-search" type="search" placeholder="搜索人口/维度代码、名称、来源域…"><select id="hr18live-kind" class="hr18live-select"><option value="">全部定义</option><option value="Population">Population</option><option value="Dimension">Dimension</option></select></div><div class="hr18live-list"><div class="hr18live-empty">正在读取真实 Population / Dimension 定义…</div></div><div class="hr18live-rule">边界保持不变：定义 Authority 已接通，但历史 As-of 执行引擎仍未接通。页面不会拿今天的组织、岗位、职称状态冒充历史时点。</div>';
+  work.appendChild(card);
+
+  let definitions = [];
+  function render() {
+    const q = document.getElementById('hr18live-search').value.trim().toLowerCase();
+    const kind = document.getElementById('hr18live-kind').value;
+    const rows = definitions.filter((x) => (!kind || x.kind === kind) && (!q || [x.name, x.code, x.source, x.status, x.detail].join(' ').toLowerCase().includes(q)));
+    const target = card.querySelector('.hr18live-list');
+    target.innerHTML = rows.length ? rows.map((x) => `<div class="hr18live-row"><div><b>${esc(x.name)}</b><small>${esc(x.code)}</small></div><small class="hr18live-source">${esc(x.source)} · ${esc(x.detail)}</small><span class="hr18live-pill">${esc(x.kind)} / ${esc(x.status || '—')}</span><small class="hr18live-version">v${esc(x.version)}${x.asOf ? ' · As-of口径' : ''}</small></div>`).join('') : '<div class="hr18live-empty">没有符合当前筛选条件的定义。</div>';
+  }
+
+  document.getElementById('hr18live-search').addEventListener('input', render);
+  document.getElementById('hr18live-kind').addEventListener('change', render);
+
+  fetch('/api/v1/hr/data/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+    .then((response) => {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.json();
+    })
+    .then((data) => {
+      document.getElementById('hr18live-pop-count').textContent = data.summary?.populationCodes ?? 0;
+      document.getElementById('hr18live-dim-count').textContent = data.summary?.dimensionCodes ?? 0;
+      const populations = (data.recentPopulations || []).map((x) => ({
+        kind:'Population', name:x.name || x.population_code || '未命名 Population', code:x.population_code || '—',
+        source:(x.source_domains || []).join(', ') || x.root_domain || '—', detail:x.root_domain ? `Root ${x.root_domain}` : '—',
+        status:x.status, version:x.version_no ?? '—', asOf:Boolean(x.as_of_required)
+      }));
+      const dimensions = (data.recentDimensions || []).map((x) => ({
+        kind:'Dimension', name:x.name || x.dimension_code || '未命名 Dimension', code:x.dimension_code || '—',
+        source:x.source_domain || '—', detail:[x.attribute_path, x.value_type].filter(Boolean).join(' · ') || '—',
+        status:x.status, version:x.version_no ?? '—', asOf:Boolean(x.as_of_required)
+      }));
+      definitions = populations.concat(dimensions);
+      render();
+    })
+    .catch((error) => {
+      card.querySelector('.hr18live-list').innerHTML = `<div class="hr18live-empty">定义读取失败：${esc(error.message)}</div>`;
+    });
+})();
+</script>
+{% endblock %}
