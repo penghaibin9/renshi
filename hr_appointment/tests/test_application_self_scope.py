@@ -87,7 +87,7 @@ class ApplicantIdentityResolverTests(TestCase):
         self.assertIsNone(application_api._resolve_applicant_person_id(request, 77))
 
 
-class ApplicantTransitionScopeTests(SimpleTestCase):
+class ApplicantTransitionScopeTests(TestCase):
     @patch("hr_appointment.services.application_service.AppointmentApplicationCase.objects")
     def test_submit_rejects_other_person_inside_locked_service_boundary(self, case_objects):
         case = MagicMock()
