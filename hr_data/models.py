@@ -85,7 +85,10 @@ class MetricDefinitionVersion(HrVersionedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "metric_code", "status"), name="idx_hr18_metric_tenant_status"),
+            models.Index(
+                fields=("tenant_id", "metric_code", "status"),
+                name="idx_hr18_metric_tenant_status",
+            ),
         ]
 
 
@@ -106,19 +109,106 @@ class DataQualityFinding(HrTenantScopedModel):
     rule_code = models.CharField(max_length=64)
     source_domain = models.CharField(max_length=16)
     source_object_ref = models.CharField(max_length=128)
-    severity = models.CharField(max_length=16, choices=Severity.choices, default=Severity.WARNING, db_index=True)
-    status = models.CharField(max_length=24, choices=Status.choices, default=Status.OPEN, db_index=True)
+    severity = models.CharField(
+        max_length=16,
+        choices=Severity.choices,
+        default=Severity.WARNING,
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=24,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+    )
     detected_at = models.DateTimeField()
     resolved_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "hr18_data_quality_finding"
         constraints = [
-            models.UniqueConstraint(fields=("tenant_id", "finding_no"), name="uq_hr18_finding_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "finding_no"),
+                name="uq_hr18_finding_tenant_no",
+            ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "source_domain", "status"), name="idx_hr18_finding_domain_status"),
+            models.Index(
+                fields=("tenant_id", "source_domain", "status"),
+                name="idx_hr18_finding_domain_status",
+            ),
         ]
+
+
+class AsOfEvidenceSnapshot(HrTenantScopedModel):
+    """Immutable proof that required sources were reconstructable for one as-of cut.
+
+    This does not pretend the HR18 history engine is complete. It is a fail-closed
+    handoff record produced by trusted internal reconstruction/provider code and
+    consumed by formal submission validation.
+    """
+
+    class Status(models.TextChoices):
+        COMPLETE = "COMPLETE", "Complete"
+        PARTIAL = "PARTIAL", "Partial"
+        UNAVAILABLE = "UNAVAILABLE", "Unavailable"
+        ERROR = "ERROR", "Error"
+
+    evidence_no = models.CharField(max_length=64)
+    definition_code = models.CharField(max_length=64)
+    definition_version = models.PositiveIntegerField()
+    as_of_date = models.DateField()
+    status = models.CharField(max_length=16, choices=Status.choices, db_index=True)
+    source_statuses_json = models.JSONField(default=dict)
+    blocked_domains_json = models.JSONField(default=list, blank=True)
+    provider_versions_json = models.JSONField(default=dict, blank=True)
+    evidence_hash = models.CharField(max_length=64)
+    generated_at = models.DateTimeField(auto_now_add=True)
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "evidence_no",
+        "definition_code",
+        "definition_version",
+        "as_of_date",
+        "status",
+        "source_statuses_json",
+        "blocked_domains_json",
+        "provider_versions_json",
+        "evidence_hash",
+    )
+
+    class Meta:
+        db_table = "hr18_asof_evidence_snapshot"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "evidence_no"),
+                name="uq_hr18_asof_evidence_no",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "definition_code", "as_of_date", "status"),
+                name="idx_hr18_asof_def_status",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "HR18_ASOF_EVIDENCE_IMMUTABLE: evidence snapshots must be appended"
+                    )
+        return super().save(*args, **kwargs)
 
 
 class SubmissionSnapshot(HrTenantScopedModel):
@@ -137,7 +227,12 @@ class SubmissionSnapshot(HrTenantScopedModel):
     as_of_date = models.DateField()
     scope_json = models.JSONField(default=dict)
     payload_hash = models.CharField(max_length=64)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
     submitted_at = models.DateTimeField(null=True, blank=True)
     receipt_ref = models.CharField(max_length=255, blank=True, default="")
     parent_submission_id = models.UUIDField(null=True, blank=True)
@@ -145,9 +240,18 @@ class SubmissionSnapshot(HrTenantScopedModel):
     class Meta:
         db_table = "hr18_submission_snapshot"
         constraints = [
-            models.UniqueConstraint(fields=("tenant_id", "submission_no"), name="uq_hr18_submission_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "submission_no"),
+                name="uq_hr18_submission_tenant_no",
+            ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "definition_code", "status"), name="idx_hr18_submission_def_status"),
-            models.Index(fields=("tenant_id", "as_of_date"), name="idx_hr18_submission_asof"),
+            models.Index(
+                fields=("tenant_id", "definition_code", "status"),
+                name="idx_hr18_submission_def_status",
+            ),
+            models.Index(
+                fields=("tenant_id", "as_of_date"),
+                name="idx_hr18_submission_asof",
+            ),
         ]
