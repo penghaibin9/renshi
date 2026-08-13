@@ -21,6 +21,7 @@ class AppointmentPolicyVersion(HrVersionedModel):
         permissions = [
             ("hr.appointment.view", "查看 HR14 岗位聘任工作区"),
             ("hr.appointment.review", "执行 HR14 评议排序"),
+            ("hr.appointment.publicity", "维护 HR14 拟聘公示与异议"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -332,6 +333,160 @@ class AppointmentRankingResult(HrTenantScopedModel):
                     raise ValueError(
                         "APPOINTMENT_RANKING_IMMUTABLE: finalized ranking results "
                         "must be appended, not edited in place"
+                    )
+        return super().save(*args, **kwargs)
+
+
+class AppointmentPublicityRecord(HrTenantScopedModel):
+    """Auditable publicity window for one selected appointment application."""
+
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        CLOSED = "CLOSED", "Closed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    publicity_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField()
+    ranking_result_id = models.UUIDField()
+    batch_no = models.CharField(max_length=64)
+    person_id = models.UUIDField()
+    position_instance_id = models.PositiveBigIntegerField()
+    attempt_no = models.PositiveIntegerField(default=1)
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    notice_snapshot_json = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.OPEN, db_index=True
+    )
+    opened_by = models.PositiveBigIntegerField(null=True, blank=True)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    closed_by = models.PositiveBigIntegerField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True, default="")
+
+    _IMMUTABLE_FIELDS = (
+        "tenant_id",
+        "publicity_no",
+        "application_case_id",
+        "ranking_result_id",
+        "batch_no",
+        "person_id",
+        "position_instance_id",
+        "attempt_no",
+        "start_at",
+        "end_at",
+        "notice_snapshot_json",
+        "opened_by",
+    )
+
+    class Meta:
+        db_table = "hr14_appointment_publicity"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "publicity_no"),
+                name="uq_hr14_publicity_tenant_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "application_case_id", "attempt_no"),
+                name="uq_hr14_publicity_case_attempt",
+            ),
+            models.CheckConstraint(
+                condition=Q(end_at__gt=models.F("start_at")),
+                name="ck_hr14_publicity_time_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "batch_no", "status"),
+                name="idx_hr14_publicity_batch",
+            ),
+            models.Index(
+                fields=("tenant_id", "application_case_id", "status"),
+                name="idx_hr14_publicity_case",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._IMMUTABLE_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._IMMUTABLE_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "APPOINTMENT_PUBLICITY_IMMUTABLE: publicity basis and window "
+                        "must not be edited in place"
+                    )
+        return super().save(*args, **kwargs)
+
+
+class AppointmentPublicityObjection(HrTenantScopedModel):
+    """An objection raised during an appointment publicity window."""
+
+    class Status(models.TextChoices):
+        RECEIVED = "RECEIVED", "Received"
+        UNDER_REVIEW = "UNDER_REVIEW", "Under review"
+        UPHELD = "UPHELD", "Upheld"
+        NOT_UPHELD = "NOT_UPHELD", "Not upheld"
+        WITHDRAWN = "WITHDRAWN", "Withdrawn"
+
+    objection_no = models.CharField(max_length=64)
+    publicity_id = models.UUIDField(db_index=True)
+    submitter_ref = models.CharField(max_length=128, blank=True, default="")
+    content_summary = models.TextField()
+    evidence_refs_json = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.RECEIVED, db_index=True
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    resolved_by = models.PositiveBigIntegerField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_note = models.TextField(blank=True, default="")
+
+    _SUBMISSION_FIELDS = (
+        "tenant_id",
+        "objection_no",
+        "publicity_id",
+        "submitter_ref",
+        "content_summary",
+        "evidence_refs_json",
+    )
+
+    class Meta:
+        db_table = "hr14_appointment_publicity_objection"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "objection_no"),
+                name="uq_hr14_objection_tenant_no",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "publicity_id", "status"),
+                name="idx_hr14_objection_publicity",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._SUBMISSION_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._SUBMISSION_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "APPOINTMENT_OBJECTION_IMMUTABLE: objection submission content "
+                        "must not be edited in place"
                     )
         return super().save(*args, **kwargs)
 
