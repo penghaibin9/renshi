@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, publicity_api
+from . import api, publicity_api, result_api
 
 app_name = "hr_title_api"
 urlpatterns = [
@@ -59,5 +59,20 @@ urlpatterns = [
         "publicities/<uuid:publicity_id>/cancel/",
         publicity_api.cancel_publicity,
         name="publicity-cancel",
+    ),
+    path(
+        "applications/<uuid:case_id>/result/effective/",
+        result_api.make_effective,
+        name="result-effective",
+    ),
+    path(
+        "results/<uuid:result_id>/revisions/",
+        result_api.revise_result,
+        name="result-revise",
+    ),
+    path(
+        "results/<uuid:result_id>/revoke/",
+        result_api.revoke_result,
+        name="result-revoke",
     ),
 ]
