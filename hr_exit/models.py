@@ -39,13 +39,106 @@ class ExitCase(HrTenantScopedModel):
 
     class Meta:
         db_table = "hr16_exit_case"
-        permissions = [("hr.exit.view", "查看 HR16 退休与离校工作区")]
+        permissions = [
+            ("hr.exit.view", "查看 HR16 退休与离校工作区"),
+            ("hr.exit.handover", "维护 HR16 离校交接清单"),
+        ]
         constraints = [
             models.UniqueConstraint(fields=("tenant_id", "case_no"), name="uq_hr16_case_tenant_no"),
         ]
         indexes = [
             models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr16_case_tenant_person"),
         ]
+
+
+class ExitHandoverItem(HrTenantScopedModel):
+    """Auditable checklist item that gates HANDOVER -> SETTLEMENT.
+
+    Required items must be COMPLETED or explicitly WAIVED before settlement can
+    start. Terminal items are immutable; corrections are represented by a new
+    item linked through ``supersedes_item_id`` instead of rewriting history.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        COMPLETED = "COMPLETED", "Completed"
+        WAIVED = "WAIVED", "Waived"
+
+    item_no = models.CharField(max_length=64)
+    case_id = models.UUIDField(db_index=True)
+    category_code = models.CharField(max_length=64)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    required = models.BooleanField(default=True, db_index=True)
+    owner_staff_id = models.UUIDField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    evidence_ref = models.CharField(max_length=256, blank=True, default="")
+    completed_by = models.PositiveBigIntegerField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    waiver_reason = models.TextField(blank=True, default="")
+    supersedes_item_id = models.UUIDField(null=True, blank=True)
+
+    _TERMINAL = frozenset({Status.COMPLETED, Status.WAIVED})
+    _BUSINESS_FIELDS = (
+        "tenant_id",
+        "item_no",
+        "case_id",
+        "category_code",
+        "title",
+        "description",
+        "required",
+        "owner_staff_id",
+        "due_date",
+        "status",
+        "evidence_ref",
+        "completed_by",
+        "completed_at",
+        "waiver_reason",
+        "supersedes_item_id",
+    )
+
+    class Meta:
+        db_table = "hr16_exit_handover_item"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "item_no"),
+                name="uq_hr16_handover_tenant_no",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "case_id", "required", "status"),
+                name="idx_hr16_handover_case_gate",
+            ),
+            models.Index(
+                fields=("tenant_id", "owner_staff_id", "status"),
+                name="idx_hr16_handover_owner",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._BUSINESS_FIELDS
+            ).first()
+            if persisted and persisted["status"] in self._TERMINAL:
+                changed = [
+                    field
+                    for field in self._BUSINESS_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "EXIT_HANDOVER_ITEM_IMMUTABLE: completed/waived handover items "
+                        "must be superseded, not edited in place"
+                    )
+        return super().save(*args, **kwargs)
 
 
 class ExitEffect(HrTenantScopedModel):
