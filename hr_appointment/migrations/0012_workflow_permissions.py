@@ -4,7 +4,7 @@ from django.db import migrations
 def create_workflow_permissions(apps, schema_editor):
     ContentType = apps.get_model("contenttypes", "ContentType")
     Permission = apps.get_model("auth", "Permission")
-    content_type = ContentType.objects.get(
+    content_type, _created = ContentType.objects.get_or_create(
         app_label="hr_appointment",
         model="appointmentpolicyversion",
     )
