@@ -12,13 +12,19 @@ from .services.publicity_service import TitlePublicityError, TitlePublicityServi
 PUBLICITY_PERMISSION = "hr.title.publicity"
 
 
-def _dt(value):
+def _dt(value, field_name: str):
     parsed = parse_datetime(str(value or "").strip())
     if parsed is None:
-        raise ValueError("datetime is required in ISO-8601 format")
+        raise ValueError(f"{field_name} is required in ISO-8601 format")
     if timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
+
+
+def _response(payload, *, status=200):
+    response = JsonResponse(payload, status=status)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def _publicity_error(exc: TitlePublicityError) -> JsonResponse:
@@ -29,10 +35,12 @@ def _publicity_error(exc: TitlePublicityError) -> JsonResponse:
     }:
         status = 404
     elif exc.code in {
+        "TITLE_PUBLICITY_IDEMPOTENCY_CONFLICT",
+        "TITLE_APPEAL_IDEMPOTENCY_CONFLICT",
         "TITLE_PUBLICITY_INVALID_CASE_STATE",
         "TITLE_PUBLICITY_ALREADY_OPEN",
         "TITLE_APPEAL_PUBLICITY_NOT_OPEN",
-        "TITLE_APPEAL_WINDOW_CLOSED",
+        "TITLE_APPEAL_OUTSIDE_WINDOW",
         "TITLE_APPEAL_ALREADY_RESOLVED",
         "TITLE_PUBLICITY_NOT_OPEN",
         "TITLE_PUBLICITY_PERIOD_NOT_ENDED",
@@ -64,8 +72,8 @@ def open_publicity(request, case_id):
         return _error(exc.code, exc.message, status=403)
     try:
         payload = _json_payload(request)
-        start_at = _dt(payload.get("startAt"))
-        end_at = _dt(payload.get("endAt"))
+        start_at = _dt(payload.get("startAt"), "startAt")
+        end_at = _dt(payload.get("endAt"), "endAt")
     except ValueError as exc:
         return _error("INVALID_REQUEST", str(exc), status=400)
     try:
@@ -78,7 +86,7 @@ def open_publicity(request, case_id):
         )
     except TitlePublicityError as exc:
         return _publicity_error(exc)
-    return JsonResponse(
+    return _response(
         {
             "data": {
                 "id": str(publicity.id),
@@ -87,6 +95,7 @@ def open_publicity(request, case_id):
                 "startAt": publicity.start_at.isoformat(),
                 "endAt": publicity.end_at.isoformat(),
                 "status": publicity.status,
+                "contentSnapshot": publicity.content_snapshot_json,
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr13.publicity.1",
@@ -116,7 +125,7 @@ def lodge_appeal(request, publicity_id):
         )
     except TitlePublicityError as exc:
         return _publicity_error(exc)
-    return JsonResponse(
+    return _response(
         {
             "data": {
                 "id": str(appeal.id),
@@ -124,6 +133,7 @@ def lodge_appeal(request, publicity_id):
                 "publicityId": str(appeal.publicity_id),
                 "applicationCaseId": str(appeal.application_case_id),
                 "status": appeal.status,
+                "reason": appeal.reason,
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr13.appeal.1",
@@ -151,7 +161,7 @@ def resolve_appeal(request, appeal_id):
         )
     except TitlePublicityError as exc:
         return _publicity_error(exc)
-    return JsonResponse(
+    return _response(
         {
             "data": {
                 "id": str(appeal.id),
@@ -177,7 +187,7 @@ def close_publicity(request, publicity_id):
         publicity = service.close_publicity(publicity_id)
     except TitlePublicityError as exc:
         return _publicity_error(exc)
-    return JsonResponse(
+    return _response(
         {
             "data": {
                 "id": str(publicity.id),
@@ -202,7 +212,7 @@ def cancel_publicity(request, publicity_id):
         publicity = service.cancel_publicity(publicity_id)
     except TitlePublicityError as exc:
         return _publicity_error(exc)
-    return JsonResponse(
+    return _response(
         {
             "data": {
                 "id": str(publicity.id),
