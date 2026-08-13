@@ -34,6 +34,7 @@ class Hr18DefinitionApiTests(SimpleTestCase):
                     "populationCode": "ACTIVE_STAFF",
                     "name": "在职教职工",
                     "rootDomain": "HR03",
+                    "grain": "STAFF",
                     "predicate": {"field": "employment.status", "op": "eq", "value": "ACTIVE"},
                     "sourceDomains": ["HR03"],
                 }
@@ -51,19 +52,59 @@ class Hr18DefinitionApiTests(SimpleTestCase):
     @patch("hr_data.api.resolve_tenant_from_request", return_value=7)
     @patch("hr_data.api.get_allowed_company_ids", return_value={7})
     @patch("hr_data.api.HrDataDefinitionService")
-    def test_population_api_uses_resolved_tenant_and_actor(
+    def test_population_api_uses_resolved_tenant_actor_and_explicit_grain(
         self, service_cls, _allowed, _tenant
     ):
         definition = SimpleNamespace(
             id=uuid.uuid4(),
             population_code="ACTIVE_STAFF",
             version_no=1,
+            grain="STAFF",
             status="DRAFT",
             content_hash="a" * 64,
         )
         service_cls.return_value.create_population_version.return_value = SimpleNamespace(
             definition=definition,
             created=True,
+        )
+        request = self.factory.post(
+            "/api/v1/hr/data/definitions/populations/",
+            data=json.dumps(
+                {
+                    "populationCode": "ACTIVE_STAFF",
+                    "name": "在职教职工",
+                    "rootDomain": "HR03",
+                    "grain": "STAFF",
+                    "predicate": {"field": "employment.status", "op": "eq", "value": "ACTIVE"},
+                    "sourceDomains": ["HR03"],
+                }
+            ),
+            content_type="application/json",
+        )
+        request.user = UserStub({api.DEFINE_PERMISSION})
+
+        response = api.create_population_definition(request)
+
+        self.assertEqual(response.status_code, 201)
+        service_cls.assert_called_once_with(7, actor_user_id=88)
+        kwargs = service_cls.return_value.create_population_version.call_args.kwargs
+        self.assertEqual(kwargs["grain"], "STAFF")
+        self.assertIn(b'"populationCode": "ACTIVE_STAFF"', response.content)
+        self.assertIn(b'"grain": "STAFF"', response.content)
+        self.assertIn(b'"schemaVersion": "hr18.population-definition.2"', response.content)
+        self.assertEqual(response["Cache-Control"], "no-store")
+
+    @patch("hr_data.api.resolve_tenant_from_request", return_value=7)
+    @patch("hr_data.api.get_allowed_company_ids", return_value={7})
+    @patch("hr_data.api.HrDataDefinitionService")
+    def test_missing_grain_is_forwarded_as_empty_and_fail_closed_by_authority(
+        self, service_cls, _allowed, _tenant
+    ):
+        from hr_data.services.definition_service import HrDataDefinitionError
+
+        service_cls.return_value.create_population_version.side_effect = HrDataDefinitionError(
+            "HR18_POPULATION_GRAIN_INVALID",
+            "grain must be explicit",
         )
         request = self.factory.post(
             "/api/v1/hr/data/definitions/populations/",
@@ -82,11 +123,10 @@ class Hr18DefinitionApiTests(SimpleTestCase):
 
         response = api.create_population_definition(request)
 
-        self.assertEqual(response.status_code, 201)
-        service_cls.assert_called_once_with(7, actor_user_id=88)
-        self.assertIn(b'"populationCode": "ACTIVE_STAFF"', response.content)
-        self.assertIn(b'"schemaVersion": "hr18.population-definition.1"', response.content)
-        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(response.status_code, 400)
+        kwargs = service_cls.return_value.create_population_version.call_args.kwargs
+        self.assertEqual(kwargs["grain"], "")
+        self.assertIn(b"HR18_POPULATION_GRAIN_INVALID", response.content)
 
     @patch("hr_data.api.resolve_tenant_from_request", return_value=7)
     @patch("hr_data.api.get_allowed_company_ids", return_value={7})
