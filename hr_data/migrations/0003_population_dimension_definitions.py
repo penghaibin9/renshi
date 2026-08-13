@@ -7,6 +7,15 @@ class Migration(migrations.Migration):
     dependencies = [("hr_data", "0002_data_view_permission")]
 
     operations = [
+        migrations.AlterModelOptions(
+            name="metricdefinitionversion",
+            options={
+                "permissions": [
+                    ("hr.data.view", "查看 HR18 人事数据中心"),
+                    ("hr.data.define", "维护 HR18 人口维度指标定义"),
+                ],
+            },
+        ),
         migrations.CreateModel(
             name="PopulationDefinitionVersion",
             fields=[
