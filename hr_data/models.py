@@ -7,6 +7,61 @@ from django.db import models
 from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
 
 
+class PopulationDefinitionVersion(HrVersionedModel):
+    """Versioned declarative population definition; never stores executable code."""
+
+    population_code = models.CharField(max_length=64)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    root_domain = models.CharField(max_length=32, default="HR03")
+    predicate_json = models.JSONField(default=dict, blank=True)
+    source_domains = models.JSONField(default=list, blank=True)
+    as_of_required = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "hr18_population_definition_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "population_code", "version_no"),
+                name="uq_hr18_population_code_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "population_code", "status"),
+                name="idx_hr18_population_status",
+            ),
+        ]
+
+
+class DimensionDefinitionVersion(HrVersionedModel):
+    """Versioned dimension contract used for grouping and drill-down."""
+
+    dimension_code = models.CharField(max_length=64)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    source_domain = models.CharField(max_length=32)
+    attribute_path = models.CharField(max_length=160)
+    value_type = models.CharField(max_length=32)
+    label_map_json = models.JSONField(default=dict, blank=True)
+    as_of_required = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "hr18_dimension_definition_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "dimension_code", "version_no"),
+                name="uq_hr18_dimension_code_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "dimension_code", "status"),
+                name="idx_hr18_dimension_status",
+            ),
+        ]
+
+
 class MetricDefinitionVersion(HrVersionedModel):
     metric_code = models.CharField(max_length=64)
     name = models.CharField(max_length=200)
