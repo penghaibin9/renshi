@@ -1,11 +1,12 @@
 from django.urls import path
 
-from . import api
+from . import api, case_api
 
 app_name = "hr_exit_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
     path("cases/", api.create_case, name="case-create"),
+    path("cases/<uuid:case_id>/", case_api.amend_case, name="case-amend"),
     path("cases/<uuid:case_id>/submit/", api.submit_case, name="case-submit"),
     path("cases/<uuid:case_id>/return/", api.return_case, name="case-return"),
     path("cases/<uuid:case_id>/approve/", api.approve_case, name="case-approve"),
