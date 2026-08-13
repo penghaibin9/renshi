@@ -170,7 +170,7 @@ def qualification_decision(request, case_id):
     return response
 
 
-def review_round_open(request, case_id):
+def open_review_round(request, case_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
@@ -205,13 +205,14 @@ def review_round_open(request, case_id):
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr13.review-round.1",
-        }
+        },
+        status=201,
     )
     response["Cache-Control"] = "no-store"
     return response
 
 
-def review_assignment_create(request, round_id):
+def create_review_assignment(request, round_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
@@ -246,13 +247,14 @@ def review_assignment_create(request, round_id):
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr13.review-assignment.1",
-        }
+        },
+        status=201,
     )
     response["Cache-Control"] = "no-store"
     return response
 
 
-def review_assignment_respond(request, assignment_id):
+def respond_review_assignment(request, assignment_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
@@ -274,6 +276,7 @@ def review_assignment_respond(request, assignment_id):
         )
     except TitlePanelError as exc:
         return _panel_error(exc)
+    responded_at = getattr(assignment, "responded_at", None)
     response = JsonResponse(
         {
             "data": {
@@ -281,9 +284,7 @@ def review_assignment_respond(request, assignment_id):
                 "status": assignment.status,
                 "conflictDeclared": assignment.conflict_declared,
                 "conflictNote": assignment.conflict_note,
-                "respondedAt": assignment.responded_at.isoformat()
-                if assignment.responded_at
-                else None,
+                "respondedAt": responded_at.isoformat() if responded_at else None,
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr13.review-assignment-response.1",
@@ -293,7 +294,7 @@ def review_assignment_respond(request, assignment_id):
     return response
 
 
-def review_ballot_submit(request, assignment_id):
+def submit_review_ballot(request, assignment_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
@@ -328,13 +329,14 @@ def review_ballot_submit(request, assignment_id):
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr13.review-ballot.1",
-        }
+        },
+        status=201,
     )
     response["Cache-Control"] = "no-store"
     return response
 
 
-def review_round_close(request, round_id):
+def close_review_round(request, round_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
