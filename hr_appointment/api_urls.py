@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, term_api, term_effect_api
+from . import api, capacity_api, term_api, term_effect_api
 
 app_name = "hr_appointment_api"
 urlpatterns = [
@@ -14,6 +14,11 @@ urlpatterns = [
         "applications/<uuid:case_id>/publicity/",
         api.open_publicity,
         name="publicity-open",
+    ),
+    path(
+        "applications/<uuid:case_id>/capacity-reservation/",
+        capacity_api.prepare_capacity,
+        name="appointment-capacity-prepare",
     ),
     path(
         "applications/<uuid:case_id>/apply-effect/",
