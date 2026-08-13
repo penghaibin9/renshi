@@ -191,6 +191,7 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
     def test_successful_irreversible_participant_cannot_be_downgraded(self, effect_objects):
         effect = MagicMock()
         effect.hr03_status = ExitEffect.ParticipantStatus.SUCCESS
+        effect.hr03_receipt_json = {"relationshipId": "rel-1"}
         effect_objects.select_for_update.return_value.filter.return_value.first.return_value = effect
 
         with self.assertRaises(ExitSagaError) as cm:
@@ -202,6 +203,57 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
             )
 
         self.assertEqual(cm.exception.code, "EXIT_EFFECT_SUCCESS_IMMUTABLE")
+        effect.save.assert_not_called()
+
+    @patch("hr_exit.services.saga_service.ExitEffect.objects")
+    def test_success_receipt_cannot_be_rewritten(self, effect_objects):
+        effect = MagicMock()
+        effect.iam_status = ExitEffect.ParticipantStatus.SUCCESS
+        effect.iam_receipt_json = {"accountId": "iam-1"}
+        effect_objects.select_for_update.return_value.filter.return_value.first.return_value = effect
+
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.record_participant(
+                effect_id="effect-1",
+                participant="IAM",
+                status=ExitEffect.ParticipantStatus.SUCCESS,
+                receipt={"accountId": "iam-2"},
+            )
+
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_SUCCESS_RECEIPT_CONFLICT")
+        effect.save.assert_not_called()
+
+        replay = self.service.record_participant(
+            effect_id="effect-1",
+            participant="IAM",
+            status=ExitEffect.ParticipantStatus.SUCCESS,
+            receipt={"accountId": "iam-1"},
+        )
+        self.assertIs(replay, effect)
+        effect.save.assert_not_called()
+
+    @patch("hr_exit.services.saga_service.ExitEffect.objects")
+    def test_required_membership_cannot_change_after_saga_creation(self, effect_objects):
+        effect = MagicMock()
+        effect.iam_status = ExitEffect.ParticipantStatus.NOT_REQUIRED
+        effect_objects.select_for_update.return_value.filter.return_value.first.return_value = effect
+
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.record_participant(
+                effect_id="effect-1",
+                participant="IAM",
+                status=ExitEffect.ParticipantStatus.RUNNING,
+            )
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_PARTICIPANT_REQUIREMENT_IMMUTABLE")
+
+        effect.iam_status = ExitEffect.ParticipantStatus.PENDING
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.record_participant(
+                effect_id="effect-1",
+                participant="IAM",
+                status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            )
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_PARTICIPANT_REQUIREMENT_IMMUTABLE")
         effect.save.assert_not_called()
 
     def test_hr03_can_never_be_not_required(self):
