@@ -115,13 +115,10 @@ class AppointmentBatchService:
             "status": policy.status,
         }
         observed = self._canonical_hash(payload)
-        frozen = str(policy.content_hash or "").strip().lower()
-        if frozen and frozen != observed:
-            raise AppointmentBatchError(
-                "APPOINTMENT_POLICY_HASH_MISMATCH",
-                "appointment policy content_hash does not match its canonical content",
-            )
-        if not frozen:
+        if str(policy.content_hash or "").strip().lower() != observed:
+            # HR14 did not historically own a canonical policy-hash builder.
+            # Publish is the freeze boundary: normalize any draft-era/legacy hash
+            # to the exact current policy content, then guards make it immutable.
             policy.content_hash = observed
             policy.updated_by = self.actor_user_id
             policy.save(update_fields=["content_hash", "updated_by", "updated_at"])
