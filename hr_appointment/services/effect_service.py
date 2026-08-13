@@ -138,10 +138,16 @@ class AppointmentEffectService:
                 "APPOINTMENT_RESERVATION_POSITION_MISMATCH",
                 "reservation does not belong to the appointed position",
             )
-        if reservation.source_domain and reservation.source_domain != "HR14":
+        if reservation.source_domain != "HR14":
             raise AppointmentEffectError(
                 "APPOINTMENT_RESERVATION_SOURCE_MISMATCH",
-                "reservation is not owned by HR14",
+                "reservation must be owned by HR14",
+            )
+        owner_refs = {str(case.id), str(case.case_no)}
+        if str(reservation.source_business_id or "") not in owner_refs:
+            raise AppointmentEffectError(
+                "APPOINTMENT_RESERVATION_OWNER_MISMATCH",
+                "reservation is not owned by this appointment application",
             )
 
         position = (
