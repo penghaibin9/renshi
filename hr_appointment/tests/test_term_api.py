@@ -4,8 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.http import HttpRequest
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase
 from django.urls import resolve, reverse
 
 from hr_appointment import term_api
@@ -14,9 +13,11 @@ from hr_appointment.api import HrAppointmentAccessError
 
 class AppointmentTermApiContractTests(SimpleTestCase):
     def _request(self, body=None):
-        request = HttpRequest()
-        request.method = "POST"
-        request.body = json.dumps(body or {}).encode("utf-8")
+        request = RequestFactory().post(
+            "/api/v1/hr/appointments/term-contract-test/",
+            data=json.dumps(body or {}),
+            content_type="application/json",
+        )
         request.user = SimpleNamespace(id=9, is_authenticated=True, is_superuser=False)
         return request
 
@@ -46,6 +47,10 @@ class AppointmentTermApiContractTests(SimpleTestCase):
                 {"renewal_id": renewal_id},
                 f"/api/v1/hr/appointments/renewals/{renewal_id}/decision/",
             ),
+            "hr_appointment_api:renewal-effect-apply": (
+                {"renewal_id": renewal_id},
+                f"/api/v1/hr/appointments/renewals/{renewal_id}/apply-effect/",
+            ),
             "hr_appointment_api:term-change-open": (
                 {"term_id": term_id},
                 f"/api/v1/hr/appointments/terms/{term_id}/changes/",
@@ -53,6 +58,10 @@ class AppointmentTermApiContractTests(SimpleTestCase):
             "hr_appointment_api:term-change-decision": (
                 {"change_id": change_id},
                 f"/api/v1/hr/appointments/term-changes/{change_id}/decision/",
+            ),
+            "hr_appointment_api:term-change-effect-apply": (
+                {"change_id": change_id},
+                f"/api/v1/hr/appointments/term-changes/{change_id}/apply-effect/",
             ),
         }
         for name, (kwargs, path) in expected.items():
