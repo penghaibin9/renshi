@@ -1,0 +1,76 @@
+{% extends "hr_payroll/workspace.html" %}
+
+{% block content %}
+{{ block.super }}
+<style>
+.hr15live-reconcile{margin-top:14px}.hr15live-summary{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hr15live-chip{padding:6px 9px;border-radius:999px;border:1px solid #d7ebe8;background:#f7fcfb;color:#52686a;font-size:12px}.hr15live-chip strong{color:#102a2e}.hr15live-list{display:grid;gap:8px;margin-top:12px}.hr15live-row{display:grid;grid-template-columns:minmax(170px,1.2fr) minmax(180px,1.2fr) 145px 110px;gap:10px;align-items:center;padding:12px;border:1px solid #e8efee;border-radius:12px;background:#fff}.hr15live-row b,.hr15live-row small{display:block;overflow-wrap:anywhere}.hr15live-row small{color:#66777b}.hr15live-badge{justify-self:start;padding:4px 9px;border-radius:999px;background:#e9f7f4;color:#0c6c63;font-size:12px;font-weight:700}.hr15live-badge.warn{background:#fff5e9;color:#a85b11}.hr15live-empty{padding:24px 14px;text-align:center;color:#66777b;border:1px dashed #cfe0de;border-radius:12px;background:#fbfdfd}.hr15live-rule{margin-top:12px;padding:12px;border-radius:12px;background:#fff7ed;color:#8b5b24;font-size:12px;line-height:1.7}
+@media(max-width:720px){.hr15live-row{grid-template-columns:minmax(0,1fr) auto}.hr15live-row .hr15live-map{grid-column:1}.hr15live-row .hr15live-id{grid-column:2;grid-row:2}}
+@media(max-width:390px){.hr15live-row{grid-template-columns:1fr}.hr15live-row .hr15live-map,.hr15live-row .hr15live-id{grid-column:1;grid-row:auto}.hr15live-badge{justify-self:start}}
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(() => {
+  // Disable the legacy page-level mobile shell hiding rule. The shared Horilla
+  // responsive shell owns sidebar visibility and keeps its real toggle state.
+  document.body.classList.remove('hr15-page');
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+
+  const caps = document.getElementById('hr15-caps');
+  if (caps) {
+    const renameCapabilities = () => {
+      caps.querySelectorAll('.hr15-cap > span:first-child').forEach((node) => {
+        if (node.textContent.trim() === 'legacyReadReconcile') node.textContent = '历史工资只读对账';
+        if (node.textContent.trim() === '历史工资系统对账') node.textContent = '正式历史工资接管';
+      });
+    };
+    const observer = new MutationObserver(renameCapabilities);
+    observer.observe(caps, {childList:true, subtree:true});
+    renameCapabilities();
+  }
+
+  const section = '{{ section|escapejs }}';
+  if (section !== 'legacy_takeover') return;
+  const legacyCard = document.getElementById('hr15-title')?.closest('.hr15-card');
+  if (legacyCard) legacyCard.hidden = true;
+  const work = document.querySelector('.hr15-layout > div');
+  if (!work || document.getElementById('hr15live-reconcile')) return;
+
+  const card = document.createElement('article');
+  card.id = 'hr15live-reconcile';
+  card.className = 'hr15-card hr15live-reconcile';
+  card.innerHTML = '<h2>旧 payroll 双读对账</h2><p>旧 Payslip 只作为迁移来源；通过 HR03 legacy_employee_id 映射到 HR15 Period / ResultFact，对不上就明确暴露，不把旧 paid/confirmed 提升为新 Authority。</p><div class="hr15live-summary"><span class="hr15live-chip">Legacy 行 <strong id="hr15live-total">—</strong></span><span class="hr15live-chip">已匹配 <strong id="hr15live-matched">—</strong></span><span class="hr15live-chip">金额不一致 <strong id="hr15live-mismatch">—</strong></span><span class="hr15live-chip">未映射人员 <strong id="hr15live-unmapped">—</strong></span></div><div class="hr15live-list"><div class="hr15live-empty">正在读取真实双读对账…</div></div><div class="hr15live-rule">边界保持不变：只读 reconciliation 已接通，但 legacyTakeover 仍为待完成。双读/对账、正式切换、冻结旧写入口完成前，不宣称历史 payroll 已正式接管。</div>';
+  work.appendChild(card);
+
+  fetch('/api/v1/hr/payroll/legacy-reconciliation/?limit=200', {headers:{'X-Requested-With':'XMLHttpRequest'}})
+    .then((response) => {
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      return response.json();
+    })
+    .then((data) => {
+      const counts = data.counts || {};
+      document.getElementById('hr15live-total').textContent = data.totalLegacyRows ?? 0;
+      document.getElementById('hr15live-matched').textContent = counts.matched ?? 0;
+      document.getElementById('hr15live-mismatch').textContent = counts.amountMismatch ?? 0;
+      document.getElementById('hr15live-unmapped').textContent = counts.unmappedStaff ?? 0;
+      const target = card.querySelector('.hr15live-list');
+      const rows = data.items || [];
+      target.innerHTML = rows.length ? rows.map((x) => {
+        const state = x.reconciliation || '—';
+        const mapping = x.staffId ? `HR03 Staff ${x.staffId}` : '尚未映射 HR03 Staff';
+        const authority = x.authorityResultId ? `HR15 Result ${x.authorityResultId}` : (x.payrollPeriodId ? `HR15 Period ${x.payrollPeriodId}` : '尚无对应 HR15 事实');
+        const badgeClass = state === 'MATCHED' || state === 'LEGACY_NON_FINAL' ? '' : ' warn';
+        return `<div class="hr15live-row"><div><b>Legacy Payslip #${esc(x.legacyPayslipId)}</b><small>${esc(x.legacyStatus || '—')} · legacyAuthority=false</small></div><small class="hr15live-map">${esc(mapping)}<br>${esc(authority)}</small><span class="hr15live-badge${badgeClass}">${esc(state)}</span><small class="hr15live-id">${esc(x.startDate || '—')} → ${esc(x.endDate || '—')}</small></div>`;
+      }).join('') : '<div class="hr15live-empty">当前租户没有 legacy Payslip 可供对账。</div>';
+    })
+    .catch((error) => {
+      card.querySelector('.hr15live-list').innerHTML = `<div class="hr15live-empty">双读对账读取失败：${esc(error.message)}</div>`;
+    });
+})();
+</script>
+{% endblock %}
