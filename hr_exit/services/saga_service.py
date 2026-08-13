@@ -170,11 +170,11 @@ class ExitEffectSagaService:
         receipt: Optional[Mapping] = None,
         error: str = "",
     ) -> ExitEffect:
-        participant = participant.upper()
+        participant = str(participant or "").strip().upper()
         if participant not in self.PARTICIPANTS:
             raise ExitSagaError(
                 "EXIT_EFFECT_PARTICIPANT_UNKNOWN",
-                f"unknown effect participant: {participant}",
+                f"unknown effect participant: {participant or '<blank>'}",
             )
         valid_statuses = {value for value, _label in ExitEffect.ParticipantStatus.choices}
         if status not in valid_statuses:
@@ -198,17 +198,43 @@ class ExitEffectSagaService:
 
         status_field, receipt_field = self.PARTICIPANTS[participant]
         previous = getattr(effect, status_field)
-        if (
-            previous == ExitEffect.ParticipantStatus.SUCCESS
-            and status != ExitEffect.ParticipantStatus.SUCCESS
-        ):
-            # An externally successful, potentially irreversible participant is
-            # an immutable historical observation. Later drift becomes a risk /
-            # reconciliation event; never rewrite SUCCESS to make it disappear.
+        previous_required = previous != ExitEffect.ParticipantStatus.NOT_REQUIRED
+        next_required = status != ExitEffect.ParticipantStatus.NOT_REQUIRED
+        if previous_required != next_required:
             raise ExitSagaError(
-                "EXIT_EFFECT_SUCCESS_IMMUTABLE",
-                f"{participant} SUCCESS cannot be downgraded",
+                "EXIT_EFFECT_PARTICIPANT_REQUIREMENT_IMMUTABLE",
+                f"{participant} required/not-required membership is frozen at saga creation",
             )
+
+        if previous == ExitEffect.ParticipantStatus.SUCCESS:
+            if status != ExitEffect.ParticipantStatus.SUCCESS:
+                # An externally successful, potentially irreversible participant is
+                # an immutable historical observation. Later drift becomes a risk /
+                # reconciliation event; never rewrite SUCCESS to make it disappear.
+                raise ExitSagaError(
+                    "EXIT_EFFECT_SUCCESS_IMMUTABLE",
+                    f"{participant} SUCCESS cannot be downgraded",
+                )
+            frozen_receipt = dict(getattr(effect, receipt_field) or {})
+            if receipt is not None and dict(receipt) != frozen_receipt:
+                raise ExitSagaError(
+                    "EXIT_EFFECT_SUCCESS_RECEIPT_CONFLICT",
+                    f"{participant} SUCCESS receipt is immutable",
+                )
+            if error:
+                raise ExitSagaError(
+                    "EXIT_EFFECT_SUCCESS_IMMUTABLE",
+                    f"{participant} SUCCESS cannot be rewritten with an error",
+                )
+            return effect
+
+        if status == ExitEffect.ParticipantStatus.NOT_REQUIRED:
+            if receipt is not None or error:
+                raise ExitSagaError(
+                    "EXIT_EFFECT_PARTICIPANT_REQUIREMENT_IMMUTABLE",
+                    f"{participant} NOT_REQUIRED cannot carry a receipt or error",
+                )
+            return effect
 
         setattr(effect, status_field, status)
         update_fields = [status_field]
