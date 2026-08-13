@@ -16,6 +16,7 @@ class Migration(migrations.Migration):
                     ("VALIDATED", "Validated"),
                     ("APPROVED", "Approved"),
                     ("DISPATCH_QUEUED", "Async dispatch queued"),
+                    ("DISPATCH_FAILED", "Async dispatch failed"),
                     ("SUBMITTED", "Submitted"),
                     ("ACCEPTED", "Accepted"),
                     ("REJECTED", "Rejected"),
@@ -35,5 +36,10 @@ class Migration(migrations.Migration):
             model_name="submissionsnapshot",
             name="dispatch_requested_at",
             field=models.DateTimeField(blank=True, null=True),
+        ),
+        migrations.AddField(
+            model_name="submissionsnapshot",
+            name="dispatch_error",
+            field=models.TextField(blank=True, default=""),
         ),
     ]
