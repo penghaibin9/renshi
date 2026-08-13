@@ -1,9 +1,9 @@
 """Professional title result authority service.
 
-Formal HR13 title results are append-only facts.  EFFECTIVE/REVISED/REVOKED
-rows are never edited in place; revisions and revocations create a successor
-row linked by ``supersedes_result_id``.  This preserves the historical chain
-needed by HR14/HR15/HR17/HR18 consumers.
+Formal HR13 title results are append-only facts. EFFECTIVE/REVISED/REVOKED
+rows are never edited in place. A PUBLICITY case is only eligible for its first
+formal result after the latest real publicity record is CLOSED and all appeals
+are non-blocking.
 """
 
 from __future__ import annotations
@@ -13,9 +13,13 @@ from datetime import date
 from typing import Optional
 
 from django.db import transaction
-from django.utils import timezone
 
-from hr_title.models import ProfessionalTitleResult, TitleApplicationCase
+from hr_title.models import (
+    ProfessionalTitleResult,
+    TitleAppealRecord,
+    TitleApplicationCase,
+    TitlePublicityRecord,
+)
 
 
 class TitleResultError(Exception):
@@ -75,6 +79,43 @@ class ProfessionalTitleResultService:
             updated_by=self.actor_user_id,
         )
 
+    def _require_closed_publicity(self, case: TitleApplicationCase) -> TitlePublicityRecord:
+        publicity = (
+            TitlePublicityRecord.objects.select_for_update()
+            .filter(
+                tenant_id=self.tenant_id,
+                application_case_id=case.id,
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        if publicity is None:
+            raise TitleResultError(
+                "TITLE_PUBLICITY_REQUIRED",
+                "a real publicity record is required before a formal title result",
+            )
+        if publicity.status != TitlePublicityRecord.Status.CLOSED or publicity.closed_at is None:
+            raise TitleResultError(
+                "TITLE_PUBLICITY_NOT_CLOSED",
+                "the latest publicity record must be closed before a formal title result",
+            )
+        appeals = TitleAppealRecord.objects.select_for_update().filter(
+            tenant_id=self.tenant_id,
+            publicity_id=publicity.id,
+            application_case_id=case.id,
+        )
+        if appeals.filter(status=TitleAppealRecord.Status.OPEN).exists():
+            raise TitleResultError(
+                "TITLE_APPEALS_PENDING",
+                "open appeals block the formal title result",
+            )
+        if appeals.filter(status=TitleAppealRecord.Status.UPHELD).exists():
+            raise TitleResultError(
+                "TITLE_APPEAL_UPHELD",
+                "an upheld appeal blocks the formal title result",
+            )
+        return publicity
+
     @transaction.atomic
     def make_effective(
         self,
@@ -82,7 +123,7 @@ class ProfessionalTitleResultService:
         application_case_id,
         payload: TitleResultInput,
     ) -> ProfessionalTitleResult:
-        """Create the first formal result from a publicity-complete case."""
+        """Create the first formal result only after publicity/appeal closure."""
         case = (
             TitleApplicationCase.objects.select_for_update()
             .filter(id=application_case_id, tenant_id=self.tenant_id)
@@ -96,8 +137,8 @@ class ProfessionalTitleResultService:
                 "only a PUBLICITY case can become effective",
             )
 
-        # Locking the case serializes first-result creation.  A second caller
-        # must not create another root result for the same application.
+        self._require_closed_publicity(case)
+
         if ProfessionalTitleResult.objects.filter(
             tenant_id=self.tenant_id,
             application_case_id=case.id,
@@ -125,9 +166,6 @@ class ProfessionalTitleResultService:
         )
         if result is None:
             raise TitleResultError("TITLE_RESULT_NOT_FOUND", "title result not found")
-
-        # A formal fact may have only one direct successor.  This prevents two
-        # concurrent revisions from branching the immutable history chain.
         if ProfessionalTitleResult.objects.filter(
             tenant_id=self.tenant_id,
             supersedes_result_id=result.id,
@@ -162,7 +200,6 @@ class ProfessionalTitleResultService:
         result_id,
         payload: TitleResultInput,
     ) -> ProfessionalTitleResult:
-        """Append a REVISED successor; never mutate the previous fact."""
         current = self._lock_terminal_fact(result_id)
         if current.status == ProfessionalTitleResult.Status.REVOKED:
             raise TitleResultError(
@@ -190,7 +227,6 @@ class ProfessionalTitleResultService:
         result_no: str,
         revoked_at: date,
     ) -> ProfessionalTitleResult:
-        """Append a REVOKED successor that records when the title ceased."""
         current = self._lock_terminal_fact(result_id)
         if current.status == ProfessionalTitleResult.Status.REVOKED:
             raise TitleResultError("TITLE_RESULT_REVOKED", "result is already revoked")
