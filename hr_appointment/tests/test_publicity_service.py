@@ -16,6 +16,7 @@ from hr_appointment.services.publicity_service import (
     AppointmentPublicityError,
     AppointmentPublicityService,
 )
+from hr_appointment.services.ranking_service import AppointmentRankingService
 
 
 class Hr14PublicityServiceTests(TestCase):
@@ -52,6 +53,18 @@ class Hr14PublicityServiceTests(TestCase):
             score_snapshot_json={"panel": "P1"},
         )
         return case, ranking
+
+    def _review_case(self, batch, *, suffix: str, position_id: int):
+        return AppointmentApplicationCase.objects.create(
+            tenant_id=7,
+            case_no=f"C-{suffix}-{uuid.uuid4().hex[:6]}",
+            person_id=uuid.uuid4(),
+            policy_version_id=batch.policy_version_id,
+            position_instance_id=position_id,
+            batch_no=batch.batch_no,
+            requested_level_code="L2",
+            status=AppointmentApplicationCase.Status.UNDER_REVIEW,
+        )
 
     def _open(self, *, tenant_id=7, batch_status=AppointmentBatch.Status.RANKING):
         batch = self._batch(tenant_id=tenant_id, status=batch_status)
@@ -105,6 +118,59 @@ class Hr14PublicityServiceTests(TestCase):
         self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_RANKING_INCOMPLETE")
         case.refresh_from_db()
         self.assertEqual(case.status, AppointmentApplicationCase.Status.PROPOSED)
+
+    def test_ranked_waitlist_and_not_selected_cases_do_not_deadlock_publicity(self):
+        batch = self._batch()
+        selected = self._review_case(batch, suffix="SELECTED", position_id=101)
+        waitlist = self._review_case(batch, suffix="WAITLIST", position_id=101)
+        not_selected = self._review_case(batch, suffix="NO", position_id=101)
+        ranking_service = AppointmentRankingService(7, actor_user_id=88)
+
+        selected_ranking = ranking_service.finalize(
+            case_id=selected.id,
+            ranking_no="RK-MULTI-1",
+            total_score="92",
+            rank_no=1,
+            outcome="SELECTED",
+        ).ranking
+        ranking_service.finalize(
+            case_id=waitlist.id,
+            ranking_no="RK-MULTI-2",
+            total_score="88",
+            rank_no=2,
+            outcome="WAITLIST",
+        )
+        ranking_service.finalize(
+            case_id=not_selected.id,
+            ranking_no="RK-MULTI-3",
+            total_score="70",
+            rank_no=3,
+            outcome="NOT_SELECTED",
+        )
+
+        now = timezone.now()
+        record = AppointmentPublicityService(7, actor_user_id=88).open_publicity(
+            case_id=selected.id,
+            ranking_result_id=selected_ranking.id,
+            publicity_no="P-MULTI-RANKED",
+            start_at=now,
+            end_at=now + timedelta(days=5),
+        ).publicity
+
+        selected.refresh_from_db()
+        waitlist.refresh_from_db()
+        not_selected.refresh_from_db()
+        self.assertEqual(record.status, AppointmentPublicityRecord.Status.OPEN)
+        self.assertEqual(selected.status, AppointmentApplicationCase.Status.PUBLICITY)
+        self.assertEqual(waitlist.status, AppointmentApplicationCase.Status.WAITLIST)
+        self.assertEqual(not_selected.status, AppointmentApplicationCase.Status.NOT_SELECTED)
+        self.assertFalse(
+            AppointmentApplicationCase.objects.filter(
+                tenant_id=7,
+                batch_no=batch.batch_no,
+                status=AppointmentApplicationCase.Status.UNDER_REVIEW,
+            ).exists()
+        )
 
     def test_objection_is_only_accepted_inside_open_publicity_window(self):
         _, _, _, record, now = self._open()
