@@ -75,6 +75,7 @@ class SelfCatalogService:
                 Q(service_code__icontains=query)
                 | Q(name__icontains=query)
                 | Q(action_key__icontains=query)
+                | Q(search_keywords__icontains=query)
             )
         source_domain = str(source_domain or "").strip().upper()
         if source_domain:
