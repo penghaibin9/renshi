@@ -280,6 +280,16 @@ class TitleReviewRound(HrTenantScopedModel):
     closed_at = models.DateTimeField(null=True, blank=True)
     closure_snapshot_json = models.JSONField(default=dict, blank=True)
 
+    _FROZEN_FIELDS = (
+        "tenant_id",
+        "round_no",
+        "application_case_id",
+        "attempt_no",
+        "required_ballots",
+        "required_pass_votes",
+        "opened_by",
+    )
+
     class Meta:
         db_table = "hr13_title_review_round"
         constraints = [
@@ -307,6 +317,23 @@ class TitleReviewRound(HrTenantScopedModel):
                 name="idx_hr13_review_case_status",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FROZEN_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FROZEN_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "TITLE_REVIEW_ROUND_IMMUTABLE: quorum and review identity are frozen"
+                    )
+        return super().save(*args, **kwargs)
 
 
 class TitleReviewAssignment(HrTenantScopedModel):
