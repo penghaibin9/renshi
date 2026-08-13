@@ -1,0 +1,62 @@
+{% extends "hr_appointment/workspace.html" %}
+
+{% block content %}
+{{ block.super }}
+<style>
+.hr14live-history{margin-top:14px}.hr14live-list{display:grid;gap:8px;margin-top:12px}.hr14live-row{display:grid;grid-template-columns:minmax(160px,1.2fr) minmax(190px,1.35fr) 108px 96px;gap:10px;align-items:center;padding:12px;border:1px solid #efedf7;border-radius:12px;background:#fff}.hr14live-row b,.hr14live-row small{display:block;overflow-wrap:anywhere}.hr14live-row small{color:#6b7280}.hr14live-badge{justify-self:start;padding:4px 9px;border-radius:999px;background:#f0edff;color:#5141b5;font-size:12px;font-weight:700}.hr14live-empty{padding:24px 14px;text-align:center;color:#6b7280;border:1px dashed #d9d8e5;border-radius:12px;background:#fcfcfe}
+@media(max-width:720px){.hr14live-row{grid-template-columns:minmax(0,1fr) auto}.hr14live-row .hr14live-detail{grid-column:1}.hr14live-row .hr14live-date{grid-column:2;grid-row:2}}
+@media(max-width:390px){.hr14live-row{grid-template-columns:1fr}.hr14live-row .hr14live-detail,.hr14live-row .hr14live-date{grid-column:1;grid-row:auto}.hr14live-badge{justify-self:start}}
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(() => {
+  const section = '{{ section|escapejs }}';
+  if (section !== 'ranking') return;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+
+  const desc = document.getElementById('hr14-desc');
+  if (desc) {
+    const observer = new MutationObserver(() => {
+      observer.disconnect();
+      desc.textContent = '上方保留待评议申请队列；下方读取真实 AppointmentRankingResult，名次、分数、入选/候补/未入选均独立留痕。';
+    });
+    observer.observe(desc, {childList:true, characterData:true, subtree:true});
+  }
+
+  async function renderRankingHistory() {
+    const work = document.querySelector('.hr14-layout > div');
+    if (!work || document.getElementById('hr14live-ranking-history')) return;
+    const card = document.createElement('article');
+    card.id = 'hr14live-ranking-history';
+    card.className = 'hr14-card hr14live-history';
+    card.innerHTML = '<h2>已固化评议排序</h2><p>排序事实 append-only；入选才进入拟聘，候补与未入选不会被改写成资格驳回。</p><div class="hr14live-list"><div class="hr14live-empty">正在读取真实排序结果…</div></div>';
+    work.appendChild(card);
+    try {
+      const response = await fetch('/api/v1/hr/appointments/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}});
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const data = await response.json();
+      const rows = data.recentRankings || [];
+      const target = card.querySelector('.hr14live-list');
+      target.innerHTML = rows.length ? rows.map((x) => {
+        const title = x.ranking_no || '未编号排序';
+        const score = x.total_score ?? '—';
+        const rank = x.rank_no ?? '—';
+        const detail = [x.batch_no, `岗位 ${x.position_instance_id ?? '—'}`, `第 ${x.attempt_no ?? '—'} 轮`, `得分 ${score}`].filter(Boolean).join(' · ');
+        const date = (x.finalized_at || '').slice(0, 10) || '—';
+        return `<div class="hr14live-row"><div><b>${esc(title)}</b><small>名次 ${esc(rank)}</small></div><small class="hr14live-detail">${esc(detail)}</small><span class="hr14live-badge">${esc(x.outcome || '—')}</span><small class="hr14live-date">${esc(date)}</small></div>`;
+      }).join('') : '<div class="hr14live-empty">当前尚无已固化排序结果；待评议申请仍显示在上方队列。</div>';
+    } catch (error) {
+      const target = card.querySelector('.hr14live-list');
+      if (target) target.innerHTML = `<div class="hr14live-empty">排序结果读取失败：${esc(error.message)}</div>`;
+    }
+  }
+
+  renderRankingHistory();
+})();
+</script>
+{% endblock %}
