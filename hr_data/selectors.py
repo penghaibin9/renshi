@@ -61,9 +61,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         ),
         "recentAsOfEvidence": list(
             evidences.order_by("-generated_at")[:16].values(
-                "id", "evidence_no", "definition_code", "definition_version", "as_of_date",
-                "status", "source_statuses_json", "blocked_domains_json", "provider_versions_json",
-                "evidence_hash", "generated_at"
+                "id", "evidence_no", "definition_kind", "definition_code", "definition_version",
+                "as_of_date", "status", "source_statuses_json", "blocked_domains_json",
+                "provider_versions_json", "provider_evidence_hashes_json", "evidence_hash", "generated_at"
             )
         ),
         "recentFindings": list(
@@ -74,9 +74,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         ),
         "recentSubmissions": list(
             submissions.order_by("-created_at")[:12].values(
-                "id", "submission_no", "definition_code", "definition_version", "as_of_date",
-                "scope_json", "status", "dispatch_ref", "dispatch_requested_at", "dispatch_error",
-                "receipt_ref", "submitted_at", "parent_submission_id", "created_at"
+                "id", "submission_no", "definition_kind", "definition_code", "definition_version",
+                "as_of_date", "scope_json", "status", "dispatch_ref", "dispatch_requested_at",
+                "dispatch_error", "receipt_ref", "submitted_at", "parent_submission_id", "created_at"
             )
         ),
         "capabilities": {
@@ -86,7 +86,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "sourceGate": True,
             "populationDimension": True,
             "submissionAsOfGate": True,
-            "asOfEngine": False,
+            "asOfEngine": True,
             "qualityRuleExecution": False,
             "asyncSubmissionDispatch": True,
             "asyncExchange": False,
