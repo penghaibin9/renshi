@@ -1,7 +1,7 @@
 """Tenant-scoped read models for HR16 retirement and exit."""
 from collections import Counter
 
-from .models import ExitCase, ExitEffect, ExitFact, RetirementFact
+from .models import ExitCase, ExitEffect, ExitFact, ExitHandoverItem, RetirementFact
 
 
 def dashboard_snapshot(tenant_id: int) -> dict:
@@ -12,6 +12,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     effects = ExitEffect.objects.filter(tenant_id=tenant_id)
     exits = ExitFact.objects.filter(tenant_id=tenant_id)
     retirements = RetirementFact.objects.filter(tenant_id=tenant_id)
+    handover_items = ExitHandoverItem.objects.filter(tenant_id=tenant_id)
+    required_handover = handover_items.filter(required=True)
     counts = Counter(cases.values_list("status", flat=True))
     return {
         "summary": {
@@ -22,6 +24,10 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "rejected": counts.get("REJECTED", 0),
             "handover": counts.get("HANDOVER", 0),
             "settlement": counts.get("SETTLEMENT", 0),
+            "handoverItems": handover_items.count(),
+            "pendingRequiredHandover": required_handover.filter(status="PENDING").count(),
+            "completedRequiredHandover": required_handover.filter(status="COMPLETED").count(),
+            "waivedRequiredHandover": required_handover.filter(status="WAIVED").count(),
             "effectExceptions": effects.filter(status__in=["PARTIAL_FAILED", "FAILED"]).count(),
             "effectiveExits": exits.filter(status="EFFECTIVE").count(),
             "retirementFacts": retirements.filter(status="EFFECTIVE").count(),
@@ -30,6 +36,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             cases.order_by("-updated_at")[:12].values(
                 "id", "case_no", "person_id", "exit_type", "status", "requested_date",
                 "last_working_date", "planned_employment_end_date", "planned_access_end_at", "updated_at"
+            )
+        ),
+        "recentHandoverItems": list(
+            handover_items.order_by("case_id", "status", "due_date", "created_at")[:24].values(
+                "id", "item_no", "case_id", "category_code", "title", "required",
+                "owner_staff_id", "due_date", "status", "evidence_ref", "completed_by",
+                "completed_at", "waiver_reason", "supersedes_item_id", "updated_at"
             )
         ),
         "recentEffects": list(
@@ -57,7 +70,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "exitFact": True,
             "retirementFact": True,
             "approvalWorkflow": True,
-            "handoverChecklist": False,
+            "handoverChecklist": True,
             "retirementPolicy": False,
             "retirementPrecheck": False,
             "assetProvider": False,
