@@ -14,7 +14,7 @@ from typing import Optional
 from django.db import transaction
 from django.utils import timezone
 
-from hr_title.models import TitleApplicationCase
+from hr_title.models import TitleApplicationCase, TitleReviewRound
 
 
 class TitleApplicationError(Exception):
@@ -153,7 +153,26 @@ class TitleApplicationService:
 
     @transaction.atomic
     def propose(self, case_id) -> TitleApplicationCase:
+        """Compatibility transition guarded by a real PASSED review round.
+
+        The canonical panel service closes a successful round and moves the case
+        to PROPOSED atomically. This method remains only for legacy callers and
+        cannot bypass the expert-panel authority.
+        """
         case = self._lock_case(case_id)
+        latest_round = (
+            TitleReviewRound.objects.filter(
+                tenant_id=self.tenant_id,
+                application_case_id=case.id,
+            )
+            .order_by("-attempt_no", "-created_at")
+            .first()
+        )
+        if latest_round is None or latest_round.status != TitleReviewRound.Status.PASSED:
+            raise TitleApplicationError(
+                "TITLE_REVIEW_PASSED_REQUIRED",
+                "a passed expert-review round is required before proposal",
+            )
         return self._transition(
             case,
             allowed_from={TitleApplicationCase.Status.UNDER_REVIEW},
