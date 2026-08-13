@@ -10,6 +10,9 @@ from .models import (
     TitleMaterialSnapshot,
     TitlePolicyVersion,
     TitleQualificationDecision,
+    TitleReviewAssignment,
+    TitleReviewBallot,
+    TitleReviewRound,
 )
 
 
@@ -25,6 +28,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     policies = TitlePolicyVersion.objects.filter(tenant_id=tenant_id)
     materials = TitleMaterialSnapshot.objects.filter(tenant_id=tenant_id)
     qualifications = TitleQualificationDecision.objects.filter(tenant_id=tenant_id)
+    review_rounds = TitleReviewRound.objects.filter(tenant_id=tenant_id)
+    assignments = TitleReviewAssignment.objects.filter(tenant_id=tenant_id)
+    ballots = TitleReviewBallot.objects.filter(tenant_id=tenant_id)
     results = ProfessionalTitleResult.objects.filter(tenant_id=tenant_id)
 
     status_counts = Counter(cases.values_list("status", flat=True))
@@ -34,7 +40,15 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "applications": cases.count(),
             "qualificationDecisions": qualifications.count(),
             "materials": materials.count(),
-            "acceptedMaterials": materials.filter(status=TitleMaterialSnapshot.Status.ACCEPTED).count(),
+            "acceptedMaterials": materials.filter(
+                status=TitleMaterialSnapshot.Status.ACCEPTED
+            ).count(),
+            "reviewRounds": review_rounds.count(),
+            "openReviewRounds": review_rounds.filter(
+                status=TitleReviewRound.Status.OPEN
+            ).count(),
+            "reviewAssignments": assignments.count(),
+            "reviewBallots": ballots.count(),
             "awaitingQualification": status_counts.get("SUBMITTED", 0),
             "underReview": status_counts.get("UNDER_REVIEW", 0),
             "inPublicity": status_counts.get("PUBLICITY", 0),
@@ -83,6 +97,50 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "updated_at",
             )
         ),
+        "recentReviewRounds": list(
+            review_rounds.order_by("-opened_at", "-created_at")[:12].values(
+                "id",
+                "round_no",
+                "application_case_id",
+                "attempt_no",
+                "required_ballots",
+                "required_pass_votes",
+                "status",
+                "opened_by",
+                "opened_at",
+                "closed_by",
+                "closed_at",
+                "closure_snapshot_json",
+            )
+        ),
+        "recentReviewAssignments": list(
+            assignments.order_by("-assigned_at", "-created_at")[:24].values(
+                "id",
+                "assignment_no",
+                "review_round_id",
+                "reviewer_staff_id",
+                "reviewer_role",
+                "status",
+                "conflict_declared",
+                "conflict_note",
+                "assigned_by",
+                "assigned_at",
+                "responded_at",
+            )
+        ),
+        "recentReviewBallots": list(
+            ballots.order_by("-submitted_at", "-created_at")[:24].values(
+                "id",
+                "ballot_no",
+                "review_round_id",
+                "assignment_id",
+                "recommendation",
+                "score",
+                "rationale",
+                "submitted_by",
+                "submitted_at",
+            )
+        ),
         "recentResults": list(
             results.order_by("-effective_from", "-created_at")[:12].values(
                 "id",
@@ -117,8 +175,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "formalResult": True,
             "qualificationReview": True,
             "materials": True,
-            "expertPanel": False,
-            "deliberationVote": False,
+            "expertPanel": True,
+            "deliberationVote": True,
             "publicity": False,
             "appealReview": False,
         },
