@@ -1,12 +1,13 @@
 """HR14 competition-batch lifecycle authority.
 
-A batch freezes the policy, HR02 supply snapshots and quota pools used by one
-appointment competition.  Application/review services consume this lifecycle;
-they must not invent batch state transitions independently.
+A batch freezes the policy, HR03 population, HR02 supply snapshots and quota
+pools used by one appointment competition. Application/review services consume
+this lifecycle; they must not invent batch state transitions independently.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -21,6 +22,9 @@ from hr_appointment.models import (
     AppointmentPositionSupplySnapshot,
     AppointmentQuotaPool,
 )
+
+
+_HASH_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 class AppointmentBatchError(Exception):
@@ -152,6 +156,22 @@ class AppointmentBatchService:
             )
         self._policy(batch.policy_version_id)
         self._validate_window(batch.application_from, batch.application_to, required=True)
+
+        from hr_appointment.population_models import AppointmentPopulationSnapshot
+
+        population = AppointmentPopulationSnapshot.objects.filter(
+            tenant_id=self.tenant_id,
+            batch=batch,
+        ).first()
+        if (
+            population is None
+            or population.member_count < 1
+            or not _HASH_RE.fullmatch(str(population.content_hash or ""))
+        ):
+            raise AppointmentBatchError(
+                "APPOINTMENT_BATCH_POPULATION_REQUIRED",
+                "a non-empty frozen HR03 population snapshot with a valid hash is required",
+            )
         if not AppointmentPositionSupplySnapshot.objects.filter(
             tenant_id=self.tenant_id, batch=batch
         ).exists():
