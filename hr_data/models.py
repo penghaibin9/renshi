@@ -217,6 +217,7 @@ class SubmissionSnapshot(HrTenantScopedModel):
         VALIDATED = "VALIDATED", "Validated"
         APPROVED = "APPROVED", "Approved"
         DISPATCH_QUEUED = "DISPATCH_QUEUED", "Async dispatch queued"
+        DISPATCH_FAILED = "DISPATCH_FAILED", "Async dispatch failed"
         SUBMITTED = "SUBMITTED", "Submitted"
         ACCEPTED = "ACCEPTED", "Accepted"
         REJECTED = "REJECTED", "Rejected"
@@ -236,6 +237,7 @@ class SubmissionSnapshot(HrTenantScopedModel):
     )
     dispatch_ref = models.CharField(max_length=255, blank=True, default="")
     dispatch_requested_at = models.DateTimeField(null=True, blank=True)
+    dispatch_error = models.TextField(blank=True, default="")
     submitted_at = models.DateTimeField(null=True, blank=True)
     receipt_ref = models.CharField(max_length=255, blank=True, default="")
     parent_submission_id = models.UUIDField(null=True, blank=True)
