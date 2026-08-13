@@ -1,7 +1,7 @@
 """Bounded built-in HR03 data-quality Provider for HR18.
 
 Supported rule codes intentionally cover source provenance and Authority-link
-completeness only.  They do not encode school-specific policy thresholds.  Any
+completeness only. They do not encode school-specific policy thresholds. Any
 unknown rule remains UNAVAILABLE so HR18 never pretends an arbitrary rule was
 executed.
 """
@@ -292,6 +292,11 @@ def quality_provider(
     if rule_parameters is None:
         rule_parameters = {}
     if not isinstance(rule_parameters, dict):
+        return {"status": SourceStatus.ERROR.value}
+    if rule_code in {
+        "HR03_EMPLOYMENT_PROVENANCE_REQUIRED",
+        "HR03_ASSIGNMENT_PROVENANCE_REQUIRED",
+    } and rule_parameters:
         return {"status": SourceStatus.ERROR.value}
     if as_of_date is None:
         as_of_date = timezone.localdate()
