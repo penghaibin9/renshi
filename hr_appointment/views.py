@@ -19,10 +19,12 @@ SECTIONS = {
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "岗位聘任")
+    # Progressive runtime chain:
     # workspace_live owns ranking/publicity real workflows;
-    # workspace_term adds term/renewal/change governance while preserving the
-    # hard boundary that approval is not an HR03/appointment effect.
-    template_name = "hr_appointment/workspace_term.html"
+    # workspace_term adds term/renewal/change approval governance;
+    # workspace_term_effect adds the explicit apply-effect boundary that creates
+    # successor HR14 facts and invokes HR03 only for real assignment changes.
+    template_name = "hr_appointment/workspace_term_effect.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrAppointmentAccessError as exc:
