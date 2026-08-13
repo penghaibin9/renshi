@@ -6,8 +6,8 @@ from django.http import JsonResponse
 from django.utils.dateparse import parse_date
 
 from .api import HrDataAccessError, _error, _payload, resolve_request_tenant
-from .services.assignment_evaluation_service import Hr03AssignmentAsOfEvaluationService
-from .services.evaluation_service import AsOfEvaluationError, Hr03AsOfEvaluationService
+from .services.evaluation_router import HistoricalEvaluationRouter
+from .services.evaluation_service import AsOfEvaluationError
 
 ASOF_PERMISSION = "hr.data.asof"
 
@@ -21,56 +21,10 @@ def _status(code: str) -> int:
     if code in {
         "ASOF_EVALUATION_EVIDENCE_INCOMPLETE",
         "ASOF_EVALUATION_EVIDENCE_STALE",
+        "ASOF_EVALUATION_SOURCE_UNAVAILABLE",
     }:
         return 409
     return 400
-
-
-def _evaluate_with_grain_fallback(
-    *,
-    tenant_id: int,
-    actor_user_id,
-    definition_kind: str,
-    definition_code,
-    definition_version: int,
-    evidence_no: str,
-    as_of_date,
-):
-    primary = Hr03AsOfEvaluationService(
-        tenant_id,
-        actor_user_id=actor_user_id,
-    )
-    assignment = Hr03AssignmentAsOfEvaluationService(
-        tenant_id,
-        actor_user_id=actor_user_id,
-    )
-
-    def run(service):
-        if definition_kind == "POPULATION":
-            return service.evaluate_population(
-                evidence_no=evidence_no,
-                population_code=definition_code,
-                population_version=definition_version,
-                as_of_date=as_of_date,
-            )
-        if definition_kind == "METRIC":
-            return service.evaluate_count_metric(
-                evidence_no=evidence_no,
-                metric_code=definition_code,
-                metric_version=definition_version,
-                as_of_date=as_of_date,
-            )
-        raise AsOfEvaluationError(
-            "ASOF_EVALUATION_KIND_UNSUPPORTED",
-            "当前求值器仅支持 POPULATION 或 METRIC",
-        )
-
-    try:
-        return run(primary)
-    except AsOfEvaluationError as exc:
-        if exc.code != "ASOF_EVALUATION_GRAIN_UNSUPPORTED":
-            raise
-    return run(assignment)
 
 
 def evaluate(request):
@@ -120,24 +74,35 @@ def evaluate(request):
             status=400,
         )
 
+    service = HistoricalEvaluationRouter(
+        tenant_id,
+        actor_user_id=getattr(request.user, "id", None),
+    )
     try:
-        result = _evaluate_with_grain_fallback(
-            tenant_id=tenant_id,
-            actor_user_id=getattr(request.user, "id", None),
-            definition_kind=definition_kind,
-            definition_code=definition_code,
-            definition_version=definition_version,
-            evidence_no=evidence_no,
-            as_of_date=as_of_date,
-        )
+        if definition_kind == "POPULATION":
+            routed = service.evaluate_population(
+                evidence_no=evidence_no,
+                population_code=definition_code,
+                population_version=definition_version,
+                as_of_date=as_of_date,
+            )
+        elif definition_kind == "METRIC":
+            routed = service.evaluate_count_metric(
+                evidence_no=evidence_no,
+                metric_code=definition_code,
+                metric_version=definition_version,
+                as_of_date=as_of_date,
+            )
+        else:
+            return _error(
+                "ASOF_EVALUATION_KIND_UNSUPPORTED",
+                "当前求值器仅支持 POPULATION 或 METRIC",
+                status=400,
+            )
     except AsOfEvaluationError as exc:
         return _error(exc.code, str(exc), status=_status(exc.code))
 
-    evaluator_version = (
-        "hr03-assignment-count-v1"
-        if result.grain == "ASSIGNMENT"
-        else "hr03-count-v1"
-    )
+    result = routed.result
     response = JsonResponse(
         {
             "data": {
@@ -153,7 +118,7 @@ def evaluate(request):
                 "evidenceNo": result.evidence.evidence_no,
                 "evidenceHash": result.evidence.evidence_hash,
                 "calculationHash": result.calculation_hash,
-                "evaluatorVersion": evaluator_version,
+                "evaluatorVersion": routed.evaluator_version,
             },
             "apiVersion": "1.0",
             "schemaVersion": "hr18.asof-evaluation.1",
