@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr_appointment.models import AppointmentApplicationCase, PositionAppointmentFact
 from hr_appointment.services.effect_service import AppointmentEffectError, AppointmentEffectService
@@ -13,6 +14,7 @@ class AppointmentEffectServiceTests(TestCase):
     def _fixtures(self):
         case = MagicMock()
         case.id = "00000000-0000-0000-0000-000000000101"
+        case.case_no = "CASE-000101"
         case.person_id = "00000000-0000-0000-0000-000000000201"
         case.position_instance_id = 31
         case.requested_level_code = "PRO_LEVEL_7"
@@ -34,6 +36,76 @@ class AppointmentEffectServiceTests(TestCase):
         relationship = SimpleNamespace(id="00000000-0000-0000-0000-000000000501")
         publicity = SimpleNamespace(id="00000000-0000-0000-0000-000000000701")
         return case, fact, reservation, position, staff, relationship, publicity
+
+    @patch("hr_structure.models.HrPosition.objects")
+    @patch("hr_structure.models.HrPositionReservation.objects")
+    def test_capacity_receipt_requires_explicit_hr14_source_domain(
+        self, reservation_objects, position_objects
+    ):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, *_ = self._fixtures()
+        reservation = SimpleNamespace(
+            id=41,
+            status="HELD",
+            expires_at=timezone.now() + __import__("datetime").timedelta(days=1),
+            position_id_id=case.position_instance_id,
+            source_domain="",
+            source_business_id=str(case.id),
+        )
+        reservation_objects.select_for_update.return_value.filter.return_value.first.return_value = reservation
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service._lock_capacity_receipt(case, reservation.id)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_RESERVATION_SOURCE_MISMATCH")
+        position_objects.select_for_update.assert_not_called()
+
+    @patch("hr_structure.models.HrPosition.objects")
+    @patch("hr_structure.models.HrPositionReservation.objects")
+    def test_capacity_receipt_cannot_be_stolen_from_another_hr14_case(
+        self, reservation_objects, position_objects
+    ):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, *_ = self._fixtures()
+        reservation = SimpleNamespace(
+            id=41,
+            status="HELD",
+            expires_at=timezone.now() + __import__("datetime").timedelta(days=1),
+            position_id_id=case.position_instance_id,
+            source_domain="HR14",
+            source_business_id="CASE-OTHER",
+        )
+        reservation_objects.select_for_update.return_value.filter.return_value.first.return_value = reservation
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service._lock_capacity_receipt(case, reservation.id)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_RESERVATION_OWNER_MISMATCH")
+        position_objects.select_for_update.assert_not_called()
+
+    @patch("hr_structure.models.HrPosition.objects")
+    @patch("hr_structure.models.HrPositionReservation.objects")
+    def test_capacity_receipt_accepts_current_case_id_as_owner(
+        self, reservation_objects, position_objects
+    ):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, *_ = self._fixtures()
+        reservation = SimpleNamespace(
+            id=41,
+            status="HELD",
+            expires_at=timezone.now() + __import__("datetime").timedelta(days=1),
+            position_id_id=case.position_instance_id,
+            source_domain="HR14",
+            source_business_id=str(case.id),
+        )
+        position = SimpleNamespace(id=case.position_instance_id)
+        reservation_objects.select_for_update.return_value.filter.return_value.first.return_value = reservation
+        position_objects.select_for_update.return_value.filter.return_value.first.return_value = position
+
+        locked_reservation, locked_position = service._lock_capacity_receipt(case, reservation.id)
+
+        self.assertIs(locked_reservation, reservation)
+        self.assertIs(locked_position, position)
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
     @patch("hr_structure.services.position.PositionService")
