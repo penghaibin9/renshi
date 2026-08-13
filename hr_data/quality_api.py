@@ -6,11 +6,8 @@ from django.http import JsonResponse
 from django.utils.dateparse import parse_date
 
 from .api import HrDataAccessError, _error, _payload, resolve_request_tenant
-from .services.quality_service import (
-    DataQualityError,
-    DataQualityExecutionService,
-    DataQualityRuleService,
-)
+from .services.quality_runtime_service import RuntimeDataQualityExecutionService
+from .services.quality_service import DataQualityError, DataQualityRuleService
 
 QUALITY_PERMISSION = "hr.data.quality"
 
@@ -121,7 +118,7 @@ def execute_run(request):
                 status=400,
             )
     try:
-        outcome = DataQualityExecutionService(
+        outcome = RuntimeDataQualityExecutionService(
             tenant_id,
             actor_user_id=getattr(request.user, "id", None),
         ).execute(
