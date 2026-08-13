@@ -91,8 +91,21 @@ class Hr18SelectorCapabilityTests(TestCase):
         payload = dashboard_snapshot(77)
 
         self.assertTrue(payload["capabilities"]["qualityRuleExecution"])
+        self.assertTrue(payload["capabilities"]["builtinHr03QualityProvider"])
+        self.assertTrue(payload["capabilities"]["qualityFindingLifecycle"])
         self.assertEqual(payload["summary"]["qualityRuleVersions"], 1)
         self.assertEqual(payload["summary"]["qualityRuns"], 1)
         self.assertEqual(payload["summary"]["qualityUnavailableRuns"], 1)
         self.assertEqual(payload["summary"]["qualityErrorRuns"], 0)
         self.assertEqual(payload["recentQualityRuns"][0]["run_no"], "QRUN-UNAVAILABLE")
+
+    def test_dashboard_publishes_exact_historical_engine_scope(self):
+        capabilities = dashboard_snapshot(77)["capabilities"]
+
+        self.assertTrue(capabilities["asOfEvidenceEngine"])
+        self.assertTrue(capabilities["asOfEngine"])
+        self.assertTrue(capabilities["hr03CountEvaluation"])
+        self.assertTrue(capabilities["hr03AssignmentCountEvaluation"])
+        self.assertTrue(capabilities["formalFactProviderEvidence"])
+        self.assertTrue(capabilities["formalFactPersonCountEvaluation"])
+        self.assertFalse(capabilities["metricEvaluation"])
