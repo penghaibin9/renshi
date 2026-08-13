@@ -9,6 +9,7 @@ from .models import (
     TitleApplicationCase,
     TitleMaterialSnapshot,
     TitlePolicyVersion,
+    TitleQualificationDecision,
 )
 
 
@@ -23,6 +24,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     cases = TitleApplicationCase.objects.filter(tenant_id=tenant_id)
     policies = TitlePolicyVersion.objects.filter(tenant_id=tenant_id)
     materials = TitleMaterialSnapshot.objects.filter(tenant_id=tenant_id)
+    qualifications = TitleQualificationDecision.objects.filter(tenant_id=tenant_id)
     results = ProfessionalTitleResult.objects.filter(tenant_id=tenant_id)
 
     status_counts = Counter(cases.values_list("status", flat=True))
@@ -30,6 +32,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         "summary": {
             "policyVersions": policies.count(),
             "applications": cases.count(),
+            "qualificationDecisions": qualifications.count(),
             "materials": materials.count(),
             "acceptedMaterials": materials.filter(status=TitleMaterialSnapshot.Status.ACCEPTED).count(),
             "awaitingQualification": status_counts.get("SUBMITTED", 0),
@@ -49,6 +52,19 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "status",
                 "submitted_at",
                 "updated_at",
+            )
+        ),
+        "recentQualificationDecisions": list(
+            qualifications.order_by("-decided_at", "-created_at")[:12].values(
+                "id",
+                "decision_no",
+                "application_case_id",
+                "attempt_no",
+                "decision",
+                "reason_code",
+                "reason",
+                "decided_by",
+                "decided_at",
             )
         ),
         "recentMaterials": list(
@@ -99,7 +115,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "policy": True,
             "application": True,
             "formalResult": True,
-            "qualificationReview": False,
+            "qualificationReview": True,
             "materials": True,
             "expertPanel": False,
             "deliberationVote": False,
