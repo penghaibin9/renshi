@@ -18,10 +18,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from hr_data.models import DataQualityFinding, DataQualityRun
-from hr_data.services.quality_service import (
-    DataQualityError,
-    DataQualityExecutionService,
-)
+from hr_data.services.quality_runtime_service import RuntimeDataQualityExecutionService
+from hr_data.services.quality_service import DataQualityError
 
 
 class DataQualityFindingError(Exception):
@@ -144,7 +142,7 @@ class DataQualityFindingService:
             )
 
         try:
-            verification = DataQualityExecutionService(
+            verification = RuntimeDataQualityExecutionService(
                 self.tenant_id,
                 actor_user_id=self.actor_user_id,
             ).execute(
