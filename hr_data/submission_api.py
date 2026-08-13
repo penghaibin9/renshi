@@ -7,6 +7,10 @@ import uuid
 from django.http import JsonResponse
 
 from .api import HrDataAccessError, _error, _payload, resolve_request_tenant
+from .services.submission_dispatch_service import (
+    SubmissionDispatchError,
+    SubmissionDispatchService,
+)
 from .services.submission_service import SubmissionLifecycleError, SubmissionLifecycleService
 
 SUBMIT_PERMISSION = "hr.data.submit"
@@ -20,8 +24,14 @@ def _status(code: str) -> int:
         "SUBMISSION_INVALID_STATE",
         "SUBMISSION_ASOF_EVIDENCE_MISMATCH",
         "SUBMISSION_ASOF_INCOMPLETE",
+        "SUBMISSION_ASYNC_DISPATCH_REQUIRED",
+        "SUBMISSION_DISPATCH_REF_MISMATCH",
     }:
         return 409
+    if code in {"SUBMISSION_DISPATCH_UNAVAILABLE"}:
+        return 503
+    if code in {"SUBMISSION_DISPATCH_FAILED"}:
+        return 502
     return 400
 
 
@@ -35,6 +45,13 @@ def _serialize(snapshot):
         "scope": snapshot.scope_json,
         "payloadHash": snapshot.payload_hash,
         "status": snapshot.status,
+        "dispatchRef": snapshot.dispatch_ref or None,
+        "dispatchRequestedAt": (
+            snapshot.dispatch_requested_at.isoformat()
+            if snapshot.dispatch_requested_at
+            else None
+        ),
+        "dispatchError": snapshot.dispatch_error or None,
         "submittedAt": snapshot.submitted_at.isoformat() if snapshot.submitted_at else None,
         "receiptRef": snapshot.receipt_ref or None,
         "parentSubmissionId": (
@@ -43,11 +60,15 @@ def _serialize(snapshot):
     }
 
 
-def _service(request):
-    tenant_id = resolve_request_tenant(
+def _tenant(request):
+    return resolve_request_tenant(
         request,
         required_permission=SUBMIT_PERMISSION,
     )
+
+
+def _service(request):
+    tenant_id = _tenant(request)
     return SubmissionLifecycleService(
         tenant_id,
         actor_user_id=getattr(request.user, "id", None),
@@ -125,7 +146,34 @@ def approve_submission(request, submission_id):
 
 
 def submit_submission(request, submission_id):
-    return _transition(request, submission_id, "submit")
+    """Queue async dispatch; never mark SUBMITTED in the request thread."""
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = _tenant(request)
+    except HrDataAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    try:
+        result = SubmissionDispatchService(
+            tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).queue(submission_id)
+    except SubmissionDispatchError as exc:
+        return _error(exc.code, str(exc), status=_status(exc.code))
+    response = JsonResponse(
+        {
+            "data": {
+                **_serialize(result.snapshot),
+                "queued": result.queued,
+                "dispatchRef": result.dispatch_ref,
+            },
+            "apiVersion": "1.0",
+            "schemaVersion": "hr18.submission-dispatch.1",
+        },
+        status=202,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def record_receipt(request, submission_id):
