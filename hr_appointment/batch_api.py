@@ -6,13 +6,8 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .api import (
-    HrAppointmentAccessError,
-    REVIEW_PERMISSION,
-    _error,
-    _payload,
-    resolve_request_tenant,
-)
+from .api import HrAppointmentAccessError, _error, _payload, resolve_request_tenant
+from .permissions import MANAGE_PERMISSION
 from .services.batch_service import (
     AppointmentBatchError,
     AppointmentBatchInput,
@@ -64,7 +59,7 @@ def _serialize(batch):
 
 
 def _service(request):
-    tenant_id = resolve_request_tenant(request, required_permission=REVIEW_PERMISSION)
+    tenant_id = resolve_request_tenant(request, required_permission=MANAGE_PERMISSION)
     return AppointmentBatchService(
         tenant_id,
         actor_user_id=getattr(request.user, "id", None),
