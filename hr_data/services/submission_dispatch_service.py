@@ -4,6 +4,8 @@ The configured provider must enqueue work and return a durable ``dispatchRef``.
 The request thread never marks the snapshot SUBMITTED. It only records
 DISPATCH_QUEUED; the async worker later calls ``confirm_dispatched`` or
 ``record_dispatch_failure`` on SubmissionLifecycleService with the same ref.
+Provider execution failures are committed as DISPATCH_FAILED facts and returned
+to the HTTP layer as an error result rather than raised inside the transaction.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ class SubmissionDispatchResult:
     snapshot: SubmissionSnapshot
     queued: bool
     dispatch_ref: str
+    error: str = ""
 
 
 class SubmissionDispatchService:
@@ -109,10 +112,12 @@ class SubmissionDispatchService:
                     "updated_at",
                 ]
             )
-            raise SubmissionDispatchError(
-                "SUBMISSION_DISPATCH_FAILED",
-                snapshot.dispatch_error or "submission dispatch provider failed",
-            ) from exc
+            return SubmissionDispatchResult(
+                snapshot=snapshot,
+                queued=False,
+                dispatch_ref=snapshot.dispatch_ref or "",
+                error=snapshot.dispatch_error or "submission dispatch provider failed",
+            )
 
         if not isinstance(receipt, Mapping) or receipt.get("queued") is not True:
             raise SubmissionDispatchError(
