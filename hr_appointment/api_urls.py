@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api
+from . import api, term_api
 
 app_name = "hr_appointment_api"
 urlpatterns = [
@@ -34,5 +34,40 @@ urlpatterns = [
         "publicities/<uuid:publicity_id>/cancel/",
         api.cancel_publicity,
         name="publicity-cancel",
+    ),
+    path(
+        "appointment-facts/<uuid:fact_id>/term/",
+        term_api.register_term,
+        name="term-register",
+    ),
+    path(
+        "terms/<uuid:term_id>/expiring/",
+        term_api.mark_expiring,
+        name="term-mark-expiring",
+    ),
+    path(
+        "terms/<uuid:term_id>/expired/",
+        term_api.mark_expired,
+        name="term-mark-expired",
+    ),
+    path(
+        "terms/<uuid:term_id>/renewals/",
+        term_api.open_renewal,
+        name="renewal-open",
+    ),
+    path(
+        "renewals/<uuid:renewal_id>/decision/",
+        term_api.decide_renewal,
+        name="renewal-decision",
+    ),
+    path(
+        "terms/<uuid:term_id>/changes/",
+        term_api.open_change,
+        name="term-change-open",
+    ),
+    path(
+        "term-changes/<uuid:change_id>/decision/",
+        term_api.decide_change,
+        name="term-change-decision",
     ),
 ]
