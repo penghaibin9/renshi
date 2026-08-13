@@ -1,10 +1,74 @@
 from django.urls import path
 
-from . import api, capacity_api, term_api, term_effect_api
+from . import (
+    api,
+    application_api,
+    batch_api,
+    capacity_api,
+    term_api,
+    term_effect_api,
+)
 
 app_name = "hr_appointment_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
+    path("batches/", batch_api.create_batch, name="batch-create"),
+    path(
+        "batches/<uuid:batch_id>/publish/",
+        batch_api.publish_batch,
+        name="batch-publish",
+    ),
+    path(
+        "batches/<uuid:batch_id>/applications/open/",
+        batch_api.open_applications,
+        name="batch-applications-open",
+    ),
+    path(
+        "batches/<uuid:batch_id>/applications/close/",
+        batch_api.close_applications,
+        name="batch-applications-close",
+    ),
+    path(
+        "batches/<uuid:batch_id>/eligibility/start/",
+        batch_api.begin_eligibility_review,
+        name="batch-eligibility-start",
+    ),
+    path(
+        "batches/<uuid:batch_id>/review/start/",
+        batch_api.begin_review,
+        name="batch-review-start",
+    ),
+    path("applications/", application_api.create_application, name="application-create"),
+    path(
+        "applications/<uuid:case_id>/submit/",
+        application_api.submit_application,
+        name="application-submit",
+    ),
+    path(
+        "applications/<uuid:case_id>/return/",
+        application_api.return_application,
+        name="application-return",
+    ),
+    path(
+        "applications/<uuid:case_id>/eligibility/pass/",
+        application_api.pass_eligibility,
+        name="application-eligibility-pass",
+    ),
+    path(
+        "applications/<uuid:case_id>/eligibility/reject/",
+        application_api.reject_eligibility,
+        name="application-eligibility-reject",
+    ),
+    path(
+        "applications/<uuid:case_id>/withdraw/",
+        application_api.withdraw_application,
+        name="application-withdraw",
+    ),
+    path(
+        "applications/<uuid:case_id>/review/start/",
+        application_api.start_review,
+        name="application-review-start",
+    ),
     path(
         "applications/<uuid:case_id>/ranking-result/",
         api.ranking_result,
