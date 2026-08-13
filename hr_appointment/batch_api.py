@@ -39,7 +39,6 @@ def _status(code: str) -> int:
         "APPOINTMENT_BATCH_QUOTA_EMPTY",
         "APPOINTMENT_APPLICATION_WINDOW_REQUIRED",
         "APPOINTMENT_PUBLICITY_WINDOW_REQUIRED",
-        "APPOINTMENT_POLICY_HASH_MISMATCH",
         "APPOINTMENT_APPLICATION_WINDOW_NOT_STARTED",
         "APPOINTMENT_APPLICATION_WINDOW_ENDED",
         "APPOINTMENT_ELIGIBILITY_INCOMPLETE",
@@ -61,6 +60,7 @@ def _serialize(batch):
         "applicationTo": batch.application_to.isoformat() if batch.application_to else None,
         "publicityFrom": batch.publicity_from.isoformat() if batch.publicity_from else None,
         "publicityTo": batch.publicity_to.isoformat() if batch.publicity_to else None,
+        "versionNo": batch.version_no,
         "contentHash": batch.content_hash,
         "status": batch.status,
     }
@@ -128,6 +128,7 @@ def create_batch(request):
         status=201,
     )
     response["Cache-Control"] = "no-store"
+    response["ETag"] = f'"hr14-batch-v{batch.version_no}"'
     return response
 
 
@@ -150,6 +151,7 @@ def _transition(request, batch_id, method_name):
         }
     )
     response["Cache-Control"] = "no-store"
+    response["ETag"] = f'"hr14-batch-v{batch.version_no}"'
     return response
 
 
