@@ -34,10 +34,12 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "openFindings": open_findings.count(),
             "criticalFindings": open_findings.filter(severity="CRITICAL").count(),
             "submissions": submissions.count(),
-            "awaitingReceipt": submissions.filter(status="SUBMITTED", receipt_ref="").count(),
-            "acceptedReceipts": submissions.filter(status="ACCEPTED").exclude(receipt_ref="").count(),
-            "rejectedReceipts": submissions.filter(status="REJECTED").exclude(receipt_ref="").count(),
-            "corrections": submissions.filter(status="CORRECTED").count(),
+            "dispatchQueued": submissions.filter(status=SubmissionSnapshot.Status.DISPATCH_QUEUED).count(),
+            "dispatchFailed": submissions.filter(status=SubmissionSnapshot.Status.DISPATCH_FAILED).count(),
+            "awaitingReceipt": submissions.filter(status=SubmissionSnapshot.Status.SUBMITTED, receipt_ref="").count(),
+            "acceptedReceipts": submissions.filter(status=SubmissionSnapshot.Status.ACCEPTED).exclude(receipt_ref="").count(),
+            "rejectedReceipts": submissions.filter(status=SubmissionSnapshot.Status.REJECTED).exclude(receipt_ref="").count(),
+            "corrections": submissions.filter(status=SubmissionSnapshot.Status.CORRECTED).count(),
         },
         "recentPopulations": list(
             populations.order_by("population_code", "-version_no")[:12].values(
@@ -73,7 +75,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         "recentSubmissions": list(
             submissions.order_by("-created_at")[:12].values(
                 "id", "submission_no", "definition_code", "definition_version", "as_of_date",
-                "scope_json", "status", "receipt_ref", "submitted_at", "parent_submission_id", "created_at"
+                "scope_json", "status", "dispatch_ref", "dispatch_requested_at", "dispatch_error",
+                "receipt_ref", "submitted_at", "parent_submission_id", "created_at"
             )
         ),
         "capabilities": {
@@ -85,6 +88,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "submissionAsOfGate": True,
             "asOfEngine": False,
             "qualityRuleExecution": False,
+            "asyncSubmissionDispatch": True,
             "asyncExchange": False,
             "submissionReceipt": True,
             "correctionWorkflow": False,
