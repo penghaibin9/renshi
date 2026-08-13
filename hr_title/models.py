@@ -29,6 +29,7 @@ class TitlePolicyVersion(HrVersionedModel):
         permissions = [
             ("hr.title.view", "查看 HR13 职称评审工作区"),
             ("hr.title.review", "执行 HR13 资格审查"),
+            ("hr.title.panel", "维护 HR13 专家评议与表决"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -36,12 +37,16 @@ class TitlePolicyVersion(HrVersionedModel):
                 name="uq_hr13_policy_tenant_code_ver",
             ),
             models.CheckConstraint(
-                condition=Q(effective_to__isnull=True) | Q(effective_to__gt=models.F("effective_from")),
+                condition=Q(effective_to__isnull=True)
+                | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr13_policy_effective_range",
             ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "status"), name="idx_hr13_policy_tenant_status"),
+            models.Index(
+                fields=("tenant_id", "status"),
+                name="idx_hr13_policy_tenant_status",
+            ),
         ]
 
 
@@ -51,9 +56,10 @@ class TitleApplicationCase(HrTenantScopedModel):
         SUBMITTED = "SUBMITTED", "Submitted"
         RETURNED = "RETURNED", "Returned for correction"
         ELIGIBLE = "ELIGIBLE", "Eligibility passed"
-        REJECTED = "REJECTED", "Rejected"
+        REJECTED = "REJECTED", "Eligibility rejected"
         WITHDRAWN = "WITHDRAWN", "Withdrawn"
         UNDER_REVIEW = "UNDER_REVIEW", "Under review"
+        REVIEW_NOT_PASSED = "REVIEW_NOT_PASSED", "Review not passed"
         PROPOSED = "PROPOSED", "Proposed result"
         PUBLICITY = "PUBLICITY", "Publicity"
         EFFECTIVE = "EFFECTIVE", "Effective"
@@ -65,17 +71,31 @@ class TitleApplicationCase(HrTenantScopedModel):
     batch_no = models.CharField(max_length=64)
     requested_title_code = models.CharField(max_length=64)
     requested_title_name = models.CharField(max_length=200, blank=True, default="")
-    status = models.CharField(max_length=32, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        db_index=True,
+    )
     submitted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "hr13_title_application_case"
         constraints = [
-            models.UniqueConstraint(fields=("tenant_id", "case_no"), name="uq_hr13_case_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "case_no"),
+                name="uq_hr13_case_tenant_no",
+            ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr13_case_tenant_person"),
-            models.Index(fields=("tenant_id", "batch_no", "status"), name="idx_hr13_case_tenant_batch"),
+            models.Index(
+                fields=("tenant_id", "person_id", "status"),
+                name="idx_hr13_case_tenant_person",
+            ),
+            models.Index(
+                fields=("tenant_id", "batch_no", "status"),
+                name="idx_hr13_case_tenant_batch",
+            ),
         ]
 
 
@@ -90,7 +110,11 @@ class TitleQualificationDecision(HrTenantScopedModel):
     decision_no = models.CharField(max_length=64)
     application_case_id = models.UUIDField()
     attempt_no = models.PositiveIntegerField()
-    decision = models.CharField(max_length=16, choices=Decision.choices, db_index=True)
+    decision = models.CharField(
+        max_length=16,
+        choices=Decision.choices,
+        db_index=True,
+    )
     reason_code = models.CharField(max_length=64, blank=True, default="")
     reason = models.TextField(blank=True, default="")
     decided_by = models.PositiveBigIntegerField(null=True, blank=True)
@@ -169,7 +193,10 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
     content_hash = models.CharField(max_length=64)
     snapshot_json = models.JSONField(default=dict, blank=True)
     status = models.CharField(
-        max_length=16, choices=Status.choices, default=Status.ATTACHED, db_index=True
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ATTACHED,
+        db_index=True,
     )
     supersedes_snapshot_id = models.UUIDField(null=True, blank=True)
 
@@ -193,7 +220,8 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
         db_table = "hr13_title_material_snapshot"
         constraints = [
             models.UniqueConstraint(
-                fields=("tenant_id", "material_no"), name="uq_hr13_material_tenant_no"
+                fields=("tenant_id", "material_no"),
+                name="uq_hr13_material_tenant_no",
             ),
         ]
         indexes = [
@@ -226,6 +254,183 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+class TitleReviewRound(HrTenantScopedModel):
+    """Frozen quorum and pass-threshold authority for one review attempt."""
+
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        PASSED = "PASSED", "Passed"
+        NOT_PASSED = "NOT_PASSED", "Not passed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    round_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField(db_index=True)
+    attempt_no = models.PositiveIntegerField()
+    required_ballots = models.PositiveIntegerField()
+    required_pass_votes = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+    )
+    opened_by = models.PositiveBigIntegerField(null=True, blank=True)
+    opened_at = models.DateTimeField(auto_now_add=True)
+    closed_by = models.PositiveBigIntegerField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closure_snapshot_json = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "hr13_title_review_round"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "round_no"),
+                name="uq_hr13_review_round_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "application_case_id", "attempt_no"),
+                name="uq_hr13_review_case_attempt",
+            ),
+            models.CheckConstraint(
+                condition=Q(required_ballots__gte=1),
+                name="ck_hr13_review_ballots_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(required_pass_votes__gte=1)
+                & Q(required_pass_votes__lte=models.F("required_ballots")),
+                name="ck_hr13_review_pass_threshold",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "application_case_id", "status"),
+                name="idx_hr13_review_case_status",
+            ),
+        ]
+
+
+class TitleReviewAssignment(HrTenantScopedModel):
+    """Reviewer assignment with an explicit conflict/recusal decision."""
+
+    class Role(models.TextChoices):
+        EXPERT = "EXPERT", "Expert"
+        COMMITTEE = "COMMITTEE", "Committee member"
+        CHAIR = "CHAIR", "Chair"
+
+    class Status(models.TextChoices):
+        ASSIGNED = "ASSIGNED", "Assigned"
+        ACCEPTED = "ACCEPTED", "Accepted"
+        DECLINED = "DECLINED", "Declined"
+
+    assignment_no = models.CharField(max_length=64)
+    review_round_id = models.UUIDField(db_index=True)
+    reviewer_staff_id = models.UUIDField()
+    reviewer_role = models.CharField(
+        max_length=16,
+        choices=Role.choices,
+        default=Role.EXPERT,
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.ASSIGNED,
+        db_index=True,
+    )
+    conflict_declared = models.BooleanField(default=False, db_index=True)
+    conflict_note = models.TextField(blank=True, default="")
+    assigned_by = models.PositiveBigIntegerField(null=True, blank=True)
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "hr13_title_review_assignment"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "assignment_no"),
+                name="uq_hr13_review_assignment_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "review_round_id", "reviewer_staff_id"),
+                name="uq_hr13_review_round_reviewer",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "review_round_id", "status"),
+                name="idx_hr13_assignment_round",
+            ),
+        ]
+
+
+class TitleReviewBallot(HrTenantScopedModel):
+    """Append-only reviewer ballot for one accepted non-conflicted assignment."""
+
+    class Recommendation(models.TextChoices):
+        PASS = "PASS", "Pass"
+        FAIL = "FAIL", "Fail"
+        ABSTAIN = "ABSTAIN", "Abstain"
+
+    ballot_no = models.CharField(max_length=64)
+    review_round_id = models.UUIDField(db_index=True)
+    assignment_id = models.UUIDField()
+    recommendation = models.CharField(
+        max_length=16,
+        choices=Recommendation.choices,
+        db_index=True,
+    )
+    score = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    rationale = models.TextField(blank=True, default="")
+    submitted_by = models.PositiveBigIntegerField(null=True, blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "ballot_no",
+        "review_round_id",
+        "assignment_id",
+        "recommendation",
+        "score",
+        "rationale",
+        "submitted_by",
+    )
+
+    class Meta:
+        db_table = "hr13_title_review_ballot"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "ballot_no"),
+                name="uq_hr13_review_ballot_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "review_round_id", "assignment_id"),
+                name="uq_hr13_review_round_assignment_ballot",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "review_round_id", "recommendation"),
+                name="idx_hr13_ballot_round",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "TITLE_REVIEW_BALLOT_IMMUTABLE: submitted ballots must be appended, not edited"
+                    )
+        return super().save(*args, **kwargs)
+
+
 class ProfessionalTitleResult(HrTenantScopedModel):
     class Status(models.TextChoices):
         EFFECTIVE = "EFFECTIVE", "Effective"
@@ -241,18 +446,30 @@ class ProfessionalTitleResult(HrTenantScopedModel):
     title_level_code = models.CharField(max_length=64, blank=True, default="")
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.EFFECTIVE, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.EFFECTIVE,
+        db_index=True,
+    )
     supersedes_result_id = models.UUIDField(null=True, blank=True)
 
     class Meta:
         db_table = "hr13_professional_title_result"
         constraints = [
-            models.UniqueConstraint(fields=("tenant_id", "result_no"), name="uq_hr13_result_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "result_no"),
+                name="uq_hr13_result_tenant_no",
+            ),
             models.CheckConstraint(
-                condition=Q(effective_to__isnull=True) | Q(effective_to__gt=models.F("effective_from")),
+                condition=Q(effective_to__isnull=True)
+                | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr13_result_effective_range",
             ),
         ]
         indexes = [
-            models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr13_result_tenant_person"),
+            models.Index(
+                fields=("tenant_id", "person_id", "status"),
+                name="idx_hr13_result_tenant_person",
+            ),
         ]
