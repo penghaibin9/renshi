@@ -1,10 +1,4 @@
-"""HR13 title evaluation authority models.
-
-HR13 owns the frozen evaluation policy, application workflow, evidence snapshots
-used by the review, qualification decisions, and formal title result history.
-Upstream HR03/09/10/12 facts are referenced through provider metadata and copied
-only as review-time snapshots; HR13 never becomes their source of truth.
-"""
+"""HR13 title evaluation authority models."""
 
 from __future__ import annotations
 
@@ -30,6 +24,7 @@ class TitlePolicyVersion(HrVersionedModel):
             ("hr.title.view", "查看 HR13 职称评审工作区"),
             ("hr.title.review", "执行 HR13 资格审查"),
             ("hr.title.panel", "维护 HR13 专家评议与表决"),
+            ("hr.title.publicity", "维护 HR13 公示与异议复核"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -100,8 +95,6 @@ class TitleApplicationCase(HrTenantScopedModel):
 
 
 class TitleQualificationDecision(HrTenantScopedModel):
-    """Append-only eligibility-review decision for one submission attempt."""
-
     class Decision(models.TextChoices):
         ELIGIBLE = "ELIGIBLE", "Eligible"
         RETURNED = "RETURNED", "Returned for correction"
@@ -170,13 +163,6 @@ class TitleQualificationDecision(HrTenantScopedModel):
 
 
 class TitleMaterialSnapshot(HrTenantScopedModel):
-    """Immutable review-time evidence snapshot for one title application.
-
-    ``source_domain``/``source_ref`` point back to the upstream provider fact;
-    ``snapshot_json`` and ``content_hash`` preserve exactly what reviewers saw.
-    HR13 does not edit the upstream authority record through this model.
-    """
-
     class Status(models.TextChoices):
         ATTACHED = "ATTACHED", "Attached"
         RETURNED = "RETURNED", "Returned for correction"
@@ -255,8 +241,6 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
 
 
 class TitleReviewRound(HrTenantScopedModel):
-    """Frozen quorum and pass-threshold authority for one review attempt."""
-
     class Status(models.TextChoices):
         OPEN = "OPEN", "Open"
         PASSED = "PASSED", "Passed"
@@ -337,8 +321,6 @@ class TitleReviewRound(HrTenantScopedModel):
 
 
 class TitleReviewAssignment(HrTenantScopedModel):
-    """Reviewer assignment with an explicit conflict/recusal decision."""
-
     class Role(models.TextChoices):
         EXPERT = "EXPERT", "Expert"
         COMMITTEE = "COMMITTEE", "Committee member"
@@ -390,8 +372,6 @@ class TitleReviewAssignment(HrTenantScopedModel):
 
 
 class TitleReviewBallot(HrTenantScopedModel):
-    """Append-only reviewer ballot for one accepted non-conflicted assignment."""
-
     class Recommendation(models.TextChoices):
         PASS = "PASS", "Pass"
         FAIL = "FAIL", "Fail"
@@ -456,6 +436,87 @@ class TitleReviewBallot(HrTenantScopedModel):
                         "TITLE_REVIEW_BALLOT_IMMUTABLE: submitted ballots must be appended, not edited"
                     )
         return super().save(*args, **kwargs)
+
+
+class TitlePublicityRecord(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        CLOSED = "CLOSED", "Closed"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    publicity_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField(db_index=True)
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    content_snapshot_json = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+    )
+    opened_by = models.PositiveBigIntegerField(null=True, blank=True)
+    closed_by = models.PositiveBigIntegerField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "hr13_title_publicity_record"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "publicity_no"),
+                name="uq_hr13_publicity_tenant_no",
+            ),
+            models.CheckConstraint(
+                condition=Q(end_at__gt=models.F("start_at")),
+                name="ck_hr13_publicity_time_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "application_case_id", "status"),
+                name="idx_hr13_publicity_case",
+            ),
+        ]
+
+
+class TitleAppealRecord(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        OPEN = "OPEN", "Open"
+        REJECTED = "REJECTED", "Rejected"
+        UPHELD = "UPHELD", "Upheld"
+        WITHDRAWN = "WITHDRAWN", "Withdrawn"
+
+    appeal_no = models.CharField(max_length=64)
+    publicity_id = models.UUIDField(db_index=True)
+    application_case_id = models.UUIDField(db_index=True)
+    appellant_ref = models.CharField(max_length=128, blank=True, default="")
+    reason = models.TextField()
+    evidence_json = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+    )
+    resolution = models.TextField(blank=True, default="")
+    resolved_by = models.PositiveBigIntegerField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "hr13_title_appeal_record"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "appeal_no"),
+                name="uq_hr13_appeal_tenant_no",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "publicity_id", "status"),
+                name="idx_hr13_appeal_publicity",
+            ),
+        ]
 
 
 class ProfessionalTitleResult(HrTenantScopedModel):
