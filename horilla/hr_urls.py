@@ -35,9 +35,10 @@ urlpatterns = [
     path("", include("hr_assessment.api.urls")),
 ]
 
-# HR13~HR18 are isolated parallel construction lines. Registration stays
-# explicit while child branches are developed independently; every Authority
-# that is physically present in the integrated code tree is registered here.
+# HR13~HR18 are isolated parallel construction lines. Registration remains
+# explicit and ordered, while missing sibling apps are not imported on an
+# individual child branch. Once branches are recovered together, every present
+# Authority is registered by the same table without merge-conflict edits.
 PARALLEL_HR_ROUTES = [
     ("hr_title", "hr/titles/", "api/v1/hr/titles/"),  # HR13
     ("hr_appointment", "hr/appointments/", "api/v1/hr/appointments/"),  # HR14
