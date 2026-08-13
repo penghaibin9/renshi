@@ -52,7 +52,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         },
         "recentPopulations": list(
             populations.order_by("population_code", "-version_no")[:12].values(
-                "id", "population_code", "name", "version_no", "status", "root_domain",
+                "id", "population_code", "name", "version_no", "status", "root_domain", "grain",
                 "predicate_json", "source_domains", "as_of_required", "updated_at"
             )
         ),
@@ -108,8 +108,10 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "submissionSnapshot": True,
             "sourceGate": True,
             "populationDimension": True,
+            "populationGrain": True,
             "submissionAsOfGate": True,
             "asOfEvidenceEngine": True,
+            "hr03CountEvaluation": True,
             "asOfEngine": False,
             "metricEvaluation": False,
             "qualityRuleExecution": True,
