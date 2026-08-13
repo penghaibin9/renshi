@@ -15,6 +15,7 @@ from hr_data.services.evaluation_service import (
     Hr03AsOfEvaluationService,
 )
 from hr_data.services.formal_fact_evaluation_service import FormalFactAsOfEvaluationService
+from hr_data.services.formal_fact_evidence_guard import verify_formal_fact_evidence
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,14 @@ class HistoricalEvaluationRouter:
             "historical value evaluator supports HR03, HR13 or HR14 single-domain populations only",
         )
 
+    def _guard_formal(self, *, population: PopulationDefinitionVersion, result: AsOfEvaluationResult):
+        verify_formal_fact_evidence(
+            tenant_id=self.tenant_id,
+            domain=population.root_domain,
+            result=result,
+            actor_user_id=self.actor_user_id,
+        )
+
     def evaluate_population(
         self,
         *,
@@ -83,6 +92,7 @@ class HistoricalEvaluationRouter:
                 population_version=population.version_no,
                 as_of_date=as_of_date,
             )
+            self._guard_formal(population=population, result=result)
             return RoutedEvaluationResult(result, version)
         result = service.evaluate_population(
             evidence_no=evidence_no,
@@ -125,6 +135,7 @@ class HistoricalEvaluationRouter:
                 metric_version=metric.version_no,
                 as_of_date=as_of_date,
             )
+            self._guard_formal(population=population, result=result)
             return RoutedEvaluationResult(result, version)
         result = service.evaluate_count_metric(
             evidence_no=evidence_no,
