@@ -4,8 +4,11 @@ A submission snapshot is immutable payload identity. Creation derives the
 formal definition/version/as-of identity from a tenant-owned AsOfEvidenceSnapshot;
 callers cannot self-assert those fields. Validation is fail-closed: formal
 reporting requires the same evidence to be COMPLETE with a trusted hash.
-Missing/partial/unavailable history can never be normalized into a valid formal
-submission.
+
+APPROVED is not SUBMITTED. Formal dispatch must first be durably queued by the
+async dispatch service; only the worker owning the matching dispatch_ref may
+confirm DISPATCH_QUEUED -> SUBMITTED. External receipt then owns the final
+ACCEPTED/REJECTED result.
 """
 
 from __future__ import annotations
@@ -210,17 +213,68 @@ class SubmissionLifecycleService:
 
     @transaction.atomic
     def submit(self, submission_id) -> SubmissionSnapshot:
+        # Compatibility guard: old direct callers must not bypass the async
+        # dispatch authority introduced for formal reporting.
+        self._lock(submission_id)
+        raise SubmissionLifecycleError(
+            "SUBMISSION_ASYNC_DISPATCH_REQUIRED",
+            "formal submission must be queued through the async dispatch authority",
+        )
+
+    @transaction.atomic
+    def confirm_dispatched(self, submission_id, *, dispatch_ref: str) -> SubmissionSnapshot:
         snapshot = self._lock(submission_id)
-        if snapshot.status != SubmissionSnapshot.Status.APPROVED:
+        dispatch_ref = str(dispatch_ref or "").strip()
+        if snapshot.status != SubmissionSnapshot.Status.DISPATCH_QUEUED:
             raise SubmissionLifecycleError(
                 "SUBMISSION_INVALID_STATE",
-                f"submission status {snapshot.status} cannot transition to SUBMITTED",
+                f"submission status {snapshot.status} cannot be confirmed as submitted",
+            )
+        if not dispatch_ref or dispatch_ref != snapshot.dispatch_ref:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_DISPATCH_REF_MISMATCH",
+                "dispatch confirmation must match the queued dispatch_ref",
             )
         snapshot.status = SubmissionSnapshot.Status.SUBMITTED
         snapshot.submitted_at = timezone.now()
+        snapshot.dispatch_error = ""
         snapshot.updated_by = self.actor_user_id
         snapshot.save(
-            update_fields=["status", "submitted_at", "updated_by", "updated_at"]
+            update_fields=[
+                "status",
+                "submitted_at",
+                "dispatch_error",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+        return snapshot
+
+    @transaction.atomic
+    def record_dispatch_failure(
+        self,
+        submission_id,
+        *,
+        dispatch_ref: str,
+        error: str,
+    ) -> SubmissionSnapshot:
+        snapshot = self._lock(submission_id)
+        dispatch_ref = str(dispatch_ref or "").strip()
+        if snapshot.status != SubmissionSnapshot.Status.DISPATCH_QUEUED:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_INVALID_STATE",
+                f"submission status {snapshot.status} cannot record dispatch failure",
+            )
+        if not dispatch_ref or dispatch_ref != snapshot.dispatch_ref:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_DISPATCH_REF_MISMATCH",
+                "dispatch failure must match the queued dispatch_ref",
+            )
+        snapshot.status = SubmissionSnapshot.Status.DISPATCH_FAILED
+        snapshot.dispatch_error = str(error or "dispatch failed")[:2000]
+        snapshot.updated_by = self.actor_user_id
+        snapshot.save(
+            update_fields=["status", "dispatch_error", "updated_by", "updated_at"]
         )
         return snapshot
 
