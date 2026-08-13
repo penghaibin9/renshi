@@ -12,27 +12,27 @@ urlpatterns = [
     ),
     path(
         "applications/<uuid:case_id>/review-rounds/",
-        api.review_round_open,
+        api.open_review_round,
         name="review-round-open",
     ),
     path(
         "review-rounds/<uuid:round_id>/assignments/",
-        api.review_assignment_create,
+        api.create_review_assignment,
         name="review-assignment-create",
     ),
     path(
-        "review-assignments/<uuid:assignment_id>/response/",
-        api.review_assignment_respond,
+        "review-assignments/<uuid:assignment_id>/respond/",
+        api.respond_review_assignment,
         name="review-assignment-respond",
     ),
     path(
-        "review-assignments/<uuid:assignment_id>/ballot/",
-        api.review_ballot_submit,
+        "review-assignments/<uuid:assignment_id>/ballots/",
+        api.submit_review_ballot,
         name="review-ballot-submit",
     ),
     path(
         "review-rounds/<uuid:round_id>/close/",
-        api.review_round_close,
+        api.close_review_round,
         name="review-round-close",
     ),
 ]
