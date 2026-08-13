@@ -40,15 +40,28 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
 
     @patch("hr_exit.services.saga_service.ExitEffect.objects")
     @patch("hr_exit.services.saga_service.ExitCase.objects")
-    def test_begin_is_tenant_scoped_and_replays_same_idempotency_key(
+    def test_begin_is_tenant_scoped_and_replays_exact_frozen_payload(
         self, case_objects, effect_objects
     ):
         case = SimpleNamespace(id="case-1")
         case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
-        existing = SimpleNamespace(case_id="case-1")
+        existing = SimpleNamespace(
+            case_id="case-1",
+            correlation_id="corr-1",
+            hr03_status=ExitEffect.ParticipantStatus.SUCCESS,
+            hr14_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            iam_status=ExitEffect.ParticipantStatus.SUCCESS,
+            settlement_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            archive_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+        )
         effect_objects.select_for_update.return_value.filter.return_value.first.return_value = existing
 
-        result = self.service.begin(case_id="case-1", idempotency_key="exit:case-1:v1")
+        result = self.service.begin(
+            case_id="case-1",
+            idempotency_key="exit:case-1:v1",
+            correlation_id=" corr-1 ",
+            required_participants=["iam"],
+        )
 
         self.assertIs(result, existing)
         case_objects.select_for_update.return_value.filter.assert_called_once_with(
@@ -57,6 +70,63 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
         effect_objects.select_for_update.return_value.filter.assert_called_once_with(
             tenant_id=77, idempotency_key="exit:case-1:v1"
         )
+        effect_objects.create.assert_not_called()
+
+    @patch("hr_exit.services.saga_service.ExitEffect.objects")
+    @patch("hr_exit.services.saga_service.ExitCase.objects")
+    def test_same_idempotency_key_rejects_changed_required_participants(
+        self, case_objects, effect_objects
+    ):
+        case = SimpleNamespace(id="case-1")
+        case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
+        existing = SimpleNamespace(
+            case_id="case-1",
+            correlation_id="corr-1",
+            hr03_status=ExitEffect.ParticipantStatus.SUCCESS,
+            hr14_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            iam_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            settlement_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            archive_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+        )
+        effect_objects.select_for_update.return_value.filter.return_value.first.return_value = existing
+
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.begin(
+                case_id="case-1",
+                idempotency_key="exit:case-1:v1",
+                correlation_id="corr-1",
+                required_participants=["IAM"],
+            )
+
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_IDEMPOTENCY_CONFLICT")
+        effect_objects.create.assert_not_called()
+
+    @patch("hr_exit.services.saga_service.ExitEffect.objects")
+    @patch("hr_exit.services.saga_service.ExitCase.objects")
+    def test_same_idempotency_key_rejects_changed_correlation_id(
+        self, case_objects, effect_objects
+    ):
+        case = SimpleNamespace(id="case-1")
+        case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
+        existing = SimpleNamespace(
+            case_id="case-1",
+            correlation_id="corr-1",
+            hr03_status=ExitEffect.ParticipantStatus.SUCCESS,
+            hr14_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            iam_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            settlement_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            archive_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+        )
+        effect_objects.select_for_update.return_value.filter.return_value.first.return_value = existing
+
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.begin(
+                case_id="case-1",
+                idempotency_key="exit:case-1:v1",
+                correlation_id="corr-2",
+            )
+
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_IDEMPOTENCY_CONFLICT")
         effect_objects.create.assert_not_called()
 
     @patch("hr_exit.services.saga_service.ExitEffect.objects")
@@ -76,12 +146,14 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
         result = self.service.begin(
             case_id="case-1",
             idempotency_key="exit:case-1:v3",
+            correlation_id=" corr-3 ",
             required_participants=["IAM", "ARCHIVE"],
         )
 
         self.assertIs(result, created)
         kwargs = effect_objects.create.call_args.kwargs
         self.assertEqual(kwargs["effect_version"], 3)
+        self.assertEqual(kwargs["correlation_id"], "corr-3")
         self.assertEqual(kwargs["hr03_status"], ExitEffect.ParticipantStatus.PENDING)
         self.assertEqual(kwargs["iam_status"], ExitEffect.ParticipantStatus.PENDING)
         self.assertEqual(kwargs["archive_status"], ExitEffect.ParticipantStatus.PENDING)
@@ -92,6 +164,28 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
         with self.assertRaises(ExitSagaError) as cm:
             self.service.begin(case_id="case-1", idempotency_key="")
         self.assertEqual(cm.exception.code, "EXIT_EFFECT_IDEMPOTENCY_KEY_REQUIRED")
+
+    def test_effect_rejects_oversized_frozen_identifiers_before_database_access(self):
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.begin(case_id="case-1", idempotency_key="x" * 129)
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_IDEMPOTENCY_KEY_INVALID")
+
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.begin(
+                case_id="case-1",
+                idempotency_key="exit:case-1:v1",
+                correlation_id="x" * 129,
+            )
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_CORRELATION_ID_INVALID")
+
+    def test_effect_rejects_unknown_required_participant_before_database_access(self):
+        with self.assertRaises(ExitSagaError) as cm:
+            self.service.begin(
+                case_id="case-1",
+                idempotency_key="exit:case-1:v1",
+                required_participants=["UNKNOWN"],
+            )
+        self.assertEqual(cm.exception.code, "EXIT_EFFECT_PARTICIPANT_UNKNOWN")
 
     @patch("hr_exit.services.saga_service.ExitEffect.objects")
     def test_successful_irreversible_participant_cannot_be_downgraded(self, effect_objects):
