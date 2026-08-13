@@ -55,6 +55,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "socialInsuranceHousingFund": False,
             "payment": False,
             "financeReconciliation": False,
+            "legacyReadReconcile": True,
             "legacyTakeover": False,
         },
     }
