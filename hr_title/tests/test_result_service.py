@@ -1,5 +1,4 @@
 from datetime import date
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
@@ -23,10 +22,11 @@ class ProfessionalTitleResultServiceTests(TestCase):
             effective_from=effective_from,
         )
 
+    @patch.object(ProfessionalTitleResultService, "_require_closed_publicity")
     @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
     @patch("hr_title.services.result_service.TitleApplicationCase.objects")
-    def test_make_effective_locks_case_inside_tenant_and_creates_one_root_fact(
-        self, case_objects, result_objects
+    def test_make_effective_locks_case_requires_publicity_and_creates_one_root_fact(
+        self, case_objects, result_objects, publicity_gate
     ):
         case = MagicMock()
         case.id = "case-1"
@@ -45,6 +45,7 @@ class ProfessionalTitleResultServiceTests(TestCase):
         case_objects.select_for_update.return_value.filter.assert_called_once_with(
             id="case-1", tenant_id=77
         )
+        publicity_gate.assert_called_once_with(case)
         result_objects.filter.assert_called_once_with(
             tenant_id=77, application_case_id="case-1"
         )
@@ -54,9 +55,12 @@ class ProfessionalTitleResultServiceTests(TestCase):
             update_fields=["status", "updated_by", "updated_at"]
         )
 
+    @patch.object(ProfessionalTitleResultService, "_require_closed_publicity")
     @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
     @patch("hr_title.services.result_service.TitleApplicationCase.objects")
-    def test_second_root_result_is_rejected(self, case_objects, result_objects):
+    def test_second_root_result_is_rejected_after_publicity_gate(
+        self, case_objects, result_objects, publicity_gate
+    ):
         case = MagicMock()
         case.id = "case-1"
         case.status = TitleApplicationCase.Status.PUBLICITY
@@ -68,6 +72,7 @@ class ProfessionalTitleResultServiceTests(TestCase):
                 application_case_id="case-1",
                 payload=self._payload(),
             )
+        publicity_gate.assert_called_once_with(case)
         result_objects.create.assert_not_called()
 
     @patch("hr_title.services.result_service.TitleApplicationCase.objects")
