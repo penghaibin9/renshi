@@ -60,6 +60,9 @@ class AsOfReconstructionService:
             "metric_code",
         ),
     }
+    _BUILTIN_PROVIDERS = {
+        "HR03": "hr_data.providers.hr03.asof_provider",
+    }
 
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
         if not tenant_id:
@@ -174,13 +177,16 @@ class AsOfReconstructionService:
             )
         return domains
 
-    @staticmethod
-    def _provider_registry() -> Mapping:
-        registry = getattr(settings, "HR18_ASOF_PROVIDERS", {})
-        if not isinstance(registry, Mapping):
+    @classmethod
+    def _provider_registry(cls) -> Mapping:
+        configured = getattr(settings, "HR18_ASOF_PROVIDERS", {})
+        if not isinstance(configured, Mapping):
             raise AsOfReconstructionError(
                 "ASOF_PROVIDER_REGISTRY_INVALID", "HR18_ASOF_PROVIDERS must be a mapping"
             )
+        registry = dict(cls._BUILTIN_PROVIDERS)
+        for domain, provider_path in configured.items():
+            registry[str(domain or "").strip().upper()] = provider_path
         return registry
 
     def _provider_receipt(
