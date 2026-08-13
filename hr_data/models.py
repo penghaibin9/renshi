@@ -94,6 +94,111 @@ class MetricDefinitionVersion(HrVersionedModel):
         ]
 
 
+class DataQualityRuleVersion(HrVersionedModel):
+    class Severity(models.TextChoices):
+        INFO = "INFO", "Info"
+        WARNING = "WARNING", "Warning"
+        ERROR = "ERROR", "Error"
+        CRITICAL = "CRITICAL", "Critical"
+
+    rule_code = models.CharField(max_length=64)
+    name = models.CharField(max_length=200)
+    source_domain = models.CharField(max_length=16)
+    severity = models.CharField(
+        max_length=16,
+        choices=Severity.choices,
+        default=Severity.WARNING,
+        db_index=True,
+    )
+    parameters_json = models.JSONField(default=dict, blank=True)
+    as_of_required = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "hr18_data_quality_rule_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "rule_code", "version_no"),
+                name="uq_hr18_quality_rule_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "rule_code", "status"),
+                name="idx_hr18_quality_rule_status",
+            ),
+            models.Index(
+                fields=("tenant_id", "source_domain", "status"),
+                name="idx_hr18_quality_rule_domain",
+            ),
+        ]
+
+
+class DataQualityRun(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        SUCCESS = "SUCCESS", "Execution completed"
+        PARTIAL = "PARTIAL", "Execution partially completed"
+        UNAVAILABLE = "UNAVAILABLE", "Provider unavailable"
+        ERROR = "ERROR", "Provider error"
+
+    run_no = models.CharField(max_length=64)
+    rule_code = models.CharField(max_length=64)
+    rule_version = models.PositiveIntegerField()
+    source_domain = models.CharField(max_length=16)
+    as_of_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, db_index=True)
+    provider_version = models.CharField(max_length=64, blank=True, default="")
+    evidence_hash = models.CharField(max_length=64, blank=True, default="")
+    finding_count = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(blank=True, default="")
+    executed_at = models.DateTimeField(auto_now_add=True)
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "run_no",
+        "rule_code",
+        "rule_version",
+        "source_domain",
+        "as_of_date",
+        "status",
+        "provider_version",
+        "evidence_hash",
+        "finding_count",
+        "error_message",
+    )
+
+    class Meta:
+        db_table = "hr18_data_quality_run"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "run_no"),
+                name="uq_hr18_quality_run_no",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "rule_code", "status"),
+                name="idx_hr18_quality_run_rule",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "HR18_DATA_QUALITY_RUN_IMMUTABLE: execution runs must be appended"
+                    )
+        return super().save(*args, **kwargs)
+
+
 class DataQualityFinding(HrTenantScopedModel):
     class Severity(models.TextChoices):
         INFO = "INFO", "Info"
@@ -108,15 +213,19 @@ class DataQualityFinding(HrTenantScopedModel):
         DISMISSED = "DISMISSED", "Dismissed"
 
     finding_no = models.CharField(max_length=64)
+    quality_run_id = models.UUIDField(null=True, blank=True)
     rule_code = models.CharField(max_length=64)
+    rule_version = models.PositiveIntegerField(null=True, blank=True)
     source_domain = models.CharField(max_length=16)
     source_object_ref = models.CharField(max_length=128)
+    finding_fingerprint = models.CharField(max_length=64, blank=True, default="")
     severity = models.CharField(
         max_length=16,
         choices=Severity.choices,
         default=Severity.WARNING,
         db_index=True,
     )
+    details_json = models.JSONField(default=dict, blank=True)
     status = models.CharField(
         max_length=24,
         choices=Status.choices,
@@ -126,6 +235,20 @@ class DataQualityFinding(HrTenantScopedModel):
     detected_at = models.DateTimeField()
     resolved_at = models.DateTimeField(null=True, blank=True)
 
+    _IDENTITY_FIELDS = (
+        "tenant_id",
+        "finding_no",
+        "quality_run_id",
+        "rule_code",
+        "rule_version",
+        "source_domain",
+        "source_object_ref",
+        "finding_fingerprint",
+        "severity",
+        "details_json",
+        "detected_at",
+    )
+
     class Meta:
         db_table = "hr18_data_quality_finding"
         constraints = [
@@ -133,13 +256,38 @@ class DataQualityFinding(HrTenantScopedModel):
                 fields=("tenant_id", "finding_no"),
                 name="uq_hr18_finding_tenant_no",
             ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "quality_run_id", "finding_fingerprint"),
+                name="uq_hr18_finding_run_fingerprint",
+            ),
         ]
         indexes = [
             models.Index(
                 fields=("tenant_id", "source_domain", "status"),
                 name="idx_hr18_finding_domain_status",
             ),
+            models.Index(
+                fields=("tenant_id", "quality_run_id", "status"),
+                name="idx_hr18_finding_run_status",
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._IDENTITY_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._IDENTITY_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "HR18_DATA_QUALITY_FINDING_IDENTITY_IMMUTABLE: finding identity cannot change"
+                    )
+        return super().save(*args, **kwargs)
 
 
 class AsOfEvidenceSnapshot(HrTenantScopedModel):
