@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, asof_api, metric_api, quality_api, submission_api
+from . import api, asof_api, evaluation_api, metric_api, quality_api, submission_api
 
 app_name = "hr_data_api"
 
@@ -25,6 +25,11 @@ urlpatterns = [
         "as-of/evidence/",
         asof_api.reconstruct_evidence,
         name="asof-evidence-reconstruct",
+    ),
+    path(
+        "as-of/evaluate/",
+        evaluation_api.evaluate,
+        name="asof-evaluate",
     ),
     path(
         "quality/rules/",
