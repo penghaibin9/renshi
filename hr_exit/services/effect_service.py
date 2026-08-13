@@ -161,6 +161,14 @@ class ExitEffectService:
         required_participants: Iterable[str] = (),
     ) -> ExitEffectResult:
         """Apply HR03 employment termination and record it in the durable saga."""
+        fact_no = str(fact_no or "").strip()
+        if not fact_no:
+            raise ExitEffectError("EXIT_FACT_NO_REQUIRED", "fact_no is required")
+        if len(fact_no) > 64:
+            raise ExitEffectError(
+                "EXIT_FACT_NO_INVALID", "fact_no cannot exceed 64 characters"
+            )
+
         saga = ExitEffectSagaService(self.tenant_id, self.actor_user_id)
         effect = saga.begin(
             case_id=case_id,
