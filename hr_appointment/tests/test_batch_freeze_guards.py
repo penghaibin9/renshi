@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, timedelta
 
 from django.core.exceptions import ValidationError
@@ -8,6 +9,10 @@ from hr_appointment.models import (
     AppointmentPolicyVersion,
     AppointmentPositionSupplySnapshot,
     AppointmentQuotaPool,
+)
+from hr_appointment.population_models import (
+    AppointmentPopulationMemberSnapshot,
+    AppointmentPopulationSnapshot,
 )
 from hr_appointment.services.batch_service import AppointmentBatchInput, AppointmentBatchService
 
@@ -34,6 +39,21 @@ class AppointmentBatchFreezeGuardTests(TestCase):
                 application_from=self.now - timedelta(hours=1),
                 application_to=self.now + timedelta(days=5),
             )
+        )
+        population = AppointmentPopulationSnapshot.objects.create(
+            tenant_id=self.tenant,
+            batch=self.batch,
+            as_of_date=self.now.date(),
+            snapshot_at=self.now,
+            member_count=1,
+            content_hash="a" * 64,
+        )
+        AppointmentPopulationMemberSnapshot.objects.create(
+            tenant_id=self.tenant,
+            snapshot=population,
+            person_id=uuid.uuid4(),
+            staff_id=uuid.uuid4(),
+            member_hash="b" * 64,
         )
         self.supply = AppointmentPositionSupplySnapshot.objects.create(
             tenant_id=self.tenant,
