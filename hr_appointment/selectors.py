@@ -5,6 +5,8 @@ from .models import (
     AppointmentApplicationCase,
     AppointmentBatch,
     AppointmentPolicyVersion,
+    AppointmentPublicityObjection,
+    AppointmentPublicityRecord,
     AppointmentQuotaPool,
     AppointmentRankingResult,
     PositionAppointmentFact,
@@ -20,12 +22,20 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     policies = AppointmentPolicyVersion.objects.filter(tenant_id=tenant_id)
     facts = PositionAppointmentFact.objects.filter(tenant_id=tenant_id)
     rankings = AppointmentRankingResult.objects.filter(tenant_id=tenant_id)
+    publicities = AppointmentPublicityRecord.objects.filter(tenant_id=tenant_id)
+    objections = AppointmentPublicityObjection.objects.filter(tenant_id=tenant_id)
     quota_pools = AppointmentQuotaPool.objects.filter(
         tenant_id=tenant_id, batch__tenant_id=tenant_id
     ).select_related("batch")
     counts = Counter(cases.values_list("status", flat=True))
     quota_total = sum(row.available for row in quota_pools.iterator())
     quota_rows = list(quota_pools.order_by("-updated_at")[:12])
+    unresolved_objections = objections.filter(
+        status__in=[
+            AppointmentPublicityObjection.Status.RECEIVED,
+            AppointmentPublicityObjection.Status.UNDER_REVIEW,
+        ]
+    )
     return {
         "summary": {
             "policyVersions": policies.count(),
@@ -36,6 +46,11 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "selectedRankings": rankings.filter(outcome=AppointmentRankingResult.Outcome.SELECTED).count(),
             "proposed": counts.get("PROPOSED", 0),
             "inPublicity": counts.get("PUBLICITY", 0),
+            "openPublicities": publicities.filter(status=AppointmentPublicityRecord.Status.OPEN).count(),
+            "closedPublicities": publicities.filter(status=AppointmentPublicityRecord.Status.CLOSED).count(),
+            "publicityObjections": objections.count(),
+            "unresolvedObjections": unresolved_objections.count(),
+            "upheldObjections": objections.filter(status=AppointmentPublicityObjection.Status.UPHELD).count(),
             "effectiveAppointments": facts.filter(status="EFFECTIVE").count(),
             "quotaPools": quota_pools.count(),
             "availableQuota": quota_total,
@@ -58,6 +73,21 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "id", "ranking_no", "application_case_id", "batch_no",
                 "position_instance_id", "attempt_no", "total_score", "rank_no",
                 "outcome", "score_snapshot_json", "finalized_by", "finalized_at"
+            )
+        ),
+        "recentPublicities": list(
+            publicities.order_by("-opened_at")[:16].values(
+                "id", "publicity_no", "application_case_id", "ranking_result_id",
+                "batch_no", "person_id", "position_instance_id", "attempt_no",
+                "start_at", "end_at", "status", "opened_by", "opened_at",
+                "closed_by", "closed_at", "cancellation_reason"
+            )
+        ),
+        "recentObjections": list(
+            objections.order_by("-submitted_at")[:24].values(
+                "id", "objection_no", "publicity_id", "submitter_ref", "content_summary",
+                "evidence_refs_json", "status", "submitted_at", "resolved_by",
+                "resolved_at", "resolution_note"
             )
         ),
         "recentAppointments": list(
@@ -96,7 +126,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "quotaSnapshot": True,
             "competition": True,
             "reviewRanking": True,
-            "publicity": False,
+            "publicity": True,
+            "publicityObjection": True,
             "termChange": False,
         },
     }
