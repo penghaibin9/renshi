@@ -1,21 +1,24 @@
 """Typed provider gateway for the HR17 SELF experience.
 
-HR17 owns presentation and aggregation only.  Source business truth stays in
-HR03-HR16.  Providers are isolated so one unavailable or failing source cannot
+HR17 owns presentation and aggregation only. Source business truth stays in
+HR03-HR16. Providers are isolated so one unavailable or failing source cannot
 turn into a plausible empty value and cannot take down the whole SELF bootstrap.
 
-The registry is intentionally extensible: source domains register adapters when
-their real SELF read contract is available on the integration branch.  Missing
-adapters remain explicitly UNAVAILABLE; HR17 never falls back to legacy tables.
+Integration branches register real source adapters explicitly through
+``HR17_SELF_PROVIDER_PATHS``. Missing or invalid adapters remain UNAVAILABLE;
+HR17 never falls back to legacy tables or copies source state machines.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Optional
 
+from django.conf import settings
 from django.utils import timezone
+from django.utils.module_loading import import_string
 
 from hr_self.services.identity_service import SelfIdentityContext
 
@@ -146,7 +149,35 @@ def hr03_self_provider(context: SelfIdentityContext) -> SelfProviderResult:
     )
 
 
+def configured_self_provider_paths() -> dict[str, str]:
+    raw = getattr(settings, "HR17_SELF_PROVIDER_PATHS", {}) or {}
+    if not isinstance(raw, Mapping):
+        return {}
+    configured = {}
+    for domain, path in raw.items():
+        normalized = str(domain or "").strip().upper()
+        if normalized not in SelfProviderRegistry.REQUIRED_DOMAINS:
+            continue
+        value = str(path or "").strip()
+        if value:
+            configured[normalized] = value
+    return configured
+
+
 def default_self_provider_registry() -> SelfProviderRegistry:
     registry = SelfProviderRegistry()
+    # HR03 identity/profile is foundational and cannot be overridden by runtime
+    # configuration. Other domains are attached only through explicit adapters.
     registry.register("HR03", hr03_self_provider)
+    for domain, path in configured_self_provider_paths().items():
+        if domain == "HR03":
+            continue
+        try:
+            provider = import_string(path)
+        except Exception:
+            # Invalid integration configuration must degrade to UNAVAILABLE, not
+            # crash HR17 bootstrap or pretend a provider is registered.
+            continue
+        if callable(provider):
+            registry.register(domain, provider)
     return registry
