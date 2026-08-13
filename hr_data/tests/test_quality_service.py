@@ -55,6 +55,26 @@ def invalid_quality_provider(**_kwargs):
     return {"status": "OK", "providerVersion": "v1", "findings": []}
 
 
+def duplicate_fingerprint_provider(**_kwargs):
+    return {
+        "status": "OK",
+        "providerVersion": "hr03-quality-v5",
+        "evidenceHash": "f" * 64,
+        "findings": [
+            {
+                "sourceObjectRef": "employment:3001",
+                "fingerprint": "9" * 64,
+                "details": {"reason": "first"},
+            },
+            {
+                "sourceObjectRef": "employment:3002",
+                "fingerprint": "9" * 64,
+                "details": {"reason": "duplicate"},
+            },
+        ],
+    }
+
+
 class DataQualityRuleServiceTests(TestCase):
     def test_rule_content_is_versioned_and_exact_replay_is_idempotent(self):
         service = DataQualityRuleService(77, actor_user_id=9)
@@ -254,6 +274,30 @@ class DataQualityExecutionServiceTests(TestCase):
         self.assertEqual(outcome.run.status, DataQualityRun.Status.ERROR)
         self.assertEqual(outcome.run.finding_count, 0)
         self.assertIn("evidence contract", outcome.run.error_message)
+
+    @override_settings(
+        HR18_QUALITY_PROVIDERS={
+            "HR03": "hr_data.tests.test_quality_service.duplicate_fingerprint_provider"
+        }
+    )
+    def test_duplicate_provider_fingerprints_become_durable_error_run(self):
+        rule = self._rule()
+        outcome = DataQualityExecutionService(77).execute(
+            run_no="QRUN-DUPLICATE-FINGERPRINT",
+            rule_code=rule.rule_code,
+            rule_version=1,
+        )
+        self.assertEqual(outcome.run.status, DataQualityRun.Status.ERROR)
+        self.assertEqual(outcome.run.finding_count, 0)
+        self.assertEqual(outcome.findings, ())
+        self.assertIn("duplicate finding fingerprints", outcome.run.error_message)
+        self.assertTrue(
+            DataQualityRun.objects.filter(
+                tenant_id=77,
+                run_no="QRUN-DUPLICATE-FINGERPRINT",
+                status=DataQualityRun.Status.ERROR,
+            ).exists()
+        )
 
     @override_settings(
         HR18_QUALITY_PROVIDERS={
