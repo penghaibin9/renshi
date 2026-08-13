@@ -10,6 +10,10 @@ from hr_appointment.models import (
     AppointmentPositionSupplySnapshot,
     AppointmentQuotaPool,
 )
+from hr_appointment.population_models import (
+    AppointmentPopulationMemberSnapshot,
+    AppointmentPopulationSnapshot,
+)
 from hr_appointment.services.batch_service import (
     AppointmentBatchError,
     AppointmentBatchInput,
@@ -42,6 +46,25 @@ class AppointmentBatchServiceTests(TestCase):
                 application_to=self.now + timedelta(days=5),
             )
         )
+
+    def _population(self, batch):
+        person_id = uuid.uuid4()
+        snapshot = AppointmentPopulationSnapshot.objects.create(
+            tenant_id=self.tenant,
+            batch=batch,
+            as_of_date=self.now.date(),
+            snapshot_at=self.now,
+            member_count=1,
+            content_hash="a" * 64,
+        )
+        AppointmentPopulationMemberSnapshot.objects.create(
+            tenant_id=self.tenant,
+            snapshot=snapshot,
+            person_id=person_id,
+            staff_id=uuid.uuid4(),
+            member_hash="b" * 64,
+        )
+        return snapshot
 
     def _supply(self, batch):
         return AppointmentPositionSupplySnapshot.objects.create(
@@ -96,8 +119,13 @@ class AppointmentBatchServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_TARGETS_INVALID")
 
-    def test_publish_requires_frozen_supply_and_positive_quota(self):
+    def test_publish_requires_frozen_population_supply_and_positive_quota(self):
         batch = self._draft()
+        with self.assertRaises(AppointmentBatchError) as ctx:
+            self.service.publish(batch.id)
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_POPULATION_REQUIRED")
+
+        self._population(batch)
         with self.assertRaises(AppointmentBatchError) as ctx:
             self.service.publish(batch.id)
         self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_SUPPLY_REQUIRED")
@@ -119,6 +147,7 @@ class AppointmentBatchServiceTests(TestCase):
 
     def test_application_window_and_batch_phases_are_explicit(self):
         batch = self._draft()
+        self._population(batch)
         self._supply(batch)
         self._pool(batch)
         self.service.publish(batch.id)
@@ -134,6 +163,7 @@ class AppointmentBatchServiceTests(TestCase):
 
     def test_open_applications_rejects_before_or_after_frozen_window(self):
         batch = self._draft()
+        self._population(batch)
         self._supply(batch)
         self._pool(batch)
         self.service.publish(batch.id)
