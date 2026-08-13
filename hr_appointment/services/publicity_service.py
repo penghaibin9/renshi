@@ -153,15 +153,15 @@ class AppointmentPublicityService:
                 "APPOINTMENT_PUBLICITY_INVALID_BATCH_STATE",
                 f"publicity requires PROPOSED/PUBLICITY batch, got {batch.status}",
             )
-        if batch.publicity_from is not None and batch.publicity_from != start_at:
+        if batch.publicity_from is None or batch.publicity_to is None:
             raise AppointmentPublicityError(
-                "APPOINTMENT_PUBLICITY_BATCH_WINDOW_MISMATCH",
-                "publicity start does not match frozen batch publicity window",
+                "APPOINTMENT_PUBLICITY_BATCH_WINDOW_REQUIRED",
+                "publicity window must be frozen on the batch before publicity opens",
             )
-        if batch.publicity_to is not None and batch.publicity_to != end_at:
+        if batch.publicity_from != start_at or batch.publicity_to != end_at:
             raise AppointmentPublicityError(
                 "APPOINTMENT_PUBLICITY_BATCH_WINDOW_MISMATCH",
-                "publicity end does not match frozen batch publicity window",
+                "publicity window must exactly match the frozen batch publicity window",
             )
 
         attempt_no = (
@@ -192,18 +192,8 @@ class AppointmentPublicityService:
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
         batch.status = AppointmentBatch.Status.PUBLICITY
-        batch.publicity_from = start_at
-        batch.publicity_to = end_at
         batch.updated_by = self.actor_user_id
-        batch.save(
-            update_fields=[
-                "status",
-                "publicity_from",
-                "publicity_to",
-                "updated_by",
-                "updated_at",
-            ]
-        )
+        batch.save(update_fields=["status", "updated_by", "updated_at"])
         return PublicityOutcome(record, case, True)
 
     @transaction.atomic
