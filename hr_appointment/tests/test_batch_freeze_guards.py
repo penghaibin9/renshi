@@ -2,6 +2,7 @@ import uuid
 from datetime import date, timedelta
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.test import TestCase
 from django.utils import timezone
 
@@ -134,17 +135,21 @@ class AppointmentBatchFreezeGuardTests(TestCase):
         self.service.publish(self.batch.id)
 
         with self.assertRaises(ValidationError) as ctx:
-            self.supply.delete()
+            with transaction.atomic():
+                self.supply.delete()
         self.assertIn("APPOINTMENT_SUPPLY_SNAPSHOT_IMMUTABLE", str(ctx.exception))
 
         with self.assertRaises(ValidationError) as ctx:
-            self.pool.delete()
+            with transaction.atomic():
+                self.pool.delete()
         self.assertIn("APPOINTMENT_QUOTA_BASIS_IMMUTABLE", str(ctx.exception))
 
         with self.assertRaises(ValidationError) as ctx:
-            self.population_member.delete()
+            with transaction.atomic():
+                self.population_member.delete()
         self.assertIn("APPOINTMENT_POPULATION_MEMBER_IMMUTABLE", str(ctx.exception))
 
         with self.assertRaises(ValidationError) as ctx:
-            self.policy.delete()
+            with transaction.atomic():
+                self.policy.delete()
         self.assertIn("APPOINTMENT_POLICY_VERSION_IN_USE", str(ctx.exception))
