@@ -73,6 +73,8 @@ def _resolve_applicant_person_id(request, tenant_id: int):
     person_ids = list(
         HrAccountLink.objects.filter(
             tenant_id=tenant_id,
+            staff_id__tenant_id=tenant_id,
+            staff_id__person_id__tenant_id=tenant_id,
             auth_user_id=user_id,
             link_status=HrAccountLink.LinkStatus.ACTIVE,
         )
