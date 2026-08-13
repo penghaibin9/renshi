@@ -10,10 +10,23 @@ from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
 class PopulationDefinitionVersion(HrVersionedModel):
     """Versioned declarative population definition; never stores executable code."""
 
+    class Grain(models.TextChoices):
+        UNSPECIFIED = "UNSPECIFIED", "Legacy / unspecified"
+        PERSON = "PERSON", "Person"
+        STAFF = "STAFF", "Staff"
+        EMPLOYMENT_RELATIONSHIP = "EMPLOYMENT_RELATIONSHIP", "Employment relationship"
+        ASSIGNMENT = "ASSIGNMENT", "Assignment"
+
     population_code = models.CharField(max_length=64)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
     root_domain = models.CharField(max_length=32, default="HR03")
+    grain = models.CharField(
+        max_length=32,
+        choices=Grain.choices,
+        default=Grain.UNSPECIFIED,
+        db_index=True,
+    )
     predicate_json = models.JSONField(default=dict, blank=True)
     source_domains = models.JSONField(default=list, blank=True)
     as_of_required = models.BooleanField(default=True)
@@ -30,6 +43,10 @@ class PopulationDefinitionVersion(HrVersionedModel):
             models.Index(
                 fields=("tenant_id", "population_code", "status"),
                 name="idx_hr18_population_status",
+            ),
+            models.Index(
+                fields=("tenant_id", "grain", "status"),
+                name="idx_hr18_population_grain",
             ),
         ]
 
