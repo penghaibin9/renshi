@@ -85,6 +85,63 @@ class AppointmentTermServiceTests(TestCase):
         self.assertIsNone(decision.renewal.successor_fact_id)
         self.assertIsNone(decision.renewal.successor_term_id)
 
+    def test_direct_renewal_cannot_silently_change_appointment_level(self):
+        term = self._term()
+        with self.assertRaisesRegex(
+            AppointmentTermError,
+            "formal appointment change workflow",
+        ):
+            AppointmentTermService(self.tenant_id).open_renewal(
+                term_id=term.id,
+                renewal_no="REN-LEVEL-BYPASS",
+                route=AppointmentRenewalCase.Route.DIRECT_RENEWAL,
+                proposed_effective_from=term.effective_to,
+                proposed_effective_to=term.effective_to + timedelta(days=365),
+                proposed_level_code="L6",
+            )
+        self.assertFalse(
+            AppointmentRenewalCase.objects.filter(
+                tenant_id=self.tenant_id,
+                renewal_no="REN-LEVEL-BYPASS",
+            ).exists()
+        )
+
+    def test_term_assessment_renewal_cannot_silently_change_appointment_level(self):
+        term = self._term()
+        with self.assertRaisesRegex(
+            AppointmentTermError,
+            "formal appointment change workflow",
+        ):
+            AppointmentTermService(self.tenant_id).open_renewal(
+                term_id=term.id,
+                renewal_no="REN-HR12-LEVEL-BYPASS",
+                route=AppointmentRenewalCase.Route.TERM_ASSESSMENT,
+                proposed_effective_from=term.effective_to,
+                proposed_effective_to=term.effective_to + timedelta(days=365),
+                proposed_level_code="L6",
+                hr12_term_result_ref="HR12-FINAL-2029-001",
+            )
+
+    def test_reappointment_route_may_propose_different_level_but_never_effects_directly(self):
+        term = self._term()
+        renewal = AppointmentTermService(self.tenant_id).open_renewal(
+            term_id=term.id,
+            renewal_no="REN-REAPPOINT-L6",
+            route=AppointmentRenewalCase.Route.REAPPOINTMENT,
+            proposed_effective_from=term.effective_to,
+            proposed_effective_to=term.effective_to + timedelta(days=365),
+            proposed_level_code="L6",
+        )
+        term.refresh_from_db()
+        self.assertEqual(renewal.proposed_level_code, "L6")
+        self.assertEqual(
+            renewal.status,
+            AppointmentRenewalCase.Status.REAPPOINTMENT_REQUIRED,
+        )
+        self.assertEqual(term.status, AppointmentTerm.Status.REAPPOINTMENT_REQUIRED)
+        self.assertIsNone(renewal.successor_fact_id)
+        self.assertIsNone(renewal.successor_term_id)
+
     def test_term_assessment_route_fails_closed_without_hr12_final_result(self):
         term = self._term()
         with self.assertRaisesRegex(AppointmentTermError, "HR12 final term assessment"):
