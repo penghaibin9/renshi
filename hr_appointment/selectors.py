@@ -76,8 +76,10 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "expiringTerms": terms.filter(status=AppointmentTerm.Status.EXPIRING).count(),
             "renewalCases": renewals.count(),
             "pendingRenewals": renewals.filter(status__in=pending_renewal_statuses).count(),
+            "appliedRenewals": renewals.filter(status=AppointmentRenewalCase.Status.APPLIED).count(),
             "changeCases": changes.count(),
             "pendingTermChanges": changes.filter(status__in=pending_change_statuses).count(),
+            "appliedTermChanges": changes.filter(status=AppointmentChangeCase.Status.APPLIED).count(),
             "quotaPools": quota_pools.count(),
             "availableQuota": quota_total,
         },
@@ -120,7 +122,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             facts.order_by("-effective_from", "-created_at")[:12].values(
                 "id", "appointment_no", "person_id", "position_instance_id",
                 "application_case_id", "level_code", "effective_from", "effective_to",
-                "status", "created_at"
+                "status", "supersedes_fact_id", "effect_receipt_json", "created_at"
             )
         ),
         "recentTerms": list(
@@ -179,6 +181,6 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "publicity": True,
             "publicityObjection": True,
             "termChange": True,
-            "termEffect": False,
+            "termEffect": True,
         },
     }
