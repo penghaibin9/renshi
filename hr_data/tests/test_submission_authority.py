@@ -207,16 +207,14 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
             (submission_api.submit_submission, "submit", "SUBMITTED"),
         ):
             snapshot = self._snapshot(self.submission_id, status=status)
-            setattr(service_cls.return_value, method_name, SimpleNamespace())
-            getattr(service_cls.return_value, method_name).return_value = snapshot
+            method = getattr(service_cls.return_value, method_name)
+            method.return_value = snapshot
             request = self.factory.post("/transition")
             request.user = UserStub()
             response = function(request, self.submission_id)
             self.assertEqual(response.status_code, 200)
-            getattr(service_cls.return_value, method_name).assert_called_once_with(
-                self.submission_id
-            )
-            getattr(service_cls.return_value, method_name).reset_mock()
+            method.assert_called_once_with(self.submission_id)
+            method.reset_mock()
 
     @patch("hr_data.submission_api.SubmissionLifecycleService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
