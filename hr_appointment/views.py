@@ -19,17 +19,18 @@ SECTIONS = {
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "岗位聘任")
+    template_name = "hr_appointment/workspace_live.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrAppointmentAccessError as exc:
         return render(
             request,
-            "hr_appointment/workspace.html",
+            template_name,
             {"access_error": str(exc), "section": section, "section_title": title},
             status=403,
         )
     return render(
         request,
-        "hr_appointment/workspace.html",
+        template_name,
         {"tenant_id": tenant_id, "section": section, "section_title": title},
     )
