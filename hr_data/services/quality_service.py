@@ -288,6 +288,7 @@ class DataQualityExecutionService:
         if not isinstance(raw_findings, list):
             return SourceStatus.ERROR.value, "", "", (), "quality provider findings must be a list"
         normalized = []
+        seen_fingerprints = set()
         for item in raw_findings:
             if not isinstance(item, Mapping):
                 return SourceStatus.ERROR.value, "", "", (), "quality provider finding must be an object"
@@ -298,6 +299,15 @@ class DataQualityExecutionService:
                 return SourceStatus.ERROR.value, "", "", (), "quality finding sourceObjectRef is invalid"
             if not _HASH_RE.fullmatch(fingerprint):
                 return SourceStatus.ERROR.value, "", "", (), "quality finding fingerprint must be SHA-256"
+            if fingerprint in seen_fingerprints:
+                return (
+                    SourceStatus.ERROR.value,
+                    "",
+                    "",
+                    (),
+                    "quality provider returned duplicate finding fingerprints",
+                )
+            seen_fingerprints.add(fingerprint)
             if not isinstance(details, dict):
                 return SourceStatus.ERROR.value, "", "", (), "quality finding details must be an object"
             normalized.append(
