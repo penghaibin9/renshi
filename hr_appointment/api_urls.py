@@ -4,6 +4,7 @@ from . import (
     api,
     application_api,
     batch_api,
+    batch_configuration_api,
     capacity_api,
     population_api,
     term_api,
@@ -14,6 +15,11 @@ app_name = "hr_appointment_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
     path("batches/", batch_api.create_batch, name="batch-create"),
+    path(
+        "batches/<uuid:batch_id>/",
+        batch_configuration_api.update_batch,
+        name="batch-update",
+    ),
     path(
         "batches/<uuid:batch_id>/population/freeze/",
         population_api.freeze_population,
