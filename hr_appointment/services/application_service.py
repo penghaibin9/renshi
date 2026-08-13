@@ -42,7 +42,7 @@ class AppointmentApplicationService:
         self.tenant_id = tenant_id
         self.actor_user_id = actor_user_id
 
-    def _lock_case(self, case_id) -> AppointmentApplicationCase:
+    def _lock_case(self, case_id, *, actor_person_id=None) -> AppointmentApplicationCase:
         case = (
             AppointmentApplicationCase.objects.select_for_update()
             .filter(id=case_id, tenant_id=self.tenant_id)
@@ -51,6 +51,11 @@ class AppointmentApplicationService:
         if case is None:
             raise AppointmentApplicationError(
                 "APPOINTMENT_CASE_NOT_FOUND", "appointment application case not found"
+            )
+        if actor_person_id is not None and str(case.person_id) != str(actor_person_id):
+            raise AppointmentApplicationError(
+                "APPOINTMENT_APPLICATION_SELF_ONLY",
+                "applicant permission can only operate the current account's own application",
             )
         return case
 
@@ -169,8 +174,8 @@ class AppointmentApplicationService:
         )
 
     @transaction.atomic
-    def submit(self, case_id) -> AppointmentApplicationCase:
-        case = self._lock_case(case_id)
+    def submit(self, case_id, *, actor_person_id=None) -> AppointmentApplicationCase:
+        case = self._lock_case(case_id, actor_person_id=actor_person_id)
         if case.status == AppointmentApplicationCase.Status.DRAFT:
             self._require_batch_phase(
                 case,
@@ -178,8 +183,6 @@ class AppointmentApplicationService:
                 "APPOINTMENT_BATCH_NOT_OPEN",
             )
         elif case.status == AppointmentApplicationCase.Status.RETURNED:
-            # A correction returned during eligibility review must be able to
-            # come back without reopening the public application window.
             self._require_batch_phase(
                 case,
                 {
@@ -240,8 +243,8 @@ class AppointmentApplicationService:
         )
 
     @transaction.atomic
-    def withdraw(self, case_id) -> AppointmentApplicationCase:
-        case = self._lock_case(case_id)
+    def withdraw(self, case_id, *, actor_person_id=None) -> AppointmentApplicationCase:
+        case = self._lock_case(case_id, actor_person_id=actor_person_id)
         return self._transition(
             case,
             allowed_from={
