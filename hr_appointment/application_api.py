@@ -6,13 +6,8 @@ import uuid
 
 from django.http import JsonResponse
 
-from .api import (
-    HrAppointmentAccessError,
-    REVIEW_PERMISSION,
-    _error,
-    _payload,
-    resolve_request_tenant,
-)
+from .api import HrAppointmentAccessError, _error, _payload, resolve_request_tenant
+from .permissions import APPLICATION_PERMISSION, MANAGE_PERMISSION, REVIEW_PERMISSION
 from .services.application_service import (
     AppointmentApplicationError,
     AppointmentApplicationInput,
@@ -50,8 +45,8 @@ def _serialize(case):
     }
 
 
-def _service(request):
-    tenant_id = resolve_request_tenant(request, required_permission=REVIEW_PERMISSION)
+def _service(request, *, permission: str):
+    tenant_id = resolve_request_tenant(request, required_permission=permission)
     return AppointmentApplicationService(
         tenant_id,
         actor_user_id=getattr(request.user, "id", None),
@@ -62,7 +57,7 @@ def create_application(request):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, permission=APPLICATION_PERMISSION)
     except HrAppointmentAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -106,11 +101,11 @@ def create_application(request):
     return response
 
 
-def _transition(request, case_id, method_name):
+def _transition(request, case_id, method_name, *, permission: str):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, permission=permission)
     except HrAppointmentAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -129,24 +124,54 @@ def _transition(request, case_id, method_name):
 
 
 def submit_application(request, case_id):
-    return _transition(request, case_id, "submit")
+    return _transition(
+        request,
+        case_id,
+        "submit",
+        permission=APPLICATION_PERMISSION,
+    )
 
 
 def return_application(request, case_id):
-    return _transition(request, case_id, "return_for_correction")
+    return _transition(
+        request,
+        case_id,
+        "return_for_correction",
+        permission=MANAGE_PERMISSION,
+    )
 
 
 def pass_eligibility(request, case_id):
-    return _transition(request, case_id, "pass_eligibility")
+    return _transition(
+        request,
+        case_id,
+        "pass_eligibility",
+        permission=MANAGE_PERMISSION,
+    )
 
 
 def reject_eligibility(request, case_id):
-    return _transition(request, case_id, "reject_eligibility")
+    return _transition(
+        request,
+        case_id,
+        "reject_eligibility",
+        permission=MANAGE_PERMISSION,
+    )
 
 
 def withdraw_application(request, case_id):
-    return _transition(request, case_id, "withdraw")
+    return _transition(
+        request,
+        case_id,
+        "withdraw",
+        permission=APPLICATION_PERMISSION,
+    )
 
 
 def start_review(request, case_id):
-    return _transition(request, case_id, "start_review")
+    return _transition(
+        request,
+        case_id,
+        "start_review",
+        permission=REVIEW_PERMISSION,
+    )
