@@ -60,6 +60,7 @@ class AppointmentEffectService:
         if case.status not in (
             AppointmentApplicationCase.Status.PUBLICITY,
             AppointmentApplicationCase.Status.EFFECT_PENDING,
+            AppointmentApplicationCase.Status.EFFECTIVE,
         ):
             raise AppointmentEffectError(
                 "APPOINTMENT_CASE_INVALID_STATE",
@@ -88,6 +89,7 @@ class AppointmentEffectService:
                 or fact.position_instance_id != case.position_instance_id
                 or fact.reservation_id != reservation_id
                 or fact.effective_from != effective_from
+                or fact.level_code != level_code
             ):
                 raise AppointmentEffectError(
                     "APPOINTMENT_EFFECT_IDEMPOTENCY_CONFLICT",
@@ -245,7 +247,30 @@ class AppointmentEffectService:
         level_code: str = "",
     ) -> AppointmentEffectResult:
         """Create/retry a formal appointment and apply it to HR03 atomically."""
+        appointment_no = str(appointment_no or "").strip()
+        if not appointment_no:
+            raise AppointmentEffectError(
+                "APPOINTMENT_NO_REQUIRED", "appointment_no is required"
+            )
+        if not isinstance(reservation_id, int) or reservation_id <= 0:
+            raise AppointmentEffectError(
+                "APPOINTMENT_RESERVATION_ID_INVALID",
+                "reservation_id must be a positive integer",
+            )
+        if not isinstance(effective_from, date):
+            raise AppointmentEffectError(
+                "APPOINTMENT_EFFECTIVE_FROM_INVALID",
+                "effective_from must be a date",
+            )
+
         case = self._lock_case(case_id)
+        frozen_level = str(case.requested_level_code or "").strip()
+        requested_effect_level = str(level_code or "").strip()
+        if requested_effect_level and requested_effect_level != frozen_level:
+            raise AppointmentEffectError(
+                "APPOINTMENT_EFFECT_LEVEL_MISMATCH",
+                "formal effect level must match the frozen application level",
+            )
 
         from hr_appointment.services.publicity_service import (
             AppointmentPublicityError,
@@ -265,9 +290,14 @@ class AppointmentEffectService:
             appointment_no=appointment_no,
             reservation_id=reservation_id,
             effective_from=effective_from,
-            level_code=level_code or case.requested_level_code,
+            level_code=frozen_level,
         )
         if fact.status == PositionAppointmentFact.Status.EFFECTIVE:
+            if quota_reservation.status != AppointmentQuotaReservation.Status.CONSUMED:
+                raise AppointmentEffectError(
+                    "APPOINTMENT_EFFECT_QUOTA_RECEIPT_INCONSISTENT",
+                    "effective appointment requires a consumed HR14 quota receipt",
+                )
             return AppointmentEffectResult(fact=fact, effective=True)
 
         reservation, position = self._lock_capacity_receipt(case, reservation_id)
