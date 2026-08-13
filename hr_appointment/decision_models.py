@@ -113,13 +113,15 @@ def _approved_decision_for_fact(instance: PositionAppointmentFact):
     dispatch_uid="hr14_collective_decision_effect_gate",
 )
 def require_collective_decision_for_formal_effect(sender, instance, **kwargs):
-    """Fail closed at the fact boundary, not only at the HTTP endpoint.
+    """Require collective approval for the initial appointment fact only.
 
-    Historical EFFECTIVE facts are not rewritten. New/pending formal effects and
-    transitions to EFFECTIVE must reference an approved decision tied to the
-    latest closed publicity record.
+    Renewal/change successor facts have their own explicit HR14 decision
+    authorities and carry ``supersedes_fact_id``; they must not be forced back
+    through the initial collective-decision gate.
     """
 
+    if instance.supersedes_fact_id is not None:
+        return
     if instance.status not in {
         PositionAppointmentFact.Status.EFFECT_PENDING,
         PositionAppointmentFact.Status.EFFECTIVE,
