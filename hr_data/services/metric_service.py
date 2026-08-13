@@ -122,6 +122,11 @@ class HrMetricDefinitionService:
                 "HR18_POPULATION_VERSION_NOT_FOUND",
                 "referenced population version does not exist inside tenant",
             )
+        if population.grain == PopulationDefinitionVersion.Grain.UNSPECIFIED:
+            raise HrDataDefinitionError(
+                "HR18_POPULATION_GRAIN_REQUIRED",
+                "new metrics cannot reference a legacy population with unspecified grain",
+            )
 
         domains = _source_domains(source_domains)
         population_domains = list(population.source_domains or [])
