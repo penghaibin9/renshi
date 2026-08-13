@@ -26,7 +26,10 @@ class TitlePolicyVersion(HrVersionedModel):
 
     class Meta:
         db_table = "hr13_title_policy_version"
-        permissions = [("hr.title.view", "查看 HR13 职称评审工作区")]
+        permissions = [
+            ("hr.title.view", "查看 HR13 职称评审工作区"),
+            ("hr.title.review", "执行 HR13 资格审查"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "policy_code", "version_no"),
