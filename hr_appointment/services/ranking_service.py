@@ -186,6 +186,10 @@ class AppointmentRankingService:
                 "APPOINTMENT_RANKING_INVALID_BATCH_STATE",
                 f"ranking requires REVIEWING/RANKING batch, got {batch.status}",
             )
+        if batch.status == AppointmentBatch.Status.REVIEWING:
+            batch.status = AppointmentBatch.Status.RANKING
+            batch.updated_by = self.actor_user_id
+            batch.save(update_fields=["status", "updated_by", "updated_at"])
 
         last_attempt = (
             AppointmentRankingResult.objects.filter(
