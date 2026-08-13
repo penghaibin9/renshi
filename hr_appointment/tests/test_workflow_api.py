@@ -33,8 +33,8 @@ class Hr14WorkflowApiTests(SimpleTestCase):
 
     @patch("hr_appointment.batch_api.resolve_request_tenant", return_value=7)
     @patch("hr_appointment.batch_api.AppointmentBatchService")
-    def test_create_batch_parses_window_and_uses_review_permission(
-        self, service_cls, _tenant
+    def test_create_batch_parses_window_and_uses_manage_permission(
+        self, service_cls, tenant_resolver
     ):
         now = timezone.now().replace(microsecond=0)
         batch = SimpleNamespace(
@@ -65,11 +65,14 @@ class Hr14WorkflowApiTests(SimpleTestCase):
             ),
             content_type="application/json",
         )
-        request.user = UserStub({batch_api.REVIEW_PERMISSION})
+        request.user = UserStub({batch_api.MANAGE_PERMISSION})
 
         response = batch_api.create_batch(request)
 
         self.assertEqual(response.status_code, 201)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=batch_api.MANAGE_PERMISSION
+        )
         service_cls.assert_called_once_with(7, actor_user_id=88)
         payload = service_cls.return_value.create_draft.call_args.args[0]
         self.assertEqual(payload.batch_no, "B-2026-01")
@@ -79,7 +82,7 @@ class Hr14WorkflowApiTests(SimpleTestCase):
     @patch("hr_appointment.batch_api.resolve_request_tenant", return_value=7)
     @patch("hr_appointment.batch_api.AppointmentBatchService")
     def test_unresolved_eligibility_maps_batch_review_start_to_conflict(
-        self, service_cls, _tenant
+        self, service_cls, tenant_resolver
     ):
         service_cls.return_value.begin_review.side_effect = AppointmentBatchError(
             "APPOINTMENT_ELIGIBILITY_INCOMPLETE",
@@ -88,17 +91,20 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         request = self.factory.post(
             f"/api/v1/hr/appointments/batches/{self.batch_id}/review/start/"
         )
-        request.user = UserStub({batch_api.REVIEW_PERMISSION})
+        request.user = UserStub({batch_api.MANAGE_PERMISSION})
 
         response = batch_api.begin_review(request, self.batch_id)
 
         self.assertEqual(response.status_code, 409)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=batch_api.MANAGE_PERMISSION
+        )
         self.assertIn(b"APPOINTMENT_ELIGIBILITY_INCOMPLETE", response.content)
 
     @patch("hr_appointment.application_api.resolve_request_tenant", return_value=7)
     @patch("hr_appointment.application_api.AppointmentApplicationService")
-    def test_create_application_uses_frozen_identity_payload(
-        self, service_cls, _tenant
+    def test_create_application_uses_application_permission_and_frozen_identity_payload(
+        self, service_cls, tenant_resolver
     ):
         case = SimpleNamespace(
             id=self.case_id,
@@ -125,11 +131,14 @@ class Hr14WorkflowApiTests(SimpleTestCase):
             ),
             content_type="application/json",
         )
-        request.user = UserStub({application_api.REVIEW_PERMISSION})
+        request.user = UserStub({application_api.APPLICATION_PERMISSION})
 
         response = application_api.create_application(request)
 
         self.assertEqual(response.status_code, 201)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=application_api.APPLICATION_PERMISSION
+        )
         payload = service_cls.return_value.create_draft.call_args.args[0]
         self.assertEqual(payload.person_id, self.person_id)
         self.assertEqual(payload.policy_version_id, self.policy_id)
@@ -137,7 +146,9 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         self.assertIn(b'"status": "DRAFT"', response.content)
 
     @patch("hr_appointment.application_api.resolve_request_tenant", return_value=7)
-    def test_invalid_application_identity_is_rejected_before_service(self, _tenant):
+    def test_invalid_application_identity_is_rejected_before_service(
+        self, tenant_resolver
+    ):
         request = self.factory.post(
             "/api/v1/hr/appointments/applications/",
             data=json.dumps(
@@ -151,9 +162,64 @@ class Hr14WorkflowApiTests(SimpleTestCase):
             ),
             content_type="application/json",
         )
-        request.user = UserStub({application_api.REVIEW_PERMISSION})
+        request.user = UserStub({application_api.APPLICATION_PERMISSION})
 
         response = application_api.create_application(request)
 
         self.assertEqual(response.status_code, 400)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=application_api.APPLICATION_PERMISSION
+        )
         self.assertIn(b"APPOINTMENT_APPLICATION_IDENTITY_INVALID", response.content)
+
+    @patch("hr_appointment.application_api.resolve_request_tenant", return_value=7)
+    @patch("hr_appointment.application_api.AppointmentApplicationService")
+    def test_eligibility_decision_uses_manage_permission(
+        self, service_cls, tenant_resolver
+    ):
+        case = SimpleNamespace(
+            id=self.case_id,
+            case_no="CASE-ELIGIBLE",
+            person_id=self.person_id,
+            policy_version_id=self.policy_id,
+            position_instance_id=1001,
+            batch_no="B-2026-01",
+            requested_level_code="PT-7",
+            status="ELIGIBLE",
+        )
+        service_cls.return_value.pass_eligibility.return_value = case
+        request = self.factory.post("/eligibility/pass")
+        request.user = UserStub({application_api.MANAGE_PERMISSION})
+
+        response = application_api.pass_eligibility(request, self.case_id)
+
+        self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=application_api.MANAGE_PERMISSION
+        )
+
+    @patch("hr_appointment.application_api.resolve_request_tenant", return_value=7)
+    @patch("hr_appointment.application_api.AppointmentApplicationService")
+    def test_start_review_keeps_review_permission(
+        self, service_cls, tenant_resolver
+    ):
+        case = SimpleNamespace(
+            id=self.case_id,
+            case_no="CASE-REVIEW",
+            person_id=self.person_id,
+            policy_version_id=self.policy_id,
+            position_instance_id=1001,
+            batch_no="B-2026-01",
+            requested_level_code="PT-7",
+            status="UNDER_REVIEW",
+        )
+        service_cls.return_value.start_review.return_value = case
+        request = self.factory.post("/review/start")
+        request.user = UserStub({application_api.REVIEW_PERMISSION})
+
+        response = application_api.start_review(request, self.case_id)
+
+        self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=application_api.REVIEW_PERMISSION
+        )
