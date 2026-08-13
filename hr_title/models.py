@@ -1,9 +1,9 @@
 """HR13 title evaluation authority models.
 
 HR13 owns the frozen evaluation policy, application workflow, evidence snapshots
-used by the review, and formal title result history.  Upstream HR03/09/10/12
-facts are referenced through provider metadata and copied only as review-time
-snapshots; HR13 never becomes their source of truth.
+used by the review, qualification decisions, and formal title result history.
+Upstream HR03/09/10/12 facts are referenced through provider metadata and copied
+only as review-time snapshots; HR13 never becomes their source of truth.
 """
 
 from __future__ import annotations
@@ -74,6 +74,72 @@ class TitleApplicationCase(HrTenantScopedModel):
             models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr13_case_tenant_person"),
             models.Index(fields=("tenant_id", "batch_no", "status"), name="idx_hr13_case_tenant_batch"),
         ]
+
+
+class TitleQualificationDecision(HrTenantScopedModel):
+    """Append-only eligibility-review decision for one submission attempt."""
+
+    class Decision(models.TextChoices):
+        ELIGIBLE = "ELIGIBLE", "Eligible"
+        RETURNED = "RETURNED", "Returned for correction"
+        REJECTED = "REJECTED", "Rejected"
+
+    decision_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField()
+    attempt_no = models.PositiveIntegerField()
+    decision = models.CharField(max_length=16, choices=Decision.choices, db_index=True)
+    reason_code = models.CharField(max_length=64, blank=True, default="")
+    reason = models.TextField(blank=True, default="")
+    decided_by = models.PositiveBigIntegerField(null=True, blank=True)
+    decided_at = models.DateTimeField(auto_now_add=True)
+
+    _DECISION_FIELDS = (
+        "tenant_id",
+        "decision_no",
+        "application_case_id",
+        "attempt_no",
+        "decision",
+        "reason_code",
+        "reason",
+        "decided_by",
+    )
+
+    class Meta:
+        db_table = "hr13_title_qualification_decision"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "decision_no"),
+                name="uq_hr13_qualification_tenant_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "application_case_id", "attempt_no"),
+                name="uq_hr13_qualification_case_attempt",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "application_case_id", "decision"),
+                name="idx_hr13_qualification_case",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._DECISION_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._DECISION_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "TITLE_QUALIFICATION_DECISION_IMMUTABLE: review decisions "
+                        "must be appended, not edited in place"
+                    )
+        return super().save(*args, **kwargs)
 
 
 class TitleMaterialSnapshot(HrTenantScopedModel):
