@@ -18,7 +18,7 @@ SECTIONS = {
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "人事数据中心")
-    template_name = "hr_data/workspace_live.html"
+    template_name = "hr_data/workspace_asof.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrDataAccessError as exc:
