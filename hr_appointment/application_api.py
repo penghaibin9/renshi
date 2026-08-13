@@ -6,6 +6,8 @@ import uuid
 
 from django.http import JsonResponse
 
+from hr_staff.models import HrAccountLink
+
 from .api import HrAppointmentAccessError, _error, _payload, resolve_request_tenant
 from .permissions import APPLICATION_PERMISSION, MANAGE_PERMISSION, REVIEW_PERMISSION
 from .services.application_service import (
@@ -31,6 +33,8 @@ def _status(code: str) -> int:
         "APPOINTMENT_APPLICATION_LEVEL_MISMATCH",
     }:
         return 409
+    if code == "APPOINTMENT_APPLICATION_SELF_ONLY":
+        return 403
     return 400
 
 
@@ -47,19 +51,52 @@ def _serialize(case):
     }
 
 
-def _service(request, *, permission: str):
+def _context(request, *, permission: str):
     tenant_id = resolve_request_tenant(request, required_permission=permission)
-    return AppointmentApplicationService(
+    return tenant_id, AppointmentApplicationService(
         tenant_id,
         actor_user_id=getattr(request.user, "id", None),
     )
+
+
+def _resolve_applicant_person_id(request, tenant_id: int):
+    """Resolve SELF scope from HR03 account authority; managers may act on behalf."""
+    user = request.user
+    if getattr(user, "is_superuser", False) or user.has_perm(MANAGE_PERMISSION):
+        return None
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        raise HrAppointmentAccessError(
+            "APPOINTMENT_SELF_IDENTITY_REQUIRED",
+            "当前账号没有可用于岗位竞聘申报的 HR03 人员身份",
+        )
+    person_ids = list(
+        HrAccountLink.objects.filter(
+            tenant_id=tenant_id,
+            auth_user_id=user_id,
+            link_status=HrAccountLink.LinkStatus.ACTIVE,
+        )
+        .values_list("staff_id__person_id_id", flat=True)
+        .distinct()[:2]
+    )
+    if not person_ids:
+        raise HrAppointmentAccessError(
+            "APPOINTMENT_SELF_IDENTITY_REQUIRED",
+            "当前账号未绑定本校 ACTIVE HR03 人员身份",
+        )
+    if len(person_ids) != 1:
+        raise HrAppointmentAccessError(
+            "APPOINTMENT_SELF_IDENTITY_AMBIGUOUS",
+            "当前账号绑定了多个 HR03 人员身份，禁止自动选择申报主体",
+        )
+    return person_ids[0]
 
 
 def create_application(request):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request, permission=APPLICATION_PERMISSION)
+        tenant_id, service = _context(request, permission=APPLICATION_PERMISSION)
     except HrAppointmentAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -77,6 +114,16 @@ def create_application(request):
             "APPOINTMENT_APPLICATION_IDENTITY_INVALID",
             "personId/policyVersionId 必须是 UUID，positionInstanceId 必须是正整数",
             status=400,
+        )
+    try:
+        actor_person_id = _resolve_applicant_person_id(request, tenant_id)
+    except HrAppointmentAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    if actor_person_id is not None and str(actor_person_id) != str(person_id):
+        return _error(
+            "APPOINTMENT_APPLICATION_SELF_ONLY",
+            "普通申报权限只能为当前账号绑定的本人创建岗位竞聘申请",
+            status=403,
         )
     try:
         case = service.create_draft(
@@ -107,11 +154,17 @@ def _transition(request, case_id, method_name, *, permission: str):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request, permission=permission)
+        tenant_id, service = _context(request, permission=permission)
     except HrAppointmentAccessError as exc:
         return _error(exc.code, exc.message, status=403)
+    kwargs = {}
+    if permission == APPLICATION_PERMISSION and method_name in {"submit", "withdraw"}:
+        try:
+            kwargs["actor_person_id"] = _resolve_applicant_person_id(request, tenant_id)
+        except HrAppointmentAccessError as exc:
+            return _error(exc.code, exc.message, status=403)
     try:
-        case = getattr(service, method_name)(case_id)
+        case = getattr(service, method_name)(case_id, **kwargs)
     except AppointmentApplicationError as exc:
         return _error(exc.code, str(exc), status=_status(exc.code))
     response = JsonResponse(
