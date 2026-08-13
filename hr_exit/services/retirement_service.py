@@ -67,6 +67,10 @@ class RetirementFactService:
         retirement_type = str(retirement_type or "").strip().upper()
         if not fact_no:
             raise RetirementFactError("RETIREMENT_FACT_NO_REQUIRED", "fact_no is required")
+        if len(fact_no) > 64:
+            raise RetirementFactError(
+                "RETIREMENT_FACT_NO_INVALID", "fact_no exceeds 64 characters"
+            )
         if not retirement_type:
             raise RetirementFactError(
                 "RETIREMENT_TYPE_REQUIRED", "retirement_type is required"
