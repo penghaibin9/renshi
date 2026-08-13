@@ -20,12 +20,21 @@ from hr_appointment.services.ranking_service import AppointmentRankingService
 
 
 class Hr14PublicityServiceTests(TestCase):
-    def _batch(self, *, tenant_id=7, status=AppointmentBatch.Status.RANKING):
+    def _batch(
+        self,
+        *,
+        tenant_id=7,
+        status=AppointmentBatch.Status.RANKING,
+        frozen_window=True,
+    ):
+        now = timezone.now()
         return AppointmentBatch.objects.create(
             tenant_id=tenant_id,
             batch_no=f"B-{tenant_id}-{uuid.uuid4().hex[:6]}",
             name="2026 岗位竞聘",
             policy_version_id=uuid.uuid4(),
+            publicity_from=now - timedelta(hours=1) if frozen_window else None,
+            publicity_to=now + timedelta(days=5) if frozen_window else None,
             status=status,
         )
 
@@ -74,23 +83,53 @@ class Hr14PublicityServiceTests(TestCase):
             case_id=case.id,
             ranking_result_id=ranking.id,
             publicity_no=f"P-{tenant_id}-{uuid.uuid4().hex[:8]}",
-            start_at=now - timedelta(hours=1),
-            end_at=now + timedelta(days=5),
+            start_at=batch.publicity_from,
+            end_at=batch.publicity_to,
             notice_snapshot={"rank": 1, "position": 101},
         ).publicity
         return batch, case, ranking, record, now
 
-    def test_open_publicity_freezes_window_and_moves_case_and_batch(self):
+    def test_open_publicity_consumes_frozen_window_and_moves_case_and_batch(self):
         batch, case, ranking, record, _ = self._open()
+        frozen_from = batch.publicity_from
+        frozen_to = batch.publicity_to
 
         case.refresh_from_db()
         batch.refresh_from_db()
         self.assertEqual(case.status, AppointmentApplicationCase.Status.PUBLICITY)
         self.assertEqual(batch.status, AppointmentBatch.Status.PUBLICITY)
-        self.assertEqual(batch.publicity_from, record.start_at)
-        self.assertEqual(batch.publicity_to, record.end_at)
+        self.assertEqual(batch.publicity_from, frozen_from)
+        self.assertEqual(batch.publicity_to, frozen_to)
+        self.assertEqual(record.start_at, frozen_from)
+        self.assertEqual(record.end_at, frozen_to)
         self.assertEqual(record.ranking_result_id, ranking.id)
         self.assertEqual(record.status, AppointmentPublicityRecord.Status.OPEN)
+
+    def test_open_publicity_rejects_missing_or_mismatched_frozen_window(self):
+        missing = self._batch(frozen_window=False)
+        case, ranking = self._selected_case(missing)
+        now = timezone.now()
+        with self.assertRaises(AppointmentPublicityError) as ctx:
+            AppointmentPublicityService(7).open_publicity(
+                case_id=case.id,
+                ranking_result_id=ranking.id,
+                publicity_no="P-NO-WINDOW",
+                start_at=now,
+                end_at=now + timedelta(days=5),
+            )
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_PUBLICITY_BATCH_WINDOW_REQUIRED")
+
+        batch = self._batch()
+        case, ranking = self._selected_case(batch)
+        with self.assertRaises(AppointmentPublicityError) as ctx:
+            AppointmentPublicityService(7).open_publicity(
+                case_id=case.id,
+                ranking_result_id=ranking.id,
+                publicity_no="P-MISMATCH",
+                start_at=batch.publicity_from + timedelta(minutes=1),
+                end_at=batch.publicity_to,
+            )
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_PUBLICITY_BATCH_WINDOW_MISMATCH")
 
     def test_open_publicity_blocks_while_another_case_is_still_under_review(self):
         batch = self._batch()
@@ -104,15 +143,14 @@ class Hr14PublicityServiceTests(TestCase):
             batch_no=batch.batch_no,
             status=AppointmentApplicationCase.Status.UNDER_REVIEW,
         )
-        now = timezone.now()
 
         with self.assertRaises(AppointmentPublicityError) as ctx:
             AppointmentPublicityService(7).open_publicity(
                 case_id=case.id,
                 ranking_result_id=ranking.id,
                 publicity_no="P-BLOCKED",
-                start_at=now,
-                end_at=now + timedelta(days=5),
+                start_at=batch.publicity_from,
+                end_at=batch.publicity_to,
             )
 
         self.assertEqual(ctx.exception.code, "APPOINTMENT_BATCH_RANKING_INCOMPLETE")
@@ -148,13 +186,12 @@ class Hr14PublicityServiceTests(TestCase):
             outcome="NOT_SELECTED",
         )
 
-        now = timezone.now()
         record = AppointmentPublicityService(7, actor_user_id=88).open_publicity(
             case_id=selected.id,
             ranking_result_id=selected_ranking.id,
             publicity_no="P-MULTI-RANKED",
-            start_at=now,
-            end_at=now + timedelta(days=5),
+            start_at=batch.publicity_from,
+            end_at=batch.publicity_to,
         ).publicity
 
         selected.refresh_from_db()
@@ -261,13 +298,12 @@ class Hr14PublicityServiceTests(TestCase):
     def test_open_publicity_is_tenant_scoped(self):
         batch = self._batch(tenant_id=8)
         case, ranking = self._selected_case(batch, tenant_id=8)
-        now = timezone.now()
         with self.assertRaises(AppointmentPublicityError) as ctx:
             AppointmentPublicityService(7).open_publicity(
                 case_id=case.id,
                 ranking_result_id=ranking.id,
                 publicity_no="P-XTENANT",
-                start_at=now,
-                end_at=now + timedelta(days=5),
+                start_at=batch.publicity_from,
+                end_at=batch.publicity_to,
             )
         self.assertEqual(ctx.exception.code, "APPOINTMENT_CASE_NOT_FOUND")
