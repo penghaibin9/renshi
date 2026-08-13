@@ -77,6 +77,8 @@ class MetricDefinitionVersion(HrVersionedModel):
         permissions = [
             ("hr.data.view", "查看 HR18 人事数据中心"),
             ("hr.data.define", "维护 HR18 人口维度指标定义"),
+            ("hr.data.asof", "执行 HR18 历史时点重建"),
+            ("hr.data.quality", "执行 HR18 数据质量治理"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -141,12 +143,13 @@ class DataQualityFinding(HrTenantScopedModel):
 
 
 class AsOfEvidenceSnapshot(HrTenantScopedModel):
-    """Immutable proof that required sources were reconstructable for one as-of cut.
+    """Immutable proof that required sources were reconstructable for one as-of cut."""
 
-    This does not pretend the HR18 history engine is complete. It is a fail-closed
-    handoff record produced by trusted internal reconstruction/provider code and
-    consumed by formal submission validation.
-    """
+    class DefinitionKind(models.TextChoices):
+        UNKNOWN = "UNKNOWN", "Legacy / unknown"
+        POPULATION = "POPULATION", "Population definition"
+        DIMENSION = "DIMENSION", "Dimension definition"
+        METRIC = "METRIC", "Metric definition"
 
     class Status(models.TextChoices):
         COMPLETE = "COMPLETE", "Complete"
@@ -155,6 +158,12 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
         ERROR = "ERROR", "Error"
 
     evidence_no = models.CharField(max_length=64)
+    definition_kind = models.CharField(
+        max_length=16,
+        choices=DefinitionKind.choices,
+        default=DefinitionKind.UNKNOWN,
+        db_index=True,
+    )
     definition_code = models.CharField(max_length=64)
     definition_version = models.PositiveIntegerField()
     as_of_date = models.DateField()
@@ -162,12 +171,14 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
     source_statuses_json = models.JSONField(default=dict)
     blocked_domains_json = models.JSONField(default=list, blank=True)
     provider_versions_json = models.JSONField(default=dict, blank=True)
+    provider_evidence_hashes_json = models.JSONField(default=dict, blank=True)
     evidence_hash = models.CharField(max_length=64)
     generated_at = models.DateTimeField(auto_now_add=True)
 
     _FACT_FIELDS = (
         "tenant_id",
         "evidence_no",
+        "definition_kind",
         "definition_code",
         "definition_version",
         "as_of_date",
@@ -175,6 +186,7 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
         "source_statuses_json",
         "blocked_domains_json",
         "provider_versions_json",
+        "provider_evidence_hashes_json",
         "evidence_hash",
     )
 
@@ -188,7 +200,13 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
         ]
         indexes = [
             models.Index(
-                fields=("tenant_id", "definition_code", "as_of_date", "status"),
+                fields=(
+                    "tenant_id",
+                    "definition_kind",
+                    "definition_code",
+                    "as_of_date",
+                    "status",
+                ),
                 name="idx_hr18_asof_def_status",
             ),
         ]
@@ -224,6 +242,12 @@ class SubmissionSnapshot(HrTenantScopedModel):
         CORRECTED = "CORRECTED", "Corrected"
 
     submission_no = models.CharField(max_length=64)
+    definition_kind = models.CharField(
+        max_length=16,
+        choices=AsOfEvidenceSnapshot.DefinitionKind.choices,
+        default=AsOfEvidenceSnapshot.DefinitionKind.UNKNOWN,
+        db_index=True,
+    )
     definition_code = models.CharField(max_length=64)
     definition_version = models.PositiveIntegerField()
     as_of_date = models.DateField()
@@ -245,6 +269,7 @@ class SubmissionSnapshot(HrTenantScopedModel):
     _IDENTITY_FIELDS = (
         "tenant_id",
         "submission_no",
+        "definition_kind",
         "definition_code",
         "definition_version",
         "as_of_date",
@@ -263,7 +288,7 @@ class SubmissionSnapshot(HrTenantScopedModel):
         ]
         indexes = [
             models.Index(
-                fields=("tenant_id", "definition_code", "status"),
+                fields=("tenant_id", "definition_kind", "definition_code", "status"),
                 name="idx_hr18_submission_def_status",
             ),
             models.Index(
