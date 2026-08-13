@@ -14,7 +14,7 @@ from hr_data.services.evaluation_service import (
     AsOfEvaluationResult,
     Hr03AsOfEvaluationService,
 )
-from hr_data.services.formal_fact_evaluation_service import FormalFactAsOfEvaluationService
+from hr_data.services.formal_fact_chain_service import FormalFactAsOfEvaluationService
 from hr_data.services.formal_fact_evidence_guard import verify_formal_fact_evidence
 
 
