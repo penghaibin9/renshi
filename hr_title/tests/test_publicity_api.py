@@ -3,8 +3,7 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from django.http import HttpRequest
-from django.test import SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase
 from django.urls import resolve, reverse
 
 from hr_title import publicity_api
@@ -14,9 +13,11 @@ from hr_title.services.publicity_service import TitlePublicityError
 
 class Hr13PublicityApiContractTests(SimpleTestCase):
     def _request(self, body=None):
-        request = HttpRequest()
-        request.method = "POST"
-        request.body = json.dumps(body or {}).encode("utf-8")
+        request = RequestFactory().post(
+            "/api/v1/hr/titles/publicity-contract-test/",
+            data=json.dumps(body or {}),
+            content_type="application/json",
+        )
         request.user = SimpleNamespace(id=9, is_authenticated=True, is_superuser=False)
         return request
 
