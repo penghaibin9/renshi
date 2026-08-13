@@ -38,9 +38,11 @@ class AppointmentBatchFreezeGuardTests(TestCase):
                 target_levels=("PT-7",),
                 application_from=self.now - timedelta(hours=1),
                 application_to=self.now + timedelta(days=5),
+                publicity_from=self.now + timedelta(days=10),
+                publicity_to=self.now + timedelta(days=15),
             )
         )
-        population = AppointmentPopulationSnapshot.objects.create(
+        self.population = AppointmentPopulationSnapshot.objects.create(
             tenant_id=self.tenant,
             batch=self.batch,
             as_of_date=self.now.date(),
@@ -48,9 +50,9 @@ class AppointmentBatchFreezeGuardTests(TestCase):
             member_count=1,
             content_hash="a" * 64,
         )
-        AppointmentPopulationMemberSnapshot.objects.create(
+        self.population_member = AppointmentPopulationMemberSnapshot.objects.create(
             tenant_id=self.tenant,
-            snapshot=population,
+            snapshot=self.population,
             person_id=uuid.uuid4(),
             staff_id=uuid.uuid4(),
             member_hash="b" * 64,
@@ -96,17 +98,26 @@ class AppointmentBatchFreezeGuardTests(TestCase):
         self.assertEqual(self.pool.authorized, 2)
         self.assertEqual(self.pool.exception_quota, 1)
 
-    def test_published_quota_basis_is_immutable(self):
+    def test_published_batch_policy_and_quota_basis_are_immutable(self):
         self.service.publish(self.batch.id)
+
+        self.batch.refresh_from_db()
+        self.batch.name = "静默改名"
+        with self.assertRaises(ValidationError) as ctx:
+            self.batch.save(update_fields=["name", "updated_at"])
+        self.assertIn("APPOINTMENT_BATCH_FROZEN", str(ctx.exception))
+
+        self.policy.refresh_from_db()
+        self.policy.name = "静默改制度"
+        with self.assertRaises(ValidationError) as ctx:
+            self.policy.save(update_fields=["name", "updated_at"])
+        self.assertIn("APPOINTMENT_POLICY_VERSION_FROZEN", str(ctx.exception))
+
         self.pool.refresh_from_db()
         self.pool.authorized = 2
-
         with self.assertRaises(ValidationError) as ctx:
             self.pool.save(update_fields=["authorized", "updated_at"])
         self.assertIn("APPOINTMENT_QUOTA_BASIS_IMMUTABLE", str(ctx.exception))
-
-        self.pool.refresh_from_db()
-        self.assertEqual(self.pool.authorized, 1)
 
     def test_published_quota_runtime_counters_remain_mutable(self):
         self.service.publish(self.batch.id)
@@ -118,3 +129,22 @@ class AppointmentBatchFreezeGuardTests(TestCase):
         self.pool.refresh_from_db()
         self.assertEqual(self.pool.reserved, 1)
         self.assertEqual(self.pool.available, 0)
+
+    def test_published_frozen_inputs_cannot_be_deleted(self):
+        self.service.publish(self.batch.id)
+
+        with self.assertRaises(ValidationError) as ctx:
+            self.supply.delete()
+        self.assertIn("APPOINTMENT_SUPPLY_SNAPSHOT_IMMUTABLE", str(ctx.exception))
+
+        with self.assertRaises(ValidationError) as ctx:
+            self.pool.delete()
+        self.assertIn("APPOINTMENT_QUOTA_BASIS_IMMUTABLE", str(ctx.exception))
+
+        with self.assertRaises(ValidationError) as ctx:
+            self.population_member.delete()
+        self.assertIn("APPOINTMENT_POPULATION_MEMBER_IMMUTABLE", str(ctx.exception))
+
+        with self.assertRaises(ValidationError) as ctx:
+            self.policy.delete()
+        self.assertIn("APPOINTMENT_POLICY_VERSION_IN_USE", str(ctx.exception))
