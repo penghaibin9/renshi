@@ -21,7 +21,7 @@ class Hr14TermUiContractTests(SimpleTestCase):
         template = get_template("hr_appointment/workspace_term.html")
         source = Path(template.origin.name).read_text(encoding="utf-8")
 
-        self.assertIn("批准 ≠ 已生效", source)
+        self.assertIn("批准”只代表 HR14 治理决定", source)
         self.assertIn("尚未形成新的正式 AppointmentFact / Term", source)
         self.assertIn("HR03/正式聘任事实尚未生效", source)
         self.assertIn("新的 PositionAppointmentFact / AppointmentTerm 与 HR03 Assignment effect receipt", source)
