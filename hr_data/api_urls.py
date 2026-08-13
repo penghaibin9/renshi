@@ -1,6 +1,14 @@
 from django.urls import path
 
-from . import api, asof_api, evaluation_api, metric_api, quality_api, submission_api
+from . import (
+    api,
+    asof_api,
+    evaluation_api,
+    metric_api,
+    quality_api,
+    quality_finding_api,
+    submission_api,
+)
 
 app_name = "hr_data_api"
 
@@ -40,6 +48,16 @@ urlpatterns = [
         "quality/runs/",
         quality_api.execute_run,
         name="quality-run-execute",
+    ),
+    path(
+        "quality/findings/<uuid:finding_id>/acknowledge/",
+        quality_finding_api.acknowledge,
+        name="quality-finding-acknowledge",
+    ),
+    path(
+        "quality/findings/<uuid:finding_id>/verify-fixed/",
+        quality_finding_api.verify_fixed,
+        name="quality-finding-verify-fixed",
     ),
     path("submissions/", submission_api.create_submission, name="submission-create"),
     path(
