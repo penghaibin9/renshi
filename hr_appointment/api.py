@@ -2,12 +2,13 @@ import json
 
 from django.http import JsonResponse
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 
 from base.auth_backends import get_allowed_company_ids
 from hr_control_center.context import resolve_tenant_from_request
 
 from .selectors import dashboard_snapshot
+from .services.effect_service import AppointmentEffectError, AppointmentEffectService
 from .services.publicity_service import (
     AppointmentPublicityError,
     AppointmentPublicityService,
@@ -17,6 +18,7 @@ from .services.ranking_service import AppointmentRankingError, AppointmentRankin
 READ_PERMISSION = "hr.appointment.view"
 REVIEW_PERMISSION = "hr.appointment.review"
 PUBLICITY_PERMISSION = "hr.appointment.publicity"
+EFFECT_PERMISSION = "hr.appointment.effect"
 
 
 class HrAppointmentAccessError(Exception):
@@ -71,6 +73,15 @@ def _datetime(value, *, field: str):
     return parsed
 
 
+def _date(value, *, field: str):
+    if not value:
+        raise ValueError(field)
+    parsed = parse_date(str(value))
+    if parsed is None:
+        raise ValueError(field)
+    return parsed
+
+
 def _publicity_status(code: str) -> int:
     if code in {
         "APPOINTMENT_CASE_NOT_FOUND",
@@ -93,6 +104,34 @@ def _publicity_status(code: str) -> int:
         "APPOINTMENT_PUBLICITY_WINDOW_NOT_ENDED",
         "APPOINTMENT_PUBLICITY_OBJECTION_PENDING",
         "APPOINTMENT_PUBLICITY_UPHELD_OBJECTION",
+    }:
+        return 409
+    return 400
+
+
+def _effect_status(code: str) -> int:
+    if code in {
+        "APPOINTMENT_CASE_NOT_FOUND",
+        "APPOINTMENT_RESERVATION_NOT_FOUND",
+        "APPOINTMENT_STAFF_NOT_FOUND",
+    }:
+        return 404
+    if code in {
+        "APPOINTMENT_CASE_INVALID_STATE",
+        "APPOINTMENT_EFFECT_IDEMPOTENCY_CONFLICT",
+        "APPOINTMENT_RESULT_INVALID_STATE",
+        "APPOINTMENT_PUBLICITY_NOT_CLOSED",
+        "APPOINTMENT_PUBLICITY_OBJECTION_BLOCKS_EFFECT",
+        "APPOINTMENT_QUOTA_RESERVATION_REQUIRED",
+        "APPOINTMENT_QUOTA_BATCH_MISMATCH",
+        "APPOINTMENT_QUOTA_NOT_ACTIVE",
+        "APPOINTMENT_RESERVATION_INVALID_STATE",
+        "APPOINTMENT_RESERVATION_EXPIRED",
+        "APPOINTMENT_RESERVATION_POSITION_MISMATCH",
+        "APPOINTMENT_RESERVATION_SOURCE_MISMATCH",
+        "APPOINTMENT_RESERVATION_OWNER_MISMATCH",
+        "APPOINTMENT_POSITION_NOT_ACTIVE",
+        "APPOINTMENT_ACTIVE_RELATIONSHIP_REQUIRED",
     }:
         return 409
     return 400
@@ -152,6 +191,7 @@ def ranking_result(request, case_id):
             "APPOINTMENT_RANKING_IDEMPOTENCY_CONFLICT",
             "APPOINTMENT_RANKING_INVALID_CASE_STATE",
             "APPOINTMENT_RANKING_INVALID_BATCH_STATE",
+            "APPOINTMENT_RANKING_QUOTA_ALREADY_CONSUMED",
         }:
             status = 409
         else:
@@ -375,6 +415,82 @@ def cancel_publicity(request, publicity_id):
             "apiVersion": "1.0",
             "schemaVersion": "hr14.publicity.1",
         }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def apply_effect(request, case_id):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=EFFECT_PERMISSION)
+    except HrAppointmentAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+
+    try:
+        payload = _payload(request)
+        effective_from = _date(payload.get("effectiveFrom"), field="effectiveFrom")
+    except ValueError as exc:
+        field = str(exc)
+        if field == "INVALID_JSON":
+            return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
+        return _error("INVALID_DATE", f"{field} 必须是 YYYY-MM-DD 日期", status=400)
+
+    appointment_no = str(payload.get("appointmentNo", "") or "").strip()
+    if not appointment_no:
+        return _error(
+            "APPOINTMENT_NO_REQUIRED",
+            "appointmentNo 不能为空",
+            status=400,
+        )
+    try:
+        reservation_id = int(payload.get("reservationId"))
+    except (TypeError, ValueError):
+        return _error(
+            "INVALID_RESERVATION_ID",
+            "reservationId 必须是正整数",
+            status=400,
+        )
+    if reservation_id <= 0:
+        return _error(
+            "INVALID_RESERVATION_ID",
+            "reservationId 必须是正整数",
+            status=400,
+        )
+
+    try:
+        outcome = AppointmentEffectService(
+            tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).apply(
+            case_id=case_id,
+            appointment_no=appointment_no,
+            reservation_id=reservation_id,
+            effective_from=effective_from,
+            level_code=str(payload.get("levelCode", "") or "").strip(),
+        )
+    except AppointmentEffectError as exc:
+        return _error(exc.code, str(exc), status=_effect_status(exc.code))
+
+    fact = outcome.fact
+    response = JsonResponse(
+        {
+            "data": {
+                "id": str(fact.id),
+                "appointmentNo": fact.appointment_no,
+                "applicationCaseId": str(fact.application_case_id),
+                "positionInstanceId": fact.position_instance_id,
+                "effectiveFrom": fact.effective_from.isoformat(),
+                "status": fact.status,
+                "effective": outcome.effective,
+                "effectReceipt": fact.effect_receipt_json,
+                "error": outcome.error,
+            },
+            "apiVersion": "1.0",
+            "schemaVersion": "hr14.appointment-effect.1",
+        },
+        status=200 if outcome.effective else 202,
     )
     response["Cache-Control"] = "no-store"
     return response
