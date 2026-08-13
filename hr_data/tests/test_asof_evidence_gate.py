@@ -23,7 +23,7 @@ class Hr18AsOfEvidenceGateTests(TestCase):
             evidence_hash=("a" if tenant_id == 77 else "b") * 64,
         )
 
-    def test_dashboard_exposes_real_asof_engine_and_tenant_scoped_evidence(self):
+    def test_dashboard_distinguishes_evidence_engine_from_metric_asof_engine(self):
         self._evidence(77, "E-1", AsOfEvidenceSnapshot.Status.COMPLETE)
         self._evidence(77, "E-2", AsOfEvidenceSnapshot.Status.PARTIAL)
         self._evidence(88, "E-OTHER", AsOfEvidenceSnapshot.Status.COMPLETE)
@@ -31,7 +31,9 @@ class Hr18AsOfEvidenceGateTests(TestCase):
         payload = dashboard_snapshot(77)
 
         self.assertTrue(payload["capabilities"]["submissionAsOfGate"])
-        self.assertTrue(payload["capabilities"]["asOfEngine"])
+        self.assertTrue(payload["capabilities"]["asOfEvidenceEngine"])
+        self.assertFalse(payload["capabilities"]["asOfEngine"])
+        self.assertFalse(payload["capabilities"]["metricEvaluation"])
         self.assertEqual(payload["summary"]["asOfEvidence"], 2)
         self.assertEqual(payload["summary"]["completeAsOfEvidence"], 1)
         self.assertEqual(payload["summary"]["blockedAsOfEvidence"], 1)
