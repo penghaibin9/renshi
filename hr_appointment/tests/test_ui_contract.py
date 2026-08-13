@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.template.loader import get_template
 from django.test import TestCase
 from django.urls import resolve, reverse
@@ -28,5 +30,23 @@ class Hr14UiContractTests(TestCase):
         self.assertEqual(reverse("hr_appointment_api:dashboard"), path)
         self.assertEqual(resolve(path).view_name, "hr_appointment_api:dashboard")
 
-    def test_workspace_template_compiles(self):
-        self.assertIsNotNone(get_template("hr_appointment/workspace.html"))
+    def test_workspace_templates_compile(self):
+        for name in (
+            "workspace.html",
+            "workspace_live.html",
+            "workspace_term.html",
+            "workspace_term_effect.html",
+        ):
+            self.assertIsNotNone(get_template(f"hr_appointment/{name}"))
+
+    def test_term_effect_workspace_uses_real_apply_effect_boundary(self):
+        template = get_template("hr_appointment/workspace_term_effect.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertIn("/apply-effect/", source)
+        self.assertIn("pendingFactId", source)
+        self.assertIn("HR02 HELD reservation", source)
+        self.assertIn("HR03 switch_primary", source)
+        self.assertIn("审批", source)
+        self.assertIn("正式生效", source)
+        self.assertIn("Correction Authority", source)
+        self.assertNotIn("createCorrectionAuthority", source)
