@@ -1,17 +1,29 @@
 """Tenant-scoped read models for the HR18 data governance center."""
-from .models import DataQualityFinding, MetricDefinitionVersion, SubmissionSnapshot
+from .models import (
+    DataQualityFinding,
+    DimensionDefinitionVersion,
+    MetricDefinitionVersion,
+    PopulationDefinitionVersion,
+    SubmissionSnapshot,
+)
 
 
 def dashboard_snapshot(tenant_id: int) -> dict:
     if not tenant_id:
         raise ValueError("tenant_id is required")
     tenant_id = int(tenant_id)
+    populations = PopulationDefinitionVersion.objects.filter(tenant_id=tenant_id)
+    dimensions = DimensionDefinitionVersion.objects.filter(tenant_id=tenant_id)
     metrics = MetricDefinitionVersion.objects.filter(tenant_id=tenant_id)
     findings = DataQualityFinding.objects.filter(tenant_id=tenant_id)
     submissions = SubmissionSnapshot.objects.filter(tenant_id=tenant_id)
     open_findings = findings.filter(status__in=["OPEN", "ACKNOWLEDGED"])
     return {
         "summary": {
+            "populationVersions": populations.count(),
+            "populationCodes": populations.values("population_code").distinct().count(),
+            "dimensionVersions": dimensions.count(),
+            "dimensionCodes": dimensions.values("dimension_code").distinct().count(),
             "metricVersions": metrics.count(),
             "metricCodes": metrics.values("metric_code").distinct().count(),
             "openFindings": open_findings.count(),
@@ -22,6 +34,18 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "rejectedReceipts": submissions.filter(status="REJECTED").exclude(receipt_ref="").count(),
             "corrections": submissions.filter(status="CORRECTED").count(),
         },
+        "recentPopulations": list(
+            populations.order_by("population_code", "-version_no")[:12].values(
+                "id", "population_code", "name", "version_no", "status", "root_domain",
+                "predicate_json", "source_domains", "as_of_required", "updated_at"
+            )
+        ),
+        "recentDimensions": list(
+            dimensions.order_by("dimension_code", "-version_no")[:12].values(
+                "id", "dimension_code", "name", "version_no", "status", "source_domain",
+                "attribute_path", "value_type", "label_map_json", "as_of_required", "updated_at"
+            )
+        ),
         "recentMetrics": list(
             metrics.order_by("metric_code", "-version_no")[:12].values(
                 "id", "metric_code", "name", "version_no", "status", "value_type", "unit",
@@ -45,7 +69,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "dataQualityFinding": True,
             "submissionSnapshot": True,
             "sourceGate": True,
-            "populationDimension": False,
+            "populationDimension": True,
             "asOfEngine": False,
             "qualityRuleExecution": False,
             "asyncExchange": False,
