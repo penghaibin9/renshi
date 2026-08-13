@@ -67,6 +67,19 @@ def _source_domains(values) -> list[str]:
     return result
 
 
+def _population_grain(value) -> str:
+    grain = str(value or "").strip().upper()
+    allowed = set(PopulationDefinitionVersion.Grain.values) - {
+        PopulationDefinitionVersion.Grain.UNSPECIFIED
+    }
+    if grain not in allowed:
+        raise HrDataDefinitionError(
+            "HR18_POPULATION_GRAIN_INVALID",
+            "grain must be PERSON, STAFF, EMPLOYMENT_RELATIONSHIP or ASSIGNMENT",
+        )
+    return grain
+
+
 def _validate_predicate(node, *, depth: int = 0) -> None:
     """Validate a small declarative filter grammar; no executable code allowed."""
     if depth > 8:
@@ -144,6 +157,7 @@ class HrDataDefinitionService:
         population_code: str,
         name: str,
         root_domain: str,
+        grain: str,
         predicate: dict,
         source_domains: list,
         description: str = "",
@@ -154,6 +168,7 @@ class HrDataDefinitionService:
         if not name:
             raise HrDataDefinitionError("HR18_DEFINITION_NAME_REQUIRED", "name is required")
         root_domain = _domain(root_domain, label="root_domain")
+        grain = _population_grain(grain)
         domains = _source_domains(source_domains)
         if root_domain not in domains:
             raise HrDataDefinitionError(
@@ -166,6 +181,7 @@ class HrDataDefinitionService:
             "name": name,
             "description": str(description or "").strip(),
             "rootDomain": root_domain,
+            "grain": grain,
             "predicate": predicate,
             "sourceDomains": domains,
             "asOfRequired": bool(as_of_required),
@@ -190,6 +206,7 @@ class HrDataDefinitionService:
             name=name,
             description=canonical["description"],
             root_domain=root_domain,
+            grain=grain,
             predicate_json=predicate,
             source_domains=domains,
             as_of_required=bool(as_of_required),
