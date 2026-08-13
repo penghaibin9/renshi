@@ -1,5 +1,4 @@
 import json
-from datetime import date
 
 from django.test import TestCase
 
@@ -9,20 +8,6 @@ from hr_data.services.metric_service import HrMetricDefinitionService
 
 
 class HrMetricDefinitionServiceTests(TestCase):
-    def _population(self, *, tenant_id=77, code="ACTIVE_STAFF", version=1, sources=None):
-        return PopulationDefinitionVersion.objects.create(
-            tenant_id=tenant_id,
-            population_code=code,
-            name="在职教职工",
-            root_domain="HR03",
-            predicate_json={"field": "employment.status", "op": "eq", "value": "ACTIVE"},
-            source_domains=sources or ["HR03"],
-            as_of_required=True,
-            version_no=version,
-            content_hash="a" * 64,
-            effective_from=date(2026, 1, 1) if hasattr(PopulationDefinitionVersion, "effective_from") else None,
-        )
-
     def test_count_metric_is_canonical_and_freezes_population_version(self):
         population = PopulationDefinitionVersion.objects.create(
             tenant_id=77,
