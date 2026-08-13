@@ -8,6 +8,8 @@ HR03 employment effect.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Optional
 
 from django.db import transaction
@@ -21,7 +23,31 @@ class ExitCaseError(Exception):
         super().__init__(message)
 
 
+@dataclass(frozen=True)
+class ExitCaseInput:
+    case_no: str
+    person_id: object
+    employment_relationship_id: object
+    exit_type: str
+    requested_date: Optional[date] = None
+    last_working_date: Optional[date] = None
+    planned_employment_end_date: Optional[date] = None
+    planned_access_end_at: Optional[datetime] = None
+
+
 class ExitCaseService:
+    OPEN_STATUSES = frozenset(
+        {
+            ExitCase.Status.DRAFT,
+            ExitCase.Status.SUBMITTED,
+            ExitCase.Status.RETURNED,
+            ExitCase.Status.APPROVED,
+            ExitCase.Status.HANDOVER,
+            ExitCase.Status.SETTLEMENT,
+            ExitCase.Status.EFFECT_PENDING,
+        }
+    )
+
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
         if not tenant_id:
             raise ExitCaseError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
@@ -38,6 +64,33 @@ class ExitCaseService:
             raise ExitCaseError("EXIT_CASE_NOT_FOUND", "exit case not found")
         return case
 
+    def _lock_relationship(self, relationship_id, person_id):
+        from hr_staff.constants import RelationshipStatus
+        from hr_staff.models import HrEmploymentRelationship
+
+        relationship = (
+            HrEmploymentRelationship.objects.select_for_update()
+            .select_related("staff_id__person_id")
+            .filter(id=relationship_id, tenant_id=self.tenant_id)
+            .first()
+        )
+        if relationship is None:
+            raise ExitCaseError(
+                "EXIT_RELATIONSHIP_NOT_FOUND",
+                "HR03 employment relationship not found inside tenant",
+            )
+        if str(relationship.staff_id.person_id_id) != str(person_id):
+            raise ExitCaseError(
+                "EXIT_RELATIONSHIP_PERSON_MISMATCH",
+                "exit person does not own the referenced HR03 relationship",
+            )
+        if relationship.status != RelationshipStatus.ACTIVE:
+            raise ExitCaseError(
+                "EXIT_RELATIONSHIP_NOT_ACTIVE",
+                "only an ACTIVE HR03 employment relationship can open an exit case",
+            )
+        return relationship
+
     def _transition(self, case: ExitCase, *, allowed_from, target: str) -> ExitCase:
         if case.status not in allowed_from:
             raise ExitCaseError(
@@ -48,6 +101,65 @@ class ExitCaseService:
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
         return case
+
+    @transaction.atomic
+    def create_draft(self, payload: ExitCaseInput) -> ExitCase:
+        case_no = str(payload.case_no or "").strip()
+        exit_type = str(payload.exit_type or "").strip().upper()
+        if not case_no:
+            raise ExitCaseError("EXIT_CASE_NO_REQUIRED", "case_no is required")
+        if exit_type not in ExitCase.ExitType.values:
+            raise ExitCaseError("EXIT_TYPE_INVALID", f"unsupported exit_type: {exit_type}")
+        if not payload.person_id:
+            raise ExitCaseError("EXIT_PERSON_REQUIRED", "person_id is required")
+        if not payload.employment_relationship_id:
+            raise ExitCaseError(
+                "EXIT_RELATIONSHIP_REQUIRED", "employment_relationship_id is required"
+            )
+        if (
+            payload.last_working_date
+            and payload.planned_employment_end_date
+            and payload.last_working_date > payload.planned_employment_end_date
+        ):
+            raise ExitCaseError(
+                "EXIT_WORKING_DATE_AFTER_END_DATE",
+                "last working date cannot be later than planned employment end date",
+            )
+
+        self._lock_relationship(payload.employment_relationship_id, payload.person_id)
+        existing = (
+            ExitCase.objects.select_for_update()
+            .filter(
+                tenant_id=self.tenant_id,
+                employment_relationship_id=payload.employment_relationship_id,
+                status__in=self.OPEN_STATUSES,
+            )
+            .first()
+        )
+        if existing is not None:
+            raise ExitCaseError(
+                "EXIT_CASE_ALREADY_OPEN",
+                "an open exit case already exists for this employment relationship",
+            )
+        if ExitCase.objects.filter(tenant_id=self.tenant_id, case_no=case_no).exists():
+            raise ExitCaseError(
+                "EXIT_CASE_NO_CONFLICT", "case_no already exists inside tenant"
+            )
+
+        return ExitCase.objects.create(
+            tenant_id=self.tenant_id,
+            case_no=case_no,
+            person_id=payload.person_id,
+            employment_relationship_id=payload.employment_relationship_id,
+            exit_type=exit_type,
+            requested_date=payload.requested_date,
+            last_working_date=payload.last_working_date,
+            planned_employment_end_date=payload.planned_employment_end_date,
+            planned_access_end_at=payload.planned_access_end_at,
+            status=ExitCase.Status.DRAFT,
+            created_by=self.actor_user_id,
+            updated_by=self.actor_user_id,
+        )
 
     @transaction.atomic
     def submit(self, case_id) -> ExitCase:
