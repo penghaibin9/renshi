@@ -18,7 +18,10 @@ class AppointmentPolicyVersion(HrVersionedModel):
 
     class Meta:
         db_table = "hr14_appointment_policy_version"
-        permissions = [("hr.appointment.view", "查看 HR14 岗位聘任工作区")]
+        permissions = [
+            ("hr.appointment.view", "查看 HR14 岗位聘任工作区"),
+            ("hr.appointment.review", "执行 HR14 评议排序"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "policy_code", "version_no"),
@@ -90,7 +93,8 @@ class AppointmentBatch(HrVersionedModel):
         ]
         indexes = [
             models.Index(
-                fields=("tenant_id", "status", "batch_no"), name="idx_hr14_batch_tenant_status"
+                fields=("tenant_id", "status", "batch_no"),
+                name="idx_hr14_batch_tenant_status",
             )
         ]
 
@@ -99,7 +103,9 @@ class AppointmentPositionSupplySnapshot(HrTenantScopedModel):
     """Immutable HR02 position-supply snapshot captured for an appointment batch."""
 
     batch = models.ForeignKey(
-        AppointmentBatch, on_delete=models.PROTECT, related_name="position_supply_snapshots"
+        AppointmentBatch,
+        on_delete=models.PROTECT,
+        related_name="position_supply_snapshots",
     )
     position_instance_id = models.PositiveBigIntegerField()
     organization_id = models.PositiveBigIntegerField(null=True, blank=True)
@@ -200,8 +206,6 @@ class AppointmentApplicationCase(HrTenantScopedModel):
     case_no = models.CharField(max_length=64)
     person_id = models.UUIDField()
     policy_version_id = models.UUIDField()
-    # HR02 HrPosition uses a BigAutoField primary key. Keep a scalar provider
-    # reference here (not a cross-domain FK), but the scalar type must match.
     position_instance_id = models.PositiveBigIntegerField()
     batch_no = models.CharField(max_length=64)
     requested_level_code = models.CharField(max_length=64, blank=True, default="")
@@ -229,13 +233,6 @@ class AppointmentApplicationCase(HrTenantScopedModel):
 
 
 class AppointmentQuotaReservation(HrTenantScopedModel):
-    """Idempotent quota hold for one application case.
-
-    The reservation row is reused if a returned/reopened application needs to
-    reserve again. Keeping one stable row per case prevents duplicate holds in
-    concurrent requests while retaining the full status/version audit trail.
-    """
-
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", "Active"
         RELEASED = "RELEASED", "Released"
@@ -267,6 +264,78 @@ class AppointmentQuotaReservation(HrTenantScopedModel):
         ]
 
 
+class AppointmentRankingResult(HrTenantScopedModel):
+    """Append-only final aggregate ranking for one review attempt."""
+
+    class Outcome(models.TextChoices):
+        SELECTED = "SELECTED", "Selected"
+        WAITLIST = "WAITLIST", "Waitlist"
+        NOT_SELECTED = "NOT_SELECTED", "Not selected"
+
+    ranking_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField()
+    batch_no = models.CharField(max_length=64)
+    position_instance_id = models.PositiveBigIntegerField()
+    attempt_no = models.PositiveIntegerField()
+    total_score = models.DecimalField(max_digits=12, decimal_places=4)
+    rank_no = models.PositiveIntegerField()
+    outcome = models.CharField(max_length=16, choices=Outcome.choices, db_index=True)
+    score_snapshot_json = models.JSONField(default=dict, blank=True)
+    finalized_by = models.PositiveBigIntegerField(null=True, blank=True)
+    finalized_at = models.DateTimeField(auto_now_add=True)
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "ranking_no",
+        "application_case_id",
+        "batch_no",
+        "position_instance_id",
+        "attempt_no",
+        "total_score",
+        "rank_no",
+        "outcome",
+        "score_snapshot_json",
+        "finalized_by",
+    )
+
+    class Meta:
+        db_table = "hr14_appointment_ranking_result"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "ranking_no"),
+                name="uq_hr14_ranking_tenant_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "application_case_id", "attempt_no"),
+                name="uq_hr14_ranking_case_attempt",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "batch_no", "position_instance_id", "rank_no"),
+                name="idx_hr14_ranking_batch_position",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "APPOINTMENT_RANKING_IMMUTABLE: finalized ranking results "
+                        "must be appended, not edited in place"
+                    )
+        return super().save(*args, **kwargs)
+
+
 class PositionAppointmentFact(HrTenantScopedModel):
     class Status(models.TextChoices):
         EFFECT_PENDING = "EFFECT_PENDING", "Final, waiting for HR03 effect"
@@ -277,11 +346,8 @@ class PositionAppointmentFact(HrTenantScopedModel):
 
     appointment_no = models.CharField(max_length=64)
     person_id = models.UUIDField()
-    # Scalar Provider reference to HR02 HrPosition.id (BigAutoField).
     position_instance_id = models.PositiveBigIntegerField()
     application_case_id = models.UUIDField()
-    # Receipt for the exact HR02 capacity hold consumed by this result. It is
-    # scalar on purpose: HR14 does not own HR02 lifecycle or cascade behavior.
     reservation_id = models.PositiveBigIntegerField(null=True, blank=True, db_index=True)
     level_code = models.CharField(max_length=64, blank=True, default="")
     effective_from = models.DateField()
@@ -292,8 +358,6 @@ class PositionAppointmentFact(HrTenantScopedModel):
         default=Status.EFFECT_PENDING,
         db_index=True,
     )
-    # Provider receipt/error allow EFFECT_PENDING to be retried/reconciled
-    # without claiming that the HR03 assignment was already made effective.
     effect_receipt_json = models.JSONField(default=dict, blank=True)
     last_effect_error = models.TextField(blank=True, default="")
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
