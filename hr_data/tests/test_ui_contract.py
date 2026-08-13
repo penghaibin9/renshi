@@ -37,5 +37,6 @@ class Hr18UiContractTests(SimpleTestCase):
         self.assertIn("submissionAsOfGate", source)
         self.assertIn("asOfEngine 仍未接通", source)
         self.assertIn("recentAsOfEvidence", source)
-        self.assertNotIn("生成 COMPLETE", source)
         self.assertNotIn("createAsOfEvidence", source)
+        self.assertNotIn("method:'POST'", source)
+        self.assertNotIn('method:"POST"', source)
