@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api
+from . import api, metric_api
 
 app_name = "hr_data_api"
 
@@ -15,5 +15,10 @@ urlpatterns = [
         "definitions/dimensions/",
         api.create_dimension_definition,
         name="dimension-definition-create",
+    ),
+    path(
+        "definitions/metrics/",
+        metric_api.create_metric_definition,
+        name="metric-definition-create",
     ),
 ]
