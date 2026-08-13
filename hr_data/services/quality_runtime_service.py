@@ -1,7 +1,7 @@
 """Production runtime registry for HR18 data-quality execution.
 
 The core execution service remains registry-agnostic for tests and extensions.
-This runtime layer provides a small built-in HR03 quality adapter while still
+This runtime layer provides bounded built-in Authority adapters while still
 allowing deployment settings to override or add source-domain providers.
 """
 
@@ -17,6 +17,8 @@ from hr_data.services.quality_service import DataQualityError, DataQualityExecut
 class RuntimeDataQualityExecutionService(DataQualityExecutionService):
     _BUILTIN_PROVIDERS = {
         "HR03": "hr_data.providers.hr03_quality.quality_provider",
+        "HR13": "hr_data.providers.formal_fact_quality.quality_provider",
+        "HR14": "hr_data.providers.formal_fact_quality.quality_provider",
     }
 
     @staticmethod
