@@ -23,8 +23,9 @@ def workspace(request, section="overview"):
     # workspace_c = business visual layer;
     # workspace_d = live dashboard/runtime;
     # workspace_e = native Horilla responsive shell + qualification history;
-    # workspace_f = real expert-panel / conflict / ballot authority UI.
-    template_name = "hr_title/workspace_f.html"
+    # workspace_f = expert-panel / conflict / ballot authority UI;
+    # workspace_g = publicity / appeal authority UI and formal-result gate visibility.
+    template_name = "hr_title/workspace_g.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrTitleAccessError as exc:
