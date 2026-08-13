@@ -49,13 +49,34 @@ class ExitEffectSagaService:
         correlation_id: str = "",
         required_participants: Iterable[str] = (),
     ) -> ExitEffect:
-        """Create one effect version, or replay the exact idempotent effect."""
+        """Create one effect version, or replay the exact frozen effect payload."""
         key = (idempotency_key or "").strip()
         if not key:
             raise ExitSagaError(
                 "EXIT_EFFECT_IDEMPOTENCY_KEY_REQUIRED",
                 "effect apply requires an idempotency key",
             )
+        if len(key) > 128:
+            raise ExitSagaError(
+                "EXIT_EFFECT_IDEMPOTENCY_KEY_INVALID",
+                "effect idempotency key is limited to 128 characters",
+            )
+        correlation = str(correlation_id or "").strip()
+        if len(correlation) > 128:
+            raise ExitSagaError(
+                "EXIT_EFFECT_CORRELATION_ID_INVALID",
+                "effect correlation id is limited to 128 characters",
+            )
+
+        required = {str(value or "").strip().upper() for value in required_participants}
+        unknown = required - set(self.PARTICIPANTS)
+        if unknown:
+            labels = [value or "<blank>" for value in sorted(unknown)]
+            raise ExitSagaError(
+                "EXIT_EFFECT_PARTICIPANT_UNKNOWN",
+                f"unknown effect participants: {', '.join(labels)}",
+            )
+        required.add("HR03")
 
         case = (
             ExitCase.objects.select_for_update()
@@ -71,21 +92,21 @@ class ExitEffectSagaService:
             .first()
         )
         if existing is not None:
-            if str(existing.case_id) != str(case.id):
+            existing_required = {
+                participant
+                for participant, (status_field, _receipt_field) in self.PARTICIPANTS.items()
+                if getattr(existing, status_field) != ExitEffect.ParticipantStatus.NOT_REQUIRED
+            }
+            if (
+                str(existing.case_id) != str(case.id)
+                or str(existing.correlation_id or "").strip() != correlation
+                or existing_required != required
+            ):
                 raise ExitSagaError(
                     "EXIT_EFFECT_IDEMPOTENCY_CONFLICT",
-                    "idempotency key already belongs to a different exit case",
+                    "idempotency key already belongs to a different frozen exit effect payload",
                 )
             return existing
-
-        required = {str(value).upper() for value in required_participants}
-        unknown = required - set(self.PARTICIPANTS)
-        if unknown:
-            raise ExitSagaError(
-                "EXIT_EFFECT_PARTICIPANT_UNKNOWN",
-                f"unknown effect participants: {', '.join(sorted(unknown))}",
-            )
-        required.add("HR03")
 
         current_max = (
             ExitEffect.objects.filter(
@@ -107,7 +128,7 @@ class ExitEffectSagaService:
             case_id=case.id,
             effect_version=current_max + 1,
             idempotency_key=key,
-            correlation_id=correlation_id,
+            correlation_id=correlation,
             status=ExitEffect.Status.PENDING,
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
