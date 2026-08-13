@@ -5,7 +5,8 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 
 from hr_appointment.models import AppointmentApplicationCase, PositionAppointmentFact
-from hr_appointment.services.effect_service import AppointmentEffectService
+from hr_appointment.services.effect_service import AppointmentEffectError, AppointmentEffectService
+from hr_appointment.services.publicity_service import AppointmentPublicityError
 
 
 class AppointmentEffectServiceTests(TestCase):
@@ -31,15 +32,18 @@ class AppointmentEffectServiceTests(TestCase):
         )
         staff = SimpleNamespace(id="00000000-0000-0000-0000-000000000401")
         relationship = SimpleNamespace(id="00000000-0000-0000-0000-000000000501")
-        return case, fact, reservation, position, staff, relationship
+        publicity = SimpleNamespace(id="00000000-0000-0000-0000-000000000701")
+        return case, fact, reservation, position, staff, relationship, publicity
 
+    @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
     @patch("hr_structure.services.position.PositionService")
     @patch("hr_staff.services.assignment_service.AssignmentService")
     def test_provider_failure_keeps_effect_pending_and_does_not_commit_reservation(
-        self, assignment_service_cls, position_service_cls
+        self, assignment_service_cls, position_service_cls, publicity_gate
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
-        case, fact, reservation, position, staff, relationship = self._fixtures()
+        case, fact, reservation, position, staff, relationship, publicity = self._fixtures()
+        publicity_gate.return_value = publicity
         service._lock_case = MagicMock(return_value=case)
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
         service._lock_capacity_receipt = MagicMock(return_value=(reservation, position))
@@ -56,18 +60,21 @@ class AppointmentEffectServiceTests(TestCase):
         )
 
         self.assertFalse(result.effective)
+        publicity_gate.assert_called_once_with(case.id)
         self.assertEqual(fact.status, PositionAppointmentFact.Status.EFFECT_PENDING)
         self.assertIn("HR03 write failed", fact.last_effect_error)
         self.assertEqual(case.status, AppointmentApplicationCase.Status.EFFECT_PENDING)
         position_service_cls.return_value.commit.assert_not_called()
 
+    @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
     @patch("hr_structure.services.position.PositionService")
     @patch("hr_staff.services.assignment_service.AssignmentService")
-    def test_success_requires_hr03_write_then_reservation_commit_before_effective(
-        self, assignment_service_cls, position_service_cls
+    def test_success_requires_closed_publicity_then_provider_effect(
+        self, assignment_service_cls, position_service_cls, publicity_gate
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
-        case, fact, reservation, position, staff, relationship = self._fixtures()
+        case, fact, reservation, position, staff, relationship, publicity = self._fixtures()
+        publicity_gate.return_value = publicity
         service._lock_case = MagicMock(return_value=case)
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
         service._lock_capacity_receipt = MagicMock(return_value=(reservation, position))
@@ -84,6 +91,7 @@ class AppointmentEffectServiceTests(TestCase):
         )
 
         self.assertTrue(result.effective)
+        publicity_gate.assert_called_once_with(case.id)
         assignment_service_cls.return_value.switch_primary.assert_called_once_with(
             employment_relationship_id=relationship,
             effective_from=date(2026, 9, 1),
@@ -96,12 +104,39 @@ class AppointmentEffectServiceTests(TestCase):
         position_service_cls.return_value.commit.assert_called_once_with(41)
         self.assertEqual(fact.status, PositionAppointmentFact.Status.EFFECTIVE)
         self.assertEqual(case.status, AppointmentApplicationCase.Status.EFFECTIVE)
+        self.assertEqual(fact.effect_receipt_json["hr14PublicityId"], str(publicity.id))
         self.assertEqual(fact.effect_receipt_json["hr02ReservationId"], 41)
         self.assertEqual(fact.effect_receipt_json["hr02PositionId"], 31)
 
-    def test_already_effective_fact_is_idempotent_and_skips_provider_writes(self):
+    @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    def test_publicity_gate_failure_prevents_pending_fact_creation(self, publicity_gate):
         service = AppointmentEffectService(77, actor_user_id=9)
         case, fact, *_ = self._fixtures()
+        service._lock_case = MagicMock(return_value=case)
+        service._get_or_create_pending_fact = MagicMock(return_value=fact)
+        publicity_gate.side_effect = AppointmentPublicityError(
+            "APPOINTMENT_PUBLICITY_NOT_CLOSED",
+            "formal appointment effect requires a closed publicity record",
+        )
+
+        with self.assertRaises(AppointmentEffectError) as ctx:
+            service.apply(
+                case_id=case.id,
+                appointment_no="APT-001",
+                reservation_id=41,
+                effective_from=date(2026, 9, 1),
+            )
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_PUBLICITY_NOT_CLOSED")
+        service._get_or_create_pending_fact.assert_not_called()
+
+    @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    def test_already_effective_fact_still_requires_publicity_receipt_but_skips_providers(
+        self, publicity_gate
+    ):
+        service = AppointmentEffectService(77, actor_user_id=9)
+        case, fact, *_, publicity = self._fixtures()
+        publicity_gate.return_value = publicity
         fact.status = PositionAppointmentFact.Status.EFFECTIVE
         service._lock_case = MagicMock(return_value=case)
         service._get_or_create_pending_fact = MagicMock(return_value=fact)
@@ -115,4 +150,5 @@ class AppointmentEffectServiceTests(TestCase):
         )
 
         self.assertTrue(result.effective)
+        publicity_gate.assert_called_once_with(case.id)
         service._lock_capacity_receipt.assert_not_called()
