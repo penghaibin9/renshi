@@ -115,10 +115,20 @@ class AppointmentBatchService:
             "status": policy.status,
         }
         observed = self._canonical_hash(payload)
-        if str(policy.content_hash or "").strip().lower() != observed:
+        stored = str(policy.content_hash or "").strip().lower()
+        if stored == observed:
+            return observed
+
+        already_frozen = AppointmentBatch.objects.filter(
+            tenant_id=self.tenant_id,
+            policy_version_id=policy.id,
+        ).exclude(
+            status__in={AppointmentBatch.Status.DRAFT, AppointmentBatch.Status.CONFIGURING}
+        ).exists()
+        if not already_frozen:
             # HR14 did not historically own a canonical policy-hash builder.
-            # Publish is the freeze boundary: normalize any draft-era/legacy hash
-            # to the exact current policy content, then guards make it immutable.
+            # The first publish using a still-configurable policy normalizes any
+            # draft-era/legacy hash. From that point the policy guard freezes it.
             policy.content_hash = observed
             policy.updated_by = self.actor_user_id
             policy.save(update_fields=["content_hash", "updated_by", "updated_at"])
