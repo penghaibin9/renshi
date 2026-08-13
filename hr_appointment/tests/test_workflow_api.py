@@ -33,7 +33,7 @@ class Hr14WorkflowApiTests(SimpleTestCase):
 
     @patch("hr_appointment.batch_api.resolve_request_tenant", return_value=7)
     @patch("hr_appointment.batch_api.AppointmentBatchService")
-    def test_create_batch_parses_window_and_uses_manage_permission(
+    def test_create_batch_parses_windows_and_uses_manage_permission(
         self, service_cls, tenant_resolver
     ):
         now = timezone.now().replace(microsecond=0)
@@ -47,6 +47,9 @@ class Hr14WorkflowApiTests(SimpleTestCase):
             target_levels_json=["PT-7"],
             application_from=now,
             application_to=now + timedelta(days=5),
+            publicity_from=now + timedelta(days=10),
+            publicity_to=now + timedelta(days=15),
+            content_hash="",
             status="DRAFT",
         )
         service_cls.return_value.create_draft.return_value = batch
@@ -61,6 +64,8 @@ class Hr14WorkflowApiTests(SimpleTestCase):
                     "targetLevels": batch.target_levels_json,
                     "applicationFrom": now.isoformat(),
                     "applicationTo": (now + timedelta(days=5)).isoformat(),
+                    "publicityFrom": (now + timedelta(days=10)).isoformat(),
+                    "publicityTo": (now + timedelta(days=15)).isoformat(),
                 }
             ),
             content_type="application/json",
@@ -77,6 +82,7 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         payload = service_cls.return_value.create_draft.call_args.args[0]
         self.assertEqual(payload.batch_no, "B-2026-01")
         self.assertEqual(payload.application_from, now)
+        self.assertEqual(payload.publicity_from, now + timedelta(days=10))
         self.assertEqual(response["Cache-Control"], "no-store")
 
     @patch("hr_appointment.batch_api.resolve_request_tenant", return_value=7)
@@ -101,11 +107,13 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         )
         self.assertIn(b"APPOINTMENT_ELIGIBILITY_INCOMPLETE", response.content)
 
+    @patch("hr_appointment.application_api._resolve_applicant_person_id")
     @patch("hr_appointment.application_api.resolve_request_tenant", return_value=7)
     @patch("hr_appointment.application_api.AppointmentApplicationService")
     def test_create_application_uses_application_permission_and_frozen_identity_payload(
-        self, service_cls, tenant_resolver
+        self, service_cls, tenant_resolver, resolve_self
     ):
+        resolve_self.return_value = self.person_id
         case = SimpleNamespace(
             id=self.case_id,
             case_no="CASE-001",
@@ -139,6 +147,7 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         tenant_resolver.assert_called_once_with(
             request, required_permission=application_api.APPLICATION_PERMISSION
         )
+        resolve_self.assert_called_once_with(request, 7)
         payload = service_cls.return_value.create_draft.call_args.args[0]
         self.assertEqual(payload.person_id, self.person_id)
         self.assertEqual(payload.policy_version_id, self.policy_id)
@@ -146,7 +155,7 @@ class Hr14WorkflowApiTests(SimpleTestCase):
         self.assertIn(b'"status": "DRAFT"', response.content)
 
     @patch("hr_appointment.application_api.resolve_request_tenant", return_value=7)
-    def test_invalid_application_identity_is_rejected_before_service(
+    def test_invalid_application_identity_is_rejected_before_self_resolution(
         self, tenant_resolver
     ):
         request = self.factory.post(
