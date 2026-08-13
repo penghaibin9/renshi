@@ -4,8 +4,8 @@ A collective/publicity result is not yet an effective personnel fact.  HR14
 requires the latest publicity window to be CLOSED with no blocking objection,
 then records an ``EFFECT_PENDING`` result tied to the exact HR02 reservation and
 closed publicity receipt before asking HR03 to switch the primary assignment.
-Only when the HR03 write and HR02 reservation commit succeed in the same
-savepoint may HR14 expose the result as ``EFFECTIVE``.
+Only when the HR03 write, HR02 reservation commit and HR14 batch-quota consume
+succeed in the same savepoint may HR14 expose the result as ``EFFECTIVE``.
 
 If the provider write fails, the pending fact and reservation receipt remain so
 reconciliation can retry.  No caller should infer appointment effectiveness
@@ -22,7 +22,11 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from hr_appointment.models import AppointmentApplicationCase, PositionAppointmentFact
+from hr_appointment.models import (
+    AppointmentApplicationCase,
+    AppointmentQuotaReservation,
+    PositionAppointmentFact,
+)
 
 
 class AppointmentEffectError(Exception):
@@ -111,6 +115,38 @@ class AppointmentEffectService:
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
+
+    def _lock_batch_quota_receipt(self, case) -> AppointmentQuotaReservation:
+        reservation = (
+            AppointmentQuotaReservation.objects.select_for_update()
+            .select_related("quota_pool__batch")
+            .filter(
+                tenant_id=self.tenant_id,
+                application_case=case,
+                quota_pool__tenant_id=self.tenant_id,
+                quota_pool__batch__tenant_id=self.tenant_id,
+            )
+            .first()
+        )
+        if reservation is None:
+            raise AppointmentEffectError(
+                "APPOINTMENT_QUOTA_RESERVATION_REQUIRED",
+                "formal appointment effect requires an HR14 batch quota reservation",
+            )
+        if reservation.quota_pool.batch.batch_no != case.batch_no:
+            raise AppointmentEffectError(
+                "APPOINTMENT_QUOTA_BATCH_MISMATCH",
+                "HR14 quota reservation belongs to a different appointment batch",
+            )
+        if reservation.status not in {
+            AppointmentQuotaReservation.Status.ACTIVE,
+            AppointmentQuotaReservation.Status.CONSUMED,
+        }:
+            raise AppointmentEffectError(
+                "APPOINTMENT_QUOTA_NOT_ACTIVE",
+                f"HR14 quota reservation status {reservation.status} cannot enter effect",
+            )
+        return reservation
 
     def _lock_capacity_receipt(self, case, reservation_id):
         from hr_structure.models import HrPosition, HrPositionReservation
@@ -223,6 +259,7 @@ class AppointmentEffectService:
         except AppointmentPublicityError as exc:
             raise AppointmentEffectError(exc.code, str(exc)) from exc
 
+        quota_reservation = self._lock_batch_quota_receipt(case)
         fact = self._get_or_create_pending_fact(
             case=case,
             appointment_no=appointment_no,
@@ -248,6 +285,7 @@ class AppointmentEffectService:
 
         try:
             with transaction.atomic():
+                from hr_appointment.services.quota_service import AppointmentQuotaService
                 from hr_staff.services.assignment_service import AssignmentService
                 from hr_structure.scope import Hr02Scope
                 from hr_structure.services.position import PositionService
@@ -267,6 +305,9 @@ class AppointmentEffectService:
                     Hr02Scope("SCHOOL", tenant_id=self.tenant_id),
                     actor=str(self.actor_user_id or ""),
                 ).commit(reservation.id)
+                AppointmentQuotaService(
+                    self.tenant_id, actor_user_id=self.actor_user_id
+                ).consume(quota_reservation.id)
         except Exception as exc:
             fact.last_effect_error = str(exc)[:2000]
             fact.save(update_fields=["last_effect_error", "updated_at"])
@@ -279,6 +320,7 @@ class AppointmentEffectService:
         fact.status = PositionAppointmentFact.Status.EFFECTIVE
         fact.effect_receipt_json = {
             "hr14PublicityId": str(publicity.id),
+            "hr14QuotaReservationId": str(quota_reservation.id),
             "hr03AssignmentId": str(assignment.id),
             "hr03RelationshipId": str(relationship.id),
             "hr02ReservationId": reservation.id,
