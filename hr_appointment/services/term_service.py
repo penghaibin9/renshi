@@ -218,6 +218,14 @@ class AppointmentTermService:
             raise AppointmentTermError("APPOINTMENT_RENEWAL_NO_REQUIRED", "renewal_no is required")
         if route not in AppointmentRenewalCase.Route.values:
             raise AppointmentTermError("APPOINTMENT_RENEWAL_ROUTE_INVALID", "invalid renewal route")
+        if (
+            route != AppointmentRenewalCase.Route.REAPPOINTMENT
+            and proposed_level_code != term.level_code
+        ):
+            raise AppointmentTermError(
+                "APPOINTMENT_RENEWAL_LEVEL_CHANGE_REQUIRES_CHANGE_WORKFLOW",
+                "renewal cannot change appointment level; use the formal appointment change workflow",
+            )
         if proposed_effective_to is not None and proposed_effective_to <= proposed_effective_from:
             raise AppointmentTermError(
                 "APPOINTMENT_RENEWAL_RANGE_INVALID",
