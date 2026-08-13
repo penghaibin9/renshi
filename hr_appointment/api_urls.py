@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, term_api
+from . import api, term_api, term_effect_api
 
 app_name = "hr_appointment_api"
 urlpatterns = [
@@ -61,6 +61,11 @@ urlpatterns = [
         name="renewal-decision",
     ),
     path(
+        "renewals/<uuid:renewal_id>/apply-effect/",
+        term_effect_api.apply_renewal_effect,
+        name="renewal-effect-apply",
+    ),
+    path(
         "terms/<uuid:term_id>/changes/",
         term_api.open_change,
         name="term-change-open",
@@ -69,5 +74,10 @@ urlpatterns = [
         "term-changes/<uuid:change_id>/decision/",
         term_api.decide_change,
         name="term-change-decision",
+    ),
+    path(
+        "term-changes/<uuid:change_id>/apply-effect/",
+        term_effect_api.apply_change_effect,
+        name="term-change-effect-apply",
     ),
 ]
