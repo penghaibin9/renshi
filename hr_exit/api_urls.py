@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, case_api
+from . import api, case_api, retirement_api
 
 app_name = "hr_exit_api"
 urlpatterns = [
@@ -26,6 +26,16 @@ urlpatterns = [
         "cases/<uuid:case_id>/apply-effect/",
         api.apply_effect,
         name="case-effect-apply",
+    ),
+    path(
+        "exit-facts/<uuid:exit_fact_id>/retirement/",
+        retirement_api.finalize_retirement,
+        name="retirement-finalize",
+    ),
+    path(
+        "retirement-facts/<uuid:retirement_fact_id>/pension-status/",
+        retirement_api.set_pension_status,
+        name="retirement-pension-status",
     ),
     path(
         "cases/<uuid:case_id>/handover-items/",
