@@ -216,6 +216,7 @@ class SubmissionSnapshot(HrTenantScopedModel):
         DRAFT = "DRAFT", "Draft"
         VALIDATED = "VALIDATED", "Validated"
         APPROVED = "APPROVED", "Approved"
+        DISPATCH_QUEUED = "DISPATCH_QUEUED", "Async dispatch queued"
         SUBMITTED = "SUBMITTED", "Submitted"
         ACCEPTED = "ACCEPTED", "Accepted"
         REJECTED = "REJECTED", "Rejected"
@@ -228,14 +229,27 @@ class SubmissionSnapshot(HrTenantScopedModel):
     scope_json = models.JSONField(default=dict)
     payload_hash = models.CharField(max_length=64)
     status = models.CharField(
-        max_length=16,
+        max_length=20,
         choices=Status.choices,
         default=Status.DRAFT,
         db_index=True,
     )
+    dispatch_ref = models.CharField(max_length=255, blank=True, default="")
+    dispatch_requested_at = models.DateTimeField(null=True, blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     receipt_ref = models.CharField(max_length=255, blank=True, default="")
     parent_submission_id = models.UUIDField(null=True, blank=True)
+
+    _IDENTITY_FIELDS = (
+        "tenant_id",
+        "submission_no",
+        "definition_code",
+        "definition_version",
+        "as_of_date",
+        "scope_json",
+        "payload_hash",
+        "parent_submission_id",
+    )
 
     class Meta:
         db_table = "hr18_submission_snapshot"
@@ -255,3 +269,20 @@ class SubmissionSnapshot(HrTenantScopedModel):
                 name="idx_hr18_submission_asof",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._IDENTITY_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._IDENTITY_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "HR18_SUBMISSION_IDENTITY_IMMUTABLE: submission payload identity must be appended"
+                    )
+        return super().save(*args, **kwargs)
