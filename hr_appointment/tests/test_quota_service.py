@@ -30,7 +30,7 @@ class AppointmentQuotaServiceTests(TestCase):
             scope_type="SCHOOL",
             category_code="PROFESSIONAL_TECHNICAL",
             exact_level_code="PT-7",
-            authorized=2,
+            authorized=1,
             occupied=0,
             reserved=0,
         )
@@ -56,11 +56,9 @@ class AppointmentQuotaServiceTests(TestCase):
         self.assertEqual(first.id, second.id)
         self.pool.refresh_from_db()
         self.assertEqual(self.pool.reserved, 1)
-        self.assertEqual(self.pool.available, 1)
+        self.assertEqual(self.pool.available, 0)
 
     def test_exhausted_quota_blocks_second_application(self):
-        self.pool.authorized = 1
-        self.pool.save(update_fields=["authorized", "updated_at"])
         self.service.reserve(application_case_id=self.case.id, quota_pool_id=self.pool.id)
 
         other_case = AppointmentApplicationCase.objects.create(
