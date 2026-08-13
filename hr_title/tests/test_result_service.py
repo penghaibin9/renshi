@@ -1,9 +1,15 @@
-from datetime import date
-from unittest.mock import MagicMock, patch
+import uuid
+from datetime import date, timedelta
 
 from django.test import TestCase
+from django.utils import timezone
 
-from hr_title.models import ProfessionalTitleResult, TitleApplicationCase
+from hr_title.models import (
+    ProfessionalTitleResult,
+    TitleAppealRecord,
+    TitleApplicationCase,
+    TitlePublicityRecord,
+)
 from hr_title.services.result_service import (
     ProfessionalTitleResultService,
     TitleResultError,
@@ -12,151 +18,223 @@ from hr_title.services.result_service import (
 
 
 class ProfessionalTitleResultServiceTests(TestCase):
-    def _payload(self, *, result_no="R-001", effective_from=date(2026, 8, 10)):
+    def _case(self, *, tenant_id=77, status=TitleApplicationCase.Status.PUBLICITY):
+        return TitleApplicationCase.objects.create(
+            tenant_id=tenant_id,
+            case_no=f"CASE-{tenant_id}-{uuid.uuid4().hex[:8]}",
+            person_id=uuid.uuid4(),
+            policy_version_id=uuid.uuid4(),
+            batch_no="B-2026",
+            requested_title_code="PRO-ASSOCIATE",
+            requested_title_name="副教授",
+            status=status,
+        )
+
+    def _closed_publicity(self, case):
+        now = timezone.now()
+        return TitlePublicityRecord.objects.create(
+            tenant_id=case.tenant_id,
+            publicity_no=f"PUB-{uuid.uuid4().hex[:8]}",
+            application_case_id=case.id,
+            start_at=now - timedelta(days=7),
+            end_at=now - timedelta(days=1),
+            status=TitlePublicityRecord.Status.CLOSED,
+            closed_at=now,
+        )
+
+    @staticmethod
+    def _payload(result_no="RESULT-001", *, effective_from=date(2026, 9, 1)):
         return TitleResultInput(
             result_no=result_no,
-            title_code="ASSOCIATE_PROFESSOR",
+            title_code="PRO-ASSOCIATE",
             title_name="副教授",
-            title_series_code="TEACHING",
-            title_level_code="ASSOCIATE",
+            title_series_code="PROFESSIONAL",
+            title_level_code="L7",
             effective_from=effective_from,
         )
 
-    @patch.object(ProfessionalTitleResultService, "_require_closed_publicity")
-    @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
-    @patch("hr_title.services.result_service.TitleApplicationCase.objects")
-    def test_make_effective_locks_case_requires_publicity_and_creates_one_root_fact(
-        self, case_objects, result_objects, publicity_gate
-    ):
-        case = MagicMock()
-        case.id = "case-1"
-        case.person_id = "person-1"
-        case.status = TitleApplicationCase.Status.PUBLICITY
-        case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
-        result_objects.filter.return_value.exists.return_value = False
-        created = MagicMock()
-        result_objects.create.return_value = created
+    def test_make_effective_requires_real_closed_publicity(self):
+        case = self._case()
+        service = ProfessionalTitleResultService(77)
+        with self.assertRaises(TitleResultError) as ctx:
+            service.make_effective(application_case_id=case.id, payload=self._payload())
+        self.assertEqual(ctx.exception.code, "TITLE_PUBLICITY_REQUIRED")
+        self.assertFalse(ProfessionalTitleResult.objects.filter(tenant_id=77).exists())
 
-        result = ProfessionalTitleResultService(77, actor_user_id=9).make_effective(
-            application_case_id="case-1",
-            payload=self._payload(),
+        now = timezone.now()
+        TitlePublicityRecord.objects.create(
+            tenant_id=77,
+            publicity_no="PUB-OPEN",
+            application_case_id=case.id,
+            start_at=now - timedelta(days=1),
+            end_at=now + timedelta(days=1),
+            status=TitlePublicityRecord.Status.OPEN,
         )
+        with self.assertRaises(TitleResultError) as ctx:
+            service.make_effective(
+                application_case_id=case.id,
+                payload=self._payload("RESULT-OPEN"),
+            )
+        self.assertEqual(ctx.exception.code, "TITLE_PUBLICITY_NOT_CLOSED")
 
-        case_objects.select_for_update.return_value.filter.assert_called_once_with(
-            id="case-1", tenant_id=77
+    def test_open_or_upheld_appeal_blocks_formal_result(self):
+        case = self._case()
+        publicity = self._closed_publicity(case)
+        appeal = TitleAppealRecord.objects.create(
+            tenant_id=77,
+            appeal_no="APPEAL-OPEN",
+            publicity_id=publicity.id,
+            application_case_id=case.id,
+            reason="评分材料需要复核",
+            status=TitleAppealRecord.Status.OPEN,
         )
-        publicity_gate.assert_called_once_with(case)
-        result_objects.filter.assert_called_once_with(
-            tenant_id=77, application_case_id="case-1"
-        )
-        self.assertIs(result, created)
+        service = ProfessionalTitleResultService(77)
+        with self.assertRaises(TitleResultError) as ctx:
+            service.make_effective(application_case_id=case.id, payload=self._payload())
+        self.assertEqual(ctx.exception.code, "TITLE_APPEALS_PENDING")
+
+        appeal.status = TitleAppealRecord.Status.UPHELD
+        appeal.save(update_fields=["status", "updated_at"])
+        with self.assertRaises(TitleResultError) as ctx:
+            service.make_effective(application_case_id=case.id, payload=self._payload())
+        self.assertEqual(ctx.exception.code, "TITLE_APPEAL_UPHELD")
+
+    def test_effective_result_is_exactly_idempotent_after_case_is_effective(self):
+        case = self._case()
+        self._closed_publicity(case)
+        service = ProfessionalTitleResultService(77, actor_user_id=9)
+        payload = self._payload()
+
+        first = service.make_effective(application_case_id=case.id, payload=payload)
+        case.refresh_from_db()
         self.assertEqual(case.status, TitleApplicationCase.Status.EFFECTIVE)
-        case.save.assert_called_once_with(
-            update_fields=["status", "updated_by", "updated_at"]
+        self.assertEqual(first.status, ProfessionalTitleResult.Status.EFFECTIVE)
+
+        replay = service.make_effective(application_case_id=case.id, payload=payload)
+        self.assertEqual(replay.id, first.id)
+        self.assertEqual(
+            ProfessionalTitleResult.objects.filter(
+                tenant_id=77, result_no="RESULT-001"
+            ).count(),
+            1,
         )
 
-    @patch.object(ProfessionalTitleResultService, "_require_closed_publicity")
-    @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
-    @patch("hr_title.services.result_service.TitleApplicationCase.objects")
-    def test_second_root_result_is_rejected_after_publicity_gate(
-        self, case_objects, result_objects, publicity_gate
-    ):
-        case = MagicMock()
-        case.id = "case-1"
-        case.status = TitleApplicationCase.Status.PUBLICITY
-        case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
-        result_objects.filter.return_value.exists.return_value = True
+        with self.assertRaises(TitleResultError) as ctx:
+            service.make_effective(
+                application_case_id=case.id,
+                payload=TitleResultInput(
+                    result_no="RESULT-001",
+                    title_code="PRO-FULL",
+                    title_name="教授",
+                    effective_from=date(2026, 9, 1),
+                ),
+            )
+        self.assertEqual(ctx.exception.code, "TITLE_RESULT_IDEMPOTENCY_CONFLICT")
 
-        with self.assertRaisesRegex(TitleResultError, "formal result already exists"):
+    def test_result_identity_fields_and_effective_range_fail_closed(self):
+        case = self._case()
+        self._closed_publicity(case)
+        service = ProfessionalTitleResultService(77)
+        for payload, code in (
+            (
+                TitleResultInput("", "X", "名称", date(2026, 9, 1)),
+                "TITLE_RESULT_RESULT_NO_REQUIRED",
+            ),
+            (
+                TitleResultInput("R-1", "", "名称", date(2026, 9, 1)),
+                "TITLE_RESULT_TITLE_CODE_REQUIRED",
+            ),
+            (
+                TitleResultInput("R-2", "X", "", date(2026, 9, 1)),
+                "TITLE_RESULT_TITLE_NAME_REQUIRED",
+            ),
+            (
+                TitleResultInput(
+                    "R-3",
+                    "X",
+                    "名称",
+                    date(2026, 9, 1),
+                    effective_to=date(2026, 9, 1),
+                ),
+                "TITLE_RESULT_EFFECTIVE_RANGE_INVALID",
+            ),
+        ):
+            with self.assertRaises(TitleResultError) as ctx:
+                service.make_effective(application_case_id=case.id, payload=payload)
+            self.assertEqual(ctx.exception.code, code)
+
+    def test_revision_appends_successor_without_mutating_root_and_replays(self):
+        case = self._case()
+        self._closed_publicity(case)
+        service = ProfessionalTitleResultService(77)
+        root = service.make_effective(
+            application_case_id=case.id,
+            payload=self._payload("RESULT-ROOT", effective_from=date(2026, 9, 1)),
+        )
+        payload = TitleResultInput(
+            result_no="RESULT-REV-1",
+            title_code="PRO-FULL",
+            title_name="教授",
+            title_series_code="PROFESSIONAL",
+            title_level_code="L4",
+            effective_from=date(2027, 1, 1),
+        )
+
+        revised = service.revise(result_id=root.id, payload=payload)
+        self.assertEqual(revised.status, ProfessionalTitleResult.Status.REVISED)
+        self.assertEqual(revised.supersedes_result_id, root.id)
+        root.refresh_from_db()
+        self.assertEqual(root.status, ProfessionalTitleResult.Status.EFFECTIVE)
+        self.assertEqual(root.title_name, "副教授")
+
+        replay = service.revise(result_id=root.id, payload=payload)
+        self.assertEqual(replay.id, revised.id)
+        with self.assertRaises(TitleResultError) as ctx:
+            service.revise(
+                result_id=root.id,
+                payload=TitleResultInput(
+                    result_no="RESULT-REV-2",
+                    title_code="PRO-FULL",
+                    title_name="教授（二次）",
+                    effective_from=date(2027, 2, 1),
+                ),
+            )
+        self.assertEqual(ctx.exception.code, "TITLE_RESULT_ALREADY_SUPERSEDED")
+
+    def test_revoke_appends_successor_marks_case_and_replays(self):
+        case = self._case()
+        self._closed_publicity(case)
+        service = ProfessionalTitleResultService(77)
+        root = service.make_effective(
+            application_case_id=case.id,
+            payload=self._payload("RESULT-ROOT-REVOKE"),
+        )
+
+        revoked = service.revoke(
+            result_id=root.id,
+            result_no="RESULT-REVOKE-1",
+            revoked_at=date(2026, 10, 1),
+        )
+        self.assertEqual(revoked.status, ProfessionalTitleResult.Status.REVOKED)
+        self.assertEqual(revoked.supersedes_result_id, root.id)
+        root.refresh_from_db()
+        self.assertEqual(root.status, ProfessionalTitleResult.Status.EFFECTIVE)
+        case.refresh_from_db()
+        self.assertEqual(case.status, TitleApplicationCase.Status.REVOKED)
+
+        replay = service.revoke(
+            result_id=root.id,
+            result_no="RESULT-REVOKE-1",
+            revoked_at=date(2026, 10, 1),
+        )
+        self.assertEqual(replay.id, revoked.id)
+
+    def test_cross_tenant_case_fails_closed(self):
+        case = self._case(tenant_id=88)
+        self._closed_publicity(case)
+        with self.assertRaises(TitleResultError) as ctx:
             ProfessionalTitleResultService(77).make_effective(
-                application_case_id="case-1",
+                application_case_id=case.id,
                 payload=self._payload(),
             )
-        publicity_gate.assert_called_once_with(case)
-        result_objects.create.assert_not_called()
-
-    @patch("hr_title.services.result_service.TitleApplicationCase.objects")
-    @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
-    def test_revision_appends_successor_without_saving_old_fact(
-        self, result_objects, case_objects
-    ):
-        current = MagicMock()
-        current.id = "old-result"
-        current.status = ProfessionalTitleResult.Status.EFFECTIVE
-        current.effective_from = date(2026, 1, 1)
-        current.application_case_id = "case-1"
-        current.person_id = "person-1"
-        result_objects.select_for_update.return_value.filter.return_value.first.return_value = current
-        result_objects.filter.return_value.exists.return_value = False
-        case = MagicMock()
-        case.id = "case-1"
-        case.person_id = "person-1"
-        case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
-        successor = MagicMock()
-        result_objects.create.return_value = successor
-
-        result = ProfessionalTitleResultService(77, actor_user_id=9).revise(
-            result_id="old-result",
-            payload=self._payload(
-                result_no="R-002", effective_from=date(2026, 8, 10)
-            ),
-        )
-
-        self.assertIs(result, successor)
-        current.save.assert_not_called()
-        create_kwargs = result_objects.create.call_args.kwargs
-        self.assertEqual(create_kwargs["status"], ProfessionalTitleResult.Status.REVISED)
-        self.assertEqual(create_kwargs["supersedes_result_id"], "old-result")
-        self.assertEqual(create_kwargs["tenant_id"], 77)
-
-    @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
-    def test_existing_successor_prevents_history_branch(self, result_objects):
-        current = MagicMock()
-        current.id = "old-result"
-        current.status = ProfessionalTitleResult.Status.EFFECTIVE
-        result_objects.select_for_update.return_value.filter.return_value.first.return_value = current
-        result_objects.filter.return_value.exists.return_value = True
-
-        with self.assertRaisesRegex(TitleResultError, "already has a successor"):
-            ProfessionalTitleResultService(77).revise(
-                result_id="old-result",
-                payload=self._payload(result_no="R-002"),
-            )
-
-    @patch("hr_title.services.result_service.TitleApplicationCase.objects")
-    @patch("hr_title.services.result_service.ProfessionalTitleResult.objects")
-    def test_revoke_appends_fact_and_marks_case_revoked(
-        self, result_objects, case_objects
-    ):
-        current = MagicMock()
-        current.id = "old-result"
-        current.status = ProfessionalTitleResult.Status.EFFECTIVE
-        current.effective_from = date(2026, 1, 1)
-        current.application_case_id = "case-1"
-        current.person_id = "person-1"
-        current.title_code = "ASSOCIATE_PROFESSOR"
-        current.title_name = "副教授"
-        current.title_series_code = "TEACHING"
-        current.title_level_code = "ASSOCIATE"
-        result_objects.select_for_update.return_value.filter.return_value.first.return_value = current
-        result_objects.filter.return_value.exists.return_value = False
-        case = MagicMock()
-        case.id = "case-1"
-        case.person_id = "person-1"
-        case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
-        revoked = MagicMock()
-        result_objects.create.return_value = revoked
-
-        result = ProfessionalTitleResultService(77, actor_user_id=9).revoke(
-            result_id="old-result",
-            result_no="R-003",
-            revoked_at=date(2026, 8, 10),
-        )
-
-        self.assertIs(result, revoked)
-        current.save.assert_not_called()
-        self.assertEqual(case.status, TitleApplicationCase.Status.REVOKED)
-        self.assertEqual(
-            result_objects.create.call_args.kwargs["status"],
-            ProfessionalTitleResult.Status.REVOKED,
-        )
+        self.assertEqual(ctx.exception.code, "TITLE_CASE_NOT_FOUND")
