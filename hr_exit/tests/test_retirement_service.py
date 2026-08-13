@@ -49,6 +49,15 @@ class RetirementFactServiceTests(TestCase):
         self.assertFalse(replay.created)
         self.assertEqual(replay.fact.id, result.fact.id)
 
+    def test_retirement_fact_no_length_fails_before_database_work(self):
+        with self.assertRaises(RetirementFactError) as ctx:
+            RetirementFactService(77).finalize(
+                exit_fact_id=uuid.uuid4(),
+                fact_no="X" * 65,
+                retirement_type="STATUTORY",
+            )
+        self.assertEqual(ctx.exception.code, "RETIREMENT_FACT_NO_INVALID")
+
     def test_non_effective_or_non_retirement_exit_cannot_create_retirement_fact(self):
         pending = self._exit_fact(status=ExitFact.Status.EFFECT_PENDING)
         with self.assertRaises(RetirementFactError) as ctx:
