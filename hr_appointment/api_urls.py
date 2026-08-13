@@ -6,6 +6,7 @@ from . import (
     batch_api,
     batch_configuration_api,
     capacity_api,
+    decision_api,
     population_api,
     term_api,
     term_effect_api,
@@ -90,6 +91,11 @@ urlpatterns = [
         "applications/<uuid:case_id>/publicity/",
         api.open_publicity,
         name="publicity-open",
+    ),
+    path(
+        "applications/<uuid:case_id>/collective-decision/",
+        decision_api.record_collective_decision,
+        name="collective-decision-record",
     ),
     path(
         "applications/<uuid:case_id>/capacity-reservation/",
