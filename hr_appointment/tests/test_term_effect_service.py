@@ -4,8 +4,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.utils import timezone
 
-from hr_appointment.models import AppointmentApplicationCase, PositionAppointmentFact
+from hr_appointment.decision_models import AppointmentCollectiveDecision
+from hr_appointment.models import (
+    AppointmentApplicationCase,
+    AppointmentPublicityRecord,
+    PositionAppointmentFact,
+)
 from hr_appointment.services.term_effect_service import (
     AppointmentTermEffectError,
     AppointmentTermEffectService,
@@ -26,7 +32,39 @@ class AppointmentTermEffectServiceTests(TestCase):
             position_instance_id=101,
             batch_no="B-2026",
             requested_level_code="L7",
-            status=AppointmentApplicationCase.Status.EFFECTIVE,
+            status=AppointmentApplicationCase.Status.PUBLICITY,
+        )
+        clock = timezone.now()
+        publicity = AppointmentPublicityRecord.objects.create(
+            tenant_id=self.tenant_id,
+            publicity_no=f"PUB-{uuid.uuid4().hex[:8]}",
+            application_case_id=case.id,
+            ranking_result_id=uuid.uuid4(),
+            batch_no=case.batch_no,
+            person_id=case.person_id,
+            position_instance_id=case.position_instance_id,
+            attempt_no=1,
+            start_at=clock - timedelta(days=2),
+            end_at=clock - timedelta(days=1),
+            status=AppointmentPublicityRecord.Status.CLOSED,
+            opened_by=9,
+            closed_by=9,
+            closed_at=clock - timedelta(days=1),
+        )
+        decision = AppointmentCollectiveDecision.objects.create(
+            tenant_id=self.tenant_id,
+            decision_no=f"DEC-{uuid.uuid4().hex[:8]}",
+            application_case_id=case.id,
+            publicity=publicity,
+            batch_no=case.batch_no,
+            person_id=case.person_id,
+            position_instance_id=case.position_instance_id,
+            outcome=AppointmentCollectiveDecision.Outcome.APPROVED,
+            authority_ref="TEST-COLLECTIVE-AUTHORITY",
+            decision_reason="approved prerequisite for term effect fixture",
+            evidence_snapshot_json={"source": "test"},
+            decided_at=clock,
+            created_by=9,
         )
         fact = PositionAppointmentFact.objects.create(
             tenant_id=self.tenant_id,
@@ -38,8 +76,13 @@ class AppointmentTermEffectServiceTests(TestCase):
             effective_from=date(2026, 9, 1),
             effective_to=date(2029, 9, 1),
             status=PositionAppointmentFact.Status.EFFECTIVE,
-            effect_receipt_json={"hr03AssignmentId": "old-assignment"},
+            effect_receipt_json={
+                "hr03AssignmentId": "old-assignment",
+                "hr14CollectiveDecisionId": str(decision.id),
+            },
         )
+        case.status = AppointmentApplicationCase.Status.EFFECTIVE
+        case.save(update_fields=["status", "updated_at"])
         term = AppointmentTermService(
             self.tenant_id, actor_user_id=9
         ).register_from_effective_fact(
