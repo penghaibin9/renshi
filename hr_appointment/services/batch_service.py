@@ -108,8 +108,15 @@ class AppointmentBatchService:
             raise AppointmentBatchError(
                 "APPOINTMENT_BATCH_NO_CONFLICT", "batch_no already exists inside tenant"
             )
-        categories = list(payload.target_categories or ())
-        levels = list(payload.target_levels or ())
+        if not isinstance(payload.target_categories, (list, tuple)) or not isinstance(
+            payload.target_levels, (list, tuple)
+        ):
+            raise AppointmentBatchError(
+                "APPOINTMENT_BATCH_TARGETS_INVALID",
+                "target categories and levels must be string arrays",
+            )
+        categories = list(payload.target_categories)
+        levels = list(payload.target_levels)
         if not all(isinstance(value, str) for value in categories + levels):
             raise AppointmentBatchError(
                 "APPOINTMENT_BATCH_TARGETS_INVALID",
