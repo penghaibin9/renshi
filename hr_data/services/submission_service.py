@@ -1,9 +1,10 @@
 """HR18 formal reporting snapshot lifecycle.
 
 A submission snapshot is immutable payload identity. Creation derives the
-formal definition/version/as-of identity from a tenant-owned AsOfEvidenceSnapshot;
-callers cannot self-assert those fields. Validation is fail-closed: formal
-reporting requires the same evidence to be COMPLETE with a trusted hash.
+formal definition kind/version/as-of identity from a tenant-owned
+AsOfEvidenceSnapshot; callers cannot self-assert those fields. Validation is
+fail-closed: formal reporting requires the same evidence to be COMPLETE with a
+trusted hash.
 
 APPROVED is not SUBMITTED. Formal dispatch must first be durably queued by the
 async dispatch service; only the worker owning the matching dispatch_ref may
@@ -115,7 +116,8 @@ class SubmissionLifecycleService:
         )
         if existing is not None:
             if (
-                existing.definition_code != evidence.definition_code
+                existing.definition_kind != evidence.definition_kind
+                or existing.definition_code != evidence.definition_code
                 or existing.definition_version != evidence.definition_version
                 or existing.as_of_date != evidence.as_of_date
                 or existing.payload_hash.lower() != payload_hash
@@ -130,6 +132,7 @@ class SubmissionLifecycleService:
         snapshot = SubmissionSnapshot.objects.create(
             tenant_id=self.tenant_id,
             submission_no=submission_no,
+            definition_kind=evidence.definition_kind,
             definition_code=evidence.definition_code,
             definition_version=evidence.definition_version,
             as_of_date=evidence.as_of_date,
@@ -151,13 +154,14 @@ class SubmissionLifecycleService:
             )
         evidence = self._lock_evidence(evidence_id)
         if (
-            evidence.definition_code != snapshot.definition_code
+            evidence.definition_kind != snapshot.definition_kind
+            or evidence.definition_code != snapshot.definition_code
             or evidence.definition_version != snapshot.definition_version
             or evidence.as_of_date != snapshot.as_of_date
         ):
             raise SubmissionLifecycleError(
                 "SUBMISSION_ASOF_EVIDENCE_MISMATCH",
-                "as-of evidence does not match submission definition/version/date",
+                "as-of evidence does not match submission definition identity/version/date",
             )
         if evidence.status != AsOfEvidenceSnapshot.Status.COMPLETE:
             raise SubmissionLifecycleError(
@@ -213,8 +217,6 @@ class SubmissionLifecycleService:
 
     @transaction.atomic
     def submit(self, submission_id) -> SubmissionSnapshot:
-        # Compatibility guard: old direct callers must not bypass the async
-        # dispatch authority introduced for formal reporting.
         self._lock(submission_id)
         raise SubmissionLifecycleError(
             "SUBMISSION_ASYNC_DISPATCH_REQUIRED",
