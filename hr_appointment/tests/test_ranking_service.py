@@ -6,6 +6,8 @@ from django.test import TestCase
 from hr_appointment.models import (
     AppointmentApplicationCase,
     AppointmentBatch,
+    AppointmentQuotaPool,
+    AppointmentQuotaReservation,
     AppointmentRankingResult,
 )
 from hr_appointment.services.ranking_service import (
@@ -36,6 +38,25 @@ class Hr14RankingServiceTests(TestCase):
             status=status,
         )
 
+    def _active_quota(self, batch, case, *, tenant_id=7):
+        pool = AppointmentQuotaPool.objects.create(
+            tenant_id=tenant_id,
+            batch=batch,
+            category_code="PROFESSIONAL",
+            exact_level_code="L2",
+            authorized=1,
+            occupied=0,
+            reserved=1,
+        )
+        reservation = AppointmentQuotaReservation.objects.create(
+            tenant_id=tenant_id,
+            quota_pool=pool,
+            application_case=case,
+            units=1,
+            status=AppointmentQuotaReservation.Status.ACTIVE,
+        )
+        return pool, reservation
+
     def test_selected_ranking_is_append_only_fact_and_moves_case_to_proposed(self):
         batch = self._batch()
         case = self._case(batch)
@@ -54,9 +75,11 @@ class Hr14RankingServiceTests(TestCase):
         case.refresh_from_db()
         self.assertEqual(case.status, AppointmentApplicationCase.Status.PROPOSED)
 
-    def test_waitlist_does_not_get_promoted_to_proposed(self):
+    def test_waitlist_moves_to_terminal_state_and_releases_active_quota(self):
         batch = self._batch(status=AppointmentBatch.Status.RANKING)
         case = self._case(batch)
+        pool, reservation = self._active_quota(batch, case)
+
         outcome = AppointmentRankingService(7).finalize(
             case_id=case.id,
             ranking_no="RK-2026-0002",
@@ -64,9 +87,58 @@ class Hr14RankingServiceTests(TestCase):
             rank_no=2,
             outcome="WAITLIST",
         )
+
         self.assertEqual(outcome.ranking.outcome, AppointmentRankingResult.Outcome.WAITLIST)
         case.refresh_from_db()
+        pool.refresh_from_db()
+        reservation.refresh_from_db()
+        self.assertEqual(case.status, AppointmentApplicationCase.Status.WAITLIST)
+        self.assertEqual(pool.reserved, 0)
+        self.assertEqual(reservation.status, AppointmentQuotaReservation.Status.RELEASED)
+
+    def test_not_selected_moves_to_terminal_state_without_quota(self):
+        batch = self._batch(status=AppointmentBatch.Status.RANKING)
+        case = self._case(batch)
+
+        AppointmentRankingService(7).finalize(
+            case_id=case.id,
+            ranking_no="RK-2026-0002-N",
+            total_score="70.0000",
+            rank_no=5,
+            outcome="NOT_SELECTED",
+        )
+
+        case.refresh_from_db()
+        self.assertEqual(case.status, AppointmentApplicationCase.Status.NOT_SELECTED)
+
+    def test_non_selected_case_with_consumed_quota_fails_closed_and_rolls_back_ranking(self):
+        batch = self._batch(status=AppointmentBatch.Status.RANKING)
+        case = self._case(batch)
+        pool, reservation = self._active_quota(batch, case)
+        pool.reserved = 0
+        pool.occupied = 1
+        pool.save(update_fields=["reserved", "occupied", "updated_at"])
+        reservation.status = AppointmentQuotaReservation.Status.CONSUMED
+        reservation.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaises(AppointmentRankingError) as ctx:
+            AppointmentRankingService(7).finalize(
+                case_id=case.id,
+                ranking_no="RK-CORRUPT-CONSUMED",
+                total_score="70.0000",
+                rank_no=5,
+                outcome="NOT_SELECTED",
+            )
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_RANKING_QUOTA_ALREADY_CONSUMED")
+        case.refresh_from_db()
         self.assertEqual(case.status, AppointmentApplicationCase.Status.UNDER_REVIEW)
+        self.assertFalse(
+            AppointmentRankingResult.objects.filter(
+                tenant_id=7,
+                ranking_no="RK-CORRUPT-CONSUMED",
+            ).exists()
+        )
 
     def test_batch_state_gate_blocks_ranking_outside_review_window(self):
         batch = self._batch(status=AppointmentBatch.Status.APPLICATION_OPEN)
