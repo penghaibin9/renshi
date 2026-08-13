@@ -6,6 +6,7 @@ from .models import (
     AppointmentBatch,
     AppointmentPolicyVersion,
     AppointmentQuotaPool,
+    AppointmentRankingResult,
     PositionAppointmentFact,
 )
 
@@ -18,6 +19,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     batches = AppointmentBatch.objects.filter(tenant_id=tenant_id)
     policies = AppointmentPolicyVersion.objects.filter(tenant_id=tenant_id)
     facts = PositionAppointmentFact.objects.filter(tenant_id=tenant_id)
+    rankings = AppointmentRankingResult.objects.filter(tenant_id=tenant_id)
     quota_pools = AppointmentQuotaPool.objects.filter(
         tenant_id=tenant_id, batch__tenant_id=tenant_id
     ).select_related("batch")
@@ -30,6 +32,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "competitionBatches": batches.count(),
             "applications": cases.count(),
             "awaitingReview": counts.get("ELIGIBLE", 0) + counts.get("UNDER_REVIEW", 0),
+            "rankingResults": rankings.count(),
+            "selectedRankings": rankings.filter(outcome=AppointmentRankingResult.Outcome.SELECTED).count(),
             "proposed": counts.get("PROPOSED", 0),
             "inPublicity": counts.get("PUBLICITY", 0),
             "effectiveAppointments": facts.filter(status="EFFECTIVE").count(),
@@ -47,6 +51,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "id", "batch_no", "name", "business_type", "policy_version_id",
                 "application_from", "application_to", "publicity_from", "publicity_to",
                 "status", "updated_at"
+            )
+        ),
+        "recentRankings": list(
+            rankings.order_by("batch_no", "position_instance_id", "rank_no", "-finalized_at")[:24].values(
+                "id", "ranking_no", "application_case_id", "batch_no",
+                "position_instance_id", "attempt_no", "total_score", "rank_no",
+                "outcome", "score_snapshot_json", "finalized_by", "finalized_at"
             )
         ),
         "recentAppointments": list(
@@ -84,7 +95,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "appointmentFact": True,
             "quotaSnapshot": True,
             "competition": True,
-            "reviewRanking": False,
+            "reviewRanking": True,
             "publicity": False,
             "termChange": False,
         },
