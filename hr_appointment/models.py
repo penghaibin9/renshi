@@ -198,6 +198,8 @@ class AppointmentApplicationCase(HrTenantScopedModel):
         REJECTED = "REJECTED", "Rejected"
         WITHDRAWN = "WITHDRAWN", "Withdrawn"
         UNDER_REVIEW = "UNDER_REVIEW", "Under review"
+        WAITLIST = "WAITLIST", "Waitlist after final ranking"
+        NOT_SELECTED = "NOT_SELECTED", "Not selected after final ranking"
         PROPOSED = "PROPOSED", "Proposed appointment"
         PUBLICITY = "PUBLICITY", "Publicity"
         EFFECT_PENDING = "EFFECT_PENDING", "Final, waiting for HR03 effect"
