@@ -1,9 +1,9 @@
 """HR16 exit-case workflow before the employment termination effect.
 
-Approval, handover and settlement are workflow facts only.  They never end an
-employment relationship.  The last transition owned here is HANDOVER ->
-SETTLEMENT; only ``ExitEffectService`` may cross from SETTLEMENT to an HR03
-employment effect.
+Approval, handover and settlement are workflow facts only. They never end an
+employment relationship. HANDOVER -> SETTLEMENT is fail-closed on the HR16
+handover checklist; only ``ExitEffectService`` may cross from SETTLEMENT to an
+HR03 employment effect.
 """
 
 from __future__ import annotations
@@ -125,6 +125,25 @@ class ExitCaseService:
     @transaction.atomic
     def begin_settlement(self, case_id) -> ExitCase:
         case = self._lock_case(case_id)
+        if case.status != ExitCase.Status.HANDOVER:
+            raise ExitCaseError(
+                "EXIT_CASE_INVALID_STATE",
+                f"cannot transition exit case from {case.status} to {ExitCase.Status.SETTLEMENT}",
+            )
+
+        from hr_exit.services.handover_service import (
+            ExitHandoverError,
+            ExitHandoverService,
+        )
+
+        try:
+            ExitHandoverService(
+                self.tenant_id,
+                actor_user_id=self.actor_user_id,
+            ).assert_ready_for_settlement(case.id)
+        except ExitHandoverError as exc:
+            raise ExitCaseError(exc.code, str(exc)) from exc
+
         return self._transition(
             case,
             allowed_from={ExitCase.Status.HANDOVER},
