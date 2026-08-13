@@ -1,5 +1,4 @@
 import uuid
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
@@ -123,7 +122,7 @@ class AppointmentApplicationServiceTests(TestCase):
         case = self._case(AppointmentApplicationCase.Status.DRAFT)
         case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
         service = AppointmentApplicationService(77, actor_user_id=9)
-        service._lock_open_batch = MagicMock(return_value=SimpleNamespace(batch_no="B-OPEN"))
+        service._require_batch_phase = MagicMock()
 
         result = service.submit("case-1")
 
@@ -131,7 +130,11 @@ class AppointmentApplicationServiceTests(TestCase):
         case_objects.select_for_update.return_value.filter.assert_called_once_with(
             id="case-1", tenant_id=77
         )
-        service._lock_open_batch.assert_called_once_with("B-OPEN")
+        service._require_batch_phase.assert_called_once_with(
+            case,
+            {AppointmentBatch.Status.APPLICATION_OPEN},
+            "APPOINTMENT_BATCH_NOT_OPEN",
+        )
         self.assertEqual(case.status, AppointmentApplicationCase.Status.SUBMITTED)
 
     @patch("hr_appointment.services.application_service.AppointmentApplicationCase.objects")
@@ -143,33 +146,78 @@ class AppointmentApplicationServiceTests(TestCase):
             rejected,
         ]
         service = AppointmentApplicationService(77)
+        service._require_batch_phase = MagicMock()
 
         service.return_for_correction("return")
         service.reject_eligibility("reject")
 
         self.assertEqual(returned.status, AppointmentApplicationCase.Status.RETURNED)
         self.assertEqual(rejected.status, AppointmentApplicationCase.Status.REJECTED)
+        self.assertEqual(service._require_batch_phase.call_count, 2)
+
+    def test_returned_correction_can_resubmit_during_eligibility_review(self):
+        batch = self._open_batch_with_supply()
+        case = AppointmentApplicationCase.objects.create(
+            tenant_id=77,
+            case_no="CASE-CORRECT",
+            person_id=uuid.uuid4(),
+            policy_version_id=batch.policy_version_id,
+            position_instance_id=1001,
+            batch_no=batch.batch_no,
+            requested_level_code="PT-7",
+            status=AppointmentApplicationCase.Status.RETURNED,
+        )
+        batch.status = AppointmentBatch.Status.ELIGIBILITY_REVIEW
+        batch.save(update_fields=["status", "updated_at"])
+
+        result = AppointmentApplicationService(77).submit(case.id)
+
+        self.assertEqual(result.status, AppointmentApplicationCase.Status.SUBMITTED)
+
+    def test_eligibility_actions_require_eligibility_batch_phase(self):
+        batch = self._open_batch_with_supply()
+        case = AppointmentApplicationCase.objects.create(
+            tenant_id=77,
+            case_no="CASE-ELIGIBILITY",
+            person_id=uuid.uuid4(),
+            policy_version_id=batch.policy_version_id,
+            position_instance_id=1001,
+            batch_no=batch.batch_no,
+            requested_level_code="PT-7",
+            status=AppointmentApplicationCase.Status.SUBMITTED,
+        )
+
+        with self.assertRaises(AppointmentApplicationError) as ctx:
+            AppointmentApplicationService(77).pass_eligibility(case.id)
+
+        self.assertEqual(ctx.exception.code, "APPOINTMENT_ELIGIBILITY_REVIEW_NOT_OPEN")
+        case.refresh_from_db()
+        self.assertEqual(case.status, AppointmentApplicationCase.Status.SUBMITTED)
 
     @patch("hr_appointment.services.application_service.AppointmentApplicationCase.objects")
     def test_rejected_case_cannot_resubmit(self, case_objects):
         case = self._case(AppointmentApplicationCase.Status.REJECTED)
         case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
         service = AppointmentApplicationService(77)
-        service._lock_open_batch = MagicMock()
+        service._require_batch_phase = MagicMock()
 
         with self.assertRaisesRegex(AppointmentApplicationError, "cannot transition"):
             service.submit("case-1")
 
+        service._require_batch_phase.assert_not_called()
         case.save.assert_not_called()
 
     @patch("hr_appointment.services.application_service.AppointmentApplicationCase.objects")
     def test_review_requires_eligibility(self, case_objects):
         case = self._case(AppointmentApplicationCase.Status.SUBMITTED)
         case_objects.select_for_update.return_value.filter.return_value.first.return_value = case
+        service = AppointmentApplicationService(77)
+        service._require_batch_phase = MagicMock()
 
         with self.assertRaisesRegex(AppointmentApplicationError, "cannot transition"):
-            AppointmentApplicationService(77).start_review("case-1")
+            service.start_review("case-1")
 
+        service._require_batch_phase.assert_called_once()
         case.save.assert_not_called()
 
     @patch("hr_appointment.services.application_service.AppointmentApplicationCase.objects")
