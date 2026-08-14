@@ -1,7 +1,9 @@
 from django.apps import AppConfig
 
+from .module_contract import MODULE_CODE, MODULE_NAME
+
 
 class HrStaffConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "hr_staff"
-    verbose_name = "HR Staff Master (HR03)"
+    verbose_name = f"{MODULE_NAME} ({MODULE_CODE})"

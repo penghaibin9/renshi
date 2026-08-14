@@ -25,11 +25,31 @@ class MigrationReport:
         return f"wave={self.wave} counts={self.counts} issues={len(self.issues)}"
 
 
+class MigrationTenantScopeError(Exception):
+    """迁移对象不属于当前 tenant 时 fail-closed。"""
+
+
 class MigrationService:
     """Legacy → HR03 迁移（S11）。"""
 
     def __init__(self, tenant_id: int):
+        if not tenant_id:
+            raise MigrationTenantScopeError("tenant_id is required")
         self.tenant_id = tenant_id
+
+    def _assert_legacy_employee_in_tenant(self, employee) -> None:
+        work = getattr(employee, "employee_work_info", None)
+        company_id = getattr(work, "company_id_id", None)
+        if company_id != self.tenant_id:
+            raise MigrationTenantScopeError(
+                f"legacy employee {getattr(employee, 'id', None)} is outside tenant {self.tenant_id}"
+            )
+
+    def _assert_staff_in_tenant(self, staff) -> None:
+        if getattr(staff, "tenant_id", None) != self.tenant_id:
+            raise MigrationTenantScopeError(
+                f"HR03 staff {getattr(staff, 'id', None)} is outside tenant {self.tenant_id}"
+            )
 
     # ------------------------------------------------------------------
     # Wave 0：只盘点（P1-10：按 tenant 过滤，不跨租户）
@@ -70,6 +90,8 @@ class MigrationService:
         document_number: Optional[str] = None,
         source: str = "MIGRATED",
     ) -> dict:
+        self._assert_legacy_employee_in_tenant(employee)
+
         from hr_staff.services.person_identity_service import (
             PersonDuplicateHardMatch,
             PersonDuplicateReviewRequired,
@@ -123,30 +145,33 @@ class MigrationService:
     # ------------------------------------------------------------------
     @transaction.atomic
     def wave2_employment(self, *, staff, legacy_work_info=None, legacy_department_id=None) -> dict:
+        self._assert_staff_in_tenant(staff)
+
         from hr_staff.services.assignment_service import AssignmentService
         from hr_staff.services.employment_service import EmploymentService
 
         joining = (legacy_work_info or {}).get("date_joining") or date.today()
         emp_svc = EmploymentService(self.tenant_id)
         assign_svc = AssignmentService(self.tenant_id)
-        source_business_id = f"legacy-employee-{staff.legacy_employee_id}"
         try:
-            rel = emp_svc.start_relationship(
-                staff_id=staff,
-                relationship_type="REGULAR_EMPLOYMENT",
-                effective_from=joining,
-                source_business_type="MIGRATION_VERIFIED",
-                source_business_id=source_business_id,
-            )
-            assign_svc.create_assignment(
-                employment_relationship_id=rel,
-                assignment_type="PRIMARY",
-                effective_from=joining,
-                organization_id=None,
-                legacy_department_id=legacy_department_id,
-                source_business_type="MIGRATION_VERIFIED",
-                source_business_id=source_business_id,
-            )
+            # 这里必须再开 savepoint：函数需要把单个员工失败转换成结构化结果，
+            # 如果只依赖外层 @atomic，却在内部 catch Exception，Django 会认为事务正常结束，
+            # 可能留下“relationship 已建、assignment 失败”的半迁移事实。
+            with transaction.atomic():
+                rel = emp_svc.start_relationship(
+                    staff_id=staff,
+                    relationship_type="REGULAR_EMPLOYMENT",
+                    effective_from=joining,
+                    source_business_type="MIGRATION_VERIFIED",
+                    source_business_id=f"legacy-employee-{staff.legacy_employee_id}",
+                )
+                assign_svc.create_assignment(
+                    employment_relationship_id=rel,
+                    assignment_type="PRIMARY",
+                    effective_from=joining,
+                    organization_id=None,
+                    legacy_department_id=legacy_department_id,
+                )
             return {"status": "created", "relationshipId": str(rel.id)}
         except Exception as exc:
             return {"status": "failed", "reason": f"{exc}"}
