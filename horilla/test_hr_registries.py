@@ -8,11 +8,17 @@ from horilla.hr_permission_registry import (
     HR_DOMAINS,
     PermissionDefinition,
 )
+from horilla.hr_permissions import CANONICAL_PREFIX_ALIASES, permission_aliases
 
 
 def test_permission_domain_map_covers_hr01_hr18_exactly():
     assert tuple(HR_DOMAINS) == tuple("HR%02d" % i for i in range(1, 19))
     assert len(set(HR_DOMAINS.values())) == 18
+    assert tuple(CANONICAL_PREFIX_ALIASES) == tuple("hr%02d." % i for i in range(1, 19))
+    for module_code, domain in HR_DOMAINS.items():
+        legacy = module_code.lower() + ".agreement.view"
+        canonical = "hr.%s.agreement.view" % domain
+        assert canonical in permission_aliases(legacy)
 
 
 def test_permission_registry_rejects_wrong_domain_and_conflicting_duplicate():

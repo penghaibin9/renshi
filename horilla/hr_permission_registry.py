@@ -10,15 +10,15 @@ import re
 from typing import Dict, Iterable, Tuple
 
 HR_DOMAINS = {
-    "HR01": "control",
+    "HR01": "dashboard",
     "HR02": "structure",
     "HR03": "staff",
     "HR04": "recruitment",
     "HR05": "onboarding",
-    "HR06": "changes",
+    "HR06": "change",
     "HR07": "contracts",
     "HR08": "external",
-    "HR09": "qualifications",
+    "HR09": "qualification",
     "HR10": "development",
     "HR11": "time",
     "HR12": "assessment",
