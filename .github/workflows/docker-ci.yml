@@ -93,6 +93,7 @@ jobs:
           '
 
       - name: Real MySQL backup / restore drill
+        id: recovery
         run: |
           set -euo pipefail
           rm -rf .ci-backup
@@ -103,6 +104,15 @@ jobs:
             -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
             --entrypoint "" web python scripts/ci_mysql_recovery.py
           rm -rf .ci-backup
+
+      - name: Upload MySQL recovery diagnostics
+        if: failure() && steps.recovery.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-recovery-diagnostics
+          path: .ci-backup/recovery-diagnostics.txt
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Start Gunicorn
         run: docker compose -f "$COMPOSE_FILE" up -d web

@@ -14,14 +14,22 @@ django.setup()
 from django.conf import settings
 from django.db import connection
 
-from horilla_backup.mysqldump import dump_mysql_db, resolve_mysql_client
+from horilla_backup.mysqldump import (
+    dump_mysql_db,
+    resolve_mysql_client,
+    resolve_mysql_dump_client,
+)
 
 
 MARKER = "renshi-mysql-recovery-gate"
 BACKUP_PATH = Path("/app/.ci-backup/horilla.sql")
+DIAGNOSTIC_PATH = Path("/app/.ci-backup/recovery-diagnostics.txt")
+_CURRENT_STAGE = "startup"
 
 
 def _stage(name):
+    global _CURRENT_STAGE
+    _CURRENT_STAGE = name
     print(f"MYSQL_RECOVERY_STAGE {name}", flush=True)
 
 
@@ -63,7 +71,7 @@ def _mysql_command(database=None):
         "root",
     ]
     if database:
-        command.append(database)
+        command.append(f"--database={database}")
     return command
 
 
@@ -74,6 +82,35 @@ def _root_environment():
     environment = os.environ.copy()
     environment["MYSQL_PWD"] = password
     return environment
+
+
+def _client_version(resolver):
+    try:
+        executable = resolver()
+        result = subprocess.run(
+            [executable, "--version"],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        version = (result.stdout or result.stderr or "version unavailable").strip()
+        return f"{executable}: {version}"
+    except Exception as exc:
+        return f"unavailable: {type(exc).__name__}: {exc}"
+
+
+def _write_diagnostic(exc):
+    DIAGNOSTIC_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "MYSQL_RECOVERY_DIAGNOSTIC",
+        f"stage={_CURRENT_STAGE}",
+        f"error_type={type(exc).__name__}",
+        f"error={exc}",
+        f"mysql_client={_client_version(resolve_mysql_client)}",
+        f"dump_client={_client_version(resolve_mysql_dump_client)}",
+    ]
+    DIAGNOSTIC_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines), flush=True)
 
 
 def main():
@@ -145,7 +182,7 @@ def main():
     ).stdout.strip()
     if marker_result != MARKER:
         raise RuntimeError(
-            f"MYSQL_RECOVERY_FAILED stage=verify-sentinel: "
+            "MYSQL_RECOVERY_FAILED stage=verify-sentinel: "
             f"restored sentinel mismatch: {marker_result!r}"
         )
 
@@ -176,4 +213,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        _write_diagnostic(exc)
+        raise

@@ -56,8 +56,8 @@ def _schema_object_count(
     """Count schema-owned stored objects using the same least-privilege account.
 
     MySQL 8.4 requires extra global visibility to dump stored routines with
-    ``--routines``.  A normal application account should not need that global
-    privilege when the schema has no routines.  We therefore detect whether
+    ``--routines``. A normal application account should not need that global
+    privilege when the schema has no routines. We therefore detect whether
     routines/events actually exist and request their dump only when needed;
     if they do exist and the backup account cannot dump them, the dump fails
     closed rather than silently producing an incomplete backup.
@@ -75,7 +75,7 @@ def _schema_object_count(
         str(port or 3306),
         "--user",
         str(username),
-        str(db_name),
+        f"--database={db_name}",
         "--batch",
         "--skip-column-names",
         "--execute",
