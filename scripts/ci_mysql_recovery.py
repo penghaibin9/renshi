@@ -14,17 +14,47 @@ django.setup()
 from django.conf import settings
 from django.db import connection
 
-from horilla_backup.mysqldump import dump_mysql_db
+from horilla_backup.mysqldump import dump_mysql_db, resolve_mysql_client
 
 
 MARKER = "renshi-mysql-recovery-gate"
 BACKUP_PATH = Path("/app/.ci-backup/horilla.sql")
 
 
+def _stage(name):
+    print(f"MYSQL_RECOVERY_STAGE {name}", flush=True)
+
+
+def _safe_detail(exc):
+    detail = exc.stderr or exc.stdout or "command exited unsuccessfully"
+    if isinstance(detail, bytes):
+        detail = detail.decode("utf-8", errors="replace")
+    return str(detail).strip()
+
+
+def _run(stage, command, *, env, text=True, stdin=None):
+    _stage(stage)
+    try:
+        return subprocess.run(
+            command,
+            check=True,
+            env=env,
+            text=text,
+            stdin=stdin,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"MYSQL_RECOVERY_FAILED stage={stage}: {_safe_detail(exc)}"
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(f"MYSQL_RECOVERY_FAILED stage={stage}: {exc}") from exc
+
+
 def _mysql_command(database=None):
     db = settings.DATABASES["default"]
     command = [
-        "mysql",
+        resolve_mysql_client(),
         "--host",
         str(db.get("HOST") or "localhost"),
         "--port",
@@ -50,6 +80,7 @@ def main():
     if connection.vendor != "mysql":
         raise RuntimeError(f"Recovery drill requires MySQL, got {connection.vendor}")
 
+    _stage("prepare-sentinel")
     with connection.cursor() as cursor:
         cursor.execute(
             "CREATE TABLE IF NOT EXISTS backup_recovery_sentinel ("
@@ -62,43 +93,47 @@ def main():
         )
 
     db = settings.DATABASES["default"]
-    dump_mysql_db(
-        db_name=db["NAME"],
-        username=db["USER"],
-        output_file=BACKUP_PATH,
-        password=db.get("PASSWORD"),
-        host=db.get("HOST") or "localhost",
-        port=db.get("PORT") or 3306,
-    )
+    _stage("backup")
+    try:
+        dump_mysql_db(
+            db_name=db["NAME"],
+            username=db["USER"],
+            output_file=BACKUP_PATH,
+            password=db.get("PASSWORD"),
+            host=db.get("HOST") or "localhost",
+            port=db.get("PORT") or 3306,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"MYSQL_RECOVERY_FAILED stage=backup: {exc}") from exc
+
     if not BACKUP_PATH.exists() or BACKUP_PATH.stat().st_size == 0:
-        raise RuntimeError("Backup artifact is empty")
+        raise RuntimeError("MYSQL_RECOVERY_FAILED stage=backup: backup artifact is empty")
 
     run_id = re.sub(r"[^0-9A-Za-z_]", "_", os.environ.get("GITHUB_RUN_ID", "local"))
     restore_database = f"horilla_restore_{run_id}"
     root_environment = _root_environment()
 
-    subprocess.run(
+    _run(
+        "create-restore-db",
         _mysql_command()
         + [
             "--execute",
             f"CREATE DATABASE `{restore_database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci",
         ],
-        check=True,
         env=root_environment,
-        text=True,
-        capture_output=True,
     )
 
     with BACKUP_PATH.open("rb") as dump_file:
-        subprocess.run(
+        _run(
+            "restore",
             _mysql_command(restore_database),
-            check=True,
             env=root_environment,
+            text=False,
             stdin=dump_file,
-            capture_output=True,
         )
 
-    marker_result = subprocess.run(
+    marker_result = _run(
+        "verify-sentinel",
         _mysql_command(restore_database)
         + [
             "--batch",
@@ -106,15 +141,16 @@ def main():
             "--execute",
             "SELECT marker FROM backup_recovery_sentinel WHERE id = 1",
         ],
-        check=True,
         env=root_environment,
-        text=True,
-        capture_output=True,
     ).stdout.strip()
     if marker_result != MARKER:
-        raise RuntimeError(f"Restored sentinel mismatch: {marker_result!r}")
+        raise RuntimeError(
+            f"MYSQL_RECOVERY_FAILED stage=verify-sentinel: "
+            f"restored sentinel mismatch: {marker_result!r}"
+        )
 
-    migration_count = subprocess.run(
+    migration_count = _run(
+        "verify-migrations",
         _mysql_command(restore_database)
         + [
             "--batch",
@@ -122,19 +158,20 @@ def main():
             "--execute",
             "SELECT COUNT(*) FROM django_migrations",
         ],
-        check=True,
         env=root_environment,
-        text=True,
-        capture_output=True,
     ).stdout.strip()
     if int(migration_count) <= 0:
-        raise RuntimeError("Restored database has no migration history")
+        raise RuntimeError(
+            "MYSQL_RECOVERY_FAILED stage=verify-migrations: "
+            "restored database has no migration history"
+        )
 
     print(
         "MYSQL_RECOVERY_DRILL_OK",
         restore_database,
         f"migrations={migration_count}",
         f"backup_bytes={BACKUP_PATH.stat().st_size}",
+        flush=True,
     )
 
 
