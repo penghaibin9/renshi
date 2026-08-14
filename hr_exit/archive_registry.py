@@ -19,8 +19,8 @@ EVENT_ARCHIVE_RETURNED = "hr.exit.archive_transfer.returned"
 
 register_business_events(
     (
-        BusinessEventDefinition(EVENT_ARCHIVE_SENT, "HR16", "archive_transfer_receipt", 1),
-        BusinessEventDefinition(EVENT_ARCHIVE_RECEIVED, "HR16", "archive_transfer_receipt", 1),
-        BusinessEventDefinition(EVENT_ARCHIVE_RETURNED, "HR16", "archive_transfer_receipt", 1),
+        BusinessEventDefinition(EVENT_ARCHIVE_SENT, "HR16", "archive_transfer", 1),
+        BusinessEventDefinition(EVENT_ARCHIVE_RECEIVED, "HR16", "archive_transfer", 1),
+        BusinessEventDefinition(EVENT_ARCHIVE_RETURNED, "HR16", "archive_transfer", 1),
     )
 )
