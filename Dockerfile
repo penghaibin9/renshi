@@ -39,6 +39,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
+        default-mysql-client \
         libmariadb3 \
         libjpeg62-turbo \
         zlib1g \

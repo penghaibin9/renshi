@@ -92,6 +92,18 @@ jobs:
             python manage.py check
           '
 
+      - name: Real MySQL backup / restore drill
+        run: |
+          set -euo pipefail
+          rm -rf .ci-backup
+          mkdir -p .ci-backup
+          chmod 0777 .ci-backup
+          docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps \
+            -e MYSQL_CI_ROOT_PASSWORD=horilla_root_pass \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            --entrypoint "" web python scripts/ci_mysql_recovery.py
+          rm -rf .ci-backup
+
       - name: Start Gunicorn
         run: docker compose -f "$COMPOSE_FILE" up -d web
 
@@ -119,12 +131,58 @@ jobs:
           exit 1
 
       - name: Trivy high/critical gate
+        id: trivy
         run: |
           IMAGE=$(docker compose -f "$COMPOSE_FILE" images -q web | head -n1)
           test -n "$IMAGE"
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          rm -rf trivy-report
+          mkdir -p trivy-report
+          set +e
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/trivy-report:/report" \
             aquasec/trivy:0.58.1 image \
-            --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 "$IMAGE"
+            --severity CRITICAL,HIGH --ignore-unfixed \
+            --format json --output /report/trivy.json \
+            --exit-code 1 "$IMAGE"
+          status=$?
+          set -e
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("trivy-report/trivy.json").read_text())
+          vulnerabilities = []
+          for result in report.get("Results") or []:
+              target = result.get("Target", "unknown")
+              for item in result.get("Vulnerabilities") or []:
+                  vulnerabilities.append(
+                      (
+                          item.get("Severity", ""),
+                          target,
+                          item.get("PkgName", ""),
+                          item.get("VulnerabilityID", ""),
+                          item.get("InstalledVersion", ""),
+                          item.get("FixedVersion", ""),
+                      )
+                  )
+          print(f"Trivy HIGH/CRITICAL findings: {len(vulnerabilities)}")
+          for severity, target, package, cve, installed, fixed in vulnerabilities:
+              print(
+                  f"{severity} {target} {package} {cve} "
+                  f"installed={installed} fixed={fixed}"
+              )
+          PY
+          exit "$status"
+
+      - name: Upload Trivy diagnostics
+        if: failure() && steps.trivy.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-high-critical-report
+          path: trivy-report/trivy.json
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Tear down
         if: always()

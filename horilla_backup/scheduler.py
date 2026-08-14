@@ -6,10 +6,8 @@ from django.core.management import call_command
 from horilla import settings
 
 from .gdrive import *
-
-# from horilla.settings import DBBACKUP_STORAGE_OPTIONS
 from .models import *
-from .pgdump import *
+from .mysqldump import dump_mysql_db
 from .zip import *
 
 scheduler = BackgroundScheduler()
@@ -88,14 +86,20 @@ def google_drive_backup():
         gdrive_folder_id = google_drive.gdrive_folder_id
         if google_drive.backup_db:
             db = settings.DATABASES["default"]
-            dump_postgres_db(
+            backup_file = "backupdb.sql"
+            dump_mysql_db(
                 db_name=db["NAME"],
                 username=db["USER"],
-                output_file="backupdb.dump",
-                password=db["PASSWORD"],
+                output_file=backup_file,
+                password=db.get("PASSWORD"),
+                host=db.get("HOST") or "localhost",
+                port=db.get("PORT") or 3306,
             )
-            upload_file("backupdb.dump", service_account_file, gdrive_folder_id)
-            os.remove("backupdb.dump")
+            try:
+                upload_file(backup_file, service_account_file, gdrive_folder_id)
+            finally:
+                if os.path.exists(backup_file):
+                    os.remove(backup_file)
         if google_drive.backup_media:
             folder_to_zip = settings.MEDIA_ROOT
             output_zip_file = "media.zip"
@@ -117,7 +121,7 @@ def start_gdrive_backup_job():
             scheduler.remove_job("backup_job")
         except:
             pass
-        # Add new job based on Gdrive Backup configuration
+        # Add new job based on Google Drive Backup configuration
         if gdrive_backup.interval:
             scheduler.add_job(
                 google_drive_backup,
