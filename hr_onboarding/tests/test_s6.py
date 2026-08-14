@@ -36,8 +36,10 @@ def _prepared_case(tenant_id=1):
 
     _, version, _ = _build_template(tenant_id=tenant_id)
     service = CaseService(tenant_id=tenant_id)
+    request = _handoff_request(idem_key=f"k-s6-handoff-{_uuid.uuid4().hex}")
+    request["tenant_id"] = tenant_id
     r = service.create_case_from_handoff(
-        _handoff_request(idem_key=f"k-s6-handoff-{_uuid.uuid4().hex}"),
+        request,
         idempotency_key=f"k-s6-case-{_uuid.uuid4().hex}",
     )
     case = HrOnboardingCase.objects.get(id=r["case_id"])
@@ -54,7 +56,7 @@ class TaskServiceTests(TestCase):
     def test_instantiate_idempotent(self):
         n1 = self.service.instantiate_tasks(self.case)
         n2 = self.service.instantiate_tasks(self.case)
-        self.assertEqual(n1, 1)  # _build_template 建了 1 个 task def
+        self.assertEqual(n1, 1)
         self.assertEqual(n2, 0)
         inst = HrOnboardingTaskInstance.objects.get(case=self.case)
         self.assertEqual(inst.status, TaskStatus.NOT_STARTED)
@@ -69,7 +71,6 @@ class TaskServiceTests(TestCase):
         self.assertEqual(completed.status, TaskStatus.COMPLETED)
         self.assertEqual(completed.completion_payload["completed_by"], 9)
         self.assertIn("mail-1", completed.completion_payload["evidence"]["ref"])
-        # 已完成不可再完成
         with self.assertRaises(TaskAlreadyCompletedError):
             self.service.complete_task(completed, note="again")
 
@@ -77,8 +78,6 @@ class TaskServiceTests(TestCase):
         """非法/缺失前置定义在模板实例化阶段即 fail-closed。"""
         case2, version = _prepared_case(tenant_id=2)
         self.service2 = TaskService(tenant_id=2, actor_user_id=9)
-        # 修改定义：让它依赖一个不存在的 code。生产规则要求模板 DAG
-        # 在实例化前完整闭合，因此不能等到 complete_task 才发现。
         HrOnboardingTaskDefinition.objects.filter(template_version=version).update(
             prerequisite_codes=["NOT-EXIST"]
         )
@@ -139,13 +138,12 @@ class ProvisioningServiceTests(TestCase):
         self.assertIsNotNone(failed.next_retry_at)
         self.assertEqual(failed.attempt_count, 1)
 
-        # 重试：每次 mark_running 后 mark_failed；attempt 达到 MAX 后进入 FAILED_TERMINAL
         for _ in range(ProvisioningService.MAX_ATTEMPTS + 2):
             try:
                 self.service.mark_running(req)
                 self.service.mark_failed(req, error="timeout", retryable=True)
             except Exception:
-                break  # FAILED_TERMINAL 后 mark_running 非法 → 终止
+                break
         req.refresh_from_db()
         self.assertEqual(req.status, ProvisioningStatus.FAILED_TERMINAL)
 

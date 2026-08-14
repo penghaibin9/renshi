@@ -120,7 +120,6 @@ class MigrationService:
                 "legacyEmployeeId": employee.id,
             }
         except PersonDuplicateHardMatch:
-            # N5：同证件异名 → 人工去重裁决，不中断整批
             return {
                 "status": "review_required",
                 "reason": "HARD_MATCH_NAME_CONFLICT",
@@ -154,9 +153,6 @@ class MigrationService:
         emp_svc = EmploymentService(self.tenant_id)
         assign_svc = AssignmentService(self.tenant_id)
         try:
-            # 这里必须再开 savepoint：函数需要把单个员工失败转换成结构化结果，
-            # 如果只依赖外层 @atomic，却在内部 catch Exception，Django 会认为事务正常结束，
-            # 可能留下“relationship 已建、assignment 失败”的半迁移事实。
             with transaction.atomic():
                 rel = emp_svc.start_relationship(
                     staff_id=staff,
@@ -171,6 +167,8 @@ class MigrationService:
                     effective_from=joining,
                     organization_id=None,
                     legacy_department_id=legacy_department_id,
+                    source_business_type="MIGRATION_VERIFIED",
+                    source_business_id=f"legacy-employee-{staff.legacy_employee_id}",
                 )
             return {"status": "created", "relationshipId": str(rel.id)}
         except Exception as exc:

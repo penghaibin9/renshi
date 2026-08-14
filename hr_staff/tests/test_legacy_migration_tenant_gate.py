@@ -1,12 +1,12 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase, TestCase
+from django.test import TestCase
 
 from hr_staff.legacy.migration import MigrationService, MigrationTenantScopeError
 
 
-class LegacyMigrationTenantGateTests(SimpleTestCase):
+class LegacyMigrationTenantGateTests(TestCase):
     def test_wave1_rejects_cross_tenant_employee_before_authority_write(self):
         employee = SimpleNamespace(
             id=10,

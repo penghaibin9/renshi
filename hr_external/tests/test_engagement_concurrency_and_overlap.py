@@ -2,7 +2,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase
+from django.test import TestCase
 
 from hr_external.constants import ExternalEngagementStatus
 from hr_external.services.engagement_service import (
@@ -15,7 +15,7 @@ from hr_external.services.engagement_service import (
 )
 
 
-class EngagementConcurrencyAndOverlapTests(SimpleTestCase):
+class EngagementConcurrencyAndOverlapTests(TestCase):
     @patch("hr_external.services.engagement_service.HrExternalEngagement.objects")
     @patch("hr_external.services.engagement_service.HrExternalCategory.objects")
     @patch("hr_external.services.engagement_service.HrExternalTeacherProfile.objects")
@@ -90,8 +90,6 @@ class EngagementConcurrencyAndOverlapTests(SimpleTestCase):
         )
         EngagementService().create_engagement(payload)
 
-        # 关键断言：半开区间要求 existing.end > new.start，而不是 >=；
-        # 再要求 existing.start < new.end，因此边界相接可并存。
         self.assertEqual(base_qs.filter.call_count, 1)
         after_end_filter_qs.filter.assert_called_once_with(start_at__lt=date(2026, 10, 1))
 

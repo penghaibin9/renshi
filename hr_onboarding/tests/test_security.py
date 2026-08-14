@@ -39,16 +39,16 @@ def _make_case(tenant_id, idem_key=None, case_key=None, *, source_id=None):
     source_id = source_id or f"ph-{_uuid.uuid4().hex}"
     idem_key = idem_key or f"k-sec-{_uuid.uuid4().hex}"
     case_key = case_key or f"k-sec-case-{_uuid.uuid4().hex}"
-    return service.create_case_from_handoff(
-        _handoff_request(idem_key=idem_key, source_id=source_id), idempotency_key=case_key
-    )
+    request = _handoff_request(idem_key=idem_key, source_id=source_id)
+    request["tenant_id"] = tenant_id
+    return service.create_case_from_handoff(request, idempotency_key=case_key)
 
 
 class TenantIsolationTests(TestCase):
     def test_case_invisible_across_tenant(self):
         r1 = _make_case(1)
         detail = selectors.get_case_detail(tenant_id=2, case_id=r1["case_id"])
-        self.assertIsNone(detail)  # B 校无法读取 A 校 case
+        self.assertIsNone(detail)
 
     def test_list_scoped_to_tenant(self):
         _make_case(1)
@@ -61,7 +61,7 @@ class TenantIsolationTests(TestCase):
 
     def test_material_invisible_across_tenant(self):
         """跨 tenant 材料加载返回 None（IDOR 防护）。"""
-        _make_case(1)  # 确保 tenant=1 有 case
+        _make_case(1)
         tpl1 = HrOnboardingTemplate.objects.create(tenant_id=1, code="T1", name="T1")
         ver1 = HrOnboardingTemplateVersion.objects.create(tenant_id=1, template=tpl1, version_no=1)
         req1 = HrOnboardingMaterialRequirement.objects.create(
@@ -72,17 +72,14 @@ class TenantIsolationTests(TestCase):
             tenant_id=1, case=case, requirement=req1, status="MISSING"
         )
 
-        # tenant 2 无法按 id 取到 tenant 1 的材料
         try:
             from hr_onboarding.api.materials import _load_material_or_404
-
             from hr_onboarding.context import Hr05RequestContext
 
             ctx2 = Hr05RequestContext(tenant_id=2)
             result = _load_material_or_404(ctx2, str(material.id))
             self.assertIsNone(result)
         except Exception:
-            # 若 _load_material_or_404 直接抛 NotFoundError，也应视为拒绝
             self.assertTrue(True)
 
 
@@ -95,7 +92,6 @@ class PortalTokenSecurityTests(TestCase):
         r = _make_case(1)
         case = HrOnboardingCase.objects.get(id=r["case_id"])
         self.assertNotEqual(case.portal_access.token_hash, r["portal_token"])
-        # 明文不在任何字段
         self.assertFalse(
             case.portal_access.__class__.objects.filter(token_hash=r["portal_token"]).exists()
         )

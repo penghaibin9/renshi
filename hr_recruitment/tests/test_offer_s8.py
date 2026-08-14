@@ -60,7 +60,6 @@ class OfferFlowTests(TestCase):
             form_data={"degree": "博士"},
         )
         self.app = self.app_service.submit(application_id=str(draft.id))
-        # 资格通过（先建规则集并绑定，decision 要求绑定冻结规则集）
         self.qual_service = QualificationService(tenant_id=TENANT, actor="reviewer")
         rs = self.qual_service.create_rule_set(position_id=str(self.position.id))
         self.qual_service.add_rule(
@@ -78,7 +77,6 @@ class OfferFlowTests(TestCase):
         self.qual_service.decision(
             application_id=str(self.app.id), decision="QUALIFIED", reason_text="满足"
         )
-        # 评分锁定（selection scheme）
         self.assessment = AssessmentService(tenant_id=TENANT, actor="expert")
         self.scheme = self.assessment.create_scheme(position_id=str(self.position.id))
         self.exam = self.assessment.add_component(
@@ -109,7 +107,6 @@ class OfferFlowTests(TestCase):
         self.assessment.lock_score_sheet(score_sheet_id=str(sheet.id))
 
         self.proposed_service = ProposedHireService(tenant_id=TENANT, actor="hr")
-        # 真实 HR02 预占（handoff 前置要求 HELD）
         from datetime import timedelta
 
         from django.utils import timezone
@@ -196,13 +193,11 @@ class OfferFlowTests(TestCase):
         self.assertEqual(offer.status, OfferStatus.ACCEPTED)
         self.app.refresh_from_db()
         self.assertEqual(self.app.canonical_status, S.OFFER_ACCEPTED)
-        # 幂等重放
         offer_again = offer_service.accept(offer_id=str(offer.id))
         self.assertEqual(offer_again.status, OfferStatus.ACCEPTED)
 
     def test_handoff_preconditions_and_idempotent(self):
         """前置条件满足后才允许 handoff；重复调用返回同一 handoff。"""
-        # 先走公示闭环
         notice_service = NoticeService(tenant_id=TENANT, actor="hr")
         notice = notice_service.publish_notice(
             campaign_id=str(self.campaign.id),
@@ -215,7 +210,6 @@ class OfferFlowTests(TestCase):
             ],
         )
         notice_service.close_notice(notice_id=str(notice.id), has_blocker=False)
-        # Offer 接受
         offer_service = OfferService(tenant_id=TENANT, actor="hr")
         offer = offer_service.create_offer(
             proposed_hire_id=str(self.proposed.id), offer_no="OFFER-002"
@@ -227,23 +221,25 @@ class OfferFlowTests(TestCase):
         handoff_service = HandoffService(tenant_id=TENANT, actor="hr")
 
         class FakeConsumer:
-            def handle(self, *, proposed_hire_id, idempotency_key):
+            def handle(self, *, tenant_id, proposed_hire_id, idempotency_key):
+                self.tenant_id = tenant_id
                 return "hr05-case-1"
 
+        consumer = FakeConsumer()
         handoff = handoff_service.handoff(
             proposed_hire_id=str(self.proposed.id),
             idempotency_key="handoff-key-1",
-            hr05_consumer=FakeConsumer(),
+            hr05_consumer=consumer,
         )
+        self.assertEqual(consumer.tenant_id, TENANT)
         self.assertEqual(handoff.status, "CREATED")
         self.assertEqual(handoff.hr05_case_id, "hr05-case-1")
         self.app.refresh_from_db()
         self.assertEqual(self.app.canonical_status, S.HANDOFF_TO_HR05)
 
-        # 幂等重放：同一 proposed_hire 返回同一 handoff
         handoff2 = handoff_service.handoff(
             proposed_hire_id=str(self.proposed.id),
-            idempotency_key="handoff-key-2",  # 不同 key 也应命中 proposed 唯一
+            idempotency_key="handoff-key-2",
             hr05_consumer=FakeConsumer(),
         )
         self.assertEqual(str(handoff2.id), str(handoff.id))
@@ -272,7 +268,6 @@ class OfferFlowTests(TestCase):
         )
         self.assertEqual(handoff.status, "FAILED")
         self.app.refresh_from_db()
-        # 不推终态：保持 OFFER_ACCEPTED
         self.assertEqual(self.app.canonical_status, S.OFFER_ACCEPTED)
 
     def test_handoff_blocked_without_preconditions(self):

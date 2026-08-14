@@ -10,6 +10,7 @@ from django.test import RequestFactory, TestCase
 from hr_changes.api import bulk as bulk_api
 from hr_changes.constants import CaseStatus, ChangeActionCode, DownstreamEffectStatus
 from hr_changes.context import HrChangeRequestContext, HrChangeScope
+from hr_changes.integrations.hr02 import PositionGate
 from hr_changes.models import (
     HrBulkChangeBatch,
     HrBulkChangeItem,
@@ -83,6 +84,7 @@ class ApplyTransferTests(TestCase):
         case = svc.submit(case.id)
         case = svc.start_approval(case.id)
         case = svc.approve_all(case.id)
+        PositionGate(TENANT).reserve_for_case(case)
         return case
 
     def test_apply_transfer_effective(self):

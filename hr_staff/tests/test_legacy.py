@@ -84,6 +84,7 @@ class MigrationServiceTests(TestCase):
             phone="13800000001",
             dob=date(1990, 1, 1),
             gender="male",
+            employee_work_info=SimpleNamespace(company_id_id=TENANT),
         )
         result = MigrationService(TENANT).wave1_person_staff(employee=emp)
         self.assertEqual(result["status"], "created")
@@ -106,6 +107,7 @@ class MigrationServiceTests(TestCase):
             phone="13800000002",
             dob=date(1985, 5, 5),
             gender="male",
+            employee_work_info=SimpleNamespace(company_id_id=TENANT),
         )
         result = MigrationService(TENANT).wave1_person_staff(employee=emp)
         self.assertEqual(result["status"], "review_required")

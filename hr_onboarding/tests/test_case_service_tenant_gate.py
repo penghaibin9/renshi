@@ -1,13 +1,13 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase
+from django.test import TestCase
 
 from hr_onboarding.api.exceptions import OnboardingCaseInvalidSourceError
 from hr_onboarding.services.case_service import CaseService
 
 
-class CaseServiceTenantGateTests(SimpleTestCase):
+class CaseServiceTenantGateTests(TestCase):
     @patch("hr_onboarding.services.case_service.apply_idempotency", return_value=None)
     @patch("hr_onboarding.services.case_service.HrOnboardingCase.objects")
     def test_handoff_idempotency_is_namespaced_by_tenant(self, case_objects, apply_idempotency):
