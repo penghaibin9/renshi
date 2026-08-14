@@ -29,6 +29,38 @@ class ImpactProvider:
 
 
 # ---------------------------------------------------------------------------
+# HR06：生效能力 gate。没有 Authority 写入口的动作禁止进入“可生效”链。
+# ---------------------------------------------------------------------------
+class Hr06ApplySupportProvider(ImpactProvider):
+    name = "HR06-APPLY-SUPPORT"
+
+    # 这些动作已经出现在合同/影响分析中，但当前 ApplyService._apply_domain
+    # 尚无对应 Authority fact writer。若不阻断，会出现“0 事实写入却 EFFECTIVE”。
+    _UNSUPPORTED = frozenset(
+        {
+            ChangeActionCode.POST_CATEGORY_CHANGE,
+            ChangeActionCode.LOCATION_CHANGE,
+            ChangeActionCode.BULK_ORG_RESTRUCTURE_MOVE,
+            ChangeActionCode.DATA_CORRECTION,
+        }
+    )
+
+    def compute(self, case, as_of):
+        action = case.action_id.code
+        if action not in self._UNSUPPORTED:
+            return []
+        return [
+            {
+                "level": ImpactLevel.BLOCKER,
+                "code": "CHANGE_INVALID_ACTION",
+                "message": f"异动动作 {action} 尚未接入 Authority 生效写入口，禁止标记已生效",
+                "domain": "HR06",
+                "actionable": "先完成对应领域写入服务，再开放生效",
+            }
+        ]
+
+
+# ---------------------------------------------------------------------------
 # HR02：目标岗位容量（BLOCKER 级，禁止 override）
 # ---------------------------------------------------------------------------
 class Hr02PositionCapacityProvider(ImpactProvider):
@@ -212,6 +244,7 @@ class Hr14AppointmentProvider(ImpactProvider):
 # 注册表
 # ---------------------------------------------------------------------------
 IMPACT_PROVIDERS = [
+    Hr06ApplySupportProvider(),
     Hr02PositionCapacityProvider(),
     Hr02TargetOrgProvider(),
     Hr03FactsProvider(),

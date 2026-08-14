@@ -8,14 +8,14 @@ apply_change(case):
     revalidate current facts（BLOCKER → APPLY_FAILED，不静默）
     rebase（HARD_CONFLICT → APPLY_FAILED）
     mark APPLYING
-    ── HR03 domain service 写事实（switch_primary/create_assignment/close_assignment/…）
-    ── HR02 PositionGate commit/release
+    ── nested savepoint: HR03 domain service 写事实 + HR02 PositionGate required commit
+    ── 任一失败：回滚 domain savepoint，再把 case 标 APPLY_FAILED
     save effective snapshot（checksum 不可变）
     mark EFFECTIVE
     outbox（PersonnelChangeEffective + 下游 effects）
-    同事务；外部系统不在 DB 事务内同步等待。
 
-禁止：直接批量 UPDATE WorkInformation；生效后回滚真实人事事实。
+禁止：直接批量 UPDATE WorkInformation；岗位预占缺失/提交失败静默通过；
+禁止捕获领域异常后仍保留已经部分写入的 HR03 事实。
 """
 
 from __future__ import annotations
@@ -110,28 +110,43 @@ class ApplyService:
             case, "apply", CaseStatus.APPLYING, comment="开始生效", request_id=request_id
         )
 
-        # 4) 领域写入（HR03 domain service + HR02 gate）
+        # 4) 领域写入：必须放在 nested savepoint 中。
+        # 这样 HR03 已写成功但 HR02 reservation commit 失败时，会先回滚领域写入，
+        # 然后在外层事务里安全记录 APPLY_FAILED，而不是留下“半生效”事实。
+        before = _capture_facts(self.tenant_id, case)
         try:
-            before = _capture_facts(self.tenant_id, case)
-            domain_result = self._apply_domain(case, eff)
-            after = _capture_facts(self.tenant_id, case)
-        except Exception as exc:  # 领域失败 → APPLY_FAILED（可重试），不回滚已真实发生的（这里同事务内回滚）
+            with transaction.atomic():
+                domain_result = self._apply_domain(case, eff)
+                after = _capture_facts(self.tenant_id, case)
+        except Exception as exc:
+            code = getattr(exc, "code", "CHANGE_APPLY_DOMAIN_FAILED")
             case = self.change_service._apply_transition(
-                case, "apply_failed", CaseStatus.APPLY_FAILED,
-                comment=f"生效失败: {exc}",
+                case,
+                "apply_failed",
+                CaseStatus.APPLY_FAILED,
+                comment=f"生效失败: {code}: {exc}",
+                request_id=request_id,
             )
             enqueue_outbox(
                 tenant_id=self.tenant_id,
                 event_type="PersonnelChangeApplyFailed",
                 aggregate_type="PersonnelChangeCase",
                 aggregate_id=str(case.id),
-                payload={"caseNo": case.case_no, "error": str(exc)[:500]},
+                correlation_id=request_id,
+                payload={
+                    "caseNo": case.case_no,
+                    "code": code,
+                    "error": str(exc)[:500],
+                },
             )
             return case
 
         # 5) 生效快照（不可变，checksum）
         checksum = hashlib.sha256(
-            json.dumps({"before": before, "after": after, "case": str(case.id)}, sort_keys=True).encode()
+            json.dumps(
+                {"before": before, "after": after, "case": str(case.id)},
+                sort_keys=True,
+            ).encode()
         ).hexdigest()
         HrChangeEffectiveSnapshot.objects.create(
             change_case_id=case,
@@ -147,8 +162,11 @@ class ApplyService:
 
         # 6) 标记 EFFECTIVE
         case = self.change_service._apply_transition(
-            case, "apply_success", CaseStatus.EFFECTIVE,
-            comment="已生效", request_id=request_id,
+            case,
+            "apply_success",
+            CaseStatus.EFFECTIVE,
+            comment="已生效",
+            request_id=request_id,
             applied_at=timezone.now(),
         )
 
@@ -184,8 +202,11 @@ class ApplyService:
 
     def _mark_apply_failed(self, case, request_id: str, code: str):
         case = self.change_service._apply_transition(
-            case, "apply_failed", CaseStatus.APPLY_FAILED,
-            comment=f"生效前校验阻断: {code}", request_id=request_id,
+            case,
+            "apply_failed",
+            CaseStatus.APPLY_FAILED,
+            comment=f"生效前校验阻断: {code}",
+            request_id=request_id,
         )
         enqueue_outbox(
             tenant_id=self.tenant_id,
@@ -222,8 +243,14 @@ class ApplyService:
         source_fact_ids = [str(case.id)]
         target_fact_ids = []
 
-        target_org = _resolve_org(self.tenant_id, case.target_org_id_id or _ref("organization"))
-        target_pos = _resolve_position(self.tenant_id, case.target_position_id_id or _ref("position"))
+        target_org = _resolve_org(
+            self.tenant_id,
+            case.target_org_id_id or _ref("organization"),
+        )
+        target_pos = _resolve_position(
+            self.tenant_id,
+            case.target_position_id_id or _ref("position"),
+        )
         target_catalog = _resolve_catalog(self.tenant_id, _ref("post_catalog"))
         reporting_staff = _resolve_staff(self.tenant_id, _ref("reporting_staff"))
 
@@ -233,10 +260,12 @@ class ApplyService:
             ChangeActionCode.ORG_POSITION_TRANSFER,
             ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
         ):
-            # 主岗迁移：HR03 switch_primary（原子：锁旧段→关旧段→建新段→投影）
             try:
                 new_primary = assignment_service.switch_primary(
-                    employment_relationship_id=case.employment_relationship_id or _current_rel(self.tenant_id, case),
+                    employment_relationship_id=(
+                        case.employment_relationship_id
+                        or _current_rel(self.tenant_id, case)
+                    ),
                     effective_from=eff,
                     organization_id=target_org,
                     position_id=target_pos,
@@ -249,13 +278,24 @@ class ApplyService:
                 target_fact_ids.append(str(new_primary.id))
             except AssignmentPolicyViolation as exc:
                 raise ApplyServiceError(
-                    exc.code or "ASSIGNMENT_OVERLAP", exc.args[0] if exc.args else "主岗切换失败"
+                    exc.code or "ASSIGNMENT_OVERLAP",
+                    exc.args[0] if exc.args else "主岗切换失败",
                 )
-            # HR02：目标岗位预占提交（生效固化）
-            try:
-                self.position_gate.commit_for_case(case)
-            except Exception:
-                pass  # 无预占时静默（如未调用 reserve 的流程）
+
+            # 只有真正涉及目标岗位的动作才要求 reservation；一旦需要，必须存在并提交成功。
+            if self.position_gate.needs_position(action):
+                try:
+                    reservation = self.position_gate.require_commit_for_case(case)
+                    target_fact_ids.append(f"position-reservation:{reservation.id}")
+                except Exception as exc:
+                    raise ApplyServiceError(
+                        getattr(
+                            exc,
+                            "code",
+                            "CHANGE_POSITION_RESERVATION_COMMIT_FAILED",
+                        ),
+                        str(exc) or "目标岗位预占提交失败",
+                    ) from exc
 
         elif action == ChangeActionCode.ADD_SECONDARY_ASSIGNMENT:
             new_secondary = assignment_service.create_assignment(
@@ -272,7 +312,10 @@ class ApplyService:
 
         elif action == ChangeActionCode.END_SECONDARY_ASSIGNMENT:
             assignment_service.close_assignment(
-                assignment_id=_int_or_uuid(_ref("assignment_id")) or case.source_assignment_id_id,
+                assignment_id=(
+                    _int_or_uuid(_ref("assignment_id"))
+                    or case.source_assignment_id_id
+                ),
                 effective_to=eff,
                 source_business_type=biz_type,
                 source_business_id=biz_id,
@@ -292,7 +335,10 @@ class ApplyService:
             rel = _current_rel(self.tenant_id, case)
             if rel is None:
                 raise ApplyServiceError("RELATIONSHIP_NOT_FOUND", "未找到聘用关系")
-            EmploymentService(self.tenant_id, audit_actor_user_id=self.actor_user_id).update_relationship_type(
+            EmploymentService(
+                self.tenant_id,
+                audit_actor_user_id=self.actor_user_id,
+            ).update_relationship_type(
                 relationship_id=rel.id,
                 relationship_type=_ref("relationship_type") or rel.relationship_type,
                 employment_type=_ref("employment_type") or "",
@@ -316,7 +362,11 @@ class ApplyService:
             ChangeActionCode.TEMPORARY_SECONDMENT,
             ChangeActionCode.TEMPORARY_ATTACHMENT,
         ):
-            temp_type = "SECONDMENT" if action == ChangeActionCode.TEMPORARY_SECONDMENT else "TEMPORARY"
+            temp_type = (
+                "SECONDMENT"
+                if action == ChangeActionCode.TEMPORARY_SECONDMENT
+                else "TEMPORARY"
+            )
             temp = assignment_service.create_assignment(
                 employment_relationship_id=_current_rel(self.tenant_id, case),
                 assignment_type=temp_type,
@@ -330,7 +380,10 @@ class ApplyService:
             )
             source_assignment = _current_primary(self.tenant_id, case)
             if source_assignment is None:
-                raise ApplyServiceError("CHANGE_SOURCE_ASSIGNMENT_MISMATCH", "未找到原主岗")
+                raise ApplyServiceError(
+                    "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
+                    "未找到原主岗",
+                )
             from hr_changes.services.temporary_service import TemporaryAssignmentService
 
             TemporaryAssignmentService(self.tenant_id).create_link(
@@ -338,23 +391,28 @@ class ApplyService:
                 source_assignment_id=source_assignment,
                 temporary_assignment_id=temp,
                 start_at=eff,
-                expected_return_at=_date_or_none(_ref("expected_return_at")) or eff,
+                expected_return_at=(
+                    _date_or_none(_ref("expected_return_at")) or eff
+                ),
             )
             target_fact_ids.append(str(temp.id))
 
         elif action == ChangeActionCode.RETURN_FROM_TEMPORARY:
             from hr_changes.services.return_service import ReturnService
 
-            link = (
-                HrTemporaryAssignmentLink.objects.filter(
-                    tenant_id=self.tenant_id,
-                    change_case_id=case,
-                )
-                .first()
-            )
+            link = HrTemporaryAssignmentLink.objects.filter(
+                tenant_id=self.tenant_id,
+                change_case_id=case,
+            ).first()
             if link is None:
-                raise ApplyServiceError("CHANGE_NOT_FOUND", "未找到对应临时异动关系")
-            ReturnService(self.tenant_id, actor_user_id=self.actor_user_id).execute_return(
+                raise ApplyServiceError(
+                    "CHANGE_NOT_FOUND",
+                    "未找到对应临时异动关系",
+                )
+            ReturnService(
+                self.tenant_id,
+                actor_user_id=self.actor_user_id,
+            ).execute_return(
                 link.id,
                 return_effective_at=eff,
                 return_case_id=case.id,
@@ -382,7 +440,11 @@ class ApplyService:
             "source_fact_ids": source_fact_ids,
             "target_fact_ids": target_fact_ids,
             "position_changes": {
-                "target_position": str(case.target_position_id_id) if case.target_position_id_id else "",
+                "target_position": (
+                    str(case.target_position_id_id)
+                    if case.target_position_id_id
+                    else ""
+                ),
             },
             "followup": followup,
         }
@@ -390,22 +452,29 @@ class ApplyService:
 
 # ---------------------------------------------------------------------------
 def _current_rel(tenant_id, case):
-    from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+    from hr_staff.services.effective_dated_query_service import (
+        EffectiveDatedQueryService,
+    )
 
     qs = EffectiveDatedQueryService(tenant_id)
     return qs.relationships_as_of(case.staff_master_id_id, date.today()).first()
 
 
 def _current_primary(tenant_id, case):
-    from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+    from hr_staff.services.effective_dated_query_service import (
+        EffectiveDatedQueryService,
+    )
 
     return EffectiveDatedQueryService(tenant_id).primary_assignment_as_of(
-        case.staff_master_id_id, date.today()
+        case.staff_master_id_id,
+        date.today(),
     )
 
 
 def _capture_facts(tenant_id, case) -> dict:
-    from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+    from hr_staff.services.effective_dated_query_service import (
+        EffectiveDatedQueryService,
+    )
 
     qs = EffectiveDatedQueryService(tenant_id)
     primary = qs.primary_assignment_as_of(case.staff_master_id_id, date.today())
@@ -415,9 +484,15 @@ def _capture_facts(tenant_id, case) -> dict:
         "staffNo": staff.staff_no,
         "staffCategory": staff.staff_category_code,
         "organization": (
-            primary.organization_id.stable_code if primary and primary.organization_id else ""
+            primary.organization_id.stable_code
+            if primary and primary.organization_id
+            else ""
         ),
-        "position": primary.position_id.position_code if primary and primary.position_id else "",
+        "position": (
+            primary.position_id.position_code
+            if primary and primary.position_id
+            else ""
+        ),
         "relationshipType": rel.relationship_type if rel else "",
         "status": qs.status_as_of(case.staff_master_id_id, date.today()),
     }
@@ -430,18 +505,29 @@ def _int_or_uuid(value):
 
 
 def _map_source_business_type(action_code: str) -> str:
-    """HR06 动作代码 → HR03 VALID_ASSIGNMENT_SOURCES 白名单（对齐 hr_staff/services/assignment_service.py）。"""
-    TRANSFER_ACTIONS = frozenset({
-        "ORG_TRANSFER", "POSITION_TRANSFER", "ORG_POSITION_TRANSFER",
-        "PRIMARY_ASSIGNMENT_SWITCH", "MANAGER_CHANGE",
-    })
-    POSITION_ACTIONS = frozenset({
-        "POST_CATEGORY_CHANGE", "EMPLOYEE_CATEGORY_CHANGE",
-        "EMPLOYMENT_TYPE_CHANGE", "ADD_SECONDARY_ASSIGNMENT",
-        "END_SECONDARY_ASSIGNMENT", "TEMPORARY_SECONDMENT",
-        "TEMPORARY_ATTACHMENT", "RETURN_FROM_TEMPORARY",
-        "LOCATION_CHANGE",
-    })
+    """HR06 动作代码 → HR03 VALID_ASSIGNMENT_SOURCES 白名单。"""
+    TRANSFER_ACTIONS = frozenset(
+        {
+            "ORG_TRANSFER",
+            "POSITION_TRANSFER",
+            "ORG_POSITION_TRANSFER",
+            "PRIMARY_ASSIGNMENT_SWITCH",
+            "MANAGER_CHANGE",
+        }
+    )
+    POSITION_ACTIONS = frozenset(
+        {
+            "POST_CATEGORY_CHANGE",
+            "EMPLOYEE_CATEGORY_CHANGE",
+            "EMPLOYMENT_TYPE_CHANGE",
+            "ADD_SECONDARY_ASSIGNMENT",
+            "END_SECONDARY_ASSIGNMENT",
+            "TEMPORARY_SECONDMENT",
+            "TEMPORARY_ATTACHMENT",
+            "RETURN_FROM_TEMPORARY",
+            "LOCATION_CHANGE",
+        }
+    )
     if action_code in TRANSFER_ACTIONS:
         return "HR06_TRANSFER"
     if action_code in POSITION_ACTIONS:
