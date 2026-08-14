@@ -29,9 +29,17 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt .
 RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
     && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall -r requirements.txt \
+    && find /opt/venv -type d \( \
+        -name 'msgpack-*.dist-info' -o \
+        -name 'msgpack-*.egg-info' -o \
+        -name 'setuptools-*.dist-info' -o \
+        -name 'setuptools-*.egg-info' \
+       \) -prune -exec rm -rf '{}' + \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-deps --force-reinstall \
+        msgpack==1.2.1 \
+        setuptools==83.0.0 \
     && /opt/venv/bin/python -m pip check \
-    && test "$(/opt/venv/bin/python -c 'from importlib.metadata import version; print(version("msgpack"))')" = "1.2.1" \
-    && test "$(/opt/venv/bin/python -c 'from importlib.metadata import version; print(version("setuptools"))')" = "83.0.0" \
+    && /opt/venv/bin/python -c 'from importlib.metadata import distributions; from pathlib import Path; site_packages=next(Path("/opt/venv/lib").glob("python*/site-packages")); expected={"msgpack":"1.2.1","setuptools":"83.0.0"}; found={name:[d.version for d in distributions(path=[str(site_packages)]) if (d.metadata.get("Name") or "").lower()==name] for name in expected}; assert found=={name:[version] for name,version in expected.items()}, found' \
     && /opt/venv/bin/python -c 'from importlib.metadata import distribution; from pathlib import Path; root=Path("/opt/venv").resolve(); locations=[Path(distribution(name).locate_file("")).resolve() for name in ("msgpack", "setuptools")]; assert all(location == root or root in location.parents for location in locations), locations'
 
 # Production stage - minimal runtime image.
