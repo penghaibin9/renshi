@@ -15,7 +15,7 @@ urlpatterns = [
     path("", include("hr_recruitment.public.urls")),
     path("hr/onboarding/", include("hr_onboarding.urls")),
     path("hr/changes/", include("hr_changes.urls")),
-    # HR07 remains deliberately unrouted until its Authority UI is recovered.
+    # HR07 Authority UI remains deliberately unrouted; its canonical API is live below.
     # HR08 UI
     path("hr/external-teachers/", include("hr_external.urls")),
     # HR09 UI
@@ -29,6 +29,8 @@ urlpatterns = [
     path("hr/assessments/", include("hr_assessment.urls")),
     # Canonical APIs for old-root modules HR01/02/03/04/05/06/08/11.
     path("", include("horilla.canonical_hr_api")),
+    # HR07 canonical Agreement Authority API. Broken recovery-only API modules stay unrouted.
+    path("", include("hr_contracts.api_urls")),
     # HR09/10/12 native canonical APIs.
     path("", include("hr_qualification.api.urls")),
     path("", include("hr10_development.api.urls")),
