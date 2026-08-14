@@ -22,12 +22,17 @@ RUN apt-get update \
         g++ \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m venv /opt/venv
+RUN rm -rf /opt/venv \
+    && python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall -r requirements.txt \
+    && /opt/venv/bin/python -m pip check \
+    && test "$(/opt/venv/bin/python -c 'from importlib.metadata import version; print(version("msgpack"))')" = "1.2.1" \
+    && test "$(/opt/venv/bin/python -c 'from importlib.metadata import version; print(version("setuptools"))')" = "83.0.0" \
+    && /opt/venv/bin/python -c 'from importlib.metadata import distribution; from pathlib import Path; root=Path("/opt/venv").resolve(); locations=[Path(distribution(name).locate_file("")).resolve() for name in ("msgpack", "setuptools")]; assert all(location == root or root in location.parents for location in locations), locations'
 
 # Production stage - minimal runtime image.
 FROM python:3.12-slim AS production
