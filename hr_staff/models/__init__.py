@@ -8,6 +8,7 @@ hr_staff.models —— HR03 权威模型包（S1 骨架 → 逐步填充）。
 - S8: material.py
 - S9: correction.py
 - S10: events.py
+- Authority: decision.py (PersonnelDecision + reward/disciplinary)
 """
 
 from hr_staff.models.assignment import HrStaffAssignment
@@ -18,6 +19,7 @@ from hr_staff.models.correction import (
     HrCorrectionItem,
     HrFieldGovernancePolicy,
 )
+from hr_staff.models.decision import HrPersonnelDecision, HrRewardDisciplinaryCase
 from hr_staff.models.education import HrDegreeRecord, HrEducationExperience, HrWorkExperience
 from hr_staff.models.events import HrBusinessEventInbox, HrOutboxEvent
 from hr_staff.models.export_models import HrExportJob
@@ -66,6 +68,8 @@ __all__ = [
     "HrCorrectionCase",
     "HrCorrectionItem",
     "HrFieldGovernancePolicy",
+    "HrPersonnelDecision",
+    "HrRewardDisciplinaryCase",
     "HrOutboxEvent",
     "HrBusinessEventInbox",
     "HrExportJob",

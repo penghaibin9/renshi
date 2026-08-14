@@ -5,7 +5,6 @@ hr_staff/models/permission_meta.py —— HR03 权限码注册（总册 §39）�
 """
 
 from django.db import models
-from django.utils.translation import gettext_lazy as _
 
 
 class HrStaffPermissionMeta(models.Model):
@@ -36,4 +35,8 @@ class HrStaffPermissionMeta(models.Model):
             ("hr.staff.correction.approve_high_risk", "HR Staff: Approve High Risk Correction"),
             ("hr.staff.audit.view", "HR Staff: View Audit"),
             ("hr.staff.data_quality.manage", "HR Staff: Manage Data Quality"),
+            ("hr.staff.personnel_decision.view", "HR Staff: View Personnel Decision"),
+            ("hr.staff.personnel_decision.manage", "HR Staff: Manage Personnel Decision"),
+            ("hr.staff.reward_disciplinary.view", "HR Staff: View Reward / Disciplinary"),
+            ("hr.staff.reward_disciplinary.manage", "HR Staff: Manage Reward / Disciplinary"),
         )

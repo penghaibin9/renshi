@@ -7,7 +7,6 @@ hr_staff/services/outbox_service.py —— 全系统统一 outbox 发布器（§
 from __future__ import annotations
 
 import uuid
-from typing import Optional
 
 from hr_staff.models import HrOutboxEvent
 
@@ -79,3 +78,61 @@ def staff_material_verified(tenant_id: int, staff_id, material_id):
 
 def staff_authority_mode_changed(tenant_id: int, mode: str, reason: str = ""):
     _emit(tenant_id, "StaffAuthorityModeChanged", {"mode": mode, "reason": reason})
+
+
+def personnel_decision_effective(
+    tenant_id: int,
+    *,
+    decision_id,
+    staff_id,
+    decision_type: str,
+    decision_action: str,
+    effective_from,
+    event_type: str,
+    correlation_id: str = "",
+):
+    from horilla.hr_event_registry import global_event_registry
+
+    global_event_registry.get(event_type, 1)
+    return _emit(
+        tenant_id,
+        event_type,
+        {
+            "decisionId": str(decision_id),
+            "staffId": str(staff_id),
+            "decisionType": decision_type,
+            "decisionAction": decision_action,
+            "effectiveDate": str(effective_from),
+            "eventVersion": 1,
+        },
+        correlation_id,
+    )
+
+
+def reward_disciplinary_effective(
+    tenant_id: int,
+    *,
+    case_id,
+    decision_id,
+    staff_id,
+    kind: str,
+    effective_from,
+    event_type: str,
+    correlation_id: str = "",
+):
+    from horilla.hr_event_registry import global_event_registry
+
+    global_event_registry.get(event_type, 1)
+    return _emit(
+        tenant_id,
+        event_type,
+        {
+            "caseId": str(case_id),
+            "decisionId": str(decision_id),
+            "staffId": str(staff_id),
+            "kind": kind,
+            "effectiveDate": str(effective_from),
+            "eventVersion": 1,
+        },
+        correlation_id,
+    )
