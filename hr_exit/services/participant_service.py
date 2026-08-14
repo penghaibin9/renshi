@@ -1,8 +1,9 @@
 """Executable non-core participant orchestration for the HR16 ExitEffect saga.
 
-Providers are registered explicitly through ``HR16_EXIT_PARTICIPANT_PROVIDERS``
-in Django settings, mapping HR14/IAM/SETTLEMENT/ARCHIVE to importable callables.
-A provider is never inferred from the presence of a legacy table or page.
+Providers can be registered explicitly through ``HR16_EXIT_PARTICIPANT_PROVIDERS``
+in Django settings. HR16's canonical archive-transfer Authority is the built-in
+ARCHIVE provider; deployments may override it, or explicitly disable it with an
+empty ARCHIVE setting. Other participants are never inferred from legacy tables.
 Missing providers become UNAVAILABLE; provider exceptions become FAILED; only a
 successful provider call returning a mapping can become SUCCESS.
 """
@@ -42,6 +43,9 @@ class ExitParticipantResult:
 
 class ExitParticipantService:
     NON_CORE = frozenset({"HR14", "IAM", "SETTLEMENT", "ARCHIVE"})
+    BUILTIN_PROVIDERS = {
+        "ARCHIVE": "hr_exit.services.archive_transfer_service.archive_participant_provider",
+    }
 
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
         if not tenant_id:
@@ -73,12 +77,12 @@ class ExitParticipantService:
             )
         return case
 
-    @staticmethod
-    def _provider_path(participant: str) -> str:
+    @classmethod
+    def _provider_path(cls, participant: str) -> str:
         configured = getattr(settings, "HR16_EXIT_PARTICIPANT_PROVIDERS", {}) or {}
-        if not isinstance(configured, Mapping):
-            return ""
-        return str(configured.get(participant, "") or "").strip()
+        if isinstance(configured, Mapping) and participant in configured:
+            return str(configured.get(participant, "") or "").strip()
+        return cls.BUILTIN_PROVIDERS.get(participant, "")
 
     @transaction.atomic
     def execute(self, *, effect_id, participant: str) -> ExitParticipantResult:

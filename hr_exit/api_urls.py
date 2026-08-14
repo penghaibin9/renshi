@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, case_api, participant_api, retirement_api
+from . import api, archive_api, case_api, participant_api, retirement_api
 
 app_name = "hr_exit_api"
 urlpatterns = [
@@ -61,5 +61,25 @@ urlpatterns = [
         "handover-items/<uuid:item_id>/waive/",
         api.waive_handover_item,
         name="handover-item-waive",
+    ),
+    path(
+        "cases/<uuid:case_id>/archive-transfers/",
+        archive_api.case_archive_transfers,
+        name="archive-transfer-list-create",
+    ),
+    path(
+        "archive-transfers/<uuid:receipt_id>/send/",
+        archive_api.send_archive_transfer,
+        name="archive-transfer-send",
+    ),
+    path(
+        "archive-transfers/<uuid:receipt_id>/receive/",
+        archive_api.receive_archive_transfer,
+        name="archive-transfer-receive",
+    ),
+    path(
+        "archive-transfers/<uuid:receipt_id>/return/",
+        archive_api.return_archive_transfer,
+        name="archive-transfer-return",
     ),
 ]
