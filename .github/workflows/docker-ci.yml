@@ -99,10 +99,18 @@ jobs:
           rm -rf .ci-backup
           mkdir -p .ci-backup
           chmod 0777 .ci-backup
+          set +e
           docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps \
             -e MYSQL_CI_ROOT_PASSWORD=horilla_root_pass \
             -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
-            --entrypoint "" web python scripts/ci_mysql_recovery.py
+            --entrypoint "" web python scripts/ci_mysql_recovery.py \
+            2>&1 | tee .ci-backup/recovery.log
+          recovery_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$recovery_status" -ne 0 ]; then
+            echo "MySQL recovery drill failed with exit code $recovery_status"
+            exit "$recovery_status"
+          fi
           rm -rf .ci-backup
 
       - name: Upload MySQL recovery diagnostics
@@ -110,7 +118,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mysql-recovery-diagnostics
-          path: .ci-backup/recovery-diagnostics.txt
+          path: |
+            .ci-backup/recovery.log
+            .ci-backup/recovery-diagnostics.txt
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 3
 
