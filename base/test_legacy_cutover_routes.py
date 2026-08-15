@@ -1,7 +1,9 @@
 """Production cutover contract for retired legacy HR write surfaces."""
 
 import json
+from pathlib import Path
 
+from django.conf import settings
 from django.core.cache import cache
 from django.test import RequestFactory, SimpleTestCase
 from django.urls import URLResolver, get_resolver, resolve
@@ -71,6 +73,13 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
         active_sidebars = set(get_apps_in_base_dir())
         self.assertTrue(RETIRED_LEGACY_HR_APPS.isdisjoint(active_sidebars))
 
+    def test_global_quick_actions_do_not_restore_retired_payroll_writer(self):
+        template = (
+            Path(settings.BASE_DIR) / "templates" / "floating_button.html"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("reimbursement-create", template)
+        self.assertNotIn("Create Reimbursement", template)
+
     def test_legacy_api_mutating_verbs_are_adapter_only_308_redirects(self):
         factory = RequestFactory()
         resolver_path = "/api/hr/v1/payroll/periods/42/"
@@ -106,36 +115,16 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
     def test_generic_dynamic_writers_fail_closed_for_retired_models(self):
         factory = RequestFactory()
         cases = (
-            (
-                "POST",
-                "/generic-delete/",
-                "offboarding.OffboardingStage",
-            ),
-            (
-                "GET",
-                "/update-kanban-sequence/",
-                "payroll.Payslip",
-            ),
-            (
-                "GET",
-                "/update-kanban-item-group/",
-                "report.DynamicReport",
-            ),
+            ("POST", "/generic-delete/", "offboarding.OffboardingStage"),
+            ("GET", "/update-kanban-sequence/", "payroll.Payslip"),
+            ("GET", "/update-kanban-item-group/", "report.DynamicReport"),
             (
                 "GET",
                 "/update-kanban-group-sequence/",
                 "offboarding.OffboardingStage",
             ),
-            (
-                "POST",
-                "/horilla-history-revert/1/1/",
-                "payroll.Payslip",
-            ),
-            (
-                "POST",
-                "/generic-history/1/",
-                "offboarding.OffboardingStage",
-            ),
+            ("POST", "/horilla-history-revert/1/1/", "payroll.Payslip"),
+            ("POST", "/generic-history/1/", "offboarding.OffboardingStage"),
         )
 
         with self.assertLogs("renshi.legacy_cutover", level="WARNING") as logs:
