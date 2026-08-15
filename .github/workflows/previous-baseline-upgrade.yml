@@ -65,6 +65,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # main predates the explicit MySQL runtime dependency. The upgrade
+          # gate supplies only the backend driver so the historical schema can
+          # be materialized in the same MySQL engine used in production.
+          pip install "mysqlclient>=2.2,<3"
 
       - name: Materialize previous production baseline schema
         shell: bash
@@ -106,7 +110,7 @@ jobs:
           set -euo pipefail
           plan=$(python manage.py showmigrations --plan)
           printf '%s\n' "$plan"
-          if printf '%s\n' "$plan" | grep -Eq '^\[ \]'; then
+          if printf '%s\n' "$plan" | grep -Eq '^[[:space:]]*\[ \]'; then
             echo "::error title=Previous-baseline upgrade incomplete::Unapplied migration remains after base-to-head upgrade"
             exit 1
           fi
