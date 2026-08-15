@@ -70,7 +70,7 @@ jobs:
           # be materialized in the same MySQL engine used in production.
           pip install "mysqlclient>=2.2,<3"
 
-      - name: Apply baseline-only MySQL migration compatibility shim
+      - name: Apply baseline-only MySQL migration compatibility shims
         shell: bash
         run: |
           set -euo pipefail
@@ -78,15 +78,15 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          path = Path("base/migrations/0002_initial.py")
-          source = path.read_text(encoding="utf-8")
-          old = (
+          base_path = Path("base/migrations/0002_initial.py")
+          base_source = base_path.read_text(encoding="utf-8")
+          base_old = (
               '        migrations.AlterUniqueTogether(\n'
               '            name="company",\n'
               '            unique_together={("company", "address")},\n'
               '        ),\n'
           )
-          new = (
+          base_new = (
               '        # Baseline-only MySQL compatibility shim: MySQL 8.4 cannot\n'
               '        # create a unique index directly on TEXT address without a prefix\n'
               '        # length (error 1170). Keep Django migration state canonical while\n'
@@ -101,16 +101,100 @@ jobs:
               '            ],\n'
               '        ),\n'
           )
-          count = source.count(old)
-          if count != 1:
+          base_count = base_source.count(base_old)
+          if base_count != 1:
               raise SystemExit(
-                  f"expected exactly one legacy company/address unique_together, found {count}"
+                  f"expected exactly one legacy company/address unique_together, found {base_count}"
               )
-          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          base_path.write_text(base_source.replace(base_old, base_new, 1), encoding="utf-8")
+
+          payroll_path = Path("payroll/migrations/0001_initial.py")
+          payroll_source = payroll_path.read_text(encoding="utf-8")
+          payroll_old = (
+              '            options={\n'
+              '                "verbose_name": "Allowance",\n'
+              '                "unique_together": {\n'
+              '                    (\n'
+              '                        "title",\n'
+              '                        "is_taxable",\n'
+              '                        "is_condition_based",\n'
+              '                        "field",\n'
+              '                        "condition",\n'
+              '                        "value",\n'
+              '                        "is_fixed",\n'
+              '                        "amount",\n'
+              '                        "based_on",\n'
+              '                        "rate",\n'
+              '                        "per_attendance_fixed_amount",\n'
+              '                        "shift_id",\n'
+              '                        "shift_per_attendance_amount",\n'
+              '                        "amount_per_one_hr",\n'
+              '                        "work_type_id",\n'
+              '                        "work_type_per_attendance_amount",\n'
+              '                    )\n'
+              '                },\n'
+              '            },\n'
+              '        ),\n'
+              '        migrations.CreateModel(\n'
+              '            name="Deduction",\n'
+          )
+          payroll_new = (
+              '            options={\n'
+              '                "verbose_name": "Allowance",\n'
+              '            },\n'
+              '        ),\n'
+              '        # Baseline-only MySQL compatibility shim: the legacy Allowance\n'
+              '        # 16-column unique index exceeds InnoDB\'s 3072-byte key limit\n'
+              '        # under utf8mb4. Preserve canonical Django state only.\n'
+              '        migrations.SeparateDatabaseAndState(\n'
+              '            database_operations=[],\n'
+              '            state_operations=[\n'
+              '                migrations.AlterUniqueTogether(\n'
+              '                    name="allowance",\n'
+              '                    unique_together={\n'
+              '                        (\n'
+              '                            "title",\n'
+              '                            "is_taxable",\n'
+              '                            "is_condition_based",\n'
+              '                            "field",\n'
+              '                            "condition",\n'
+              '                            "value",\n'
+              '                            "is_fixed",\n'
+              '                            "amount",\n'
+              '                            "based_on",\n'
+              '                            "rate",\n'
+              '                            "per_attendance_fixed_amount",\n'
+              '                            "shift_id",\n'
+              '                            "shift_per_attendance_amount",\n'
+              '                            "amount_per_one_hr",\n'
+              '                            "work_type_id",\n'
+              '                            "work_type_per_attendance_amount",\n'
+              '                        )\n'
+              '                    },\n'
+              '                ),\n'
+              '            ],\n'
+              '        ),\n'
+              '        migrations.CreateModel(\n'
+              '            name="Deduction",\n'
+          )
+          payroll_count = payroll_source.count(payroll_old)
+          if payroll_count != 1:
+              raise SystemExit(
+                  f"expected exactly one legacy Allowance 16-column unique_together, found {payroll_count}"
+              )
+          payroll_path.write_text(
+              payroll_source.replace(payroll_old, payroll_new, 1), encoding="utf-8"
+          )
           PY
-          python -m py_compile base/migrations/0002_initial.py
-          git diff --check -- base/migrations/0002_initial.py
-          git diff -- base/migrations/0002_initial.py
+          python -m py_compile \
+            base/migrations/0002_initial.py \
+            payroll/migrations/0001_initial.py
+          git diff --check -- \
+            base/migrations/0002_initial.py \
+            payroll/migrations/0001_initial.py
+          git diff -- \
+            base/migrations/0002_initial.py \
+            payroll/migrations/0001_initial.py
 
       - name: Materialize previous production baseline schema
         shell: bash
