@@ -4,6 +4,7 @@ from . import (
     api,
     asof_api,
     evaluation_api,
+    legacy_api,
     metric_api,
     quality_api,
     quality_finding_api,
@@ -14,6 +15,11 @@ app_name = "hr_data_api"
 
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
+    path(
+        "legacy/report-assets/",
+        legacy_api.legacy_report_assets,
+        name="legacy-report-assets",
+    ),
     path(
         "definitions/populations/",
         api.create_population_definition,
