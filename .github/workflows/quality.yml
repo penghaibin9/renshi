@@ -139,6 +139,9 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
+      - name: HR01-HR18 Authority gate
+        run: python manage.py hr_authority_gate --fail-on-partial
+
       - name: Provision isolated Django test database
         shell: bash
         run: |
