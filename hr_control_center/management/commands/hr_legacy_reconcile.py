@@ -3,24 +3,14 @@
 from __future__ import annotations
 
 import json
-import time
 
 from django.core.management.base import BaseCommand, CommandError
 from django.core.serializers.json import DjangoJSONEncoder
 
-
-_NON_DRIFT_COUNT_KEYS = frozenset(
-    {"matched", "legacyNonFinal", "nonAuthorityPreferenceAsset"}
+from hr_control_center.services.legacy_reconciliation_aggregator import (
+    DOMAIN_CHOICES,
+    LegacyReconciliationAggregator,
 )
-
-
-def _drift_count(snapshot: dict) -> int:
-    counts = snapshot.get("counts") or {}
-    return sum(
-        int(value or 0)
-        for key, value in counts.items()
-        if key not in _NON_DRIFT_COUNT_KEYS
-    )
 
 
 class Command(BaseCommand):
@@ -30,7 +20,7 @@ class Command(BaseCommand):
         parser.add_argument("--tenant", type=int, required=True)
         parser.add_argument(
             "--domain",
-            choices=("all", "hr15", "hr16", "hr18"),
+            choices=DOMAIN_CHOICES,
             default="all",
         )
         parser.add_argument("--limit", type=int, default=200)
@@ -49,69 +39,18 @@ class Command(BaseCommand):
         if not 1 <= limit <= 500:
             raise CommandError("--limit 必须在 1..500")
 
-        domain = options["domain"]
-        selected = []
-        if domain in {"all", "hr15"}:
-            selected.append("HR15")
-        if domain in {"all", "hr16"}:
-            selected.append("HR16")
-        if domain in {"all", "hr18"}:
-            selected.append("HR18_ASSET")
+        try:
+            payload = LegacyReconciliationAggregator(
+                tenant_id,
+                limit=limit,
+            ).run(domain=options["domain"])
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
 
-        started = time.monotonic()
-        pairs: dict[str, dict] = {}
-        durations: dict[str, float] = {}
-        for pair in selected:
-            pair_started = time.monotonic()
-            if pair == "HR15":
-                from hr_payroll.services.legacy_reconciliation_service import (
-                    LegacyPayrollReconciliationService,
-                )
-
-                snapshot = LegacyPayrollReconciliationService(tenant_id).snapshot(
-                    limit=limit
-                )
-            elif pair == "HR16":
-                from hr_exit.services.legacy_reconciliation_service import (
-                    LegacyExitReconciliationService,
-                )
-
-                snapshot = LegacyExitReconciliationService(tenant_id).snapshot(
-                    limit=limit
-                )
-            else:
-                from hr_data.services.legacy_report_asset_service import (
-                    LegacyReportAssetInventoryService,
-                )
-
-                snapshot = LegacyReportAssetInventoryService(tenant_id).snapshot(
-                    limit=limit
-                )
-            pairs[pair] = snapshot
-            durations[pair] = round(time.monotonic() - pair_started, 6)
-
-        drift_by_pair = {pair: _drift_count(data) for pair, data in pairs.items()}
-        partial_pairs = [
-            pair for pair, data in pairs.items() if data.get("status") != "COMPLETE"
-        ]
-        payload = {
-            "schemaVersion": "hr.legacy-reconciliation-gate.2",
-            "tenantId": tenant_id,
-            "status": "PARTIAL" if partial_pairs else "COMPLETE",
-            "selectedPairs": selected,
-            "partialPairs": partial_pairs,
-            "reconciliationDriftTotal": sum(drift_by_pair.values()),
-            "reconciliationDriftByPair": drift_by_pair,
-            "reconciliationExecutionDurationSeconds": round(
-                time.monotonic() - started,
-                6,
-            ),
-            "pairExecutionDurationSeconds": durations,
-            "pairs": pairs,
-        }
         self.stdout.write(json.dumps(payload, cls=DjangoJSONEncoder, sort_keys=True))
 
-        if options["fail_on_drift"] and partial_pairs:
+        if options["fail_on_drift"] and payload["status"] != "COMPLETE":
             raise CommandError(
-                "legacy cutover reconciliation is PARTIAL: " + ",".join(partial_pairs)
+                "legacy cutover reconciliation is PARTIAL: "
+                + ",".join(payload["partialPairs"])
             )
