@@ -3,10 +3,11 @@
 The legacy ``payroll.Payslip`` table is a migration source, never HR15 authority.
 This service performs double-read comparison without mutating either side.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
 
@@ -28,7 +29,7 @@ def _money(value) -> Decimal:
 class LegacyPayrollReconciliationService:
     """Compare legacy payslips with HR15 authority facts for one tenant.
 
-    No method in this class writes legacy rows or HR15 authority rows.  Legacy
+    No method in this class writes legacy rows or HR15 authority rows. Legacy
     ``confirmed``/``paid`` states are only reconciliation candidates and are
     never promoted to HR15 FINALIZED by this reader.
     """
@@ -41,9 +42,15 @@ class LegacyPayrollReconciliationService:
     def _legacy_rows(self, limit: int) -> tuple[int, list[dict]]:
         from payroll.models.models import Payslip
 
-        qs = Payslip.objects.filter(
-            employee_id__employee_work_info__company_id=self.tenant_id
-        ).order_by("-end_date", "-id")
+        # Reconciliation runs outside an HTTP request too. HorillaCompanyManager
+        # deliberately returns qs.none() without thread-local tenant context, so
+        # use its controlled unscoped reader and immediately reapply the tenant
+        # predicate explicitly. This is read-only and cannot silently report 0.
+        qs = (
+            Payslip.objects.entire()
+            .filter(employee_id__employee_work_info__company_id=self.tenant_id)
+            .order_by("-end_date", "-id")
+        )
         total = qs.count()
         rows = list(
             qs.values(
@@ -123,7 +130,9 @@ class LegacyPayrollReconciliationService:
         if not terminal:
             return "AUTHORITY_RESULT_MISSING", None
         finalized = [
-            row for row in terminal if row["status"] == PayrollResultFact.Status.FINALIZED
+            row
+            for row in terminal
+            if row["status"] == PayrollResultFact.Status.FINALIZED
         ]
         # Once adjustments/reversals exist, a simple one-row comparison can no
         # longer represent the authoritative effective amount safely.

@@ -142,9 +142,10 @@ class Hr15LegacyReconciliationTests(SimpleTestCase):
         self.assertEqual(snapshot["counts"]["legacyNonFinal"], 1)
         self.assertEqual(snapshot["items"][0]["reconciliation"], "LEGACY_NON_FINAL")
 
-    def test_legacy_reader_and_staff_mapping_are_tenant_scoped(self):
+    def test_legacy_reader_uses_controlled_unscoped_manager_then_explicit_tenant(self):
         legacy_source = inspect.getsource(LegacyPayrollReconciliationService._legacy_rows)
         staff_source = inspect.getsource(LegacyPayrollReconciliationService._staff_map)
+        self.assertIn("Payslip.objects.entire()", legacy_source)
         self.assertIn(
             "employee_id__employee_work_info__company_id=self.tenant_id",
             legacy_source,

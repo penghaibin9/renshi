@@ -1,10 +1,22 @@
 from django.urls import path
 
-from . import api, archive_api, case_api, participant_api, retirement_api
+from . import (
+    api,
+    archive_api,
+    case_api,
+    legacy_api,
+    participant_api,
+    retirement_api,
+)
 
 app_name = "hr_exit_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
+    path(
+        "legacy/reconcile/",
+        legacy_api.legacy_reconciliation,
+        name="legacy-reconcile",
+    ),
     path("cases/", api.create_case, name="case-create"),
     path("cases/<uuid:case_id>/", case_api.amend_case, name="case-amend"),
     path("cases/<uuid:case_id>/submit/", api.submit_case, name="case-submit"),
