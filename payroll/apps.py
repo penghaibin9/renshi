@@ -1,23 +1,23 @@
-"""
-App configuration for the 'payroll' app.
-"""
+"""App configuration for the retired legacy payroll data source."""
 
 from django.apps import AppConfig
 from django.conf import settings
-from django.db.models.signals import post_migrate
 
 
 class PayrollConfig(AppConfig):
-    """
-    AppConfig for the 'payroll' app.
-    """
+    """Keep legacy payroll models installed without activating legacy writers."""
 
     default_auto_field = "django.db.models.BigAutoField"
     name = "payroll"
 
     def ready(self) -> None:
         ready = super().ready()
-        from payroll import scheduler, signals
-
-        settings.APPS.append("payroll")
+        # Cutover contract: payroll remains installed for tenant-safe read-only
+        # reconciliation/projection only. Importing payroll.scheduler would
+        # start background jobs that create Payslip / mutate Contract, while
+        # importing payroll.signals would create legacy Contract rows from
+        # EmployeeWorkInformation saves. Neither writer may be activated after
+        # FREEZE_LEGACY_FORMAL_WRITES.
+        if "payroll" not in settings.APPS:
+            settings.APPS.append("payroll")
         return ready
