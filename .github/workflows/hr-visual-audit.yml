@@ -1,15 +1,17 @@
 name: HR Visual Audit / Chromium
 
 on:
-  pull_request:
+  push:
     branches: [agent/renshi-takeover-cleanup-20260810]
+  pull_request:
+    branches: [main, agent/renshi-takeover-cleanup-20260810]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
 
 concurrency:
-  group: hr-visual-${{ github.event.pull_request.number }}
+  group: hr-visual-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -25,6 +27,9 @@ env:
 jobs:
   hr-visual-audit:
     if: >-
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/agent/renshi-takeover-cleanup-20260810') ||
+      github.head_ref == 'agent/renshi-takeover-cleanup-20260810' ||
       github.head_ref == 'agent/renshi-g-hr13-title' ||
       github.head_ref == 'agent/renshi-h-hr14-appointment' ||
       github.head_ref == 'agent/renshi-i-hr15-payroll' ||
@@ -78,7 +83,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ci-cache/hr-visual-mysql.sql
-          key: hr-visual-mysql-${{ runner.os }}-${{ github.head_ref }}-${{ hashFiles('**/migrations/*.py', 'requirements.txt', 'horilla/settings/__init__.py') }}
+          key: hr-visual-mysql-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('**/migrations/*.py', 'requirements.txt', 'horilla/settings/__init__.py') }}
 
       - name: Prepare visual audit MySQL schemas
         shell: bash
@@ -150,7 +155,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hr-visual-${{ github.event.pull_request.number }}-${{ github.sha }}
+          name: hr-visual-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
           path: artifacts/hr-visual/
           if-no-files-found: error
           retention-days: 14
