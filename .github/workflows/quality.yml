@@ -139,7 +139,7 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
-      - name: HR01-HR18 Authority gate
+      - name: HR01-HR18 structural Authority gate
         run: python manage.py hr_authority_gate --fail-on-partial
 
       - name: Provision isolated Django test database
@@ -187,6 +187,22 @@ jobs:
             python manage.py migrate --run-syncdb --noinput
           DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
             python manage.py migrate --check
+
+      - name: Seed deterministic Authority reconciliation tenant
+        env:
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+        run: |
+          python manage.py shell -c "from base.models import Company; Company.objects.get_or_create(company='CI Authority Tenant', address='CI only', defaults={'hq': True, 'country': 'CN', 'state': 'Hunan', 'city': 'Changsha', 'zip': '410000'})"
+
+      - name: HR01-HR18 production acceptance gate
+        env:
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+        run: >-
+          python manage.py hr_authority_gate
+          --all-tenants
+          --require-reconciliation
+          --require-zero-legacy-writes
+          --fail-on-partial
 
       - name: Tenant and registered HR tests
         id: hr-tests
