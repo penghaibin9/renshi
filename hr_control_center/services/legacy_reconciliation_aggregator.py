@@ -226,9 +226,12 @@ class GlobalLegacyReconciliationAggregator:
         domain: str = "all",
         tenant_ids: Iterable[int] | None = None,
     ) -> dict:
-        # Validate domain before discovering tenants so invalid operator input
-        # never touches the database.
-        LegacyReconciliationAggregator._selected(domain)
+        # Keep operator-input validation local to this orchestration layer.
+        # The tenant aggregator is deliberately replaceable in tests and can
+        # evolve internally without becoming part of the global contract.
+        domain = str(domain or "all").lower()
+        if domain not in DOMAIN_CHOICES:
+            raise ValueError(f"unsupported reconciliation domain: {domain}")
         ids = (
             self.discover_tenant_ids()
             if tenant_ids is None
