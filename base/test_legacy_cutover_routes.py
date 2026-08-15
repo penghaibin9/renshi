@@ -5,6 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.cache import cache
+from django.template.loader import get_template
 from django.test import RequestFactory, SimpleTestCase
 from django.urls import URLResolver, get_resolver, resolve
 
@@ -75,11 +76,25 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
         self.assertTrue(RETIRED_LEGACY_HR_APPS.isdisjoint(active_sidebars))
 
     def test_global_quick_actions_do_not_restore_retired_payroll_writer(self):
-        template = (
-            Path(settings.BASE_DIR) / "templates" / "floating_button.html"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn("reimbursement-create", template)
-        self.assertNotIn("Create Reimbursement", template)
+        # Test the template Django actually resolves, not only the low-priority
+        # BASE_DIR/templates copy. The loader order intentionally gives the
+        # theme and app templates precedence over that fallback directory.
+        resolved = get_template("floating_button.html")
+        resolved_source = resolved.template.source
+        self.assertNotIn("reimbursement-create", resolved_source)
+        self.assertNotIn("Create Reimbursement", resolved_source)
+
+        # Keep every repository-owned quick-action copy clean as well, so a
+        # future loader-order change cannot silently resurrect the writer.
+        template_paths = (
+            Path(settings.BASE_DIR) / "horilla_theme" / "templates" / "floating_button.html",
+            Path(settings.BASE_DIR) / "templates" / "floating_button.html",
+        )
+        for template_path in template_paths:
+            with self.subTest(template=str(template_path)):
+                template = template_path.read_text(encoding="utf-8")
+                self.assertNotIn("reimbursement-create", template)
+                self.assertNotIn("Create Reimbursement", template)
 
     def test_legacy_ui_get_deep_links_move_to_canonical_workspaces(self):
         factory = RequestFactory()
