@@ -204,6 +204,15 @@ jobs:
           --require-zero-legacy-writes
           --fail-on-partial
 
+      - name: Reset isolated Django test data after acceptance
+        env:
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+        run: |
+          # The production acceptance gate intentionally seeds a real tenant and
+          # may persist reconciliation evidence. The registered TestCase suite
+          # must start from a clean data plane while reusing the verified schema.
+          python manage.py flush --noinput
+
       - name: Tenant and registered HR tests
         id: hr-tests
         shell: bash
