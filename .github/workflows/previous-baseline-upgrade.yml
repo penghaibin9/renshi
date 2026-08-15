@@ -70,6 +70,46 @@ jobs:
           # be materialized in the same MySQL engine used in production.
           pip install "mysqlclient>=2.2,<3"
 
+      - name: Apply baseline-only MySQL migration compatibility shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("base/migrations/0002_initial.py")
+          source = path.read_text(encoding="utf-8")
+          old = '''        migrations.AlterUniqueTogether(
+              name="company",
+              unique_together={("company", "address")},
+          ),
+          '''
+          new = '''        # Baseline-only MySQL compatibility shim: MySQL 8.4 cannot
+          # create a unique index directly on TEXT address without a prefix
+          # length (error 1170). Keep Django migration state canonical while
+          # omitting only the impossible historical database DDL.
+          migrations.SeparateDatabaseAndState(
+              database_operations=[],
+              state_operations=[
+                  migrations.AlterUniqueTogether(
+                      name="company",
+                      unique_together={("company", "address")},
+                  ),
+              ],
+          ),
+          '''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(
+                  f"expected exactly one legacy company/address unique_together, found {count}"
+              )
+          path.write_text(source.replace(old, new, 1), encoding="utf-8")
+          PY
+          python -m py_compile base/migrations/0002_initial.py
+          git diff --check -- base/migrations/0002_initial.py
+          git diff -- base/migrations/0002_initial.py
+
       - name: Materialize previous production baseline schema
         shell: bash
         run: |
