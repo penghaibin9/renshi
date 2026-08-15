@@ -5,6 +5,7 @@ from importlib.util import find_spec
 from django.urls import include, path, re_path
 
 from horilla.legacy_hr_api import legacy_hr_api_redirect
+from horilla.legacy_hr_ui import legacy_hr_ui_redirect
 
 urlpatterns = [
     # HR01~HR06 UI routes
@@ -58,6 +59,18 @@ for _app, _ui_prefix, _api_prefix in PARALLEL_HR_ROUTES:
             path(_ui_prefix, include(f"{_app}.urls")),
             path(_api_prefix, include(f"{_app}.api_urls")),
         ]
+    )
+
+# Retired browser roots remain bookmark-compatible without reviving legacy
+# writers. GET/HEAD land on canonical workspaces; unsafe methods fail closed.
+for _legacy_domain in ("payroll", "offboarding", "report"):
+    urlpatterns.append(
+        re_path(
+            rf"^{_legacy_domain}(?:/(?P<tail>.*))?$",
+            legacy_hr_ui_redirect,
+            kwargs={"domain": _legacy_domain},
+            name=f"legacy-{_legacy_domain}-ui",
+        )
     )
 
 # Legacy API root is adapter-only. 308 preserves POST/PUT/PATCH bodies.

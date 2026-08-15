@@ -28,7 +28,7 @@ def is_retired_legacy_model_path(model_path: str | None) -> bool:
 def record_legacy_write_attempt(request, *, surface: str, model_path: str = "") -> None:
     """Record a blocked/redirected legacy formal-write attempt.
 
-    The structured warning is the production aggregation source of truth.  A
+    The structured warning is the production aggregation source of truth. A
     best-effort shared cache counter gives operators/tests a cheap current
     total when Redis is configured. Observability failure must never turn a
     safely blocked legacy write into a 500.
@@ -54,7 +54,7 @@ def record_legacy_write_attempt(request, *, surface: str, model_path: str = "") 
     try:
         if not cache.add(LEGACY_WRITE_ATTEMPTS_CACHE_KEY, 1, timeout=None):
             cache.incr(LEGACY_WRITE_ATTEMPTS_CACHE_KEY)
-    except Exception:  # pragma: no cover - structured log above remains authoritative
+    except Exception:  # pragma: no cover - structured log remains authoritative
         pass
 
 
@@ -64,6 +64,23 @@ def get_legacy_write_attempts_total() -> int:
         return int(cache.get(LEGACY_WRITE_ATTEMPTS_CACHE_KEY) or 0)
     except Exception:  # pragma: no cover - cache outage must not fail callers
         return 0
+
+
+def legacy_formal_write_frozen_response(*, model_path: str = "") -> JsonResponse:
+    """Return the stable fail-closed response for retired legacy write surfaces."""
+    response = JsonResponse(
+        {
+            "error": {
+                "code": "LEGACY_FORMAL_WRITE_FROZEN",
+                "message": "legacy HR authority is read-only after cutover",
+                "model": model_path,
+            }
+        },
+        status=410,
+    )
+    response["Cache-Control"] = "no-store"
+    response["Deprecation"] = "true"
+    return response
 
 
 def protect_retired_legacy_model_write(
@@ -108,18 +125,6 @@ def protect_retired_legacy_model_write(
                 model_path=model_path,
             )
 
-        response = JsonResponse(
-            {
-                "error": {
-                    "code": "LEGACY_FORMAL_WRITE_FROZEN",
-                    "message": "legacy HR authority is read-only after cutover",
-                    "model": model_path,
-                }
-            },
-            status=410,
-        )
-        response["Cache-Control"] = "no-store"
-        response["Deprecation"] = "true"
-        return response
+        return legacy_formal_write_frozen_response(model_path=model_path)
 
     return guarded

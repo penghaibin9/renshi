@@ -19,6 +19,7 @@ from horilla.legacy_hr_cutover import (
     RETIRED_LEGACY_HR_APPS,
     get_legacy_write_attempts_total,
 )
+from horilla.legacy_hr_ui import legacy_hr_ui_redirect
 
 
 RETIRED_FORMAL_AUTHORITY_MODULES = ("payroll", "offboarding", "report")
@@ -80,6 +81,53 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
         self.assertNotIn("reimbursement-create", template)
         self.assertNotIn("Create Reimbursement", template)
 
+    def test_legacy_ui_get_deep_links_move_to_canonical_workspaces(self):
+        factory = RequestFactory()
+        cases = (
+            ("/payroll/payslip-view/", "/hr/payroll/?tenant=7"),
+            ("/offboarding/employee-view/", "/hr/exit/?tenant=7"),
+            ("/report/recruitment-report/", "/hr/data/?tenant=7"),
+        )
+        for resolver_path, expected_location in cases:
+            with self.subTest(path=resolver_path):
+                match = resolve(resolver_path)
+                self.assertIs(match.func, legacy_hr_ui_redirect)
+                request = factory.get(f"{resolver_path}?tenant=7")
+                response = match.func(request, **match.kwargs)
+                self.assertEqual(response.status_code, 308)
+                self.assertEqual(response["Location"], expected_location)
+                self.assertEqual(response["Deprecation"], "true")
+                self.assertIn('rel="successor-version"', response["Link"])
+        self.assertEqual(get_legacy_write_attempts_total(), 0)
+
+    def test_legacy_ui_mutating_verbs_never_restore_old_writers(self):
+        factory = RequestFactory()
+        resolver_path = "/offboarding/employee-create/"
+        match = resolve(resolver_path)
+        self.assertIs(match.func, legacy_hr_ui_redirect)
+
+        with self.assertLogs("renshi.legacy_cutover", level="WARNING") as logs:
+            for method in ("POST", "PUT", "PATCH", "DELETE"):
+                with self.subTest(method=method):
+                    request = factory.generic(
+                        method,
+                        resolver_path,
+                        data=b'{"legacy":"write"}',
+                        content_type="application/json",
+                    )
+                    response = match.func(request, **match.kwargs)
+                    self.assertEqual(response.status_code, 410)
+                    payload = json.loads(response.content.decode("utf-8"))
+                    self.assertEqual(
+                        payload["error"]["code"],
+                        "LEGACY_FORMAL_WRITE_FROZEN",
+                    )
+                    self.assertEqual(response["Cache-Control"], "no-store")
+                    self.assertEqual(response["Deprecation"], "true")
+
+        self.assertEqual(get_legacy_write_attempts_total(), 4)
+        self.assertEqual(len(logs.output), 4)
+
     def test_legacy_api_mutating_verbs_are_adapter_only_308_redirects(self):
         factory = RequestFactory()
         resolver_path = "/api/hr/v1/payroll/periods/42/"
@@ -91,7 +139,6 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
                 with self.subTest(method=method):
                     match = resolve(resolver_path)
                     self.assertIs(match.func, legacy_hr_api_redirect)
-
                     request = factory.generic(
                         method,
                         request_path,
@@ -99,7 +146,6 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
                         content_type="application/json",
                     )
                     response = match.func(request, **match.kwargs)
-
                     self.assertIsInstance(response, HttpResponsePermanentRedirect308)
                     self.assertEqual(response.status_code, 308)
                     self.assertEqual(response["Location"], expected_location)
