@@ -2,6 +2,11 @@
 
 from django.http.response import HttpResponseRedirectBase
 
+from horilla.legacy_hr_cutover import (
+    MUTATING_HTTP_METHODS,
+    record_legacy_write_attempt,
+)
+
 
 class HttpResponsePermanentRedirect308(HttpResponseRedirectBase):
     status_code = 308
@@ -10,6 +15,13 @@ class HttpResponsePermanentRedirect308(HttpResponseRedirectBase):
 
 def legacy_hr_api_redirect(request, tail=""):
     """Preserve method/body while moving old clients to /api/v1/hr/... ."""
+    if str(request.method or "").upper() in MUTATING_HTTP_METHODS:
+        record_legacy_write_attempt(
+            request,
+            surface="legacy-api-adapter",
+            model_path=f"api/hr/v1/{tail}",
+        )
+
     target = f"/api/v1/hr/{tail}"
     query = request.META.get("QUERY_STRING")
     if query:

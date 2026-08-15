@@ -11,11 +11,20 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.context_processors import PermWrapper
 
+from horilla.legacy_hr_cutover import RETIRED_LEGACY_HR_APPS
+
 logger = logging.getLogger(__name__)
 
 
 def get_apps_in_base_dir():
-    return settings.SIDEBARS
+    """Return only active sidebar providers after the HR cutover.
+
+    payroll/offboarding/report remain installed as read-only legacy data sources,
+    but their sidebars reverse retired writer URLs. Hiding them here prevents
+    navigation from resurrecting a second formal Authority while canonical
+    HR15/HR16/HR18 own the live UI/API surfaces.
+    """
+    return [app for app in settings.SIDEBARS if app not in RETIRED_LEGACY_HR_APPS]
 
 
 def import_method(accessibility):
