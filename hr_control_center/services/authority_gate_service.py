@@ -2,7 +2,7 @@
 
 The gate validates existing module contracts, canonical routes and global
 registries. It does not become another business Authority and performs no
-writes. Optional legacy reconciliation delegates to the existing aggregator.
+writes. Optional legacy reconciliation delegates to the existing aggregators.
 """
 
 from __future__ import annotations
@@ -18,15 +18,18 @@ from horilla.hr_permission_registry import HR_DOMAINS, permission_registry
 from horilla.hr_permissions import CANONICAL_PREFIX_ALIASES
 from horilla.legacy_cutover_policy import legacy_cutover_policy_snapshot
 from horilla.legacy_hr_cutover import (
+    LEGACY_WRITE_ATTEMPTS_METRIC,
     RETIRED_LEGACY_HR_APPS,
     WRITE_SURFACE_REGISTRY,
+    get_legacy_write_attempts_total,
 )
 from hr_control_center.services.legacy_reconciliation_aggregator import (
+    GlobalLegacyReconciliationAggregator,
     LegacyReconciliationAggregator,
 )
 
 
-AUTHORITY_GATE_SCHEMA = "hr.authority-gate.1"
+AUTHORITY_GATE_SCHEMA = "hr.authority-gate.2"
 MODULE_CONTRACT_MODULES = (
     "hr_control_center.module_contract",
     "hr_structure.module_contract",
@@ -117,8 +120,17 @@ def _normalize_route(value: str) -> str:
 
 
 class AuthorityGateService:
-    def __init__(self, *, tenant_id: int | None = None, limit: int = 200):
+    def __init__(
+        self,
+        *,
+        tenant_id: int | None = None,
+        all_tenants: bool = False,
+        limit: int = 200,
+    ):
+        if tenant_id is not None and all_tenants:
+            raise ValueError("tenant_id and all_tenants are mutually exclusive")
         self.tenant_id = int(tenant_id) if tenant_id is not None else None
+        self.all_tenants = bool(all_tenants)
         self.limit = int(limit)
 
     @staticmethod
@@ -130,7 +142,12 @@ class AuthorityGateService:
                 counts[code] += 1
         return counts
 
-    def run(self, *, require_reconciliation: bool = False) -> dict:
+    def run(
+        self,
+        *,
+        require_reconciliation: bool = False,
+        require_zero_legacy_writes: bool = False,
+    ) -> dict:
         errors: list[str] = []
         warnings: list[str] = []
         contracts = load_module_contracts()
@@ -230,8 +247,23 @@ class AuthorityGateService:
         if "horilla.horilla_middlewares.ThreadLocalMiddleware" not in middleware:
             errors.append("request context cleanup middleware is not installed")
 
+        legacy_write_attempts = get_legacy_write_attempts_total()
+        if require_zero_legacy_writes and legacy_write_attempts != 0:
+            errors.append(
+                f"{LEGACY_WRITE_ATTEMPTS_METRIC} must be zero, got {legacy_write_attempts}"
+            )
+
         reconciliation = {"status": "NOT_RUN"}
-        if self.tenant_id is not None:
+        if self.all_tenants:
+            reconciliation = GlobalLegacyReconciliationAggregator(
+                limit=self.limit
+            ).run(domain="all")
+            if reconciliation["status"] != "COMPLETE":
+                errors.append(
+                    "global legacy reconciliation is not COMPLETE: "
+                    f"{reconciliation['status']}"
+                )
+        elif self.tenant_id is not None:
             reconciliation = LegacyReconciliationAggregator(
                 self.tenant_id,
                 limit=self.limit,
@@ -242,7 +274,9 @@ class AuthorityGateService:
                     + ",".join(reconciliation["partialPairs"])
                 )
         elif require_reconciliation:
-            errors.append("production Authority Gate requires an explicit tenant")
+            errors.append(
+                "production Authority Gate requires --tenant or --all-tenants"
+            )
 
         return {
             "schemaVersion": AUTHORITY_GATE_SCHEMA,
@@ -253,5 +287,11 @@ class AuthorityGateService:
             "permissionDefinitionCountByModule": permission_counts,
             "eventDefinitionCountByModule": event_counts,
             "legacyCutoverPolicy": legacy_policy,
+            "legacyWriteAttemptMetric": {
+                "name": LEGACY_WRITE_ATTEMPTS_METRIC,
+                "total": legacy_write_attempts,
+                "counter": "shared-cache-best-effort",
+                "authoritativeEvidence": "structured-legacy-cutover-log",
+            },
             "reconciliation": reconciliation,
         }

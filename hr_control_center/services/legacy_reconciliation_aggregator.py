@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterable
 
 
 SCHEMA_VERSION = "hr.legacy-reconciliation-gate.2"
+GLOBAL_SCHEMA_VERSION = "hr.legacy-reconciliation-global-gate.1"
 DOMAIN_CHOICES = ("all", "hr15", "hr16", "hr18")
 _NON_DRIFT_COUNT_KEYS = frozenset(
     {"matched", "legacyNonFinal", "nonAuthorityPreferenceAsset"}
@@ -124,8 +125,8 @@ class LegacyReconciliationAggregator:
     """Aggregate existing domain snapshots for one explicit tenant.
 
     The aggregator has no model imports, no writes and no migration behavior.
-    It is safe to reuse from the management command and the later global
-    Authority Gate without creating another source of HR truth.
+    It is safe to reuse from the management command and the global Authority
+    Gate without creating another source of HR truth.
     """
 
     def __init__(self, tenant_id: int, *, limit: int = 200):
@@ -185,4 +186,89 @@ class LegacyReconciliationAggregator:
             "legacySourceKinds": source_kinds,
             "orchestrationMode": "EXISTING_DOMAIN_READERS_ONLY",
             "pairs": pairs,
+        }
+
+
+class GlobalLegacyReconciliationAggregator:
+    """Run the tenant-local aggregator across every school tenant.
+
+    This layer never joins business facts across tenants. It only discovers
+    Company primary keys, invokes the existing tenant aggregator one by one,
+    and produces an acceptance summary. A deployment with zero tenants is
+    intentionally ``EMPTY`` rather than green, so production acceptance cannot
+    accidentally certify an unscoped or uninitialized database.
+    """
+
+    def __init__(self, *, limit: int = 200):
+        limit = int(limit)
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be in 1..500")
+        self.limit = limit
+
+    @staticmethod
+    def _normalize_tenant_ids(tenant_ids: Iterable[int]) -> tuple[int, ...]:
+        normalized = sorted({int(value) for value in tenant_ids})
+        if any(value <= 0 for value in normalized):
+            raise ValueError("tenant ids must all be positive integers")
+        return tuple(normalized)
+
+    @classmethod
+    def discover_tenant_ids(cls) -> tuple[int, ...]:
+        from base.models import Company
+
+        return cls._normalize_tenant_ids(
+            Company.objects.order_by("pk").values_list("pk", flat=True)
+        )
+
+    def run(
+        self,
+        *,
+        domain: str = "all",
+        tenant_ids: Iterable[int] | None = None,
+    ) -> dict:
+        # Validate domain before discovering tenants so invalid operator input
+        # never touches the database.
+        LegacyReconciliationAggregator._selected(domain)
+        ids = (
+            self.discover_tenant_ids()
+            if tenant_ids is None
+            else self._normalize_tenant_ids(tenant_ids)
+        )
+        started = time.monotonic()
+        snapshots: dict[str, dict] = {}
+        drift_by_tenant: dict[str, int] = {}
+        partial_tenants: list[int] = []
+
+        for tenant_id in ids:
+            snapshot = LegacyReconciliationAggregator(
+                tenant_id,
+                limit=self.limit,
+            ).run(domain=domain)
+            snapshots[str(tenant_id)] = snapshot
+            drift = int(snapshot.get("reconciliationDriftTotal") or 0)
+            drift_by_tenant[str(tenant_id)] = drift
+            if snapshot.get("status") != "COMPLETE":
+                partial_tenants.append(tenant_id)
+
+        if not ids:
+            status = "EMPTY"
+        elif partial_tenants:
+            status = "PARTIAL"
+        else:
+            status = "COMPLETE"
+
+        return {
+            "schemaVersion": GLOBAL_SCHEMA_VERSION,
+            "status": status,
+            "tenantCount": len(ids),
+            "tenantIds": list(ids),
+            "partialTenantIds": partial_tenants,
+            "reconciliationDriftTotal": sum(drift_by_tenant.values()),
+            "reconciliationDriftByTenant": drift_by_tenant,
+            "reconciliationExecutionDurationSeconds": round(
+                time.monotonic() - started,
+                6,
+            ),
+            "orchestrationMode": "TENANT_ISOLATED_EXISTING_DOMAIN_READERS_ONLY",
+            "tenantSnapshots": snapshots,
         }

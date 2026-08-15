@@ -1,4 +1,4 @@
-"""Run tenant-scoped legacy cutover reconciliation/inventory as a production gate."""
+"""Run tenant or all-tenant legacy cutover reconciliation as a production gate."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 
 from hr_control_center.services.legacy_reconciliation_aggregator import (
     DOMAIN_CHOICES,
+    GlobalLegacyReconciliationAggregator,
     LegacyReconciliationAggregator,
 )
 
@@ -17,7 +18,13 @@ class Command(BaseCommand):
     help = "Run read-only HR15/HR16 reconciliation and HR18 legacy asset inventory"
 
     def add_arguments(self, parser):
-        parser.add_argument("--tenant", type=int, required=True)
+        scope = parser.add_mutually_exclusive_group(required=True)
+        scope.add_argument("--tenant", type=int)
+        scope.add_argument(
+            "--all-tenants",
+            action="store_true",
+            help="Run tenant-isolated reconciliation for every Company",
+        )
         parser.add_argument(
             "--domain",
             choices=DOMAIN_CHOICES,
@@ -27,12 +34,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--fail-on-drift",
             action="store_true",
-            help="Return non-zero when any selected cutover report is PARTIAL",
+            help="Return non-zero unless the selected reconciliation is COMPLETE",
         )
 
     def handle(self, *args, **options):
-        tenant_id = int(options["tenant"] or 0)
-        if tenant_id <= 0:
+        tenant_id = options.get("tenant")
+        if tenant_id is not None and int(tenant_id) <= 0:
             raise CommandError("--tenant 必须是正整数")
 
         limit = int(options["limit"])
@@ -40,17 +47,27 @@ class Command(BaseCommand):
             raise CommandError("--limit 必须在 1..500")
 
         try:
-            payload = LegacyReconciliationAggregator(
-                tenant_id,
-                limit=limit,
-            ).run(domain=options["domain"])
+            if options.get("all_tenants"):
+                payload = GlobalLegacyReconciliationAggregator(limit=limit).run(
+                    domain=options["domain"]
+                )
+            else:
+                payload = LegacyReconciliationAggregator(
+                    int(tenant_id),
+                    limit=limit,
+                ).run(domain=options["domain"])
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
 
         self.stdout.write(json.dumps(payload, cls=DjangoJSONEncoder, sort_keys=True))
 
         if options["fail_on_drift"] and payload["status"] != "COMPLETE":
+            if options.get("all_tenants"):
+                detail = ",".join(str(value) for value in payload["partialTenantIds"])
+                if payload["status"] == "EMPTY":
+                    detail = "NO_TENANTS"
+            else:
+                detail = ",".join(payload["partialPairs"])
             raise CommandError(
-                "legacy cutover reconciliation is PARTIAL: "
-                + ",".join(payload["partialPairs"])
+                f"legacy cutover reconciliation is {payload['status']}: {detail}"
             )

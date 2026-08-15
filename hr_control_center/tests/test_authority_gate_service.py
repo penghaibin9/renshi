@@ -1,5 +1,7 @@
 """Runtime production contract for the HR01-HR18 Authority Gate."""
 
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 
 from hr_control_center.services.authority_gate_service import (
@@ -39,11 +41,53 @@ class AuthorityGateServiceTests(SimpleTestCase):
             all(row["canonicalApiCallbackCount"] > 0 for row in payload["modules"])
         )
         self.assertEqual(payload["reconciliation"]["status"], "NOT_RUN")
+        self.assertEqual(payload["legacyWriteAttemptMetric"]["total"], 0)
 
-    def test_require_reconciliation_fails_closed_without_tenant(self):
+    def test_require_reconciliation_fails_closed_without_scope(self):
         payload = AuthorityGateService().run(require_reconciliation=True)
         self.assertEqual(payload["status"], "PARTIAL")
         self.assertIn(
-            "production Authority Gate requires an explicit tenant",
+            "production Authority Gate requires --tenant or --all-tenants",
             payload["errors"],
         )
+
+    @patch(
+        "hr_control_center.services.authority_gate_service."
+        "get_legacy_write_attempts_total",
+        return_value=2,
+    )
+    def test_zero_legacy_write_gate_fails_closed(self, _metric):
+        payload = AuthorityGateService().run(require_zero_legacy_writes=True)
+        self.assertEqual(payload["status"], "PARTIAL")
+        self.assertIn(
+            "legacy_write_attempts_total must be zero, got 2",
+            payload["errors"],
+        )
+
+    @patch(
+        "hr_control_center.services.authority_gate_service."
+        "GlobalLegacyReconciliationAggregator"
+    )
+    def test_all_tenant_authority_gate_delegates_to_global_reconciliation(
+        self, global_agg
+    ):
+        global_agg.return_value.run.return_value = {
+            "status": "COMPLETE",
+            "tenantCount": 2,
+            "tenantIds": [3, 7],
+            "partialTenantIds": [],
+            "reconciliationDriftTotal": 0,
+        }
+
+        payload = AuthorityGateService(all_tenants=True, limit=55).run(
+            require_reconciliation=True
+        )
+
+        self.assertEqual(payload["status"], "COMPLETE", msg=payload["errors"])
+        self.assertEqual(payload["reconciliation"]["tenantIds"], [3, 7])
+        global_agg.assert_called_once_with(limit=55)
+        global_agg.return_value.run.assert_called_once_with(domain="all")
+
+    def test_tenant_and_all_tenants_are_mutually_exclusive(self):
+        with self.assertRaises(ValueError):
+            AuthorityGateService(tenant_id=7, all_tenants=True)

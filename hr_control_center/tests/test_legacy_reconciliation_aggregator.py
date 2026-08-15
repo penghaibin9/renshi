@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from hr_control_center.services.legacy_reconciliation_aggregator import (
+    GlobalLegacyReconciliationAggregator,
     LegacyReconciliationAggregator,
     ReconciliationContractError,
     drift_count,
@@ -143,3 +144,59 @@ class LegacyReconciliationAggregatorTests(SimpleTestCase):
             LegacyReconciliationAggregator(7, limit=501)
         with self.assertRaises(ValueError):
             LegacyReconciliationAggregator(7).run(domain="hr19")
+
+
+class GlobalLegacyReconciliationAggregatorTests(SimpleTestCase):
+    def test_tenants_remain_isolated_and_drift_rolls_up_only_as_metrics(self):
+        snapshots = {
+            3: {
+                "status": "COMPLETE",
+                "partialPairs": [],
+                "reconciliationDriftTotal": 0,
+            },
+            7: {
+                "status": "PARTIAL",
+                "partialPairs": ["HR16"],
+                "reconciliationDriftTotal": 2,
+            },
+        }
+
+        class FakeTenantAggregator:
+            def __init__(self, tenant_id, *, limit=200):
+                self.tenant_id = tenant_id
+                self.limit = limit
+
+            def run(self, *, domain="all"):
+                self_domain = domain
+                self.assert_domain = self_domain
+                return dict(snapshots[self.tenant_id])
+
+        with patch(
+            "hr_control_center.services.legacy_reconciliation_aggregator."
+            "LegacyReconciliationAggregator",
+            FakeTenantAggregator,
+        ):
+            payload = GlobalLegacyReconciliationAggregator(limit=33).run(
+                tenant_ids=[7, 3, 7]
+            )
+
+        self.assertEqual(payload["tenantIds"], [3, 7])
+        self.assertEqual(payload["tenantCount"], 2)
+        self.assertEqual(payload["partialTenantIds"], [7])
+        self.assertEqual(payload["reconciliationDriftTotal"], 2)
+        self.assertEqual(
+            payload["orchestrationMode"],
+            "TENANT_ISOLATED_EXISTING_DOMAIN_READERS_ONLY",
+        )
+        self.assertEqual(set(payload["tenantSnapshots"]), {"3", "7"})
+
+    def test_empty_tenant_set_is_never_certified_complete(self):
+        payload = GlobalLegacyReconciliationAggregator().run(tenant_ids=[])
+        self.assertEqual(payload["status"], "EMPTY")
+        self.assertEqual(payload["tenantCount"], 0)
+
+    def test_invalid_global_tenant_scope_is_rejected(self):
+        with self.assertRaises(ValueError):
+            GlobalLegacyReconciliationAggregator(limit=501)
+        with self.assertRaises(ValueError):
+            GlobalLegacyReconciliationAggregator().run(tenant_ids=[0, 7])

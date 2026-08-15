@@ -154,6 +154,35 @@ class LegacyReconciliationCommandTests(SimpleTestCase):
         self.assertEqual(payload["status"], "PARTIAL")
         self.assertEqual(payload["reconciliationDriftTotal"], 1)
 
+    @patch(
+        "hr_control_center.management.commands.hr_legacy_reconcile."
+        "GlobalLegacyReconciliationAggregator"
+    )
+    def test_all_tenants_uses_global_tenant_isolated_aggregator(self, global_agg):
+        global_agg.return_value.run.return_value = {
+            "schemaVersion": "hr.legacy-reconciliation-global-gate.1",
+            "status": "COMPLETE",
+            "tenantCount": 2,
+            "tenantIds": [3, 7],
+            "partialTenantIds": [],
+            "reconciliationDriftTotal": 0,
+        }
+        stdout = io.StringIO()
+
+        call_command(
+            "hr_legacy_reconcile",
+            all_tenants=True,
+            domain="all",
+            limit=44,
+            fail_on_drift=True,
+            stdout=stdout,
+        )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["tenantIds"], [3, 7])
+        global_agg.assert_called_once_with(limit=44)
+        global_agg.return_value.run.assert_called_once_with(domain="all")
+
     def test_invalid_limit_fails_before_services_run(self):
         with self.assertRaises(CommandError):
             call_command(
