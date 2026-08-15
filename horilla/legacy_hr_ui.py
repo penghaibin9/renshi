@@ -2,19 +2,16 @@
 
 from django.http import JsonResponse
 
+from horilla.legacy_cutover_policy import (
+    LEGACY_HR_UI_SUCCESSORS,
+    apply_legacy_deprecation_headers,
+)
 from horilla.legacy_hr_api import HttpResponsePermanentRedirect308
 from horilla.legacy_hr_cutover import (
     MUTATING_HTTP_METHODS,
     legacy_formal_write_frozen_response,
     record_legacy_write_attempt,
 )
-
-
-LEGACY_HR_UI_SUCCESSORS = {
-    "payroll": "/hr/payroll/",
-    "offboarding": "/hr/exit/",
-    "report": "/hr/data/",
-}
 
 
 def legacy_hr_ui_redirect(request, domain, tail=""):
@@ -34,7 +31,8 @@ def legacy_hr_ui_redirect(request, domain, tail=""):
             surface="legacy-ui-deep-link",
             model_path=legacy_ref,
         )
-        return legacy_formal_write_frozen_response(model_path=legacy_ref)
+        response = legacy_formal_write_frozen_response(model_path=legacy_ref)
+        return apply_legacy_deprecation_headers(response, successor=successor)
 
     if method not in {"GET", "HEAD"}:
         response = JsonResponse(
@@ -48,7 +46,4 @@ def legacy_hr_ui_redirect(request, domain, tail=""):
     query = request.META.get("QUERY_STRING")
     target = f"{successor}?{query}" if query else successor
     response = HttpResponsePermanentRedirect308(target)
-    response["Deprecation"] = "true"
-    response["Sunset"] = "2026-12-31"
-    response["Link"] = f'<{successor}>; rel="successor-version"'
-    return response
+    return apply_legacy_deprecation_headers(response, successor=successor)

@@ -2,6 +2,10 @@
 
 from django.http.response import HttpResponseRedirectBase
 
+from horilla.legacy_cutover_policy import (
+    LEGACY_API_SUCCESSOR_ROOT,
+    apply_legacy_deprecation_headers,
+)
 from horilla.legacy_hr_cutover import (
     MUTATING_HTTP_METHODS,
     record_legacy_write_attempt,
@@ -14,7 +18,12 @@ class HttpResponsePermanentRedirect308(HttpResponseRedirectBase):
 
 
 def legacy_hr_api_redirect(request, tail=""):
-    """Preserve method/body while moving old clients to /api/v1/hr/... ."""
+    """Preserve method/body while moving old clients to canonical HR APIs.
+
+    This is an entry adapter only. A mutating request is measured as a legacy
+    write attempt, but the retired application never regains formal write
+    authority; the preserved request is transferred to the canonical API.
+    """
     if str(request.method or "").upper() in MUTATING_HTTP_METHODS:
         record_legacy_write_attempt(
             request,
@@ -22,12 +31,12 @@ def legacy_hr_api_redirect(request, tail=""):
             model_path=f"api/hr/v1/{tail}",
         )
 
-    target = f"/api/v1/hr/{tail}"
+    target = f"{LEGACY_API_SUCCESSOR_ROOT}{tail}"
     query = request.META.get("QUERY_STRING")
     if query:
         target = f"{target}?{query}"
     response = HttpResponsePermanentRedirect308(target)
-    response["Deprecation"] = "true"
-    response["Sunset"] = "2026-12-31"
-    response["Link"] = f'<{target.split("?", 1)[0]}>; rel="successor-version"'
-    return response
+    return apply_legacy_deprecation_headers(
+        response,
+        successor=target.split("?", 1)[0],
+    )
