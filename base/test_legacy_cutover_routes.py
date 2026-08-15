@@ -56,17 +56,18 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
 
     def test_legacy_api_mutating_verbs_are_adapter_only_308_redirects(self):
         factory = RequestFactory()
-        legacy_path = "/api/hr/v1/payroll/periods/42/?tenant=7"
+        resolver_path = "/api/hr/v1/payroll/periods/42/"
+        request_path = f"{resolver_path}?tenant=7"
         expected_location = "/api/v1/hr/payroll/periods/42/?tenant=7"
 
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             with self.subTest(method=method):
-                match = resolve(legacy_path)
+                match = resolve(resolver_path)
                 self.assertIs(match.func, legacy_hr_api_redirect)
 
                 request = factory.generic(
                     method,
-                    legacy_path,
+                    request_path,
                     data=b'{"formal":"write-attempt"}',
                     content_type="application/json",
                 )
