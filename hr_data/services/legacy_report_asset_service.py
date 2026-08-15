@@ -34,7 +34,6 @@ class LegacyReportAssetInventoryService:
                 "config",
                 "created_by_id",
                 "created_at",
-                "updated_at",
             )[:limit]
         )
         return total, rows
@@ -50,7 +49,6 @@ class LegacyReportAssetInventoryService:
                 "name": row["name"],
                 "createdById": row.get("created_by_id"),
                 "createdAt": row.get("created_at"),
-                "updatedAt": row.get("updated_at"),
                 "classification": "NON_AUTHORITY_PREFERENCE_ASSET",
                 "legacyAuthority": False,
                 "canonicalAuthorityMapping": None,
