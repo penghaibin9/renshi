@@ -80,25 +80,27 @@ jobs:
 
           path = Path("base/migrations/0002_initial.py")
           source = path.read_text(encoding="utf-8")
-          old = '''        migrations.AlterUniqueTogether(
-              name="company",
-              unique_together={("company", "address")},
-          ),
-          '''
-          new = '''        # Baseline-only MySQL compatibility shim: MySQL 8.4 cannot
-          # create a unique index directly on TEXT address without a prefix
-          # length (error 1170). Keep Django migration state canonical while
-          # omitting only the impossible historical database DDL.
-          migrations.SeparateDatabaseAndState(
-              database_operations=[],
-              state_operations=[
-                  migrations.AlterUniqueTogether(
-                      name="company",
-                      unique_together={("company", "address")},
-                  ),
-              ],
-          ),
-          '''
+          old = (
+              '        migrations.AlterUniqueTogether(\n'
+              '            name="company",\n'
+              '            unique_together={("company", "address")},\n'
+              '        ),\n'
+          )
+          new = (
+              '        # Baseline-only MySQL compatibility shim: MySQL 8.4 cannot\n'
+              '        # create a unique index directly on TEXT address without a prefix\n'
+              '        # length (error 1170). Keep Django migration state canonical while\n'
+              '        # omitting only the impossible historical database DDL.\n'
+              '        migrations.SeparateDatabaseAndState(\n'
+              '            database_operations=[],\n'
+              '            state_operations=[\n'
+              '                migrations.AlterUniqueTogether(\n'
+              '                    name="company",\n'
+              '                    unique_together={("company", "address")},\n'
+              '                ),\n'
+              '            ],\n'
+              '        ),\n'
+          )
           count = source.count(old)
           if count != 1:
               raise SystemExit(
