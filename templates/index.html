@@ -109,7 +109,7 @@
                     </div>
                 </div>
             </div>
-            <!-- End of Confirmation Modal -->
+            <!-- End of Confirm Modal -->
 
             <!-- Start of Notifications activity bar -->
             <div class="oh-activity-sidebar " id="allNotifications" style="z-index:1000">
@@ -176,15 +176,13 @@
 
                         {% if show_company_switcher %}
                             <!-- Start of Companies dropdown in nav bar -->
-                            <div class="oh-navbar__action-icons" title="{% trans 'Companies' %}">
-                                {% include "base/navbar_components/company_selection.html" %}
-                            </div>
+                            {% include "base/navbar_components/company_selection.html" %}
                             <!-- End of Companies dropdown in nav bar -->
                         {% endif %}
 
-                        <!-- Start of profile dropdown -->
+                        <!-- Start of profile dropdown in nav bar -->
                         {% include "navbar_component/profile_section.html" %}
-                        <!-- End of profile dropdown -->
+                        <!-- End of profile dropdown in nav bar -->
                     </div>
                 </div>
                 <!-- Start of quick access in index page -->
