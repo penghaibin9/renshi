@@ -8,7 +8,7 @@ from horilla.legacy_hr_api import legacy_hr_api_redirect
 from horilla.legacy_hr_ui import legacy_hr_ui_redirect
 
 urlpatterns = [
-    # HR01~HR06 UI routes
+    # HR01~HR07 UI routes
     path("hr/", include("hr_control_center.urls")),
     path("hr/structure/", include("hr_structure.urls")),
     path("hr/staff/", include("hr_staff.urls")),
@@ -16,7 +16,7 @@ urlpatterns = [
     path("", include("hr_recruitment.public.urls")),
     path("hr/onboarding/", include("hr_onboarding.urls")),
     path("hr/changes/", include("hr_changes.urls")),
-    # HR07 Authority UI remains deliberately unrouted; its canonical API is live below.
+    path("hr/contracts/", include("hr_contracts.urls")),
     # HR08 UI
     path("hr/external-teachers/", include("hr_external.urls")),
     # HR09 UI
@@ -30,7 +30,7 @@ urlpatterns = [
     path("hr/assessments/", include("hr_assessment.urls")),
     # Canonical APIs for old-root modules HR01/02/03/04/05/06/08/11.
     path("", include("horilla.canonical_hr_api")),
-    # HR07 canonical Agreement Authority API. Broken recovery-only API modules stay unrouted.
+    # HR07 canonical Agreement Authority API. Recovery-only legacy handlers stay unrouted.
     path("", include("hr_contracts.api_urls")),
     # HR09/10/12 native canonical APIs.
     path("", include("hr_qualification.api.urls")),
