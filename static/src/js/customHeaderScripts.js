@@ -288,6 +288,10 @@
     }
 
     function loadHrPageEnhancements() {
+        if (document.querySelector('.hr15[data-module="HR15"]')) {
+            addStylesheet('/static/hr/css/hr15-actions.css', 'hr15-action-styles');
+            addScript('/static/hr/js/pages/hr15-actions.js', 'hr15-action-script');
+        }
         if (document.querySelector('.hr18[data-module="HR18"]')) {
             addStylesheet('/static/hr/css/hr18-actions.css', 'hr18-action-styles');
             addScript('/static/hr/js/pages/hr18-actions.js', 'hr18-action-script');
