@@ -40,6 +40,13 @@ def hr04_qualification(request):
 
 
 @login_required
+@require_hr04_permission("hr04.assessment.manage")
+def hr04_assessment(request):
+    """HR04-05 考试、面试、试讲与考察工作台页面。"""
+    return render(request, "hr/recruitment/assessment/assessment.html")
+
+
+@login_required
 @require_hr04_permission("hr04.proposed_hire.manage")
 def hr04_proposed_hires(request):
     """HR04-06 拟录用工作台页面。"""
