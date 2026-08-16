@@ -8,8 +8,6 @@ HR02 页面路由（挂载 /hr/structure/ 下）：
   /hr/structure/post-catalogs        → HR02-04 岗位目录
   /hr/structure/positions            → HR02-05 岗位编制台账
   /hr/structure/history              → HR02-06 组织岗位历史
-
-API 前缀：/api/hr/v1/structure/*（见 api/urls.py）。
 """
 
 from django.urls import path
@@ -22,26 +20,10 @@ urlpatterns = [
         "",
         RedirectView.as_view(pattern_name="hr-structure-organizations", permanent=False),
     ),
-    path(
-        "organizations",
-        views.hr_organizations,
-        name="hr-structure-organizations",
-    ),
-    path(
-        "relations",
-        RedirectView.as_view(pattern_name="hr-structure-organizations", permanent=False),
-    ),
-    path(
-        "staffing-plans",
-        RedirectView.as_view(pattern_name="hr-structure-organizations", permanent=False),
-    ),
-    path(
-        "post-catalogs",
-        RedirectView.as_view(pattern_name="hr-structure-organizations", permanent=False),
-    ),
-    path(
-        "positions",
-        views.hr_positions,
-        name="hr-structure-positions",
-    ),
+    path("organizations", views.hr_organizations, name="hr-structure-organizations"),
+    path("relations", views.hr_structure_workspace, {"section": "relations"}, name="hr-structure-relations"),
+    path("staffing-plans", views.hr_structure_workspace, {"section": "staffing-plans"}, name="hr-structure-staffing-plans"),
+    path("post-catalogs", views.hr_structure_workspace, {"section": "post-catalogs"}, name="hr-structure-post-catalogs"),
+    path("positions", views.hr_positions, name="hr-structure-positions"),
+    path("history", views.hr_structure_workspace, {"section": "history"}, name="hr-structure-history"),
 ]
