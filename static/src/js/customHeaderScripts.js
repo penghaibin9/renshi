@@ -264,3 +264,36 @@
     document.addEventListener('DOMContentLoaded', buildCanonicalHrMenu);
     window.addEventListener('load', buildCanonicalHrMenu);
 })();
+
+// Load action-heavy HR workspaces only on the relevant page. The global shell
+// stays light, while page-specific UI can evolve without adding more inline
+// template JavaScript.
+(function () {
+    function addStylesheet(href, id) {
+        if (document.getElementById(id)) return;
+        const link = document.createElement('link');
+        link.id = id;
+        link.rel = 'stylesheet';
+        link.href = href;
+        document.head.appendChild(link);
+    }
+
+    function addScript(src, id) {
+        if (document.getElementById(id)) return;
+        const script = document.createElement('script');
+        script.id = id;
+        script.src = src;
+        script.defer = true;
+        document.body.appendChild(script);
+    }
+
+    function loadHrPageEnhancements() {
+        if (document.querySelector('.hr18[data-module="HR18"]')) {
+            addStylesheet('/static/hr/css/hr18-actions.css', 'hr18-action-styles');
+            addScript('/static/hr/js/pages/hr18-actions.js', 'hr18-action-script');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadHrPageEnhancements);
+    window.addEventListener('load', loadHrPageEnhancements);
+})();
