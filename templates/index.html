@@ -266,6 +266,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{% static 'src/js/customFooterScripts.js' %}"></script>
     <script src="{% static 'src/js/hrAcademicWorkspace.js' %}"></script>
+    {% block scripts %}
+    {% endblock scripts %}
     <script>
         // Clear all query parameters from the URL
         function clearQueryParameters() {
