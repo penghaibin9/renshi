@@ -296,6 +296,10 @@
             addStylesheet('/static/hr/css/hr16-actions.css', 'hr16-action-styles');
             addScript('/static/hr/js/pages/hr16-actions.js', 'hr16-action-script');
         }
+        if (document.querySelector('.hr17[data-module="HR17"]')) {
+            addStylesheet('/static/hr/css/hr17-actions.css', 'hr17-action-styles');
+            addScript('/static/hr/js/pages/hr17-actions.js', 'hr17-action-script');
+        }
         if (document.querySelector('.hr18[data-module="HR18"]')) {
             addStylesheet('/static/hr/css/hr18-actions.css', 'hr18-action-styles');
             addScript('/static/hr/js/pages/hr18-actions.js', 'hr18-action-script');
