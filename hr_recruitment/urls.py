@@ -23,7 +23,6 @@ urlpatterns = [
         "",
         RedirectView.as_view(pattern_name="hr04-campaigns", permanent=False),
     ),
-    # S3 挂载点
     path(
         "plans",
         views.hr04_plans,
@@ -43,6 +42,11 @@ urlpatterns = [
         "qualification",
         views.hr04_qualification,
         name="hr04-qualification",
+    ),
+    path(
+        "assessment",
+        views.hr04_assessment,
+        name="hr04-assessment",
     ),
     path(
         "proposed-hires",
