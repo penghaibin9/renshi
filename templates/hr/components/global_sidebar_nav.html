@@ -1,0 +1,79 @@
+{% load static i18n %}
+<li class="oh-sidebar__menu-item" x-data="{ isOpen: getOpenState('higherEducationHrNav') }">
+    <a
+        class="oh-sidebar__menu-link"
+        data-id="higherEducationHrNav"
+        x-on:click.prevent="isOpen = !isOpen; saveOpenState('higherEducationHrNav', isOpen)"
+        x-bind:class="isOpen ? 'oh-sidebar__menu-link--active' : ''"
+        style="cursor: pointer"
+        aria-label="高校人事 HR01 至 HR18"
+    >
+        <div class="oh-sidebar__menu-icon">
+            <img
+                src="{% static 'images/ui/dashboard.svg' %}"
+                alt=""
+                width="24"
+                height="24"
+            >
+        </div>
+        <span>高校人事</span>
+    </a>
+    <div
+        class="oh-sidebar__submenu"
+        id="higherEducationHrNav"
+        style="display: none"
+        x-show="isOpen"
+        x-transition
+    >
+        <ul class="oh-sidebar__submenu-items hr-canonical-sidebar">
+            <li class="hr-canonical-sidebar__group" aria-hidden="true">基础人事</li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/overview" class="oh-sidebar__submenu-link"><strong>HR01</strong> 人事工作台</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/structure/" class="oh-sidebar__submenu-link"><strong>HR02</strong> 组织机构与岗位</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/staff/" class="oh-sidebar__submenu-link"><strong>HR03</strong> 教职工主档</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/recruitment/" class="oh-sidebar__submenu-link"><strong>HR04</strong> 招聘与人才引进</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/onboarding/" class="oh-sidebar__submenu-link"><strong>HR05</strong> 入职管理</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/changes/" class="oh-sidebar__submenu-link"><strong>HR06</strong> 人事异动</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/contracts/" class="oh-sidebar__submenu-link"><strong>HR07</strong> 合同与聘用</a></li>
+
+            <li class="hr-canonical-sidebar__group" aria-hidden="true">教师发展与时间</li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/external-teachers/" class="oh-sidebar__submenu-link"><strong>HR08</strong> 兼职外聘教师</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/qualifications/" class="oh-sidebar__submenu-link"><strong>HR09</strong> 教师资格与双师型</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/development/dashboard" class="oh-sidebar__submenu-link"><strong>HR10</strong> 培训进修与企业实践</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/time/" class="oh-sidebar__submenu-link"><strong>HR11</strong> 考勤与请假</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/assessments/" class="oh-sidebar__submenu-link"><strong>HR12</strong> 年度与聘期考核</a></li>
+
+            <li class="hr-canonical-sidebar__group" aria-hidden="true">聘任薪酬与服务</li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/titles/" class="oh-sidebar__submenu-link"><strong>HR13</strong> 职称评审</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/appointments/" class="oh-sidebar__submenu-link"><strong>HR14</strong> 岗位聘任</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/payroll/" class="oh-sidebar__submenu-link"><strong>HR15</strong> 薪酬福利</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/exit/" class="oh-sidebar__submenu-link"><strong>HR16</strong> 退休与离校</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/self/" class="oh-sidebar__submenu-link"><strong>HR17</strong> 教职工服务</a></li>
+            <li class="oh-sidebar__submenu-item"><a href="/hr/data/" class="oh-sidebar__submenu-link"><strong>HR18</strong> 人事数据中心</a></li>
+        </ul>
+    </div>
+</li>
+
+<style>
+    .hr-canonical-sidebar__group {
+        padding: 10px 16px 5px;
+        color: rgba(255, 255, 255, .56);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        list-style: none;
+    }
+
+    .hr-canonical-sidebar .oh-sidebar__submenu-link {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+    }
+
+    .hr-canonical-sidebar .oh-sidebar__submenu-link strong {
+        min-width: 34px;
+        color: rgba(255, 255, 255, .72);
+        font-size: 10px;
+        letter-spacing: .03em;
+    }
+</style>
