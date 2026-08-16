@@ -95,3 +95,172 @@
         mq.addEventListener('change', initialiseResponsiveShell);
     }
 })();
+
+// Canonical higher-education HR navigation.
+//
+// Legacy Horilla menus are assembled dynamically by installed legacy apps, so
+// they cannot guarantee that every HR01-HR18 workspace remains reachable after
+// Authority cutover. Keep one stable frontend-owned navigation group that only
+// links to canonical browser workspaces and never infers permissions or writes
+// business facts.
+(function () {
+    const OPEN_STATE_KEY = 'higherEducationHrSidebarOpen';
+    const MENU_STATES_KEY = 'menuStates';
+
+    // sidebar.html historically assumes this object already exists when a user
+    // clicks a legacy group. First visits do not have it, which can throw while
+    // attempting menuStates[id] = false. Initialise the harmless UI state here.
+    if (!localStorage.getItem(MENU_STATES_KEY)) {
+        localStorage.setItem(MENU_STATES_KEY, '{}');
+    }
+
+    const GROUPS = [
+        {
+            title: '基础人事',
+            items: [
+                ['HR01', '人事工作台', '/hr/overview'],
+                ['HR02', '组织机构与岗位', '/hr/structure/'],
+                ['HR03', '教职工主档', '/hr/staff/'],
+                ['HR04', '招聘与人才引进', '/hr/recruitment/'],
+                ['HR05', '入职管理', '/hr/onboarding/'],
+                ['HR06', '人事异动', '/hr/changes/'],
+                ['HR07', '合同与聘用', '/hr/contracts/'],
+            ],
+        },
+        {
+            title: '教师发展与时间',
+            items: [
+                ['HR08', '兼职外聘教师', '/hr/external-teachers/'],
+                ['HR09', '教师资格与双师型', '/hr/qualifications/'],
+                ['HR10', '培训进修与企业实践', '/hr/development/dashboard'],
+                ['HR11', '考勤与请假', '/hr/time/'],
+                ['HR12', '年度与聘期考核', '/hr/assessments/'],
+            ],
+        },
+        {
+            title: '聘任薪酬与服务',
+            items: [
+                ['HR13', '职称评审', '/hr/titles/'],
+                ['HR14', '岗位聘任', '/hr/appointments/'],
+                ['HR15', '薪酬福利', '/hr/payroll/'],
+                ['HR16', '退休与离校', '/hr/exit/'],
+                ['HR17', '教职工服务', '/hr/self/'],
+                ['HR18', '人事数据中心', '/hr/data/'],
+            ],
+        },
+    ];
+
+    function isCurrentRoute(target) {
+        const path = window.location.pathname;
+        if (target === '/hr/overview') return path === '/hr/' || path === '/hr/overview';
+        return path === target || path.startsWith(target.endsWith('/') ? target : `${target}/`);
+    }
+
+    function createGroupLabel(text) {
+        const li = document.createElement('li');
+        li.textContent = text;
+        li.setAttribute('aria-hidden', 'true');
+        li.style.cssText = [
+            'list-style:none',
+            'padding:10px 16px 5px',
+            'font-size:10px',
+            'font-weight:700',
+            'letter-spacing:.08em',
+            'color:rgba(255,255,255,.56)',
+        ].join(';');
+        return li;
+    }
+
+    function createItem(code, label, href) {
+        const li = document.createElement('li');
+        li.className = 'oh-sidebar__submenu-item';
+
+        const link = document.createElement('a');
+        link.href = href;
+        link.className = 'oh-sidebar__submenu-link';
+        link.style.display = 'flex';
+        link.style.alignItems = 'baseline';
+        link.style.gap = '7px';
+        if (isCurrentRoute(href)) {
+            link.setAttribute('aria-current', 'page');
+            link.style.background = 'rgba(255,255,255,.10)';
+        }
+
+        const badge = document.createElement('strong');
+        badge.textContent = code;
+        badge.style.cssText = 'min-width:34px;font-size:10px;letter-spacing:.03em;color:rgba(255,255,255,.72)';
+        const text = document.createElement('span');
+        text.textContent = label;
+        link.append(badge, text);
+        li.appendChild(link);
+        return li;
+    }
+
+    function buildCanonicalHrMenu() {
+        const menu = document.querySelector('.oh-sidebar__menu-items');
+        if (!menu || document.getElementById('higherEducationHrNav')) return;
+
+        const item = document.createElement('li');
+        item.className = 'oh-sidebar__menu-item';
+        item.dataset.canonicalHrNav = 'true';
+
+        const trigger = document.createElement('a');
+        trigger.href = '#';
+        trigger.className = 'oh-sidebar__menu-link';
+        trigger.dataset.id = 'higherEducationHrNav';
+        trigger.style.cursor = 'pointer';
+        trigger.setAttribute('aria-controls', 'higherEducationHrNav');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.innerHTML = [
+            '<div class="oh-sidebar__menu-icon">',
+            '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">',
+            '<rect x="3" y="3" width="7" height="7" rx="1"></rect>',
+            '<rect x="14" y="3" width="7" height="7" rx="1"></rect>',
+            '<rect x="3" y="14" width="7" height="7" rx="1"></rect>',
+            '<rect x="14" y="14" width="7" height="7" rx="1"></rect>',
+            '</svg>',
+            '</div>',
+            '<span>高校人事</span>',
+        ].join('');
+
+        const submenu = document.createElement('div');
+        submenu.className = 'oh-sidebar__submenu';
+        submenu.id = 'higherEducationHrNav';
+        submenu.style.display = 'none';
+        const list = document.createElement('ul');
+        list.className = 'oh-sidebar__submenu-items';
+
+        GROUPS.forEach((group) => {
+            list.appendChild(createGroupLabel(group.title));
+            group.items.forEach((entry) => list.appendChild(createItem(...entry)));
+        });
+        submenu.appendChild(list);
+        item.append(trigger, submenu);
+
+        const dashboardItem = menu.querySelector('.oh-sidebar__menu-item');
+        if (dashboardItem && dashboardItem.nextSibling) {
+            menu.insertBefore(item, dashboardItem.nextSibling);
+        } else {
+            menu.appendChild(item);
+        }
+
+        let open = localStorage.getItem(OPEN_STATE_KEY) === 'true' || window.location.pathname.startsWith('/hr/');
+        const render = function () {
+            submenu.style.display = open ? '' : 'none';
+            trigger.classList.toggle('oh-sidebar__menu-link--active', open);
+            trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        };
+        render();
+
+        trigger.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            open = !open;
+            localStorage.setItem(OPEN_STATE_KEY, open ? 'true' : 'false');
+            render();
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', buildCanonicalHrMenu);
+    window.addEventListener('load', buildCanonicalHrMenu);
+})();
