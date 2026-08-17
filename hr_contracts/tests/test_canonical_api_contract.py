@@ -14,17 +14,35 @@ from hr_contracts.permissions import (
     PERM_AGREEMENT_CREATE,
     PERM_AGREEMENT_SIGN,
     PERM_AGREEMENT_VIEW,
+    PERM_CASE_ACTIVATE,
+    PERM_CASE_APPROVE,
+    PERM_CASE_CREATE,
+    PERM_CASE_SIGN,
+    PERM_CASE_SUBMIT,
+    PERM_CASE_TERMINATE,
 )
 
 
 def test_hr07_canonical_routes_are_registered_without_recovery_only_modules():
     routes = {str(pattern.pattern) for pattern in urlpatterns}
-    assert "api/v1/hr/contracts/agreements" in routes
-    assert "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/sign" in routes
-    assert (
-        "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/"
-        "<uuid:version_id>/activate"
-    ) in routes
+    expected = {
+        "api/v1/hr/contracts/agreements",
+        "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/sign",
+        (
+            "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/"
+            "<uuid:version_id>/activate"
+        ),
+        "api/v1/hr/contracts/cases",
+        "api/v1/hr/contracts/cases/<uuid:case_id>/submit",
+        "api/v1/hr/contracts/cases/<uuid:case_id>/approve",
+        "api/v1/hr/contracts/cases/<uuid:case_id>/versions/sign",
+        (
+            "api/v1/hr/contracts/cases/<uuid:case_id>/versions/"
+            "<uuid:version_id>/activate"
+        ),
+        "api/v1/hr/contracts/cases/<uuid:case_id>/termination/effect",
+    }
+    assert expected <= routes
 
 
 def test_hr07_permissions_use_global_registry():
@@ -33,6 +51,12 @@ def test_hr07_permissions_use_global_registry():
         PERM_AGREEMENT_CREATE,
         PERM_AGREEMENT_SIGN,
         PERM_AGREEMENT_ACTIVATE,
+        PERM_CASE_CREATE,
+        PERM_CASE_SUBMIT,
+        PERM_CASE_APPROVE,
+        PERM_CASE_SIGN,
+        PERM_CASE_ACTIVATE,
+        PERM_CASE_TERMINATE,
     ):
         definition = permission_registry.get(key)
         assert definition.module_code == "HR07"
