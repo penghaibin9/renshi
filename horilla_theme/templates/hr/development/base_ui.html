@@ -1,0 +1,60 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}教师发展{% endblock %} · 跃科高校人事系统</title>
+  <link rel="stylesheet" href="{% static 'hr/css/hr10-actions.css' %}">
+  <style>
+    :root{--hr10-blue:#315fc6;--hr10-bg:#f6f8fc;--hr10-card:#fff;--hr10-border:#e1e7f0;--hr10-text:#172033;--hr10-muted:#68758a}
+    *{box-sizing:border-box}body{margin:0;background:var(--hr10-bg);color:var(--hr10-text);font-family:"Microsoft YaHei",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    a{color:inherit}.hr10-shell-top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-bottom:1px solid var(--hr10-border)}
+    .hr10-shell-top__inner{max-width:1440px;margin:auto;padding:12px 22px;display:flex;align-items:center;gap:16px;justify-content:space-between}
+    .hr10-shell-brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:800}.hr10-shell-brand__mark{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#315fc6,#6d8ee0);color:#fff;display:grid;place-items:center;font-size:12px;letter-spacing:.03em}
+    .hr10-shell-brand small{display:block;color:var(--hr10-muted);font-size:10px;font-weight:600;margin-top:2px}.hr10-shell-actions{display:flex;gap:8px;align-items:center}.hr10-shell-link{display:inline-flex;align-items:center;min-height:36px;padding:7px 11px;border:1px solid var(--hr10-border);border-radius:10px;background:#fff;text-decoration:none;color:#53627b;font-size:12px;font-weight:700}.hr10-shell-link:hover{border-color:#b6c6e3;color:var(--hr10-blue)}
+    .hr10-nav-wrap{background:#fff;border-bottom:1px solid var(--hr10-border)}.hr10-nav{max-width:1440px;margin:auto;padding:0 22px;display:flex;gap:3px;overflow-x:auto}.hr10-nav a{flex:0 0 auto;padding:12px 14px;text-decoration:none;color:#66758b;font-size:13px;border-bottom:2px solid transparent}.hr10-nav a:hover,.hr10-nav a.active{color:var(--hr10-blue);border-bottom-color:var(--hr10-blue);font-weight:700}
+    .hr10-main{max-width:1440px;margin:auto;padding:22px}.hr10-record-lookup{display:none;position:fixed;inset:0;z-index:60;background:rgba(20,29,44,.38);place-items:center;padding:18px}.hr10-record-lookup.open{display:grid}.hr10-record-dialog{width:min(520px,100%);background:#fff;border-radius:18px;padding:20px;box-shadow:0 24px 80px rgba(20,29,44,.22)}.hr10-record-dialog h2{margin:0;font-size:18px}.hr10-record-dialog p{color:#68758a;font-size:12px;line-height:1.6}.hr10-record-dialog form{display:flex;gap:8px}.hr10-record-dialog input{flex:1;min-width:0;border:1px solid #d6dfec;border-radius:10px;padding:10px 11px}.hr10-record-dialog button{border:0;border-radius:10px;padding:9px 13px;font-weight:700;cursor:pointer}.hr10-record-dialog .primary{background:var(--hr10-blue);color:#fff}
+    @media(max-width:720px){.hr10-shell-top__inner{padding:10px 12px}.hr10-shell-actions .hr10-shell-link:first-child{display:none}.hr10-nav{padding:0 10px}.hr10-main{padding:12px}.hr10-shell-brand span:last-child{font-size:13px}}
+  </style>
+</head>
+<body>
+  <header class="hr10-shell-top">
+    <div class="hr10-shell-top__inner">
+      <a class="hr10-shell-brand" href="/hr/development/dashboard">
+        <span class="hr10-shell-brand__mark">HR10</span>
+        <span>教师发展<small>{% block title_zh %}培养、培训与企业实践{% endblock %}</small></span>
+      </a>
+      <div class="hr10-shell-actions">
+        <a class="hr10-shell-link" href="/hr/overview">← 返回人事工作台</a>
+        <button class="hr10-shell-link" type="button" id="hr10-open-record" style="cursor:pointer">查询教师发展档案</button>
+      </div>
+    </div>
+  </header>
+  <nav class="hr10-nav-wrap" aria-label="教师发展业务导航">
+    <div class="hr10-nav">
+      <a href="/hr/development/dashboard" {% if request.path == '/hr/development/dashboard' %}class="active"{% endif %}>发展总览</a>
+      <a href="/hr/development/plans" {% if request.path == '/hr/development/plans' %}class="active"{% endif %}>发展计划</a>
+      <a href="/hr/development/programs" {% if request.path == '/hr/development/programs' %}class="active"{% endif %}>培训项目</a>
+      <a href="/hr/development/requests" {% if request.path == '/hr/development/requests' %}class="active"{% endif %}>报名与审批</a>
+      <a href="/hr/development/enterprise-practice" {% if request.path == '/hr/development/enterprise-practice' %}class="active"{% endif %}>企业实践</a>
+    </div>
+  </nav>
+  <main class="hr10-main">{% block content %}{% endblock %}</main>
+  <div class="hr10-record-lookup" id="hr10-record-lookup" role="dialog" aria-modal="true" aria-labelledby="hr10-record-title">
+    <div class="hr10-record-dialog">
+      <h2 id="hr10-record-title">查询教师发展档案</h2>
+      <p>输入真实 Staff ID 后进入该教师的发展档案。这里不再默认跳到 Staff 1，也不会猜测当前教师身份。</p>
+      <form id="hr10-record-form">
+        <input id="hr10-record-id" inputmode="numeric" pattern="[0-9]+" placeholder="Staff ID" aria-label="Staff ID" required>
+        <button class="primary" type="submit">打开档案</button>
+        <button type="button" id="hr10-record-close">取消</button>
+      </form>
+    </div>
+  </div>
+  <script>
+    (()=>{const modal=document.getElementById('hr10-record-lookup'),open=document.getElementById('hr10-open-record'),close=document.getElementById('hr10-record-close'),form=document.getElementById('hr10-record-form'),input=document.getElementById('hr10-record-id');open?.addEventListener('click',()=>{modal.classList.add('open');setTimeout(()=>input.focus(),0)});close?.addEventListener('click',()=>modal.classList.remove('open'));modal?.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});form?.addEventListener('submit',e=>{e.preventDefault();const id=input.value.trim();if(!/^\d+$/.test(id))return;location.href='/hr/development/records/'+encodeURIComponent(id)})})();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
