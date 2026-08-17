@@ -84,9 +84,6 @@
         else restoreDesktopSidebarState();
     }
 
-    // This listener is registered from <head>, before static/index/index.js is
-    // parsed at the end of <body>. Therefore mobile sidebarOpen=false is in
-    // place before Horilla's existing jQuery-ready restore reads it.
     document.addEventListener('DOMContentLoaded', initialiseResponsiveShell);
     window.addEventListener('load', initialiseResponsiveShell);
 
@@ -97,19 +94,10 @@
 })();
 
 // Canonical higher-education HR navigation.
-//
-// Legacy Horilla menus are assembled dynamically by installed legacy apps, so
-// they cannot guarantee that every HR01-HR18 workspace remains reachable after
-// Authority cutover. Keep one stable frontend-owned navigation group that only
-// links to canonical browser workspaces and never infers permissions or writes
-// business facts.
 (function () {
     const OPEN_STATE_KEY = 'higherEducationHrSidebarOpen';
     const MENU_STATES_KEY = 'menuStates';
 
-    // sidebar.html historically assumes this object already exists when a user
-    // clicks a legacy group. First visits do not have it, which can throw while
-    // attempting menuStates[id] = false. Initialise the harmless UI state here.
     if (!localStorage.getItem(MENU_STATES_KEY)) {
         localStorage.setItem(MENU_STATES_KEY, '{}');
     }
@@ -174,7 +162,6 @@
     function createItem(code, label, href) {
         const li = document.createElement('li');
         li.className = 'oh-sidebar__submenu-item';
-
         const link = document.createElement('a');
         link.href = href;
         link.className = 'oh-sidebar__submenu-link';
@@ -185,7 +172,6 @@
             link.setAttribute('aria-current', 'page');
             link.style.background = 'rgba(255,255,255,.10)';
         }
-
         const badge = document.createElement('strong');
         badge.textContent = code;
         badge.style.cssText = 'min-width:34px;font-size:10px;letter-spacing:.03em;color:rgba(255,255,255,.72)';
@@ -199,11 +185,9 @@
     function buildCanonicalHrMenu() {
         const menu = document.querySelector('.oh-sidebar__menu-items');
         if (!menu || document.getElementById('higherEducationHrNav')) return;
-
         const item = document.createElement('li');
         item.className = 'oh-sidebar__menu-item';
         item.dataset.canonicalHrNav = 'true';
-
         const trigger = document.createElement('a');
         trigger.href = '#';
         trigger.className = 'oh-sidebar__menu-link';
@@ -222,28 +206,21 @@
             '</div>',
             '<span>高校人事</span>',
         ].join('');
-
         const submenu = document.createElement('div');
         submenu.className = 'oh-sidebar__submenu';
         submenu.id = 'higherEducationHrNav';
         submenu.style.display = 'none';
         const list = document.createElement('ul');
         list.className = 'oh-sidebar__submenu-items';
-
         GROUPS.forEach((group) => {
             list.appendChild(createGroupLabel(group.title));
             group.items.forEach((entry) => list.appendChild(createItem(...entry)));
         });
         submenu.appendChild(list);
         item.append(trigger, submenu);
-
         const dashboardItem = menu.querySelector('.oh-sidebar__menu-item');
-        if (dashboardItem && dashboardItem.nextSibling) {
-            menu.insertBefore(item, dashboardItem.nextSibling);
-        } else {
-            menu.appendChild(item);
-        }
-
+        if (dashboardItem && dashboardItem.nextSibling) menu.insertBefore(item, dashboardItem.nextSibling);
+        else menu.appendChild(item);
         let open = localStorage.getItem(OPEN_STATE_KEY) === 'true' || window.location.pathname.startsWith('/hr/');
         const render = function () {
             submenu.style.display = open ? '' : 'none';
@@ -251,7 +228,6 @@
             trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
         };
         render();
-
         trigger.addEventListener('click', function (event) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -265,9 +241,7 @@
     window.addEventListener('load', buildCanonicalHrMenu);
 })();
 
-// Load action-heavy HR workspaces only on the relevant page. The global shell
-// stays light, while page-specific UI can evolve without adding more inline
-// template JavaScript.
+// Load action-heavy HR workspaces only on relevant pages.
 (function () {
     function addStylesheet(href, id) {
         if (document.getElementById(id)) return;
@@ -288,6 +262,10 @@
     }
 
     function loadHrPageEnhancements() {
+        if (document.querySelector('.hr09')) {
+            addStylesheet('/static/hr/css/hr09-actions.css', 'hr09-action-styles');
+            addScript('/static/hr/js/pages/hr09-actions.js', 'hr09-action-script');
+        }
         if (document.querySelector('.hr15[data-module="HR15"]')) {
             addStylesheet('/static/hr/css/hr15-actions.css', 'hr15-action-styles');
             addScript('/static/hr/js/pages/hr15-actions.js', 'hr15-action-script');
