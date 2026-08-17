@@ -66,8 +66,6 @@
             toggle.dataset.mobileShellBound = 'true';
             toggle.addEventListener('click', function () {
                 if (!mediaQuery().matches) return;
-                // Let Horilla's bundled sidebarToggle handler own the class
-                // change, then mirror the resulting native state.
                 setTimeout(function () {
                     const shell = document.querySelector('.oh-wrapper-main');
                     if (!shell) return;
@@ -265,6 +263,14 @@
         if (document.querySelector('.hr09')) {
             addStylesheet('/static/hr/css/hr09-actions.css', 'hr09-action-styles');
             addScript('/static/hr/js/pages/hr09-actions.js', 'hr09-action-script');
+        }
+        if (document.querySelector('.hr11')) {
+            addStylesheet('/static/hr/css/hr11-actions.css', 'hr11-action-styles');
+            addScript('/static/hr/js/pages/hr11-actions.js', 'hr11-action-script');
+        }
+        if (document.querySelector('.hr12')) {
+            addStylesheet('/static/hr/css/hr12-actions.css', 'hr12-action-styles');
+            addScript('/static/hr/js/pages/hr12-actions.js', 'hr12-action-script');
         }
         if (document.querySelector('.hr15[data-module="HR15"]')) {
             addStylesheet('/static/hr/css/hr15-actions.css', 'hr15-action-styles');
