@@ -1,0 +1,17 @@
+{% extends "hr/development/base_ui.html" %}
+{% load static %}
+{% block title %}培训项目{% endblock %}
+{% block title_zh %}培训项目与班次{% endblock %}
+{% block content %}
+<div class="hr10-workspace" data-hr10-page="programs">
+  <section class="hr10-hero">
+    <div><h2>培训项目与班次</h2><p>项目负责课程与完成规则，班次负责具体时间、地点、容量和报名窗口。项目版本发布后保留历史，不把当前配置覆盖过去事实。</p></div>
+    <span class="hr10-hero-badge">项目 / Offering</span>
+  </section>
+  <section class="hr10-panel">
+    <h3>从项目到开班</h3><p>先建立培训项目，再形成项目版本；具体开班引用版本创建 Offering，开放报名后由名额控制决定报名或候补。</p>
+    <div class="hr10-steps"><div class="hr10-step"><b>1 · 项目</b><span>类型、责任组织、目标人群</span></div><div class="hr10-step"><b>2 · 项目版本</b><span>课程与完成规则快照</span></div><div class="hr10-step"><b>3 · 发布</b><span>正式对学校开放</span></div><div class="hr10-step"><b>4 · 班次</b><span>时间地点与容量</span></div><div class="hr10-step"><b>5 · 报名</b><span>开放、容量、候补</span></div></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hr/js/pages/hr10-actions.js' %}" defer></script>{% endblock %}
