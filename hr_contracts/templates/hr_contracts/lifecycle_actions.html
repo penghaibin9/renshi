@@ -1,0 +1,23 @@
+<div class="hr07-lifecycle-divider"></div>
+<div class="hr07-card__head hr07-card__head--compact">
+  <div>
+    <h3>继续办理已有 Case</h3>
+    <p>提交、审批、签署、激活/解除分别校验自己的 canonical permission；没有权限时后端直接拒绝，不在前端放宽。</p>
+  </div>
+</div>
+<form class="hr07-sign-form" data-lifecycle-action-form>
+  <label><span>Case UUID</span><input name="caseId" required placeholder="创建 Case 后自动回填，也可粘贴已有 Case UUID"></label>
+  <label><span>Successor Version UUID</span><input name="versionId" placeholder="签署新版本后自动回填；激活时必填"></label>
+  <label><span>执行日期</span><input name="asOf" type="date"><small>留空时由后端按当前学校日期判断。</small></label>
+  <label><span>签署时间</span><input name="signedAt" type="datetime-local"><small>仅“签署新版本”使用。</small></label>
+  <label><span>签署文件引用</span><input name="signedDocumentRef" placeholder="private object/file reference"></label>
+  <label class="is-wide"><span>签署内容快照（JSON）</span><textarea name="contentSnapshot" placeholder='例如 {"clauses":["..."],"salary":"..."}'></textarea></label>
+  <div class="hr07-form-actions hr07-form-actions--wrap">
+    <button class="hr07-btn" type="button" data-case-action="submit">提交 Case</button>
+    <button class="hr07-btn" type="button" data-case-action="approve">审批通过</button>
+    <button class="hr07-btn hr07-btn--primary" type="button" data-case-action="sign">签署新版本</button>
+    <button class="hr07-btn hr07-btn--primary" type="button" data-case-action="activate">激活新版本</button>
+    <button class="hr07-btn hr07-btn--danger" type="button" data-case-action="terminate">执行解除生效</button>
+  </div>
+  <div class="hr07-inline-state is-wide" data-lifecycle-result>尚未执行 Case 动作。</div>
+</form>
