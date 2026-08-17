@@ -1,0 +1,18 @@
+{% extends "hr/development/base_ui.html" %}
+{% load static %}
+{% block title %}培训报名与审批{% endblock %}
+{% block title_zh %}培训报名与审批{% endblock %}
+{% block content %}
+<div class="hr10-workspace" data-hr10-page="requests">
+  <section class="hr10-hero">
+    <div><h2>培训报名与审批</h2><p>培训申请先形成正式 TrainingRequest，再按审批链推进；审批通过后再进入具体班次报名。系统禁止自审批，名额和候补由服务端并发控制。</p></div>
+    <span class="hr10-hero-badge">申请 / Enrollment</span>
+  </section>
+  <section class="hr10-panel">
+    <h3>办理链</h3><p>“申请获批”和“已占到班次名额”是两个不同事实，页面不会把两者混成一个状态。</p>
+    <div class="hr10-steps"><div class="hr10-step"><b>1 · 建申请</b><span>人员、项目、理由与成本</span></div><div class="hr10-step"><b>2 · 提交</b><span>进入正式审批工作流</span></div><div class="hr10-step"><b>3 · 审批</b><span>批准、退回、拒绝</span></div><div class="hr10-step"><b>4 · 报名</b><span>占用 Offering 正式容量</span></div><div class="hr10-step"><b>5 · 候补</b><span>满额后进入候补队列</span></div></div>
+  </section>
+  <div class="hr10-note"><strong>安全边界：</strong>审批人由当前登录身份决定；服务端会拒绝申请人自批，不接受浏览器伪造“审批人”。</div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hr/js/pages/hr10-actions.js' %}" defer></script>{% endblock %}
