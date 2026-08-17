@@ -1,0 +1,27 @@
+{% comment %}
+HrRiskBadge — 风险严重度徽章（CRITICAL/HIGH/MEDIUM/LOW/INFO）。
+语义色板映射（禁止随机颜色），文字与颜色并存，满足无障碍（不只靠颜色）：
+  CRITICAL → danger（实心，视觉最重）
+  HIGH     → danger（浅底）
+  MEDIUM   → warning
+  LOW      → success
+  INFO     → info
+
+Usage:
+  {% include "hr/components/risk_badge.html" with severity="HIGH" %}
+  {% include "hr/components/risk_badge.html" with severity="MEDIUM" label="合同将到期" %}
+
+severity 不区分大小写；label 缺省时使用内置中文文案。
+{% endcomment %}
+{% load i18n %}
+{% with sev=severity|lower %}
+  <span class="hr-risk-badge
+       {% if sev == 'critical' %}hr-risk-badge--danger hr-risk-badge--solid{% elif sev == 'high' %}hr-risk-badge--danger{% elif sev == 'medium' %}hr-risk-badge--warning{% elif sev == 'low' %}hr-risk-badge--success{% elif sev == 'info' %}hr-risk-badge--info{% else %}hr-risk-badge--info{% endif %}"
+        {% if label %}title="{{ label }}"{% endif %}>
+    {% if label %}
+      {{ label }}
+    {% else %}
+      {% if sev == 'critical' %}{% trans "严重" %}{% elif sev == 'high' %}{% trans "高" %}{% elif sev == 'medium' %}{% trans "中" %}{% elif sev == 'low' %}{% trans "低" %}{% else %}{% trans "提示" %}{% endif %}
+    {% endif %}
+  </span>
+{% endwith %}

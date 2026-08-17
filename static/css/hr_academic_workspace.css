@@ -1,0 +1,375 @@
+/*
+ * Academic HR workspace completion layer (HR01-HR18)
+ *
+ * This stylesheet is intentionally scoped to [data-module^="HR"] so the
+ * upstream Horilla screens keep their existing visual contract. Individual
+ * module templates still own their domain colours and information hierarchy;
+ * this layer supplies the shared production UI behaviour that every academic
+ * HR workspace needs: focus visibility, responsive navigation, safe overflow,
+ * touch targets, loading/empty states and printable output.
+ */
+
+[data-module^="HR"] {
+  --hr-ui-focus: #3157d5;
+  --hr-ui-text: #172033;
+  --hr-ui-muted: #667085;
+  --hr-ui-border: #e4e9f2;
+  --hr-ui-surface: #ffffff;
+  --hr-ui-soft: #f7f9fc;
+  --hr-ui-shadow: 0 12px 34px rgba(31, 50, 81, 0.07);
+  color: var(--hr-ui-text);
+  min-width: 0;
+}
+
+[data-module^="HR"] *,
+[data-module^="HR"] *::before,
+[data-module^="HR"] *::after {
+  box-sizing: border-box;
+}
+
+[data-module^="HR"] :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--hr-ui-focus) 30%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+[data-module^="HR"] :where(button, input, select, textarea) {
+  font: inherit;
+}
+
+[data-module^="HR"] :where(button, a, select, input[type="checkbox"], input[type="radio"]) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-module^="HR"] :where(nav) {
+  scrollbar-width: thin;
+  scrollbar-color: #c9d3e3 transparent;
+}
+
+[data-module^="HR"] :where(nav)::-webkit-scrollbar {
+  height: 6px;
+}
+
+[data-module^="HR"] :where(nav)::-webkit-scrollbar-thumb {
+  background: #c9d3e3;
+  border-radius: 999px;
+}
+
+[data-module^="HR"] :where(nav a) {
+  min-height: 38px;
+}
+
+[data-module^="HR"] :where(article, section, aside, div) {
+  min-width: 0;
+}
+
+[data-module^="HR"] :where(h1, h2, h3, h4, p, b, strong, small, span, a) {
+  overflow-wrap: anywhere;
+}
+
+[data-module^="HR"] :where(input[type="search"])::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+[data-module^="HR"] :where(input[type="search"], select, button, .oh-btn) {
+  min-height: 38px;
+}
+
+[data-module^="HR"] :where(button, .oh-btn, a[class*="btn"], a[class*="action"]) {
+  cursor: pointer;
+}
+
+[data-module^="HR"] :where(table) {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+[data-module^="HR"] :where(th) {
+  text-align: left;
+}
+
+[data-module^="HR"] :where(td, th) {
+  overflow-wrap: anywhere;
+}
+
+[data-module^="HR"] [aria-busy="true"] {
+  position: relative;
+}
+
+[data-module^="HR"] [aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.55) 42%, transparent 64%);
+  background-size: 220% 100%;
+  animation: hr-ui-loading 1.35s linear infinite;
+}
+
+@keyframes hr-ui-loading {
+  to { background-position: -220% 0; }
+}
+
+.hr-academic-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border-radius: inherit;
+}
+
+.hr-academic-mobile-nav {
+  display: none;
+  margin: 12px 0 6px;
+  padding: 12px;
+  border: 1px solid var(--hr-ui-border);
+  border-radius: 14px;
+  background: var(--hr-ui-surface);
+  box-shadow: 0 8px 26px rgba(31, 50, 81, 0.05);
+}
+
+.hr-academic-mobile-nav__label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--hr-ui-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hr-academic-mobile-nav__select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 38px 0 12px;
+  border: 1px solid #d7dfeb;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--hr-ui-text);
+  font-weight: 700;
+}
+
+.hr-academic-shortcut-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-inline-start: 6px;
+  color: #98a2b3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hr-academic-shortcut-hint kbd {
+  min-width: 22px;
+  padding: 2px 6px;
+  border: 1px solid #d8dee9;
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #fff;
+  color: #667085;
+  font: 600 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: center;
+}
+
+.hr-academic-ui-tools {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 45;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.hr-academic-ui-tools__button {
+  pointer-events: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #dfe5ef;
+  border-radius: 13px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 10px 30px rgba(31, 50, 81, .13);
+  color: #40506a;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  visibility: hidden;
+  transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+}
+
+.hr-academic-ui-tools__button.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.hr-academic-ui-tools__button:hover {
+  border-color: #c9d6ee;
+  color: var(--hr-ui-focus);
+}
+
+.hr-academic-ui-tools__button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+/* Standardise common module cards without overriding module-specific colours. */
+[data-module^="HR"] :where([class$="-card"], [class*="-card "]) {
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-module^="HR"] :where([class$="-card"], [class*="-card "]):hover {
+    border-color: #d8e0ec;
+  }
+}
+
+/* Ensure the module's horizontal business nav remains usable with a keyboard. */
+[data-module^="HR"] :where(nav a[aria-current="page"]) {
+  scroll-margin-inline: 24px;
+}
+
+/* Tablets: keep content readable and prevent metric cards from becoming tiny. */
+@media (max-width: 1024px) {
+  [data-module^="HR"] {
+    max-width: 100% !important;
+  }
+
+  [data-module^="HR"] :where([class*="-hero"]) {
+    border-radius: 18px !important;
+  }
+
+  [data-module^="HR"] :where([class*="-layout"], [class*="-work"]) {
+    min-width: 0;
+  }
+}
+
+/* Phones: use a native select for deep module navigation, while retaining the
+   original nav in the DOM for accessibility, back/forward and desktop use. */
+@media (max-width: 720px) {
+  .hr-academic-mobile-nav {
+    display: block;
+  }
+
+  [data-module^="HR"] nav[data-hr-academic-nav="true"] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0 0 0 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+
+  [data-module^="HR"] :where([class*="-hero"]) {
+    border-radius: 16px !important;
+  }
+
+  [data-module^="HR"] :where([class*="-hero"] h1) {
+    line-height: 1.25 !important;
+  }
+
+  [data-module^="HR"] :where([class*="-toolbar"]) {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr) !important;
+  }
+
+  [data-module^="HR"] :where([class*="-toolbar"] input, [class*="-toolbar"] select, [class*="-toolbar"] button) {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px;
+  }
+
+  [data-module^="HR"] :where([class*="-kpi"], [class*="-metric"]) {
+    min-width: 0;
+  }
+
+  [data-module^="HR"] :where([class*="-card"]) {
+    border-radius: 14px !important;
+  }
+
+  [data-module^="HR"] :where([class*="-row"]) {
+    min-width: 0;
+  }
+
+  [data-module^="HR"] :where([class*="-row"] a, [class*="-row"] button) {
+    min-height: 36px;
+  }
+
+  .hr-academic-shortcut-hint {
+    display: none;
+  }
+
+  .hr-academic-ui-tools {
+    right: 12px;
+    bottom: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  [data-module^="HR"] {
+    padding-inline: 10px !important;
+  }
+
+  [data-module^="HR"] :where([class*="-hero"], [class*="-card"]) {
+    padding-inline: 13px !important;
+  }
+
+  [data-module^="HR"] :where([class*="-grid"], [class*="-kpis"]) {
+    gap: 8px !important;
+  }
+
+  .hr-academic-mobile-nav {
+    margin-inline: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-module^="HR"] *,
+  [data-module^="HR"] *::before,
+  [data-module^="HR"] *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+@media print {
+  body:has([data-module^="HR"]) #sidebar,
+  body:has([data-module^="HR"]) .oh-navbar,
+  body:has([data-module^="HR"]) .hr-academic-mobile-nav,
+  body:has([data-module^="HR"]) .hr-academic-ui-tools {
+    display: none !important;
+  }
+
+  body:has([data-module^="HR"]) #main,
+  body:has([data-module^="HR"]) #main-section,
+  body:has([data-module^="HR"]) #main-section-data {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  [data-module^="HR"] {
+    max-width: none !important;
+    padding: 0 !important;
+    color: #111 !important;
+  }
+
+  [data-module^="HR"] :where([class*="-hero"], [class*="-card"], [class*="-kpi"]) {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  [data-module^="HR"] :where(nav, [class*="-toolbar"]) {
+    display: none !important;
+  }
+}

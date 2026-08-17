@@ -1,0 +1,24 @@
+{% comment %}
+HrPermissionGuard — 权限守卫容器：无权限时渲染占位，不渲染（不泄漏）数据。
+状态：allowed（渲染 content）/ permission_denied（渲染占位）。
+
+Usage:
+  {% include "hr/components/permission_guard.html" with allowed=can_view content=data_html|safe reason=deny_reason %}
+
+注意：
+  - content 为"安全 HTML"插槽；仅在 allowed 时渲染，denied 时整个内容不进入 DOM。
+  - 该组件是"最后一层展示防线"，后端权限校验仍必须做（见总册 14 节权限约定）；
+    不要依赖它承担数据隔离责任。
+  - 占位展示固定文案 + 可选原因/联系提示，不给攻击者提供数据存在性线索。
+{% endcomment %}
+{% load i18n %}
+{% if allowed %}
+  {{ content }}
+{% else %}
+  <div class="hr-permission-guard">
+    <span class="hr-permission-guard__icon" aria-hidden="true">&#10007;</span>
+    <h3 class="hr-permission-guard__title">{% trans "无查看权限" %}</h3>
+    {% if reason %}<p class="hr-meta">{{ reason }}</p>{% endif %}
+    {% if contact_hint %}<p class="hr-meta">{{ contact_hint }}</p>{% endif %}
+  </div>
+{% endif %}

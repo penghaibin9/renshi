@@ -1,0 +1,5 @@
+{% comment %}
+HrEngagementPeriod —— 聘期显示（半开区间 [start, end)，end 为空=开放）。
+用法：{% include "hr_external/components/engagement_period.html" with start_at=eng.start_at end_at=eng.end_at %}
+{% endcomment %}
+<span class="hr-engagement-period">{{ start_at|date:"Y-m-d" }} ~ {{ end_at|date:"Y-m-d"|default:"长期" }}</span>

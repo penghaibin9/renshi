@@ -1,0 +1,18 @@
+{% load i18n %}
+{# HR05 公共组件：Portal 安全状态（总册 §9.7/§30） #}
+<div class="hr-portal-security-status hr-card">
+  <h3>{% trans "Portal 访问状态" %}</h3>
+  {% if portal.status == "ACTIVE" %}
+  <span class="oh-badge oh-badge--success">{% trans "有效" %}</span>
+  {% elif portal.status == "USED" %}
+  <span class="oh-badge oh-badge--secondary">{% trans "已使用" %}</span>
+  {% elif portal.status == "EXPIRED" %}
+  <span class="oh-badge oh-badge--warning">{% trans "已过期" %}</span>
+  {% elif portal.status == "REVOKED" %}
+  <span class="oh-badge oh-badge--danger">{% trans "已撤销" %}</span>
+  {% else %}
+  <span class="oh-badge oh-badge--secondary">{% trans "未开通" %}</span>
+  {% endif %}
+  <p>{% trans "有效期至" %}：{{ portal.expires_at|date:"Y-m-d H:i" }}</p>
+  <p class="hr-muted">{% trans "令牌仅一次性签发，不存明文、不入日志" %}</p>
+</div>

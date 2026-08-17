@@ -1,0 +1,10 @@
+{% comment %}
+公共组件：HrSnapshotDiff —— 更正前后对比（总册 §16）
+用法：{% include "hr_staff/components/snapshot_diff.html" with before=item.oldValueMasked after=item.newValueMasked field=item.fieldCode %}
+{% endcomment %}
+<div class="diff-row">
+  <div class="diff-field">{{ field }}</div>
+  <div class="diff-before">{{ before|default:"-" }}</div>
+  <div class="diff-arrow">→</div>
+  <div class="diff-after">{{ after|default:"-" }}</div>
+</div>

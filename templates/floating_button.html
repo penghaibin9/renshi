@@ -147,19 +147,6 @@
             </a>
         </div>
     {% endif %}
-    {% if "payroll"|app_installed %}
-        <div id="fab6" class="fab round" data-tooltip="{% trans 'Create Reimbursement' %}">
-            <a
-                class="text-light"
-                data-toggle="oh-modal-toggle"
-                data-target="#genericModal"
-                hx-get="{% url 'reimbursement-create' %}"
-                hx-target="#genericModalBody"
-            >
-                <i class="material-icons mt-2">paid</i>
-            </a>
-        </div>
-    {% endif %}
     <div id="fab5" class="fab round" data-tooltip="{% trans 'Create Work Type Request' %}">
         <a
             class="text-light"
@@ -238,7 +225,6 @@
                 "fab3",
                 "fab4",
                 "fab5",
-                "fab6",
                 "fab7",
                 "fab8",
                 "fab9",

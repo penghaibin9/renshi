@@ -1,0 +1,16 @@
+{% extends "hr/development/base_ui.html" %}
+{% load static %}
+{% block title %}教师发展档案{% endblock %}
+{% block title_zh %}教师发展档案{% endblock %}
+{% block content %}
+<div class="hr10-workspace hr10-insights" data-hr10-insights="record" data-staff-id="{{ staff_id }}">
+  <section class="hr10-hero"><div><h2>教师发展档案</h2><p>Staff {{ staff_id }} 的培训、企业实践、发展成果、指标分账、合规评估和风险都从 HR10 正式事实读取；这里只做聚合展示，不复制或改写源事实。</p></div><span class="hr10-hero-badge">Staff {{ staff_id }}</span></section>
+  <div class="hr10-result" data-error></div>
+  <section class="hr10-kpis" data-summary><div class="hr10-kpi"><span>加载中</span><strong>—</strong></div></section>
+  <section class="hr10-panel"><h3>已核验发展事实</h3><p>培训完成、进修、企业实践和成果转化均保留核验状态与有效期。</p><div class="hr10-list" data-facts><div class="hr10-empty">正在读取发展事实…</div></div></section>
+  <section class="hr10-panel"><h3>发展指标分账</h3><p>学时、天数和其它发展指标按转换规则归一化，保留原始值和规则版本。</p><div class="hr10-list" data-ledger><div class="hr10-empty">正在读取指标分账…</div></div></section>
+  <section class="hr10-panel"><h3>合规评估</h3><p>按当前学校规则与 As-of 口径评估，不把缺失 Provider 自动判成通过。</p><div class="hr10-list" data-compliance><div class="hr10-empty">正在读取合规评估…</div></div></section>
+  <section class="hr10-panel"><h3>发展风险</h3><p>风险单独跟踪严重度、状态、发现时间和截止时间。</p><div class="hr10-list" data-risks><div class="hr10-empty">正在读取发展风险…</div></div></section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hr/js/pages/hr10-insights.js' %}" defer></script>{% endblock %}

@@ -1,0 +1,45 @@
+{% comment %}
+HrSectionCard — 区块卡片（标题 + 内容 + 可选操作区），复用 .hr-card。
+状态支持：loading / empty / ready（默认渲染 content）。
+
+Usage:
+  {% include "hr/components/section_card.html" with title="教职工构成" content=table_html %}
+  {% include "hr/components/section_card.html" with title="在岗数据" status="loading" %}
+  {% include "hr/components/section_card.html" with title="合同到期" status="empty" empty_message="未来 90 天内无到期合同" %}
+
+注意：
+  - content / actions 为「安全 HTML」插槽：请在调用处用 |safe 标记（如 content=block_html|safe），
+    组件内不做二次转义，避免 XSS 责任边界混淆。
+  - 简单"查看全部"链接可用 action_label + action_url，无需拼 HTML。
+{% endcomment %}
+{% load i18n %}
+<section class="hr-section-card hr-card" {% if id %}id="{{ id }}"{% endif %}>
+  <header class="hr-section-card__header">
+    <div class="hr-section-card__heading">
+      <h2 class="hr-section-card__title">{{ title|default:_("区块") }}</h2>
+      {% if subtitle %}<p class="hr-section-card__subtitle hr-meta">{{ subtitle }}</p>{% endif %}
+    </div>
+    {% if actions %}
+      <div class="hr-section-card__actions">{{ actions }}</div>
+    {% elif action_url %}
+      <div class="hr-section-card__actions">
+        <a class="hr-btn hr-btn--ghost" href="{{ action_url }}">{{ action_label|default:_("查看全部") }}</a>
+      </div>
+    {% endif %}
+  </header>
+
+  <div class="hr-section-card__body">
+    {% with st=status|lower %}
+      {% if st == "loading" %}
+        <div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div>
+        <span class="hr-sr-only">{% trans "加载中" %}</span>
+      {% elif st == "empty" %}
+        <div class="hr-empty-state">
+          <div class="hr-empty-state__title">{{ empty_message|default:_("暂无数据") }}</div>
+        </div>
+      {% else %}
+        {{ content }}
+      {% endif %}
+    {% endwith %}
+  </div>
+</section>

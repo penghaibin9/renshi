@@ -1,0 +1,20 @@
+{% comment %}
+HrErrorState — 错误状态（含 requestId 展示）。
+用于数据请求失败/服务端异常；与 empty（无数据）严格区分。
+
+Usage:
+  {% include "hr/components/error_state.html" with message="上游数据源暂时不可用" request_id="req_8f3a..." retry_url="..." %}
+
+状态语义：error。role="alert" 让屏幕阅读器播报。
+requestId 用等宽字体单独一行展示，便于排障。
+{% endcomment %}
+{% load i18n %}
+<div class="hr-error-state" role="alert">
+  <div class="hr-error-state__icon" aria-hidden="true">&#33;</div>
+  <h3 class="hr-error-state__title">{{ title|default:_("数据暂时无法计算") }}</h3>
+  {% if message %}<p class="hr-meta">{{ message }}</p>{% endif %}
+  {% if retry_url %}
+    <a class="hr-btn hr-btn--ghost hr-error-state__retry" href="{{ retry_url }}">{{ retry_label|default:_("重试") }}</a>
+  {% endif %}
+  {% if request_id %}<p class="hr-meta hr-error-state__request-id">requestId: {{ request_id }}</p>{% endif %}
+</div>

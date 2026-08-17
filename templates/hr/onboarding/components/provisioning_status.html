@@ -1,0 +1,10 @@
+{% load i18n %}
+{# HR05 公共组件：Provisioning 状态（总册 §15/§30） #}
+{% if status == "PENDING" %}<span class="oh-badge oh-badge--secondary">{% trans "待处理" %}</span>
+{% elif status == "RUNNING" %}<span class="oh-badge oh-badge--info">{% trans "执行中" %}</span>
+{% elif status == "SUCCESS" %}<span class="oh-badge oh-badge--success">{% trans "成功" %}</span>
+{% elif status == "FAILED_RETRYABLE" %}<span class="oh-badge oh-badge--warning">{% trans "失败待重试" %}</span>
+{% elif status == "FAILED_TERMINAL" %}<span class="oh-badge oh-badge--danger">{% trans "失败终态" %}</span>
+{% elif status == "CANCELLED" %}<span class="oh-badge oh-badge--neutral">{% trans "已取消" %}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{{ status|default:_("未知") }}</span>
+{% endif %}

@@ -1,0 +1,24 @@
+{% extends "index.html" %}
+{% load static i18n %}
+{% comment %}
+HR01-05 快捷办理 —— 已授权高频业务的真实入口
+
+数据来源：GET /api/hr/v1/home/quick-actions（服务端过滤后的 Action Catalog）。
+前端不做授权判断，只渲染 catalog。
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="actions">
+  {% include "hr/components/page_header.html" with title="快捷办理" subtitle="高频业务一键进入真实办理入口" %}
+
+  {% include "hr/components/section_card.html" with id="hr-quick-actions" title="高频业务" status="loading" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/quick-actions.js' %}"></script>
+{% endblock %}

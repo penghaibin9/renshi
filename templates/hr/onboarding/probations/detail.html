@@ -1,0 +1,87 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% block title %}{% trans "试用与转正" %} — {{ probation.case_no|default:_("未编号") }}{% endblock %}
+{% block content %}
+<div class="hr-page" id="probationPage" data-probation-id="{{ probation.id }}">
+  <div class="hr-page-header">
+    <h1>{% trans "试用与转正" %}</h1>
+    <div class="hr-probation-stats">
+      <span class="hr-stat">{% trans "试用中" %}：{{ stats.in_progress|default:0 }}</span>
+      <span class="hr-stat hr-stat--warning">{% trans "30 天内到期" %}：{{ stats.due_30|default:0 }}</span>
+      <span class="hr-stat hr-stat--info">{% trans "待评价" %}：{{ stats.review_due|default:0 }}</span>
+      <span class="hr-stat hr-stat--warning">{% trans "延期" %}：{{ stats.extended|default:0 }}</span>
+      <span class="hr-stat hr-stat--danger">{% trans "异常" %}：{{ stats.failed|default:0 }}</span>
+    </div>
+  </div>
+  <div class="hr-grid hr-grid--2col">
+    <div class="hr-card">
+      <h3>{% trans "基本事实" %}</h3>
+      <dl class="hr-dl">
+        <dt>{% trans "入职单" %}</dt><dd>{{ probation.case_no|default:"—" }}</dd>
+        <dt>{% trans "开始日期" %}</dt><dd>{{ probation.start_date|date:"Y-m-d" }}</dd>
+        <dt>{% trans "计划转正日" %}</dt><dd>{{ probation.planned_end_date|date:"Y-m-d" }}</dd>
+        <dt>{% trans "当前状态" %}</dt><dd><span class="hr-badge hr-badge--{{ probation.status_class }}">{% firstof probation.status_label probation.status "—" %}</span></dd>
+        <dt>{% trans "试用结果" %}</dt><dd>{% firstof probation.result_label probation.result "—" %}</dd>
+        <dt>{% trans "延长次数" %}</dt><dd>{{ probation.extension_count|default:0 }}</dd>
+      </dl>
+    </div>
+    <div class="hr-card">
+      {% include "hr/onboarding/components/probation_timeline.html" %}
+    </div>
+  </div>
+  <div class="hr-tabs">
+    <nav class="hr-tabs__nav" role="tablist">
+      <button class="hr-tabs__tab active" data-panel="goals" role="tab" aria-selected="true">{% trans "试用目标" %}</button>
+      <button class="hr-tabs__tab" data-panel="self" role="tab">{% trans "员工自评" %}</button>
+      <button class="hr-tabs__tab" data-panel="college" role="tab">{% trans "学院评价" %}</button>
+      <button class="hr-tabs__tab" data-panel="hr-review" role="tab">{% trans "审核" %}</button>
+      <button class="hr-tabs__tab" data-panel="extensions" role="tab">{% trans "延长记录" %}</button>
+    </nav>
+    <div class="hr-tabs__panel active" id="panel-goals" role="tabpanel">
+      <ul class="hr-goal-list">
+        {% for goal in goals %}
+        <li class="hr-goal-list__item">
+          <strong>{{ goal.title }}</strong>
+          <span class="hr-badge">{{ goal.category }}</span>
+          <p>{{ goal.description }}</p>
+        </li>
+        {% empty %}
+        <li class="hr-empty">{% trans "暂无试用目标" %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="hr-tabs__panel" id="panel-self" role="tabpanel" hidden>
+      {% for review in reviews_by_type.SELF %}
+      <div class="hr-card"><p>{{ review.content }}</p><small>{{ review.submitted_at|date:"Y-m-d H:i" }}</small></div>
+      {% empty %}
+      <div class="hr-card"><textarea class="oh-input w-100" rows="4" placeholder="{% trans '请输入自评内容' %}" data-review-type="SELF"></textarea>
+      <button class="oh-btn oh-btn--primary" data-action="submit-review" data-review-type="SELF">{% trans "提交自评" %}</button></div>
+      {% endfor %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-college" role="tabpanel" hidden>
+      {% for review in reviews_by_type.COLLEGE %}
+      <div class="hr-card"><p>{{ review.content }}</p><small>{{ review.submitted_at|date:"Y-m-d H:i" }}</small></div>
+      {% endfor %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-hr-review" role="tabpanel" hidden>
+      {% for review in reviews_by_type.HR %}
+      <div class="hr-card"><p>{{ review.content }}</p><small>{{ review.submitted_at|date:"Y-m-d H:i" }}</small></div>
+      {% endfor %}
+    </div>
+    <div class="hr-tabs__panel" id="panel-extensions" role="tabpanel" hidden>
+      <ol class="hr-timeline">
+        {% for ext in extensions %}
+        <li class="hr-timeline__item">
+          <span class="hr-timeline__dot" aria-hidden="true"></span>
+          <div><strong>{{ ext.old_end_date|date:"Y-m-d" }} → {{ ext.new_end_date|date:"Y-m-d" }}</strong>
+          <p>{{ ext.reason }}</p></div>
+        </li>
+        {% empty %}
+        <li class="hr-empty">{% trans "无延长记录" %}</li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+  {% include "hr/onboarding/components/probation_decision_bar.html" %}
+</div>
+{% endblock %}

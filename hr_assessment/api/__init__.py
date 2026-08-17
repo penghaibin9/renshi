@@ -1,0 +1,1 @@
+"""HR12 Assessment API — /api/v1/hr/assessments/*"""

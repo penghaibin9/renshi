@@ -1,0 +1,35 @@
+{% comment %}
+HrHistoricalModeBanner — 历史日期模式整页顶部琥珀色只读横幅。
+
+职责：
+  - 显示 asOf 日期（含今天对照）；
+  - 明确只读提示（页面上所有写按钮应由页面级逻辑隐藏，本横幅负责说明）；
+  - 「返回今天」按钮回到今天视图。
+
+参数：
+  as_of      — 历史日期（YYYY-MM-DD 字符串）
+  today      — 今天日期（可选，用于对照展示）
+  return_url — 「返回今天」跳转地址（必填，否则按钮不可用）
+
+无障碍：role="status"；只读状态有完整文字说明，不只靠颜色。
+{% endcomment %}
+{% load i18n %}
+{% if as_of %}
+  <div class="hr-historical-banner" role="status">
+    <span class="hr-historical-banner__icon" aria-hidden="true">&#9200;</span>
+    <div class="hr-historical-banner__text">
+      <strong>{% trans "历史日期模式" %}</strong>
+      <span>
+        {% trans "当前展示" %}
+        <time class="hr-historical-banner__date" datetime="{{ as_of }}">{{ as_of }}</time>
+        {% trans "的组织快照。所有修改操作已隐藏，本页为只读视图。" %}
+        {% if today %}
+          <span class="hr-meta">{% trans "今天" %} <time datetime="{{ today }}">{{ today }}</time></span>
+        {% endif %}
+      </span>
+    </div>
+    <a class="hr-btn hr-btn--primary hr-historical-banner__action"
+       href="{{ return_url|default:'#' }}"
+       {% if not return_url %}aria-disabled="true"{% endif %}>{% trans "返回今天" %}</a>
+  </div>
+{% endif %}

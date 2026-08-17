@@ -1,0 +1,13 @@
+{% load i18n %}
+{# HR05 公共组件：任务状态徽标（总册 §14.4/§30；枚举值不变，仅展示中文） #}
+{% if status == "NOT_STARTED" %}<span class="oh-badge oh-badge--secondary">{% trans "未开始" %}</span>
+{% elif status == "READY" %}<span class="oh-badge oh-badge--secondary">{% trans "就绪" %}</span>
+{% elif status == "IN_PROGRESS" %}<span class="oh-badge oh-badge--info">{% trans "进行中" %}</span>
+{% elif status == "WAITING_EXTERNAL" %}<span class="oh-badge oh-badge--info">{% trans "等待外部" %}</span>
+{% elif status == "BLOCKED" %}<span class="oh-badge oh-badge--danger">{% trans "已阻塞" %}</span>
+{% elif status == "FAILED" %}<span class="oh-badge oh-badge--danger">{% trans "已失败" %}</span>
+{% elif status == "COMPLETED" %}<span class="oh-badge oh-badge--success">{% trans "已完成" %}</span>
+{% elif status == "WAIVED" %}<span class="oh-badge oh-badge--neutral">{% trans "已豁免" %}</span>
+{% elif status == "CANCELLED" %}<span class="oh-badge oh-badge--neutral">{% trans "已取消" %}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{{ status|default:_("未知") }}</span>
+{% endif %}

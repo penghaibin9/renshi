@@ -1,0 +1,34 @@
+{% load i18n %}
+{# HR05 公共组件：任务矩阵（总册 §14.5/§30） #}
+<div class="hr-task-matrix hr-card">
+  <div class="hr-task-matrix__header">
+    <h3>{% trans "入职协同中心" %}</h3>
+    <div class="hr-task-matrix__stats">
+      <span>{% trans "本周入职" %}：{{ stats.this_week|default:0 }}</span>
+      <span>{% trans "超期" %}：{{ stats.overdue|default:0 }}</span>
+      <span>{% trans "阻塞" %}：{{ stats.blocked|default:0 }}</span>
+    </div>
+  </div>
+  <table class="hr-table">
+    <thead>
+      <tr>
+        <th>{% trans "姓名" %}</th>
+        {% for column in columns %}
+        <th>{{ column }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.name }}</td>
+        {% for cell in row.cells %}
+        <td>{{ cell }}</td>
+        {% endfor %}
+      </tr>
+      {% empty %}
+      <tr><td colspan="{{ columns|length|add:1 }}" class="hr-empty">{% trans "暂无任务" %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

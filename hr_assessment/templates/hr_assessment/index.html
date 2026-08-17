@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}HR12 考核管理{% endblock %}
+
+{% block content %}
+<div class="hr-assessment-container">
+  <div class="hr-assessment-header">
+    <h1>{% trans "考核管理" %}</h1>
+    <span class="stage-badge">S1 基础骨架</span>
+  </div>
+
+  <div class="hr-assessment-status-cards">
+    <div class="status-card">
+      <h3>Provider 状态</h3>
+      <ul class="provider-list">
+        <li><span class="badge-ok">✅</span> HR03 人员主档</li>
+        <li><span class="badge-ok">✅</span> HR07 合同聘期</li>
+        <li><span class="badge-ok">✅</span> HR09 教师资格</li>
+        <li><span class="badge-unavailable">⚠️</span> HR10 教师发展</li>
+        <li><span class="badge-ok">✅</span> HR11 考勤月结</li>
+        <li><span class="badge-unavailable">⚠️</span> 教务系统</li>
+        <li><span class="badge-unavailable">⚠️</span> 科研系统</li>
+      </ul>
+    </div>
+
+    <div class="status-card">
+      <h3>施工阶段</h3>
+      <div class="stage-progress">
+        <div class="stage done">S0<br>基线复审</div>
+        <div class="stage active">S1<br>基础骨架</div>
+        <div class="stage">S2<br>考核制度</div>
+        <div class="stage">S3<br>周期/人群</div>
+      </div>
+    </div>
+
+    <div class="status-card">
+      <h3>三级模块</h3>
+      <ul>
+        <li>⏳ HR12-01 考核制度与指标体系</li>
+        <li>⏳ HR12-02 目标任务与平时考核</li>
+        <li>⏳ HR12-03 年度考核</li>
+        <li>⏳ HR12-04 聘期考核</li>
+        <li>⏳ HR12-05 师德与专项考核</li>
+        <li>⏳ HR12-06 评议审定与考核档案</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<style>
+.hr-assessment-container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.hr-assessment-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.stage-badge { background: #e8f4fd; color: #1976d2; padding: 4px 12px; border-radius: 12px; font-size: 13px; }
+.hr-assessment-status-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.status-card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; }
+.status-card h3 { margin-top: 0; margin-bottom: 12px; color: #333; }
+.provider-list, .status-card ul { list-style: none; padding: 0; margin: 0; }
+.provider-list li, .status-card li { padding: 6px 0; border-bottom: 1px solid #f5f5f5; }
+.provider-list li:last-child, .status-card li:last-child { border-bottom: none; }
+.badge-ok { color: #4caf50; }
+.badge-unavailable { color: #ff9800; }
+.stage-progress { display: flex; gap: 8px; }
+.stage { padding: 8px 12px; border-radius: 6px; font-size: 12px; text-align: center; background: #f5f5f5; color: #999; min-width: 70px; }
+.stage.done { background: #e8f5e9; color: #4caf50; }
+.stage.active { background: #e3f2fd; color: #1976d2; font-weight: bold; }
+</style>
+{% endblock %}

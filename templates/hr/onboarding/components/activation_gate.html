@@ -1,0 +1,24 @@
+{% load i18n %}
+{# HR05 公共组件：正式生效闸门（总册 §30/§10.5） #}
+<div class="hr-activation-gate hr-card" data-gate-passed="{{ gate.passed|yesno:"true,false" }}">
+  <div class="hr-activation-gate__header">
+    <h3>{% trans "正式生效闸门" %}</h3>
+    {% if gate.passed %}
+    <span class="oh-badge oh-badge--success">{% trans "已通过" %}</span>
+    {% else %}
+    <span class="oh-badge oh-badge--danger">{% trans "未通过" %}</span>
+    {% endif %}
+  </div>
+  {% if not gate.passed %}
+  <ul class="hr-activation-gate__blocked">
+    {% for item in gate.items %}
+      {% if not item.ok %}
+      <li>
+        <span class="hr-check-icon" aria-hidden="true">&#10007;</span>
+        {{ item.label }}<small>（{{ item.code }}）</small>
+      </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

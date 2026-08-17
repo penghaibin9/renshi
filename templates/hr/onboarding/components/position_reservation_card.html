@@ -1,0 +1,21 @@
+{% load i18n %}
+{# HR05 公共组件：岗位预占卡片（总册 §24/§30） #}
+<div class="hr-position-reservation-card hr-card">
+  <h3>{% trans "岗位预占" %}</h3>
+  {% if reservation.status == "HELD" %}
+  <span class="oh-badge oh-badge--info">{% trans "预占有效" %}</span>
+  {% elif reservation.status == "COMMITTED" %}
+  <span class="oh-badge oh-badge--success">{% trans "已提交占岗" %}</span>
+  {% elif reservation.status == "RELEASED" %}
+  <span class="oh-badge oh-badge--neutral">{% trans "已释放" %}</span>
+  {% elif reservation.status == "EXPIRED" %}
+  <span class="oh-badge oh-badge--danger">{% trans "已过期" %}</span>
+  {% elif reservation.status == "CANCELLED" %}
+  <span class="oh-badge oh-badge--neutral">{% trans "已取消" %}</span>
+  {% else %}
+  <span class="oh-badge oh-badge--secondary">{% trans "无预占" %}</span>
+  {% endif %}
+  {% if reservation.expires_at %}
+  <p>{% trans "有效期至" %}：{{ reservation.expires_at|date:"Y-m-d H:i" }}</p>
+  {% endif %}
+</div>

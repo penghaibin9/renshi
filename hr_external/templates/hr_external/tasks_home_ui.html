@@ -1,0 +1,10 @@
+{% extends "hr_external/tasks_home.html" %}
+{% load static %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr08-actions.css' %}">
+<div data-hr08-page="tasks">
+  {{ block.super }}
+</div>
+<script src="{% static 'hr/js/pages/hr08-actions.js' %}" defer></script>
+{% endblock %}

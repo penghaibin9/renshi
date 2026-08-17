@@ -1,0 +1,39 @@
+{% comment %}
+HrTimeline — 时间线（用于最近人事变化）。
+状态支持：ready（默认）/ loading / empty。
+
+Usage:
+  {% include "hr/components/timeline.html" with items=items %}
+  # items 为列表，每项 dict：
+  #   {title, description?, time?, type?}
+  # type 可选 success / warning / danger / info / primary（缺省 primary），
+  # 决定时间线节点颜色，仅作语义点缀；文字信息始终完整可读。
+
+示例项：{"title":"张三 由副教授晋升为教授","time":"2026-08-06","type":"success"}
+{% endcomment %}
+{% load i18n %}
+{% with st=state|lower %}
+  {% if st == "loading" %}
+    {% include "hr/components/skeleton.html" with variant="panel" %}
+  {% elif st == "empty" or not items %}
+    {% include "hr/components/empty_state.html" with title=empty_title|default:_("暂无人事变化") hint=empty_hint %}
+  {% else %}
+    <ol class="hr-timeline">
+      {% for item in items %}
+        <li class="hr-timeline__item">
+          <span class="hr-timeline__marker
+               {% if item.type == 'success' %}hr-timeline__marker--success
+               {% elif item.type == 'warning' %}hr-timeline__marker--warning
+               {% elif item.type == 'danger' %}hr-timeline__marker--danger
+               {% elif item.type == 'info' %}hr-timeline__marker--info{% endif %}"
+                aria-hidden="true"></span>
+          <div class="hr-timeline__content">
+            <div class="hr-timeline__title">{{ item.title }}</div>
+            {% if item.description %}<p class="hr-meta hr-timeline__description">{{ item.description }}</p>{% endif %}
+            {% if item.time %}<time class="hr-meta hr-timeline__time" datetime="{{ item.time|date:'c' }}">{{ item.time }}</time>{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+{% endwith %}

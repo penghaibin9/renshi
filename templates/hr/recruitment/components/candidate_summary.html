@@ -1,0 +1,16 @@
+{% comment %}
+HrCandidateSummary — 候选人摘要（权限裁剪后字段；手机号/身份证等敏感字段由服务端决定是否传入）
+Usage:
+  {% include "hr/recruitment/components/candidate_summary.html" with candidate=candidate %}
+  # candidate: {name, candidate_no, primary_email, primary_mobile_masked, latest_application}
+{% endcomment %}
+{% load i18n %}
+<div class="hr-rec-candidate-summary">
+  <div class="hr-rec-candidate-summary__name">{{ candidate.name }}</div>
+  <div class="hr-meta">{{ candidate.candidate_no }}</div>
+  {% if candidate.primary_email %}<div class="hr-meta">{{ candidate.primary_email }}</div>{% endif %}
+  {% if candidate.primary_mobile_masked %}<div class="hr-meta">{{ candidate.primary_mobile_masked }}</div>{% endif %}
+  {% if candidate.latest_application %}
+  <div class="hr-meta">{% trans "最近申请" %}: {{ candidate.latest_application }}</div>
+  {% endif %}
+</div>

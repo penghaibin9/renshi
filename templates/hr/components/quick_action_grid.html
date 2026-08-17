@@ -1,0 +1,27 @@
+{% comment %}
+HrQuickActionGrid — 快捷动作网格（首屏最多 6 个，超出用"更多"入口）。
+状态：ready / empty（无任何可用动作时）。
+
+Usage:
+  {% include "hr/components/quick_action_grid.html" with actions=actions more_url="..." %}
+  # actions 为列表，每项 dict 与 quick_action.html 参数一致：
+  #   {name, description?, icon?, badge?, url?, disabled?, disabled_reason?}
+  # max_items 控制首屏数量（缺省 6）；more_url 打开完整列表。
+
+注意：disabled 的动作仍渲染（便于说明原因），并计入 max_items。
+{% endcomment %}
+{% load i18n %}
+{% if actions %}
+  <div class="hr-quick-action-grid">
+    {% for action in actions %}
+      {% if forloop.counter <= max_items|default:6 %}
+        {% include "hr/components/quick_action.html" with name=action.name description=action.description icon=action.icon badge=action.badge url=action.url disabled=action.disabled disabled_reason=action.disabled_reason %}
+      {% endif %}
+    {% endfor %}
+    {% if more_url %}
+      <a class="hr-quick-action hr-quick-action--more" href="{{ more_url }}">{% trans "更多" %}…</a>
+    {% endif %}
+  </div>
+{% else %}
+  {% include "hr/components/empty_state.html" with title=_("暂无快捷操作") hint=empty_hint %}
+{% endif %}

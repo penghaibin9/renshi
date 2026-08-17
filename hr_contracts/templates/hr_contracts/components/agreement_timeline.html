@@ -1,0 +1,10 @@
+<!-- §99 HrAgreementTimeline -->
+<div class="hr-timeline">
+  {% for e in events %}
+  <div class="hr-timeline__item">
+    <span class="hr-timeline__date">{{ e.date|default:"" }}</span>
+    <span class="hr-timeline__action">{{ e.actionLabel }}</span>
+    <span class="hr-timeline__detail">{{ e.detail }}</span>
+  </div>
+  {% empty %}<div>暂无事件</div>{% endfor %}
+</div>

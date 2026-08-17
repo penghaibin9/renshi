@@ -1,0 +1,11 @@
+{% comment %}
+HrRecruitmentStatusBadge — 招聘状态徽章（复用 HR tokens，非色块区分状态）
+Usage:
+  {% include "hr/recruitment/components/status_badge.html" with status="OPEN" label="开放报名" %}
+{% endcomment %}
+{% load i18n %}
+<span class="hr-rec-badge hr-rec-badge--{{ status|lower }}"
+      role="status"
+      {% if title %}title="{{ title }}"{% endif %}>
+  {{ label|default:status }}
+</span>

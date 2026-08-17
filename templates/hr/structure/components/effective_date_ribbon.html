@@ -1,0 +1,43 @@
+{% comment %}
+HrEffectiveDateRibbon — 有效期/日期模式提示条。
+
+规则：
+  - today 模式（as_of 为空或等于 today）：不输出任何节点；
+  - history 模式（as_of < today）：琥珀色「历史日期」只读条；
+  - future 模式（as_of > today）：蓝色「待生效」条。
+
+参数：
+  as_of / today — YYYY-MM-DD 字符串（推荐由视图格式化传入，组件内做字符串比较）；
+  mode — 可选，显式指定 today/history/future，跳过自动判断（as_of 为日期对象时建议显式传入）。
+
+无障碍：role="status"；历史/未来状态同时有文字说明，不只靠颜色。
+{% endcomment %}
+{% load i18n %}
+{% if kind %}
+  {% if kind != "today" %}
+  <div class="hr-effective-date-ribbon hr-effective-date-ribbon--{{ kind }}" role="status">
+    <span class="hr-effective-date-ribbon__icon" aria-hidden="true">&#9200;</span>
+    <div class="hr-effective-date-ribbon__text">
+      {% if kind == "history" %}
+        <strong>{% trans "历史日期" %}</strong>
+        <span>{% trans "当前展示" %} <time class="hr-effective-date-ribbon__date" datetime="{{ as_of }}">{{ as_of }}</time> {% trans "的组织快照，为只读视图。" %}</span>
+      {% else %}
+        <strong>{% trans "待生效" %}</strong>
+        <span>{% trans "当前展示" %} <time class="hr-effective-date-ribbon__date" datetime="{{ as_of }}">{{ as_of }}</time> {% trans "起生效的组织视图。" %}</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+{% elif mode %}
+  {% with kind=mode|lower %}
+    {% include "hr/structure/components/effective_date_ribbon.html" with kind=kind as_of=as_of %}
+  {% endwith %}
+{% elif as_of and today %}
+  {% if as_of|stringformat:"s" == today|stringformat:"s" %}
+    {% comment %}今天：不显示{% endcomment %}
+  {% elif as_of|stringformat:"s" < today|stringformat:"s" %}
+    {% include "hr/structure/components/effective_date_ribbon.html" with kind="history" as_of=as_of %}
+  {% else %}
+    {% include "hr/structure/components/effective_date_ribbon.html" with kind="future" as_of=as_of %}
+  {% endif %}
+{% endif %}

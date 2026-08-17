@@ -1,192 +1,153 @@
-# Horilla HRMS
+# 跃科高校人事管理与教师发展系统
 
-[![License: LGPL v2.1](https://img.shields.io/badge/License-LGPL%20v2.1-blue.svg)](https://www.gnu.org/licenses/lgpl-2.1)
-[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Django](https://img.shields.io/badge/django-5.0+-green.svg)](https://www.djangoproject.com/)
-[![Stars](https://img.shields.io/github/stars/horilla/horilla-hr)](https://github.com/horilla/horilla-hr/stargazers)
-[![Forks](https://img.shields.io/github/forks/horilla/horilla-hr)](https://github.com/horilla/horilla-hr/network/members)
+> 仓库：`penghaibin9/renshi`  
+> 底座：Horilla HRMS 2.0（正在逐步接管，不再按 Horilla 上游开发分支规则施工）  
+> 当前开发总线：`agent/renshi-takeover-cleanup-20260810`  
+> 默认稳定分支：`main`（**没有全绿验收，不合并 main**）
 
-> [!IMPORTANT]
-> **`2.0` is now this repository’s default branch.** Use it to run or deploy Horilla (a plain `git clone` checks it out). To contribute code, branch from and open PRs against `dev/v2.0` — GitHub still pre-selects `2.0` as the PR base, so switch it manually. v1 (`1.0`/`master`) is deprioritized, with fixes considered case-by-case rather than on a guaranteed schedule. Full details → [Discussion #1127](https://github.com/horilla/horilla-hr/discussions/1127).
+## 先看这一段
 
-> **A comprehensive, free, and open-source Human Resource Management System (HRMS) designed to streamline HR operations and enhance organizational efficiency.**
+这是一个面向高校/职业院校的人事管理与教师发展系统。仓库最初基于 Horilla 2.0，目前正在把旧 Horilla 能力逐步接管为 HR01~HR18 的高校人事 Authority。
 
-## 🚀 Features
+如果你是第一次打开这个仓库，不要先翻几百个源码文件，也不要直接照旧 Horilla README 操作。请按下面顺序：
 
-### Core HR Modules
-- 👥 **Employee Management** - Centralized workforce data with LDAP integration
-- 🎯 **Recruitment** - End-to-end hiring process from job posting to onboarding
-- 📋 **Onboarding & Offboarding** - Structured workflows for employee lifecycle
-- ⏰ **Attendance & Time Tracking** - Biometric integration and automated check-in/out
-- 🏖️ **Leave Management** - Policy enforcement, approvals, and balance tracking
-- 💰 **Payroll** - Automated salary processing, tax calculations, and compliance
-- 📊 **Performance Management** - Goal setting, reviews, and continuous feedback
-- 🏢 **Asset Management** - Track and manage company resources
-- 🎫 **Helpdesk** - Centralized HR support and ticketing system
+1. 先读 [`docs/README_新手入口.md`](docs/README_新手入口.md)
+2. 再读 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)
+3. 需要看业务设计时，再进入 [`docs/00_文档总索引.md`](docs/00_文档总索引.md)
+4. 只有在修某一个 HR 模块时，才读该模块的施工总册和代码
 
+## 当前最重要的事实
 
-## 📋 Table of Contents
+### 1. 暂停新增 HR13~HR18 功能
 
-- [Which Branch Do I Want?](#-which-branch-do-i-want)
-- [Quick Start](#-quick-start)
-- [Installation](#-installation)
-- [Deployment](#-deployment)
-- [Contributing](#-contributing)
-- [Security](#-security)
-- [Support](#-support)
-- [License](#-license)
+当前优先任务不是继续堆功能，而是把 HR01~HR12 从“模块内完成”收敛成“全系统可运行、可测试、可上线”。
 
-## 🌳 Which Branch Do I Want?
+### 2. 目标数据库是 MySQL-only
 
-- **`2.0`** (default) — the latest stable v2 snapshot. This is what a plain `git clone` gives you. Use it to run or deploy Horilla.
-- **`dev/v2.0`** — the active integration branch. If you want to contribute code, branch from and open PRs against this, not `2.0`.
-- **`1.0`/`master`** — v1, now deprioritized (fixes considered case-by-case, no guaranteed schedule). Not deleted, but no longer where active development happens.
+`docs/00_高校人事系统全局架构与Horilla接管合同.md` 已冻结：开发、测试、CI、迁移验收、生产统一以 MySQL 为目标。
 
-See [Discussion #1127](https://github.com/horilla/horilla-hr/discussions/1127) for full background on this transition.
+**注意：当前 `docker-compose.yml` 和部分 CI 仍是 PostgreSQL，这是待清理的历史欠账，不代表目标架构。**
 
-## ⚡ Quick Start
+### 3. 文档里的 READY 不能代替代码验收
 
-### Using Docker (Recommended)
+以后只认：
 
-```bash
-# Clone the repository (defaults to the stable 2.0 branch)
-git clone https://github.com/horilla/horilla-hr.git
-cd horilla-hr
-
-# Start with Docker Compose
-docker-compose up -d
-
-# Access the application
-open http://localhost:8000
+```text
+当前 Git HEAD
++ Django system check
++ makemigrations --check
++ MySQL fresh migrate
++ 对应模块测试
++ tenant / permission 负测试
++ 跨域 E2E
++ GitHub Actions 全绿
 ```
 
-### Manual Installation
+任何旧报告写着 `READY FOR ACCEPTANCE`，如果当前 HEAD 没有通过上面这些 Gate，就仍然视为未封板。
 
-```bash
-# Clone and setup (defaults to the stable 2.0 branch)
-git clone https://github.com/horilla/horilla-hr.git
-cd horilla-hr
+### 4. API / Permission / Event 只保留一套正式合同
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+新代码最终统一到：
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Setup environment
-cp .env.dist .env
-# Edit .env with your configuration
-
-# Initialize database
-python manage.py migrate
-python manage.py compilemessages
-python manage.py collectstatic
-
-# Run development server
-python manage.py runserver
+```text
+API:        /api/v1/hr/...
+Permission: hr.<domain>.<resource>.<action>
+Tenant:     fail-closed
+History:    effective-dated / as-of
+Cross-domain write: Provider / Command API / durable Event
 ```
 
+旧 `/api/hr/v1/...` 只允许作为迁移期 Legacy Adapter，不再新增业务 handler。
 
-## 🛠 Installation
+## 目录怎么认
 
-For detailed installation instructions, configuration guides, and platform-specific setup instructions, please visit our comprehensive documentation:
+### 先认识 6 类目录
 
-### 📖 [Complete Installation Guide → docs.horilla.com/technical/v2.0/ ](https://docs.horilla.com/technical/v2.0/)
+```text
+horilla/                 Django 全局设置、URL、启动配置
+base/                    Horilla 基础能力与多学校/权限底座
+employee/                Horilla 旧员工域（Legacy，逐步被 HR03 等接管）
+hr_* / hr10_development/ 新高校人事模块代码
 
-Our documentation includes:
-- **Step-by-step installation** for all supported platforms
-- **Database configuration** guides
-- **Environment setup** instructions
-- **Production deployment** best practices
-- **Troubleshooting** common issues
-- **Advanced configuration** options
-
-<!-- Need help? Check out the [Installation FAQ](https://docs.horilla.com) or reach out to our [community support](#-support). -->
-
-## 🚀 Deployment
-
-For production deployment guides including Nginx, Apache, and cloud platforms:
-### 📖 [Deployment Guide → docs.horilla.com/technical/v2.0/doc/deployment/nginx-gunicorn](https://docs.horilla.com/technical/v2.0/doc/deployment/nginx-gunicorn)
-
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Setup
-
-```bash
-# Fork and clone your fork
-git clone -b dev/v2.0 https://github.com/YOUR_USERNAME/horilla-hr.git
-cd horilla-hr
-
-# Add upstream remote
-git remote add upstream https://github.com/horilla/horilla-hr.git
-
-# Create feature branch
-git checkout -b feature/your-feature-name
-
-# Install development dependencies
-pip install -r requirements.txt
-
-# Submit pull request
+docs/                    系统设计、总控、模块施工册、验收资料
+.github/workflows/        GitHub Actions 门禁（当前需要重建为 main + MySQL）
 ```
 
-> **Note:** `2.0` is the repo default, so GitHub pre-selects it as your PR base. Before submitting, change the base branch to `dev/v2.0` — that's where active development and reviews happen, not `2.0`.
+### HR01~HR12 对应代码目录
 
-### Code Standards
+| 模块 | 业务 | 代码目录 |
+|---|---|---|
+| HR01 | 人事工作台 | `hr_control_center/` |
+| HR02 | 组织机构与编制岗位 | `hr_structure/` |
+| HR03 | 教职工主档 | `hr_staff/` |
+| HR04 | 招聘与人才引进 | `hr_recruitment/` |
+| HR05 | 入职管理 | `hr_onboarding/` |
+| HR06 | 人事异动 | `hr_changes/` |
+| HR07 | 合同与聘用 | `hr_contracts/` |
+| HR08 | 兼职外聘教师 | `hr_external/` |
+| HR09 | 教师资格与双师型 | `hr_qualification/` |
+| HR10 | 培训进修与企业实践 | `hr10_development/` |
+| HR11 | 考勤与请假 | `hr_time/` |
+| HR12 | 年度与聘期考核 | `hr_assessment/` |
 
-- Follow [PEP 8](https://pep8.org/) for Python code
-- Use [Black](https://black.readthedocs.io/) for code formatting
-- Write tests for new features
-- Update documentation for user-facing changes
+## 新手每天只做这 5 步
 
-## 🔒 Security
+```bash
+# 1. 看自己在哪个分支
+git branch --show-current
 
-### Security Features
+# 2. 看当前有没有未提交改动
+git status
 
-- 🔐 **Authentication & Authorization** - Role-based access control
-- 🛡️ **Data Protection** - Encrypted sensitive data storage
-- 🔍 **Audit Trails** - Comprehensive activity logging
-- 🚫 **Input Validation** - XSS and injection protection
-- 🔒 **Session Security** - Secure session management
+# 3. 一次只改一个阶段/一个模块
+# 不要同时改多个 Authority
 
-### Reporting Security Issues
+# 4. 跑该阶段要求的检查/测试
+# 以 docs/开发顺序_接管版.md 的 Gate 为准
 
-Please report security vulnerabilities via [GitHub Private Vulnerability Reporting](https://github.com/horilla/horilla-hr/security/advisories/new), not email. Do not create public GitHub issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for full details.
+# 5. 通过后再提交；仍然不直接合并 main
+```
 
-### Security Best Practices
+## 绝对不要做
 
-- Always use HTTPS in production
-- Regularly update dependencies
-- Use strong passwords and enable 2FA
-- Monitor logs for suspicious activities
+- 不要为了“测试绿”关闭 tenant / permission / audit
+- 不要默认第一所学校或 `all` scope
+- 不要让 Dashboard / Report / Legacy 页面直接改 Authority
+- 不要跨域 import 对方正式模型后 `.save()`
+- 不要把 PostgreSQL/SQLite 测试通过当成 MySQL 已验收
+- 不要看到旧文档写 READY 就继续往后开发
+- 不要在 HR01~HR12 系统收口前继续铺 HR13~HR18
+- 不要一次性大范围重写旧 Horilla；必须按 Authority Cutover 逐域退出
 
-## 📞 Support
+## 当前开发顺序
 
-### Community Support
+简版：
 
-- 📖 **Documentation**: [docs.horilla.com](https://docs.horilla.com)
-- 💬 **GitHub Discussions**: [GitHub Discussions](https://github.com/horilla/horilla-hr/discussions)
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/horilla/horilla-hr/issues)
-- ✨ **Feature Requests**: [GitHub Issues](https://github.com/horilla/horilla-hr/issues)
+```text
+C0 新手化与仓库真相清洗
+→ C1 H0/A0 多学校租户底座
+→ C2 MySQL-only 开发/CI/迁移基线
+→ C3 Django App / URL / API / Permission 全局接管
+→ C4 HR02 + HR03 基础 Authority 封板
+→ C5 HR04 → HR05 → HR07 入人主链
+→ C6 HR06 → HR08 → HR09 → HR10 → HR11 → HR12
+→ C7 HR01 聚合收口
+→ C8 跨域 E2E / Failure Injection / Backup-Restore / Security
+→ 全绿后才开始 HR13
+```
 
-### Professional Support
+详细验收条件见 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)。
 
-For enterprise support, custom development, and consulting services:
-- 📧 **Email**: support@horilla.com
-- 🌐 **Website**: [www.horilla.com](https://www.horilla.com)
+## 目前不建议直接使用的旧入口
 
+旧 Horilla README 中的这些说明已经不再作为本仓库开发规则：
 
-## 📄 License
+- `2.0` / `dev/v2.0` 作为开发目标分支
+- PostgreSQL 作为最终生产验收数据库
+- Horilla 原模块目录就是最终 Authority
 
-This project is licensed under the [LGPL-2.1 License](LICENSE) - see the LICENSE file for details.
+Horilla 仍然是重要 Legacy 底座，但本仓库的最终裁决以 `docs/00_高校人事系统全局架构与Horilla接管合同.md` 和当前代码 Gate 为准。
 
-<div align="center">
+## License
 
-**Made with ❤️ by the Horilla Team**
-
-[⭐ Star us on GitHub](https://github.com/horilla/horilla-hr) | [🐛 Report Bug](https://github.com/horilla/horilla-hr/issues) | [💡 Request Feature](https://github.com/horilla/horilla-hr/issues)
-
-</div>
+本仓库继续遵守原项目的 LGPL-2.1 许可证要求，详见 [`LICENSE`](LICENSE)。

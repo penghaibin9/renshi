@@ -1,0 +1,7 @@
+{% comment %}
+HrExternalScopePill —— 数据范围提示（§89）。
+用法：{% include "hr_external/components/external_scope_pill.html" with scope_type="COLLEGE" scope_label="人工智能学院" %}
+{% endcomment %}
+<span class="hr-scope-pill" title="当前数据范围">
+  {% if scope_type == "SCHOOL" %}全校{% elif scope_type == "COLLEGE" %}{{ scope_label|default:"学院" }}{% elif scope_type == "ENGAGEMENT" %}本聘期{% elif scope_type == "ASSIGNED_TASKS" %}本人任务{% elif scope_type == "SELF" %}仅本人{% else %}限定范围{% endif %}
+</span>

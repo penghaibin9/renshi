@@ -1,79 +1,128 @@
-"""
-Company-scoped permission backend.
-
-Replaces django.contrib.auth.backends.ModelBackend in AUTHENTICATION_BACKENDS.
-While settings.COMPANY_SCOPED_PERMISSIONS is False this behaves exactly like
-ModelBackend (global group permissions). When True, group permissions are
-resolved from base.models.CompanyGroupAssignment for the company selected in
-the current request (set by base.middleware.CompanyMiddleware into a
-ContextVar before any view or template runs).
-
-Resolution rules (flag on, non-superusers — superusers bypass backends):
-- specific company selected  -> permissions from groups assigned for that company
-- "all" / "All my companies" -> union of the user's per-company assignments
-  (data layer still limits rows to those companies via HorillaCompanyManager)
-- no company context (API/JWT without session, shells, schedulers)
-                             -> user's work-info company; if none, the union
-                                of all their per-company assignments
-
-The union fallbacks never grant anything beyond what the user already holds
-in at least one of their companies, so they cannot escalate privileges while
-preventing accidental lockouts on session-less code paths.
-"""
+"""Company-scoped authentication backend for the HR takeover."""
 
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
 
 from horilla.horilla_middlewares import _thread_locals, get_selected_company
+from horilla.hr_permissions import (
+    is_semantic_hr_permission,
+    permission_aliases,
+    semantic_codes_for_codename,
+)
 
 
 class CompanyScopedBackend(ModelBackend):
-    """ModelBackend with per-company group permission resolution."""
+    """
+    Resolve permissions inside the current school and understand semantic HR
+    permission codes.
+
+    Important differences from Django's default ModelBackend:
+    - group grants are tenant scoped;
+    - direct user permissions are disabled when tenant-scoped RBAC is active,
+      because they are global and would bypass the selected school;
+    - no cross-tenant permission cache is kept on the user object;
+    - dotted business codenames (``hr.staff.view``) are resolved as codenames,
+      not misread as Django app labels.
+    """
+
+    @staticmethod
+    def _scoped_mode():
+        return bool(getattr(settings, "COMPANY_SCOPED_PERMISSIONS", False))
+
+    def _get_user_permissions(self, user_obj):
+        if self._scoped_mode():
+            return Permission.objects.none()
+        return super()._get_user_permissions(user_obj)
 
     def _get_group_permissions(self, user_obj):
-        if not getattr(settings, "COMPANY_SCOPED_PERMISSIONS", False):
+        if not self._scoped_mode():
             return super()._get_group_permissions(user_obj)
 
-        company_id = self._resolve_company_id(user_obj)
+        selected = get_selected_company()
+        if selected is None:
+            return Permission.objects.none()
+
         assignments = user_obj.company_group_assignments.all()
-        if company_id is not None:
-            assignments = assignments.filter(company_id=company_id)
+        if selected != "all":
+            assignments = assignments.filter(company_id=selected)
         return Permission.objects.filter(
             group__company_assignments__in=assignments
         ).distinct()
 
+    def _effective_permission_objects(self, user_obj):
+        if not getattr(user_obj, "is_active", False) or getattr(
+            user_obj, "is_anonymous", True
+        ):
+            return Permission.objects.none()
+
+        if getattr(user_obj, "is_superuser", False):
+            return Permission.objects.all()
+
+        user_ids = self._get_user_permissions(user_obj).values_list("pk", flat=True)
+        group_ids = self._get_group_permissions(user_obj).values_list("pk", flat=True)
+        return Permission.objects.filter(
+            pk__in=user_ids.union(group_ids)
+        ).select_related("content_type")
+
+    @staticmethod
+    def _render_permission_strings(permission_objects):
+        rendered = set()
+        for permission in permission_objects:
+            rendered.add(f"{permission.content_type.app_label}.{permission.codename}")
+            rendered.update(semantic_codes_for_codename(permission.codename))
+        return rendered
+
+    def get_user_permissions(self, user_obj, obj=None):
+        if obj is not None:
+            return set()
+        permissions = self._get_user_permissions(user_obj).select_related(
+            "content_type"
+        )
+        return self._render_permission_strings(permissions)
+
+    def get_group_permissions(self, user_obj, obj=None):
+        if obj is not None:
+            return set()
+        permissions = self._get_group_permissions(user_obj).select_related(
+            "content_type"
+        )
+        return self._render_permission_strings(permissions)
+
+    def get_all_permissions(self, user_obj, obj=None):
+        if obj is not None:
+            return set()
+        return self._render_permission_strings(
+            self._effective_permission_objects(user_obj)
+        )
+
+    def has_perm(self, user_obj, perm, obj=None):
+        if not getattr(user_obj, "is_active", False):
+            return False
+        if getattr(user_obj, "is_superuser", False):
+            return True
+        if obj is not None:
+            return False
+
+        permissions = self.get_all_permissions(user_obj)
+        if is_semantic_hr_permission(perm):
+            return bool(permission_aliases(perm) & permissions)
+        return perm in permissions
+
     @staticmethod
     def _resolve_company_id(user_obj):
-        """
-        Return the company id to scope permissions to, or None for
-        "union of the user's assigned companies".
-        """
+        """Compatibility helper: never invent a tenant when context is absent."""
         company = get_selected_company()
-        if company and company != "all":
-            return company
-        if company == "all":
+        if company in (None, "all"):
             return None
-        # No request context: prefer the user's work-info company.
-        try:
-            work_info_company_id = (
-                user_obj.employee_get.employee_work_info.company_id_id
-            )
-        except Exception:
-            work_info_company_id = None
-        return work_info_company_id
+        return company
 
 
 def company_scoped_active():
-    """True when per-company permission scoping is enabled."""
     return bool(getattr(settings, "COMPANY_SCOPED_PERMISSIONS", False))
 
 
 def get_assigned_company_ids(user):
-    """
-    Companies where the user holds a CompanyGroupAssignment (role grant).
-    Used for All-my-companies data scope and permission unions.
-    """
     from base.models import CompanyGroupAssignment
 
     return set(
@@ -84,11 +133,6 @@ def get_assigned_company_ids(user):
 
 
 def get_allowed_company_ids(user):
-    """
-    Companies the user may select in the switcher: assignment companies
-    plus their work-info company (so they can return to their home company
-    even when they only hold a role elsewhere).
-    """
     ids = get_assigned_company_ids(user)
     try:
         work_company_id = user.employee_get.employee_work_info.company_id_id
@@ -100,13 +144,6 @@ def get_allowed_company_ids(user):
 
 
 def get_write_company_id(user):
-    """
-    Company to stamp on new records when the session is "All my companies".
-
-    Prefers the user's work-info company when it is an *assignment* company;
-    otherwise the first assigned company. Falls back to allowed (work) only
-    if they have no assignments.
-    """
     assigned = get_assigned_company_ids(user)
     pool = assigned or get_allowed_company_ids(user)
     if not pool:
@@ -121,13 +158,7 @@ def get_write_company_id(user):
 
 
 def resolve_company_id_for_new_record(request=None):
-    """
-    Concrete company id for creating/saving rows.
-
-    - Specific company selected -> that id
-    - Superuser on "all" -> None (leave unset / form chooses)
-    - Non-superuser on "all" -> write company (work-info or first allowed)
-    """
+    """Resolve a concrete write tenant; returns None rather than guessing."""
     request = request or getattr(_thread_locals, "request", None)
     company = get_selected_company()
     if company and company != "all":
@@ -139,18 +170,12 @@ def resolve_company_id_for_new_record(request=None):
         return None
     if not request.user.is_authenticated or request.user.is_superuser:
         return None
-    if company_scoped_active():
+    if company_scoped_active() and company == "all":
         return get_write_company_id(request.user)
     return None
 
 
 def stamp_company_on_create(instance, attr="company_id"):
-    """
-    If ``instance`` is new and ``attr`` is unset, assign the company from
-    ``resolve_company_id_for_new_record`` (supports All my companies writes).
-
-    Returns True when a company was stamped.
-    """
     if getattr(instance, "pk", None):
         return False
     fk_id_attr = f"{attr}_id"
@@ -169,30 +194,17 @@ def stamp_company_on_create(instance, attr="company_id"):
 
 
 def _normalize_company_id(company_id=None):
-    """
-    Resolve company id for permission/group display.
-
-    None  -> current selected company from context
-    "all" -> None (union of assignment companies)
-    int/str id -> that company
-    """
     if company_id is None:
         company_id = get_selected_company()
-    if company_id in (None, "", "all"):
+    if company_id in ("", "all"):
         return None
     try:
-        return int(company_id)
+        return int(company_id) if company_id is not None else None
     except (TypeError, ValueError):
         return company_id
 
 
 def get_user_groups_for_company(user, company_id=None):
-    """
-    Groups the user holds via CompanyGroupAssignment for ``company_id``.
-
-    When company scoping is off, returns ``user.groups``.
-    When ``company_id`` is None/"all", returns the union of all assignment groups.
-    """
     from django.contrib.auth.models import Group
 
     if not user:
@@ -200,28 +212,25 @@ def get_user_groups_for_company(user, company_id=None):
     if not company_scoped_active():
         return user.groups.all()
 
-    company_id = _normalize_company_id(company_id)
+    explicit = company_id if company_id is not None else get_selected_company()
+    if explicit is None:
+        return Group.objects.none()
+
     assignments = user.company_group_assignments.all()
-    if company_id is not None:
-        assignments = assignments.filter(company_id=company_id)
+    normalized = _normalize_company_id(explicit)
+    if normalized is not None:
+        assignments = assignments.filter(company_id=normalized)
     return Group.objects.filter(
         id__in=assignments.values_list("group_id", flat=True)
     ).distinct()
 
 
 def get_effective_permission_codenames(user, company_id=None, include_direct=True):
-    """
-    Codenames the user effectively has for a company.
-
-    - Direct ``user_permissions`` are included when ``include_direct`` (global).
-    - Group permissions come from CompanyGroupAssignment for that company
-      (or the union when company is "all"/None).
-    """
     if not user:
         return []
 
     codenames = set()
-    if include_direct:
+    if include_direct and not company_scoped_active():
         codenames.update(user.user_permissions.values_list("codename", flat=True))
 
     if not company_scoped_active():
@@ -232,27 +241,30 @@ def get_effective_permission_codenames(user, company_id=None, include_direct=Tru
         )
         return sorted(codenames)
 
-    company_id = _normalize_company_id(company_id)
+    explicit = company_id if company_id is not None else get_selected_company()
+    if explicit is None:
+        return sorted(codenames)
+
     assignments = user.company_group_assignments.all()
-    if company_id is not None:
-        assignments = assignments.filter(company_id=company_id)
+    normalized = _normalize_company_id(explicit)
+    if normalized is not None:
+        assignments = assignments.filter(company_id=normalized)
     codenames.update(
         Permission.objects.filter(
             group__company_assignments__in=assignments
         ).values_list("codename", flat=True)
     )
-    return sorted(set(codenames))
+    return sorted(codenames)
 
 
 def get_permission_company_label(company_id=None):
-    """Human-readable label for the company used in permission display."""
     from base.models import Company
 
-    company_id = _normalize_company_id(company_id)
-    if company_id is None:
-        selected = get_selected_company()
-        if selected == "all":
-            return "All my companies"
+    explicit = company_id if company_id is not None else get_selected_company()
+    if explicit is None:
         return None
-    company = Company.objects.filter(id=company_id).first()
+    if explicit == "all":
+        return "All my companies"
+    normalized = _normalize_company_id(explicit)
+    company = Company.objects.filter(id=normalized).first()
     return company.company if company else None

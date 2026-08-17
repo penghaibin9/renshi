@@ -1,0 +1,10 @@
+<!-- §99 HrSignatureParticipants -->
+<div class="hr-signature-participants">
+  {% for p in participants %}
+  <div class="hr-signature-participant">
+    <span>{{ p.signer_name|default:p.signer_ref }}</span>
+    <span class="oh-badge oh-badge--secondary">{{ p.role }}</span>
+    {% if p.status == "SIGNED" %}<span class="oh-badge oh-badge--success">已签署 {{ p.signed_at|default:"" }}</span>{% else %}<span class="oh-badge oh-badge--secondary">待签署</span>{% endif %}
+  </div>
+  {% empty %}<div>暂无签署人</div>{% endfor %}
+</div>

@@ -1,0 +1,207 @@
+{% extends "hr_title/workspace_e.html" %}
+
+{% block content %}
+{{ block.super }}
+<style>
+.hr13f-panel{margin-top:14px}.hr13f-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,.8fr);gap:12px;margin-top:12px}.hr13f-box{border:1px solid #e6eaf1;border-radius:14px;background:#fbfcff;padding:14px}.hr13f-box h3{margin:0 0 4px;font-size:14px;color:#172033}.hr13f-box p{margin:0 0 10px;color:#667085;font-size:12px;line-height:1.6}.hr13f-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.hr13f-form .wide{grid-column:1/-1}.hr13f-input,.hr13f-select,.hr13f-textarea{width:100%;min-width:0;border:1px solid #d8deea;border-radius:10px;background:#fff;color:#172033;padding:9px 10px;font:inherit}.hr13f-textarea{min-height:74px;resize:vertical}.hr13f-btn{border:1px solid #bdc9ea;border-radius:10px;background:#3157d5;color:#fff;padding:9px 12px;font-weight:800;cursor:pointer}.hr13f-btn.secondary{background:#fff;color:#3157d5}.hr13f-btn.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}.hr13f-btn:disabled{opacity:.45;cursor:not-allowed}.hr13f-list{display:grid;gap:8px;margin-top:10px}.hr13f-row{border:1px solid #edf0f5;border-radius:12px;background:#fff;padding:11px}.hr13f-row-head{display:flex;gap:8px;justify-content:space-between;align-items:flex-start}.hr13f-row b{display:block;color:#172033}.hr13f-row small{display:block;color:#667085;overflow-wrap:anywhere}.hr13f-badge{white-space:nowrap;padding:4px 8px;border-radius:999px;background:#eef2ff;color:#3448a6;font-size:11px;font-weight:800}.hr13f-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.hr13f-actions button{font-size:12px;padding:6px 9px}.hr13f-note{margin-top:8px;padding:9px 10px;border-radius:10px;background:#f8faff;color:#5b6679;font-size:12px}.hr13f-error{margin-top:8px;padding:9px 10px;border-radius:10px;background:#fff4f2;color:#b42318;font-size:12px}.hr13f-ok{margin-top:8px;padding:9px 10px;border-radius:10px;background:#ecfdf3;color:#067647;font-size:12px}
+@media(max-width:900px){.hr13f-grid{grid-template-columns:1fr}}
+@media(max-width:560px){.hr13f-form{grid-template-columns:1fr}.hr13f-form .wide{grid-column:auto}.hr13f-row-head{display:block}.hr13f-badge{display:inline-block;margin-top:6px}}
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+(() => {
+  const section = '{{ section|escapejs }}';
+  if (!['experts', 'deliberation'].includes(section)) return;
+
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+  const csrf = () => document.cookie.split('; ').find((x) => x.startsWith('csrftoken='))?.split('=')[1] || '';
+  let dashboard = null;
+  let staffRows = [];
+
+  async function jsonFetch(url, options={}) {
+    const response = await fetch(url, {credentials:'same-origin', ...options});
+    let body = {};
+    try { body = await response.json(); } catch (_) {}
+    if (!response.ok) {
+      const error = new Error(body?.error?.message || body?.error?.code || `HTTP ${response.status}`);
+      error.code = body?.error?.code || `HTTP_${response.status}`;
+      throw error;
+    }
+    return body;
+  }
+
+  async function post(url, payload={}) {
+    return jsonFetch(url, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf(),'X-Requested-With':'XMLHttpRequest'},
+      body:JSON.stringify(payload),
+    });
+  }
+
+  function statusMessage(box, text, ok=false) {
+    const old = box?.querySelector('.hr13f-error,.hr13f-ok');
+    if (old) old.remove();
+    if (!box || !text) return;
+    const node = document.createElement('div');
+    node.className = ok ? 'hr13f-ok' : 'hr13f-error';
+    node.textContent = text;
+    box.appendChild(node);
+  }
+
+  function eligibleCases() {
+    return (dashboard?.recentApplications || []).filter((x) => ['ELIGIBLE','REVIEW_NOT_PASSED'].includes(x.status));
+  }
+  function openRounds() {
+    return (dashboard?.recentReviewRounds || []).filter((x) => x.status === 'OPEN');
+  }
+  function ballotsFor(roundId) {
+    return (dashboard?.recentReviewBallots || []).filter((x) => String(x.review_round_id) === String(roundId));
+  }
+  function staffLabel(id) {
+    const row = staffRows.find((x) => String(x.staff_id) === String(id));
+    if (!row) return '专家身份已记录';
+    return [row.legal_name || row.preferred_name || row.staff_no, row.org_name, row.position_name].filter(Boolean).join(' · ');
+  }
+
+  async function refreshDashboard() {
+    dashboard = await jsonFetch('/api/v1/hr/titles/dashboard/', {headers:{'X-Requested-With':'XMLHttpRequest'}});
+  }
+
+  async function loadStaff(keyword='') {
+    const q = new URLSearchParams({page:'1', pageSize:'100'});
+    if (keyword.trim()) q.set('keyword', keyword.trim());
+    try {
+      const data = await jsonFetch('/api/hr/v1/staff?' + q.toString(), {headers:{'X-Requested-With':'XMLHttpRequest'}});
+      staffRows = data.items || [];
+      return null;
+    } catch (error) {
+      staffRows = [];
+      return error;
+    }
+  }
+
+  function caseOptions() {
+    const rows = eligibleCases();
+    return rows.length ? rows.map((x) => `<option value="${esc(x.id)}">${esc(x.case_no)} · ${esc(x.requested_title_name || x.requested_title_code)} · ${esc(x.status)}</option>`).join('') : '<option value="">暂无可开启评审的案件</option>';
+  }
+  function roundOptions() {
+    const rows = openRounds();
+    return rows.length ? rows.map((x) => `<option value="${esc(x.id)}">${esc(x.round_no)} · 第 ${esc(x.attempt_no)} 轮</option>`).join('') : '<option value="">暂无开放评审轮次</option>';
+  }
+  function staffOptions() {
+    return staffRows.length ? staffRows.map((x) => `<option value="${esc(x.staff_id)}">${esc([x.legal_name || x.preferred_name || x.staff_no, x.staff_no, x.org_name].filter(Boolean).join(' · '))}</option>`).join('') : '<option value="">无可选教职工</option>';
+  }
+
+  function roundsHtml() {
+    const rows = dashboard?.recentReviewRounds || [];
+    if (!rows.length) return '<div class="hr13f-note">当前还没有评审轮次。资格通过后，可在左侧创建第一轮专家评审。</div>';
+    return rows.map((x) => {
+      const closed = x.closure_snapshot_json || {};
+      const tally = x.status === 'OPEN'
+        ? `法定 ${x.required_ballots} 票 · 通过线 ${x.required_pass_votes} 票`
+        : `实投 ${closed.ballots ?? '—'} · 通过 ${closed.passVotes ?? '—'} · 反对 ${closed.failVotes ?? '—'} · 弃权 ${closed.abstentions ?? '—'}`;
+      return `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.round_no)}</b><small>第 ${esc(x.attempt_no)} 轮 · ${esc(tally)}</small></div><span class="hr13f-badge">${esc(x.status)}</span></div>${x.status === 'OPEN' && section === 'deliberation' ? `<div class="hr13f-actions"><button class="hr13f-btn secondary" data-close-round="${esc(x.id)}">结算本轮票决</button></div>` : ''}</div>`;
+    }).join('');
+  }
+
+  function assignmentsHtml() {
+    const rows = dashboard?.recentReviewAssignments || [];
+    if (!rows.length) return '<div class="hr13f-note">当前还没有专家分配记录。</div>';
+    return rows.map((x) => {
+      const actions = x.status === 'ASSIGNED' && section === 'experts'
+        ? `<div class="hr13f-actions"><button class="hr13f-btn secondary" data-accept="${esc(x.id)}">接受评审</button><button class="hr13f-btn warn" data-conflict="${esc(x.id)}">申报回避</button></div>` : '';
+      return `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.assignment_no)} · ${esc(staffLabel(x.reviewer_staff_id))}</b><small>${esc(x.reviewer_role)}${x.conflict_declared ? ' · 已声明利益冲突' : ''}</small></div><span class="hr13f-badge">${esc(x.status)}</span></div>${actions}</div>`;
+    }).join('');
+  }
+
+  function ballotsHtml() {
+    const rows = dashboard?.recentReviewBallots || [];
+    if (!rows.length) return '<div class="hr13f-note">当前还没有已提交票决。Ballot 提交后不可原地修改。</div>';
+    return rows.map((x) => `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.ballot_no)} · ${esc(x.recommendation)}</b><small>${x.score !== null && x.score !== undefined ? `评分 ${esc(x.score)} · ` : ''}${esc(x.rationale || '无补充意见')}</small></div><span class="hr13f-badge">已提交</span></div></div>`).join('');
+  }
+
+  function expertControls() {
+    return `<div class="hr13f-grid"><section class="hr13f-box" id="hr13f-round-box"><h3>开启专家评审轮次</h3><p>仅资格通过或上一轮未通过的案件可开启；法定票数和通过线创建后冻结。</p><form id="hr13f-round-form" class="hr13f-form"><select class="hr13f-select wide" name="caseId" required>${caseOptions()}</select><input class="hr13f-input" name="roundNo" placeholder="评审轮次编号" required><input class="hr13f-input" name="requiredBallots" type="number" min="1" value="3" required><input class="hr13f-input" name="requiredPassVotes" type="number" min="1" value="2" required><button class="hr13f-btn" type="submit">开启评审轮次</button></form></section><section class="hr13f-box" id="hr13f-assignment-box"><h3>分配专家 / 评委</h3><p>专家来自 HR03 正式教职工名册；没有名册权限时不会退化成手填 UUID。</p><form id="hr13f-assignment-form" class="hr13f-form"><select class="hr13f-select wide" name="roundId" required>${roundOptions()}</select><input id="hr13f-staff-search" class="hr13f-input wide" placeholder="按姓名/工号搜索 HR03 名册"><select id="hr13f-staff" class="hr13f-select wide" name="reviewerStaffId" required>${staffOptions()}</select><input class="hr13f-input" name="assignmentNo" placeholder="分配编号" required><select class="hr13f-select" name="reviewerRole"><option value="EXPERT">专家</option><option value="COMMITTEE">评委</option><option value="CHAIR">主任委员</option></select><button class="hr13f-btn" type="submit">确认分配</button></form></section></div>`;
+  }
+
+  function ballotControls() {
+    const eligibleAssignments = (dashboard?.recentReviewAssignments || []).filter((a) => a.status === 'ACCEPTED' && !a.conflict_declared && !((dashboard?.recentReviewBallots || []).some((b) => String(b.assignment_id) === String(a.id))));
+    const options = eligibleAssignments.length ? eligibleAssignments.map((x) => `<option value="${esc(x.id)}">${esc(x.assignment_no)} · ${esc(staffLabel(x.reviewer_staff_id))}</option>`).join('') : '<option value="">暂无待投票的已接受专家</option>';
+    return `<section class="hr13f-box" id="hr13f-ballot-box"><h3>提交评议票</h3><p>仅已接受且未回避的专家可投票；同一分配只能提交一次 Ballot。</p><form id="hr13f-ballot-form" class="hr13f-form"><select class="hr13f-select wide" name="assignmentId" required>${options}</select><input class="hr13f-input" name="ballotNo" placeholder="票决编号" required><select class="hr13f-select" name="recommendation"><option value="PASS">通过</option><option value="FAIL">不通过</option><option value="ABSTAIN">弃权</option></select><input class="hr13f-input" name="score" type="number" step="0.01" placeholder="评分（可选）"><textarea class="hr13f-textarea wide" name="rationale" placeholder="评议意见（可选）"></textarea><button class="hr13f-btn" type="submit">提交不可变票决</button></form></section>`;
+  }
+
+  function renderWorkspace(staffError=null) {
+    const work = document.querySelector('.hr13c-layout > div');
+    if (!work) return;
+    let card = document.getElementById('hr13f-panel');
+    if (!card) {
+      card = document.createElement('article');
+      card.id = 'hr13f-panel';
+      card.className = 'hr13c-card hr13f-panel';
+      work.appendChild(card);
+    }
+    card.innerHTML = section === 'experts'
+      ? `<h2>专家评审 Authority</h2><p>真实评审轮次、专家分配、利益冲突与接受/拒绝状态均独立留痕。</p>${expertControls()}${staffError ? `<div class="hr13f-error">HR03 名册不可用：${esc(staffError.code || staffError.message)}。当前只展示已有专家记录，不允许手填身份绕过 Provider。</div>` : ''}<div class="hr13f-grid"><section class="hr13f-box"><h3>评审轮次</h3><div class="hr13f-list">${roundsHtml()}</div></section><section class="hr13f-box"><h3>专家分配</h3><div class="hr13f-list">${assignmentsHtml()}</div></section></div>`
+      : `<h2>评议与表决 Authority</h2><p>票决门槛、每位专家 Ballot 和最终票数快照均来自真实 Authority；未达到法定票数无法关单。</p><div class="hr13f-grid">${ballotControls()}<section class="hr13f-box"><h3>评审轮次 / 关单</h3><div class="hr13f-list">${roundsHtml()}</div></section></div><section class="hr13f-box" style="margin-top:12px"><h3>已提交票决</h3><div class="hr13f-list">${ballotsHtml()}</div></section>`;
+    bindActions(card);
+  }
+
+  async function reload(staffError=null) {
+    await refreshDashboard();
+    renderWorkspace(staffError);
+  }
+
+  function bindActions(card) {
+    card.querySelector('#hr13f-round-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault(); const box = event.currentTarget.closest('.hr13f-box'); const f = new FormData(event.currentTarget);
+      try { await post(`/api/v1/hr/titles/applications/${encodeURIComponent(f.get('caseId'))}/review-rounds/`, {roundNo:f.get('roundNo'), requiredBallots:Number(f.get('requiredBallots')), requiredPassVotes:Number(f.get('requiredPassVotes'))}); await reload(); statusMessage(document.getElementById('hr13f-round-box'), '评审轮次已开启。', true); } catch (e) { statusMessage(box, `${e.code}: ${e.message}`); }
+    });
+    card.querySelector('#hr13f-assignment-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault(); const box = event.currentTarget.closest('.hr13f-box'); const f = new FormData(event.currentTarget);
+      try { await post(`/api/v1/hr/titles/review-rounds/${encodeURIComponent(f.get('roundId'))}/assignments/`, {assignmentNo:f.get('assignmentNo'), reviewerStaffId:f.get('reviewerStaffId'), reviewerRole:f.get('reviewerRole')}); await reload(); } catch (e) { statusMessage(box, `${e.code}: ${e.message}`); }
+    });
+    card.querySelector('#hr13f-ballot-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault(); const box = event.currentTarget.closest('.hr13f-box'); const f = new FormData(event.currentTarget);
+      try { await post(`/api/v1/hr/titles/review-assignments/${encodeURIComponent(f.get('assignmentId'))}/ballots/`, {ballotNo:f.get('ballotNo'), recommendation:f.get('recommendation'), score:f.get('score') || null, rationale:f.get('rationale')}); await reload(); } catch (e) { statusMessage(box, `${e.code}: ${e.message}`); }
+    });
+    card.querySelectorAll('[data-accept]').forEach((button) => button.addEventListener('click', async () => {
+      try { await post(`/api/v1/hr/titles/review-assignments/${encodeURIComponent(button.dataset.accept)}/respond/`, {accept:true, conflictDeclared:false, conflictNote:''}); await reload(); } catch (e) { statusMessage(card, `${e.code}: ${e.message}`); }
+    }));
+    card.querySelectorAll('[data-conflict]').forEach((button) => button.addEventListener('click', async () => {
+      const reason = window.prompt('请填写回避原因（必填）', ''); if (!reason?.trim()) return;
+      try { await post(`/api/v1/hr/titles/review-assignments/${encodeURIComponent(button.dataset.conflict)}/respond/`, {accept:false, conflictDeclared:true, conflictNote:reason.trim()}); await reload(); } catch (e) { statusMessage(card, `${e.code}: ${e.message}`); }
+    }));
+    card.querySelectorAll('[data-close-round]').forEach((button) => button.addEventListener('click', async () => {
+      try { await post(`/api/v1/hr/titles/review-rounds/${encodeURIComponent(button.dataset.closeRound)}/close/`, {}); await reload(); } catch (e) { statusMessage(card, `${e.code}: ${e.message}`); }
+    }));
+    const search = card.querySelector('#hr13f-staff-search');
+    let timer = null;
+    search?.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(async () => { const err = await loadStaff(search.value); renderWorkspace(err); }, 260); });
+  }
+
+  async function boot() {
+    try {
+      await refreshDashboard();
+      const staffError = await loadStaff('');
+      renderWorkspace(staffError);
+    } catch (error) {
+      const work = document.querySelector('.hr13c-layout > div');
+      if (work) {
+        const card = document.createElement('article');
+        card.className = 'hr13c-card hr13f-panel';
+        card.innerHTML = `<h2>专家评审 Authority</h2><div class="hr13f-error">真实评审数据读取失败：${esc(error.code || error.message)}</div>`;
+        work.appendChild(card);
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true});
+  else boot();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% load i18n %}{% load hr07_components %}
+{% trans "签订合同" as t_title %}{% trans "选择人员/聘用关系" as t_s1 %}{% trans "选择合同类型" as t_s2 %}{% trans "匹配模板与规则" as t_s3 %}{% trans "填写条款" as t_s4 %}{% trans "规则校验" as t_s5 %}{% trans "预览合同" as t_s6 %}{% trans "审批" as t_s7 %}{% trans "签署" as t_s8 %}{% trans "上一步" as t_prev %}{% trans "下一步" as t_next %}{% trans "提交" as t_submit %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ t_title }} · HR07</title>
+<style>:root{--hr-primary:#2563eb;--hr-success:#16a34a;--hr-warning:#d97706;--hr-danger:#dc2626;--hr-bg:#f5f7fa;--hr-card:#fff;--hr-border:#e5e7eb;--hr-text:#1f2937;--hr-muted:#6b7280;--hr-radius:12px}*{box-sizing:border-box}body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:var(--hr-bg);color:var(--hr-text)}.wizard{max-width:1200px;margin:0 auto;padding:24px;display:grid;grid-template-columns:220px 1fr 280px;gap:16px}.steps{background:var(--hr-card);border-radius:var(--hr-radius);padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}.step{padding:10px 12px;border-radius:8px;font-size:13px;color:var(--hr-muted);border-left:3px solid transparent;margin-bottom:4px}.step.active{color:var(--hr-primary);border-left-color:var(--hr-primary);background:#eff6ff;font-weight:600}.step.done{color:var(--hr-success);border-left-color:var(--hr-success)}.main{background:var(--hr-card);border-radius:var(--hr-radius);padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.08);min-height:400px}.main h3{font-size:16px;margin:0 0 16px}.side{background:var(--hr-card);border-radius:var(--hr-radius);padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)}.side h4{font-size:14px;margin:0 0 12px}.btn-row{display:flex;gap:8px;margin-top:20px}.btn{padding:8px 18px;border-radius:8px;border:1px solid var(--hr-border);background:#fff;font-size:13px;cursor:pointer}.btn.primary{background:var(--hr-primary);color:#fff;border-color:var(--hr-primary)}.btn:disabled{opacity:.5;cursor:not-allowed}input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--hr-border);border-radius:8px;font-size:13px;margin-bottom:12px}label{font-size:13px;color:var(--hr-muted);display:block;margin-bottom:4px}.panel{display:none}.panel.active{display:block}.preview-box{border:1px solid var(--hr-border);padding:16px;border-radius:8px;background:#fff;min-height:200px;white-space:pre-wrap;font-size:13px}@media(max-width:900px){.wizard{grid-template-columns:1fr}.steps{display:flex;overflow-x:auto;gap:8px}.step{flex-shrink:0;white-space:nowrap}}</style></head>
+<body><div class="wizard">
+<div class="steps">
+  <div class="step active" id="step-1">1. {{ t_s1 }}</div>
+  <div class="step" id="step-2">2. {{ t_s2 }}</div>
+  <div class="step" id="step-3">3. {{ t_s3 }}</div>
+  <div class="step" id="step-4">4. {{ t_s4 }}</div>
+  <div class="step" id="step-5">5. {{ t_s5 }}</div>
+  <div class="step" id="step-6">6. {{ t_s6 }}</div>
+  <div class="step" id="step-7">7. {{ t_s7 }}</div>
+  <div class="step" id="step-8">8. {{ t_s8 }}</div>
+</div>
+<div class="main">
+  <div class="panel active" id="panel-1">
+    <h3>{{ t_s1 }}</h3>
+    <label>聘用关系 ID</label><input type="text" id="rel-id" placeholder="HR03 EmploymentRelationship UUID" />
+    <label>人员</label><input type="text" id="staff-search" placeholder="输入姓名或工号搜索" />
+    <div id="staff-result"></div>
+  </div>
+  <div class="panel" id="panel-2">
+    <h3>{{ t_s2 }}</h3>
+    <label>合同类型</label><select id="type-select">{% for t in types %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select>
+  </div>
+  <div class="panel" id="panel-3">
+    <h3>{{ t_s3 }}</h3>
+    <label>模板版本</label><select id="template-select">{% for tv in template_versions %}<option value="{{ tv.id }}">{{ tv.name }}</option>{% endfor %}</select>
+    <div id="rule-summary" style="margin-top:12px"></div>
+  </div>
+  <div class="panel" id="panel-4">
+    <h3>{{ t_s4 }}</h3>
+    <label>合同起始日</label><input type="date" id="proposed-start" />
+    <label>合同到期日</label><input type="date" id="proposed-end" />
+    <label>续聘评审日</label><input type="date" id="review-date" />
+    <label>通知期（天）</label><input type="number" id="notice-period" value="30" />
+  </div>
+  <div class="panel" id="panel-5">
+    <h3>{{ t_s5 }}</h3>
+    <div id="rule-results"></div>
+  </div>
+  <div class="panel" id="panel-6">
+    <h3>{{ t_s6 }}</h3>
+    <div class="preview-box" id="preview-content">选择模板和条款后，点击预览</div>
+  </div>
+  <div class="panel" id="panel-7"><h3>{{ t_s7 }}</h3><div class="empty">提交审批</div></div>
+  <div class="panel" id="panel-8"><h3>{{ t_s8 }}</h3><div class="empty">线下签署 / 电子签</div></div>
+  <div class="btn-row">
+    <button class="btn" id="btn-prev" onclick="prevStep()" disabled>{{ t_prev }}</button>
+    <button class="btn primary" id="btn-next" onclick="nextStep()">{{ t_next }}</button>
+  </div>
+</div>
+<div class="side">
+  <h4>规则 / 风险</h4>
+  <div id="side-rules">待填写条款后显示</div>
+  <h4 style="margin-top:16px">来源数据</h4>
+  <div id="side-source">选择人员后显示</div>
+</div>
+</div>
+<script>
+let currentStep=1;const totalSteps=8;
+function showStep(n){
+  for(let i=1;i<=totalSteps;i++){
+    document.getElementById('panel-'+i).classList.toggle('active',i===n);
+    document.getElementById('step-'+i).classList.toggle('active',i===n);
+    if(i<n)document.getElementById('step-'+i).classList.add('done');
+  }
+  document.getElementById('btn-prev').disabled=n===1;
+  document.getElementById('btn-next').textContent=n===totalSteps?'{{ t_submit }}':'{{ t_next }}';
+  currentStep=n;
+}
+function nextStep(){if(currentStep<totalSteps)showStep(currentStep+1)}
+function prevStep(){if(currentStep>1)showStep(currentStep-1)}
+</script>
+</body></html>

@@ -1,0 +1,8 @@
+{% comment %}
+HrExternalCategoryBadge —— 外聘类别徽标。
+用法：{% include "hr_external/components/external_category_badge.html" with category_code="INDUSTRY_PROFESSOR" category_name="产业教授" %}
+荣誉类（HONORARY_TITLE）使用独立视觉，避免被误读为实际受聘。
+{% endcomment %}
+<span class="hr-external-badge {% if category_code == 'HONORARY_TITLE' %}hr-external-badge--honorary{% else %}hr-external-badge--category{% endif %}">
+  {{ category_name|default:category_code }}
+</span>

@@ -1,0 +1,38 @@
+{% comment %}
+HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位，总册 5.1/9.2）
+数据走 GET /api/hr/v1/recruitment/console + campaigns
+{% endcomment %}
+{% extends "index.html" %}
+{% load static i18n %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="recruitment-console">
+  {% include "hr/components/page_header.html" with title="招聘与人才引进" subtitle="从年度用人计划到 HR05 报到的招聘事实链" %}
+
+  <div class="hr-kpi-grid" id="hr04-kpis">
+    {% include "hr/components/metric_card.html" with label="进行中项目" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="开放岗位" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="待资格审核" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="本周选拔" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="待拟录用" status="loading" %}
+  </div>
+
+  <div class="hr-card">
+    <div class="hr-rec-plan-toolbar">
+      <h2 class="hr-section-title">{% trans "招聘项目" %}</h2>
+      <button class="hr-btn" data-hr-new-campaign>{% trans "新建招聘项目" %}</button>
+    </div>
+    <div id="hr04-campaign-list" class="hr-rec-campaign-grid">
+      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-campaigns.js' %}"></script>
+{% endblock %}

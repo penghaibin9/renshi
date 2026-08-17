@@ -1,0 +1,20 @@
+{% comment %}
+HrFreshnessBadge — 数据新鲜度徽章（OK / STALE）。
+状态本身就是该组件的核心状态；STALE 显示"数据可能已过期"。
+
+Usage:
+  {% include "hr/components/freshness_badge.html" with status="STALE" updated_at="2026-08-07 18:00" %}
+  {% include "hr/components/freshness_badge.html" with status="OK" updated_at="2026-08-08 09:00" %}
+
+status 不区分大小写；OK / STALE 之外一律按 STALE 处理（保守提示）。
+{% endcomment %}
+{% load i18n %}
+{% if status|lower == "ok" %}
+  <span class="hr-freshness-badge hr-freshness-badge--ok" role="status">
+    {% trans "数据已更新" %}{% if updated_at %}<span class="hr-meta"> · {{ updated_at }}</span>{% endif %}
+  </span>
+{% else %}
+  <span class="hr-freshness-badge hr-freshness-badge--stale" role="status" title="{% trans '数据可能已过期' %}">
+    {% trans "数据可能已过期" %}{% if updated_at %}<span class="hr-meta"> · {% trans "更新于" %} {{ updated_at }}</span>{% endif %}
+  </span>
+{% endif %}

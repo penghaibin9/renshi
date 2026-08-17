@@ -1,10 +1,9 @@
-"""
-horilla_company_manager.py
-"""
+"""Tenant-aware model manager used by legacy Horilla models."""
 
 import logging
 
 from django.apps import apps
+from django.conf import settings
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 from django.db.models import Q
@@ -23,17 +22,11 @@ django_filter_update = QuerySet.update
 
 
 def update(self, *args, **kwargs):
-    """
-    Bulk Update
-    """
-    # pre_update signal
     request = getattr(_thread_locals, "request", None)
     self.request = request
     pre_bulk_update.send(sender=self.model, queryset=self, args=args, kwargs=kwargs)
     result = django_filter_update(self, *args, **kwargs)
-    # post_update signal
     post_bulk_update.send(sender=self.model, queryset=self, args=args, kwargs=kwargs)
-
     return result
 
 
@@ -41,9 +34,6 @@ django_model_clean = models.Model.clean
 
 
 def clean(self, *args, **kwargs):
-    """
-    Method to override django clean and trigger to signals
-    """
     pre_model_clean.send(sender=self._meta.model, instance=self, **kwargs)
     result = django_model_clean(self)
     post_model_clean.send(sender=self._meta.model, instance=self, **kwargs)
@@ -51,11 +41,18 @@ def clean(self, *args, **kwargs):
 
 
 models.Model.clean = clean
-
 setattr(QuerySet, "update", update)
 
 
 class HorillaCompanyManager(models.Manager):
+    """
+    Company/tenant scoped manager.
+
+    In takeover mode ``TENANT_FAIL_CLOSED=True`` means a tenant-aware model
+    queried without an explicit tenant context returns an empty queryset.
+    Background code must use ``tenant_context(company_id)`` instead of relying
+    on implicit request/thread state.
+    """
 
     company_filter_path = None
 
@@ -74,34 +71,29 @@ class HorillaCompanyManager(models.Manager):
             self.company_filter_path = related_company_field
 
     def _resolve_related_field(self, model, part):
-        # Forward field
         try:
             return model._meta.get_field(part)
         except FieldDoesNotExist:
             pass
-
-        # Reverse relation
         for rel in model._meta.related_objects:
             if rel.get_accessor_name() == part:
                 return rel
-
         raise FieldDoesNotExist(part)
 
     def _field_exists(self, path):
         model = self.model
-
         parts = path.split("__")
         for i, part in enumerate(parts):
             try:
                 field = self._resolve_related_field(model, part)
             except FieldDoesNotExist:
                 logger.exception(
-                    f"Invalid company filter path '{path}' for model {self.model.__name__}. "
-                    f"Failed at field '{part}'."
+                    "Invalid company filter path '%s' for model %s at '%s'",
+                    path,
+                    self.model.__name__,
+                    part,
                 )
                 return False
-
-            # Only traverse if relational AND not last field
             if (
                 getattr(field, "is_relation", False)
                 and field.related_model
@@ -109,13 +101,13 @@ class HorillaCompanyManager(models.Manager):
             ):
                 model = field.related_model
             elif i < len(parts) - 1:
-                # Non-relational field in middle of path = invalid
-                logger.exception(
-                    f"Invalid company filter path '{path}' for model {self.model.__name__}. "
-                    f"Field '{part}' is not relational."
+                logger.error(
+                    "Invalid company filter path '%s' for model %s: '%s' is not relational",
+                    path,
+                    self.model.__name__,
+                    part,
                 )
                 return False
-
         return True
 
     def _has_company_id_fk_or_m2m(self):
@@ -128,76 +120,88 @@ class HorillaCompanyManager(models.Manager):
     def get_company_filter_path(self):
         if self.company_filter_path and self._field_exists(self.company_filter_path):
             return self.company_filter_path
-
         if self._has_company_id_fk_or_m2m():
             return "company_id"
-
         return None
+
+    @staticmethod
+    def _strict():
+        return bool(getattr(settings, "TENANT_FAIL_CLOSED", True))
+
+    @staticmethod
+    def _include_global_null_rows():
+        # Shared null-company rows are legacy behavior and are OFF by default;
+        # any future shared reference data should have an explicit global model.
+        return bool(getattr(settings, "TENANT_INCLUDE_GLOBAL_NULL_ROWS", False))
+
+    def _specific_company_q(self, filter_path, company):
+        q = Q(**{filter_path: company})
+        if self._include_global_null_rows():
+            q |= Q(**{f"{filter_path}__isnull": True})
+        return q
+
+    def _multi_company_q(self, filter_path, company_ids):
+        q = Q(**{f"{filter_path}__in": list(company_ids)})
+        if self._include_global_null_rows():
+            q |= Q(**{f"{filter_path}__isnull": True})
+        return q
 
     def get_queryset(self):
         qs = super().get_queryset()
-        company = get_selected_company()
         filter_path = self.get_company_filter_path()
-
-        if not filter_path or not company:
+        if not filter_path:
             return qs
 
-        # Superuser / legacy "all": no company filter (true tenant-wide).
-        # Non-superuser "all" (All my companies): restrict to assignment
-        # companies (all_my_company_ids), falling back to allowed ids.
+        company = get_selected_company()
+        request = getattr(_thread_locals, "request", None)
+
+        if company is None:
+            return qs.none() if self._strict() else qs
+
         if company == "all":
-            request = getattr(_thread_locals, "request", None)
+            # Only an authenticated superuser may intentionally request an
+            # unfiltered all-tenant view. Jobs never receive this bypass.
+            if request and getattr(request, "user", None) and request.user.is_superuser:
+                return qs
+
             filter_ids = None
             if request:
                 filter_ids = getattr(request, "all_my_company_ids", None)
                 if filter_ids is None:
                     filter_ids = getattr(request, "allowed_company_ids", None)
             if filter_ids is None:
-                return qs
+                return qs.none() if self._strict() else qs
             if not filter_ids:
                 return qs.none()
             try:
-                return qs.filter(
-                    Q(**{f"{filter_path}__in": list(filter_ids)})
-                    | Q(**{f"{filter_path}__isnull": True})
-                ).distinct()
-            except Exception as e:
+                return qs.filter(self._multi_company_q(filter_path, filter_ids)).distinct()
+            except Exception as exc:
                 logger.exception(
-                    f"Company filter (all-my-companies) failed for model "
-                    f"{self.model.__name__} with path '{filter_path}': {e}"
+                    "Tenant union filter failed for %s path=%s: %s",
+                    self.model.__name__,
+                    filter_path,
+                    exc,
                 )
                 return qs.none()
 
         try:
-            return qs.filter(
-                Q(**{filter_path: company}) | Q(**{f"{filter_path}__isnull": True})
-            ).distinct()
-        except Exception as e:
+            return qs.filter(self._specific_company_q(filter_path, company)).distinct()
+        except Exception as exc:
             logger.exception(
-                f"Company filter failed for model {self.model.__name__} "
-                f"with path '{filter_path}': {e}"
+                "Tenant filter failed for %s path=%s company=%s: %s",
+                self.model.__name__,
+                filter_path,
+                company,
+                exc,
             )
             return qs.none()
 
     def _get_is_active_filter(self):
-        """
-        Return True unless the request explicitly passes is_active=False/false.
-        """
         request = getattr(_thread_locals, "request", None)
         raw = request.GET.get("is_active", True) if request else True
         return raw not in ["False", "false", False]
 
     def all(self):
-        """
-        Override all() to exclude inactive records by default.
-        Only applies is_active filtering when a request context is active (not during startup/scheduler).
-        - For `employee` model: respect request.GET `is_active` param; default to active only.
-        - For `offboardingemployee` model: return unfiltered.
-        - For other models:
-            1. If the model itself has `is_active`, filter by it (respects GET param, default True).
-            2. If the model has `employee_id` FK to Employee, hide records of inactive employees.
-               Else, find the first FK to Employee and use that.
-        """
         queryset = self.get_queryset()
         request = getattr(_thread_locals, "request", None)
         if not request:
@@ -205,20 +209,15 @@ class HorillaCompanyManager(models.Manager):
 
         try:
             model_name = queryset.model._meta.model_name
-
             if model_name == "employee":
                 queryset = queryset.filter(is_active=self._get_is_active_filter())
-
             elif model_name == "offboardingemployee":
                 return queryset
-
             else:
                 model_fields = queryset.model._meta.fields
                 model_field_names = {f.name for f in model_fields}
-
                 if "is_active" in model_field_names:
                     queryset = queryset.filter(is_active=self._get_is_active_filter())
-
                 try:
                     employee_model = apps.get_model("employee", "Employee")
                     if "employee_id" in model_field_names:
@@ -241,11 +240,10 @@ class HorillaCompanyManager(models.Manager):
                                 break
                 except LookupError:
                     pass
-
-        except Exception as e:
-            logger.error(e)
-
+        except Exception as exc:
+            logger.error(exc)
         return queryset
 
     def entire(self):
+        """Explicit unscoped escape hatch for controlled admin/migration code only."""
         return super().get_queryset()

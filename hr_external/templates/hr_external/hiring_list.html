@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hr-page-header">
+  <h1>{{ page_title }}</h1>
+  <div class="hr-page-header__actions">
+    <a class="oh-btn oh-btn--primary" href="#">新建聘用</a>
+  </div>
+</header>
+
+<section class="hr-kpi-row">
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.draft }}</span><span class="hr-kpi-card__label">草稿</span></div>
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.in_review }}</span><span class="hr-kpi-card__label">审批中</span></div>
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.approved }}</span><span class="hr-kpi-card__label">已批准</span></div>
+  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.activated }}</span><span class="hr-kpi-card__label">已激活</span></div>
+</section>
+
+<form class="hr-filter-bar" method="get" action="{% url 'hr08-hiring-home' %}">
+  <select name="status" aria-label="审批状态">
+    <option value="">全部状态</option>
+    <option value="DRAFT" {% if current_status == "DRAFT" %}selected{% endif %}>草稿</option>
+    <option value="SUBMITTED" {% if current_status == "SUBMITTED" %}selected{% endif %}>已提交</option>
+    <option value="UNDER_COLLEGE_REVIEW" {% if current_status == "UNDER_COLLEGE_REVIEW" %}selected{% endif %}>学院审批</option>
+    <option value="UNDER_HR_REVIEW" {% if current_status == "UNDER_HR_REVIEW" %}selected{% endif %}>HR审批</option>
+    <option value="UNDER_SCHOOL_APPROVAL" {% if current_status == "UNDER_SCHOOL_APPROVAL" %}selected{% endif %}>学校批准</option>
+    <option value="APPROVED" {% if current_status == "APPROVED" %}selected{% endif %}>已批准</option>
+    <option value="WAITING_AGREEMENT" {% if current_status == "WAITING_AGREEMENT" %}selected{% endif %}>待协议</option>
+    <option value="ACTIVATED" {% if current_status == "ACTIVATED" %}selected{% endif %}>已激活</option>
+  </select>
+  <button class="oh-btn oh-btn--primary" type="submit">筛选</button>
+</form>
+
+<div class="hr-table-wrap">
+<table class="hr-data-table">
+  <thead>
+    <tr><th>审批单号</th><th>类别</th><th>目的</th><th>申请学院</th><th>拟聘开始</th><th>状态</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+    {% for c in cases %}
+    <tr>
+      <td><a href="{% url 'hr08-hiring-detail' c.id %}">{{ c.case_no }}</a></td>
+      <td>{{ c.category_id.name|default:c.category_id.code }}</td>
+      <td>{{ c.purpose|default:"-" }}</td>
+      <td>{{ c.request_org_id }}</td>
+      <td>{{ c.requested_start|date:"Y-m-d" }}</td>
+      <td>{{ c.status }}</td>
+      <td><a class="oh-btn oh-btn--small oh-btn--secondary" href="{% url 'hr08-hiring-detail' c.id %}">查看</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="hr-empty">暂无聘用审批单</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

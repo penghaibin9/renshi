@@ -1,0 +1,57 @@
+{% load static i18n %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任职与身份履历 · HR03</title>
+  <style>
+    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    .back { color: #2563eb; text-decoration: none; font-size: 13px; }
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 20px; margin-top: 16px; }
+    .tl { position: relative; padding-left: 24px; }
+    .tl::before { content: ""; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; background: #e5e7eb; }
+    .tl-item { position: relative; margin-bottom: 18px; }
+    .tl-item::before { content: ""; position: absolute; left: -22px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #2563eb; }
+    .tl-item.concurrent::before { background: #d97706; }
+    .tl-item.ended::before { background: #9ca3af; }
+    .kind { font-size: 12px; color: #6b7280; }
+    .period { font-size: 13px; font-weight: 600; }
+    .detail { font-size: 13px; color: #374151; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/hr/staff/{{ staff_id }}/">← 返回主档</a>
+    <div class="card">
+      <h2 style="margin:0 0 4px">任职与身份履历</h2>
+      <div style="font-size:13px;color:#6b7280">截至 <span id="asOf">{{ as_of }}</span> · 只读（历史更正走信息更正流程）</div>
+    </div>
+    <div class="card">
+      <div class="tl" id="timeline">加载中…</div>
+    </div>
+  </div>
+  <script>
+    const staffId = "{{ staff_id }}";
+    const typeLabels = {PRIMARY:"主岗",CONCURRENT:"兼岗",TEMPORARY:"临时",SECONDMENT:"借调",relationship:"聘用关系",assignment:"任职段",status:"状态"};
+    async function load() {
+      const resp = await fetch(`/api/hr/v1/staff/${staffId}/timeline`);
+      if (!resp.ok) { document.getElementById("timeline").textContent = "加载失败（" + resp.status + "）"; return; }
+      const body = await resp.json();
+      const events = body.data.events || [];
+      if (!events.length) { document.getElementById("timeline").textContent = "暂无任职履历"; return; }
+      document.getElementById("timeline").innerHTML = events.map(e => {
+        const cls = e.kind === "assignment" ? (e.label.startsWith("兼") ? "concurrent" : (e.status === "ENDED" ? "ended" : "")) : "";
+        return `<div class="tl-item ${cls}">
+          <div class="kind">${e.kind === "relationship" ? "聘用关系" : "任职段"}</div>
+          <div class="period">${e.effective_from || "-"} → ${e.effective_to || "至今"}</div>
+          <div class="detail">${escapeHtml(e.label)} · ${e.status || ""}</div>
+        </div>`;
+      }).join("");
+    }
+    function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+    load();
+  </script>
+</body>
+</html>

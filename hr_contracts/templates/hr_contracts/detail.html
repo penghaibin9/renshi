@@ -1,0 +1,60 @@
+{% load i18n %}{% load hr07_components %}
+{% trans "合同详情" as t_title %}{% trans "合同摘要" as t_summary %}{% trans "正文与条款" as t_body %}{% trans "版本" as t_versions %}{% trans "签署" as t_sig %}{% trans "审批" as t_approval %}{% trans "补充协议" as t_supp %}{% trans "事件" as t_events %}{% trans "关联聘用关系" as t_rel %}{% trans "附件" as t_docs %}{% trans "风险" as t_risk %}{% trans "审计" as t_audit %}{% trans "加载失败" as t_err %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ t_title }} · HR07</title>
+<style>:root{--hr-primary:#2563eb;--hr-success:#16a34a;--hr-warning:#d97706;--hr-danger:#dc2626;--hr-bg:#f5f7fa;--hr-card:#fff;--hr-border:#e5e7eb;--hr-text:#1f2937;--hr-muted:#6b7280;--hr-radius:12px}*{box-sizing:border-box}body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:var(--hr-bg);color:var(--hr-text)}.page{max-width:1260px;margin:0 auto;padding:24px}.header{background:var(--hr-card);border-radius:var(--hr-radius);padding:20px 24px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px}.header__no{font-size:18px;font-weight:700}.header__meta{color:var(--hr-muted);font-size:13px;margin-top:4px}.header__dates{display:flex;align-items:center;gap:12px;margin-top:8px;font-size:13px}.date-bar{flex:1;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden}.date-bar__fill{height:100%;background:var(--hr-primary);border-radius:4px}.tabs{display:flex;gap:0;background:var(--hr-card);border-radius:var(--hr-radius);overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:16px}.tab{padding:12px 18px;font-size:13px;cursor:pointer;border:none;background:none;color:var(--hr-muted);border-bottom:2px solid transparent}.tab.active{color:var(--hr-primary);border-bottom-color:var(--hr-primary);font-weight:600}.tab-content{background:var(--hr-card);border-radius:var(--hr-radius);padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.08);min-height:200px}.section{display:none}.section.active{display:block}.kv{display:flex;padding:8px 0;border-bottom:1px solid var(--hr-border)}.kv__key{width:180px;color:var(--hr-muted);font-size:13px;flex-shrink:0}.kv__val{font-size:13px}.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px}.badge.success{background:#dcfce7;color:#166534}.badge.info{background:#dbeafe;color:#1d4ed8}.badge.warning{background:#fef3c7;color:#92400e}.badge.danger{background:#fee2e2;color:#991b1b}.badge.neutral{background:#e5e7eb;color:#374151}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 12px;font-size:13px;border-bottom:1px solid var(--hr-border)}th{color:var(--hr-muted);font-weight:600}.empty{text-align:center;color:var(--hr-muted);padding:40px 0}@media(max-width:768px){.tabs{flex-wrap:wrap}.tab{padding:8px 12px}.kv{flex-direction:column}}[role=tab]:focus-visible{outline:2px solid var(--hr-primary)}</style></head>
+<body><div class="page">
+{% if error %}<div class="empty" style="background:#fef2f2;color:#991b1b;border:1px solid #fee2e2;border-radius:12px">{{ error }}</div>{% else %}
+<div class="header">
+  <div class="header__no">{{ data.agreementNo|default:"(草稿)" }}</div>
+  <div class="header__meta">{{ data.legalName|default:"-" }} · {{ data.agreementTypeName|default:"-" }} · <span class="badge success">{{ data.lifecycleStatusLabel }}</span></div>
+  <div class="header__dates">
+    <span>{{ data.contractStartDate|default:"-" }} — {{ data.contractEndDate|default:"-" }}</span>
+    <span>V{{ data.currentVersionNo|default:"1" }}</span>
+  </div>
+</div>
+<div class="tabs" role="tablist">
+  <button class="tab active" role="tab" onclick="showTab('summary')">{{ t_summary }}</button>
+  <button class="tab" role="tab" onclick="showTab('terms')">{{ t_body }}</button>
+  <button class="tab" role="tab" onclick="showTab('versions')">{{ t_versions }}</button>
+  <button class="tab" role="tab" onclick="showTab('signing')">{{ t_sig }}</button>
+  <button class="tab" role="tab" onclick="showTab('events')">{{ t_events }}</button>
+  <button class="tab" role="tab" onclick="showTab('relationship')">{{ t_rel }}</button>
+  <button class="tab" role="tab" onclick="showTab('documents')">{{ t_docs }}</button>
+  <button class="tab" role="tab" onclick="showTab('risk')">{{ t_risk }}</button>
+  <button class="tab" role="tab" onclick="showTab('audit')">{{ t_audit }}</button>
+</div>
+<div class="tab-content">
+  <div class="section active" id="tab-summary">
+    <div class="kv"><span class="kv__key">合同号</span><span class="kv__val">{{ data.agreementNo|default:"-" }}</span></div>
+    <div class="kv"><span class="kv__key">协议类型</span><span class="kv__val">{{ data.familyLabel }}</span></div>
+    <div class="kv"><span class="kv__key">状态</span><span class="kv__val"><span class="badge success">{{ data.lifecycleStatusLabel }}</span></span></div>
+    <div class="kv"><span class="kv__key">合同起始</span><span class="kv__val">{{ data.contractStartDate|default:"-" }}</span></div>
+    <div class="kv"><span class="kv__key">合同到期</span><span class="kv__val">{{ data.contractEndDate|default:"-" }}</span></div>
+    <div class="kv"><span class="kv__key">签署日期</span><span class="kv__val">{{ data.signedDate|default:"-" }}</span></div>
+    <div class="kv"><span class="kv__key">续聘评审日</span><span class="kv__val">{{ data.reviewDate|default:"-" }}</span></div>
+    <div class="kv"><span class="kv__key">当前版本</span><span class="kv__val">V{{ data.currentVersionNo|default:"1" }}</span></div>
+    {% if data.risk %}
+    <div class="kv"><span class="kv__key">风险</span><span class="kv__val"><span class="badge danger">{{ data.risk.severityLabel }}</span> {{ data.risk.riskTypeLabel }}</span></div>
+    {% endif %}
+  </div>
+  <div class="section" id="tab-terms">{% agreement_term_table terms %}</div>
+  <div class="section" id="tab-versions">{% agreement_version_rail versions data.currentVersionId %}</div>
+  <div class="section" id="tab-signing">{% signature_participants participants %}</div>
+  <div class="section" id="tab-events">{% agreement_event_timeline timeline.events %}</div>
+  <div class="section" id="tab-relationship">
+    {% if data.employmentRelationship %}{% agreement_relationship_map relationships %}{% else %}<div class="empty">无关联聘用关系</div>{% endif %}
+  </div>
+  <div class="section" id="tab-documents">
+    {% if documents %}<table><thead><tr><th>文件名</th><th>类型</th><th>大小</th><th>上传日期</th><th>签署状态</th></tr></thead><tbody>
+    {% for d in documents %}<tr><td>{{ d.file_name }}</td><td>{{ d.document_type }}</td><td>{{ d.size_bytes }}</td><td>{{ d.uploaded_at }}</td><td><span class="badge info">{{ d.signature_status }}</span></td></tr>{% endfor %}
+    </tbody></table>{% else %}<div class="empty">暂无附件</div>{% endif %}
+  </div>
+  <div class="section" id="tab-risk">
+    {% if data.risk %}{% contract_risk_card data.risk %}{% else %}<div class="empty">无风险案件</div>{% endif %}
+  </div>
+  <div class="section" id="tab-audit"><div class="empty">审计记录（需权限）</div></div>
+</div>
+{% endif %}
+</div>
+<script>function showTab(id){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));const btn=document.querySelector(`[onclick="showTab('${id}')"]`);if(btn)btn.classList.add('active');document.getElementById('tab-'+id).classList.add('active')}</script>
+</body></html>

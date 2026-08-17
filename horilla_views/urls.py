@@ -4,12 +4,43 @@ horilla_views/urls.py
 
 from django.urls import path
 
+from horilla.legacy_hr_cutover import protect_retired_legacy_model_write
 from horilla_views import views
 from horilla_views.generic.cbv import history
 from horilla_views.generic.cbv.views import (
     HorillaListView,
     ReloadMessages,
     dispatch_profile_tab,
+)
+
+_generic_delete = protect_retired_legacy_model_write(
+    views.HorillaDeleteConfirmationView.as_view(),
+    surface="generic-delete",
+    write_methods={"POST"},
+)
+_kanban_sequence = protect_retired_legacy_model_write(
+    views.update_kanban_sequence,
+    surface="update-kanban-sequence",
+)
+_kanban_item_group = protect_retired_legacy_model_write(
+    views.update_kanban_item_group,
+    surface="update-kanban-item-group",
+)
+_kanban_group_sequence = protect_retired_legacy_model_write(
+    views.update_kanban_group_sequence,
+    surface="update-kanban-group-sequence",
+)
+_history_revert = protect_retired_legacy_model_write(
+    history.HorillaHistoryView.as_view(),
+    surface="history-revert",
+    block_methods={"POST"},
+    write_methods={"POST"},
+)
+_generic_history = protect_retired_legacy_model_write(
+    history.HorillaHistoryView.as_view(),
+    surface="generic-history-revert",
+    block_methods={"POST"},
+    write_methods={"POST"},
 )
 
 urlpatterns = [
@@ -46,27 +77,27 @@ urlpatterns = [
     ),
     path(
         "generic-delete/",
-        views.HorillaDeleteConfirmationView.as_view(),
+        _generic_delete,
         name="generic-delete",
     ),
     path(
         "horilla-history-revert/<int:pk>/<int:history_id>/",
-        history.HorillaHistoryView.as_view(),
+        _history_revert,
         name="history-revert",
     ),
     path(
         "generic-history/<int:pk>/",
-        history.HorillaHistoryView.as_view(),
+        _generic_history,
         name="generic-history",
     ),
     path(
         "update-kanban-sequence/",
-        views.update_kanban_sequence,
+        _kanban_sequence,
         name="update-kanban-sequence",
     ),
     path(
         "update-kanban-item-group/",
-        views.update_kanban_item_group,
+        _kanban_item_group,
         name="update-kanban-item-group",
     ),
     path(
@@ -76,7 +107,7 @@ urlpatterns = [
     ),
     path(
         "update-kanban-group-sequence/",
-        views.update_kanban_group_sequence,
+        _kanban_group_sequence,
         name="update-kanban-group-sequence",
     ),
     path(

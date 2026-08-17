@@ -91,6 +91,15 @@ INSTALLED_APPS = [
     "horilla_ldap",
     "horilla_dbtemplate",
     "horilla_tour",
+    "hr_control_center",
+    "hr_structure",
+    "hr_staff",
+    "hr_time",
+    "hr_recruitment",
+    "hr_external",
+    "hr_onboarding",
+    "hr_contracts",
+    "hr_changes",
 ]
 
 # ========================================
@@ -298,8 +307,8 @@ WSGI_APPLICATION = "horilla.wsgi.application"
 # ========================================
 # INTERNATIONALIZATION
 # ========================================
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = env("TIME_ZONE", default="Asia/Kolkata")
+LANGUAGE_CODE = "zh-hans"
+TIME_ZONE = env("TIME_ZONE", default="Asia/Shanghai")
 USE_I18N = True
 USE_TZ = True
 

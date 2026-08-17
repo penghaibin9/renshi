@@ -1,0 +1,39 @@
+{% comment %}
+HrApplicationStatusRail — 申请状态轨（canonical status → 下一动作/负责人/截止）
+Usage:
+  {% include "hr/recruitment/components/application_status_rail.html" with application=application %}
+  # application: {canonical_status, workflow_stage, next_action, owner, due_at}
+{% endcomment %}
+{% load i18n %}
+<div class="hr-card hr-rec-status-rail">
+  <div class="hr-rec-status-rail__row">
+    <span class="hr-meta">{% trans "权威状态" %}</span>
+    <span class="hr-rec-badge hr-rec-badge--{{ application.canonical_status|lower }}">
+      {{ application.canonical_status }}
+    </span>
+  </div>
+  {% if application.workflow_stage %}
+  <div class="hr-rec-status-rail__row">
+    <span class="hr-meta">{% trans "流程阶段" %}</span>
+    <span>{{ application.workflow_stage }}</span>
+  </div>
+  {% endif %}
+  {% if application.next_action %}
+  <div class="hr-rec-status-rail__row">
+    <span class="hr-meta">{% trans "下一动作" %}</span>
+    <span>{{ application.next_action }}</span>
+  </div>
+  {% endif %}
+  {% if application.owner %}
+  <div class="hr-rec-status-rail__row">
+    <span class="hr-meta">{% trans "负责人" %}</span>
+    <span>{{ application.owner }}</span>
+  </div>
+  {% endif %}
+  {% if application.due_at %}
+  <div class="hr-rec-status-rail__row">
+    <span class="hr-meta">{% trans "截止" %}</span>
+    <span class="{% if application.overdue %}hr-rec-status-rail__overdue{% endif %}">{{ application.due_at }}</span>
+  </div>
+  {% endif %}
+</div>

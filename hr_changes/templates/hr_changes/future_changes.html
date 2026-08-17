@@ -1,0 +1,49 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>未来生效队列 · HR06</title>
+  <style>
+    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { margin: 0; font-size: 18px; }
+    .wrap { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
+    th { background: #f9fafb; color: #6b7280; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; background: #fef3c7; color: #92400e; }
+    a { color: #2563eb; text-decoration: none; }
+    .btn { display: inline-block; padding: 9px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; border: 1px solid #d1d5db; background: #fff; color: #374151; }
+    .empty { text-align: center; color: #9ca3af; padding: 48px 0; background: #fff; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>未来生效队列（已批准待生效）</h1>
+    <a class="btn" href="/hr/changes/">返回中心</a>
+  </div>
+  <div class="wrap">
+    {% if cases %}
+    <table>
+      <thead><tr><th>案件号</th><th>人员</th><th>动作</th><th>目标单位</th><th>生效日</th><th>状态</th></tr></thead>
+      <tbody>
+        {% for c in cases %}
+        <tr>
+          <td><a href="/hr/changes/{{ c.id }}">{{ c.case_no }}</a></td>
+          <td>{{ c.staff_master_id.person_id.legal_name }}（{{ c.staff_master_id.staff_no }}）</td>
+          <td>{{ c.action_id.name }}</td>
+          <td>{% if c.target_org_id %}{{ c.target_org_id.stable_code }}{% else %}—{% endif %}</td>
+          <td>{{ c.requested_effective_at|date:"Y-m-d" }}</td>
+          <td><span class="badge">已批准待生效</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">暂无待生效异动</div>
+    {% endif %}
+  </div>
+</body>
+</html>

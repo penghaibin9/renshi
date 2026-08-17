@@ -1512,6 +1512,20 @@ def save_employee_bulk_update(request):
     if request.method == "POST":
         update_fields_str = request.POST.get("update_fields", "")
         update_fields = json.loads(update_fields_str) if update_fields_str else []
+        # HR06 受管字段封堵（S9）：批量 UPDATE WorkInformation 受管字段为禁止路径（总册 §81）
+        from employee.forms import HR06_MANAGED_WORK_INFO_FIELDS
+
+        managed_hit = [
+            f for f in update_fields
+            if str(f).startswith("employee_work_info__")
+            and str(f).rsplit("__", 1)[-1] in HR06_MANAGED_WORK_INFO_FIELDS
+        ]
+        if managed_hit:
+            messages.error(
+                request,
+                _("字段已由人事异动管理，禁止批量直改：") + ", ".join(managed_hit),
+            )
+            return redirect("/employee/employee-view/?view=list")
         dict_value = request.__dict__["_post"]
         bulk_employee_ids_str = request.POST.get("bulk_employee_ids", "")
         bulk_employee_ids = (
@@ -2645,15 +2659,12 @@ def employee_work_information_delete(request, obj_id):
     args:
         obj_id : employee work information id
     """
-    try:
-        employee_work = EmployeeWorkInformation.objects.get(id=obj_id)
-        employee_work.delete()
-        messages.success(request, _("Employee work information deleted"))
-    except EmployeeWorkInformation.DoesNotExist:
-        messages.error(request, _("Employee work information not found."))
-    except ProtectedError:
-        messages.error(request, _("You cannot delete this Employee work information"))
-
+    # HR06 封堵（S9）：WorkInformation 现在是 HR03 事实的投影，禁止硬删（总册 §81）。
+    # 若确需调整请走 HR06 异动/纠错流程。
+    messages.error(
+        request,
+        _("该员工工作信息已由人事异动管理，禁止直接删除；如需调整请发起异动或纠错。"),
+    )
     return redirect("/employee/employee-work-information-view")
 
 

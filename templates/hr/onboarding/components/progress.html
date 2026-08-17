@@ -1,0 +1,15 @@
+{% load i18n %}
+{# HR05 公共组件：入职进度（总册 §30） #}
+<div class="hr-onboarding-progress">
+  <div class="hr-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+       aria-valuenow="{{ progress.percent|default:0 }}">
+    <div class="hr-progress__bar" style="width: {{ progress.percent|default:0 }}%"></div>
+    <span class="hr-progress__text">{{ progress.percent|default:0 }}%</span>
+  </div>
+  <div class="hr-progress-legend">
+    <span>{% trans "正式生效" %}：{% if progress.activated %}{% trans "已完成" %}{% else %}{% trans "未完成" %}{% endif %}</span>
+    <span>{% trans "入职协同" %}：{{ progress.task_percent|default:0 }}%</span>
+    <span>{% trans "阻断项" %}：{{ progress.blocking_count|default:0 }}</span>
+    <span>{% trans "后续事项" %}：{{ progress.post_items|default:0 }}</span>
+  </div>
+</div>

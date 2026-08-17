@@ -1,0 +1,47 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% block title %}{% trans "入职报到" %} — {{ case.case_no|default:_("未编号") }}{% endblock %}
+{% block content %}
+<div class="hr-page" id="reportPage" data-case-id="{{ case.id }}">
+  <div class="hr-page-header">
+    <h1>{% trans "入职报到" %}</h1>
+    <p class="hr-page-subtitle">{{ case.case_no }} · {{ case.legal_name|default:_("未命名") }} · {% trans "来源" %}：{{ case.source_id }}</p>
+  </div>
+  <div class="hr-report-grid">
+    {% include "hr/onboarding/components/report_status_badge.html" with status=case.status %}
+    <span class="hr-expected-date">{% trans "预计报到" %}：{{ case.expected_report_date|date:"Y-m-d"|default:"—" }}</span>
+  </div>
+  <div class="hr-grid hr-grid--3col">
+    <div class="hr-card">
+      <h3>{% trans "报到事实" %}</h3>
+      <dl class="hr-dl">
+        <dt>{% trans "实际到校时间" %}</dt><dd><input type="datetime-local" id="reportAt" class="oh-input w-100" value="{{ now|date:'Y-m-d\TH:i' }}" required></dd>
+        <dt>{% trans "身份核验" %}</dt><dd><label class="oh-checkbox"><input type="checkbox" id="identityCheck"> {% trans "已核验身份证明" %}</label></dd>
+        <dt>{% trans "报到地点" %}</dt><dd><input type="text" id="reportLocation" class="oh-input w-100" placeholder="{% trans '如：行政楼人事处' %}"></dd>
+        <dt>{% trans "备注" %}</dt><dd><textarea id="reportNotes" class="oh-input w-100" rows="2" placeholder="{% trans '选填' %}"></textarea></dd>
+      </dl>
+    </div>
+    <div class="hr-card">
+      <h3>{% trans "组织与岗位" %}</h3>
+      <dl class="hr-dl">
+        <dt>{% trans "组织" %}</dt><dd>{% firstof case.employment_type_label case.employment_type "—" %} · {% firstof case.staff_category_label case.staff_category "—" %}</dd>
+        <dt>{% trans "计划岗位" %}</dt><dd>{{ case.planned_position_id|default:"—" }}</dd>
+        <dt>{% trans "人员类别" %}</dt><dd>{% firstof case.staff_category_label case.staff_category "—" %}</dd>
+      </dl>
+      {% include "hr/onboarding/components/position_reservation_card.html" with reservation=reservation %}
+    </div>
+    <div class="hr-card">
+      <h3>{% trans "生效前闸门" %}</h3>
+      <div id="gateResult" data-loading="true">
+        <p class="hr-skeleton">{% trans "加载闸门检查中…" %}</p>
+      </div>
+    </div>
+  </div>
+  <div class="hr-bar">
+    <button type="button" class="oh-btn oh-btn--secondary" id="btnDraft">{% trans "保存草稿" %}</button>
+    <button type="button" class="oh-btn oh-btn--primary" id="btnReport">{% trans "确认报到" %}</button>
+    <button type="button" class="oh-btn oh-btn--success" id="btnActivate" disabled>{% trans "执行正式生效" %}</button>
+  </div>
+  <p class="hr-muted">{% trans "确认报到与执行正式生效是两个独立动作；正式生效前需完成材料核验" %}</p>
+</div>
+{% endblock %}

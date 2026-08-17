@@ -1,0 +1,34 @@
+{% extends "index.html" %}
+{% load static i18n %}
+{% comment %}
+HR01-04 队伍结构 —— 结论卡 + 维度分布
+
+数据来源：
+  GET /api/hr/v1/home/workforce/summary
+  GET /api/hr/v1/home/workforce/distribution?dimension=...
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<script src="{% static 'hr/vendor/apexcharts/apexcharts.min.js' %}"></script>
+
+<div class="hr-page" data-hr-page="workforce">
+  {% include "hr/components/page_header.html" with title="队伍结构" subtitle="学校/学院教师队伍结构是否合理、哪里存在缺口" %}
+
+  <!-- 结论卡 -->
+  {% include "hr/components/section_card.html" with id="hr-workforce-summary" title="队伍结构结论" status="loading" %}
+
+  <!-- 维度 Tabs -->
+  {% include "hr/components/status_tabs.html" with id="hr-workforce-tabs" %}
+
+  <!-- 分布图 -->
+  {% include "hr/components/chart_card.html" with chart_id="hr-workforce-dist" title="维度分布" status="loading" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/core/chart.js' %}"></script>
+<script src="{% static 'hr/js/pages/workforce.js' %}"></script>
+{% endblock %}

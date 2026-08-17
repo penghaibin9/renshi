@@ -34,6 +34,7 @@
     <link rel="stylesheet" href="{% static 'build/css/style.min.css' %}" />
     <link rel="stylesheet" href="{% static 'build/css/sweetalert2.min.css' %}" />
     <link rel="stylesheet" type="text/css" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" type="text/css" href="{% static 'css/hr_academic_workspace.css' %}">
     <link rel="stylesheet" href="{% static 'build/css/summernote-lite.min.css' %}" />
     <link rel="stylesheet" href="{% static 'build/css/orgChart.css' %}" />
     <link rel="stylesheet" href="{% static '/jquery/jqueryui.css' %}">
@@ -264,6 +265,9 @@
     <script src="{% static '/build/js/sweetAlert.js' %}"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{% static 'src/js/customFooterScripts.js' %}"></script>
+    <script src="{% static 'src/js/hrAcademicWorkspace.js' %}"></script>
+    {% block scripts %}
+    {% endblock scripts %}
     <script>
         // Clear all query parameters from the URL
         function clearQueryParameters() {

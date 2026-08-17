@@ -1,14 +1,17 @@
-# Verify Docker build and runtime on the runner.
-# Catches: Dockerfile/build failures, migration errors, collectstatic issues,
-# gunicorn startup failures, and broken health/readiness endpoints.
-
-name: Docker CI
+name: Docker / MySQL Smoke
 
 on:
   push:
-    branches: [dev/v2.0, "2.0"]
+    branches: [main, agent/renshi-takeover-cleanup-20260810]
   pull_request:
-    branches: [dev/v2.0, "2.0"]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   COMPOSE_FILE: docker-compose.yml
@@ -16,114 +19,192 @@ env:
 jobs:
   docker-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build web image
-        run: |
-          set -e
-          docker compose -f "$COMPOSE_FILE" build web
+        run: docker compose -f "$COMPOSE_FILE" build web
 
-      - name: Ensure local_settings exists
+      - name: Ensure local settings stub
         run: |
           if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI — allows settings import' > horilla/settings/local_settings.py
+            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
           fi
 
-      - name: Start db and redis
+      - name: Start MySQL and Redis
         run: |
           docker compose -f "$COMPOSE_FILE" up -d db redis
-          for i in $(seq 1 60); do
-            if docker compose -f "$COMPOSE_FILE" exec -T db pg_isready -U horilla_user -d horilla_db 2>/dev/null; then
-              echo "Postgres is ready"
-              break
-            fi
-            sleep 2
-            if [ "$i" -eq 60 ]; then
-              echo "Postgres did not become ready in time"
-              docker compose -f "$COMPOSE_FILE" logs db
-              exit 1
-            fi
-          done
-
-      - name: Run migrations and Django checks (no long-running server)
-        run: |
-          set -e
-          # Bypass entrypoint so CI controls migrate/collectstatic explicitly
-          # (entrypoint only runs migrate, not makemigrations).
-          docker compose -f "$COMPOSE_FILE" run --rm --no-deps \
-            --entrypoint "" \
-            web sh -c "
-              set -e
-              python manage.py migrate --noinput
-              python manage.py collectstatic --noinput
-              python manage.py check
-            "
-
-      - name: Start web (gunicorn) and wait for health + readiness
-        run: |
-          set -e
-          docker compose -f "$COMPOSE_FILE" up -d web
-
-          echo "Waiting for http://localhost:8000/health/ ..."
           for i in $(seq 1 90); do
-            if curl -sf --max-time 5 http://localhost:8000/health/ | grep -q '"status"'; then
-              echo "Health check OK"
-              curl -s http://localhost:8000/health/
-              break
-            fi
-            sleep 2
-            if [ "$i" -eq 90 ]; then
-              echo "Health check failed — web logs:"
-              docker compose -f "$COMPOSE_FILE" logs --tail=80 web
-              exit 1
-            fi
-          done
-
-          echo "Waiting for http://localhost:8000/ready/ ..."
-          for i in $(seq 1 60); do
-            if curl -sf --max-time 5 http://localhost:8000/ready/ | grep -q '"database"'; then
-              echo "Readiness check OK"
-              curl -s http://localhost:8000/ready/
+            if docker compose -f "$COMPOSE_FILE" exec -T db \
+              mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent >/dev/null 2>&1; then
+              echo "MySQL is ready"
               exit 0
             fi
             sleep 2
           done
-
-          echo "Readiness check failed — web logs:"
-          docker compose -f "$COMPOSE_FILE" logs --tail=80 web
+          docker compose -f "$COMPOSE_FILE" logs db
           exit 1
 
-      - name: Optional — production profile (nginx in front of web)
-        continue-on-error: true
+      - name: Migration schema diagnostics
         run: |
-          docker compose -f "$COMPOSE_FILE" --profile production up -d nginx
-          sleep 5
-          curl -sf --max-time 10 http://localhost:80/health/ || echo "Nginx health check skipped or failed (web :8000 already validated)"
+          docker compose -f "$COMPOSE_FILE" run --rm --no-deps --entrypoint "" web python manage.py shell -c '
+          from django.apps import apps
+          from django.db import connection
+          from django.db.migrations.loader import MigrationLoader
 
-      - name: Optional — Trivy image scan (advisory)
-        continue-on-error: true
+          if connection.vendor != "mysql":
+              raise SystemExit(f"Docker smoke requires MySQL, got {connection.vendor}")
+
+          loader = MigrationLoader(connection, ignore_no_migrations=True)
+          hr_labels = sorted(
+              label
+              for label in loader.migrated_apps
+              if label.startswith("hr_") or label == "hr10_development"
+          )
+          if not hr_labels:
+              raise SystemExit("No migrated HR apps discovered")
+
+          conflicts = {
+              label: names
+              for label, names in loader.detect_conflicts().items()
+              if label in hr_labels
+          }
+          print("DATABASE_VENDOR", connection.vendor)
+          print("HR_MIGRATED_APPS", ",".join(hr_labels))
+          for label in hr_labels:
+              leaves = loader.graph.leaf_nodes(label)
+              print("HR_MIGRATION_LEAVES", label, ",".join(name for _, name in leaves))
+          if conflicts:
+              raise SystemExit(f"Conflicting HR migration leaves: {conflicts}")
+          '
+
+      - name: Fresh migration + checks
+        run: |
+          docker compose -f "$COMPOSE_FILE" run --rm --no-deps --entrypoint "" web sh -c '
+            set -e
+            python manage.py makemigrations --check --dry-run
+            python manage.py migrate --noinput
+            python manage.py migrate --check
+            python manage.py collectstatic --noinput
+            python manage.py check
+          '
+
+      - name: Real MySQL backup / restore drill
+        id: recovery
+        run: |
+          set -euo pipefail
+          rm -rf .ci-backup
+          mkdir -p .ci-backup
+          chmod 0777 .ci-backup
+          set +e
+          docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps \
+            -e MYSQL_CI_ROOT_PASSWORD=horilla_root_pass \
+            -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            --entrypoint "" web python scripts/ci_mysql_recovery.py \
+            2>&1 | tee .ci-backup/recovery.log
+          recovery_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$recovery_status" -ne 0 ]; then
+            echo "MySQL recovery drill failed with exit code $recovery_status"
+            exit "$recovery_status"
+          fi
+          rm -rf .ci-backup
+
+      - name: Upload MySQL recovery diagnostics
+        if: failure() && steps.recovery.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-recovery-diagnostics
+          path: |
+            .ci-backup/recovery.log
+            .ci-backup/recovery-diagnostics.txt
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Start Gunicorn
+        run: docker compose -f "$COMPOSE_FILE" up -d web
+
+      - name: Health / readiness must report MySQL
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf --max-time 5 http://localhost:8000/health/ | grep -q '"status"'; then
+              break
+            fi
+            sleep 2
+            if [ "$i" -eq 90 ]; then
+              docker compose -f "$COMPOSE_FILE" logs --tail=150 web
+              exit 1
+            fi
+          done
+          for i in $(seq 1 60); do
+            body=$(curl -sf --max-time 5 http://localhost:8000/ready/ || true)
+            if echo "$body" | grep -q '"database_vendor": "mysql"'; then
+              echo "$body"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f "$COMPOSE_FILE" logs --tail=150 web
+          exit 1
+
+      - name: Trivy high/critical gate
+        id: trivy
         run: |
           IMAGE=$(docker compose -f "$COMPOSE_FILE" images -q web | head -n1)
-          if [ -z "$IMAGE" ]; then
-            echo "No web image id found; skipping Trivy"
-            exit 0
-          fi
+          test -n "$IMAGE"
+          rm -rf trivy-report
+          mkdir -p trivy-report
+          set +e
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/trivy-report:/report" \
             aquasec/trivy:0.58.1 image \
-            --severity CRITICAL,HIGH \
-            --exit-code 0 \
-            "$IMAGE"
+            --severity CRITICAL,HIGH --ignore-unfixed \
+            --format json --output /report/trivy.json \
+            --exit-code 1 "$IMAGE"
+          status=$?
+          set -e
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("trivy-report/trivy.json").read_text())
+          vulnerabilities = []
+          for result in report.get("Results") or []:
+              target = result.get("Target", "unknown")
+              for item in result.get("Vulnerabilities") or []:
+                  vulnerabilities.append(
+                      (
+                          item.get("Severity", ""),
+                          target,
+                          item.get("PkgName", ""),
+                          item.get("VulnerabilityID", ""),
+                          item.get("InstalledVersion", ""),
+                          item.get("FixedVersion", ""),
+                      )
+                  )
+          print(f"Trivy HIGH/CRITICAL findings: {len(vulnerabilities)}")
+          for severity, target, package, cve, installed, fixed in vulnerabilities:
+              print(
+                  f"{severity} {target} {package} {cve} "
+                  f"installed={installed} fixed={fixed}"
+              )
+          PY
+          exit "$status"
+
+      - name: Upload Trivy diagnostics
+        if: failure() && steps.trivy.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-high-critical-report
+          path: trivy-report/trivy.json
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Tear down
         if: always()
-        run: |
-          docker compose -f "$COMPOSE_FILE" --profile production down -v --remove-orphans || true
-          docker compose -f "$COMPOSE_FILE" down -v --remove-orphans || true
+        run: docker compose -f "$COMPOSE_FILE" down -v --remove-orphans || true

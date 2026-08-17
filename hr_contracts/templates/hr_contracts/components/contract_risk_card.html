@@ -1,0 +1,12 @@
+<!-- §99 HrContractRiskCard -->
+<div class="hr-risk-card {% if risk.severity == 'CRITICAL' or risk.severity == 'HIGH' %}hr-risk-card--high{% endif %}">
+  <div class="hr-risk-card__header">
+    <span class="hr-risk-card__type">{{ risk.riskType }}</span>
+    <span class="hr-risk-card__severity oh-badge oh-badge--danger">{{ risk.severity }}</span>
+  </div>
+  <div class="hr-risk-card__due">到期: {{ risk.dueAt|default:"-" }}</div>
+  <div class="hr-risk-card__actions">
+    <button onclick="acknowledgeRisk('{{ risk.riskCaseId }}')">确认</button>
+    <button onclick="resolveRisk('{{ risk.riskCaseId }}')">解决</button>
+  </div>
+</div>

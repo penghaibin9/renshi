@@ -1,0 +1,9 @@
+<!-- §99 HrAgreementTermTable -->
+<table class="hr-term-table">
+  <thead><tr><th>条款代码</th><th>分类</th><th>内容</th></tr></thead>
+  <tbody>
+    {% for t in terms %}
+    <tr><td>{{ t.term_code }}</td><td>{{ t.category }}</td><td>{{ t.display_text }}</td></tr>
+    {% empty %}<tr><td colspan="3">暂无结构化条款</td></tr>{% endfor %}
+  </tbody>
+</table>

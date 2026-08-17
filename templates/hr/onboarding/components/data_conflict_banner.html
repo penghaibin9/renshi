@@ -1,0 +1,17 @@
+{% load i18n %}
+{# HR05 公共组件：数据冲突横幅（总册 §22/§30） #}
+{% if conflict %}
+<div class="hr-data-conflict-banner hr-banner hr-banner--warning" role="alert">
+  <strong>{% trans "数据冲突" %}</strong>
+  <p>
+    {% trans "字段" %}：{{ conflict.field }} ·
+    {{ conflict.source_a }}：{{ conflict.value_a }} ·
+    {{ conflict.source_b }}：{{ conflict.value_b }}
+  </p>
+  {% if conflict.resolution == "OPEN" %}
+  <span class="oh-badge oh-badge--warning">{% trans "待人工裁决" %}</span>
+  {% else %}
+  <span class="oh-badge oh-badge--success">{{ conflict.resolution_label|default:conflict.resolution }}</span>
+  {% endif %}
+</div>
+{% endif %}

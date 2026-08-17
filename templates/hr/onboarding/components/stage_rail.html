@@ -1,0 +1,12 @@
+{% load i18n %}
+{# HR05 公共组件：阶段轨道（总册 §30/§37） #}
+<nav class="hr-stage-rail" aria-label="{% trans '入职阶段' %}">
+  <ol class="hr-stage-rail__list">
+    {% for stage in stages %}
+    <li class="hr-stage-rail__item {% if stage.active %}hr-stage-rail__item--active{% endif %} {% if stage.done %}hr-stage-rail__item--done{% endif %}">
+      <span class="hr-stage-rail__dot" aria-hidden="true"></span>
+      <span class="hr-stage-rail__label">{{ stage.label }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+</nav>

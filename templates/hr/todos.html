@@ -1,0 +1,32 @@
+{% extends "index.html" %}
+{% load static i18n %}
+{% comment %}
+HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
+
+数据来源：
+  GET /api/hr/v1/home/todos/summary
+  GET /api/hr/v1/home/todos
+{% endcomment %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="todos">
+  {% include "hr/components/page_header.html" with title="我的待办" subtitle="散落在各模块的、当前由我处理的事项" %}
+
+  <!-- 统计 -->
+  {% include "hr/components/section_card.html" with id="hr-todo-summary" title="待办概览" status="loading" %}
+
+  <!-- 分类 Tabs -->
+  {% include "hr/components/status_tabs.html" with id="hr-todo-tabs" %}
+
+  <!-- 待办列表 -->
+  {% include "hr/components/section_card.html" with id="hr-todo-list" title="待办事项" status="loading" %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/todos.js' %}"></script>
+{% endblock %}

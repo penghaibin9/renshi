@@ -1,0 +1,17 @@
+{% extends "hr/development/base.html" %}
+{% block title %}企业实践项目{% endblock %}
+{% block title_zh %}企业实践项目{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <a class="btn btn-primary" href="/api/v1/hr/development/practice-projects/create">新建项目</a>
+  <a class="btn" href="/api/v1/hr/development/practice-placements/create">新建批次</a>
+  <a class="btn" href="/api/v1/hr/development/practice-assignments/create">新建派出</a>
+</div>
+<div class="empty">
+  企业实践项目工作台：
+  <br><br>
+  · 开放项目 · 待匹配 · 30日内开始 · 进行中 · 前置阻断 · 风险
+  <br><br>
+  <a class="btn" href="/api/v1/hr/development/practice-projects">查看项目列表 (API)</a>
+</div>
+{% endblock %}

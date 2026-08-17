@@ -1,0 +1,30 @@
+{% comment %}
+HrStatusTabs — 状态 Tab（如 [全部][合同][退休][资格]），渲染 ul/li + a。
+非数据组件；tabs 为空时不输出任何节点。
+
+Usage:
+  {% include "hr/components/status_tabs.html" with tabs=tabs active=active_key %}
+  # tabs 为列表，每项 dict：{key, label, url?, count?}，如
+  #   [{"key":"all","label":"全部","count":128}, {"key":"contract","label":"合同"}]
+  # url 缺省时 href="#{key}"，请在调用处自行覆盖为真实链接。
+  # count 为 0 时仍显示（用 "count" in tab 判断字段是否存在）。
+
+无障碍：激活项使用 aria-current="page"，非色块区分；键盘可访问（原生 a 链接）。
+{% endcomment %}
+{% load i18n %}
+{% if tabs %}
+<nav class="hr-status-tabs" aria-label="{{ aria_label|default:_('状态筛选') }}">
+  <ul class="hr-status-tabs__list">
+    {% for tab in tabs %}
+      <li class="hr-status-tabs__item">
+        <a class="hr-status-tabs__link{% if tab.key == active %} is-active{% endif %}"
+           href="{% if tab.url %}{{ tab.url }}{% else %}#{{ tab.key }}{% endif %}"
+           {% if tab.key == active %}aria-current="page"{% endif %}>
+          {{ tab.label }}
+          {% if "count" in tab %}<span class="hr-status-tabs__count">{{ tab.count }}</span>{% endif %}
+        </a>
+      </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% endif %}

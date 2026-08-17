@@ -1,0 +1,33 @@
+{% comment %}
+HrFilterBar — 筛选栏布局容器（搜索框 + 下拉 + 按钮）。
+非数据组件，仅负责排版；搜索/下拉/按钮内容由调用方以"安全 HTML"注入。
+
+Usage:
+  {% include "hr/components/filter_bar.html" with search_name="q" search_placeholder="搜索姓名" filters=selects_html|safe actions=buttons_html|safe %}
+  # 或只要搜索框：
+  {% include "hr/components/filter_bar.html" with search_name="q" search_url="..." %}
+
+注意：
+  - filters / actions 为安全 HTML 插槽，调用处请用 |safe 标记。
+  - 若只需要一个提交按钮，传 submit_label（配合外层 <form>）。
+{% endcomment %}
+{% load i18n %}
+<div class="hr-filter-bar">
+  {% if search_name or search_url %}
+    <div class="hr-filter-bar__search">
+      {% include "hr/components/search_box.html" with name=search_name|default:"search" url=search_url|default:"" placeholder=search_placeholder|default:_("搜索…") %}
+    </div>
+  {% endif %}
+
+  {% if filters %}
+    <div class="hr-filter-bar__fields">{{ filters }}</div>
+  {% endif %}
+
+  {% if actions %}
+    <div class="hr-filter-bar__actions">{{ actions }}</div>
+  {% elif submit_label %}
+    <div class="hr-filter-bar__actions">
+      <button type="submit" class="hr-btn hr-btn--primary">{{ submit_label }}</button>
+    </div>
+  {% endif %}
+</div>

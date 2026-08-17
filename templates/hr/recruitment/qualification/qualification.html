@@ -1,0 +1,34 @@
+{% comment %}
+HR04-04 资格审查工作台（总册 11.1）
+数据走 GET /api/hr/v1/recruitment/qualification/workbench
+{% endcomment %}
+{% extends "index.html" %}
+{% load static i18n %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+
+<div class="hr-page" data-hr-page="recruitment-qualification">
+  {% include "hr/components/page_header.html" with title="资格审查" subtitle="系统预检只建议，最终结论需人工审核（HR04-04）" %}
+
+  <div class="hr-metric-strip" id="hr04-qual-stats">
+    {% include "hr/components/metric_card.html" with label="待审核" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="资格通过" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="退回补件" status="loading" %}
+    {% include "hr/components/metric_card.html" with label="不合格" status="loading" %}
+  </div>
+
+  <div class="hr-card">
+    <h2 class="hr-section-title">{% trans "审核队列" %}</h2>
+    <div id="hr04-qual-queue" class="hr-rec-qual-queue">
+      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-qualification.js' %}"></script>
+{% endblock %}

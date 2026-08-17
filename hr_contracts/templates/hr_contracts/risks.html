@@ -1,0 +1,53 @@
+{% load i18n %}{% load hr07_components %}
+{% trans "聘期与到期预警" as t_title %}{% trans "90日内到期" as t_90d %}{% trans "30日内" as t_30d %}{% trans "已过期未处理" as t_overdue %}{% trans "待签署" as t_pending_sig %}{% trans "高风险" as t_high_risk %}{% trans "到期" as t_exp %}{% trans "续聘评审" as t_rev %}{% trans "签署" as t_sig_tab %}{% trans "资料" as t_docs_tab %}{% trans "HR06影响" as t_hr06 %}{% trans "HR16离校冲突" as t_hr16 %}{% trans "人员" as t_staff %}{% trans "合同" as t_contract %}{% trans "学院" as t_college %}{% trans "到期日" as t_due %}{% trans "当前动作" as t_action %}{% trans "负责人" as t_owner %}{% trans "SLA" as t_sla %}{% trans "确认" as t_ack %}{% trans "解决" as t_resolve %}{% trans "豁免" as t_waive %}{% trans "开始续聘评审" as t_start_rev %}{% trans "发起续签" as t_start_renew %}{% trans "提醒签署" as t_remind_sig %}{% trans "补充材料" as t_supplement %}{% trans "检查HR06影响" as t_check_hr06 %}{% trans "发起解除" as t_start_term %}{% trans "交给HR16" as t_hand_hr16 %}
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ t_title }} · HR07</title>
+<style>:root{--hr-primary:#2563eb;--hr-success:#16a34a;--hr-warning:#d97706;--hr-danger:#dc2626;--hr-bg:#f5f7fa;--hr-card:#fff;--hr-border:#e5e7eb;--hr-text:#1f2937;--hr-muted:#6b7280}*{box-sizing:border-box}body{font-family:"Segoe UI","Microsoft YaHei",sans-serif;margin:0;background:var(--hr-bg);color:var(--hr-text)}.page{max-width:1400px;margin:0 auto;padding:24px}h1{font-size:22px;margin:0}h2{font-size:15px;margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--hr-border)}.kpi{display:flex;gap:16px;margin:16px 0}.kpi-item{background:var(--hr-card);border-radius:12px;padding:16px 24px;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center;flex:1}.kpi-item b{font-size:28px;display:block}.kpi-item span{font-size:13px;color:var(--hr-muted)}.tabs{display:flex;gap:4px;margin-bottom:16px}.tab{padding:8px 14px;border-radius:8px;border:1px solid var(--hr-border);background:#fff;font-size:13px;cursor:pointer}.tab.active{background:var(--hr-primary);color:#fff;border-color:var(--hr-primary)}.risk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}.risk-card{background:var(--hr-card);border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);border-left:4px solid var(--hr-border)}.risk-card.critical{border-left-color:var(--hr-danger)}.risk-card.high{border-left-color:var(--hr-warning)}.risk-card__header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.risk-card__title{font-weight:600;font-size:14px}.risk-card__severity{font-size:12px;padding:2px 8px;border-radius:999px}.risk-card__severity.CRITICAL{background:#fee2e2;color:#991b1b}.risk-card__severity.HIGH{background:#fef3c7;color:#92400e}.risk-card__meta{font-size:12px;color:var(--hr-muted);margin-bottom:8px}.risk-card__actions{display:flex;flex-wrap:wrap;gap:6px}.btn{padding:6px 12px;border-radius:6px;border:1px solid var(--hr-border);background:#fff;font-size:12px;cursor:pointer}.btn.primary{background:var(--hr-primary);color:#fff;border-color:var(--hr-primary)}.empty{text-align:center;color:var(--hr-muted);padding:40px 0}@media(max-width:768px){.kpi{flex-wrap:wrap}.kpi-item{flex:1 1 40%}}</style></head>
+<body><div class="page">
+<h1>{{ t_title }}</h1>
+<div class="kpi">
+  <div class="kpi-item"><b>{{ stats.expiring_90d|default:0 }}</b><span>{{ t_90d }}</span></div>
+  <div class="kpi-item"><b>{{ stats.expiring_30d|default:0 }}</b><span>{{ t_30d }}</span></div>
+  <div class="kpi-item"><b>{{ stats.expired_unresolved|default:0 }}</b><span>{{ t_overdue }}</span></div>
+  <div class="kpi-item"><b>{{ stats.pending_signature|default:0 }}</b><span>{{ t_pending_sig }}</span></div>
+  <div class="kpi-item"><b>{{ stats.high_risk|default:0 }}</b><span>{{ t_high_risk }}</span></div>
+</div>
+<div class="tabs">
+  <button class="tab active" onclick="filterRisks('')">{{ t_exp }}</button>
+  <button class="tab" onclick="filterRisks('REVIEW_NOT_STARTED')">{{ t_rev }}</button>
+  <button class="tab" onclick="filterRisks('SIGNATURE_FAILED')">{{ t_sig_tab }}</button>
+  <button class="tab" onclick="filterRisks('DOCUMENT_MISSING')">{{ t_docs_tab }}</button>
+  <button class="tab" onclick="filterRisks('HR06_CHANGE_REVIEW_REQUIRED')">{{ t_hr06 }}</button>
+  <button class="tab" onclick="filterRisks('HR16_EXIT_CONFLICT')">{{ t_hr16 }}</button>
+</div>
+<div class="risk-grid" id="risk-grid">
+{% for r in risks %}
+<div class="risk-card {{ r.severity|lower }}" data-type="{{ r.riskType }}">
+  <div class="risk-card__header">
+    <div class="risk-card__title">{{ r.agreementId|slice:":8" }}... · {{ r.riskTypeLabel }}</div>
+    <span class="risk-card__severity {{ r.severity }}">{{ r.severityLabel }}</span>
+  </div>
+  <div class="risk-card__meta">到期: {{ r.dueAt|default:"-" }} · 开启: {{ r.openedAt }}</div>
+  <div class="risk-card__actions">
+    <button class="btn" onclick="riskAction('{{ r.riskCaseId }}','acknowledge')">{{ t_ack }}</button>
+    <button class="btn primary" onclick="riskAction('{{ r.riskCaseId }}','resolve')">{{ t_resolve }}</button>
+    {% if r.riskType == 'REVIEW_NOT_STARTED' %}
+    <button class="btn primary" onclick="quickAction('review','{{ r.agreementId }}')">{{ t_start_rev }}</button>
+    {% elif r.riskType == 'SIGNATURE_FAILED' %}
+    <button class="btn" onclick="quickAction('remind','{{ r.agreementId }}')">{{ t_remind_sig }}</button>
+    {% elif r.riskType == 'DOCUMENT_MISSING' %}
+    <button class="btn" onclick="quickAction('supplement','{{ r.agreementId }}')">{{ t_supplement }}</button>
+    {% elif r.riskType == 'HR06_CHANGE_REVIEW_REQUIRED' %}
+    <button class="btn" onclick="quickAction('check-hr06','{{ r.agreementId }}')">{{ t_check_hr06 }}</button>
+    {% elif r.riskType == 'HR16_EXIT_CONFLICT' %}
+    <button class="btn" onclick="quickAction('hand-hr16','{{ r.agreementId }}')">{{ t_hand_hr16 }}</button>
+    {% endif %}
+  </div>
+</div>{% empty %}<div class="empty">无风险案件</div>{% endfor %}
+</div>
+</div>
+<script>
+function riskAction(id,action){fetch('/api/hr/v1/contracts/risks/'+id+'/'+action,{method:'POST'}).then(r=>r.json()).then(d=>{if(!d.error)location.reload()})}
+function quickAction(type,agreementId){if(type==='review'){fetch('/api/hr/v1/contracts/'+agreementId+'/renewal-reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reviewDueAt:new Date().toISOString().slice(0,10)})}).then(r=>r.json()).then(d=>{if(!d.error)alert('续聘评审已创建')})}}
+function filterRisks(type){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));event.target.classList.add('active');document.querySelectorAll('.risk-card').forEach(c=>{c.style.display=(!type||c.dataset.type===type)?'':'none'})}
+</script>
+</body></html>

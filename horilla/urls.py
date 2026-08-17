@@ -1,20 +1,6 @@
-"""horilla URL Configuration
+"""Root URL configuration for the Yueke higher-education HR system."""
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/4.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
-
-from django.conf.urls.static import static
+import notifications.urls
 from django.contrib import admin
 from django.core.cache import cache
 from django.db import connection
@@ -22,40 +8,44 @@ from django.http import JsonResponse
 from django.urls import include, path, re_path
 from django.views.i18n import JavaScriptCatalog
 
-import notifications.urls
-
 from . import settings
 
 
 def health_check(request):
-    """Liveness probe — cheap, no dependency checks (Docker HEALTHCHECK)."""
+    """Cheap liveness probe; does not touch dependencies."""
     return JsonResponse({"status": "ok"}, status=200)
 
 
 def readiness_check(request):
-    """
-    Readiness probe — verifies database (and Redis cache when REDIS_URL is set).
-    """
+    """Readiness probe for the signing database and configured Redis cache."""
     checks = {}
     try:
         connection.ensure_connection()
         checks["database"] = "ok"
+        checks["database_vendor"] = connection.vendor
+        if connection.vendor != "mysql":
+            return JsonResponse(
+                {
+                    "status": "unavailable",
+                    "database": "wrong vendor",
+                    "database_vendor": connection.vendor,
+                },
+                status=503,
+            )
     except Exception as exc:
         return JsonResponse(
-            {"status": "unavailable", "database": str(exc)},
-            status=503,
+            {"status": "unavailable", "database": str(exc)}, status=503
         )
 
     if getattr(settings, "REDIS_URL", None):
         try:
-            cache.set("horilla_ready_probe", "1", timeout=5)
-            if cache.get("horilla_ready_probe") != "1":
+            cache.set("renshi_ready_probe", "1", timeout=5)
+            if cache.get("renshi_ready_probe") != "1":
                 raise RuntimeError("cache readback failed")
             checks["cache"] = "ok"
         except Exception as exc:
             return JsonResponse(
-                {"status": "unavailable", "cache": str(exc), **checks},
-                status=503,
+                {"status": "unavailable", "cache": str(exc), **checks}, status=503
             )
 
     return JsonResponse({"status": "ok", **checks}, status=200)
@@ -63,7 +53,6 @@ def readiness_check(request):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("accounts/", include("django.contrib.auth.urls")),
     path("accounts/", include("django.contrib.auth.urls")),
     path("", include("base.urls")),
     path("", include("horilla_automations.urls")),
@@ -77,9 +66,8 @@ urlpatterns = [
     ),
     path("i18n/", include("django.conf.urls.i18n")),
     path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
-    path("health/", health_check),
-    path("ready/", readiness_check),
+    # One explicit HR routing graph. AppConfig.ready() must not mutate this list.
+    path("", include("horilla.hr_urls")),
+    path("health/", health_check, name="health"),
+    path("ready/", readiness_check, name="ready"),
 ]
-
-# if settings.DEBUG:
-#     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

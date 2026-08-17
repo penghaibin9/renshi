@@ -1,0 +1,21 @@
+{% comment %}
+HrSearchBox — 搜索框（GET 表单）。
+非数据组件。
+
+Usage:
+  {% include "hr/components/search_box.html" with name="q" url="?status=all" placeholder="搜索姓名/工号" %}
+
+无障碍：label 视觉隐藏但可读（.hr-sr-only）；input 为 type="search"。
+{% endcomment %}
+{% load i18n %}
+<form class="hr-search-box" action="{{ url|default:'' }}" method="get" role="search">
+  <label class="hr-sr-only" for="hr-search-{{ name }}">{{ placeholder|default:_("搜索") }}</label>
+  <input class="hr-search-box__input"
+         type="search"
+         id="hr-search-{{ name }}"
+         name="{{ name|default:'search' }}"
+         placeholder="{{ placeholder|default:_('搜索…') }}"
+         value="{{ value|default:'' }}"
+         autocomplete="off" />
+  <button type="submit" class="hr-btn hr-btn--primary">{% trans "搜索" %}</button>
+</form>

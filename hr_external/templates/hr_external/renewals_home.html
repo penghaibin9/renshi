@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="hr-page-header">
+  <h1>{{ page_title }}</h1>
+  <p class="hr-page-subtitle">到期评估与续聘决策（§59-61）：到期只 Review 不自动续</p>
+</header>
+
+<div class="hr-table-wrap">
+<table class="hr-data-table">
+  <thead>
+    <tr><th>人员</th><th>聘期</th><th>评估到期日</th><th>状态</th><th>决策</th></tr>
+  </thead>
+  <tbody>
+    {% for r in reviews %}
+    <tr>
+      <td>{{ r.engagement_id.external_profile_id.person_id.legal_name }}</td>
+      <td>{% include "hr_external/components/engagement_period.html" with start_at=r.engagement_id.start_at end_at=r.engagement_id.end_at %}</td>
+      <td>{{ r.review_due_at|date:"Y-m-d" }}</td>
+      <td>{{ r.status }}</td>
+      <td>{{ r.decision|default:"-" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="hr-empty">暂无续聘评估</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

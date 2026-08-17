@@ -1,0 +1,1 @@
+"""HR12 Assessment Providers — 跨域数据提供者接口"""

@@ -1,0 +1,14 @@
+{% load i18n %}
+{# HR05 公共组件：生效前检查清单（总册 §30） #}
+<div class="hr-activation-checklist hr-card">
+  <h3>{% trans "生效前检查清单" %}</h3>
+  <ul class="hr-checklist">
+    {% for item in gate.items %}
+    <li class="hr-checklist__item {% if item.ok %}hr-checklist__item--ok{% else %}hr-checklist__item--no{% endif %}">
+      <span class="hr-check-icon" aria-hidden="true">{% if item.ok %}&#10003;{% else %}&#10007;{% endif %}</span>
+      <span class="hr-checklist__label">{{ item.label }}</span>
+      {% if item.detail %}<span class="hr-checklist__detail">{{ item.detail }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>

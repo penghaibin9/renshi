@@ -1,0 +1,31 @@
+{% comment %}
+HrPlanCapacityCard — 用人计划/岗位额度卡片（HR02 资源校验口径，数据新鲜度合同）
+Usage:
+  {% include "hr/recruitment/components/capacity_card.html" with capacity=capacity %}
+  # capacity: {authorized, reserved, available, status, mode, reason}
+  # status: OK / PARTIAL / STALE / UNAVAILABLE / ERROR
+{% endcomment %}
+{% load i18n %}
+<div class="hr-card hr-rec-capacity" data-status="{{ capacity.status|default:'loading' }}">
+  <div class="hr-rec-capacity__title">{% trans "岗位额度" %}</div>
+  <div class="hr-rec-capacity__row">
+    <span class="hr-meta">{% trans "核定" %}</span>
+    <span class="hr-kpi-value">{{ capacity.authorized|default:"—" }}</span>
+  </div>
+  <div class="hr-rec-capacity__row">
+    <span class="hr-meta">{% trans "已预占" %}</span>
+    <span>{{ capacity.reserved|default:"—" }}</span>
+  </div>
+  <div class="hr-rec-capacity__row">
+    <span class="hr-meta">{% trans "可用" %}</span>
+    <span class="{% if capacity.status == 'OK' %}hr-rec-capacity__available{% else %}hr-rec-capacity__unavailable{% endif %}">
+      {{ capacity.available|default:"—" }}
+    </span>
+  </div>
+  {% if capacity.status == "UNAVAILABLE" or capacity.status == "ERROR" %}
+  <div class="hr-meta">{% trans "额度不可用" %}{% if capacity.reason %} · {{ capacity.reason }}{% endif %}</div>
+  {% elif capacity.status == "STALE" %}
+  <div class="hr-freshness-badge hr-freshness-badge--stale">{% trans "额度快照可能已过期" %}</div>
+  {% endif %}
+  {% if capacity.mode %}<div class="hr-meta">{% trans "口径" %}: {{ capacity.mode }}</div>{% endif %}
+</div>

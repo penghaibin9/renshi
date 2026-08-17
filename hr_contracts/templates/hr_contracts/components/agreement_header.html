@@ -1,0 +1,12 @@
+<!-- §99 HrAgreementHeader -->
+<div class="hr-agreement-header">
+  <div class="hr-agreement-header__no">{{ agreement.agreementNo|default:"(草稿)" }}</div>
+  <div class="hr-agreement-header__title">
+    {{ staff.legalName|default:"-" }} · {{ agreement.agreementTypeName|default:"-" }}
+    <span class="oh-badge oh-badge--success">履行中</span>
+  </div>
+  <div class="hr-agreement-header__dates">
+    {{ agreement.contractStartDate|default:"-" }} ~ {{ agreement.contractEndDate|default:"-" }}
+    &nbsp; V{{ agreement.currentVersionNo|default:"1" }}
+  </div>
+</div>

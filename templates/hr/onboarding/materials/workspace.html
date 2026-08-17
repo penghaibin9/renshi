@@ -1,0 +1,51 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% block title %}{% trans "入职材料核验" %}{% endblock %}
+{% block content %}
+<div class="hr-page" id="materialsPage">
+  <div class="hr-page-header">
+    <h1>{% trans "材料核验工作台" %}</h1>
+    <div class="hr-material-stats">
+      <span class="hr-stat">{% trans "全部" %}：{{ stats.total|default:0 }}</span>
+      <span class="hr-stat hr-stat--pending">{% trans "待核验" %}：{{ stats.pending|default:0 }}</span>
+      <span class="hr-stat hr-stat--returned">{% trans "缺件" %}：{{ stats.returned|default:0 }}</span>
+      <span class="hr-stat hr-stat--expired">{% trans "已过期" %}：{{ stats.expired|default:0 }}</span>
+    </div>
+  </div>
+  <div class="hr-grid hr-grid--material">
+    <div class="hr-card hr-material-sidebar">
+      <h3>{% trans "材料目录" %}</h3>
+      <ul class="hr-checklist" id="materialList">
+        {% for item in materials %}
+        <li class="hr-checklist__item {% if item.status == 'VERIFIED' or item.status == 'WAIVED' %}hr-checklist__item--ok{% else %}hr-checklist__item--no{% endif %}"
+            data-material-id="{{ item.id }}" role="button" tabindex="0">
+          <span class="hr-checklist__label">{{ item.label }}</span>
+          <span class="hr-checklist__phase">{% firstof item.blocking_phase_label item.blocking_phase "—" %}</span>
+          <span class="hr-checklist__status">{% firstof item.status_label item.status "—" %}</span>
+        </li>
+        {% empty %}
+        <li class="hr-empty">{% trans "暂无材料要求" %}</li>
+        {% endfor %}
+      </ul>
+      <div class="hr-material-filters">
+        <button class="oh-btn oh-btn--small" data-filter="pending">{% trans "仅看待核验" %}</button>
+        <button class="oh-btn oh-btn--small" data-filter="missing">{% trans "缺件" %}</button>
+        <button class="oh-btn oh-btn--small" data-filter="next" id="btnNext">{% trans "下一项" %}</button>
+      </div>
+    </div>
+    <div class="hr-card hr-material-preview">
+      <h3>{% trans "文件预览" %}</h3>
+      <div class="hr-material-preview__frame" id="previewFrame">
+        <p class="hr-empty">{% trans "请从左侧选择材料以预览" %}</p>
+      </div>
+    </div>
+    <div class="hr-card hr-material-actions">
+      <h3>{% trans "核验动作" %}</h3>
+      <div id="materialDetail" data-empty="true">
+        <p class="hr-empty">{% trans "请选择一项材料" %}</p>
+      </div>
+      {% include "hr/onboarding/components/material_verification_panel.html" with material=selected_material %}
+    </div>
+  </div>
+</div>
+{% endblock %}

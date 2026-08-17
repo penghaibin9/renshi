@@ -1,14 +1,14 @@
-# Build stage - for compiling dependencies
+# Build stage - compile Python/native dependencies for the MySQL-only stack.
 FROM python:3.12-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Install build dependencies
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        libpq-dev \
+        default-libmysqlclient-dev \
         libjpeg-dev \
         zlib1g-dev \
         libcairo2-dev \
@@ -22,26 +22,44 @@ RUN apt-get update \
         g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Create virtual environment
-RUN python -m venv /opt/venv
+RUN rm -rf /opt/venv \
+    && python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt gunicorn psycopg2-binary
+RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall -r requirements.txt \
+    && find /opt/venv -type d \( \
+        -name 'msgpack-*.dist-info' -o \
+        -name 'msgpack-*.egg-info' -o \
+        -name 'setuptools-*.dist-info' -o \
+        -name 'setuptools-*.egg-info' \
+       \) -prune -exec rm -rf '{}' + \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --no-deps --force-reinstall \
+        msgpack==1.2.1 \
+        setuptools==83.0.0 \
+    && /opt/venv/bin/python -m pip check \
+    && /opt/venv/bin/python -c 'from importlib.metadata import distributions; from pathlib import Path; site_packages=next(Path("/opt/venv/lib").glob("python*/site-packages")); expected={"msgpack":"1.2.1","setuptools":"83.0.0"}; found={name:[d.version for d in distributions(path=[str(site_packages)]) if (d.metadata.get("Name") or "").lower()==name] for name in expected}; assert found=={name:[version] for name,version in expected.items()}, found' \
+    && /opt/venv/bin/python -c 'from importlib.metadata import distribution; from pathlib import Path; root=Path("/opt/venv").resolve(); locations=[Path(distribution(name).locate_file("")).resolve() for name in ("msgpack", "setuptools")]; assert all(location == root or root in location.parents for location in locations), locations' \
+    && /opt/venv/bin/python -m pip uninstall --yes pip \
+    && /opt/venv/bin/python -c 'import importlib.util; from pathlib import Path; assert importlib.util.find_spec("pip") is None, "pip package must not ship in the production venv"; assert not list(Path("/opt/venv/bin").glob("pip*")), "pip entry points must not ship in the production venv"' \
+    && find /opt/venv -type d -name '__pycache__' -prune -exec rm -rf '{}' + \
+    && find /opt/venv -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete \
+    && /opt/venv/bin/python -c 'from pathlib import Path; leftovers=[str(path) for path in Path("/opt/venv").rglob("*") if path.is_file() and path.suffix in {".pyc", ".pyo"}]; assert not leftovers, leftovers[:20]' \
+    && /opt/venv/bin/python -c 'exec("""from pathlib import Path\nexpected = {\"msgpack\": \"1.2.1\", \"setuptools\": \"83.0.0\"}\nhits = []\nfor metadata in Path(\"/opt/venv\").rglob(\"*\"):\n    if not metadata.is_file() or metadata.name not in {\"METADATA\", \"PKG-INFO\"}:\n        continue\n    name = version = None\n    try:\n        for line in metadata.read_text(encoding=\"utf-8\", errors=\"replace\").splitlines():\n            if line.startswith(\"Name: \") and name is None:\n                name = line[6:].strip().lower()\n            elif line.startswith(\"Version: \") and version is None:\n                version = line[9:].strip()\n            if name is not None and version is not None:\n                break\n    except OSError:\n        continue\n    if name in expected and version != expected[name]:\n        hits.append((str(metadata), name, version, expected[name]))\nif hits:\n    print(\"Unsafe or stale Python package metadata detected in /opt/venv:\")\n    for path, name, version, wanted in hits:\n        print(f\"  {path}: {name} {version} (expected {wanted})\")\n    raise SystemExit(42)\n""")'
 
-# Production stage - minimal runtime image
+# Production stage - minimal runtime image.
 FROM python:3.12-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH"
 
-# Install only runtime dependencies
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
-        libpq5 \
+        default-mysql-client \
+        libmariadb3 \
         libjpeg62-turbo \
         zlib1g \
         libcairo2 \
@@ -55,27 +73,18 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Create non-root user FIRST
 RUN useradd --create-home --uid 1000 appuser
-
-# Copy virtual environment from builder stage WITH correct ownership
 COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 
 WORKDIR /app
-
-# Copy application code
 COPY --chown=appuser:appuser . .
-
-# Copy entrypoint script
 COPY --chown=appuser:appuser docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create necessary directories and set permissions
 RUN mkdir -p staticfiles media \
     && chown -R appuser:appuser /app
 
 USER appuser
-
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \

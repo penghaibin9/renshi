@@ -1,0 +1,23 @@
+{% load i18n %}
+{# HR05 公共组件：入职准备度卡片（总册 §30，非虚假百分比） #}
+<div class="hr-onboarding-readiness-card hr-card">
+  <div class="hr-readiness-header">
+    <h3>{% trans "入职准备度" %}</h3>
+    <span class="hr-freshness" data-status="{{ freshness|default:"OK" }}">{{ freshness_label|default:_("数据正常") }}</span>
+  </div>
+  <div class="hr-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+       aria-valuenow="{{ readiness.percent|default:0 }}">
+    <div class="hr-progress__bar" style="width: {{ readiness.percent|default:0 }}%"></div>
+    <span class="hr-progress__text">{{ readiness.completed|default:0 }}/{{ readiness.total|default:0 }}</span>
+  </div>
+  <p class="hr-readiness-note">{% trans "仅统计报到前必办任务（非全部任务）" %}</p>
+  {% if readiness.blocking %}
+  <ul class="hr-readiness-blocking">
+    {% for item in readiness.blocking %}
+    <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="hr-readiness-ok">{% trans "无阻断项" %}</p>
+  {% endif %}
+</div>

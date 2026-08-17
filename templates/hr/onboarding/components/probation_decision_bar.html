@@ -1,0 +1,18 @@
+{% load i18n %}
+{# HR05 公共组件：试用决策栏（总册 §17.4/§30） #}
+<div class="hr-probation-decision-bar">
+  {% if can_confirm %}
+  <button type="button" class="oh-btn oh-btn--success" data-action="probation-confirm">{% trans "转正" %}</button>
+  {% endif %}
+  {% if can_extend %}
+  <button type="button" class="oh-btn oh-btn--warning" data-action="probation-extend">{% trans "延长试用" %}</button>
+  {% endif %}
+  {% if can_fail %}
+  <button type="button" class="oh-btn oh-btn--danger" data-action="probation-fail">{% trans "不通过" %}</button>
+  {% endif %}
+  {% if probation.status == "CONFIRMED" %}
+  <span class="oh-badge oh-badge--success">{% trans "已转正（终局）" %}</span>
+  {% elif probation.status == "FAILED" %}
+  <span class="oh-badge oh-badge--danger">{% trans "不合格（终局，转人事事件处理）" %}</span>
+  {% endif %}
+</div>

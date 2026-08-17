@@ -1,0 +1,185 @@
+"""
+hr_time/services/leave_account_service.py
+
+S7 假期账户服务（总册 §87-91、§112）。
+
+- grant：创建账户 + GRANT ledger 条目（余额=ledger 求和，不存 running total）
+- annual_leave_tier：法定年休假档位评估（满1年→5天 / 满10年→10天 / 满20年→15天，§5）
+- annual_leave_evaluation：寒暑假交互（§91 教师有寒暑假 ≠ 无年休假）
+- reconcile：账户对账（§112 opening+grants−used−expired+adjust=closing；不平→LEAVE_LEDGER_DRIFT）
+
+铁律：
+- 禁止 `annual_leave_balance = 10` 单值；
+- 禁止 `teacher=True → annual_leave=0`；
+- 调整必须经 Adjust Case（S8），禁止直接 SQL 改余额。
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Optional
+
+from django.db import transaction
+from django.db.models import Sum
+
+from hr_time.enums import LeaveLedgerEntryType
+from hr_time.models.leave import (
+    HrLeaveAccount,
+    HrLeaveLedgerEntry,
+    HrLeavePolicyVersion,
+    HrLeaveType,
+    HrSchoolBreakFact,
+)
+
+
+class LeaveAccountError(Exception):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+class LeaveAccountService:
+    @staticmethod
+    @transaction.atomic
+    def grant(
+        *,
+        tenant_id: int,
+        staff_master_id: int,
+        leave_type_id: int,
+        account_year: int,
+        amount: float,
+        effective_date: date,
+        policy_version_id: Optional[int] = None,
+        entry_type: str = LeaveLedgerEntryType.GRANT,
+        source_type: str = "GRANT",
+        source_id: str = "",
+    ) -> HrLeaveLedgerEntry:
+        """授予额度：创建账户（若不存在）+ ledger 条目。
+
+        RESERVE / RESERVATION_RELEASE 为冻结语义：不改变账户余额（balance_after=冻结前余额），
+        可用额度 = 余额 - 有效预占（§112）。
+        """
+        account, _ = HrLeaveAccount.objects.get_or_create(
+            tenant_id=tenant_id,
+            staff_master_id=staff_master_id,
+            leave_type_id=leave_type_id,
+            account_year=account_year,
+            defaults={"policy_version_id": policy_version_id},
+        )
+        balance_before = LeaveAccountService.balance(
+            account=account, as_of=effective_date
+        )
+        if entry_type in (LeaveLedgerEntryType.RESERVE, LeaveLedgerEntryType.RESERVATION_RELEASE):
+            balance_after = balance_before  # 冻结不改变余额
+        else:
+            balance_after = balance_before + amount
+        return HrLeaveLedgerEntry.objects.create(
+            tenant_id=tenant_id,
+            account=account,
+            entry_type=entry_type,
+            amount=amount,
+            effective_date=effective_date,
+            source_type=source_type,
+            source_id=source_id,
+            balance_after=balance_after,
+        )
+
+    @staticmethod
+    def balance(*, account: HrLeaveAccount, as_of: Optional[date] = None) -> float:
+        """账户余额 = ledger 求和（排除冻结条目 RESERVE/RESERVATION_RELEASE，§112）。"""
+        qs = HrLeaveLedgerEntry.objects.filter(account=account).exclude(
+            entry_type__in=[
+                LeaveLedgerEntryType.RESERVE,
+                LeaveLedgerEntryType.RESERVATION_RELEASE,
+            ]
+        )
+        if as_of:
+            qs = qs.filter(effective_date__lte=as_of)
+        total = qs.aggregate(net=Sum("amount"))["net"]
+        return float(total or 0)
+
+    @staticmethod
+    def annual_leave_tier(*, cumulative_service_years: int) -> tuple[int, str]:
+        """
+        法定年休假档位（§5：满1年不满10年→5天；满10年不满20年→10天；满20年→15天）。
+        返回 (entitled_days, rule_basis)。
+        """
+        if cumulative_service_years < 1:
+            return 0, "NO_ELIGIBILITY_YET"
+        if cumulative_service_years < 10:
+            return 5, "LEGAL_TIER_1_10Y"
+        if cumulative_service_years < 20:
+            return 10, "LEGAL_TIER_10_20Y"
+        return 15, "LEGAL_TIER_20Y_PLUS"
+
+    @staticmethod
+    def annual_leave_evaluation(
+        *,
+        tenant_id: int,
+        staff_master_id: int,
+        school_year: str,
+        cumulative_service_years: int,
+        worker_regime: str = "PUBLIC_INSTITUTION",
+    ) -> dict:
+        """
+        年休假评估（§90-91）。
+
+        输入：累计工作年限 + 寒暑假事实 + 人员制度；
+        输出：entitled_days / rule_basis / exceptions / manual_review_required。
+
+        禁止：`teacher=True → annual_leave=0`。寒暑假只影响"因工作需要未休/少休时补足"语义，
+        由校方制度决定（HrSchoolBreakFact.verified 事实），不直接抹掉年假。
+        """
+        entitled_days, rule_basis = LeaveAccountService.annual_leave_tier(
+            cumulative_service_years=cumulative_service_years
+        )
+        exceptions = []
+        manual_review_required = False
+
+        breaks = HrSchoolBreakFact.objects.filter(
+            tenant_id=tenant_id,
+            staff_master_id=staff_master_id,
+            school_year=school_year,
+            verified=True,
+        )
+        for b in breaks:
+            # 寒暑假期间实际工作了（work_during_break）→ 可能需补足，标记人工复核（S7 只输出依据）
+            if b.worked_during_break_days > 0:
+                exceptions.append(
+                    f"{b.get_break_type_display()}{b.school_year} 假期工作 {b.worked_during_break_days} 天"
+                )
+                manual_review_required = True
+
+        return {
+            "entitled_days": entitled_days,
+            "rule_basis": rule_basis,
+            "effective_date": None,
+            "exceptions": exceptions,
+            "manual_review_required": manual_review_required,
+        }
+
+    @staticmethod
+    def reconcile(*, account: HrLeaveAccount) -> dict:
+        """
+        对账（§112）：opening + grants + accrual + carry - used - expired + adjust = closing。
+
+        不平 → LEAVE_LEDGER_DRIFT（由调用方登记风险）。
+        """
+        entries = HrLeaveLedgerEntry.objects.filter(account=account)
+        total = entries.aggregate(net=Sum("amount"))["net"] or 0
+        by_type = {}
+        for entry_type, amount in entries.values_list("entry_type", "amount"):
+            by_type[entry_type] = by_type.get(entry_type, 0.0) + float(amount)
+
+        # 简单校验：latest balance_after 应与求和一致
+        latest = entries.order_by("-effective_date", "-id").first()
+        drift = latest is not None and float(latest.balance_after) != float(total)
+        return {
+            "account_id": account.id,
+            "ledger_sum": float(total),
+            "by_type": by_type,
+            "latest_balance_after": float(latest.balance_after) if latest else 0.0,
+            "drift": drift,
+            "status": "LEAVE_LEDGER_DRIFT" if drift else "OK",
+        }

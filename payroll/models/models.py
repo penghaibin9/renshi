@@ -488,8 +488,14 @@ class Contract(HorillaModel):
             try:
                 wage_int = int(self.wage)
                 work_info = self.employee_id.employee_work_info
-                work_info.basic_salary = wage_int
-                work_info.save()
+                # Guard: when this Contract is created from an EmployeeWorkInformation
+                # pre_save signal, the work_info instance may still be mid-INSERT
+                # (pk is None). Saving it again would collide with the outer
+                # force_insert INSERT (UNIQUE pk conflict). Skip the writeback
+                # until the work info row is actually persisted.
+                if work_info.pk is not None:
+                    work_info.basic_salary = wage_int
+                    work_info.save()
             except ValueError:
                 logger.error((f"Failed to convert wage '{self.wage}' to an integer."))
             except Exception as e:

@@ -1,0 +1,18 @@
+{% comment %}
+HrEmptyState — 空状态（图标占位 + 标题 + 下一步提示 + 可选操作）。
+用于"确实没有数据"的场景；异常场景请用 error_state / unavailable_state / permission_guard，不要一律显示"暂无数据"。
+
+Usage:
+  {% include "hr/components/empty_state.html" with title="暂无在岗教职工" hint="可先导入教职工基础档案" action_label="去导入" action_url="..." %}
+
+状态语义：empty（"没有数据"，区别于 error/unavailable/permission_denied）。
+{% endcomment %}
+{% load i18n %}
+<div class="hr-empty-state">
+  <div class="hr-empty-state__icon" aria-hidden="true">&#8709;</div>
+  <h3 class="hr-empty-state__title">{{ title|default:_("暂无数据") }}</h3>
+  {% if hint %}<p class="hr-meta hr-empty-state__hint">{{ hint }}</p>{% endif %}
+  {% if action_label and action_url %}
+    <a class="hr-btn hr-btn--primary hr-empty-state__action" href="{{ action_url }}">{{ action_label }}</a>
+  {% endif %}
+</div>

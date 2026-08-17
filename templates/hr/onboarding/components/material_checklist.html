@@ -1,0 +1,19 @@
+{% load i18n %}
+{# HR05 公共组件：材料检查清单（总册 §12/§30） #}
+<div class="hr-material-checklist hr-card">
+  <h3>{% trans "材料清单" %}</h3>
+  <ul class="hr-checklist">
+    {% for item in materials %}
+    <li class="hr-checklist__item {% if item.status == "VERIFIED" or item.status == "WAIVED" %}hr-checklist__item--ok{% else %}hr-checklist__item--no{% endif %}">
+      <span class="hr-check-icon" aria-hidden="true">
+        {% if item.status == "VERIFIED" or item.status == "WAIVED" %}&#10003;{% else %}&#10007;{% endif %}
+      </span>
+      <span class="hr-checklist__label">{{ item.label }}</span>
+      <span class="hr-checklist__phase">{{ item.blocking_phase_label|default:item.blocking_phase }}</span>
+      <span class="hr-checklist__status">{{ item.status_label|default:item.status }}</span>
+    </li>
+    {% empty %}
+    <li class="hr-empty">{% trans "暂无材料要求" %}</li>
+    {% endfor %}
+  </ul>
+</div>

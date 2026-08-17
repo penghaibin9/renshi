@@ -1,0 +1,20 @@
+{% comment %}
+HrUnavailableState — 不可用状态（功能/模块未启用）。
+典型文案："该指标将在「双师型教师」模块启用后提供"。
+
+Usage:
+  {% include "hr/components/unavailable_state.html" with module="双师型教师" %}
+  {% include "hr/components/unavailable_state.html" with title="该指标暂不可用" message="依赖的 HR09 模块未启用" %}
+
+状态语义：unavailable（能力未启用，区别于 error/empty）。
+{% endcomment %}
+{% load i18n %}
+<div class="hr-unavailable-state">
+  <div class="hr-unavailable-state__icon" aria-hidden="true">&#8230;</div>
+  <h3 class="hr-unavailable-state__title">{{ title|default:_("该指标暂不可用") }}</h3>
+  {% if module %}
+    <p class="hr-meta">{% blocktrans %}该指标将在「{{ module }}」模块启用后提供{% endblocktrans %}</p>
+  {% elif message %}
+    <p class="hr-meta">{{ message }}</p>
+  {% endif %}
+</div>

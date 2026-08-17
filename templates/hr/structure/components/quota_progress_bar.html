@@ -1,0 +1,65 @@
+{% comment %}
+HrQuotaProgressBar — 编制/岗位额度进度条。
+
+硬性要求：分子/分母/阈值始终以数字展示，不只靠颜色；超限红色、接近阈值黄色。
+
+参数：
+  authorized — 编制/岗位核定数（分母）
+  used       — 已用数（分子）
+  threshold  — 阈值（可选，数值；通常为 authorized 的百分比折算）
+  label      — 标签（如 "编制数" / "岗位数"）
+  unit       — 单位（如 "人" / "个"）
+  level      — 可选，显式指定 ok/near/over；缺省自动判断：
+                 over — used > authorized（红色，真正超编）
+                 near — 有 threshold 且 used >= threshold（黄色，接近阈值）
+                 ok   — 其余（绿色）
+
+无障碍：role="progressbar" + aria-valuenow/min/max/valuetext；状态文字并排显示。
+{% endcomment %}
+{% load i18n %}
+{% if lvl %}
+  <div class="hr-quota-bar hr-quota-bar--{{ lvl }}" data-level="{{ lvl }}">
+    <div class="hr-quota-bar__header">
+      <span class="hr-quota-bar__label">{{ label|default:_("额度") }}</span>
+      <span class="hr-quota-bar__nums hr-tabular-nums">
+        {{ used|default:0 }} / {{ authorized|default:0 }}
+        {% if threshold is not None %}<span class="hr-quota-bar__threshold">&#183; {% trans "阈值" %} {{ threshold }}</span>{% endif %}
+        {% if unit %} {{ unit }}{% endif %}
+      </span>
+    </div>
+    <div class="hr-quota-bar__track" role="progressbar"
+         aria-label="{{ label|default:_('额度') }}"
+         aria-valuenow="{{ used|default:0 }}"
+         aria-valuemin="0"
+         aria-valuemax="{{ authorized|default:0 }}"
+         aria-valuetext="{% if threshold is not None %}{{ used|default:0 }} / {{ authorized|default:0 }}，{% trans '阈值' %} {{ threshold }}{% else %}{{ used|default:0 }} / {{ authorized|default:0 }}{% endif %}">
+      {% if authorized %}
+        <div class="hr-quota-bar__fill" style="width: {% widthratio used|default:0 authorized 100 %}%;"></div>
+        {% if threshold is not None and threshold <= authorized %}
+          <div class="hr-quota-bar__marker" style="left: {% widthratio threshold authorized 100 %}%;">
+            <span class="hr-sr-only">{% trans "阈值" %} {{ threshold }}</span>
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+    <div class="hr-quota-bar__status">
+      {% if lvl == "over" %}
+        <span class="hr-quota-bar__level hr-quota-bar__level--danger">{% trans "已超限" %}</span>
+      {% elif lvl == "near" %}
+        <span class="hr-quota-bar__level hr-quota-bar__level--warning">{% trans "接近阈值" %}</span>
+      {% else %}
+        <span class="hr-quota-bar__level hr-quota-bar__level--ok">{% trans "未超限" %}</span>
+      {% endif %}
+    </div>
+  </div>
+{% elif authorized is not None or used is not None %}
+  {% if level %}
+    {% include "hr/structure/components/quota_progress_bar.html" with lvl=level|lower label=label authorized=authorized used=used threshold=threshold unit=unit %}
+  {% elif authorized is not None and used is not None and used > authorized %}
+    {% include "hr/structure/components/quota_progress_bar.html" with lvl="over" label=label authorized=authorized used=used threshold=threshold unit=unit %}
+  {% elif threshold is not None and used is not None and used >= threshold %}
+    {% include "hr/structure/components/quota_progress_bar.html" with lvl="near" label=label authorized=authorized used=used threshold=threshold unit=unit %}
+  {% else %}
+    {% include "hr/structure/components/quota_progress_bar.html" with lvl="ok" label=label authorized=authorized used=used threshold=threshold unit=unit %}
+  {% endif %}
+{% endif %}

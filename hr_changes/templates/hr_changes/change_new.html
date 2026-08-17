@@ -1,0 +1,76 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>发起异动 · HR06</title>
+  <style>
+    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { margin: 0; font-size: 18px; }
+    .wrap { max-width: 860px; margin: 24px auto; padding: 0 24px; }
+    .steps { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .step { padding: 8px 14px; border-radius: 8px; font-size: 13px; background: #fff; border: 1px solid #d1d5db; color: #6b7280; }
+    .step.on { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .panel { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    label { display: block; font-size: 14px; margin: 14px 0 6px; color: #374151; }
+    select, input { width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
+    .hint { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+    .actions { margin-top: 24px; display: flex; gap: 12px; }
+    .btn { display: inline-block; padding: 9px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; border: none; cursor: pointer; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>发起异动</h1>
+    <a class="btn btn-outline" href="/hr/changes/">返回中心</a>
+  </div>
+  <div class="wrap">
+    <div class="steps">
+      <span class="step on">1 选择人员</span>
+      <span class="step">2 选择异动类型</span>
+      <span class="step">3 时间与原因</span>
+      <span class="step">4 变更内容</span>
+      <span class="step">5 影响预览</span>
+      <span class="step">6 提交确认</span>
+    </div>
+    <div class="panel">
+      <p style="color:#6b7280;">发起向导将引导完成：选择人员 → 异动类型 → 生效日期与原因 → 拟变更字段 → 影响预览 → 提交。</p>
+      <p style="color:#6b7280;font-size:13px;">（完整表单由前端向导调用 <code>/api/hr/v1/changes</code> API 构建；本页为 S3 向导骨架。）</p>
+      <label>选择人员（教职工）</label>
+      <input type="text" placeholder="输入姓名 / 工号搜索（待接入 HR03 人员选择器）">
+      <label>异动类型</label>
+      <select>
+        <option>组织调动 ORG_TRANSFER</option>
+        <option>岗位调动 POSITION_TRANSFER</option>
+        <option>组织+岗位调动 ORG_POSITION_TRANSFER</option>
+        <option>岗位类别变更 POST_CATEGORY_CHANGE</option>
+        <option>人员类别变更 EMPLOYEE_CATEGORY_CHANGE</option>
+        <option>用工性质变更 EMPLOYMENT_TYPE_CHANGE</option>
+        <option>直属上级变更 MANAGER_CHANGE</option>
+        <option>工作地点变更 LOCATION_CHANGE</option>
+        <option>增加兼岗 ADD_SECONDARY_ASSIGNMENT</option>
+        <option>取消兼岗 END_SECONDARY_ASSIGNMENT</option>
+        <option>主岗切换 PRIMARY_ASSIGNMENT_SWITCH</option>
+        <option>借调 TEMPORARY_SECONDMENT</option>
+        <option>挂职 TEMPORARY_ATTACHMENT</option>
+        <option>返岗 RETURN_FROM_TEMPORARY</option>
+        <option>批量组织调整 BULK_ORG_RESTRUCTURE_MOVE</option>
+        <option>数据纠错 DATA_CORRECTION</option>
+      </select>
+      <label>生效日期</label>
+      <input type="date">
+      <div class="hint">支持未来生效日期；批准后等待到期自动生效。</div>
+      <label>原因（按异动类型联动）</label>
+      <select><option>工作需要</option></select>
+      <div class="actions">
+        <a class="btn btn-primary" href="/hr/changes/">提交</a>
+        <a class="btn btn-outline" href="/hr/changes/">取消</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
