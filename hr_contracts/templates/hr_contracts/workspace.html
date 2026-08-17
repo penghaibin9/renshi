@@ -67,8 +67,10 @@
       <select id="hr07-status-filter" aria-label="按合同状态筛选">
         <option value="">全部状态</option>
         <option value="DRAFT">草稿</option>
-        <option value="SIGNED">已签署</option>
+        <option value="SIGNED_WAITING_EFFECTIVE">已签待生效</option>
         <option value="ACTIVE">有效</option>
+        <option value="RENEWAL_IN_PROGRESS">续签办理中</option>
+        <option value="EXPIRING">即将到期</option>
         <option value="EXPIRED">已到期</option>
         <option value="TERMINATED">已终止</option>
       </select>
@@ -87,15 +89,48 @@
     <div class="hr07-card__head"><div><h2 id="hr07-detail-title">合同详情</h2><p id="hr07-detail-subtitle">版本、有效期和签署证据来自 canonical API。</p></div><button type="button" class="hr07-btn" id="hr07-detail-close">关闭详情</button></div>
     <div id="hr07-detail-content"></div>
   </section>
+
   {% elif section == 'signing' %}
   <section class="hr07-card">
-    <div class="hr07-card__head"><div><h2>首版签署与生效</h2><p>输入合同 UUID 后读取正式版本，再执行已有 Authority Service 暴露的签署/激活动作。</p></div></div>
+    <div class="hr07-card__head"><div><h2>首版签署与生效</h2><p>输入合同 UUID 后读取正式版本，再通过 Agreement Authority 完成首版签署与生效。</p></div></div>
     <form id="hr07-sign-query" class="hr07-query-row">
       <label><span>合同 UUID</span><input id="hr07-sign-agreement-id" required></label>
       <button class="hr07-btn hr07-btn--primary" type="submit">读取合同</button>
     </form>
     <div id="hr07-sign-workspace" class="hr07-inline-state">尚未选择合同。</div>
   </section>
+
+  <section class="hr07-card" data-lifecycle-workspace data-case-mode="RENEW">
+    <div class="hr07-card__head"><div><h2>续签业务单</h2><p>续签先形成独立 Case，经提交、审批后冻结 successor version，再到生效日切换正式版本；不覆盖原合同版本。</p></div></div>
+    <form class="hr07-sign-form" data-lifecycle-create-form>
+      <input type="hidden" name="caseType" value="RENEW">
+      <label><span>合同 UUID</span><input name="agreementId" required></label>
+      <label><span>业务单编号</span><input name="caseNo" required placeholder="例如 RENEW-2026-001"></label>
+      <label><span>拟生效日期</span><input name="requestedEffectiveFrom" type="date" required></label>
+      <label><span>拟到期日期</span><input name="requestedEffectiveTo" type="date"></label>
+      <label><span>原因代码</span><input name="reasonCode" placeholder="例如 NORMAL_RENEWAL"></label>
+      <label class="is-wide"><span>续签说明</span><textarea name="reasonText" placeholder="记录续签依据和说明"></textarea></label>
+      <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">发起续签 Case</button><span class="hr07-form-message" data-lifecycle-create-message></span></div>
+    </form>
+    {% include "hr_contracts/lifecycle_actions.html" %}
+  </section>
+
+  {% elif section == 'changes' %}
+  <section class="hr07-card" data-lifecycle-workspace data-case-mode="CHANGE_OR_TERMINATE">
+    <div class="hr07-card__head"><div><h2>合同变更与解除</h2><p>变更与解除均走独立 Case；变更生成追加版本，解除在批准且到达生效日后终止当前正式版本。</p></div></div>
+    <form class="hr07-sign-form" data-lifecycle-create-form>
+      <label><span>业务类型</span><select name="caseType" required><option value="CHANGE">合同变更</option><option value="TERMINATE">合同解除/终止</option></select></label>
+      <label><span>合同 UUID</span><input name="agreementId" required></label>
+      <label><span>业务单编号</span><input name="caseNo" required placeholder="例如 CHANGE-2026-001"></label>
+      <label><span>拟生效日期</span><input name="requestedEffectiveFrom" type="date" required></label>
+      <label><span>拟到期日期</span><input name="requestedEffectiveTo" type="date"></label>
+      <label><span>原因代码</span><input name="reasonCode" placeholder="例如 JOB_CHANGE / AGREED_TERMINATION"></label>
+      <label class="is-wide"><span>业务说明</span><textarea name="reasonText" placeholder="记录变更或解除依据"></textarea></label>
+      <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">发起业务 Case</button><span class="hr07-form-message" data-lifecycle-create-message></span></div>
+    </form>
+    {% include "hr_contracts/lifecycle_actions.html" %}
+  </section>
+
   {% else %}
   <section class="hr07-card hr07-capability">
     <div class="hr07-capability__icon" aria-hidden="true">{{ section|slice:":1"|upper }}</div>
@@ -103,8 +138,8 @@
       <h2>{{ section_title }}</h2>
       <p>{{ section_description }}</p>
       <div class="hr07-capability__notice">
-        <strong>前端工作区已建立，正式写入口保持 fail-closed</strong>
-        <span>当前集成 HEAD 尚未为这一工作区暴露对应的 `/api/v1/hr/contracts/...` canonical handler。为避免把旧接口重新变成正式写入口，本页只展示明确的能力边界；后续 Authority handler 接入后可直接在这里承接真实列表、表单和流程。</span>
+        <strong>正式写入口保持 fail-closed</strong>
+        <span>当前工作区只承接已经冻结的 canonical Authority。尚未开放的模板规则或风险办理动作不会回退到旧 `/api/hr/v1` writer，也不会在页面端伪造正式事实。</span>
       </div>
     </div>
   </section>
