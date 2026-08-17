@@ -1,0 +1,23 @@
+{% extends "hr/development/base_ui.html" %}
+{% load static %}
+{% block title %}教师发展计划{% endblock %}
+{% block title_zh %}教师发展计划{% endblock %}
+{% block content %}
+<div class="hr10-workspace" data-hr10-page="plans">
+  <section class="hr10-hero">
+    <div><h2>教师发展计划</h2><p>把学校、部门和个人发展目标形成正式计划，按版本冻结目标、预算、政策与人群快照，再进入审核、批准、发布和关闭。</p></div>
+    <span class="hr10-hero-badge">计划 Authority</span>
+  </section>
+  <section class="hr10-kpis" aria-label="发展计划概览">
+    <div class="hr10-kpi"><span>执行中</span><strong>{{ stats.in_execution|default:0 }}</strong></div>
+    <div class="hr10-kpi"><span>待审批</span><strong>{{ stats.pending_review|default:0 }}</strong></div>
+    <div class="hr10-kpi"><span>已关闭</span><strong>{{ stats.closed|default:0 }}</strong></div>
+    <div class="hr10-kpi"><span>计划总数</span><strong>{{ plans|length|default:0 }}</strong></div>
+  </section>
+  <section class="hr10-panel">
+    <h3>办理链</h3><p>页面只推进现有状态机；审核后的正式版本不会被静默覆盖。</p>
+    <div class="hr10-steps"><div class="hr10-step"><b>1 · 建计划</b><span>明确学校/部门/个人范围</span></div><div class="hr10-step"><b>2 · 冻版本</b><span>目标与预算形成快照</span></div><div class="hr10-step"><b>3 · 审核</b><span>退回、拒绝、批准有区分</span></div><div class="hr10-step"><b>4 · 发布</b><span>批准后才进入正式执行</span></div><div class="hr10-step"><b>5 · 关闭</b><span>保留历史结果与口径</span></div></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'hr/js/pages/hr10-actions.js' %}" defer></script>{% endblock %}
