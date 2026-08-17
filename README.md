@@ -1,153 +1,97 @@
 # 跃科高校人事管理与教师发展系统
 
-> 仓库：`penghaibin9/renshi`  
-> 底座：Horilla HRMS 2.0（正在逐步接管，不再按 Horilla 上游开发分支规则施工）  
-> 当前开发总线：`agent/renshi-takeover-cleanup-20260810`  
-> 默认稳定分支：`main`（**没有全绿验收，不合并 main**）
+`renshi` 是湖南跃科信息工程有限公司面向高校与职业院校建设的人事管理与教师发展产品代码库，覆盖从组织编制、教职工主档、招聘入职、合同异动，到资格发展、考勤考核、薪酬离校、教职工服务和人事数据中心的一体化业务链路。
 
-## 先看这一段
+> 当前主干：`main`  
+> 技术栈：Django + MySQL + Redis  
+> 产品范围：HR01–HR18  
+> 数据边界：多学校 / 多租户隔离、权限、审计、历史有效期与跨域 Authority 合同
 
-这是一个面向高校/职业院校的人事管理与教师发展系统。仓库最初基于 Horilla 2.0，目前正在把旧 Horilla 能力逐步接管为 HR01~HR18 的高校人事 Authority。
+## 产品能力
 
-如果你是第一次打开这个仓库，不要先翻几百个源码文件，也不要直接照旧 Horilla README 操作。请按下面顺序：
+| 模块 | 能力 |
+|---|---|
+| HR01 | 人事工作台 |
+| HR02 | 组织机构与编制岗位 |
+| HR03 | 教职工主档 |
+| HR04 | 招聘与人才引进 |
+| HR05 | 入职管理 |
+| HR06 | 人事异动 |
+| HR07 | 合同与聘用 |
+| HR08 | 兼职外聘教师 |
+| HR09 | 教师资格与双师型 |
+| HR10 | 培训进修与企业实践 |
+| HR11 | 考勤与请假 |
+| HR12 | 年度与聘期考核 |
+| HR13 | 职称评审 |
+| HR14 | 岗位聘任 |
+| HR15 | 薪酬福利 |
+| HR16 | 退休与离校 |
+| HR17 | 教职工服务 |
+| HR18 | 人事数据中心 |
 
-1. 先读 [`docs/README_新手入口.md`](docs/README_新手入口.md)
-2. 再读 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)
-3. 需要看业务设计时，再进入 [`docs/00_文档总索引.md`](docs/00_文档总索引.md)
-4. 只有在修某一个 HR 模块时，才读该模块的施工总册和代码
+## 核心工程原则
 
-## 当前最重要的事实
+本仓库按高校人事领域 Authority 划分正式事实源。跨域写入通过明确的 Service / Command / Event 合同完成，不允许下游模块直接修改其他领域的正式事实。
 
-### 1. 暂停新增 HR13~HR18 功能
+- **MySQL-only**：开发、测试、CI、迁移验收与生产统一以 MySQL 为数据库目标。
+- **Tenant fail-closed**：学校上下文不明确时拒绝访问，不以默认学校或全量范围兜底。
+- **Permission & Audit**：关键操作必须经过权限判定并保留审计证据。
+- **Effective-dated**：组织、任职、合同等历史事实以有效期和修订语义保留历史，不直接覆盖过去。
+- **Idempotency & concurrency**：正式业务命令关注幂等、事务、锁与并发一致性。
+- **Production gates**：代码、迁移、权限负测、跨域 E2E、备份恢复与安全门禁共同决定可交付状态。
 
-当前优先任务不是继续堆功能，而是把 HR01~HR12 从“模块内完成”收敛成“全系统可运行、可测试、可上线”。
-
-### 2. 目标数据库是 MySQL-only
-
-`docs/00_高校人事系统全局架构与Horilla接管合同.md` 已冻结：开发、测试、CI、迁移验收、生产统一以 MySQL 为目标。
-
-**注意：当前 `docker-compose.yml` 和部分 CI 仍是 PostgreSQL，这是待清理的历史欠账，不代表目标架构。**
-
-### 3. 文档里的 READY 不能代替代码验收
-
-以后只认：
-
-```text
-当前 Git HEAD
-+ Django system check
-+ makemigrations --check
-+ MySQL fresh migrate
-+ 对应模块测试
-+ tenant / permission 负测试
-+ 跨域 E2E
-+ GitHub Actions 全绿
-```
-
-任何旧报告写着 `READY FOR ACCEPTANCE`，如果当前 HEAD 没有通过上面这些 Gate，就仍然视为未封板。
-
-### 4. API / Permission / Event 只保留一套正式合同
-
-新代码最终统一到：
+## 代码结构
 
 ```text
-API:        /api/v1/hr/...
-Permission: hr.<domain>.<resource>.<action>
-Tenant:     fail-closed
-History:    effective-dated / as-of
-Cross-domain write: Provider / Command API / durable Event
+hr_control_center/     HR01 人事工作台
+hr_structure/          HR02 组织机构与编制岗位
+hr_staff/              HR03 教职工主档
+hr_recruitment/        HR04 招聘与人才引进
+hr_onboarding/         HR05 入职管理
+hr_changes/            HR06 人事异动
+hr_contracts/          HR07 合同与聘用
+hr_external/           HR08 兼职外聘教师
+hr_qualification/      HR09 教师资格与双师型
+hr10_development/      HR10 培训进修与企业实践
+hr_time/               HR11 考勤与请假
+hr_assessment/         HR12 年度与聘期考核
+
+docs/                  产品架构、模块设计与生产验收资料
+.github/workflows/      CI / 生产级门禁
+horilla/                Django 工程配置及兼容底座
 ```
 
-旧 `/api/hr/v1/...` 只允许作为迁移期 Legacy Adapter，不再新增业务 handler。
+HR13–HR18 的具体代码目录与跨域依赖以 [`docs/00_文档总索引.md`](docs/00_文档总索引.md) 为准。
 
-## 目录怎么认
+## 文档入口
 
-### 先认识 6 类目录
+- [`docs/00_文档总索引.md`](docs/00_文档总索引.md)：当前产品与工程文档导航。
+- [`docs/00_高校人事系统全局架构与Horilla接管合同.md`](docs/00_高校人事系统全局架构与Horilla接管合同.md)：历史命名保留的全局架构合同，仍承载 Authority、租户、历史事实、Provider/Event 与数据库规则。
+- HR01–HR18 模块总册：各领域业务规则、状态机、边界与验收口径。
+- `docs/hr/`：模块 GAP、风险、验收和迁移资料。
+- `docs/archive/`：阶段性施工说明、旧状态快照与上游来源说明，不作为当前完成状态依据。
 
-```text
-horilla/                 Django 全局设置、URL、启动配置
-base/                    Horilla 基础能力与多学校/权限底座
-employee/                Horilla 旧员工域（Legacy，逐步被 HR03 等接管）
-hr_* / hr10_development/ 新高校人事模块代码
+判断当前实现状态时，以 **当前 `main` 代码 + 当前 CI/测试结果** 为准，不以历史阶段报告中的 `READY`、`FINAL` 或旧分支状态作为单独依据。
 
-docs/                    系统设计、总控、模块施工册、验收资料
-.github/workflows/        GitHub Actions 门禁（当前需要重建为 main + MySQL）
-```
-
-### HR01~HR12 对应代码目录
-
-| 模块 | 业务 | 代码目录 |
-|---|---|---|
-| HR01 | 人事工作台 | `hr_control_center/` |
-| HR02 | 组织机构与编制岗位 | `hr_structure/` |
-| HR03 | 教职工主档 | `hr_staff/` |
-| HR04 | 招聘与人才引进 | `hr_recruitment/` |
-| HR05 | 入职管理 | `hr_onboarding/` |
-| HR06 | 人事异动 | `hr_changes/` |
-| HR07 | 合同与聘用 | `hr_contracts/` |
-| HR08 | 兼职外聘教师 | `hr_external/` |
-| HR09 | 教师资格与双师型 | `hr_qualification/` |
-| HR10 | 培训进修与企业实践 | `hr10_development/` |
-| HR11 | 考勤与请假 | `hr_time/` |
-| HR12 | 年度与聘期考核 | `hr_assessment/` |
-
-## 新手每天只做这 5 步
+## 本地开发
 
 ```bash
-# 1. 看自己在哪个分支
-git branch --show-current
+# 创建本地环境配置
+cp .env.dist .env
 
-# 2. 看当前有没有未提交改动
-git status
-
-# 3. 一次只改一个阶段/一个模块
-# 不要同时改多个 Authority
-
-# 4. 跑该阶段要求的检查/测试
-# 以 docs/开发顺序_接管版.md 的 Gate 为准
-
-# 5. 通过后再提交；仍然不直接合并 main
+# 按项目现有开发方式启动依赖与应用
+# 数据库目标统一为 MySQL
 ```
 
-## 绝对不要做
+具体环境变量、迁移和测试入口请以仓库中的 `.env.dist`、`docker-compose.yml`、`Makefile` 与 CI 配置为准。
 
-- 不要为了“测试绿”关闭 tenant / permission / audit
-- 不要默认第一所学校或 `all` scope
-- 不要让 Dashboard / Report / Legacy 页面直接改 Authority
-- 不要跨域 import 对方正式模型后 `.save()`
-- 不要把 PostgreSQL/SQLite 测试通过当成 MySQL 已验收
-- 不要看到旧文档写 READY 就继续往后开发
-- 不要在 HR01~HR12 系统收口前继续铺 HR13~HR18
-- 不要一次性大范围重写旧 Horilla；必须按 Authority Cutover 逐域退出
+## 品牌与来源
 
-## 当前开发顺序
+“跃科高校人事管理与教师发展系统”为本仓库当前产品身份。仓库早期代码基于开源 HRMS 项目演进，并保留了兼容层、历史包名和必要的来源记录；这些技术遗留不会作为当前产品的用户可见品牌。
 
-简版：
-
-```text
-C0 新手化与仓库真相清洗
-→ C1 H0/A0 多学校租户底座
-→ C2 MySQL-only 开发/CI/迁移基线
-→ C3 Django App / URL / API / Permission 全局接管
-→ C4 HR02 + HR03 基础 Authority 封板
-→ C5 HR04 → HR05 → HR07 入人主链
-→ C6 HR06 → HR08 → HR09 → HR10 → HR11 → HR12
-→ C7 HR01 聚合收口
-→ C8 跨域 E2E / Failure Injection / Backup-Restore / Security
-→ 全绿后才开始 HR13
-```
-
-详细验收条件见 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)。
-
-## 目前不建议直接使用的旧入口
-
-旧 Horilla README 中的这些说明已经不再作为本仓库开发规则：
-
-- `2.0` / `dev/v2.0` 作为开发目标分支
-- PostgreSQL 作为最终生产验收数据库
-- Horilla 原模块目录就是最终 Authority
-
-Horilla 仍然是重要 Legacy 底座，但本仓库的最终裁决以 `docs/00_高校人事系统全局架构与Horilla接管合同.md` 和当前代码 Gate 为准。
+上游来源与迁移背景统一归档在 [`docs/archive/upstream/README.md`](docs/archive/upstream/README.md)。内部包名与历史代码标识仅在不影响兼容性的前提下逐步治理，不通过一次性大规模重命名处理。
 
 ## License
 
-本仓库继续遵守原项目的 LGPL-2.1 许可证要求，详见 [`LICENSE`](LICENSE)。
+本次产品化与仓库身份整理不修改许可证。许可证文本与适用要求以 [`LICENSE`](LICENSE) 为准。
