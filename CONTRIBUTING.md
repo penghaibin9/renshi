@@ -1,89 +1,60 @@
-# Contributing Guidelines for Horilla
+# 跃科高校人事管理与教师发展系统贡献指南
 
-Thank you for considering contributing to Horilla! We welcome your input and appreciate the community effort to make this project even better.
+感谢参与 `renshi` 的开发与维护。本仓库当前产品身份为 **跃科高校人事管理与教师发展系统**，主干为 `main`。
 
-## Branches
+## 分支与提交
 
-- **`dev/v2.0`** — the active integration branch. Always clone this and always open PRs against this — never against `2.0` directly.
-- **`2.0`** — the repository’s default branch: a periodic public snapshot for running/deploying, not where day-to-day development happens. GitHub pre-selects this as the PR base, so change it to `dev/v2.0` before submitting.
-- **`1.0`/`master`** — v1, now deprioritized. See "Contributing to v1" below and [Discussion #1127](https://github.com/horilla/horilla-hr/discussions/1127) for full background.
+- `main`：正式集成主干，不在未审计状态下直接写入。
+- 日常开发使用短生命周期分支，例如 `feat/...`、`fix/...`、`chore/...`。
+- 一个提交只解决一个清晰问题，避免把无关格式化、文档和业务改动混在一起。
+- 不重写已经共享的 Git 历史，不通过大规模重命名破坏兼容层。
 
-## How to Contribute
+## 开发约束
 
-1. **Fork the Repository**
-   - Fork [horilla/horilla-hr](https://github.com/horilla/horilla-hr) on GitHub.
+- **MySQL-only**：开发、测试、迁移和交付验收均以 MySQL 为数据库目标。
+- **多租户 fail-closed**：学校/租户上下文不明确时拒绝访问，不默认放宽数据范围。
+- **权限与审计**：正式写操作必须沿现有 Authority / Service / Command 边界执行，并保留必要审计证据。
+- **历史事实不可随意覆盖**：组织、任职、合同、薪酬等正式事实遵守仓库现有效期、修订和 successor 语义。
+- **兼容优先**：`horilla/` 等历史包名属于兼容资产；没有迁移方案时不要为了品牌统一直接重命名。
+- **用户可见品牌**：新页面、标题、帮助链接和面向客户的文案统一使用跃科产品身份，不新增 Horilla 用户可见品牌入口。
 
-2. **Clone the Repository**
+## 本地开发
 
-     ```bash
-     git clone -b dev/v2.0 https://github.com/YOUR_USERNAME/horilla-hr.git
-     cd horilla-hr
-     git remote add upstream https://github.com/horilla/horilla-hr.git
-     ```
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.dist .env
+```
 
-3. **Create a Branch**
+具体启动、迁移和测试命令以仓库当前 `Makefile`、`docker-compose.yml`、`.env.dist` 与 CI 配置为准。
 
-     ```bash
-     git checkout -b feature-or-bugfix-branch
-     ```
+## 代码与验证
 
-4. **Set Up Locally**
+- Python 代码遵循仓库现有 Black / isort / Django 约定。
+- 优先运行与改动直接相关的精准测试；准备合并时再按当前门禁要求完成集成验证。
+- 迁移必须可在干净 MySQL 与受支持的历史基线上执行。
+- 不提交 `.env`、API Key、TLS 私钥、数据库转储、客户数据或其他真实凭据。
+- 不通过删除断言、降低权限检查、跳过失败用例来换取“绿色”。
 
-     ```bash
-     python3 -m venv venv
-     source venv/bin/activate
-     pip install -r requirements.txt
-     pip install pre-commit
-     pre-commit install
-     # Optional Docker stack:
-     make dev
-     ```
+## Pull Request
 
-5. **Make Changes**
-   - Follow Horilla coding conventions (extend `HorillaModel`, use Horilla decorators, HTMX patterns).
-   - Run formatters via pre-commit (Black + isort).
+PR 默认以 `main` 为目标主干，说明至少应包含：
 
-6. **Commit Changes**
+1. 改了什么、为什么改；
+2. 影响的 HR 模块或共享基础设施；
+3. 数据库/迁移/权限/租户影响；
+4. 已完成的验证与尚未完成的验证；
+5. 如涉及 UI，说明用户可见变化与截图证据。
 
-     ```bash
-     git commit -m "[ADD] APP: clear description of why"
-     ```
+请保持 PR 范围可审计；不要把独立业务线、共享迁移和纯品牌清理混成一个不可回滚的大提交。
 
-     Allowed tags: `[ADD]`, `[FIX]`, `[UPDT]`, `[REMOVE]` (and existing `[FEAT]` where used).
+## Issue 与安全问题
 
-7. **Push and Open a Pull Request**
-   - Target branch: **`dev/v2.0`**
-   - GitHub defaults your PR’s base branch to `2.0` — manually change it to `dev/v2.0` before submitting.
-   - Provide a clear title/description and link related issues
-   - CI should stay green: **Docker CI** + **Quality**
+普通缺陷和功能建议使用本仓库 Issue 模板。
 
-## Code Style and Guidelines
+**安全漏洞不要公开披露。** 请使用本仓库的 GitHub Private Vulnerability Reporting；具体要求见 [SECURITY.md](SECURITY.md)。
 
-- Follow [PEP 8](https://pep8.org/); format with Black; sort imports with isort (`--profile black`).
-- Keep changes focused; prefer small PRs for reviewability.
-- Never commit secrets: `.env`, API keys, TLS keys, database dumps, or local SQLite files.
-- Use `.env.dist` as the public template (`cp .env.dist .env`); keep real `.env` files local only.
+## 上游来源
 
-## CI Expectations
-
-| Workflow | What it checks |
-|----------|----------------|
-| `Docker CI` | Image build, migrate, collectstatic, `/health/`, `/ready/` |
-| `Quality` | Black/isort on `horilla/settings` + `horilla/urls.py`, `manage.py check`, production settings gate |
-
-## Issues
-
-- Bugs and features: open a public GitHub issue with reproduction steps.
-- **Security vulnerabilities:** do **not** open a public issue — use [GitHub Private Vulnerability Reporting](https://github.com/horilla/horilla-hr/security/advisories/new), not email. See [SECURITY.md](SECURITY.md) for full details.
-
-### Contributing to v1 (1.0/master)
-
-v1 is now deprioritized: fixes are considered case-by-case at maintainer discretion, with no guaranteed timeline and no new features backported. If you'd like to contribute a v1 fix, please open an issue first to confirm interest before submitting a PR.
-
-## Community Guidelines
-
-- Be respectful and considerate of others.
-- Provide constructive feedback.
-- Encourage a positive and inclusive community.
-
-Thank you for your contributions to Horilla!
+本仓库保留开源上游的许可证、历史提交和兼容资产。来源与治理说明见 [`docs/archive/upstream/README.md`](docs/archive/upstream/README.md)。贡献者不得删除或规避 `LICENSE` 中适用的许可证义务。
