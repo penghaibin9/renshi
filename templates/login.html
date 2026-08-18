@@ -7,23 +7,11 @@
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>{{ white_label_company_name }} | {% trans "Sign In" %}</title>
-        <link
-            rel="apple-touch-icon"
-            sizes="180x180"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}"
-        >
-        <link
-            rel="icon"
-            type="image/png"
-            sizes="32x32"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}"
-        >
-        <link
-            rel="icon"
-            type="image/png"
-            sizes="16x16"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}"
-        >
+        {% if white_label_company.icon %}
+            <link rel="apple-touch-icon" sizes="180x180" href="{{white_label_company.icon.url}}">
+            <link rel="icon" type="image/png" sizes="32x32" href="{{white_label_company.icon.url}}">
+            <link rel="icon" type="image/png" sizes="16x16" href="{{white_label_company.icon.url}}">
+        {% endif %}
         <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}">
         <link rel="manifest" href="{% static 'build/manifest.json' %}">
     </head>
@@ -137,16 +125,18 @@
                         </div>
                     {% endif %}
                 </div>
-                <div style="display: contents">
-                    <img
-                        src="{% if white_label_company.icon %}
-                        "{{white_label_company.icon.url}}"
-                        alt="{{white_label_company_name}}"
-                        style=" opacity:.90; 200px; height: 140px;"
+                <div class="text-center mt-3">
+                    {% if white_label_company.icon %}
+                        <img
+                            src="{{ white_label_company.icon.url }}"
+                            alt="{{ white_label_company_name }}"
+                            style="max-width: 200px; max-height: 140px; opacity: .90;"
+                        >
                     {% else %}
-                        "{% static 'images/ui/auth-logo.png' %}" alt="{% trans 'Yueke HR' %}"
-                    {% endif %}"
-                    >
+                        <div style="font-size: 22px; font-weight: 700; color: #444;">
+                            跃科高校人事管理与教师发展系统
+                        </div>
+                    {% endif %}
                     {% if white_label_company %}
                         <p style="font-size: large; color: gray; text-align: center" class="mt-2">
                             {{ white_label_company }}
