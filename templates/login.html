@@ -6,7 +6,7 @@
         <meta charset="UTF-8">
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Login - {{ white_label_company_name }} Dashboard</title>
+        <title>{{ white_label_company_name }} | {% trans "Sign In" %}</title>
         <link
             rel="apple-touch-icon"
             sizes="180x180"
@@ -119,59 +119,23 @@
                                     role="button"
                                 >
                                     {% trans "Load Demo Data" %}
-                                    <ion-icon class="ms-2" name="arrow-forward-outline"></ion-icon>
+                                    <ion-icon class="ms-2" name="cloud-download-outline"></ion-icon>
                                 </a>
                             </div>
                         </div>
-                        <div
-                            class="oh-modal"
-                            id="dataLoadAuthentication"
-                            role="dialog"
-                            aria-labelledby="dataLoadAuthenticationLabel"
-                            aria-hidden="true"
-                            style="backdrop-filter: blur(8px)"
-                        >
-                            <div class="oh-modal__dialog">
-                                {% include "demo_database/auth_load_data.html" %}
-                            </div>
-                        </div>
-                    {% endif %}
-                </div>
-                <div style="display: contents">
-                    <img
-                        src="{% if white_label_company.icon %}
-                        "{{white_label_company.icon.url}}"
-                        alt="{{white_label_company_name}}"
-                        style=" opacity:.90; 200px; height: 140px;"
-                    {% else %}
-                        "{% static 'images/ui/auth-logo.png' %}" alt="{% trans 'Yueke HR' %}"
-                    {% endif %}"
-                    >
-                    {% if white_label_company %}
-                        <p style="font-size: large; color: gray; text-align: center" class="mt-2">
-                            {{ white_label_company }}
-                        </p>
                     {% endif %}
                 </div>
             </main>
         </div>
-        <script src="{% static '/build/js/web.frontend.min.js' %}"></script>
-        <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
-        {% comment %} <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
-    <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script> {% endcomment %}
-        <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
-        <script>
-            $(document).ready(function () {
-                if ($(".oh-alert--warning").length > 0) {
-                    Swal.fire({
-                        title: 'Access Denied !',
-                        text: 'Your login credentials are currently blocked. Please contact HR administrators for assistance.',
-                        icon: 'warning',
-                        confirmButtonText: 'OK',
-                    });
-                }
-            });
-        </script>
+        {% include "demo_database/data_load_authentication.html" %}
+        <script src="{% static 'build/js/web.frontend.min.js' %}"></script>
+        <script
+            type="module"
+            src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"
+        ></script>
+        <script
+            nomodule
+            src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"
+        ></script>
     </body>
 </html>
