@@ -1,11 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Report a security vulnerability
-    url: https://github.com/horilla/horilla-hr/security/advisories/new
-    about: Use GitHub Private Vulnerability Reporting only — do not open a public issue
-  - name: Horilla Community Support
-    url: https://github.com/horilla/horilla-hr/discussions
-    about: Ask questions or discuss features here
-  - name: Documentation
-    url: https://docs.horilla.com
-    about: Check the official Horilla documentation
+  - name: 安全漏洞私密报告
+    url: https://github.com/penghaibin9/renshi/security/advisories/new
+    about: 请使用 GitHub Private Vulnerability Reporting，不要公开披露漏洞细节
+  - name: 当前工程文档
+    url: https://github.com/penghaibin9/renshi/blob/main/docs/00_%E6%96%87%E6%A1%A3%E6%80%BB%E7%B4%A2%E5%BC%95.md
+    about: 查看跃科高校人事管理与教师发展系统当前文档入口
