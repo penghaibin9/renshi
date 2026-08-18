@@ -1,128 +1,64 @@
-# Security Policy
+# 安全策略
 
-Horilla takes security seriously. This document explains how to report vulnerabilities, which versions we support, what is in or out of scope, and how we handle disclosure and CVE assignment.
+本安全策略适用于 **跃科高校人事管理与教师发展系统**（`penghaibin9/renshi`）。
 
-This policy applies to Horilla HR ([`horilla/horilla-hr`](https://github.com/horilla/horilla-hr)).
+## 支持范围
 
-## Supported versions
+当前安全修复以 `main` 主干及其正式交付基线为准。历史施工分支、已关闭验证分支和上游旧版本只作为追溯资料，不单独承诺安全维护。
 
-| Version | Branch(es) | Security support |
-|---------|------------|------------------|
-| v2 | `2.0` (default), `dev/v2.0` (active development) | **Yes** — actively maintained |
-| v1 | `1.0`, `master` | **Deprioritized** — fixes considered case-by-case at maintainer discretion; no guaranteed patch schedule. Prefer upgrading to v2. |
+## 漏洞报告
 
-See [Discussion #1127](https://github.com/horilla/horilla-hr/discussions/1127) for background on this policy.
+**不要在公开 Issue、Discussion、PR 评论或日志中披露可利用漏洞、真实凭据、个人信息或客户数据。**
 
-After v2 GA, we intend to treat v1 as **EOL for security** except for extraordinary cases (e.g. critical issues affecting customers we still host on v1). Reports that only affect unsupported lines will normally be closed with guidance to upgrade.
+请使用本仓库的 **GitHub Private Vulnerability Reporting**：
 
-## Reporting a vulnerability
+https://github.com/penghaibin9/renshi/security/advisories/new
 
-**Do not** open a public GitHub issue or discussion for a security vulnerability.
-**Do not** disclose exploit details publicly until we have published a fix or explicitly agreed otherwise.
+报告建议包含：
 
-### How to report
+- 受影响的 commit / branch / 部署版本；
+- 最小可复现步骤；
+- 所需权限与租户上下文；
+- 实际影响范围；
+- 已知缓解方式（如有）；
+- 必要的脱敏日志或截图。
 
-Use **GitHub Private Vulnerability Reporting** only:
+请勿提交真实 token、密钥、数据库转储、身份证件、工资数据或其他个人敏感信息。
 
-1. Open a [private vulnerability report](https://github.com/horilla/horilla-hr/security/advisories/new) on this repository.
-2. Include enough detail for us to reproduce the issue (see below).
+## 重点安全边界
 
-We do **not** accept or triage security vulnerability reports by email. General support inboxes are for product help, not vulnerability disclosure.
+本仓库特别关注以下生产边界：
 
-We aim to **acknowledge** valid reports within **72 hours**. Resolution time depends on severity and complexity; we will keep you informed via the private advisory thread.
+- 多学校 / 多租户隔离与 tenant fail-closed；
+- 权限、数据范围、IDOR 与越权访问；
+- 教职工主档、合同、薪酬、资格证书等敏感数据；
+- 文件上传、下载、导入导出与对象级授权；
+- 登录、会话、密钥、生产配置与默认凭据；
+- 并发、幂等、事务半失败与正式事实不可逆覆盖；
+- 第三方依赖与已知可达漏洞；
+- 日志、审计记录和错误页中的敏感信息泄漏。
 
-### What to include
+## 安全缺陷判断
 
-- Affected Horilla HR **version** or commit / Docker tag
-- Environment notes (self-hosted Compose, reverse proxy, auth mode) — use variable *names* and redacted examples only
-- Step-by-step reproduction (minimal PoC preferred)
-- Impact (who can exploit it, and what they gain)
-- Whether a fix or workaround is already known
+以下情况通常属于需要安全处理的产品问题：
 
-**Never** paste live secrets, tokens, database dumps, or customer PII.
+- 未授权读取或修改其他学校/租户数据；
+- 可绕过权限或数据范围访问敏感业务事实；
+- 真实可达的认证绕过、RCE、SQL 注入、敏感文件读取等；
+- 仓库或默认部署配置直接暴露生产可用密钥/默认凭据；
+- 可由非可信用户触发的公式/脚本/文件处理链导致实际安全影响；
+- 正式业务写链可被重放、并发或越权破坏一致性。
 
-Reporter-supplied CVSS scores are helpful input; maintainers decide the final severity.
+纯部署误配置、不可达的第三方 CVE、仅存在于已归档上游历史且当前代码不可复现的问题，应先按实际可达性与影响进行确认。
 
-Please avoid dumping large batches of unverified findings without waiting for triage feedback on earlier reports.
+## 修复与披露
 
-## Scope
+安全问题在公开披露前应先完成私有复现、影响确认、修复和必要回归。是否发布 GitHub Security Advisory / CVE 由维护者根据实际影响、受支持范围和披露需要决定。
 
-### In scope
+本仓库当前不承诺现金漏洞奖励，也不在本文承诺固定响应或修复时限。
 
-- Vulnerabilities in **Horilla application code** shipped in this repository
-- Unsafe **default configuration** that we ship (for example a publicly known default `SECRET_KEY` in production paths)
-- Issues that are **authentically exploitable** with realistic privileges on a **supported** version
+## 上游安全信息
 
-### Out of scope
+本仓库由开源上游代码演进而来，但当前产品安全报告应提交给 **本仓库**，不要把跃科产品中的定制问题直接提交到上游项目。只有确认根因属于仍存在的第三方上游组件时，才按对应上游项目的安全流程协同处理。
 
-We will normally **not** treat the following as Horilla product CVEs. We may still harden or document them when useful.
-
-| Class | Notes |
-|-------|--------|
-| CSV / Excel formula injection | Spreadsheet clients interpret cell content; not a Horilla application bug |
-| Privilege escalation by users who already administer users/roles | Trusted-admin capability by design |
-| Issues only on EOL Python or EOL Horilla versions | Upgrade to a supported line |
-| Pure deployment misconfiguration | Operator responsibility (`DEBUG=True`, open admin, weak secrets you set yourself). **Exception:** shipping an insecure default that works out of the box |
-| Media / static XSS when files are served outside documented secure paths | Follow Docker / deployment docs; do not bypass Django `protected_media` with a raw `/media/` alias |
-| Dependency CVEs with **no reachable path** in Horilla | Tracked via Dependabot when applicable |
-| Third-party plugins or custom code not shipped by Horilla | Report to that project’s maintainers |
-| Compromise of marketing sites, email, or social accounts | Operational incident response — not a product advisory |
-| Demands for cash payment (“beg bounties”) | Credit only (see Rewards) |
-
-### Grey areas
-
-- Dynamic code paths used for payroll / exports: treated as **high priority** if a non-superuser can inject or trigger execution; if strictly limited to trusted admins, we still harden for v2 quality and may document the trust boundary
-- Default secrets in images or quickstart docs: **in-scope product defects**
-
-## Severity (guidance)
-
-Final severity is decided by maintainers:
-
-| Level | Examples |
-|-------|----------|
-| Critical | Unauthenticated RCE, unauthenticated auth bypass, mass data exposure without auth |
-| High | Authenticated RCE, large-scale IDOR on PII/payroll, authenticated auth bypass |
-| Medium | XSS requiring user interaction, limited IDOR, open redirect |
-| Low | Low-impact issues, verbose errors without clear exploit path |
-
-## Disclosure and CVE process
-
-1. Private intake via GitHub Private Vulnerability Reporting (private advisory draft)
-2. Triage: in scope? valid? duplicate? supported version?
-3. Fix on a supported branch; coordinate disclosure with the reporter when practical
-4. Publish a GitHub Security Advisory and **request a CVE ID via GitHub** when the issue meets our publish criteria
-5. Credit the reporter in the advisory (unless anonymity is requested)
-
-We use **GitHub as the CVE Numbering Authority** for Horilla HR advisories. We do not require reporters to self-request CVEs from MITRE; unsupported self-requests may be disputed.
-
-**We publish a CVE when all of the following are true:**
-
-- Affects a **supported** release
-- Is **authentically exploitable** with realistic privileges
-- Is in **Horilla code** or an unsafe default we ship
-- Is **not** a duplicate of an already-published advisory for the same root cause
-
-Historical issues that only affected v1 and are fixed (or EOL) in v2 are generally **closed without a new CVE**, with a short disposition note.
-
-## Rewards
-
-There is **no cash bug bounty** at this time. We offer public credit in advisories and release notes. A paid program may be considered later when triage capacity is stable.
-
-## Security tooling
-
-On this repository:
-
-- **Private vulnerability reporting** — enabled (required intake path above)
-- **Dependabot** — config lives in `.github/dependabot.yml` (PRs target `dev/v2.0`); alert/update features are enabled when available on the org/plan
-- **Secret scanning / push protection** — enabled when available on the org/plan
-
-These are operational controls for maintainers; they do not replace private reporting of product vulnerabilities.
-
-## Contact
-
-- Security reports: [GitHub Private Vulnerability Reporting](https://github.com/horilla/horilla-hr/security/advisories/new) only — see [Reporting a vulnerability](#reporting-a-vulnerability)
-- Non-security questions about this policy: open a GitHub Discussion, or contact the maintainers through the project’s normal channels
-
-## Disclaimer
-
-The Horilla project and its maintainers assume no liability for security vulnerabilities reported or discovered. We greatly appreciate responsible disclosure that helps keep users safe.
+上游来源与许可证追溯见 [`docs/archive/upstream/README.md`](docs/archive/upstream/README.md) 与根目录 [`LICENSE`](LICENSE)。
