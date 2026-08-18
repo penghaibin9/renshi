@@ -1,162 +1,111 @@
-name: Bug Report
-description: Create a report to help us improve Horilla
-title: "[Bug] <short description>"
+name: 缺陷报告
+description: 报告跃科高校人事管理与教师发展系统中的可复现问题
+title: "[Bug] <简要描述>"
 labels: ["bug"]
 assignees: []
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve Horilla! Please provide detailed information below to assist us in resolving the issue. Search existing issues first to avoid duplicates.
+        请先搜索已有 Issue，避免重复。不要在公开 Issue 中提交密码、Token、身份证件、工资数据、数据库转储或安全漏洞利用细节；安全问题请走 Private Vulnerability Reporting。
+  - type: dropdown
+    id: module
+    attributes:
+      label: 影响模块
+      description: 选择最主要的业务模块；跨域问题可选“共享基础设施 / 跨域”。
+      options:
+        - HR01 人事工作台
+        - HR02 组织机构与编制岗位
+        - HR03 教职工主档
+        - HR04 招聘与人才引进
+        - HR05 入职管理
+        - HR06 人事异动
+        - HR07 合同与聘用
+        - HR08 兼职外聘教师
+        - HR09 教师资格与双师型
+        - HR10 培训进修与企业实践
+        - HR11 考勤与请假
+        - HR12 年度与聘期考核
+        - HR13 职称评审
+        - HR14 岗位聘任
+        - HR15 薪酬福利
+        - HR16 退休与离校
+        - HR17 教职工服务
+        - HR18 人事数据中心
+        - 共享基础设施 / 跨域
+    validations:
+      required: true
   - type: textarea
     id: description
     attributes:
-      label: Description
-      description: A brief description of the bug or issue you're encountering.
-      placeholder: "E.g., Attendance report crashes when filtering by date."
+      label: 问题描述
+      description: 描述实际问题、业务场景与影响。
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to Reproduce
-      description: Detailed step-by-step instructions to reproduce the issue.
+      label: 复现步骤
       placeholder: |
-        1. Go to Attendance module
-        2. Select 'Filter by Date'
-        3. Enter '2025-04-01' to '2025-04-10'
-        4. Click 'Apply'
+        1. 使用什么角色/租户进入哪个页面或 API
+        2. 执行什么操作
+        3. 输入什么条件
+        4. 出现什么结果
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
-      description: What you expected to happen.
-      placeholder: "E.g., A report listing all attendance records for the date range."
+      label: 期望结果
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Actual Behavior
-      description: What actually happened.
-      placeholder: "E.g., Page crashes with a 500 Internal Server Error."
+      label: 实际结果
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Commit / Branch
+      description: 请提供能定位问题的 commit SHA、分支或部署版本。
+      placeholder: "例如 main@abcdef12"
     validations:
       required: true
   - type: textarea
-    id: screenshots
+    id: environment
     attributes:
-      label: Screenshots
-      description: If applicable, drag and drop screenshots illustrating the issue.
-      placeholder: "E.g., Upload an image of the error page."
-    validations:
-      required: false
-  - type: input
-    id: horilla-version
-    attributes:
-      label: Horilla Version / Branch
-      description: Horilla release tag or git branch (e.g. `2.0`, `dev/v2.0`, `1.6.0`).
-      placeholder: "E.g., 2.0"
-    validations:
-      required: true
-  - type: input
-    id: django-version
-    attributes:
-      label: Django Version
-      description: The Django version you're using.
-      placeholder: "E.g., 5.2"
-    validations:
-      required: true
-  - type: input
-    id: python-version
-    attributes:
-      label: Python Version
-      description: The Python version you're using.
-      placeholder: "E.g., 3.12"
-    validations:
-      required: true
-  - type: input
-    id: os
-    attributes:
-      label: Operating System
-      description: Your operating system.
-      placeholder: "E.g., Ubuntu 20.04"
-    validations:
-      required: true
-  - type: input
-    id: browser
-    attributes:
-      label: Browser
-      description: If applicable, specify the browser and version.
-      placeholder: "E.g., Chrome 123.0"
+      label: 环境信息
+      description: MySQL、Python、Django、浏览器/部署方式等与复现有关的信息；请脱敏。
     validations:
       required: false
   - type: textarea
-    id: additional
+    id: evidence
     attributes:
-      label: Additional Information
-      description: Any logs, error messages, or context that might help.
-      placeholder: "E.g., Error log: 'Traceback: ValueError at /attendance...'"
-    validations:
-      required: false
-  - type: textarea
-    id: solution
-    attributes:
-      label: Possible Solution
-      description: Optional - Suggest how this might be fixed.
-      placeholder: "E.g., Check date parsing logic in attendance/views.py."
-    validations:
-      required: false
-  - type: dropdown
-    id: labels
-    attributes:
-      label: Labels
-      description: Suggest labels for this issue.
-      multiple: true
-      options:
-        - bug
-        - needs investigation
-        - documentation
-        - enhancement
-      default: 0
+      label: 日志 / 截图 / 其他证据
+      description: 仅提交已脱敏信息。
     validations:
       required: false
   - type: dropdown
     id: priority
     attributes:
-      label: Priority
-      description: Specify the priority level for this issue.
+      label: 影响级别
       options:
-        - High
-        - Medium
-        - Low
-      default: 1
+        - 阻断生产/核心业务
+        - 高影响
+        - 一般影响
+        - 低影响
     validations:
       required: true
-  - type: input
-    id: assignees
-    attributes:
-      label: Assignees
-      description: Optional - Suggest GitHub usernames to assign this issue (e.g., @username).
-      placeholder: "E.g., @horilla-dev"
-    validations:
-      required: false
-  - type: textarea
-    id: related
-    attributes:
-      label: Related Issues
-      description: Optional - Mention related issues or pull requests.
-      placeholder: "E.g., Related to #123 or PR #456"
-    validations:
-      required: false
   - type: checkboxes
     id: checklist
     attributes:
-      label: Submission Checklist
-      description: Confirm these before submitting.
+      label: 提交前确认
       options:
-        - label: I have searched for duplicate issues
+        - label: 我已搜索重复 Issue
           required: true
-        - label: I have provided as much detail as possible
+        - label: 我没有公开提交真实密钥、客户数据或漏洞利用细节
+          required: true
+        - label: 我提供的是实际观察结果，没有把未验证推测写成事实
           required: true
