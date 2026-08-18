@@ -1,14 +1,29 @@
-## Description
+## 变更说明
 
-<!-- What does this PR change, and why? -->
+<!-- 这次改了什么，为什么需要改？ -->
 
-## Checklist
+## 影响范围
 
-- [ ] **This PR targets `dev/v2.0`, not `2.0`.** GitHub defaults new PRs to `2.0` (the repo default) — change the base branch to `dev/v2.0` before submitting.
-- [ ] I've followed the coding conventions in [CONTRIBUTING.md](../CONTRIBUTING.md) (Black + isort, Horilla decorators/`HorillaModel` patterns, etc.)
-- [ ] CI (Docker CI + Quality) passes
-- [ ] I've linked any related issues
+- HR 模块 / 共享基础设施：
+- 数据库 / 迁移：无 / 有（请说明）
+- 权限 / 租户 / 审计：无 / 有（请说明）
+- 用户可见 UI / 文案：无 / 有（请说明）
 
-## Related issues
+## 验证
 
-<!-- e.g. Closes #123 -->
+<!-- 写明实际执行过的精准测试、迁移检查、页面/API 验证；不要把未执行的检查写成通过。 -->
+
+## 合并检查
+
+- [ ] PR 目标主干为 `main`，或已明确说明特殊集成 base
+- [ ] 改动范围单一，没有夹带无关业务修改
+- [ ] MySQL-only 约束没有被 SQLite 或其他数据库兜底破坏
+- [ ] 多租户、权限、数据范围和审计边界已复核（如适用）
+- [ ] 迁移可追溯且没有重写历史迁移（如适用）
+- [ ] 用户可见品牌没有新增 Horilla 文案、Logo 或外链
+- [ ] 没有提交真实密钥、客户数据、数据库转储或其他敏感信息
+- [ ] 已记录实际验证结果；失败/未跑项没有伪装成绿色
+
+## 相关 Issue / 文档
+
+<!-- 例如 Closes #123；或链接 docs/ 中的正式设计/验收文档。 -->
