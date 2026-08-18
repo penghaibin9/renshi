@@ -1,128 +1,47 @@
-# Contributor Covenant Code of Conduct
+# 行为准则
 
-## Our Pledge
+本准则适用于 **跃科高校人事管理与教师发展系统** 仓库的 Issue、Pull Request、代码评审、讨论及其他协作空间。
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, religion, or sexual identity
-and orientation.
+## 我们的承诺
 
-We pledge to act and interact in ways that contribute to an open, welcoming,
-diverse, inclusive, and healthy community.
+参与者应共同维护专业、尊重、包容且安全的协作环境，不因年龄、身体状况、残障、族群、性别身份与表达、经验、教育背景、社会经济状况、国籍、外貌、种族、宗教、性取向等因素进行骚扰或歧视。
 
-## Our Standards
+## 鼓励的行为
 
-Examples of behavior that contributes to a positive environment for our
-community include:
+- 对他人保持尊重、耐心与善意；
+- 对不同观点进行基于事实和技术证据的讨论；
+- 提供具体、可执行的建设性反馈；
+- 对自己的错误负责并及时修正；
+- 保护客户、学校、教职工和贡献者的隐私与敏感信息；
+- 把仓库长期可维护性和产品安全放在个人争论之前。
 
-* Demonstrating empathy and kindness toward other people
-* Being respectful of differing opinions, viewpoints, and experiences
-* Giving and gracefully accepting constructive feedback
-* Accepting responsibility and apologizing to those affected by our mistakes,
-  and learning from the experience
-* Focusing on what is best not just for us as individuals, but for the
-  overall community
+## 不接受的行为
 
-Examples of unacceptable behavior include:
+- 侮辱、歧视、威胁、骚扰、恶意挑衅或人身攻击；
+- 发布他人的私人信息、联系方式、凭据或其他敏感数据；
+- 在公开 Issue/PR 中披露未修复安全漏洞的可利用细节；
+- 故意伪造测试结果、审计证据或生产状态；
+- 其他在专业软件协作环境中明显不适当的行为。
 
-* The use of sexualized language or imagery, and sexual attention or
-  advances of any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information, such as a physical or email
-  address, without their explicit permission
-* Other conduct which could reasonably be considered inappropriate in a
-  professional setting
+## 适用范围
 
-## Enforcement Responsibilities
+本准则适用于仓库内的全部协作空间，也适用于代表本项目参加线上或线下活动、使用官方账号或以维护者身份进行沟通的场景。
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+## 执行
 
-Community leaders have the right and responsibility to remove, edit, or reject
-comments, commits, code, wiki edits, issues, and other contributions that are
-not aligned to this Code of Conduct, and will communicate reasons for moderation
-decisions when appropriate.
+违反本准则的内容可以被编辑、隐藏、关闭或移除；严重或持续违规的参与者可以被限制或禁止参与仓库协作。处理过程中应尽量保护报告者和相关人员的隐私。
 
-## Scope
+需要私下报告行为问题时，请联系本仓库维护者的私有沟通渠道。**安全漏洞不要通过公开 Issue 报告**，应使用本仓库 GitHub Private Vulnerability Reporting，具体见 [SECURITY.md](SECURITY.md)。
 
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
-Examples of representing our community include using an official e-mail address,
-posting via an official social media account, or acting as an appointed
-representative at an online or offline event.
+## 处理原则
 
-## Enforcement
+维护者可根据影响程度采取以下措施：
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-info@horilla.com.
-All complaints will be reviewed and investigated promptly and fairly.
+1. **提醒与纠正**：对轻微、不专业或不合适的行为给出明确纠正要求；
+2. **正式警告**：对重复或较严重行为给出限制及后果说明；
+3. **临时限制**：在一定时间内禁止参与讨论、评审或其他互动；
+4. **永久限制**：对持续骚扰、严重威胁、恶意泄露隐私等行为永久禁止参与。
 
-All community leaders are obligated to respect the privacy and security of the
-reporter of any incident.
+## 归属
 
-## Enforcement Guidelines
-
-Community leaders will follow these Community Impact Guidelines in determining
-the consequences for any action they deem in violation of this Code of Conduct:
-
-### 1. Correction
-
-**Community Impact**: Use of inappropriate language or other behavior deemed
-unprofessional or unwelcome in the community.
-
-**Consequence**: A private, written warning from community leaders, providing
-clarity around the nature of the violation and an explanation of why the
-behavior was inappropriate. A public apology may be requested.
-
-### 2. Warning
-
-**Community Impact**: A violation through a single incident or series
-of actions.
-
-**Consequence**: A warning with consequences for continued behavior. No
-interaction with the people involved, including unsolicited interaction with
-those enforcing the Code of Conduct, for a specified period of time. This
-includes avoiding interactions in community spaces as well as external channels
-like social media. Violating these terms may lead to a temporary or
-permanent ban.
-
-### 3. Temporary Ban
-
-**Community Impact**: A serious violation of community standards, including
-sustained inappropriate behavior.
-
-**Consequence**: A temporary ban from any sort of interaction or public
-communication with the community for a specified period of time. No public or
-private interaction with the people involved, including unsolicited interaction
-with those enforcing the Code of Conduct, is allowed during this period.
-Violating these terms may lead to a permanent ban.
-
-### 4. Permanent Ban
-
-**Community Impact**: Demonstrating a pattern of violation of community
-standards, including sustained inappropriate behavior,  harassment of an
-individual, or aggression toward or disparagement of classes of individuals.
-
-**Consequence**: A permanent ban from any sort of public interaction within
-the community.
-
-## Attribution
-
-This Code of Conduct is adapted from the [Contributor Covenant][homepage],
-version 2.0, available at
-https://www.contributor-covenant.org/version/2/0/code_of_conduct.html.
-
-Community Impact Guidelines were inspired by [Mozilla's code of conduct
-enforcement ladder](https://github.com/mozilla/diversity).
-
-[homepage]: https://www.contributor-covenant.org
-
-For answers to common questions about this code of conduct, see the FAQ at
-https://www.contributor-covenant.org/faq. Translations are available at
-https://www.contributor-covenant.org/translations.
+本准则参考并改编自 [Contributor Covenant 2.0](https://www.contributor-covenant.org/version/2/0/code_of_conduct.html)，并结合本仓库的企业软件、安全与隐私协作要求进行整理。
