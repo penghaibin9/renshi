@@ -1,7 +1,14 @@
+from types import SimpleNamespace
+
 from django.test import TestCase, override_settings
 
 from base.models import Company, Department
-from horilla.horilla_middlewares import get_selected_company, tenant_context
+from horilla.horilla_middlewares import (
+    _thread_locals,
+    current_company_id,
+    get_selected_company,
+    tenant_context,
+)
 
 
 @override_settings(TENANT_FAIL_CLOSED=True, TENANT_INCLUDE_GLOBAL_NULL_ROWS=False)
@@ -55,3 +62,30 @@ class TenantFailClosedTests(TestCase):
         with self.assertRaises(ValueError):
             with tenant_context("all"):
                 pass
+
+    def test_superuser_all_scope_does_not_bypass_tenant_filter(self):
+        original_request = getattr(_thread_locals, "request", None)
+        company_token = current_company_id.set("all")
+        _thread_locals.request = SimpleNamespace(
+            user=SimpleNamespace(is_superuser=True)
+        )
+        try:
+            self.assertFalse(Department.objects.exists())
+        finally:
+            _thread_locals.request = original_request
+            current_company_id.reset(company_token)
+
+    def test_superuser_with_concrete_tenant_is_still_tenant_scoped(self):
+        original_request = getattr(_thread_locals, "request", None)
+        company_token = current_company_id.set(self.school_a.id)
+        _thread_locals.request = SimpleNamespace(
+            user=SimpleNamespace(is_superuser=True)
+        )
+        try:
+            self.assertEqual(
+                list(Department.objects.values_list("department", flat=True)),
+                ["A Department"],
+            )
+        finally:
+            _thread_locals.request = original_request
+            current_company_id.reset(company_token)
