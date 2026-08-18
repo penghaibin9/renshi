@@ -1,120 +1,93 @@
-name: Feature Request
-description: Suggest an idea to enhance Horilla
-title: "[Feature] <short description>"
+name: 功能建议
+description: 为跃科高校人事管理与教师发展系统提出业务或产品改进建议
+title: "[Feature] <简要描述>"
 labels: ["enhancement"]
 assignees: []
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for suggesting a new feature for Horilla! Please fill out the fields below to help us understand your idea. Search existing issues first to avoid duplicates.
+        请先搜索已有 Issue 和当前 HR01–HR18 文档，优先描述真实业务问题、使用角色和预期价值。
   - type: dropdown
     id: module
     attributes:
-      label: Target Module
-      description: Which Horilla module would this feature apply to?
+      label: 目标模块
       options:
-        - Recruitment
-        - Employee Onboarding
-        - Attendance
-        - Leave Management
-        - Payroll
-        - Performance Management
-        - Asset Management
-        - General (cross-module)
-        - Other (specify below)
-      default: 0
+        - HR01 人事工作台
+        - HR02 组织机构与编制岗位
+        - HR03 教职工主档
+        - HR04 招聘与人才引进
+        - HR05 入职管理
+        - HR06 人事异动
+        - HR07 合同与聘用
+        - HR08 兼职外聘教师
+        - HR09 教师资格与双师型
+        - HR10 培训进修与企业实践
+        - HR11 考勤与请假
+        - HR12 年度与聘期考核
+        - HR13 职称评审
+        - HR14 岗位聘任
+        - HR15 薪酬福利
+        - HR16 退休与离校
+        - HR17 教职工服务
+        - HR18 人事数据中心
+        - 共享基础设施 / 跨域
     validations:
       required: true
   - type: textarea
-    id: description
+    id: problem
     attributes:
-      label: Description
-      description: A brief description of the new feature you're requesting.
-      placeholder: "E.g., Add a shift scheduling tool to the Attendance module."
+      label: 业务问题
+      description: 当前谁在什么场景下遇到什么问题？
     validations:
       required: true
   - type: textarea
-    id: use-case
+    id: proposal
     attributes:
-      label: Use Case
-      description: Explain how this feature would be useful and how it fits into Horilla's context.
-      placeholder: "E.g., Managers need to assign shifts for employees working in multiple time zones."
+      label: 期望能力
+      description: 描述希望系统提供的行为和结果，不要求先给出技术实现。
     validations:
       required: true
   - type: textarea
-    id: solution
+    id: users
     attributes:
-      label: Proposed Solution
-      description: Optional - Provide ideas on how this feature could be implemented.
-      placeholder: "E.g., Add a new 'Shifts' tab with a calendar view and drag-and-drop scheduling."
+      label: 使用角色与频率
+      placeholder: "例如：校级人事管理员，每月集中使用；二级学院负责人，每周使用。"
+    validations:
+      required: true
+  - type: textarea
+    id: rules
+    attributes:
+      label: 关键规则 / 数据边界
+      description: 如涉及审批、状态机、权限、租户、历史事实、导入导出等，请说明。
     validations:
       required: false
   - type: textarea
-    id: benefits
+    id: evidence
     attributes:
-      label: Benefits
-      description: Highlight the value this feature would bring to users or the project.
-      placeholder: "E.g., Simplifies scheduling, reduces manual errors, and improves employee satisfaction."
-    validations:
-      required: true
-  - type: textarea
-    id: additional
-    attributes:
-      label: Additional Information
-      description: Any other details, examples, or mockups related to the feature request.
-      placeholder: "E.g., Similar feature seen in [other HRMS]. Attach mockups here."
-    validations:
-      required: false
-  - type: dropdown
-    id: labels
-    attributes:
-      label: Labels
-      description: Suggest labels for this feature request.
-      multiple: true
-      options:
-        - enhancement
-        - feature request
-        - needs discussion
-        - documentation
-      default: 0
+      label: 参考资料 / 截图
+      description: 可附脱敏业务表单、流程或界面参考。
     validations:
       required: false
   - type: dropdown
     id: priority
     attributes:
-      label: Priority
-      description: Specify the priority level for this feature.
+      label: 业务优先级
       options:
-        - High
-        - Medium
-        - Low
-      default: 1
+        - 核心业务阻断
+        - 高频关键能力
+        - 常规增强
+        - 体验优化
     validations:
       required: true
-  - type: input
-    id: assignees
-    attributes:
-      label: Assignees
-      description: Optional - Suggest GitHub usernames to assign this request (e.g., @username).
-      placeholder: "E.g., @horilla-dev"
-    validations:
-      required: false
-  - type: textarea
-    id: related
-    attributes:
-      label: Related Issues
-      description: Optional - Mention related issues or pull requests.
-      placeholder: "E.g., Related to #123 or PR #456"
-    validations:
-      required: false
   - type: checkboxes
     id: checklist
     attributes:
-      label: Submission Checklist
-      description: Confirm these before submitting.
+      label: 提交前确认
       options:
-        - label: I have searched for duplicate feature requests
+        - label: 我已搜索重复功能建议
           required: true
-        - label: I have provided clear and concise information
+        - label: 我描述了真实业务问题和预期价值
+          required: true
+        - label: 我没有提交真实客户敏感数据
           required: true
