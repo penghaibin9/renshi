@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
+from django.db.models import Count
 
 from horilla.horilla_middlewares import _thread_locals, get_selected_company
 from horilla.hr_permissions import (
@@ -10,6 +11,43 @@ from horilla.hr_permissions import (
     permission_aliases,
     semantic_codes_for_codename,
 )
+
+
+def _scoped_group_permission_queryset(user, selected):
+    """Return group permissions valid for the selected tenant scope."""
+    if selected is None:
+        return Permission.objects.none()
+
+    assignments = user.company_group_assignments.all()
+    if selected != "all":
+        assignments = assignments.filter(company_id=selected)
+        return Permission.objects.filter(
+            group__company_assignments__in=assignments
+        ).distinct()
+
+    company_ids = list(
+        assignments.values_list("company_id", flat=True).distinct()
+    )
+    if not company_ids:
+        return Permission.objects.none()
+
+    # "All my companies" is a read-only union of tenant data. A permission is
+    # safe in that union only when the user owns the same permission in every
+    # included company. Otherwise a high privilege held in company B could
+    # authorize rows from company A where the user never received that grant.
+    return (
+        Permission.objects.filter(
+            group__company_assignments__user=user,
+            group__company_assignments__company_id__in=company_ids,
+        )
+        .annotate(
+            _granted_company_count=Count(
+                "group__company_assignments__company_id", distinct=True
+            )
+        )
+        .filter(_granted_company_count=len(company_ids))
+        .distinct()
+    )
 
 
 class CompanyScopedBackend(ModelBackend):
@@ -38,17 +76,7 @@ class CompanyScopedBackend(ModelBackend):
     def _get_group_permissions(self, user_obj):
         if not self._scoped_mode():
             return super()._get_group_permissions(user_obj)
-
-        selected = get_selected_company()
-        if selected is None:
-            return Permission.objects.none()
-
-        assignments = user_obj.company_group_assignments.all()
-        if selected != "all":
-            assignments = assignments.filter(company_id=selected)
-        return Permission.objects.filter(
-            group__company_assignments__in=assignments
-        ).distinct()
+        return _scoped_group_permission_queryset(user_obj, get_selected_company())
 
     def _effective_permission_objects(self, user_obj):
         if not getattr(user_obj, "is_active", False) or getattr(
@@ -234,9 +262,28 @@ def get_user_groups_for_company(user, company_id=None):
         return Group.objects.none()
 
     assignments = user.company_group_assignments.all()
+    if explicit == "all":
+        company_ids = list(
+            assignments.values_list("company_id", flat=True).distinct()
+        )
+        if not company_ids:
+            return Group.objects.none()
+        return (
+            Group.objects.filter(
+                company_assignments__user=user,
+                company_assignments__company_id__in=company_ids,
+            )
+            .annotate(
+                _assigned_company_count=Count(
+                    "company_assignments__company_id", distinct=True
+                )
+            )
+            .filter(_assigned_company_count=len(company_ids))
+            .distinct()
+        )
+
     normalized = _normalize_company_id(explicit)
-    if normalized is not None:
-        assignments = assignments.filter(company_id=normalized)
+    assignments = assignments.filter(company_id=normalized)
     return Group.objects.filter(
         id__in=assignments.values_list("group_id", flat=True)
     ).distinct()
@@ -262,14 +309,10 @@ def get_effective_permission_codenames(user, company_id=None, include_direct=Tru
     if explicit is None:
         return sorted(codenames)
 
-    assignments = user.company_group_assignments.all()
-    normalized = _normalize_company_id(explicit)
-    if normalized is not None:
-        assignments = assignments.filter(company_id=normalized)
     codenames.update(
-        Permission.objects.filter(
-            group__company_assignments__in=assignments
-        ).values_list("codename", flat=True)
+        _scoped_group_permission_queryset(user, explicit).values_list(
+            "codename", flat=True
+        )
     )
     return sorted(codenames)
 
