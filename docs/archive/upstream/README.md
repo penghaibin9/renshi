@@ -8,6 +8,16 @@
 
 仓库早期代码基于开源 HRMS 项目 Horilla 演进，因此代码中仍可见 `horilla/`、部分 legacy app、历史模板名、迁移映射和兼容字段。这些标识属于技术来源与兼容资产，不代表当前用户可见品牌，也不应作为新业务模块的命名依据。
 
+## 可追溯上游基线
+
+- Upstream repository: `horilla/horilla-hr`
+- Upstream branch: `2.0`
+- Upstream commit: `eb16ac3bfcbcb74e17a6bc4e93ea3b326059890a`
+- Upstream tree: `e95c49219f98ba9e65d3be6a129e2ab26eb8e34e`
+- Baseline date: `2026-08-08`
+
+这些值仅用于代码来源、兼容关系和许可证追溯，不代表当前仓库的产品名称、维护分支或用户可见品牌。
+
 ## 治理原则
 
 1. **不修改 LICENSE**：许可证文本和适用要求继续以仓库根目录 `LICENSE` 为准。
