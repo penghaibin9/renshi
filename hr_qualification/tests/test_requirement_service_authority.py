@@ -72,6 +72,32 @@ class RequirementServiceAuthorityTests(TestCase):
             )
         )
 
+    def test_active_but_unverified_credential_is_not_a_satisfied_qualification(self):
+        today = timezone.localdate()
+        HrPersonCredential.objects.create(
+            tenant_id=self.tenant_id,
+            person_id=self.person,
+            staff_master_id=self.staff,
+            catalog_item_id=self.catalog,
+            credential_name_snapshot=self.catalog.name,
+            level_code="LEVEL_2",
+            issuer_name="Authority",
+            valid_from=today - timedelta(days=30),
+            status=CredentialStatus.ACTIVE,
+            current_verification_status=VerificationResult.NEEDS_MANUAL_REVIEW,
+            last_verified_at=timezone.now(),
+        )
+
+        self.assertFalse(
+            RequirementService().has_qualification(
+                self.tenant_id,
+                self.staff.id,
+                CredentialCategory.VOCATIONAL_QUALIFICATION,
+                level="LEVEL_2",
+                as_of=today,
+            )
+        )
+
     def test_unverified_work_is_not_counted(self):
         today = timezone.localdate()
         HrWorkExperience.objects.create(
