@@ -50,7 +50,7 @@ class ProviderResult:
 
 
 class CircuitBreaker:
-    """简单熔断器：连续失败 N 次后打开电路，冷却 T 秒后半开。"""
+    """连续失败 N 次后打开电路，冷却 T 秒后半开。"""
 
     def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 30.0):
         self._failures: Dict[str, int] = {}
@@ -76,7 +76,6 @@ class CircuitBreaker:
         self._last_failure_time[key] = time.monotonic()
 
 
-# 全局熔断器实例
 circuit_breaker = CircuitBreaker()
 
 
@@ -97,36 +96,80 @@ class BaseAssessmentProvider(ABC):
         cb_key = f"{self.owner_domain}:{ctx.tenant_id}"
         if circuit_breaker.is_open(cb_key):
             logger.warning("Circuit open for %s", cb_key)
-            return ProviderResult(status=ProviderStatus.ERROR, error_message="Circuit breaker open")
+            return ProviderResult(
+                status=ProviderStatus.ERROR,
+                error_message="Circuit breaker open",
+            )
 
         last_error: Optional[Exception] = None
+        last_result: Optional[ProviderResult] = None
         for attempt in range(self.max_retries + 1):
             try:
                 result = self._do_fetch(ctx)
-                circuit_breaker.record_success(cb_key)
-                return result
-            except Exception as e:
-                last_error = e
-                if attempt < self.max_retries:
-                    logger.warning("Provider %s retry %d/%d: %s", self.owner_domain, attempt + 1, self.max_retries, e)
-                    time.sleep(self.retry_backoff * (attempt + 1))
+            except Exception as exc:
+                last_error = exc
+                retry_reason = str(exc)
+            else:
+                if result.status != ProviderStatus.ERROR:
+                    # UNAVAILABLE/PARTIAL/STALE are valid provider answers. They
+                    # must not trip a transport/runtime circuit breaker.
+                    circuit_breaker.record_success(cb_key)
+                    return result
+                last_result = result
+                retry_reason = result.error_message or "provider returned ERROR"
+
+            if attempt < self.max_retries:
+                logger.warning(
+                    "Provider %s retry %d/%d: %s",
+                    self.owner_domain,
+                    attempt + 1,
+                    self.max_retries,
+                    retry_reason,
+                )
+                time.sleep(self.retry_backoff * (attempt + 1))
 
         circuit_breaker.record_failure(cb_key)
-        logger.error("Provider %s failed after %d retries: %s", self.owner_domain, self.max_retries, last_error)
+        if last_result is not None:
+            logger.error(
+                "Provider %s returned ERROR after %d retries: %s",
+                self.owner_domain,
+                self.max_retries,
+                last_result.error_message,
+            )
+            return last_result
+
+        logger.error(
+            "Provider %s failed after %d retries: %s",
+            self.owner_domain,
+            self.max_retries,
+            last_error,
+        )
         return ProviderResult(
             status=ProviderStatus.ERROR,
-            error_message=f"{self.owner_domain}: {str(last_error)[:500]}" if last_error else "Unknown error",
+            error_message=(
+                f"{self.owner_domain}: {str(last_error)[:500]}"
+                if last_error
+                else "Unknown error"
+            ),
         )
 
     def fetch_batch(self, ctx: ProviderContext, batch_size: int = 100) -> List[ProviderResult]:
-        """批量分片获取 — 避免单次查询数据量过大。"""
+        """批量分片获取 — 保留完整请求上下文，避免分片后降级安全语义。"""
+        if batch_size <= 0:
+            raise ValueError("batch_size must be greater than zero")
+
         results: List[ProviderResult] = []
         ids = ctx.ids or []
         for i in range(0, len(ids), batch_size):
             batch_ctx = ProviderContext(
-                tenant_id=ctx.tenant_id, ids=ids[i:i + batch_size],
-                as_of=ctx.as_of, source_version=ctx.source_version,
+                tenant_id=ctx.tenant_id,
+                ids=ids[i : i + batch_size],
+                as_of=ctx.as_of,
+                source_version=ctx.source_version,
+                max_stale_seconds=ctx.max_stale_seconds,
                 timeout_ms=ctx.timeout_ms,
+                sensitivity=ctx.sensitivity,
+                request_id=ctx.request_id,
             )
             results.append(self.fetch(batch_ctx))
         return results
