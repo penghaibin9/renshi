@@ -75,56 +75,47 @@ def _person_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
         )
 
 
-def _organization_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
-    if not ids:
-        return _empty_result("hr_structure:v1")
+def _organization_data(ctx: ProviderContext) -> ProviderResult:
+    if not ctx.ids:
+        return _empty_result("hr02-organization-evidence-v1")
     try:
-        from hr_structure.models.organization import HrOrganizationVersion
+        from hr_structure.public import (
+            PROVIDER_VERSION,
+            OrganizationEvidenceUnavailable,
+            get_organization_evidence,
+        )
 
-        versions = (
-            HrOrganizationVersion.objects.filter(
-                tenant_id=tenant_id,
-                organization_id_id__in=ids,
-                status="EFFECTIVE",
-            )
-            .select_related("organization_id")
-            .order_by("organization_id_id", "-validity_from", "-version_no")
+        evidence = get_organization_evidence(
+            tenant_id=ctx.tenant_id,
+            organization_ids=ctx.ids,
+            as_of=_ctx_as_of_date(ctx),
+            source_version=ctx.source_version,
         )
-        data = []
-        seen = set()
-        for version in versions:
-            organization_pk = version.organization_id_id
-            if organization_pk in seen:
-                continue
-            seen.add(organization_pk)
-            organization = version.organization_id
-            data.append(
-                {
-                    "organization_id": str(organization_pk),
-                    "stable_code": organization.stable_code,
-                    "name": version.name,
-                    "short_name": version.short_name,
-                    "org_type": version.org_type,
-                    "identity_status": organization.identity_status,
-                }
-            )
-        return ProviderResult(
-            status=(
-                ProviderStatus.OK if len(seen) == len(set(ids)) else ProviderStatus.PARTIAL
-            ),
-            data=data,
-            source_version="hr_structure:v1",
-        )
-    except ImportError:
+    except OrganizationEvidenceUnavailable as exc:
         return ProviderResult(
             status=ProviderStatus.UNAVAILABLE,
-            error_message="hr_structure 模块未安装",
+            data=None,
+            error_message=f"{exc.code}: {exc}",
+            source_version="hr02-organization-evidence-v1",
         )
-    except Exception as exc:
-        return ProviderResult(
-            status=ProviderStatus.ERROR,
-            error_message=str(exc)[:500],
+
+    status = (
+        ProviderStatus.PARTIAL
+        if evidence.missing_organization_ids
+        else ProviderStatus.OK
+    )
+    error = ""
+    if evidence.missing_organization_ids:
+        error = (
+            "ORGANIZATION_BASIS_UNAVAILABLE: missing tenant/as-of HR02 organizations: "
+            + ",".join(str(value) for value in evidence.missing_organization_ids)
         )
+    return ProviderResult(
+        status=status,
+        data=[row.snapshot() for row in evidence.rows],
+        error_message=error,
+        source_version=PROVIDER_VERSION,
+    )
 
 
 def _agreement_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
@@ -209,7 +200,7 @@ class OrganizationProvider(BaseAssessmentProvider):
     owner_domain = "hr_structure"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
-        return _organization_data(ctx.tenant_id, ctx.ids)
+        return _organization_data(ctx)
 
 
 class AgreementProvider(BaseAssessmentProvider):
