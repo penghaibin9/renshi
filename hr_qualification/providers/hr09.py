@@ -51,11 +51,23 @@ class Hr09CredentialProvider(HrEvidenceProvider):
             )
 
         items = []
+        errors = []
         for credential in evidence.rows:
             if credential.status == CredentialStatus.ACTIVE:
-                verification_status = (
-                    credential.current_verification_status or VerificationResult.VERIFIED
-                )
+                verification_status = credential.current_verification_status
+                if verification_status != VerificationResult.VERIFIED:
+                    errors.append(
+                        ProviderError(
+                            code="CREDENTIAL_VERIFICATION_UNPROVEN",
+                            message=(
+                                "active credential lacks a VERIFIED source conclusion at as_of: "
+                                f"credential={credential.credential_id} staff={credential.staff_id}"
+                            ),
+                        )
+                    )
+                    verification_status = (
+                        verification_status or VerificationResult.NEEDS_MANUAL_REVIEW
+                    )
             else:
                 # A historically verified credential that is expired at as_of is
                 # still an auditable fact, but it cannot satisfy a verified-active
@@ -89,20 +101,22 @@ class Hr09CredentialProvider(HrEvidenceProvider):
             default=None,
         )
         if evidence.uncertain_staff_ids:
+            errors.append(
+                ProviderError(
+                    code="CREDENTIAL_HISTORY_UNAVAILABLE",
+                    message=(
+                        "historical HR09 credential state cannot be proven for staff: "
+                        + ",".join(
+                            str(value) for value in evidence.uncertain_staff_ids
+                        )
+                    ),
+                )
+            )
+        if errors:
             return ProviderEvidenceResult(
                 status=ProviderStatus.PARTIAL,
                 items=items,
-                errors=[
-                    ProviderError(
-                        code="CREDENTIAL_HISTORY_UNAVAILABLE",
-                        message=(
-                            "historical HR09 credential state cannot be proven for staff: "
-                            + ",".join(
-                                str(value) for value in evidence.uncertain_staff_ids
-                            )
-                        ),
-                    )
-                ],
+                errors=errors,
                 source_updated_at=source_updated_at,
                 provider_version=PROVIDER_VERSION,
             )
