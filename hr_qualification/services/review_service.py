@@ -12,6 +12,8 @@ from hr_qualification.constants import (
     ApplicationStatus,
     ConflictStatus,
     FinalDecisionType,
+    PanelDecisionType,
+    RecognitionLevel,
     RecognitionStatus,
     ScoreSheetStatus,
 )
@@ -72,6 +74,29 @@ class ReviewService:
             raise ReviewError(exc.code, str(exc)) from exc
 
     @staticmethod
+    def _require_state(application, allowed, *, code: str, action: str) -> None:
+        if application.status in allowed:
+            return
+        raise ReviewError(
+            code,
+            f"application is {application.status}, cannot {action}",
+        )
+
+    @staticmethod
+    def _enter_panel_review(application: HrDoubleTeacherApplication) -> None:
+        """Enter PANEL_REVIEW exactly once from ELIGIBLE, otherwise fail closed."""
+        if application.status == ApplicationStatus.PANEL_REVIEW:
+            return
+        if application.status != ApplicationStatus.ELIGIBLE:
+            raise ReviewError(
+                "PANEL_REVIEW_INVALID_APPLICATION_STATE",
+                f"application is {application.status}, cannot enter panel review",
+            )
+        application.status = ApplicationStatus.PANEL_REVIEW
+        application.version += 1
+        application.save(update_fields=["status", "version", "updated_at"])
+
+    @staticmethod
     @transaction.atomic
     def formal_review(
         application: HrDoubleTeacherApplication,
@@ -80,17 +105,16 @@ class ReviewService:
     ) -> HrDoubleTeacherApplication:
         """Complete the formal-review decision against the frozen submission."""
         application = ReviewService._lock_application(application)
-        if application.status not in {
-            ApplicationStatus.SUBMITTED,
-            ApplicationStatus.FORMAL_REVIEW,
-        }:
-            raise ReviewError(
-                "FORMAL_REVIEW_INVALID_APPLICATION_STATE",
-                f"application is {application.status}, not reviewable",
-            )
+        ReviewService._require_state(
+            application,
+            {ApplicationStatus.SUBMITTED, ApplicationStatus.FORMAL_REVIEW},
+            code="FORMAL_REVIEW_INVALID_APPLICATION_STATE",
+            action="complete formal review",
+        )
         ReviewService._assert_frozen_evidence(application, for_update=True)
 
         valid_decisions = {
+            "RETURN": ApplicationStatus.RETURNED,
             "RETURNED": ApplicationStatus.RETURNED,
             ApplicationStatus.RETURNED: ApplicationStatus.RETURNED,
             "ELIGIBLE": ApplicationStatus.ELIGIBLE,
@@ -113,13 +137,21 @@ class ReviewService:
         return application
 
     @staticmethod
+    @transaction.atomic
     def create_score_sheet(
         application_id: uuid.UUID,
         panel_member_id: uuid.UUID,
         rubric_version_id: str = "",
     ) -> HrDoubleTeacherScoreSheet:
+        application = (
+            HrDoubleTeacherApplication.objects.select_for_update()
+            .select_related("batch_id__rule_pack_version_id")
+            .get(id=application_id)
+        )
+        ReviewService._assert_frozen_evidence(application, for_update=True)
+        ReviewService._enter_panel_review(application)
         return HrDoubleTeacherScoreSheet.objects.create(
-            application_id_id=application_id,
+            application_id=application,
             panel_member_id_id=panel_member_id,
             rubric_version_id=rubric_version_id,
             status=ScoreSheetStatus.DRAFT,
@@ -135,6 +167,12 @@ class ReviewService:
             HrDoubleTeacherScoreSheet.objects.select_for_update()
             .select_related("application_id__batch_id__rule_pack_version_id")
             .get(id=sheet_id)
+        )
+        ReviewService._require_state(
+            sheet.application_id,
+            {ApplicationStatus.PANEL_REVIEW},
+            code="PANEL_REVIEW_INVALID_APPLICATION_STATE",
+            action="submit score",
         )
         ReviewService._assert_frozen_evidence(
             sheet.application_id,
@@ -168,6 +206,12 @@ class ReviewService:
             HrDoubleTeacherScoreSheet.objects.select_for_update()
             .select_related("application_id__batch_id__rule_pack_version_id")
             .get(id=sheet_id)
+        )
+        ReviewService._require_state(
+            sheet.application_id,
+            {ApplicationStatus.PANEL_REVIEW},
+            code="PANEL_REVIEW_INVALID_APPLICATION_STATE",
+            action="lock score",
         )
         ReviewService._assert_frozen_evidence(
             sheet.application_id,
@@ -215,6 +259,7 @@ class ReviewService:
                 "panel does not belong to the application batch",
             )
         ReviewService._assert_frozen_evidence(application, for_update=True)
+        ReviewService._enter_panel_review(application)
         try:
             return HrDoubleTeacherVote.objects.create(
                 application_id=application,
@@ -248,9 +293,20 @@ class ReviewService:
                 "PANEL_SCOPE_MISMATCH",
                 "panel does not belong to the application batch",
             )
+        if decision not in PanelDecisionType.values:
+            raise ReviewError(
+                "PANEL_DECISION_INVALID",
+                f"invalid panel decision: {decision}",
+            )
+        if recommended_level and recommended_level not in RecognitionLevel.values:
+            raise ReviewError(
+                "PANEL_RECOMMENDED_LEVEL_INVALID",
+                f"invalid recommended level: {recommended_level}",
+            )
         ReviewService._assert_frozen_evidence(application, for_update=True)
+        ReviewService._enter_panel_review(application)
         try:
-            return HrDoubleTeacherPanelDecision.objects.create(
+            panel_decision = HrDoubleTeacherPanelDecision.objects.create(
                 application_id=application,
                 panel_id=panel,
                 decision=decision,
@@ -264,6 +320,11 @@ class ReviewService:
                 "application already has a panel decision",
             ) from exc
 
+        application.status = ApplicationStatus.RESULT_PENDING
+        application.version += 1
+        application.save(update_fields=["status", "version", "updated_at"])
+        return panel_decision
+
     @staticmethod
     @transaction.atomic
     def finalize(
@@ -274,9 +335,37 @@ class ReviewService:
         decision_authority: str = "",
         meeting_ref: str = "",
     ) -> tuple[HrDoubleTeacherFinalDecision, HrDoubleTeacherRecognition | None]:
-        """Create the immutable school decision from the exact frozen evidence."""
+        """Create the immutable school decision from RESULT_PENDING evidence."""
         application = ReviewService._lock_application(application)
+        ReviewService._require_state(
+            application,
+            {ApplicationStatus.RESULT_PENDING},
+            code="FINAL_DECISION_INVALID_APPLICATION_STATE",
+            action="finalize recognition decision",
+        )
         ReviewService._assert_frozen_evidence(application, for_update=True)
+
+        if decision not in FinalDecisionType.values:
+            raise ReviewError(
+                "FINAL_DECISION_INVALID",
+                f"invalid final decision: {decision}",
+            )
+        if decision == FinalDecisionType.RECOGNIZE:
+            if not recognized_level:
+                raise ReviewError(
+                    "RECOGNIZED_LEVEL_REQUIRED",
+                    "recognized_level is required for a recognition decision",
+                )
+            if recognized_level not in RecognitionLevel.values:
+                raise ReviewError(
+                    "RECOGNIZED_LEVEL_INVALID",
+                    f"invalid recognized_level: {recognized_level}",
+                )
+        elif recognized_level:
+            raise ReviewError(
+                "RECOGNIZED_LEVEL_NOT_ALLOWED",
+                "recognized_level is only valid for a recognition decision",
+            )
 
         if HrDoubleTeacherFinalDecision.objects.select_for_update().filter(
             application_id=application
@@ -303,7 +392,9 @@ class ReviewService:
                 application_id=application,
                 decision=decision,
                 recognized_level=recognized_level,
-                effective_from=effective_date if decision == FinalDecisionType.RECOGNIZE else None,
+                effective_from=(
+                    effective_date if decision == FinalDecisionType.RECOGNIZE else None
+                ),
                 decision_authority=decision_authority,
                 meeting_ref=meeting_ref,
                 published_at=timezone.now(),
@@ -316,11 +407,6 @@ class ReviewService:
 
         recognition = None
         if decision == FinalDecisionType.RECOGNIZE:
-            if not recognized_level:
-                raise ReviewError(
-                    "RECOGNIZED_LEVEL_REQUIRED",
-                    "recognized_level is required for a recognition decision",
-                )
             old_recognitions = list(
                 HrDoubleTeacherRecognition.objects.select_for_update().filter(
                     tenant_id=application.tenant_id,
