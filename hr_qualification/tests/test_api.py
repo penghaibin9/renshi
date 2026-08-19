@@ -122,6 +122,54 @@ class ResourceEndpointTest(TestCase):
         self.assertIn("items", data["data"])
         self.assertEqual(len(data["data"]["items"]), 1)
 
+    def test_requirement_match_endpoint_uses_restored_authority_service(self):
+        from hr_qualification.constants import CredentialCategory, CredentialStatus
+        from hr_qualification.models import (
+            HrCredentialCatalogItem,
+            HrCredentialRequirement,
+            HrPersonCredential,
+        )
+        from hr_staff.models import HrPerson
+
+        self._login_school()
+        person = HrPerson.objects.create(
+            tenant_id=self.company.pk,
+            legal_name="API requirement match",
+        )
+        catalog = HrCredentialCatalogItem.objects.create(
+            tenant_id=self.company.pk,
+            code="API-REQ-MATCH",
+            category=CredentialCategory.VOCATIONAL_QUALIFICATION,
+            name="API Requirement Match",
+            level_schema={"levels": [{"code": "LEVEL_2", "rank": 4}]},
+        )
+        credential = HrPersonCredential.objects.create(
+            tenant_id=self.company.pk,
+            person_id=person,
+            credential_name_snapshot=catalog.name,
+            catalog_item_id=catalog,
+            issuer_name="Authority",
+            level_code="LEVEL_2",
+            status=CredentialStatus.ACTIVE,
+        )
+        requirement = HrCredentialRequirement.objects.create(
+            tenant_id=self.company.pk,
+            credential_category=CredentialCategory.VOCATIONAL_QUALIFICATION,
+            catalog_item_id=catalog,
+            minimum_level="LEVEL_2",
+        )
+
+        resp = self.client.get(
+            f"/api/v1/hr/qualifications/credentials/{credential.id}/requirement-match"
+        )
+
+        self.assertEqual(resp.status_code, 200, resp.content[:500])
+        items = resp.json()["data"]["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["requirement_id"], str(requirement.id))
+        self.assertEqual(items[0]["result"], "MET")
+        self.assertEqual(items[0]["matched_credential_id"], str(credential.id))
+
     def test_catalog_list(self):
         self._login_school()
         resp = self.client.get("/api/v1/hr/qualifications/catalog")
