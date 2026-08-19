@@ -8,8 +8,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from uuid import UUID
 
-from hr_time.models.close import HrTimeClosePeriod, HrTimeCloseSnapshot
+from hr_staff.models import HrStaffMaster
+from hr_time.models.close import (
+    HrPayrollTimeBasis,
+    HrTimeClosePeriod,
+    HrTimeCloseSnapshot,
+)
 
 PROVIDER_VERSION = "hr11-time-close-v1"
 
@@ -48,6 +54,45 @@ class TimeCloseEvidence:
         }
 
 
+@dataclass(frozen=True)
+class StaffTimeBasisEvidence:
+    staff_id: UUID
+    regular_work_minutes: int
+    payable_authorized_absence_minutes: int
+    unpaid_absence_minutes: int
+    verified_overtime_minutes: int
+    comp_time_minutes: int
+    unexcused_absence_minutes: int
+    basis_version: str
+
+    def snapshot(self) -> dict:
+        return {
+            "staffId": str(self.staff_id),
+            "regularWorkMinutes": self.regular_work_minutes,
+            "payableAuthorizedAbsenceMinutes": self.payable_authorized_absence_minutes,
+            "unpaidAbsenceMinutes": self.unpaid_absence_minutes,
+            "verifiedOvertimeMinutes": self.verified_overtime_minutes,
+            "compTimeMinutes": self.comp_time_minutes,
+            "unexcusedAbsenceMinutes": self.unexcused_absence_minutes,
+            "basisVersion": self.basis_version,
+        }
+
+
+@dataclass(frozen=True)
+class TimeSummaryEvidence:
+    period: TimeCloseEvidence
+    staff_rows: tuple[StaffTimeBasisEvidence, ...]
+    missing_staff_ids: tuple[UUID, ...]
+
+
+def _assert_source_version(source_version: str | None) -> None:
+    if source_version not in (None, "", "v1", PROVIDER_VERSION):
+        raise TimeCloseEvidenceUnavailable(
+            "SOURCE_VERSION_UNSUPPORTED",
+            f"unsupported HR11 source version: {source_version}",
+        )
+
+
 def get_closed_time_period_evidence(
     *,
     tenant_id: int,
@@ -68,11 +113,7 @@ def get_closed_time_period_evidence(
         raise TimeCloseEvidenceUnavailable(
             "TIME_CLOSE_DATE_RANGE_INVALID", "end_date cannot be earlier than start_date"
         )
-    if source_version and source_version != PROVIDER_VERSION:
-        raise TimeCloseEvidenceUnavailable(
-            "SOURCE_VERSION_UNSUPPORTED",
-            f"unsupported HR11 source version: {source_version}",
-        )
+    _assert_source_version(source_version)
 
     periods = HrTimeClosePeriod.objects
     if for_update:
@@ -123,3 +164,97 @@ def get_closed_time_period_evidence(
         leave_ledger_hash=snapshot.leave_ledger_hash,
         overtime_fact_hash=snapshot.overtime_fact_hash,
     )
+
+
+def get_closed_time_summary_evidence(
+    *,
+    tenant_id: int,
+    staff_ids: list,
+    as_of: date,
+    source_version: str | None = None,
+) -> TimeSummaryEvidence:
+    """Return HR11 payroll-basis facts from the one CLOSED monthly period at as-of."""
+
+    if not tenant_id:
+        raise TimeCloseEvidenceUnavailable(
+            "TENANT_CONTEXT_REQUIRED", "tenant_id is required"
+        )
+    if not isinstance(as_of, date):
+        raise TimeCloseEvidenceUnavailable("AS_OF_REQUIRED", "as_of must be a date")
+    _assert_source_version(source_version)
+
+    periods = list(
+        HrTimeClosePeriod.objects.filter(
+            tenant_id=tenant_id,
+            period_type="MONTHLY",
+            start_date__lte=as_of,
+            end_date__gte=as_of,
+            status="CLOSED",
+        ).order_by("start_date", "id")[:2]
+    )
+    if not periods:
+        raise TimeCloseEvidenceUnavailable(
+            "TIME_CLOSE_PERIOD_NOT_FOUND",
+            "no CLOSED HR11 monthly period contains the requested as-of date",
+        )
+    if len(periods) > 1:
+        raise TimeCloseEvidenceUnavailable(
+            "TIME_CLOSE_PERIOD_AMBIGUOUS",
+            "multiple CLOSED HR11 monthly periods contain the requested as-of date",
+        )
+    period = periods[0]
+    evidence = get_closed_time_period_evidence(
+        tenant_id=tenant_id,
+        start_date=period.start_date,
+        end_date=period.end_date,
+        source_version=PROVIDER_VERSION,
+    )
+    if not staff_ids:
+        return TimeSummaryEvidence(evidence, (), ())
+
+    masters = list(
+        HrStaffMaster.objects.filter(tenant_id=tenant_id, id__in=staff_ids).only(
+            "id", "legacy_employee_id"
+        )
+    )
+    by_legacy = {
+        int(master.legacy_employee_id): master.id
+        for master in masters
+        if master.legacy_employee_id is not None
+    }
+    mapped_staff_ids = set(by_legacy.values())
+    requested_staff_ids = set(staff_ids)
+    missing = tuple(sorted(requested_staff_ids - mapped_staff_ids, key=str))
+
+    rows = HrPayrollTimeBasis.objects.filter(
+        tenant_id=tenant_id,
+        close_snapshot_id=evidence.snapshot_id,
+        staff_master_id__in=by_legacy,
+    ).order_by("staff_master_id", "id")
+    found_legacy = set()
+    staff_rows = []
+    for row in rows:
+        legacy_id = int(row.staff_master_id)
+        staff_id = by_legacy.get(legacy_id)
+        if staff_id is None:
+            continue
+        found_legacy.add(legacy_id)
+        staff_rows.append(
+            StaffTimeBasisEvidence(
+                staff_id=staff_id,
+                regular_work_minutes=row.regular_work_minutes,
+                payable_authorized_absence_minutes=row.payable_authorized_absence_minutes,
+                unpaid_absence_minutes=row.unpaid_absence_minutes,
+                verified_overtime_minutes=row.verified_overtime_minutes,
+                comp_time_minutes=row.comp_time_minutes,
+                unexcused_absence_minutes=row.unexcused_absence_minutes,
+                basis_version=row.basis_version,
+            )
+        )
+    missing_basis = {
+        staff_id
+        for legacy_id, staff_id in by_legacy.items()
+        if legacy_id not in found_legacy
+    }
+    missing = tuple(sorted(set(missing) | missing_basis, key=str))
+    return TimeSummaryEvidence(evidence, tuple(staff_rows), missing)

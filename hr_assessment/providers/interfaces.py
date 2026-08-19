@@ -1,13 +1,13 @@
-"""
-HR12 Assessment — Provider 实现（生产级 ORM 接入 + 重试/熔断）。
+"""HR12 assessment provider implementations.
 
-5 个真实 ORM Provider：Person / Organization / Agreement / Qualification / Time。
-4 个外部 UNAVAILABLE Provider。
-3 个辅助 Provider。
+Internal HR domains are read through their source-owned public contracts where
+formal evidence exists. External systems that are not actually configured stay
+explicitly UNAVAILABLE; there is no silent legacy or zero-value fallback.
 """
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from hr_assessment.providers.base import (
@@ -19,12 +19,21 @@ from hr_assessment.providers.base import (
 
 
 def _empty_result(source_version: str) -> ProviderResult:
-    """空 ID 集合是一次完整成功的查询，不应触发下游依赖或被误报 UNAVAILABLE。"""
+    """An empty requested ID set is a complete query, not UNAVAILABLE."""
     return ProviderResult(
         status=ProviderStatus.OK,
         data=[],
         source_version=source_version,
     )
+
+
+def _ctx_as_of_date(ctx: ProviderContext) -> date:
+    value = ctx.as_of
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raise ValueError("provider as_of must be a date or datetime")
 
 
 def _person_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
@@ -45,8 +54,6 @@ def _person_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
                     "staff_id": str(master.id),
                     "person_id": str(master.person_id_id),
                     "display_name": person.preferred_name or person.legal_name,
-                    # Provider contract keeps the neutral worker_category key;
-                    # HR03 authority currently names the field staff_category_code.
                     "worker_category": master.staff_category_code,
                     "status": master.current_employment_status or person.status,
                 }
@@ -102,7 +109,9 @@ def _organization_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
                 }
             )
         return ProviderResult(
-            status=ProviderStatus.OK if len(seen) == len(set(ids)) else ProviderStatus.PARTIAL,
+            status=(
+                ProviderStatus.OK if len(seen) == len(set(ids)) else ProviderStatus.PARTIAL
+            ),
             data=data,
             source_version="hr_structure:v1",
         )
@@ -189,55 +198,6 @@ def _qual_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
         )
 
 
-def _time_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
-    if not ids:
-        return _empty_result("hr_time:v1")
-    try:
-        from datetime import date
-
-        from hr_time.models import HrAttendanceRecord
-
-        today = date.today()
-        records = HrAttendanceRecord.objects.filter(
-            tenant_id=tenant_id,
-            staff_id__in=ids,
-            date__gte=today.replace(day=1),
-            date__lte=today,
-        ).values("staff_id", "status")
-        staff_map: Dict[str, Dict] = {}
-        for record in records:
-            staff_id = str(record["staff_id"])
-            if staff_id not in staff_map:
-                staff_map[staff_id] = {
-                    "staff_id": staff_id,
-                    "p": 0,
-                    "a": 0,
-                    "l": 0,
-                }
-            status = record["status"]
-            if status == "PRESENT":
-                staff_map[staff_id]["p"] += 1
-            elif status == "ABSENT":
-                staff_map[staff_id]["a"] += 1
-            elif status == "LATE":
-                staff_map[staff_id]["l"] += 1
-        return ProviderResult(
-            status=ProviderStatus.OK,
-            data=list(staff_map.values()),
-            source_version="hr_time:v1",
-        )
-    except ImportError:
-        return ProviderResult(
-            status=ProviderStatus.UNAVAILABLE,
-            error_message="hr_time 模块未安装",
-        )
-    except Exception as exc:
-        return ProviderResult(
-            status=ProviderStatus.ERROR,
-            error_message=str(exc)[:500],
-        )
-
-
 class PersonProvider(BaseAssessmentProvider):
     owner_domain = "hr_staff"
 
@@ -270,10 +230,45 @@ class DevelopmentProvider(BaseAssessmentProvider):
     owner_domain = "hr_development"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
+        if not ctx.ids:
+            return _empty_result("hr10-development-fact-v1")
+        try:
+            from hr10_development.public import (
+                PROVIDER_VERSION,
+                DevelopmentEvidenceUnavailable,
+                get_verified_development_facts,
+            )
+
+            evidence = get_verified_development_facts(
+                tenant_id=ctx.tenant_id,
+                staff_ids=ctx.ids,
+                as_of=_ctx_as_of_date(ctx),
+                source_version=ctx.source_version,
+            )
+        except DevelopmentEvidenceUnavailable as exc:
+            return ProviderResult(
+                status=ProviderStatus.UNAVAILABLE,
+                data=None,
+                error_message=f"{exc.code}: {exc}",
+                source_version="hr10-development-fact-v1",
+            )
+        data = [fact.snapshot() for fact in evidence.facts]
+        status = ProviderStatus.PARTIAL if evidence.missing_staff_ids else ProviderStatus.OK
+        error = ""
+        if evidence.missing_staff_ids:
+            error = (
+                "SOURCE_IDENTITY_MAPPING_UNAVAILABLE: missing canonical HR03 staff mappings: "
+                + ",".join(str(value) for value in evidence.missing_staff_ids)
+            )
         return ProviderResult(
-            status=ProviderStatus.UNAVAILABLE,
-            data=None,
-            error_message="HR10 模块未就绪",
+            status=status,
+            data=data,
+            error_message=error,
+            source_version=PROVIDER_VERSION,
+            source_updated_at=max(
+                (fact.updated_at for fact in evidence.facts if fact.updated_at is not None),
+                default=None,
+            ),
         )
 
 
@@ -281,7 +276,49 @@ class TimeSummaryProvider(BaseAssessmentProvider):
     owner_domain = "hr_time"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
-        return _time_data(ctx.tenant_id, ctx.ids)
+        if not ctx.ids:
+            return _empty_result("hr11-time-close-v1")
+        try:
+            from hr_time.public import (
+                PROVIDER_VERSION,
+                TimeCloseEvidenceUnavailable,
+                get_closed_time_summary_evidence,
+            )
+
+            evidence = get_closed_time_summary_evidence(
+                tenant_id=ctx.tenant_id,
+                staff_ids=ctx.ids,
+                as_of=_ctx_as_of_date(ctx),
+                source_version=ctx.source_version,
+            )
+        except TimeCloseEvidenceUnavailable as exc:
+            return ProviderResult(
+                status=ProviderStatus.UNAVAILABLE,
+                data=None,
+                error_message=f"{exc.code}: {exc}",
+                source_version="hr11-time-close-v1",
+            )
+        data = [
+            {
+                **row.snapshot(),
+                "timeClose": evidence.period.snapshot(),
+            }
+            for row in evidence.staff_rows
+        ]
+        status = ProviderStatus.PARTIAL if evidence.missing_staff_ids else ProviderStatus.OK
+        error = ""
+        if evidence.missing_staff_ids:
+            error = (
+                "TIME_BASIS_UNAVAILABLE: missing HR11 basis or canonical identity mapping: "
+                + ",".join(str(value) for value in evidence.missing_staff_ids)
+            )
+        return ProviderResult(
+            status=status,
+            data=data,
+            error_message=error,
+            source_version=PROVIDER_VERSION,
+            source_updated_at=evidence.period.closed_at,
+        )
 
 
 class AcademicProvider(BaseAssessmentProvider):
