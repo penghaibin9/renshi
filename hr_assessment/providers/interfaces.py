@@ -8,7 +8,7 @@ explicitly UNAVAILABLE; there is no silent legacy or zero-value fallback.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from hr_assessment.providers.base import (
     BaseAssessmentProvider,
@@ -32,43 +32,51 @@ def _ctx_as_of_date(ctx: ProviderContext) -> date:
     raise ValueError("provider as_of must be a date or datetime")
 
 
-def _person_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
-    if not ids:
-        return _empty_result("hr_staff:v1")
+def _person_data(ctx: ProviderContext) -> ProviderResult:
+    if not ctx.ids:
+        return _empty_result("hr03-staff-evidence-v1")
     try:
-        from hr_staff.models.staff import HrStaffMaster
-
-        masters = HrStaffMaster.objects.filter(
-            tenant_id=tenant_id,
-            id__in=ids,
-        ).select_related("person_id")
-        data = []
-        for master in masters:
-            person = master.person_id
-            data.append(
-                {
-                    "staff_id": str(master.id),
-                    "person_id": str(master.person_id_id),
-                    "display_name": person.preferred_name or person.legal_name,
-                    "worker_category": master.staff_category_code,
-                    "status": master.current_employment_status or person.status,
-                }
-            )
-        return ProviderResult(
-            status=ProviderStatus.OK if data else ProviderStatus.PARTIAL,
-            data=data,
-            source_version="hr_staff:v1",
+        from hr_staff.public import (
+            PROVIDER_VERSION,
+            StaffEvidenceUnavailable,
+            get_staff_evidence,
         )
-    except ImportError:
+
+        evidence = get_staff_evidence(
+            tenant_id=ctx.tenant_id,
+            staff_ids=ctx.ids,
+            as_of=_ctx_as_of_date(ctx),
+            source_version=ctx.source_version,
+        )
+    except StaffEvidenceUnavailable as exc:
         return ProviderResult(
             status=ProviderStatus.UNAVAILABLE,
-            error_message="hr_staff 模块未安装",
+            data=None,
+            error_message=f"{exc.code}: {exc}",
+            source_version="hr03-staff-evidence-v1",
         )
-    except Exception as exc:
-        return ProviderResult(
-            status=ProviderStatus.ERROR,
-            error_message=str(exc)[:500],
+
+    blockers = tuple(evidence.missing_staff_ids) + tuple(
+        evidence.uncertain_identity_staff_ids
+    )
+    status = ProviderStatus.PARTIAL if blockers else ProviderStatus.OK
+    errors = []
+    if evidence.missing_staff_ids:
+        errors.append(
+            "STAFF_BASIS_UNAVAILABLE: missing tenant/as-of HR03 staff: "
+            + ",".join(str(value) for value in evidence.missing_staff_ids)
         )
+    if evidence.uncertain_identity_staff_ids:
+        errors.append(
+            "STAFF_IDENTITY_HISTORY_UNAVAILABLE: current identity fields changed after as_of for staff: "
+            + ",".join(str(value) for value in evidence.uncertain_identity_staff_ids)
+        )
+    return ProviderResult(
+        status=status,
+        data=[row.snapshot() for row in evidence.rows],
+        error_message="; ".join(errors),
+        source_version=PROVIDER_VERSION,
+    )
 
 
 def _organization_data(ctx: ProviderContext) -> ProviderResult:
@@ -196,7 +204,7 @@ class PersonProvider(BaseAssessmentProvider):
     owner_domain = "hr_staff"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
-        return _person_data(ctx.tenant_id, ctx.ids)
+        return _person_data(ctx)
 
 
 class OrganizationProvider(BaseAssessmentProvider):
