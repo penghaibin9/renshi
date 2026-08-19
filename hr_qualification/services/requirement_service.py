@@ -32,13 +32,13 @@ class RequirementService:
         level: str | None = None,
         as_of: date | None = None,
     ) -> bool:
-        """Return True only for an ACTIVE credential proven at ``as_of``.
+        """Return True only for a VERIFIED + ACTIVE credential proven at ``as_of``.
 
         ``level`` is an exact normalized catalog level code. This helper never
         guesses ordering from human labels; ranked comparisons belong to the
         typed precheck evaluator.
         """
-        from hr_qualification.constants import CredentialStatus
+        from hr_qualification.constants import CredentialStatus, VerificationResult
         from hr_qualification.public import (
             CredentialEvidenceUnavailable,
             get_formal_credential_evidence_for_person,
@@ -61,6 +61,8 @@ class RequirementService:
             return False
         for credential in evidence.rows:
             if credential.status != CredentialStatus.ACTIVE:
+                continue
+            if credential.current_verification_status != VerificationResult.VERIFIED:
                 continue
             if credential.category != category:
                 continue
