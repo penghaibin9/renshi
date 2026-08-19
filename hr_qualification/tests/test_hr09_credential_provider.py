@@ -90,6 +90,38 @@ class Hr09CredentialProviderTests(TestCase):
         self.assertEqual(item.snapshot_json["level_rank"], 4)
         self.assertTrue(item.snapshot_json["requires_document"])
 
+    def test_active_credential_without_verification_never_defaults_to_verified(self):
+        today = timezone.localdate()
+        HrPersonCredential.objects.create(
+            tenant_id=self.tenant_id,
+            person_id=self.person,
+            staff_master_id=self.staff,
+            catalog_item_id=self.catalog,
+            credential_name_snapshot=self.catalog.name,
+            level_code="LEVEL_2",
+            issuer_name="Authority",
+            valid_from=today - timedelta(days=30),
+            status=CredentialStatus.ACTIVE,
+            current_verification_status="",
+            last_verified_at=None,
+        )
+
+        result = Hr09CredentialProvider().provide(
+            person_id=self.person.id,
+            staff_master_id=self.staff.id,
+            tenant_id=self.tenant_id,
+            as_of=today,
+        )
+
+        self.assertEqual(result.status, ProviderStatus.PARTIAL)
+        self.assertEqual(
+            result.items[0].verification_status,
+            VerificationResult.NEEDS_MANUAL_REVIEW,
+        )
+        self.assertTrue(
+            any(error.code == "CREDENTIAL_VERIFICATION_UNPROVEN" for error in result.errors)
+        )
+
     def test_expired_credential_never_surfaces_as_verified_active_evidence(self):
         self._credential(status=CredentialStatus.EXPIRED)
 
