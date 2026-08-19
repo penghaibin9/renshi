@@ -1,10 +1,9 @@
 """HR14 source-owned participant for HR16 exit effects.
 
-HR16 may request an HR14 participant, but it must not update HR14 tables itself.
-This provider validates the already-effective HR16 exit fact, locks the person's
-formal appointment facts, and closes only appointments that were effective at
-the employment end boundary. Future effective appointments are treated as a
-reconciliation conflict rather than silently left active after employment ends.
+The provider is replay-safe across lost participant receipts: appointments
+already closed by the same HR16 exit business fact are returned as the same
+successful evidence instead of disappearing from a retry because their current
+status is now ENDED.
 """
 
 from __future__ import annotations
@@ -13,6 +12,14 @@ from django.db import transaction
 from django.db.models import Q
 
 from hr_appointment.models import PositionAppointmentFact
+
+
+def _same_exit_closure(existing: dict, expected: dict) -> bool:
+    """Effect IDs may differ on recovery; the HR16 business closure must not."""
+    return all(
+        str(existing.get(key, "")) == str(expected.get(key, ""))
+        for key in ("exitFactId", "exitCaseId", "employmentEndDate")
+    )
 
 
 @transaction.atomic
@@ -43,10 +50,13 @@ def exit_participant_provider(*, tenant_id, case, effect, actor_user_id=None):
         PositionAppointmentFact.Status.EFFECTIVE,
         PositionAppointmentFact.Status.REVISED,
     )
+    closure = {
+        "exitFactId": str(exit_fact.id),
+        "exitCaseId": str(case.id),
+        "employmentEndDate": boundary.isoformat(),
+        "effectId": str(effect.id),
+    }
 
-    # A formal appointment that starts on/after the employment end date cannot
-    # be closed by setting effective_to=boundary (the model requires end > start).
-    # Surface it as an explicit conflict for reconciliation instead of hiding it.
     future_conflict = (
         PositionAppointmentFact.objects.select_for_update()
         .filter(
@@ -64,6 +74,32 @@ def exit_participant_provider(*, tenant_id, case, effect, actor_user_id=None):
             f"{future_conflict.appointment_no} starts {future_conflict.effective_from}"
         )
 
+    # Recovery/replay path: an earlier worker may have committed the HR14 close
+    # and crashed before HR16 persisted its participant SUCCESS receipt.
+    ended_ids = []
+    already_ended = list(
+        PositionAppointmentFact.objects.select_for_update()
+        .filter(
+            tenant_id=tenant_id,
+            person_id=case.person_id,
+            status=PositionAppointmentFact.Status.ENDED,
+            effective_from__lt=boundary,
+            effective_to=boundary,
+        )
+        .order_by("effective_from", "id")
+    )
+    for appointment in already_ended:
+        existing_exit = dict(appointment.effect_receipt_json or {}).get("hr16Exit")
+        if existing_exit is None:
+            continue
+        if not isinstance(existing_exit, dict) or not _same_exit_closure(
+            existing_exit, closure
+        ):
+            raise ValueError(
+                "HR14_EXIT_RECEIPT_CONFLICT: appointment already carries a different exit closure"
+            )
+        ended_ids.append(str(appointment.id))
+
     appointments = list(
         PositionAppointmentFact.objects.select_for_update()
         .filter(
@@ -76,17 +112,13 @@ def exit_participant_provider(*, tenant_id, case, effect, actor_user_id=None):
         .order_by("effective_from", "id")
     )
 
-    ended_ids = []
     for appointment in appointments:
         receipt = dict(appointment.effect_receipt_json or {})
         existing_exit = receipt.get("hr16Exit")
-        closure = {
-            "exitFactId": str(exit_fact.id),
-            "exitCaseId": str(case.id),
-            "employmentEndDate": boundary.isoformat(),
-            "effectId": str(effect.id),
-        }
-        if existing_exit is not None and existing_exit != closure:
+        if existing_exit is not None and (
+            not isinstance(existing_exit, dict)
+            or not _same_exit_closure(existing_exit, closure)
+        ):
             raise ValueError(
                 "HR14_EXIT_RECEIPT_CONFLICT: appointment already carries a different exit closure"
             )
