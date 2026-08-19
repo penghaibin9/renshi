@@ -2,7 +2,7 @@
 
 Read access may see national/provincial global rule packs plus the selected
 school's own packs. School-side writes can only mutate the selected tenant's
-SCHOOL/BATCH_OVERRIDE authority and never accept tenant_id from the client.
+DRAFT authority; ACTIVE/RETIRED versions are immutable business facts.
 """
 
 import uuid
@@ -14,6 +14,7 @@ from django.views.decorators.http import require_http_methods
 
 from hr_qualification.api.access import api_guard
 from hr_qualification.api.serializers import envelope, error_envelope
+from hr_qualification.constants import RulePackVersionStatus
 from hr_qualification.models import (
     HrDoubleTeacherRule,
     HrDoubleTeacherRulePack,
@@ -162,6 +163,7 @@ def rule_version_create(request: HttpRequest, pack_id: str) -> JsonResponse:
             effective_from=body["effective_from"],
             effective_to=body.get("effective_to"),
             policy_document_ids=body.get("policy_document_ids"),
+            status=RulePackVersionStatus.DRAFT,
         )
         return JsonResponse(envelope({
             "id": str(version.id),
@@ -188,7 +190,7 @@ def rule_version_detail(request: HttpRequest, version_id: str) -> JsonResponse:
         "effective_from": version.effective_from.isoformat(),
         "status": version.status,
         "checksum": version.checksum,
-        "read_only": version.rule_pack_id.tenant_id is None,
+        "read_only": version.rule_pack_id.tenant_id is None or version.status != RulePackVersionStatus.DRAFT,
         "rules": [{
             "id": str(r.id),
             "level": r.level,
@@ -212,7 +214,7 @@ def rule_version_validate(request: HttpRequest, version_id: str) -> JsonResponse
     version = _owned_version_or_none(version_id, request.hr09_tenant_id)
     if version is None:
         return JsonResponse(error_envelope("NOT_FOUND", "School Version not found"), status=404)
-    violations = RuleService.validate_inheritance(version)
+    violations = RuleService.validate_inheritance(version) + RuleService.validate_typed_rules(version)
     return JsonResponse(envelope({"valid": len(violations) == 0, "violations": violations}))
 
 
@@ -231,7 +233,7 @@ def rule_version_publish(request: HttpRequest, version_id: str) -> JsonResponse:
             "checksum": version.checksum,
         }))
     except RulePackError as e:
-        return JsonResponse(error_envelope("RULE_WEAKER_THAN_PARENT", str(e)), status=400)
+        return JsonResponse(error_envelope(e.code, str(e)), status=400)
 
 
 @csrf_exempt
@@ -261,6 +263,14 @@ def rule_create(request: HttpRequest, version_id: str) -> JsonResponse:
         version = _owned_version_or_none(version_id, request.hr09_tenant_id)
         if version is None:
             return JsonResponse(error_envelope("NOT_FOUND", "School Version not found"), status=404)
+        if version.status != RulePackVersionStatus.DRAFT:
+            return JsonResponse(
+                error_envelope(
+                    "RULE_VERSION_IMMUTABLE",
+                    f"规则版本 {version.status} 已进入正式/审核态，禁止继续新增规则；请创建新版本。",
+                ),
+                status=409,
+            )
         body = json.loads(request.body)
         rule = HrDoubleTeacherRule.objects.create(
             version_id=version,
@@ -271,6 +281,7 @@ def rule_create(request: HttpRequest, version_id: str) -> JsonResponse:
             operator=body.get("operator", ">="),
             expected_value_json=body.get("expected_value_json"),
             hard_or_soft=body.get("hard_or_soft", "HARD"),
+            evidence_type=body.get("evidence_type", ""),
             source_provider=body.get("source_provider", ""),
             manual_review_required=body.get("manual_review_required", False),
             sequence=body.get("sequence", 0),
