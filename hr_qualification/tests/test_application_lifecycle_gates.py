@@ -1,17 +1,20 @@
 """Application lifecycle hard gates: precheck cannot be bypassed."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr_qualification.constants import (
     ApplicationStatus,
+    BatchStatus,
     EvidencePackageStatus,
     HardOrSoft,
     JurisdictionLevel,
     PrecheckResultType,
     RecognitionLevel,
+    RulePackVersionStatus,
     RuleType,
 )
 from hr_qualification.models import (
@@ -33,6 +36,7 @@ from hr_staff.models import HrPerson, HrStaffMaster
 class ApplicationLifecycleGateTests(TestCase):
     def setUp(self):
         self.tenant_id = 86123
+        today = timezone.localdate()
         person = HrPerson.objects.create(
             tenant_id=self.tenant_id,
             legal_name="Lifecycle gate",
@@ -52,18 +56,23 @@ class ApplicationLifecycleGateTests(TestCase):
         self.version = HrDoubleTeacherRulePackVersion.objects.create(
             rule_pack_id=pack,
             version_no=1,
-            effective_from=date(2026, 1, 1),
+            effective_from=today - timedelta(days=30),
+            status=RulePackVersionStatus.ACTIVE,
         )
-        batch = HrDoubleTeacherRecognitionBatch.objects.create(
+        self.batch = HrDoubleTeacherRecognitionBatch.objects.create(
             tenant_id=self.tenant_id,
             batch_no=f"APP-GATE-B-{uuid.uuid4().hex}",
             name="Application gate batch",
             rule_pack_version_id=self.version,
+            application_start=today - timedelta(days=7),
+            application_end=today + timedelta(days=7),
+            target_levels=[RecognitionLevel.DOUBLE_TEACHER_JUNIOR],
+            status=BatchStatus.APPLICATION_OPEN,
         )
         self.application = HrDoubleTeacherApplication.objects.create(
             tenant_id=self.tenant_id,
             application_no=f"APP-GATE-A-{uuid.uuid4().hex}",
-            batch_id=batch,
+            batch_id=self.batch,
             person_id=person,
             staff_master_id=staff,
             target_level=RecognitionLevel.DOUBLE_TEACHER_JUNIOR,
@@ -93,12 +102,12 @@ class ApplicationLifecycleGateTests(TestCase):
             application_id=self.application,
             rule_pack_version_id=self.version,
             source_snapshots_json={
-                "_meta": {"asOf": "2026-08-19", "providerCount": 1},
+                "_meta": {"asOf": timezone.localdate().isoformat(), "providerCount": 1},
                 "HR09_CREDENTIAL": {
                     "status": "OK",
                     "itemsCount": 1,
                     "providerVersion": "hr09-credential-evidence-v1",
-                    "sourceUpdatedAt": "2026-08-19T01:00:00+00:00",
+                    "sourceUpdatedAt": timezone.now().isoformat(),
                     "errors": [],
                 },
             },
@@ -110,7 +119,7 @@ class ApplicationLifecycleGateTests(TestCase):
             source_domain="HR09_CREDENTIAL",
             source_object_type="HrPersonCredential",
             source_object_id=str(uuid.uuid4()),
-            evidence_date=date(2026, 8, 1),
+            evidence_date=timezone.localdate(),
             title="Verified credential",
             role="VOCATIONAL_QUALIFICATION",
             quantitative_value=4,
@@ -148,6 +157,28 @@ class ApplicationLifecycleGateTests(TestCase):
         app = ApplicationService.complete_precheck(app, result)
         self.assertEqual(app.status, ApplicationStatus.DRAFT)
 
+    def test_closed_batch_cannot_start_precheck(self):
+        self.batch.status = BatchStatus.APPLICATION_CLOSED
+        self.batch.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaises(ApplicationError) as cm:
+            ApplicationService.start_precheck(self.application)
+
+        self.assertEqual(cm.exception.code, "BATCH_NOT_OPEN")
+        self.application.refresh_from_db()
+        self.assertEqual(self.application.status, ApplicationStatus.DRAFT)
+
+    def test_inactive_rule_version_cannot_start_precheck(self):
+        self.version.status = RulePackVersionStatus.RETIRED
+        self.version.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaises(ApplicationError) as cm:
+            ApplicationService.start_precheck(self.application)
+
+        self.assertEqual(cm.exception.code, "RULE_VERSION_NOT_ACTIVE")
+        self.application.refresh_from_db()
+        self.assertEqual(self.application.status, ApplicationStatus.DRAFT)
+
     def test_submit_rechecks_and_freezes_package_before_status_change(self):
         package, _item = self._generated_passing_package()
         self.application.status = ApplicationStatus.READY
@@ -159,6 +190,36 @@ class ApplicationLifecycleGateTests(TestCase):
         self.assertIsNotNone(app.submitted_at)
         package.refresh_from_db()
         self.assertEqual(package.status, EvidencePackageStatus.FROZEN)
+
+    def test_batch_closing_after_precheck_blocks_submit_and_keeps_ready(self):
+        package, _item = self._generated_passing_package()
+        self.application.status = ApplicationStatus.READY
+        self.application.save(update_fields=["status", "updated_at"])
+        self.batch.status = BatchStatus.APPLICATION_CLOSED
+        self.batch.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaises(ApplicationError) as cm:
+            ApplicationService.submit(self.application)
+
+        self.assertEqual(cm.exception.code, "BATCH_NOT_OPEN")
+        self.application.refresh_from_db()
+        package.refresh_from_db()
+        self.assertEqual(self.application.status, ApplicationStatus.READY)
+        self.assertEqual(package.status, EvidencePackageStatus.GENERATED)
+
+    def test_target_level_removed_after_precheck_blocks_submit(self):
+        package, _item = self._generated_passing_package()
+        self.application.status = ApplicationStatus.READY
+        self.application.save(update_fields=["status", "updated_at"])
+        self.batch.target_levels = [RecognitionLevel.DOUBLE_TEACHER_SENIOR]
+        self.batch.save(update_fields=["target_levels", "updated_at"])
+
+        with self.assertRaises(ApplicationError) as cm:
+            ApplicationService.submit(self.application)
+
+        self.assertEqual(cm.exception.code, "TARGET_LEVEL_NOT_ALLOWED")
+        package.refresh_from_db()
+        self.assertEqual(package.status, EvidencePackageStatus.GENERATED)
 
     def test_tampered_package_blocks_submit_and_keeps_ready(self):
         package, item = self._generated_passing_package()
