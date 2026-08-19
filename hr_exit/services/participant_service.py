@@ -1,9 +1,9 @@
 """Executable non-core participant orchestration for the HR16 ExitEffect saga.
 
 Providers can be registered explicitly through ``HR16_EXIT_PARTICIPANT_PROVIDERS``
-in Django settings. HR16's canonical archive-transfer Authority is the built-in
-ARCHIVE provider; deployments may override it, or explicitly disable it with an
-empty ARCHIVE setting. Other participants are never inferred from legacy tables.
+in Django settings. Internal Authority participants use source-owned built-in
+providers; deployments may override them, or explicitly disable one with an
+empty setting. External participants are never inferred from legacy tables.
 Missing providers become UNAVAILABLE; provider exceptions become FAILED; only a
 successful provider call returning a mapping can become SUCCESS.
 """
@@ -44,6 +44,8 @@ class ExitParticipantResult:
 class ExitParticipantService:
     NON_CORE = frozenset({"HR14", "IAM", "SETTLEMENT", "ARCHIVE"})
     BUILTIN_PROVIDERS = {
+        "HR14": "hr_appointment.exit_provider.exit_participant_provider",
+        "SETTLEMENT": "hr_payroll.exit_provider.exit_settlement_participant_provider",
         "ARCHIVE": "hr_exit.services.archive_transfer_service.archive_participant_provider",
     }
 
