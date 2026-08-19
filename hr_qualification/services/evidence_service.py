@@ -38,7 +38,6 @@ class EvidenceAggregationService:
 
     @staticmethod
     def _default_providers() -> list:
-        """All modeled source providers participate; unconfigured sources fail closed."""
         from hr_qualification.providers.hr03 import (
             Hr03EducationProvider,
             Hr03WorkHistoryProvider,
@@ -69,6 +68,20 @@ class EvidenceAggregationService:
 
     def register(self, provider) -> None:
         self._providers.append(provider)
+
+    @staticmethod
+    def requirements_for_application(
+        application: HrDoubleTeacherApplication,
+    ) -> list[HrDoubleTeacherEvidenceRequirement]:
+        """Resolve the exact frozen-rule requirements for the target level."""
+        return list(
+            HrDoubleTeacherEvidenceRequirement.objects.filter(
+                rule_id__version_id=application.batch_id.rule_pack_version_id,
+                rule_id__level=application.target_level,
+            )
+            .select_related("rule_id")
+            .order_by("rule_id__sequence", "id")
+        )
 
     def aggregate(
         self,
@@ -128,9 +141,6 @@ class EvidenceAggregationService:
         allowed = requirement.allowed_source_domains or []
         if allowed:
             return item.source_domain in set(allowed)
-        # If the requirement itself names a concrete source domain, it is an
-        # implicit source restriction. This prevents unrelated provider items
-        # from satisfying every requirement when allowed_source_domains is blank.
         if requirement.evidence_category in set(EvidenceSourceDomain.values):
             return item.source_domain == requirement.evidence_category
         return True
@@ -155,16 +165,21 @@ class EvidenceAggregationService:
 
     @classmethod
     def compute_package_checksum(cls, package: HrDoubleTeacherEvidencePackage) -> str:
-        snapshots = package.source_snapshots_json or {}
         items = list(
             HrDoubleTeacherEvidenceItem.objects.filter(package_id=package)
             .select_related("requirement_id")
-            .order_by("requirement_id_id", "source_domain", "source_object_type", "source_object_id", "id")
+            .order_by(
+                "requirement_id_id",
+                "source_domain",
+                "source_object_type",
+                "source_object_id",
+                "id",
+            )
         )
         payload = {
             "applicationId": str(package.application_id_id),
             "rulePackVersionId": str(package.rule_pack_version_id_id),
-            "sourceSnapshots": snapshots,
+            "sourceSnapshots": package.source_snapshots_json or {},
             "items": [cls._evidence_item_payload(item) for item in items],
         }
         return hashlib.sha256(
@@ -180,11 +195,17 @@ class EvidenceAggregationService:
     def build_package(
         self,
         application: HrDoubleTeacherApplication,
-        requirements: list[HrDoubleTeacherEvidenceRequirement],
+        requirements: list[HrDoubleTeacherEvidenceRequirement] | None = None,
         as_of: date | None = None,
+        provider_results: dict[str, ProviderEvidenceResult] | None = None,
     ) -> HrDoubleTeacherEvidencePackage:
         as_of = as_of or date.today()
-        results = self.aggregate(
+        requirements = (
+            self.requirements_for_application(application)
+            if requirements is None
+            else list(requirements)
+        )
+        results = provider_results or self.aggregate(
             person_id=application.person_id_id,
             staff_master_id=application.staff_master_id_id,
             tenant_id=application.tenant_id,
