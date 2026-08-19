@@ -117,8 +117,12 @@ def get_verified_development_facts(
         if master.legacy_employee_id is not None
     }
     mapped = set(by_legacy.values())
-    requested = set(staff_ids)
-    missing = tuple(sorted(requested - mapped, key=str))
+    requested_by_key = {str(value): value for value in staff_ids}
+    mapped_keys = {str(value) for value in mapped}
+    missing = tuple(
+        requested_by_key[key]
+        for key in sorted(set(requested_by_key) - mapped_keys)
+    )
     if not by_legacy:
         raise DevelopmentEvidenceUnavailable(
             "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
@@ -160,3 +164,39 @@ def get_verified_development_facts(
         for fact in facts
     )
     return DevelopmentEvidence(rows, missing)
+
+
+def get_verified_development_facts_for_person(
+    *,
+    tenant_id: int,
+    person_id,
+    staff_id,
+    as_of: date,
+    source_version: str | None = None,
+) -> DevelopmentEvidence:
+    """Exact person/staff adapter for HR09 and other person-centric consumers."""
+    if staff_id is None:
+        raise DevelopmentEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "canonical HR03 staff id is required for HR10 evidence",
+        )
+    identity = (
+        HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            id=staff_id,
+            person_id_id=person_id,
+        )
+        .only("id")
+        .first()
+    )
+    if identity is None:
+        raise DevelopmentEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "person/staff identity does not match inside this tenant",
+        )
+    return get_verified_development_facts(
+        tenant_id=tenant_id,
+        staff_ids=[identity.id],
+        as_of=as_of,
+        source_version=source_version,
+    )
