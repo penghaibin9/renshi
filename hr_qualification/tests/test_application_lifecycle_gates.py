@@ -1,7 +1,7 @@
 """Application lifecycle hard gates: precheck cannot be bypassed."""
 
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 
 from django.test import TestCase
 from django.utils import timezone
@@ -30,6 +30,7 @@ from hr_qualification.models import (
 from hr_qualification.services.application_service import ApplicationError, ApplicationService
 from hr_qualification.services.evidence_service import EvidenceAggregationService
 from hr_qualification.services.precheck_service import PrecheckResult
+from hr_qualification.services.rule_service import RuleService
 from hr_staff.models import HrPerson, HrStaffMaster
 
 
@@ -57,7 +58,7 @@ class ApplicationLifecycleGateTests(TestCase):
             rule_pack_id=pack,
             version_no=1,
             effective_from=today - timedelta(days=30),
-            status=RulePackVersionStatus.ACTIVE,
+            status=RulePackVersionStatus.DRAFT,
         )
         self.batch = HrDoubleTeacherRecognitionBatch.objects.create(
             tenant_id=self.tenant_id,
@@ -80,7 +81,7 @@ class ApplicationLifecycleGateTests(TestCase):
         self.rule = HrDoubleTeacherRule.objects.create(
             version_id=self.version,
             rule_code=f"RULE-{uuid.uuid4().hex}",
-            dimension_code="QUALIFICATION",
+            dimension_code="TEACHING_ABILITY",
             level=RecognitionLevel.DOUBLE_TEACHER_JUNIOR,
             rule_type=RuleType.BOOLEAN_FACT,
             expected_value_json={"value": True},
@@ -96,6 +97,7 @@ class ApplicationLifecycleGateTests(TestCase):
             verification_required=True,
             document_required=False,
         )
+        self.version = RuleService.publish(self.version)
 
     def _generated_passing_package(self):
         package = HrDoubleTeacherEvidencePackage.objects.create(
@@ -141,10 +143,7 @@ class ApplicationLifecycleGateTests(TestCase):
 
     def test_only_passed_precheck_moves_prechecking_to_ready(self):
         app = ApplicationService.start_precheck(self.application)
-        result = PrecheckResult(
-            application_id=str(app.id),
-            overall=PrecheckResultType.PASS,
-        )
+        result = PrecheckResult(application_id=str(app.id), overall=PrecheckResultType.PASS)
         app = ApplicationService.complete_precheck(app, result)
         self.assertEqual(app.status, ApplicationStatus.READY)
 
@@ -157,13 +156,20 @@ class ApplicationLifecycleGateTests(TestCase):
         app = ApplicationService.complete_precheck(app, result)
         self.assertEqual(app.status, ApplicationStatus.DRAFT)
 
+    def test_post_publish_rule_drift_blocks_precheck(self):
+        self.rule.operator = "<="
+        self.rule.save(update_fields=["operator", "updated_at"])
+        with self.assertRaises(ApplicationError) as cm:
+            ApplicationService.start_precheck(self.application)
+        self.assertEqual(cm.exception.code, "RULE_VERSION_INTEGRITY_DRIFT")
+        self.application.refresh_from_db()
+        self.assertEqual(self.application.status, ApplicationStatus.DRAFT)
+
     def test_closed_batch_cannot_start_precheck(self):
         self.batch.status = BatchStatus.APPLICATION_CLOSED
         self.batch.save(update_fields=["status", "updated_at"])
-
         with self.assertRaises(ApplicationError) as cm:
             ApplicationService.start_precheck(self.application)
-
         self.assertEqual(cm.exception.code, "BATCH_NOT_OPEN")
         self.application.refresh_from_db()
         self.assertEqual(self.application.status, ApplicationStatus.DRAFT)
@@ -171,10 +177,8 @@ class ApplicationLifecycleGateTests(TestCase):
     def test_inactive_rule_version_cannot_start_precheck(self):
         self.version.status = RulePackVersionStatus.RETIRED
         self.version.save(update_fields=["status", "updated_at"])
-
         with self.assertRaises(ApplicationError) as cm:
             ApplicationService.start_precheck(self.application)
-
         self.assertEqual(cm.exception.code, "RULE_VERSION_NOT_ACTIVE")
         self.application.refresh_from_db()
         self.assertEqual(self.application.status, ApplicationStatus.DRAFT)
@@ -183,9 +187,7 @@ class ApplicationLifecycleGateTests(TestCase):
         package, _item = self._generated_passing_package()
         self.application.status = ApplicationStatus.READY
         self.application.save(update_fields=["status", "updated_at"])
-
         app = ApplicationService.submit(self.application)
-
         self.assertEqual(app.status, ApplicationStatus.SUBMITTED)
         self.assertIsNotNone(app.submitted_at)
         package.refresh_from_db()
@@ -197,10 +199,8 @@ class ApplicationLifecycleGateTests(TestCase):
         self.application.save(update_fields=["status", "updated_at"])
         self.batch.status = BatchStatus.APPLICATION_CLOSED
         self.batch.save(update_fields=["status", "updated_at"])
-
         with self.assertRaises(ApplicationError) as cm:
             ApplicationService.submit(self.application)
-
         self.assertEqual(cm.exception.code, "BATCH_NOT_OPEN")
         self.application.refresh_from_db()
         package.refresh_from_db()
@@ -213,10 +213,8 @@ class ApplicationLifecycleGateTests(TestCase):
         self.application.save(update_fields=["status", "updated_at"])
         self.batch.target_levels = [RecognitionLevel.DOUBLE_TEACHER_SENIOR]
         self.batch.save(update_fields=["target_levels", "updated_at"])
-
         with self.assertRaises(ApplicationError) as cm:
             ApplicationService.submit(self.application)
-
         self.assertEqual(cm.exception.code, "TARGET_LEVEL_NOT_ALLOWED")
         package.refresh_from_db()
         self.assertEqual(package.status, EvidencePackageStatus.GENERATED)
@@ -227,10 +225,8 @@ class ApplicationLifecycleGateTests(TestCase):
         self.application.save(update_fields=["status", "updated_at"])
         item.title = "tampered after precheck"
         item.save(update_fields=["title"])
-
         with self.assertRaises(ApplicationError) as cm:
             ApplicationService.submit(self.application)
-
         self.assertEqual(cm.exception.code, "EVIDENCE_PACKAGE_CHECKSUM_MISMATCH")
         self.application.refresh_from_db()
         package.refresh_from_db()
