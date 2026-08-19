@@ -23,6 +23,7 @@ from hr_qualification.services.evidence_service import (
     EvidenceAggregationService,
 )
 from hr_qualification.services.precheck_service import PrecheckResult, PrecheckService
+from hr_qualification.services.rule_service import RulePackError, RuleService
 
 
 class ApplicationError(Exception):
@@ -106,12 +107,7 @@ class ApplicationService:
 
     @staticmethod
     def _assert_batch_accepts_application(application: HrDoubleTeacherApplication) -> None:
-        """Enforce the batch/rule/date gate inside the service boundary.
-
-        API callers, background workers and management commands must observe the
-        same eligibility contract. A READY application cannot be submitted after
-        its batch closes or its frozen rule version stops being ACTIVE.
-        """
+        """Enforce batch window and sealed rule authority inside the service boundary."""
         batch = application.batch_id
         rule_version = batch.rule_pack_version_id
         today = timezone.localdate()
@@ -125,6 +121,10 @@ class ApplicationService:
                 "RULE_VERSION_NOT_ACTIVE",
                 "recognition batch rule version is not ACTIVE",
             )
+        try:
+            RuleService.assert_version_integrity(rule_version)
+        except RulePackError as exc:
+            raise ApplicationError(exc.code, str(exc)) from exc
         if batch.application_start and today < batch.application_start:
             raise ApplicationError(
                 "APPLICATION_NOT_STARTED",
@@ -158,7 +158,6 @@ class ApplicationService:
         application: HrDoubleTeacherApplication,
         target_status: str,
     ) -> HrDoubleTeacherApplication:
-        """Non-gated transitions only; READY/SUBMITTED use dedicated methods."""
         if target_status in _GUARDED_TARGETS:
             raise ApplicationError(
                 "APPLICATION_GUARDED_TRANSITION",
