@@ -75,7 +75,7 @@ def _require_self_ownership(request, app):
 
 def _batch_accepts_application(batch, target_level):
     today = timezone.localdate()
-    if batch.status != BatchStatus.OPEN:
+    if batch.status != BatchStatus.APPLICATION_OPEN:
         return "BATCH_NOT_OPEN", "当前认定批次未开放申报。"
     if batch.rule_pack_version_id.status != RulePackVersionStatus.ACTIVE:
         return "RULE_VERSION_NOT_ACTIVE", "当前批次规则版本尚未正式生效。"
