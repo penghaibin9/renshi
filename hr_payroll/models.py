@@ -63,6 +63,7 @@ class PayrollPeriod(HrTenantScopedModel):
     end_date = models.DateField()
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.OPEN, db_index=True)
     finalized_at = models.DateTimeField(null=True, blank=True)
+    time_source_snapshot_json = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = "hr15_payroll_period"

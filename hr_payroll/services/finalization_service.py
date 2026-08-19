@@ -1,10 +1,9 @@
 """HR15 payroll period finalization guard.
 
-This service intentionally does not pretend that the full calculation engine is
-already present.  It only owns the irreversible boundary that the current
-models can support safely: REVIEWED period → FINALIZED, with row locks and
-amount invariants.  Finalized result rows are never edited here; future retro
-work must append separate delta facts.
+The irreversible REVIEWED -> FINALIZED boundary requires both reconciled payroll
+amounts and the exact HR11 CLOSED time-period snapshot for the same tenant/date
+range. The HR11 source snapshot is frozen onto the payroll period so later HR11
+corrections cannot erase which time facts supported this payroll run.
 """
 
 from __future__ import annotations
@@ -50,6 +49,25 @@ class PayrollFinalizationService:
                 f"result {result.result_no} has no currency",
             )
 
+    def _time_source_snapshot(self, period: PayrollPeriod) -> dict:
+        from hr_time.public import (
+            PROVIDER_VERSION,
+            TimeCloseEvidenceUnavailable,
+            get_closed_time_period_evidence,
+        )
+
+        try:
+            evidence = get_closed_time_period_evidence(
+                tenant_id=self.tenant_id,
+                start_date=period.start_date,
+                end_date=period.end_date,
+                source_version=PROVIDER_VERSION,
+                for_update=True,
+            )
+        except TimeCloseEvidenceUnavailable as exc:
+            raise PayrollFinalizationError(exc.code, str(exc)) from exc
+        return evidence.snapshot()
+
     @retry_mysql_transaction(attempts=3, base_delay_seconds=0.05)
     @transaction.atomic
     def finalize_period(self, period_id) -> PayrollFinalizationResult:
@@ -61,6 +79,9 @@ class PayrollFinalizationService:
         if period is None:
             raise PayrollFinalizationError("PAYROLL_PERIOD_NOT_FOUND", "payroll period not found")
 
+        # Historical finalization is immutable. Replay must return the already
+        # finalized result even if HR11 was later reopened for a new correction
+        # cycle; the frozen source snapshot below preserves the original basis.
         if period.status in (PayrollPeriod.Status.FINALIZED, PayrollPeriod.Status.CLOSED):
             ids = tuple(
                 str(value)
@@ -77,6 +98,8 @@ class PayrollFinalizationService:
                 "PAYROLL_PERIOD_NOT_REVIEWED",
                 f"period status {period.status} cannot be finalized",
             )
+
+        time_source_snapshot = self._time_source_snapshot(period)
 
         results = list(
             PayrollResultFact.objects.select_for_update()
@@ -110,7 +133,15 @@ class PayrollFinalizationService:
 
         period.status = PayrollPeriod.Status.FINALIZED
         period.finalized_at = timezone.now()
-        period.save(update_fields=["status", "finalized_at", "updated_at"])
+        period.time_source_snapshot_json = time_source_snapshot
+        period.save(
+            update_fields=[
+                "status",
+                "finalized_at",
+                "time_source_snapshot_json",
+                "updated_at",
+            ]
+        )
         return PayrollFinalizationResult(
             period=period,
             finalized_result_ids=tuple(finalized_ids),
