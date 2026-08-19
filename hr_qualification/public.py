@@ -15,7 +15,11 @@ from typing import Any, Iterable
 from django.utils import timezone
 
 from hr_qualification.constants import CredentialStatus
-from hr_qualification.models import HrCredentialStatusEvent, HrPersonCredential
+from hr_qualification.models import (
+    HrCredentialDocument,
+    HrCredentialStatusEvent,
+    HrPersonCredential,
+)
 
 
 PROVIDER_VERSION = "hr09-credential-evidence-v1"
@@ -34,11 +38,17 @@ class CredentialEvidenceRow:
     staff_id: Any
     person_id: Any
     credential_name: str
+    catalog_code: str
+    category: str
     level_code: str
+    level_rank: int | None
     status: str
+    current_verification_status: str
     valid_from: date | None
     valid_to: date | None
     last_verified_at: datetime | None
+    document_refs: tuple[str, ...]
+    requires_document: bool
     as_of: date
 
     def snapshot(self) -> dict:
@@ -47,13 +57,19 @@ class CredentialEvidenceRow:
             "staff_id": str(self.staff_id),
             "person_id": str(self.person_id),
             "credential_name": self.credential_name,
+            "catalog_code": self.catalog_code,
+            "category": self.category,
             "level_code": self.level_code,
+            "level_rank": self.level_rank,
             "status": self.status,
+            "current_verification_status": self.current_verification_status,
             "valid_from": self.valid_from.isoformat() if self.valid_from else None,
             "valid_to": self.valid_to.isoformat() if self.valid_to else None,
             "last_verified_at": (
                 self.last_verified_at.isoformat() if self.last_verified_at else None
             ),
+            "document_refs": list(self.document_refs),
+            "requires_document": self.requires_document,
             "as_of": self.as_of.isoformat(),
         }
 
@@ -86,14 +102,7 @@ def _as_of_end(as_of: date) -> datetime:
 
 
 def _status_at(credential, events: list, *, as_of: date, as_of_end: datetime) -> str | None:
-    """Resolve credential status at ``as_of`` without trusting a later projection.
-
-    A status event is the primary historical authority. If there was no event,
-    the current row is usable only when the row had already reached its current
-    state by ``as_of`` (``updated_at < as_of_end``). Otherwise the historical
-    state is unknowable and the caller must fail closed for that staff member.
-    """
-
+    """Resolve credential status at ``as_of`` without trusting a later projection."""
     eligible_events = [event for event in events if event.occurred_at < as_of_end]
     if eligible_events:
         status = eligible_events[-1].to_status
@@ -111,6 +120,19 @@ def _status_at(credential, events: list, *, as_of: date, as_of_end: datetime) ->
         if valid_to is not None and valid_to <= as_of:
             return CredentialStatus.EXPIRED
     return status
+
+
+def _catalog_level_rank(catalog, level_code: str) -> int | None:
+    schema = catalog.level_schema or {}
+    levels = schema.get("levels", []) if isinstance(schema, dict) else []
+    for level in levels:
+        if not isinstance(level, dict) or str(level.get("code", "")) != str(level_code or ""):
+            continue
+        try:
+            return int(level.get("rank"))
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def get_formal_credential_evidence(
@@ -139,10 +161,11 @@ def get_formal_credential_evidence(
             tenant_id=tenant_id,
             staff_master_id_id__in=requested,
             created_at__lt=as_of_end,
-        ).order_by("staff_master_id_id", "created_at", "id")
+        )
+        .select_related("catalog_item_id")
+        .order_by("staff_master_id_id", "created_at", "id")
     )
     if not credentials:
-        # Zero credentials is a complete source answer, not provider failure.
         return CredentialEvidence((), ())
 
     credential_ids = [credential.id for credential in credentials]
@@ -152,6 +175,20 @@ def get_formal_credential_evidence(
         occurred_at__lt=as_of_end,
     ).order_by("credential_id_id", "occurred_at", "id"):
         events_by_credential.setdefault(str(event.credential_id_id), []).append(event)
+
+    documents_by_credential: dict[str, list[str]] = {str(value): [] for value in credential_ids}
+    seen_document_refs: dict[str, set[str]] = {str(value): set() for value in credential_ids}
+    for document in HrCredentialDocument.objects.filter(
+        credential_id_id__in=credential_ids,
+        verified=True,
+        uploaded_at__lt=as_of_end,
+    ).order_by("credential_id_id", "version_no", "uploaded_at", "id"):
+        key = str(document.credential_id_id)
+        ref = str(document.file_id or "").strip()
+        if not ref or ref in seen_document_refs.setdefault(key, set()):
+            continue
+        seen_document_refs[key].add(ref)
+        documents_by_credential.setdefault(key, []).append(ref)
 
     rows = []
     uncertain_staff_keys = set()
@@ -171,17 +208,29 @@ def get_formal_credential_evidence(
             continue
         if status not in _FORMAL_VISIBLE_STATUSES:
             continue
+        catalog = credential.catalog_item_id
+        if catalog.tenant_id not in (None, tenant_id):
+            raise CredentialEvidenceUnavailable(
+                "CATALOG_TENANT_MISMATCH",
+                "credential references a catalog item from a different tenant",
+            )
         rows.append(
             CredentialEvidenceRow(
                 credential_id=credential.id,
                 staff_id=staff_id,
                 person_id=credential.person_id_id,
                 credential_name=credential.credential_name_snapshot,
+                catalog_code=catalog.code,
+                category=catalog.category,
                 level_code=credential.level_code,
+                level_rank=_catalog_level_rank(catalog, credential.level_code),
                 status=status,
+                current_verification_status=credential.current_verification_status,
                 valid_from=credential.valid_from,
                 valid_to=credential.valid_to,
                 last_verified_at=credential.last_verified_at,
+                document_refs=tuple(documents_by_credential.get(str(credential.id), [])),
+                requires_document=bool(catalog.requires_document),
                 as_of=as_of,
             )
         )
@@ -190,3 +239,37 @@ def get_formal_credential_evidence(
         uncertain_staff_values[key] for key in sorted(uncertain_staff_keys)
     )
     return CredentialEvidence(rows=tuple(rows), uncertain_staff_ids=uncertain)
+
+
+def get_formal_credential_evidence_for_person(
+    *,
+    tenant_id: int,
+    person_id: Any,
+    staff_id: Any,
+    as_of: date,
+    source_version: str = "v1",
+) -> CredentialEvidence:
+    """Person-centric adapter with exact canonical HR03 identity validation."""
+    from hr_staff.models import HrStaffMaster
+
+    if staff_id is None:
+        raise CredentialEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "canonical HR03 staff id is required for HR09 credential evidence",
+        )
+    identity = HrStaffMaster.objects.filter(
+        tenant_id=tenant_id,
+        id=staff_id,
+        person_id_id=person_id,
+    ).only("id").first()
+    if identity is None:
+        raise CredentialEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "person/staff identity does not match inside this tenant",
+        )
+    return get_formal_credential_evidence(
+        tenant_id=tenant_id,
+        staff_ids=[identity.id],
+        as_of=as_of,
+        source_version=source_version,
+    )

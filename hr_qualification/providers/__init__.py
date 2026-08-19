@@ -10,6 +10,7 @@ from hr_qualification.providers.base import (
 )
 from hr_qualification.providers.hr03 import Hr03EducationProvider, Hr03WorkHistoryProvider
 from hr_qualification.providers.hr08 import Hr08EngagementProvider
+from hr_qualification.providers.hr09 import Hr09CredentialProvider
 from hr_qualification.providers.hr10 import (
     AcademicTeachingProvider,
     Hr10EnterprisePracticeProvider,
@@ -22,6 +23,7 @@ __all__ = [
     "Hr03EducationProvider",
     "Hr03WorkHistoryProvider",
     "Hr08EngagementProvider",
+    "Hr09CredentialProvider",
     "Hr10EnterprisePracticeProvider",
     "Hr10TrainingProvider",
     "Hr12AssessmentProvider",
