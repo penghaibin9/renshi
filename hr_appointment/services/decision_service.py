@@ -1,11 +1,14 @@
 """HR14 collective final-decision service.
 
 The system records an authorized human decision; it never infers appointment
-approval from ranking score or publicity completion.
+approval from ranking score or publicity completion. When HR13 title evidence
+is part of the decision basis, callers use the trusted HR13 boundary rather
+than supplying an arbitrary title snapshot.
 """
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Optional
 
 from django.db import transaction
@@ -33,6 +36,80 @@ class AppointmentDecisionService:
         self.actor_user_id = actor_user_id
 
     @transaction.atomic
+    def record_with_title_result(
+        self,
+        *,
+        case_id,
+        decision_no: str,
+        outcome: str,
+        authority_ref: str,
+        title_result_id,
+        as_of: date,
+        decision_reason: str = "",
+        additional_evidence=None,
+    ):
+        """Record a collective decision with provider-verified HR13 evidence."""
+
+        if not isinstance(as_of, date):
+            raise AppointmentDecisionError(
+                "APPOINTMENT_TITLE_EVIDENCE_AS_OF_REQUIRED", "as_of must be a date"
+            )
+        case = (
+            AppointmentApplicationCase.objects.select_for_update()
+            .filter(id=case_id, tenant_id=self.tenant_id)
+            .first()
+        )
+        if case is None:
+            raise AppointmentDecisionError(
+                "APPOINTMENT_CASE_NOT_FOUND", "appointment case not found"
+            )
+
+        from hr_title.public import (
+            PROVIDER_VERSION,
+            TitleEvidenceUnavailable,
+            get_effective_title_evidence,
+        )
+
+        try:
+            title_evidence = get_effective_title_evidence(
+                tenant_id=self.tenant_id,
+                person_id=case.person_id,
+                result_id=title_result_id,
+                as_of=as_of,
+                source_version=PROVIDER_VERSION,
+            )
+        except TitleEvidenceUnavailable as exc:
+            raise AppointmentDecisionError(exc.code, str(exc)) from exc
+
+        if additional_evidence is None:
+            evidence_snapshot = {}
+        elif isinstance(additional_evidence, dict):
+            evidence_snapshot = dict(additional_evidence)
+        else:
+            raise AppointmentDecisionError(
+                "APPOINTMENT_DECISION_EVIDENCE_INVALID",
+                "additional_evidence must be an object",
+            )
+        if "hr13TitleResult" in evidence_snapshot:
+            raise AppointmentDecisionError(
+                "APPOINTMENT_DECISION_RESERVED_EVIDENCE_KEY",
+                "hr13TitleResult is reserved for provider-verified HR13 evidence",
+            )
+        evidence_snapshot["hr13TitleResult"] = {
+            **title_evidence.snapshot(),
+            "providerVersion": title_evidence.source_version,
+            "asOf": as_of.isoformat(),
+        }
+        return self.record(
+            case_id=case.id,
+            decision_no=decision_no,
+            outcome=outcome,
+            authority_ref=authority_ref,
+            decision_reason=decision_reason,
+            evidence_snapshot=evidence_snapshot,
+        )
+
+    @transaction.atomic
     def record(
         self,
         *,
@@ -49,7 +126,8 @@ class AppointmentDecisionService:
         outcome = str(outcome or "").strip().upper()
         if not decision_no or len(decision_no) > 64:
             raise AppointmentDecisionError(
-                "APPOINTMENT_DECISION_NO_INVALID", "decision_no is required and must be <= 64 characters"
+                "APPOINTMENT_DECISION_NO_INVALID",
+                "decision_no is required and must be <= 64 characters",
             )
         if not authority_ref or len(authority_ref) > 200:
             raise AppointmentDecisionError(
@@ -58,13 +136,15 @@ class AppointmentDecisionService:
             )
         if outcome not in AppointmentCollectiveDecision.Outcome.values:
             raise AppointmentDecisionError(
-                "APPOINTMENT_DECISION_OUTCOME_INVALID", "outcome must be APPROVED or REJECTED"
+                "APPOINTMENT_DECISION_OUTCOME_INVALID",
+                "outcome must be APPROVED or REJECTED",
             )
         if evidence_snapshot is None:
             evidence_snapshot = {}
         if not isinstance(evidence_snapshot, dict):
             raise AppointmentDecisionError(
-                "APPOINTMENT_DECISION_EVIDENCE_INVALID", "evidence_snapshot must be an object"
+                "APPOINTMENT_DECISION_EVIDENCE_INVALID",
+                "evidence_snapshot must be an object",
             )
 
         case = (
@@ -73,7 +153,9 @@ class AppointmentDecisionService:
             .first()
         )
         if case is None:
-            raise AppointmentDecisionError("APPOINTMENT_CASE_NOT_FOUND", "appointment case not found")
+            raise AppointmentDecisionError(
+                "APPOINTMENT_CASE_NOT_FOUND", "appointment case not found"
+            )
 
         existing = (
             AppointmentCollectiveDecision.objects.select_for_update()
