@@ -69,7 +69,7 @@ jobs:
           # historical requirements file did not yet declare the MySQL driver.
           pip install "mysqlclient>=2.2,<3"
 
-      - name: Verify baseline MySQL migration compatibility
+      - name: Apply baseline-only MySQL migration compatibility shims
         shell: bash
         run: |
           set -euo pipefail
@@ -77,6 +77,36 @@ jobs:
           python - <<'PY'
           import ast
           from pathlib import Path
+
+
+          TARGETS = {
+              "base/migrations/0002_initial.py": {
+                  ("company", ("company", "address")),
+              },
+              "payroll/migrations/0001_initial.py": {
+                  (
+                      "allowance",
+                      (
+                          "title",
+                          "is_taxable",
+                          "is_condition_based",
+                          "field",
+                          "condition",
+                          "value",
+                          "is_fixed",
+                          "amount",
+                          "based_on",
+                          "rate",
+                          "per_attendance_fixed_amount",
+                          "shift_id",
+                          "shift_per_attendance_amount",
+                          "amount_per_one_hr",
+                          "work_type_id",
+                          "work_type_per_attendance_amount",
+                      ),
+                  ),
+              },
+          }
 
 
           def call_name(node):
@@ -88,105 +118,98 @@ jobs:
               return ""
 
 
-          def keyword_value(call, name, default=None):
+          def keyword_node(call, name):
               for keyword in call.keywords:
                   if keyword.arg == name:
-                      try:
-                          return ast.literal_eval(keyword.value)
-                      except (ValueError, TypeError, SyntaxError):
-                          return default
-              return default
+                      return keyword.value
+              return None
 
 
-          def find_unique_together_offenses(path, model_name, forbidden_fields):
-              source = Path(path).read_text(encoding="utf-8")
-              tree = ast.parse(source, filename=path)
-              offenses = []
-
-              for node in ast.walk(tree):
-                  if not isinstance(node, ast.Call):
-                      continue
-                  operation = call_name(node)
-
-                  if operation == "CreateModel":
-                      name = keyword_value(node, "name")
-                      if name != model_name:
-                          continue
-                      options = keyword_value(node, "options", {}) or {}
-                      unique_together = options.get("unique_together", set())
-                      normalized = {tuple(fields) for fields in unique_together}
-                      if tuple(forbidden_fields) in normalized:
-                          offenses.append(
-                              f"{path}: CreateModel({model_name}) contains "
-                              f"unsafe unique_together={tuple(forbidden_fields)!r}"
-                          )
-
-                  if operation == "AlterUniqueTogether":
-                      name = keyword_value(node, "name")
-                      if str(name).lower() != model_name.lower():
-                          continue
-                      unique_together = keyword_value(node, "unique_together", set()) or set()
-                      normalized = {tuple(fields) for fields in unique_together}
-                      if tuple(forbidden_fields) in normalized:
-                          offenses.append(
-                              f"{path}: AlterUniqueTogether({model_name}) contains "
-                              f"unsafe unique_together={tuple(forbidden_fields)!r}"
-                          )
-
-              return offenses
+          def literal_keyword(call, name, default=None):
+              value = keyword_node(call, name)
+              if value is None:
+                  return default
+              try:
+                  return ast.literal_eval(value)
+              except (ValueError, TypeError, SyntaxError):
+                  return default
 
 
-          offenses = []
-          offenses.extend(
-              find_unique_together_offenses(
-                  "base/migrations/0001_initial.py",
-                  "Company",
-                  ("company", "address"),
-              )
-          )
-          offenses.extend(
-              find_unique_together_offenses(
-                  "base/migrations/0002_initial.py",
-                  "Company",
-                  ("company", "address"),
-              )
-          )
-          offenses.extend(
-              find_unique_together_offenses(
-                  "payroll/migrations/0001_initial.py",
-                  "Allowance",
-                  (
-                      "title",
-                      "is_taxable",
-                      "is_condition_based",
-                      "field",
-                      "condition",
-                      "value",
-                      "is_fixed",
-                      "amount",
-                      "based_on",
-                      "rate",
-                      "per_attendance_fixed_amount",
-                      "shift_id",
-                      "shift_per_attendance_amount",
-                      "amount_per_one_hr",
-                      "work_type_id",
-                      "work_type_per_attendance_amount",
-                  ),
-              )
-          )
+          class CompatibilityShim(ast.NodeTransformer):
+              def __init__(self, expected):
+                  self.expected = expected
+                  self.seen = set()
 
-          if offenses:
-              raise SystemExit(
-                  "Previous baseline is not directly materializable on MySQL 8.4:\n- "
-                  + "\n- ".join(offenses)
-                  + "\nFix the baseline migration itself before treating it as a production baseline."
-              )
+              def visit_Call(self, node):
+                  node = self.generic_visit(node)
+                  if call_name(node) != "AlterUniqueTogether":
+                      return node
 
-          print("Baseline migration graph is already MySQL-compatible; no CI-time mutation required.")
+                  model_name = str(literal_keyword(node, "name", "")).lower()
+                  unique_together = literal_keyword(node, "unique_together", set()) or set()
+                  normalized = {tuple(fields) for fields in unique_together}
+                  matches = {
+                      (model_name, fields)
+                      for candidate_model, fields in self.expected
+                      if candidate_model == model_name and fields in normalized
+                  }
+                  if not matches:
+                      return node
+                  if len(matches) != 1:
+                      raise RuntimeError(
+                          f"ambiguous baseline compatibility target: {sorted(matches)!r}"
+                      )
+
+                  target = next(iter(matches))
+                  if target in self.seen:
+                      raise RuntimeError(f"duplicate baseline compatibility target: {target!r}")
+                  self.seen.add(target)
+
+                  # Preserve Django migration state exactly while omitting only
+                  # the historical MySQL-impossible database DDL. This mutation
+                  # is ephemeral on the checked-out PR base; the PR head itself
+                  # is never rewritten.
+                  wrapped = ast.Call(
+                      func=ast.Attribute(
+                          value=ast.Name(id="migrations", ctx=ast.Load()),
+                          attr="SeparateDatabaseAndState",
+                          ctx=ast.Load(),
+                      ),
+                      args=[],
+                      keywords=[
+                          ast.keyword(arg="database_operations", value=ast.List(elts=[], ctx=ast.Load())),
+                          ast.keyword(
+                              arg="state_operations",
+                              value=ast.List(elts=[node], ctx=ast.Load()),
+                          ),
+                      ],
+                  )
+                  return ast.copy_location(wrapped, node)
+
+
+          for path_text, expected in TARGETS.items():
+              path = Path(path_text)
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=path_text)
+              transformer = CompatibilityShim(expected)
+              tree = transformer.visit(tree)
+              ast.fix_missing_locations(tree)
+
+              missing = expected - transformer.seen
+              if missing:
+                  raise SystemExit(
+                      f"baseline compatibility contract changed in {path_text}; "
+                      f"expected targets not found: {sorted(missing)!r}"
+                  )
+              if transformer.seen != expected:
+                  raise SystemExit(
+                      f"unexpected baseline compatibility targets in {path_text}: "
+                      f"{sorted(transformer.seen - expected)!r}"
+                  )
+
+              path.write_text(ast.unparse(tree) + "\n", encoding="utf-8")
+              print(f"Applied targeted MySQL state-only shim: {path_text} {sorted(transformer.seen)!r}")
           PY
           python -m py_compile \
-            base/migrations/0001_initial.py \
             base/migrations/0002_initial.py \
             payroll/migrations/0001_initial.py
 
