@@ -2,12 +2,14 @@
 
 Tenant is always the selected school. SELF application endpoints derive the
 applicant from the authenticated HR03 mapping and never trust person_id from
-query/body input.
+query/body input. Precheck/submission always use the guarded lifecycle service.
 """
 
 import uuid
 
+from django.db import transaction
 from django.http import HttpRequest, JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -18,7 +20,7 @@ from hr_qualification.api.access import (
     current_person_id_or_raise,
 )
 from hr_qualification.api.serializers import envelope, error_envelope
-from hr_qualification.constants import ApplicationStatus, BatchStatus
+from hr_qualification.constants import ApplicationStatus, BatchStatus, RulePackVersionStatus
 from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherEvidencePackage,
@@ -41,12 +43,18 @@ def _has_perm(request, code):
 
 
 def _batch_or_none(batch_id, tenant_id):
-    return HrDoubleTeacherRecognitionBatch.objects.filter(id=batch_id, tenant_id=tenant_id).first()
+    return (
+        HrDoubleTeacherRecognitionBatch.objects.select_related("rule_pack_version_id")
+        .filter(id=batch_id, tenant_id=tenant_id)
+        .first()
+    )
 
 
 def _application_or_none(app_id, tenant_id):
     return (
-        HrDoubleTeacherApplication.objects.select_related("batch_id")
+        HrDoubleTeacherApplication.objects.select_related(
+            "batch_id__rule_pack_version_id"
+        )
         .filter(id=app_id, tenant_id=tenant_id, batch_id__tenant_id=tenant_id)
         .first()
     )
@@ -58,7 +66,25 @@ def _require_self_ownership(request, app):
     except QualificationAccessError as exc:
         return access_error_response(exc)
     if str(app.person_id_id) != str(person_id):
-        return JsonResponse(error_envelope("PERMISSION_DENIED", "只能操作本人的双师申报。"), status=403)
+        return JsonResponse(
+            error_envelope("PERMISSION_DENIED", "只能操作本人的双师申报。"),
+            status=403,
+        )
+    return None
+
+
+def _batch_accepts_application(batch, target_level):
+    today = timezone.localdate()
+    if batch.status != BatchStatus.OPEN:
+        return "BATCH_NOT_OPEN", "当前认定批次未开放申报。"
+    if batch.rule_pack_version_id.status != RulePackVersionStatus.ACTIVE:
+        return "RULE_VERSION_NOT_ACTIVE", "当前批次规则版本尚未正式生效。"
+    if batch.application_start and today < batch.application_start:
+        return "APPLICATION_NOT_STARTED", "当前认定批次尚未开始申报。"
+    if batch.application_end and today > batch.application_end:
+        return "APPLICATION_CLOSED", "当前认定批次已超过申报截止日期。"
+    if batch.target_levels and target_level not in set(batch.target_levels):
+        return "TARGET_LEVEL_NOT_ALLOWED", "目标认定等级不在当前批次开放范围内。"
     return None
 
 
@@ -72,18 +98,25 @@ def batch_list(request: HttpRequest) -> JsonResponse:
     if status:
         qs = qs.filter(status=status)
     batches = list(qs.order_by("-created_at")[:100])
-    items = [{
-        "id": str(b.id),
-        "batch_no": b.batch_no,
-        "name": b.name,
-        "school_year": b.school_year,
-        "application_start": b.application_start.isoformat() if b.application_start else None,
-        "application_end": b.application_end.isoformat() if b.application_end else None,
-        "rule_pack_version_id": str(b.rule_pack_version_id_id),
-        "status": b.status,
-        "target_levels": b.target_levels,
-        "application_count": b.applications.filter(tenant_id=tenant_id).count(),
-    } for b in batches]
+    items = [
+        {
+            "id": str(b.id),
+            "batch_no": b.batch_no,
+            "name": b.name,
+            "school_year": b.school_year,
+            "application_start": (
+                b.application_start.isoformat() if b.application_start else None
+            ),
+            "application_end": (
+                b.application_end.isoformat() if b.application_end else None
+            ),
+            "rule_pack_version_id": str(b.rule_pack_version_id_id),
+            "status": b.status,
+            "target_levels": b.target_levels,
+            "application_count": b.applications.filter(tenant_id=tenant_id).count(),
+        }
+        for b in batches
+    ]
     return JsonResponse(envelope({"items": items}))
 
 
@@ -108,11 +141,14 @@ def batch_create(request: HttpRequest) -> JsonResponse:
             target_levels=body.get("target_levels"),
             status=BatchStatus.DRAFT,
         )
-        return JsonResponse(envelope({"id": str(batch.id), "batch_no": batch.batch_no}), status=201)
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+        return JsonResponse(
+            envelope({"id": str(batch.id), "batch_no": batch.batch_no}),
+            status=201,
+        )
+    except (KeyError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except Exception as exc:
+        return JsonResponse(error_envelope("INTERNAL_ERROR", str(exc)), status=500)
 
 
 @csrf_exempt
@@ -128,19 +164,26 @@ def batch_detail(request: HttpRequest, batch_id: str) -> JsonResponse:
             batch_id=b,
         ).order_by("-created_at")[:200]
     )
-    return JsonResponse(envelope({
-        "id": str(b.id),
-        "batch_no": b.batch_no,
-        "name": b.name,
-        "status": b.status,
-        "applications": [{
-            "id": str(a.id),
-            "application_no": a.application_no,
-            "target_level": a.target_level,
-            "status": a.status,
-            "route": a.route,
-        } for a in apps],
-    }))
+    return JsonResponse(
+        envelope(
+            {
+                "id": str(b.id),
+                "batch_no": b.batch_no,
+                "name": b.name,
+                "status": b.status,
+                "applications": [
+                    {
+                        "id": str(a.id),
+                        "application_no": a.application_no,
+                        "target_level": a.target_level,
+                        "status": a.status,
+                        "route": a.route,
+                    }
+                    for a in apps
+                ],
+            }
+        )
+    )
 
 
 @csrf_exempt
@@ -152,53 +195,110 @@ def application_create(request: HttpRequest) -> JsonResponse:
 
         body = json.loads(request.body)
         tenant_id = request.hr09_tenant_id
-        batch = _batch_or_none(body["batch_id"], tenant_id)
-        if batch is None:
-            return JsonResponse(error_envelope("NOT_FOUND", "Batch not found"), status=404)
+        target_level = body["target_level"]
+        with transaction.atomic():
+            batch = (
+                HrDoubleTeacherRecognitionBatch.objects.select_for_update()
+                .select_related("rule_pack_version_id")
+                .filter(id=body["batch_id"], tenant_id=tenant_id)
+                .first()
+            )
+            if batch is None:
+                return JsonResponse(
+                    error_envelope("NOT_FOUND", "Batch not found"), status=404
+                )
+            batch_error = _batch_accepts_application(batch, target_level)
+            if batch_error:
+                code, message = batch_error
+                return JsonResponse(error_envelope(code, message), status=409)
 
-        # Normal users may only create an application for their own HR03 identity.
-        if _has_perm(request, FORMAL_REVIEW):
-            person_id = body.get("person_id")
-            staff_master_id = body.get("staff_master_id")
-            if not person_id:
-                return JsonResponse(error_envelope("INVALID_REQUEST", "person_id is required"), status=400)
-            person = HrPerson.objects.filter(id=person_id, tenant_id=tenant_id).first()
-            if person is None:
-                return JsonResponse(error_envelope("NOT_FOUND", "Person not found in tenant"), status=404)
-            if staff_master_id:
-                staff = HrStaffMaster.objects.filter(
-                    id=staff_master_id,
-                    tenant_id=tenant_id,
-                    person_id=person,
+            if _has_perm(request, FORMAL_REVIEW):
+                person_id = body.get("person_id")
+                staff_master_id = body.get("staff_master_id")
+                if not person_id:
+                    return JsonResponse(
+                        error_envelope("INVALID_REQUEST", "person_id is required"),
+                        status=400,
+                    )
+                person = HrPerson.objects.filter(
+                    id=person_id, tenant_id=tenant_id
                 ).first()
-                if staff is None:
-                    return JsonResponse(error_envelope("NOT_FOUND", "Staff master not found in tenant"), status=404)
-        else:
-            person_id, staff_master_id = current_person_id_or_raise(request, tenant_id)
+                if person is None:
+                    return JsonResponse(
+                        error_envelope("NOT_FOUND", "Person not found in tenant"),
+                        status=404,
+                    )
+                if staff_master_id:
+                    staff = HrStaffMaster.objects.filter(
+                        id=staff_master_id,
+                        tenant_id=tenant_id,
+                        person_id=person,
+                    ).first()
+                    if staff is None:
+                        return JsonResponse(
+                            error_envelope(
+                                "NOT_FOUND", "Staff master not found in tenant"
+                            ),
+                            status=404,
+                        )
+            else:
+                person_id, staff_master_id = current_person_id_or_raise(
+                    request, tenant_id
+                )
 
-        app_no = f"APP-{tenant_id}-{uuid.uuid4().hex[:10].upper()}"
-        app = HrDoubleTeacherApplication.objects.create(
-            tenant_id=tenant_id,
-            application_no=app_no,
-            batch_id=batch,
-            person_id_id=person_id,
-            staff_master_id_id=staff_master_id,
-            target_level=body["target_level"],
-            route=body.get("route", "NORMAL"),
-            applicant_statement=body.get("applicant_statement", ""),
-            status=ApplicationStatus.DRAFT,
+            existing = (
+                HrDoubleTeacherApplication.objects.select_for_update()
+                .filter(
+                    tenant_id=tenant_id,
+                    batch_id=batch,
+                    person_id_id=person_id,
+                    target_level=target_level,
+                )
+                .exclude(
+                    status__in=(
+                        ApplicationStatus.WITHDRAWN,
+                        ApplicationStatus.CANCELLED,
+                    )
+                )
+                .first()
+            )
+            if existing is not None:
+                return JsonResponse(
+                    error_envelope(
+                        "APPLICATION_ALREADY_EXISTS",
+                        "当前人员在本批次同一目标等级已有有效申报。",
+                    ),
+                    status=409,
+                )
+
+            app_no = f"APP-{tenant_id}-{uuid.uuid4().hex[:10].upper()}"
+            app = HrDoubleTeacherApplication.objects.create(
+                tenant_id=tenant_id,
+                application_no=app_no,
+                batch_id=batch,
+                person_id_id=person_id,
+                staff_master_id_id=staff_master_id,
+                target_level=target_level,
+                route=body.get("route", "NORMAL"),
+                applicant_statement=body.get("applicant_statement", ""),
+                status=ApplicationStatus.DRAFT,
+            )
+        return JsonResponse(
+            envelope(
+                {
+                    "id": str(app.id),
+                    "application_no": app.application_no,
+                    "status": app.status,
+                }
+            ),
+            status=201,
         )
-        return JsonResponse(envelope({
-            "id": str(app.id),
-            "application_no": app.application_no,
-            "status": app.status,
-        }), status=201)
     except QualificationAccessError as exc:
         return access_error_response(exc)
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+    except (KeyError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except Exception as exc:
+        return JsonResponse(error_envelope("INTERNAL_ERROR", str(exc)), status=500)
 
 
 @csrf_exempt
@@ -213,24 +313,32 @@ def application_detail(request: HttpRequest, app_id: str) -> JsonResponse:
         if denied:
             return denied
     pkgs = list(
-        HrDoubleTeacherEvidencePackage.objects.filter(application_id=app).order_by("-generated_at")
+        HrDoubleTeacherEvidencePackage.objects.filter(application_id=app).order_by(
+            "-generated_at"
+        )
     )
-    return JsonResponse(envelope({
-        "id": str(app.id),
-        "application_no": app.application_no,
-        "batch_id": str(app.batch_id_id),
-        "person_id": str(app.person_id_id),
-        "target_level": app.target_level,
-        "route": app.route,
-        "status": app.status,
-        "submitted_at": app.submitted_at.isoformat() if app.submitted_at else None,
-        "applicant_statement": app.applicant_statement,
-        "version": app.version,
-        "evidence_packages": [
-            {"id": str(p.id), "status": p.status, "checksum": p.checksum}
-            for p in pkgs
-        ],
-    }))
+    return JsonResponse(
+        envelope(
+            {
+                "id": str(app.id),
+                "application_no": app.application_no,
+                "batch_id": str(app.batch_id_id),
+                "person_id": str(app.person_id_id),
+                "target_level": app.target_level,
+                "route": app.route,
+                "status": app.status,
+                "submitted_at": (
+                    app.submitted_at.isoformat() if app.submitted_at else None
+                ),
+                "applicant_statement": app.applicant_statement,
+                "version": app.version,
+                "evidence_packages": [
+                    {"id": str(p.id), "status": p.status, "checksum": p.checksum}
+                    for p in pkgs
+                ],
+            }
+        )
+    )
 
 
 @csrf_exempt
@@ -244,26 +352,75 @@ def application_precheck(request: HttpRequest, app_id: str) -> JsonResponse:
         denied = _require_self_ownership(request, app)
         if denied:
             return denied
+
+    started = False
     try:
-        package = EvidenceAggregationService().build_package(app, [])
-        result = PrecheckService.precheck(app, package)
-        return JsonResponse(envelope({
-            "application_id": result.application_id,
-            "overall": result.overall,
-            "passed": result.passed,
-            "failed": result.failed,
-            "missing": result.missing,
-            "manual_review": result.manual_review,
-            "source_unavailable": result.source_unavailable,
-            "items": [{
-                "rule_code": i.rule_code,
-                "dimension_code": i.dimension_code,
-                "result": i.result,
-                "detail": i.detail,
-            } for i in result.items],
-        }))
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+        app = ApplicationService.start_precheck(app)
+        started = True
+        aggregator = EvidenceAggregationService()
+        as_of = timezone.localdate()
+        requirements = aggregator.requirements_for_application(app)
+        provider_results = aggregator.aggregate(
+            person_id=app.person_id_id,
+            staff_master_id=app.staff_master_id_id,
+            tenant_id=app.tenant_id,
+            as_of=as_of,
+        )
+        package = aggregator.build_package(
+            app,
+            requirements=requirements,
+            as_of=as_of,
+            provider_results=provider_results,
+        )
+        result = PrecheckService.precheck(
+            app,
+            package,
+            provider_results=provider_results,
+        )
+        app = ApplicationService.complete_precheck(app, result)
+        return JsonResponse(
+            envelope(
+                {
+                    "application_id": result.application_id,
+                    "application_status": app.status,
+                    "evidence_package_id": str(package.id),
+                    "evidence_package_checksum": package.checksum,
+                    "overall": result.overall,
+                    "passed": result.passed,
+                    "failed": result.failed,
+                    "missing": result.missing,
+                    "manual_review": result.manual_review,
+                    "source_unavailable": result.source_unavailable,
+                    "rule_error": result.rule_error,
+                    "items": [
+                        {
+                            "rule_code": i.rule_code,
+                            "dimension_code": i.dimension_code,
+                            "result": i.result,
+                            "detail": i.detail,
+                        }
+                        for i in result.items
+                    ],
+                }
+            )
+        )
+    except ApplicationError as exc:
+        if started:
+            try:
+                ApplicationService.abort_precheck(app)
+            except ApplicationError:
+                pass
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
+    except Exception:
+        if started:
+            try:
+                ApplicationService.abort_precheck(app)
+            except Exception:
+                pass
+        return JsonResponse(
+            error_envelope("PRECHECK_INTERNAL_ERROR", "预检执行失败，请重新发起预检。"),
+            status=500,
+        )
 
 
 @csrf_exempt
@@ -277,14 +434,20 @@ def application_submit(request: HttpRequest, app_id: str) -> JsonResponse:
     if denied:
         return denied
     try:
-        app = ApplicationService.transition(app, ApplicationStatus.SUBMITTED)
-        return JsonResponse(envelope({
-            "id": str(app.id),
-            "status": app.status,
-            "submitted_at": app.submitted_at.isoformat() if app.submitted_at else None,
-        }))
-    except ApplicationError as e:
-        return JsonResponse(error_envelope("APPLICATION_ALREADY_SUBMITTED", str(e)), status=409)
+        app = ApplicationService.submit(app)
+        return JsonResponse(
+            envelope(
+                {
+                    "id": str(app.id),
+                    "status": app.status,
+                    "submitted_at": (
+                        app.submitted_at.isoformat() if app.submitted_at else None
+                    ),
+                }
+            )
+        )
+    except ApplicationError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @csrf_exempt
@@ -300,8 +463,8 @@ def application_withdraw(request: HttpRequest, app_id: str) -> JsonResponse:
     try:
         app = ApplicationService.transition(app, ApplicationStatus.WITHDRAWN)
         return JsonResponse(envelope({"id": str(app.id), "status": app.status}))
-    except ApplicationError as e:
-        return JsonResponse(error_envelope("STATUS_ERROR", str(e)), status=409)
+    except ApplicationError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @csrf_exempt
@@ -309,7 +472,9 @@ def application_withdraw(request: HttpRequest, app_id: str) -> JsonResponse:
 @api_guard(APP_SELF)
 def my_applications(request: HttpRequest) -> JsonResponse:
     try:
-        person_id, _staff_id = current_person_id_or_raise(request, request.hr09_tenant_id)
+        person_id, _staff_id = current_person_id_or_raise(
+            request, request.hr09_tenant_id
+        )
     except QualificationAccessError as exc:
         return access_error_response(exc)
     apps = list(
@@ -317,10 +482,19 @@ def my_applications(request: HttpRequest) -> JsonResponse:
         .filter(tenant_id=request.hr09_tenant_id, person_id=person_id)
         .order_by("-created_at")[:100]
     )
-    return JsonResponse(envelope({"items": [{
-        "id": str(a.id),
-        "application_no": a.application_no,
-        "target_level": a.target_level,
-        "status": a.status,
-        "batch_name": a.batch_id.name if a.batch_id_id else "",
-    } for a in apps]}))
+    return JsonResponse(
+        envelope(
+            {
+                "items": [
+                    {
+                        "id": str(a.id),
+                        "application_no": a.application_no,
+                        "target_level": a.target_level,
+                        "status": a.status,
+                        "batch_name": a.batch_id.name if a.batch_id_id else "",
+                    }
+                    for a in apps
+                ]
+            }
+        )
+    )
