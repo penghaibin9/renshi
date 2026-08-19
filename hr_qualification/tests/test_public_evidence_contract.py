@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 
-from hr_qualification.constants import CredentialStatus
-from hr_qualification.public import _status_at
+from hr_qualification.constants import CredentialStatus, VerificationResult
+from hr_qualification.public import _status_at, _verification_at
 
 
 class CredentialHistoricalStatusContractTests(SimpleTestCase):
@@ -76,3 +76,39 @@ class CredentialHistoricalStatusContractTests(SimpleTestCase):
         )
 
         self.assertIsNone(status)
+
+    def test_verification_history_beats_later_current_projection(self):
+        credential = SimpleNamespace(
+            current_verification_status=VerificationResult.VERIFIED,
+            last_verified_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        )
+        verifications = [
+            SimpleNamespace(
+                result=VerificationResult.NEEDS_MANUAL_REVIEW,
+                verified_at=datetime(2026, 5, 15, tzinfo=timezone.utc),
+            )
+        ]
+
+        status, verified_at = _verification_at(
+            credential,
+            verifications,
+            as_of_end=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(status, VerificationResult.NEEDS_MANUAL_REVIEW)
+        self.assertEqual(verified_at, datetime(2026, 5, 15, tzinfo=timezone.utc))
+
+    def test_future_verification_projection_is_not_copied_into_the_past(self):
+        credential = SimpleNamespace(
+            current_verification_status=VerificationResult.VERIFIED,
+            last_verified_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        )
+
+        status, verified_at = _verification_at(
+            credential,
+            [],
+            as_of_end=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertIsNone(status)
+        self.assertIsNone(verified_at)
