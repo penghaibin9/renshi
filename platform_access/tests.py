@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
 from django.contrib.sessions.backends.db import SessionStore
@@ -17,6 +18,7 @@ from platform_access.services import (
     SESSION_KEY,
     get_active_tenant_elevation,
     grant_tenant_elevation,
+    is_platform_operator,
     revoke_tenant_elevation,
 )
 
@@ -44,6 +46,19 @@ class PlatformTenantElevationTests(TestCase):
         request.user = self.user
         request.session = SessionStore()
         return request
+
+    def test_platform_identity_is_not_equivalent_to_every_superuser(self):
+        platform_only = SimpleNamespace(is_authenticated=True, is_superuser=True)
+        school_admin = SimpleNamespace(
+            is_authenticated=True,
+            is_superuser=True,
+            employee_get=object(),
+        )
+        regular_user = SimpleNamespace(is_authenticated=True, is_superuser=False)
+
+        self.assertTrue(is_platform_operator(platform_only))
+        self.assertFalse(is_platform_operator(school_admin))
+        self.assertFalse(is_platform_operator(regular_user))
 
     def test_grant_requires_meaningful_reason_and_timebox(self):
         request = self._request()

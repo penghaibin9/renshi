@@ -15,12 +15,26 @@ MIN_DURATION_MINUTES = 5
 MIN_REASON_LENGTH = 12
 
 
-def _platform_actor(user):
-    return bool(
+def is_platform_operator(user):
+    """Return True only for a platform-only superuser without school HR identity.
+
+    Horilla legitimately uses ``is_superuser`` for school HR administrators too.
+    Those users remain tenant-bound through their Employee identity and must not
+    be forced through the platform break-glass path. A superuser that has no
+    Employee row is the platform/operator identity and therefore requires an
+    audited elevation before entering a concrete school tenant.
+    """
+    if not (
         user
         and getattr(user, "is_authenticated", False)
         and getattr(user, "is_superuser", False)
-    )
+    ):
+        return False
+    try:
+        employee = user.employee_get
+    except Exception:
+        return True
+    return employee is None
 
 
 def _client_ip(request):
@@ -60,8 +74,8 @@ def grant_tenant_elevation(
     reference="",
 ):
     user = getattr(request, "user", None)
-    if not _platform_actor(user):
-        raise PermissionDenied("Platform superuser is required.")
+    if not is_platform_operator(user):
+        raise PermissionDenied("Platform-only superuser is required.")
 
     reason = " ".join(str(reason or "").split())
     if len(reason) < MIN_REASON_LENGTH:
@@ -120,7 +134,7 @@ def grant_tenant_elevation(
 
 def get_active_tenant_elevation(request, *, expected_company_id=None):
     user = getattr(request, "user", None)
-    if not _platform_actor(user) or not hasattr(request, "session"):
+    if not is_platform_operator(user) or not hasattr(request, "session"):
         return None
 
     elevation_id = request.session.get(SESSION_KEY)
@@ -154,8 +168,8 @@ def get_active_tenant_elevation(request, *, expected_company_id=None):
 
 def revoke_tenant_elevation(request, *, reason="operator revoked elevation"):
     user = getattr(request, "user", None)
-    if not _platform_actor(user):
-        raise PermissionDenied("Platform superuser is required.")
+    if not is_platform_operator(user):
+        raise PermissionDenied("Platform-only superuser is required.")
 
     elevation_id = request.session.get(SESSION_KEY) if hasattr(request, "session") else None
     if not elevation_id:

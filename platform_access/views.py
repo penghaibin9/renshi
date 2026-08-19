@@ -8,6 +8,7 @@ from horilla.horilla_middlewares import set_selected_company
 from platform_access.services import (
     get_active_tenant_elevation,
     grant_tenant_elevation,
+    is_platform_operator,
     revoke_tenant_elevation,
 )
 
@@ -22,16 +23,11 @@ def _payload(request):
 
 
 def _platform_user(request):
-    user = getattr(request, "user", None)
-    return bool(
-        user
-        and getattr(user, "is_authenticated", False)
-        and getattr(user, "is_superuser", False)
-    )
+    return is_platform_operator(getattr(request, "user", None))
 
 
 def _forbidden():
-    return JsonResponse({"detail": "Platform superuser is required."}, status=403)
+    return JsonResponse({"detail": "Platform-only superuser is required."}, status=403)
 
 
 @require_POST

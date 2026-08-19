@@ -6,6 +6,7 @@ from horilla.horilla_middlewares import get_selected_company, set_selected_compa
 from platform_access.services import (
     clear_elevation_session,
     get_active_tenant_elevation,
+    is_platform_operator,
 )
 
 
@@ -35,11 +36,7 @@ class SafeCompanyMiddleware(LegacyCompanyMiddleware):
 
     def _set_company_session(self, request, company_id):
         user = getattr(request, "user", None)
-        if not (
-            user
-            and getattr(user, "is_authenticated", False)
-            and getattr(user, "is_superuser", False)
-        ):
+        if not is_platform_operator(user):
             return super()._set_company_session(request, company_id)
 
         if company_id is not None:
@@ -73,11 +70,7 @@ class PlatformTenantElevationMiddleware:
 
     def __call__(self, request):
         user = getattr(request, "user", None)
-        if not (
-            user
-            and getattr(user, "is_authenticated", False)
-            and getattr(user, "is_superuser", False)
-        ):
+        if not is_platform_operator(user):
             return self.get_response(request)
 
         selected = get_selected_company()
