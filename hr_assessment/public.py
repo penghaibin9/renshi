@@ -1,9 +1,9 @@
-"""Public read contract for finalized HR12 assessment evidence.
+"""Public read contracts for finalized HR12 assessment evidence.
 
 Consumers must use this boundary instead of trusting caller-provided snapshots or
-querying HR12 tables with guessed identities. The contract resolves the
-canonical HR03 person -> staff mapping inside one tenant and exposes only a
-specific FINALIZED result that was effective by the requested as-of date.
+querying HR12 tables with guessed identities. The contract resolves canonical
+HR03 identity inside one tenant and exposes only FINALIZED results effective by
+the requested as-of date.
 """
 
 from __future__ import annotations
@@ -68,20 +68,7 @@ class FinalAssessmentEvidence:
         }
 
 
-def get_finalized_assessment_evidence(
-    *,
-    tenant_id: int,
-    person_id,
-    result_id,
-    as_of: date,
-    source_version: str | None = None,
-) -> FinalAssessmentEvidence:
-    """Return one trusted HR12 final result for a canonical person.
-
-    There is intentionally no "best effort" or legacy fallback. A mismatched
-    tenant/person/result/version/as-of boundary is reported as unavailable.
-    """
-
+def _validate_request(*, tenant_id: int, as_of: date, source_version: str | None) -> None:
     if not tenant_id:
         raise AssessmentEvidenceUnavailable(
             "TENANT_CONTEXT_REQUIRED", "tenant_id is required"
@@ -96,19 +83,93 @@ def get_finalized_assessment_evidence(
             f"unsupported HR12 source version: {source_version}",
         )
 
-    staff = (
-        HrStaffMaster.objects.filter(
-            tenant_id=tenant_id,
-            person_id_id=person_id,
-        )
-        .order_by("id")
-        .first()
+
+def _canonical_staff(*, tenant_id: int, person_id, staff_id=None) -> HrStaffMaster:
+    qs = HrStaffMaster.objects.filter(
+        tenant_id=tenant_id,
+        person_id_id=person_id,
     )
+    if staff_id is not None:
+        qs = qs.filter(id=staff_id)
+    staff = qs.order_by("id").first()
     if staff is None:
         raise AssessmentEvidenceUnavailable(
             "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
             "canonical HR03 staff mapping is unavailable for this person and tenant",
         )
+    return staff
+
+
+def _to_evidence(result: HrFinalAssessmentResult, staff_id) -> FinalAssessmentEvidence:
+    return FinalAssessmentEvidence(
+        result_id=result.id,
+        case_id=result.case_id,
+        staff_id=staff_id,
+        assessment_type=result.assessment_type,
+        grade_code=result.grade_code,
+        display_grade=dict(result.display_grade_snapshot_json or {}),
+        calculated_score=result.calculated_score,
+        decision_reason=result.decision_reason,
+        finalized_at=result.finalized_at,
+        result_version_no=result.result_version_no,
+        content_hash=result.content_hash,
+        policy_version_id=result.policy_version_id,
+        decision_session_id=result.decision_session_id,
+    )
+
+
+def list_finalized_assessment_evidence(
+    *,
+    tenant_id: int,
+    person_id,
+    staff_id,
+    as_of: date,
+    source_version: str | None = None,
+) -> tuple[FinalAssessmentEvidence, ...]:
+    """Return all trusted FINALIZED HR12 results for one canonical HR03 staff.
+
+    Empty results are a complete source answer. Identity/version/as-of mismatch
+    is unavailable rather than a fake empty success.
+    """
+    _validate_request(
+        tenant_id=tenant_id,
+        as_of=as_of,
+        source_version=source_version,
+    )
+    staff = _canonical_staff(
+        tenant_id=tenant_id,
+        person_id=person_id,
+        staff_id=staff_id,
+    )
+    case_ids = HrAssessmentCase.objects.filter(
+        tenant_id=tenant_id,
+        staff_id=staff.id,
+    ).values_list("id", flat=True)
+    results = HrFinalAssessmentResult.objects.filter(
+        tenant_id=tenant_id,
+        case_id__in=case_ids,
+        status="FINALIZED",
+        finalized_at__isnull=False,
+        finalized_at__date__lte=as_of,
+    ).order_by("finalized_at", "id")
+    return tuple(_to_evidence(result, staff.id) for result in results)
+
+
+def get_finalized_assessment_evidence(
+    *,
+    tenant_id: int,
+    person_id,
+    result_id,
+    as_of: date,
+    source_version: str | None = None,
+) -> FinalAssessmentEvidence:
+    """Return one trusted HR12 final result for a canonical person."""
+    _validate_request(
+        tenant_id=tenant_id,
+        as_of=as_of,
+        source_version=source_version,
+    )
+    staff = _canonical_staff(tenant_id=tenant_id, person_id=person_id)
 
     result = (
         HrFinalAssessmentResult.objects.filter(
@@ -137,18 +198,4 @@ def get_finalized_assessment_evidence(
             "requested HR12 result does not belong to the canonical person in this tenant",
         )
 
-    return FinalAssessmentEvidence(
-        result_id=result.id,
-        case_id=case.id,
-        staff_id=staff.id,
-        assessment_type=result.assessment_type,
-        grade_code=result.grade_code,
-        display_grade=dict(result.display_grade_snapshot_json or {}),
-        calculated_score=result.calculated_score,
-        decision_reason=result.decision_reason,
-        finalized_at=result.finalized_at,
-        result_version_no=result.result_version_no,
-        content_hash=result.content_hash,
-        policy_version_id=result.policy_version_id,
-        decision_session_id=result.decision_session_id,
-    )
+    return _to_evidence(result, staff.id)
