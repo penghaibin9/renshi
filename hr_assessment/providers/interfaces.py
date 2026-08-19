@@ -8,7 +8,7 @@ explicitly UNAVAILABLE; there is no silent legacy or zero-value fallback.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from hr_assessment.providers.base import (
     BaseAssessmentProvider,
@@ -20,11 +20,7 @@ from hr_assessment.providers.base import (
 
 def _empty_result(source_version: str) -> ProviderResult:
     """An empty requested ID set is a complete query, not UNAVAILABLE."""
-    return ProviderResult(
-        status=ProviderStatus.OK,
-        data=[],
-        source_version=source_version,
-    )
+    return ProviderResult(status=ProviderStatus.OK, data=[], source_version=source_version)
 
 
 def _ctx_as_of_date(ctx: ProviderContext) -> date:
@@ -99,11 +95,7 @@ def _organization_data(ctx: ProviderContext) -> ProviderResult:
             source_version="hr02-organization-evidence-v1",
         )
 
-    status = (
-        ProviderStatus.PARTIAL
-        if evidence.missing_organization_ids
-        else ProviderStatus.OK
-    )
+    status = ProviderStatus.PARTIAL if evidence.missing_organization_ids else ProviderStatus.OK
     error = ""
     if evidence.missing_organization_ids:
         error = (
@@ -157,40 +149,47 @@ def _agreement_data(ctx: ProviderContext) -> ProviderResult:
     )
 
 
-def _qual_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
-    if not ids:
-        return _empty_result("hr_qualification:v1")
+def _qual_data(ctx: ProviderContext) -> ProviderResult:
+    if not ctx.ids:
+        return _empty_result("hr09-credential-evidence-v1")
     try:
-        from hr_qualification.models import HrPersonCredential
+        from hr_qualification.public import (
+            PROVIDER_VERSION,
+            CredentialEvidenceUnavailable,
+            get_formal_credential_evidence,
+        )
 
-        credentials = HrPersonCredential.objects.filter(
-            tenant_id=tenant_id,
-            person_id__in=ids,
-            status__in=("ACTIVE", "EXPIRED"),
+        evidence = get_formal_credential_evidence(
+            tenant_id=ctx.tenant_id,
+            staff_ids=ctx.ids,
+            as_of=_ctx_as_of_date(ctx),
+            source_version=ctx.source_version,
         )
-        data = [
-            {
-                "credential_id": str(credential.id),
-                "person_id": str(credential.person_id),
-                "status": credential.status,
-            }
-            for credential in credentials
-        ]
-        return ProviderResult(
-            status=ProviderStatus.OK if data else ProviderStatus.PARTIAL,
-            data=data,
-            source_version="hr_qualification:v1",
-        )
-    except ImportError:
+    except CredentialEvidenceUnavailable as exc:
         return ProviderResult(
             status=ProviderStatus.UNAVAILABLE,
-            error_message="hr_qualification 模块未安装",
+            data=None,
+            error_message=f"{exc.code}: {exc}",
+            source_version="hr09-credential-evidence-v1",
         )
-    except Exception as exc:
-        return ProviderResult(
-            status=ProviderStatus.ERROR,
-            error_message=str(exc)[:500],
+
+    status = ProviderStatus.PARTIAL if evidence.uncertain_staff_ids else ProviderStatus.OK
+    error = ""
+    if evidence.uncertain_staff_ids:
+        error = (
+            "CREDENTIAL_HISTORY_UNAVAILABLE: historical HR09 state cannot be proven for staff: "
+            + ",".join(str(value) for value in evidence.uncertain_staff_ids)
         )
+    return ProviderResult(
+        status=status,
+        data=[row.snapshot() for row in evidence.rows],
+        error_message=error,
+        source_version=PROVIDER_VERSION,
+        source_updated_at=max(
+            (row.last_verified_at for row in evidence.rows if row.last_verified_at is not None),
+            default=None,
+        ),
+    )
 
 
 class PersonProvider(BaseAssessmentProvider):
@@ -218,7 +217,7 @@ class QualificationProvider(BaseAssessmentProvider):
     owner_domain = "hr_qualification"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
-        return _qual_data(ctx.tenant_id, ctx.ids)
+        return _qual_data(ctx)
 
 
 class DevelopmentProvider(BaseAssessmentProvider):
@@ -294,10 +293,7 @@ class TimeSummaryProvider(BaseAssessmentProvider):
                 source_version="hr11-time-close-v1",
             )
         data = [
-            {
-                **row.snapshot(),
-                "timeClose": evidence.period.snapshot(),
-            }
+            {**row.snapshot(), "timeClose": evidence.period.snapshot()}
             for row in evidence.staff_rows
         ]
         status = ProviderStatus.PARTIAL if evidence.missing_staff_ids else ProviderStatus.OK
