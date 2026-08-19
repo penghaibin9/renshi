@@ -118,39 +118,43 @@ def _organization_data(ctx: ProviderContext) -> ProviderResult:
     )
 
 
-def _agreement_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
-    if not ids:
-        return _empty_result("hr_contracts:v1")
+def _agreement_data(ctx: ProviderContext) -> ProviderResult:
+    if not ctx.ids:
+        return _empty_result("hr07-agreement-evidence-v1")
     try:
-        from hr_contracts.models.agreement import HrAgreement
-
-        agreements = HrAgreement.objects.filter(
-            tenant_id=tenant_id,
-            staff_id__in=ids,
-        ).order_by("-effective_from")
-        data = [
-            {
-                "agreement_id": str(agreement.id),
-                "staff_id": str(agreement.staff_id),
-                "status": agreement.status,
-            }
-            for agreement in agreements
-        ]
-        return ProviderResult(
-            status=ProviderStatus.OK if data else ProviderStatus.PARTIAL,
-            data=data,
-            source_version="hr_contracts:v1",
+        from hr_contracts.public import (
+            PROVIDER_VERSION,
+            AgreementEvidenceUnavailable,
+            get_formal_agreement_evidence,
         )
-    except ImportError:
+
+        evidence = get_formal_agreement_evidence(
+            tenant_id=ctx.tenant_id,
+            staff_ids=ctx.ids,
+            as_of=_ctx_as_of_date(ctx),
+            source_version=ctx.source_version,
+        )
+    except AgreementEvidenceUnavailable as exc:
         return ProviderResult(
             status=ProviderStatus.UNAVAILABLE,
-            error_message="hr_contracts 模块未安装",
+            data=None,
+            error_message=f"{exc.code}: {exc}",
+            source_version="hr07-agreement-evidence-v1",
         )
-    except Exception as exc:
-        return ProviderResult(
-            status=ProviderStatus.ERROR,
-            error_message=str(exc)[:500],
+
+    status = ProviderStatus.PARTIAL if evidence.missing_staff_ids else ProviderStatus.OK
+    error = ""
+    if evidence.missing_staff_ids:
+        error = (
+            "AGREEMENT_BASIS_UNAVAILABLE: missing tenant/as-of HR07 agreements for staff: "
+            + ",".join(str(value) for value in evidence.missing_staff_ids)
         )
+    return ProviderResult(
+        status=status,
+        data=[row.snapshot() for row in evidence.rows],
+        error_message=error,
+        source_version=PROVIDER_VERSION,
+    )
 
 
 def _qual_data(tenant_id: int, ids: List[Any]) -> ProviderResult:
@@ -207,7 +211,7 @@ class AgreementProvider(BaseAssessmentProvider):
     owner_domain = "hr_contracts"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
-        return _agreement_data(ctx.tenant_id, ctx.ids)
+        return _agreement_data(ctx)
 
 
 class QualificationProvider(BaseAssessmentProvider):
