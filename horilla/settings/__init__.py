@@ -61,6 +61,28 @@ for _app in CANONICAL_HR_APPS:
     if _app not in INSTALLED_APPS:  # noqa: F405
         INSTALLED_APPS.append(_app)  # noqa: F405
 
+# Platform support access is global infrastructure, not an HR Authority.
+if "platform_access" not in INSTALLED_APPS:  # noqa: F405
+    INSTALLED_APPS.append("platform_access")  # noqa: F405
+
+# Replace the legacy company middleware with a compatibility subclass that
+# supports platform-only superusers, then require audited tenant elevation
+# immediately after tenant resolution.
+_company_middleware = "base.middleware.CompanyMiddleware"
+_safe_company_middleware = "platform_access.middleware.SafeCompanyMiddleware"
+_elevation_middleware = "platform_access.middleware.PlatformTenantElevationMiddleware"
+if _company_middleware in MIDDLEWARE:  # noqa: F405
+    _company_index = MIDDLEWARE.index(_company_middleware)  # noqa: F405
+    MIDDLEWARE[_company_index] = _safe_company_middleware  # noqa: F405
+else:
+    _company_index = MIDDLEWARE.index(_safe_company_middleware)  # noqa: F405
+if _elevation_middleware not in MIDDLEWARE:  # noqa: F405
+    MIDDLEWARE.insert(_company_index + 1, _elevation_middleware)  # noqa: F405
+
+PLATFORM_TENANT_ELEVATION_MAX_MINUTES = int(
+    os.getenv("PLATFORM_TENANT_ELEVATION_MAX_MINUTES", "60")
+)
+
 # PATCH-00 / takeover contract: MySQL is the one signing database for dev,
 # CI, migrations and production. Failing here is intentional.
 _db = DATABASES.get("default", {})  # noqa: F405
