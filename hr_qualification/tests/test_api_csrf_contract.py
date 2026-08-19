@@ -1,5 +1,6 @@
 """HR09 session-authenticated API CSRF contracts."""
 
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -50,5 +51,5 @@ class ApiGuardCsrfContractTests(SimpleTestCase):
         response = self._legacy_exempt_endpoint()(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True})
+        self.assertEqual(json.loads(response.content), {"ok": True})
         self.assertEqual(request.hr09_tenant_id, 123)
