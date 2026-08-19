@@ -65,6 +65,26 @@ class PayrollFinalizationServiceTests(TestCase):
 
     @patch("hr_payroll.services.finalization_service.PayrollResultFact.objects")
     @patch("hr_payroll.services.finalization_service.PayrollPeriod.objects")
+    def test_finalized_period_replay_is_idempotent_and_does_not_rewrite_results(
+        self, period_objects, result_objects
+    ):
+        period = MagicMock()
+        period.id = "00000000-0000-0000-0000-000000000101"
+        period.status = PayrollPeriod.Status.FINALIZED
+        period_objects.select_for_update.return_value.filter.return_value.first.return_value = period
+        result_id = "00000000-0000-0000-0000-000000000201"
+        result_objects.filter.return_value.values_list.return_value = [result_id]
+
+        first = PayrollFinalizationService(77).finalize_period(period.id)
+        second = PayrollFinalizationService(77).finalize_period(period.id)
+
+        self.assertEqual(first.finalized_result_ids, (result_id,))
+        self.assertEqual(second.finalized_result_ids, (result_id,))
+        result_objects.select_for_update.assert_not_called()
+        period.save.assert_not_called()
+
+    @patch("hr_payroll.services.finalization_service.PayrollResultFact.objects")
+    @patch("hr_payroll.services.finalization_service.PayrollPeriod.objects")
     def test_unreviewed_period_cannot_finalize(self, period_objects, result_objects):
         period = MagicMock()
         period.status = PayrollPeriod.Status.CALCULATED

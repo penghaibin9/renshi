@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable
 
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.db_retry import retry_mysql_transaction
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
 
 
@@ -50,6 +50,7 @@ class PayrollFinalizationService:
                 f"result {result.result_no} has no currency",
             )
 
+    @retry_mysql_transaction(attempts=3, base_delay_seconds=0.05)
     @transaction.atomic
     def finalize_period(self, period_id) -> PayrollFinalizationResult:
         period = (
