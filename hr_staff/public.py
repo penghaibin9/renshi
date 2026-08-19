@@ -1,9 +1,8 @@
-"""HR03 source-owned staff evidence for cross-domain consumers.
+"""HR03 source-owned evidence contracts for cross-domain consumers.
 
-Historical employment status is resolved from effective-dated HR03 facts. The
-mutable current projection on ``HrStaffMaster.current_employment_status`` is
-never used as historical authority. Identity fields are returned only when the
-current row can be proven unchanged since the requested ``as_of`` date.
+This module exposes stable read boundaries for canonical staff identity/status and
+verified background facts. Consumers must not query mutable HR03 tables directly
+or treat current projections as historical authority.
 """
 
 from __future__ import annotations
@@ -14,15 +13,29 @@ from typing import Any, Iterable
 
 from django.utils import timezone
 
-from hr_staff.constants import StaffStatus
-from hr_staff.models import HrEmploymentRelationship, HrStaffMaster, HrStatusHistory
+from hr_staff.constants import StaffStatus, VerificationStatus
+from hr_staff.models import (
+    HrDegreeRecord,
+    HrEducationExperience,
+    HrEmploymentRelationship,
+    HrStaffMaster,
+    HrStatusHistory,
+    HrWorkExperience,
+)
 from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
 
 PROVIDER_VERSION = "hr03-staff-evidence-v1"
+BACKGROUND_PROVIDER_VERSION = "hr03-background-evidence-v1"
 
 
 class StaffEvidenceUnavailable(RuntimeError):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+class BackgroundEvidenceUnavailable(RuntimeError):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
@@ -56,6 +69,27 @@ class StaffEvidence:
     source_version: str = PROVIDER_VERSION
 
 
+@dataclass(frozen=True)
+class BackgroundEvidenceRow:
+    kind: str
+    source_object_type: str
+    source_object_id: Any
+    staff_id: Any
+    evidence_date: date
+    title: str
+    role: str
+    quantitative_value: float | None
+    verification_status: str
+    snapshot: dict
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class BackgroundEvidence:
+    rows: tuple[BackgroundEvidenceRow, ...]
+    source_version: str = BACKGROUND_PROVIDER_VERSION
+
+
 def _dedupe_ids(values: Iterable[Any]) -> tuple[Any, ...]:
     result = []
     seen = set()
@@ -80,9 +114,6 @@ def _status_as_of(*, tenant_id: int, staff_id: Any, as_of: date) -> str:
     service = EffectiveDatedQueryService(tenant_id)
     status = service.status_as_of(staff_id, as_of)
 
-    # The legacy selector historically returned DEPARTED when no relationship
-    # had ever existed, despite its own contract saying PENDING_ENTRY. Preserve
-    # the domain truth at this public boundary until that selector is migrated.
     if status == StaffStatus.DEPARTED:
         has_relationship = HrEmploymentRelationship.objects.filter(
             tenant_id=tenant_id,
@@ -125,9 +156,7 @@ def get_staff_evidence(
     )
     by_key = {str(master.id): master for master in masters}
 
-    missing = tuple(
-        value for value in requested if str(value) not in by_key
-    )
+    missing = tuple(value for value in requested if str(value) not in by_key)
     rows = []
     uncertain = []
     for requested_id in requested:
@@ -135,9 +164,6 @@ def get_staff_evidence(
         if master is None:
             continue
         person = master.person_id
-        # Name/category have no effective-dated value table. If either source
-        # row changed after as_of, returning today's value as historical truth
-        # would be dishonest, so omit that row and surface PARTIAL upstream.
         if master.updated_at >= as_of_end or person.updated_at >= as_of_end:
             uncertain.append(requested_id)
             continue
@@ -161,3 +187,164 @@ def get_staff_evidence(
         missing_staff_ids=tuple(missing),
         uncertain_identity_staff_ids=tuple(uncertain),
     )
+
+
+def _canonical_staff(*, tenant_id: int, person_id: Any, staff_id: Any) -> HrStaffMaster:
+    if not tenant_id:
+        raise BackgroundEvidenceUnavailable(
+            "TENANT_CONTEXT_REQUIRED", "tenant_id is required"
+        )
+    if staff_id is None:
+        raise BackgroundEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "canonical HR03 staff id is required for background evidence",
+        )
+    staff = (
+        HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            id=staff_id,
+            person_id_id=person_id,
+        )
+        .only("id", "person_id")
+        .first()
+    )
+    if staff is None:
+        raise BackgroundEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "person/staff identity does not match inside this tenant",
+        )
+    return staff
+
+
+def get_verified_background_evidence(
+    *,
+    tenant_id: int,
+    person_id: Any,
+    staff_id: Any,
+    as_of: date,
+    source_version: str | None = None,
+) -> BackgroundEvidence:
+    """Return HR03 background facts that were business-effective by ``as_of``.
+
+    Only source-verified facts are positive evidence. Education and degree facts
+    require a completed/awarded business date by ``as_of``; work history is
+    included once it has started, with duration capped at the requested date.
+    """
+    if not isinstance(as_of, date):
+        raise BackgroundEvidenceUnavailable("AS_OF_REQUIRED", "as_of must be a date")
+    if source_version not in (None, "", "v1", BACKGROUND_PROVIDER_VERSION):
+        raise BackgroundEvidenceUnavailable(
+            "SOURCE_VERSION_UNSUPPORTED",
+            f"unsupported HR03 background source version: {source_version}",
+        )
+    staff = _canonical_staff(
+        tenant_id=tenant_id,
+        person_id=person_id,
+        staff_id=staff_id,
+    )
+
+    rows: list[BackgroundEvidenceRow] = []
+    education_rows = HrEducationExperience.objects.filter(
+        tenant_id=tenant_id,
+        staff_id=staff.id,
+        verification_status=VerificationStatus.VERIFIED,
+        end_date__isnull=False,
+        end_date__lte=as_of,
+    ).order_by("end_date", "id")
+    for item in education_rows:
+        rows.append(
+            BackgroundEvidenceRow(
+                kind="EDUCATION",
+                source_object_type="HrEducationExperience",
+                source_object_id=item.id,
+                staff_id=staff.id,
+                evidence_date=item.end_date,
+                title=f"{item.education_level} {item.major_name} ({item.school_name})",
+                role=item.education_level,
+                quantitative_value=None,
+                verification_status=item.verification_status,
+                snapshot={
+                    "schoolName": item.school_name,
+                    "educationLevel": item.education_level,
+                    "majorName": item.major_name,
+                    "studyType": item.study_type,
+                    "startDate": item.start_date.isoformat() if item.start_date else None,
+                    "endDate": item.end_date.isoformat(),
+                    "source": item.source,
+                    "version": item.version,
+                },
+                updated_at=item.updated_at,
+            )
+        )
+
+    degree_rows = HrDegreeRecord.objects.filter(
+        tenant_id=tenant_id,
+        staff_id=staff.id,
+        verification_status=VerificationStatus.VERIFIED,
+        awarded_date__isnull=False,
+        awarded_date__lte=as_of,
+    ).order_by("awarded_date", "id")
+    for item in degree_rows:
+        rows.append(
+            BackgroundEvidenceRow(
+                kind="DEGREE",
+                source_object_type="HrDegreeRecord",
+                source_object_id=item.id,
+                staff_id=staff.id,
+                evidence_date=item.awarded_date,
+                title=f"{item.degree_level} {item.degree_name} ({item.granting_institution})",
+                role=item.degree_level,
+                quantitative_value=None,
+                verification_status=item.verification_status,
+                snapshot={
+                    "degreeLevel": item.degree_level,
+                    "degreeName": item.degree_name,
+                    "grantingInstitution": item.granting_institution,
+                    "major": item.major,
+                    "awardedDate": item.awarded_date.isoformat(),
+                    "source": item.source,
+                    "version": item.version,
+                },
+                updated_at=item.updated_at,
+            )
+        )
+
+    work_rows = HrWorkExperience.objects.filter(
+        tenant_id=tenant_id,
+        staff_id=staff.id,
+        verification_status=VerificationStatus.VERIFIED,
+        start_date__isnull=False,
+        start_date__lte=as_of,
+    ).order_by("start_date", "id")
+    for item in work_rows:
+        effective_end = min(item.end_date, as_of) if item.end_date else as_of
+        duration_days = max(0, (effective_end - item.start_date).days)
+        rows.append(
+            BackgroundEvidenceRow(
+                kind="WORK",
+                source_object_type="HrWorkExperience",
+                source_object_id=item.id,
+                staff_id=staff.id,
+                evidence_date=item.start_date,
+                title=f"{item.organization_name} · {item.position_title}",
+                role=item.experience_type,
+                quantitative_value=float(duration_days),
+                verification_status=item.verification_status,
+                snapshot={
+                    "organizationName": item.organization_name,
+                    "departmentName": item.department_name,
+                    "positionTitle": item.position_title,
+                    "industryCode": item.industry_code,
+                    "experienceType": item.experience_type,
+                    "startDate": item.start_date.isoformat(),
+                    "endDate": item.end_date.isoformat() if item.end_date else None,
+                    "durationDaysAsOf": duration_days,
+                    "source": item.source,
+                    "version": item.version,
+                },
+                updated_at=item.updated_at,
+            )
+        )
+
+    rows.sort(key=lambda row: (row.evidence_date, row.kind, str(row.source_object_id)))
+    return BackgroundEvidence(rows=tuple(rows))
