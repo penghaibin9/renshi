@@ -15,6 +15,8 @@ from importlib.util import find_spec
 
 from django.core.exceptions import ImproperlyConfigured
 
+from horilla.settings.runtime_seals import install_legacy_runtime_seals
+
 from .base import *  # noqa: F401,F403
 
 # Client / deployment overrides are independent. A missing addons.py must not
@@ -60,6 +62,11 @@ CANONICAL_HR_APPS = CORE_HR_APPS + [
 for _app in CANONICAL_HR_APPS:
     if _app not in INSTALLED_APPS:  # noqa: F405
         INSTALLED_APPS.append(_app)  # noqa: F405
+
+# The write-freeze core is ineffective unless its router/middleware are wired
+# into every settings entrypoint. Install after local overrides so those
+# overrides cannot accidentally drop the production seal.
+install_legacy_runtime_seals(globals())
 
 # PATCH-00 / takeover contract: MySQL is the one signing database for dev,
 # CI, migrations and production. Failing here is intentional.
