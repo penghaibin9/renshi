@@ -9,6 +9,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_qualification.constants import EvidencePackageStatus, EvidenceSourceDomain
 from hr_qualification.models import (
@@ -73,7 +74,6 @@ class EvidenceAggregationService:
     def requirements_for_application(
         application: HrDoubleTeacherApplication,
     ) -> list[HrDoubleTeacherEvidenceRequirement]:
-        """Resolve the exact frozen-rule requirements for the target level."""
         return list(
             HrDoubleTeacherEvidenceRequirement.objects.filter(
                 rule_id__version_id=application.batch_id.rule_pack_version_id,
@@ -192,6 +192,17 @@ class EvidenceAggregationService:
             ).encode("utf-8")
         ).hexdigest()
 
+    @staticmethod
+    def _assert_rule_authority(application: HrDoubleTeacherApplication):
+        from hr_qualification.services.rule_service import RulePackError, RuleService
+
+        version = application.batch_id.rule_pack_version_id
+        try:
+            RuleService.assert_version_integrity(version)
+        except RulePackError as exc:
+            raise EvidenceAggregationError(exc.code, str(exc)) from exc
+        return version
+
     def build_package(
         self,
         application: HrDoubleTeacherApplication,
@@ -200,21 +211,36 @@ class EvidenceAggregationService:
         provider_results: dict[str, ProviderEvidenceResult] | None = None,
     ) -> HrDoubleTeacherEvidencePackage:
         as_of = as_of or date.today()
+        rule_version = self._assert_rule_authority(application)
         requirements = (
             self.requirements_for_application(application)
             if requirements is None
             else list(requirements)
         )
-        results = provider_results or self.aggregate(
-            person_id=application.person_id_id,
-            staff_master_id=application.staff_master_id_id,
-            tenant_id=application.tenant_id,
-            as_of=as_of,
+        results = (
+            self.aggregate(
+                person_id=application.person_id_id,
+                staff_master_id=application.staff_master_id_id,
+                tenant_id=application.tenant_id,
+                as_of=as_of,
+            )
+            if provider_results is None
+            else provider_results
         )
         source_snapshots = {
             "_meta": {
                 "asOf": as_of.isoformat(),
                 "providerCount": len(results),
+                "applicationId": str(application.id),
+                "personId": str(application.person_id_id),
+                "staffMasterId": (
+                    str(application.staff_master_id_id)
+                    if application.staff_master_id_id
+                    else None
+                ),
+                "targetLevel": application.target_level,
+                "rulePackVersionId": str(rule_version.id),
+                "rulePackChecksum": rule_version.checksum,
             },
             **{
                 key: self._provider_snapshot(value)
@@ -225,7 +251,7 @@ class EvidenceAggregationService:
         with transaction.atomic():
             package = HrDoubleTeacherEvidencePackage.objects.create(
                 application_id=application,
-                rule_pack_version_id=application.batch_id.rule_pack_version_id,
+                rule_pack_version_id=rule_version,
                 source_snapshots_json=source_snapshots,
                 status=EvidencePackageStatus.GENERATED,
             )
@@ -274,7 +300,12 @@ class EvidenceAggregationService:
         cls,
         package: HrDoubleTeacherEvidencePackage,
     ) -> HrDoubleTeacherEvidencePackage:
-        package = HrDoubleTeacherEvidencePackage.objects.select_for_update().get(id=package.id)
+        package = (
+            HrDoubleTeacherEvidencePackage.objects.select_for_update()
+            .select_related("application_id__batch_id__rule_pack_version_id")
+            .get(id=package.id)
+        )
+        cls._assert_rule_authority(package.application_id)
         current_checksum = cls.compute_package_checksum(package)
         if not package.checksum or current_checksum != package.checksum:
             raise EvidenceAggregationError(
@@ -290,7 +321,8 @@ class EvidenceAggregationService:
             )
 
         package.status = EvidencePackageStatus.FROZEN
-        package.save(update_fields=["status"])
+        package.frozen_at = timezone.now()
+        package.save(update_fields=["status", "frozen_at"])
 
         from hr_qualification.models import HrEvidenceUsage
 
