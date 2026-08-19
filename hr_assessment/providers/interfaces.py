@@ -359,8 +359,10 @@ class DocumentProvider(BaseAssessmentProvider):
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
         return ProviderResult(
-            status=ProviderStatus.OK,
-            data={"provider": "horilla_documents"},
+            status=ProviderStatus.UNAVAILABLE,
+            data=None,
+            error_message="文档服务未配置真实事实查询/回执接口",
+            source_version="horilla_documents:unconfigured",
         )
 
 
@@ -380,8 +382,10 @@ class NotificationProvider(BaseAssessmentProvider):
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
         return ProviderResult(
-            status=ProviderStatus.OK,
-            data={"provider": "notifications"},
+            status=ProviderStatus.UNAVAILABLE,
+            data=None,
+            error_message="通知服务未配置真实投递/回执接口",
+            source_version="notifications:unconfigured",
         )
 
 
