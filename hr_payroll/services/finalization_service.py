@@ -49,6 +49,26 @@ class PayrollFinalizationService:
                 f"result {result.result_no} has no currency",
             )
 
+    @staticmethod
+    def _validate_unique_staff_results(results) -> None:
+        """A payroll run may finalize exactly one base result per staff member.
+
+        Retroactive deltas are appended only after finalization through the
+        adjustment service. Allowing two DRAFT base rows for one staff member to
+        cross the FINALIZED boundary would create ambiguous payroll authority.
+        """
+        counts = {}
+        for result in results:
+            key = str(result.staff_id)
+            counts[key] = counts.get(key, 0) + 1
+        duplicates = sorted(key for key, count in counts.items() if count > 1)
+        if duplicates:
+            raise PayrollFinalizationError(
+                "PAYROLL_RESULT_DUPLICATE_STAFF",
+                "payroll period contains multiple base calculation results for staff: "
+                + ",".join(duplicates),
+            )
+
     def _time_source_snapshot(self, period: PayrollPeriod) -> dict:
         from hr_time.public import (
             PROVIDER_VERSION,
@@ -79,9 +99,6 @@ class PayrollFinalizationService:
         if period is None:
             raise PayrollFinalizationError("PAYROLL_PERIOD_NOT_FOUND", "payroll period not found")
 
-        # Historical finalization is immutable. Replay must return the already
-        # finalized result even if HR11 was later reopened for a new correction
-        # cycle; the frozen source snapshot below preserves the original basis.
         if period.status in (PayrollPeriod.Status.FINALIZED, PayrollPeriod.Status.CLOSED):
             ids = tuple(
                 str(value)
@@ -122,6 +139,7 @@ class PayrollFinalizationService:
                 "period contains results that are not DRAFT at finalization boundary",
             )
 
+        self._validate_unique_staff_results(results)
         for result in results:
             self._validate_result(result)
 
