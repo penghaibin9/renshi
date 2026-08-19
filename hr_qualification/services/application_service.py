@@ -7,7 +7,12 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from hr_qualification.constants import ApplicationStatus, PrecheckResultType
+from hr_qualification.constants import (
+    ApplicationStatus,
+    BatchStatus,
+    PrecheckResultType,
+    RulePackVersionStatus,
+)
 from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherEvidencePackage,
@@ -100,6 +105,43 @@ class ApplicationService:
         return locked
 
     @staticmethod
+    def _assert_batch_accepts_application(application: HrDoubleTeacherApplication) -> None:
+        """Enforce the batch/rule/date gate inside the service boundary.
+
+        API callers, background workers and management commands must observe the
+        same eligibility contract. A READY application cannot be submitted after
+        its batch closes or its frozen rule version stops being ACTIVE.
+        """
+        batch = application.batch_id
+        rule_version = batch.rule_pack_version_id
+        today = timezone.localdate()
+        if batch.status != BatchStatus.APPLICATION_OPEN:
+            raise ApplicationError(
+                "BATCH_NOT_OPEN",
+                "recognition batch is not open for applications",
+            )
+        if rule_version.status != RulePackVersionStatus.ACTIVE:
+            raise ApplicationError(
+                "RULE_VERSION_NOT_ACTIVE",
+                "recognition batch rule version is not ACTIVE",
+            )
+        if batch.application_start and today < batch.application_start:
+            raise ApplicationError(
+                "APPLICATION_NOT_STARTED",
+                "recognition batch application window has not started",
+            )
+        if batch.application_end and today > batch.application_end:
+            raise ApplicationError(
+                "APPLICATION_CLOSED",
+                "recognition batch application window is closed",
+            )
+        if batch.target_levels and application.target_level not in set(batch.target_levels):
+            raise ApplicationError(
+                "TARGET_LEVEL_NOT_ALLOWED",
+                "application target level is not enabled by this batch",
+            )
+
+    @staticmethod
     def _set_status(application, target_status):
         application.status = target_status
         application.version += 1
@@ -135,14 +177,13 @@ class ApplicationService:
     @transaction.atomic
     def start_precheck(application: HrDoubleTeacherApplication) -> HrDoubleTeacherApplication:
         application = ApplicationService._lock(application)
+        ApplicationService._assert_batch_accepts_application(application)
         if application.status == ApplicationStatus.PRECHECKING:
             if application.updated_at > timezone.now() - _PRECHECK_LEASE:
                 raise ApplicationError(
                     "APPLICATION_PRECHECK_ALREADY_RUNNING",
                     "application already has an active precheck lease",
                 )
-            # Stale PRECHECKING is recoverable: the new execution takes over the
-            # same state after incrementing version/updated_at.
             application.version += 1
             application.save(update_fields=["version", "updated_at"])
             return application
@@ -210,6 +251,7 @@ class ApplicationService:
                 "APPLICATION_NOT_READY",
                 f"submission requires READY, got {application.status}",
             )
+        ApplicationService._assert_batch_accepts_application(application)
 
         package = (
             HrDoubleTeacherEvidencePackage.objects.select_for_update()
