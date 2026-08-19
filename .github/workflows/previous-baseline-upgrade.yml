@@ -65,134 +65,128 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # main predates the explicit MySQL runtime dependency. The upgrade
-          # gate supplies only the backend driver so the historical schema can
-          # be materialized in the same MySQL engine used in production.
+          # Keep the gate able to materialize an older PR base even if that
+          # historical requirements file did not yet declare the MySQL driver.
           pip install "mysqlclient>=2.2,<3"
 
-      - name: Apply baseline-only MySQL migration compatibility shims
+      - name: Verify baseline MySQL migration compatibility
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
           python - <<'PY'
+          import ast
           from pathlib import Path
 
-          base_path = Path("base/migrations/0002_initial.py")
-          base_source = base_path.read_text(encoding="utf-8")
-          base_old = (
-              '        migrations.AlterUniqueTogether(\n'
-              '            name="company",\n'
-              '            unique_together={("company", "address")},\n'
-              '        ),\n'
-          )
-          base_new = (
-              '        # Baseline-only MySQL compatibility shim: MySQL 8.4 cannot\n'
-              '        # create a unique index directly on TEXT address without a prefix\n'
-              '        # length (error 1170). Keep Django migration state canonical while\n'
-              '        # omitting only the impossible historical database DDL.\n'
-              '        migrations.SeparateDatabaseAndState(\n'
-              '            database_operations=[],\n'
-              '            state_operations=[\n'
-              '                migrations.AlterUniqueTogether(\n'
-              '                    name="company",\n'
-              '                    unique_together={("company", "address")},\n'
-              '                ),\n'
-              '            ],\n'
-              '        ),\n'
-          )
-          base_count = base_source.count(base_old)
-          if base_count != 1:
-              raise SystemExit(
-                  f"expected exactly one legacy company/address unique_together, found {base_count}"
-              )
-          base_path.write_text(base_source.replace(base_old, base_new, 1), encoding="utf-8")
 
-          payroll_path = Path("payroll/migrations/0001_initial.py")
-          payroll_source = payroll_path.read_text(encoding="utf-8")
-          payroll_old = (
-              '            options={\n'
-              '                "verbose_name": "Allowance",\n'
-              '                "unique_together": {\n'
-              '                    (\n'
-              '                        "title",\n'
-              '                        "is_taxable",\n'
-              '                        "is_condition_based",\n'
-              '                        "field",\n'
-              '                        "condition",\n'
-              '                        "value",\n'
-              '                        "is_fixed",\n'
-              '                        "amount",\n'
-              '                        "based_on",\n'
-              '                        "rate",\n'
-              '                        "per_attendance_fixed_amount",\n'
-              '                        "shift_id",\n'
-              '                        "shift_per_attendance_amount",\n'
-              '                        "amount_per_one_hr",\n'
-              '                        "work_type_id",\n'
-              '                        "work_type_per_attendance_amount",\n'
-              '                    )\n'
-              '                },\n'
-              '            },\n'
-              '        ),\n'
-              '        migrations.CreateModel(\n'
-              '            name="Deduction",\n'
-          )
-          payroll_new = (
-              '            options={\n'
-              '                "verbose_name": "Allowance",\n'
-              '            },\n'
-              '        ),\n'
-              '        # Baseline-only MySQL compatibility shim: the legacy Allowance\n'
-              '        # 16-column unique index exceeds InnoDB\'s 3072-byte key limit\n'
-              '        # under utf8mb4. Preserve canonical Django state only.\n'
-              '        migrations.SeparateDatabaseAndState(\n'
-              '            database_operations=[],\n'
-              '            state_operations=[\n'
-              '                migrations.AlterUniqueTogether(\n'
-              '                    name="allowance",\n'
-              '                    unique_together={\n'
-              '                        (\n'
-              '                            "title",\n'
-              '                            "is_taxable",\n'
-              '                            "is_condition_based",\n'
-              '                            "field",\n'
-              '                            "condition",\n'
-              '                            "value",\n'
-              '                            "is_fixed",\n'
-              '                            "amount",\n'
-              '                            "based_on",\n'
-              '                            "rate",\n'
-              '                            "per_attendance_fixed_amount",\n'
-              '                            "shift_id",\n'
-              '                            "shift_per_attendance_amount",\n'
-              '                            "amount_per_one_hr",\n'
-              '                            "work_type_id",\n'
-              '                            "work_type_per_attendance_amount",\n'
-              '                        )\n'
-              '                    },\n'
-              '                ),\n'
-              '            ],\n'
-              '        ),\n'
-              '        migrations.CreateModel(\n'
-              '            name="Deduction",\n'
-          )
-          payroll_count = payroll_source.count(payroll_old)
-          if payroll_count != 1:
-              raise SystemExit(
-                  f"expected exactly one legacy Allowance 16-column unique_together, found {payroll_count}"
+          def call_name(node):
+              func = node.func
+              if isinstance(func, ast.Attribute):
+                  return func.attr
+              if isinstance(func, ast.Name):
+                  return func.id
+              return ""
+
+
+          def keyword_value(call, name, default=None):
+              for keyword in call.keywords:
+                  if keyword.arg == name:
+                      try:
+                          return ast.literal_eval(keyword.value)
+                      except (ValueError, TypeError, SyntaxError):
+                          return default
+              return default
+
+
+          def find_unique_together_offenses(path, model_name, forbidden_fields):
+              source = Path(path).read_text(encoding="utf-8")
+              tree = ast.parse(source, filename=path)
+              offenses = []
+
+              for node in ast.walk(tree):
+                  if not isinstance(node, ast.Call):
+                      continue
+                  operation = call_name(node)
+
+                  if operation == "CreateModel":
+                      name = keyword_value(node, "name")
+                      if name != model_name:
+                          continue
+                      options = keyword_value(node, "options", {}) or {}
+                      unique_together = options.get("unique_together", set())
+                      normalized = {tuple(fields) for fields in unique_together}
+                      if tuple(forbidden_fields) in normalized:
+                          offenses.append(
+                              f"{path}: CreateModel({model_name}) contains "
+                              f"unsafe unique_together={tuple(forbidden_fields)!r}"
+                          )
+
+                  if operation == "AlterUniqueTogether":
+                      name = keyword_value(node, "name")
+                      if str(name).lower() != model_name.lower():
+                          continue
+                      unique_together = keyword_value(node, "unique_together", set()) or set()
+                      normalized = {tuple(fields) for fields in unique_together}
+                      if tuple(forbidden_fields) in normalized:
+                          offenses.append(
+                              f"{path}: AlterUniqueTogether({model_name}) contains "
+                              f"unsafe unique_together={tuple(forbidden_fields)!r}"
+                          )
+
+              return offenses
+
+
+          offenses = []
+          offenses.extend(
+              find_unique_together_offenses(
+                  "base/migrations/0001_initial.py",
+                  "Company",
+                  ("company", "address"),
               )
-          payroll_path.write_text(
-              payroll_source.replace(payroll_old, payroll_new, 1), encoding="utf-8"
           )
+          offenses.extend(
+              find_unique_together_offenses(
+                  "base/migrations/0002_initial.py",
+                  "Company",
+                  ("company", "address"),
+              )
+          )
+          offenses.extend(
+              find_unique_together_offenses(
+                  "payroll/migrations/0001_initial.py",
+                  "Allowance",
+                  (
+                      "title",
+                      "is_taxable",
+                      "is_condition_based",
+                      "field",
+                      "condition",
+                      "value",
+                      "is_fixed",
+                      "amount",
+                      "based_on",
+                      "rate",
+                      "per_attendance_fixed_amount",
+                      "shift_id",
+                      "shift_per_attendance_amount",
+                      "amount_per_one_hr",
+                      "work_type_id",
+                      "work_type_per_attendance_amount",
+                  ),
+              )
+          )
+
+          if offenses:
+              raise SystemExit(
+                  "Previous baseline is not directly materializable on MySQL 8.4:\n- "
+                  + "\n- ".join(offenses)
+                  + "\nFix the baseline migration itself before treating it as a production baseline."
+              )
+
+          print("Baseline migration graph is already MySQL-compatible; no CI-time mutation required.")
           PY
           python -m py_compile \
-            base/migrations/0002_initial.py \
-            payroll/migrations/0001_initial.py
-          git diff --check -- \
-            base/migrations/0002_initial.py \
-            payroll/migrations/0001_initial.py
-          git diff -- \
+            base/migrations/0001_initial.py \
             base/migrations/0002_initial.py \
             payroll/migrations/0001_initial.py
 
