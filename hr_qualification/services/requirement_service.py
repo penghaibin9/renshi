@@ -1,77 +1,138 @@
-"""
-hr_qualification/services/requirement_service.py —— Person vs Requirement 对比。
-
-总册 §30：
-- 对比个人持证事实 vs 岗位/认定资格需求
-- 返回 MatchResult（MET/MISSING/EXPIRED/UNVERIFIED/LOWER_LEVEL 等）
-"""
+"""HR09 requirement helpers backed by source-owned public evidence contracts."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
-from hr_qualification.constants import RequirementMatchResult
-from hr_qualification.models import HrCredentialRequirement, HrPersonCredential
-
-
-@dataclass
-class RequirementMatchItem:
-    requirement: HrCredentialRequirement
-    result: RequirementMatchResult
-    matched_credential_id: str | None = None
-    detail: str = ""
+from hr_staff.models import HrStaffMaster
 
 
 class RequirementService:
-    """资格需求匹配服务。"""
+    """Legacy-friendly boolean helpers with fail-closed source authority."""
+
+    def __init__(self, providers=None):
+        self.providers = providers or {}
 
     @staticmethod
-    def compare_person_to_requirement(
-        credential: HrPersonCredential,
-        requirement: HrCredentialRequirement,
-        as_of: date | None = None,
-    ) -> RequirementMatchItem:
-        """单证书 vs 单需求对比。"""
-        as_of = as_of or date.today()
-
-        # 类别不匹配 → NOT_APPLICABLE
-        if (
-            requirement.credential_category
-            and requirement.credential_category
-            != credential.catalog_item_id.category
-        ):
-            return RequirementMatchItem(
-                requirement=requirement,
-                result=RequirementMatchResult.NOT_APPLICABLE,
-                detail=f"Credential category {credential.catalog_item_id.category} "
-                f"≠ requirement {requirement.credential_category}",
+    def _canonical_identity(tenant_id: int, staff_master_id):
+        return (
+            HrStaffMaster.objects.filter(
+                tenant_id=tenant_id,
+                id=staff_master_id,
             )
-
-        # 过期检查
-        if credential.valid_to and credential.valid_to < as_of:
-            return RequirementMatchItem(
-                requirement=requirement,
-                result=RequirementMatchResult.EXPIRED,
-                matched_credential_id=str(credential.id),
-                detail=f"Expired on {credential.valid_to}",
-            )
-
-        # 核验状态检查
-        if requirement.verification_required:
-            verified_value = "VERIFIED"
-            if credential.current_verification_status != verified_value:
-                return RequirementMatchItem(
-                    requirement=requirement,
-                    result=RequirementMatchResult.UNVERIFIED,
-                    matched_credential_id=str(credential.id),
-                    detail=f"Verification required but status is {credential.current_verification_status}",
-                )
-
-        # MET
-        return RequirementMatchItem(
-            requirement=requirement,
-            result=RequirementMatchResult.MET,
-            matched_credential_id=str(credential.id),
-            detail="OK",
+            .only("id", "person_id")
+            .first()
         )
+
+    def has_qualification(
+        self,
+        tenant_id: int,
+        staff_master_id,
+        category: str,
+        level: str | None = None,
+        as_of: date | None = None,
+    ) -> bool:
+        """Return True only for an ACTIVE credential proven at ``as_of``.
+
+        ``level`` is an exact normalized catalog level code. This helper never
+        guesses ordering from human labels; ranked comparisons belong to the
+        typed precheck evaluator.
+        """
+        from hr_qualification.constants import CredentialStatus
+        from hr_qualification.public import (
+            CredentialEvidenceUnavailable,
+            get_formal_credential_evidence_for_person,
+        )
+
+        as_of = as_of or date.today()
+        identity = self._canonical_identity(tenant_id, staff_master_id)
+        if identity is None:
+            return False
+        try:
+            evidence = get_formal_credential_evidence_for_person(
+                tenant_id=tenant_id,
+                person_id=identity.person_id_id,
+                staff_id=identity.id,
+                as_of=as_of,
+            )
+        except CredentialEvidenceUnavailable:
+            return False
+        if evidence.uncertain_staff_ids:
+            return False
+        for credential in evidence.rows:
+            if credential.status != CredentialStatus.ACTIVE:
+                continue
+            if credential.category != category:
+                continue
+            if level is not None and credential.level_code != level:
+                continue
+            return True
+        return False
+
+    def has_min_experience_days(
+        self,
+        tenant_id: int,
+        staff_master_id,
+        experience_type: str,
+        min_days: int,
+        as_of: date | None = None,
+    ) -> bool:
+        """Count verified HR03 work coverage without double-counting overlaps."""
+        from hr_staff.public import (
+            BackgroundEvidenceUnavailable,
+            get_verified_background_evidence,
+        )
+
+        as_of = as_of or date.today()
+        identity = self._canonical_identity(tenant_id, staff_master_id)
+        if identity is None:
+            return False
+        try:
+            evidence = get_verified_background_evidence(
+                tenant_id=tenant_id,
+                person_id=identity.person_id_id,
+                staff_id=identity.id,
+                as_of=as_of,
+            )
+        except BackgroundEvidenceUnavailable:
+            return False
+
+        intervals = []
+        for row in evidence.rows:
+            if row.kind != "WORK":
+                continue
+            snapshot = row.snapshot or {}
+            if snapshot.get("experienceType") != experience_type:
+                continue
+            raw_start = snapshot.get("startDate")
+            if not raw_start:
+                continue
+            try:
+                start = date.fromisoformat(str(raw_start))
+            except ValueError:
+                continue
+            raw_end = snapshot.get("endDate")
+            try:
+                end = date.fromisoformat(str(raw_end)) if raw_end else as_of
+            except ValueError:
+                continue
+            end = min(end, as_of)
+            if end <= start:
+                continue
+            intervals.append((start, end))
+
+        if not intervals:
+            return min_days <= 0
+        intervals.sort()
+        merged = []
+        for start, end in intervals:
+            if not merged or start > merged[-1][1]:
+                merged.append([start, end])
+                continue
+            if end > merged[-1][1]:
+                merged[-1][1] = end
+        total_days = sum((end - start).days for start, end in merged)
+        return total_days >= int(min_days)
+
+    def provider_available(self, provider_key: str) -> bool:
+        return provider_key in self.providers
