@@ -25,9 +25,7 @@ def _scoped_group_permission_queryset(user, selected):
             group__company_assignments__in=assignments
         ).distinct()
 
-    company_ids = list(
-        assignments.values_list("company_id", flat=True).distinct()
-    )
+    company_ids = list(assignments.values_list("company_id", flat=True).distinct())
     if not company_ids:
         return Permission.objects.none()
 
@@ -263,9 +261,7 @@ def get_user_groups_for_company(user, company_id=None):
 
     assignments = user.company_group_assignments.all()
     if explicit == "all":
-        company_ids = list(
-            assignments.values_list("company_id", flat=True).distinct()
-        )
+        company_ids = list(assignments.values_list("company_id", flat=True).distinct())
         if not company_ids:
             return Group.objects.none()
         return (
