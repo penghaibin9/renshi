@@ -1,9 +1,9 @@
 """HR09 source-owned credential evidence for cross-domain consumers.
 
-The public contract accepts canonical HR03 staff IDs. Historical status is
-reconstructed from append-only credential status events and validity dates;
-current projection state is never silently substituted when the historical
-state cannot be proven.
+The public contract accepts canonical HR03 staff IDs. Historical credential and
+verification state is reconstructed from append-only status/verification facts;
+current projections are never silently substituted when the requested past state
+cannot be proven.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from hr_qualification.constants import CredentialStatus
 from hr_qualification.models import (
     HrCredentialDocument,
     HrCredentialStatusEvent,
+    HrCredentialVerification,
     HrPersonCredential,
 )
 
@@ -122,6 +123,36 @@ def _status_at(credential, events: list, *, as_of: date, as_of_end: datetime) ->
     return status
 
 
+def _verification_at(
+    credential,
+    verifications: list,
+    *,
+    as_of_end: datetime,
+) -> tuple[str | None, datetime | None]:
+    """Resolve the verification projection that was knowable by ``as_of``.
+
+    Append-only verification rows are authoritative. For migrated/current rows
+    without a verification history record, the timestamped projection may be
+    used only when its own ``last_verified_at`` is not later than the requested
+    as-of day. A later projection is never copied backwards.
+    """
+    eligible = [
+        item
+        for item in verifications
+        if item.verified_at is not None and item.verified_at < as_of_end
+    ]
+    if eligible:
+        latest = eligible[-1]
+        return latest.result, latest.verified_at
+
+    last_verified_at = getattr(credential, "last_verified_at", None)
+    if last_verified_at is None:
+        return "", None
+    if last_verified_at >= as_of_end:
+        return None, None
+    return getattr(credential, "current_verification_status", "") or "", last_verified_at
+
+
 def _catalog_level_rank(catalog, level_code: str) -> int | None:
     schema = catalog.level_schema or {}
     levels = schema.get("levels", []) if isinstance(schema, dict) else []
@@ -146,6 +177,8 @@ def get_formal_credential_evidence(
         raise CredentialEvidenceUnavailable(
             "TENANT_CONTEXT_REQUIRED", "tenant_id is required"
         )
+    if not isinstance(as_of, date):
+        raise CredentialEvidenceUnavailable("AS_OF_REQUIRED", "as_of must be a date")
     if source_version not in {"v1", PROVIDER_VERSION}:
         raise CredentialEvidenceUnavailable(
             "SOURCE_VERSION_UNSUPPORTED",
@@ -176,6 +209,18 @@ def get_formal_credential_evidence(
     ).order_by("credential_id_id", "occurred_at", "id"):
         events_by_credential.setdefault(str(event.credential_id_id), []).append(event)
 
+    verifications_by_credential: dict[str, list] = {
+        str(value): [] for value in credential_ids
+    }
+    for verification in HrCredentialVerification.objects.filter(
+        credential_id_id__in=credential_ids,
+        verified_at__isnull=False,
+        verified_at__lt=as_of_end,
+    ).order_by("credential_id_id", "verified_at", "id"):
+        verifications_by_credential.setdefault(
+            str(verification.credential_id_id), []
+        ).append(verification)
+
     documents_by_credential: dict[str, list[str]] = {str(value): [] for value in credential_ids}
     seen_document_refs: dict[str, set[str]] = {str(value): set() for value in credential_ids}
     for document in HrCredentialDocument.objects.filter(
@@ -195,6 +240,7 @@ def get_formal_credential_evidence(
     uncertain_staff_values = {}
     for credential in credentials:
         staff_id = credential.staff_master_id_id
+        key = str(staff_id)
         status = _status_at(
             credential,
             events_by_credential.get(str(credential.id), []),
@@ -202,12 +248,22 @@ def get_formal_credential_evidence(
             as_of_end=as_of_end,
         )
         if status is None:
-            key = str(staff_id)
             uncertain_staff_keys.add(key)
             uncertain_staff_values.setdefault(key, staff_id)
             continue
         if status not in _FORMAL_VISIBLE_STATUSES:
             continue
+
+        verification_status, verified_at = _verification_at(
+            credential,
+            verifications_by_credential.get(str(credential.id), []),
+            as_of_end=as_of_end,
+        )
+        if verification_status is None:
+            uncertain_staff_keys.add(key)
+            uncertain_staff_values.setdefault(key, staff_id)
+            verification_status = ""
+
         catalog = credential.catalog_item_id
         if catalog.tenant_id not in (None, tenant_id):
             raise CredentialEvidenceUnavailable(
@@ -225,10 +281,10 @@ def get_formal_credential_evidence(
                 level_code=credential.level_code,
                 level_rank=_catalog_level_rank(catalog, credential.level_code),
                 status=status,
-                current_verification_status=credential.current_verification_status,
+                current_verification_status=verification_status,
                 valid_from=credential.valid_from,
                 valid_to=credential.valid_to,
-                last_verified_at=credential.last_verified_at,
+                last_verified_at=verified_at,
                 document_refs=tuple(documents_by_credential.get(str(credential.id), [])),
                 requires_document=bool(catalog.requires_document),
                 as_of=as_of,
