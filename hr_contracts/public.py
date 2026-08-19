@@ -66,6 +66,18 @@ class AgreementEvidence:
     source_version: str = PROVIDER_VERSION
 
 
+def _dedupe_ids(values: list) -> tuple[Any, ...]:
+    result = []
+    seen = set()
+    for value in values:
+        key = str(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return tuple(result)
+
+
 def get_formal_agreement_evidence(
     *,
     tenant_id: int,
@@ -87,7 +99,7 @@ def get_formal_agreement_evidence(
     if not staff_ids:
         return AgreementEvidence((), ())
 
-    requested = tuple(dict.fromkeys(staff_ids))
+    requested = _dedupe_ids(staff_ids)
     versions = list(
         HrContractVersion.objects.filter(
             tenant_id=tenant_id,
@@ -102,18 +114,18 @@ def get_formal_agreement_evidence(
     )
 
     seen_agreements = set()
-    present_staff = set()
+    present_staff_keys = set()
     rows = []
     for version in versions:
-        agreement_key = version.agreement_id
+        agreement_key = str(version.agreement_id)
         if agreement_key in seen_agreements:
             raise AgreementEvidenceUnavailable(
                 "FORMAL_VERSION_CONFLICT",
-                f"multiple formal HR07 versions cover as_of for agreement {agreement_key}",
+                f"multiple formal HR07 versions cover as_of for agreement {version.agreement_id}",
             )
         seen_agreements.add(agreement_key)
         agreement = version.agreement
-        present_staff.add(agreement.staff_id)
+        present_staff_keys.add(str(agreement.staff_id))
         rows.append(
             AgreementEvidenceRow(
                 agreement_id=agreement.id,
@@ -131,5 +143,7 @@ def get_formal_agreement_evidence(
             )
         )
 
-    missing = tuple(sorted((value for value in requested if value not in present_staff), key=str))
+    missing = tuple(
+        sorted((value for value in requested if str(value) not in present_staff_keys), key=str)
+    )
     return AgreementEvidence(rows=tuple(rows), missing_staff_ids=missing)

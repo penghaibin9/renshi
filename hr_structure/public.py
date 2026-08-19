@@ -53,6 +53,18 @@ class OrganizationEvidence:
     source_version: str = PROVIDER_VERSION
 
 
+def _dedupe_ids(values: list) -> tuple[Any, ...]:
+    result = []
+    seen = set()
+    for value in values:
+        key = str(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return tuple(result)
+
+
 def get_organization_evidence(
     *,
     tenant_id: int,
@@ -76,7 +88,7 @@ def get_organization_evidence(
     if not organization_ids:
         return OrganizationEvidence((), ())
 
-    requested = tuple(dict.fromkeys(organization_ids))
+    requested = _dedupe_ids(organization_ids)
     versions = list(
         HrOrganizationVersion.objects.filter(
             tenant_id=tenant_id,
@@ -92,19 +104,20 @@ def get_organization_evidence(
     chosen = {}
     for version in versions:
         organization_id = version.organization_id_id
-        if organization_id in chosen:
+        key = str(organization_id)
+        if key in chosen:
             raise OrganizationEvidenceUnavailable(
                 "FORMAL_VERSION_CONFLICT",
                 f"multiple formal HR02 organization versions cover as_of for {organization_id}",
             )
-        chosen[organization_id] = version
+        chosen[key] = version
 
     missing = tuple(
-        sorted((value for value in requested if value not in chosen), key=str)
+        sorted((value for value in requested if str(value) not in chosen), key=str)
     )
     rows = tuple(
         OrganizationEvidenceRow(
-            organization_id=organization_id,
+            organization_id=version.organization_id_id,
             stable_code=version.organization_id.stable_code,
             name=version.name,
             short_name=version.short_name,
@@ -114,6 +127,6 @@ def get_organization_evidence(
             validity_to=version.validity_to,
             version_no=version.version_no,
         )
-        for organization_id, version in chosen.items()
+        for version in chosen.values()
     )
     return OrganizationEvidence(rows=rows, missing_organization_ids=missing)

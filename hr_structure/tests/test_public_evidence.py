@@ -53,6 +53,16 @@ class OrganizationEvidenceTests(TestCase):
         self.assertEqual(evidence.rows[0].version_no, 1)
         self.assertEqual(evidence.missing_organization_ids, ())
 
+    def test_string_uuid_input_is_not_misreported_missing(self):
+        evidence = get_organization_evidence(
+            tenant_id=self.tenant_id,
+            organization_ids=[str(self.organization.id)],
+            as_of=date(2026, 6, 1),
+        )
+
+        self.assertEqual(len(evidence.rows), 1)
+        self.assertEqual(evidence.missing_organization_ids, ())
+
     def test_cross_tenant_identity_is_reported_missing(self):
         other = HrOrganization.objects.create(
             tenant_id=20002,
