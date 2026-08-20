@@ -40,8 +40,28 @@ case "${SECRET_KEY:-}" in
     ;;
 esac
 
-python manage.py migrate --noinput
-python manage.py collectstatic --noinput
+is_production=false
+if [ "${HORILLA_ENV:-}" = "production" ] || [ "${DEBUG:-1}" = "0" ] || [ "${DEBUG:-}" = "False" ]; then
+  is_production=true
+fi
+
+# In production, schema migration and collectstatic belong to one release job,
+# not every web replica. Development keeps the convenient automatic behavior.
+if [ -z "${MIGRATE_ON_START:-}" ]; then
+  if $is_production; then MIGRATE_ON_START=0; else MIGRATE_ON_START=1; fi
+fi
+if [ -z "${COLLECTSTATIC_ON_START:-}" ]; then
+  if $is_production; then COLLECTSTATIC_ON_START=0; else COLLECTSTATIC_ON_START=1; fi
+fi
+
+if [ "$MIGRATE_ON_START" = "1" ] || [ "$MIGRATE_ON_START" = "true" ] || [ "$MIGRATE_ON_START" = "True" ]; then
+  python manage.py migrate --noinput
+fi
+
+if [ "$COLLECTSTATIC_ON_START" = "1" ] || [ "$COLLECTSTATIC_ON_START" = "true" ] || [ "$COLLECTSTATIC_ON_START" = "True" ]; then
+  python manage.py collectstatic --noinput
+fi
+
 python manage.py check
 
 echo "Starting server..."
