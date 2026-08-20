@@ -31,7 +31,11 @@ keepalive = 5
 accesslog = "-"
 errorlog = "-"
 loglevel = os.environ.get("GUNICORN_LOG_LEVEL", "info")
-access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
+# Never log query strings. HR download tickets and other one-time credentials are
+# intentionally accepted in query parameters for browser compatibility; Gunicorn
+# must log only the URL path so those secrets do not become long-lived log data.
+# Gunicorn atoms: m=method, U=URL path without query, H=protocol.
+access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(m)s %(U)s %(H)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
 # Process naming
 proc_name = "horilla-hrms"
