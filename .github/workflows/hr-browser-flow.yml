@@ -54,10 +54,16 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Syntax gate for browser harness
+        run: python -m py_compile scripts/hr_real_browser_click.py
+
       - name: Install application and Chromium
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config curl
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install playwright
@@ -162,6 +168,17 @@ jobs:
             cat artifacts/hr-browser-flow/django-runserver.log
             exit 1
           fi
+
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
+            | tee artifacts/hr-browser-flow/readiness.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("artifacts/hr-browser-flow/readiness.json").read_text())
+          assert payload.get("status") == "ok", payload
+          assert payload.get("database_vendor") == "mysql", payload
+          PY
 
           python scripts/hr_real_browser_click.py
 
