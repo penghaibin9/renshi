@@ -83,6 +83,11 @@ class SubmissionLifecycleService:
             raise SubmissionLifecycleError(
                 "SUBMISSION_NO_REQUIRED", "submission_no is required"
             )
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_ACTOR_REQUIRED",
+                "formal submission drafts require an authenticated actor",
+            )
         payload_hash = str(payload_hash or "").strip().lower()
         if not _HASH_RE.fullmatch(payload_hash):
             raise SubmissionLifecycleError(
@@ -209,6 +214,21 @@ class SubmissionLifecycleService:
     @transaction.atomic
     def approve(self, submission_id) -> SubmissionSnapshot:
         snapshot = self._lock(submission_id)
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_APPROVER_REQUIRED",
+                "formal submission approval requires an identifiable approver",
+            )
+        if snapshot.created_by is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_CREATOR_UNKNOWN",
+                "formal submission cannot be approved without creator audit identity",
+            )
+        if int(snapshot.created_by) == int(self.actor_user_id):
+            raise SubmissionLifecycleError(
+                "SUBMISSION_SELF_APPROVAL_DENIED",
+                "formal submission creator cannot approve the same submission",
+            )
         return self._transition(
             snapshot,
             expected=SubmissionSnapshot.Status.VALIDATED,
@@ -288,6 +308,11 @@ class SubmissionLifecycleService:
     @transaction.atomic
     def record_receipt(self, submission_id, *, accepted: bool, receipt_ref: str) -> SubmissionSnapshot:
         snapshot = self._lock(submission_id)
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_RECEIPT_ACTOR_REQUIRED",
+                "external receipt recording requires an identifiable actor",
+            )
         if snapshot.status != SubmissionSnapshot.Status.SUBMITTED:
             raise SubmissionLifecycleError(
                 "SUBMISSION_INVALID_STATE",
