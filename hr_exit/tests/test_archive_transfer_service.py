@@ -136,6 +136,59 @@ class ArchiveTransferServiceTests(TestCase):
         self.assertNotEqual(returned.status, ArchiveTransferReceipt.Status.RECEIVED)
         self.assertEqual(returned.return_reason, "材料缺页")
 
+    def test_business_text_and_attachment_refs_are_bounded_before_database_write(self):
+        svc = ArchiveTransferService(self.TENANT, actor_user_id=9)
+        case = self._case()
+        for field, value in (
+            ("destination_name", "N" * 201),
+            ("destination_type", "T" * 65),
+            ("destination_address", "A" * 501),
+            ("tracking_no", "K" * 129),
+            ("archive_attachment_ref", "R" * 257),
+        ):
+            kwargs = {
+                "case_id": case.id,
+                "transfer_no": f"ARCH-LIMIT-{field}",
+                "destination_name": "人才档案中心",
+                "destination_type": "TALENT_CENTER",
+                "destination_address": "长沙市",
+                "transfer_method": ArchiveTransferReceipt.TransferMethod.SYSTEM_TRANSFER,
+                "tracking_no": "",
+                "archive_attachment_ref": "file://archive-package-1",
+            }
+            kwargs[field] = value
+            with self.assertRaises(ArchiveTransferError) as ctx:
+                svc.create_transfer(**kwargs)
+            self.assertEqual(ctx.exception.code, "ARCHIVE_TRANSFER_FIELD_TOO_LONG")
+        self.assertFalse(
+            ArchiveTransferReceipt.objects.filter(
+                tenant_id=self.TENANT,
+                transfer_no__startswith="ARCH-LIMIT-",
+            ).exists()
+        )
+
+    def test_receive_and_return_payloads_are_bounded(self):
+        svc = ArchiveTransferService(self.TENANT, actor_user_id=9)
+        receive = self._draft(transfer_no="ARCH-LIMIT-RECEIVE")
+        svc.mark_sent(receipt_id=receive.id)
+        with self.assertRaises(ArchiveTransferError) as ctx:
+            svc.acknowledge_received(
+                receipt_id=receive.id,
+                received_by="R" * 201,
+                receipt_attachment_ref="file://receipt-1",
+            )
+        self.assertEqual(ctx.exception.code, "ARCHIVE_TRANSFER_FIELD_TOO_LONG")
+        receive.refresh_from_db()
+        self.assertEqual(receive.status, ArchiveTransferReceipt.Status.SENT)
+
+        returned = self._draft(transfer_no="ARCH-LIMIT-RETURN")
+        svc.mark_sent(receipt_id=returned.id)
+        with self.assertRaises(ArchiveTransferError) as ctx:
+            svc.mark_returned(receipt_id=returned.id, reason="X" * 2001)
+        self.assertEqual(ctx.exception.code, "ARCHIVE_TRANSFER_FIELD_TOO_LONG")
+        returned.refresh_from_db()
+        self.assertEqual(returned.status, ArchiveTransferReceipt.Status.SENT)
+
     def test_cross_tenant_receipt_is_fail_closed(self):
         case = self._case()
         receipt = self._draft(case=case)
