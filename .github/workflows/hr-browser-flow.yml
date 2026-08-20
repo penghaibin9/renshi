@@ -17,10 +17,13 @@ env:
   DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
   SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
   ALLOWED_HOSTS: localhost,127.0.0.1
-  CSRF_TRUSTED_ORIGINS: http://localhost:8000
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
+  HR_BROWSER_USERNAME: hr-runtime-browser-auditor
+  HR_BROWSER_PASSWORD: runtime-browser-flow-only-password
+  HR_BROWSER_BASE_URL: http://127.0.0.1:8000
+  HR_BROWSER_ARTIFACT_DIR: artifacts/hr-browser-flow
 
 jobs:
   real-browser-click-flow:
@@ -54,7 +57,7 @@ jobs:
       - name: Install application and Chromium
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
+          sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config curl
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install playwright
@@ -66,59 +69,116 @@ jobs:
             printf '%s\n' '# Ephemeral for CI browser flow' > horilla/settings/local_settings.py
           fi
 
-      - name: Prepare focused MySQL browser-test database
-        shell: bash
+      - name: Migrate real ephemeral MySQL runtime
         run: |
-          set -euo pipefail
           python manage.py migrate --noinput
           python manage.py migrate --check
 
-          python - <<'PY'
+      - name: Seed only the technical browser identity
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
           import os
-          import MySQLdb
+          from django.contrib.auth import get_user_model
+          from django.core.files.uploadedfile import SimpleUploadedFile
+          from base.models import Company
+          from employee.models import Employee, EmployeeWorkInformation
+          from hr_staff.models import HrPerson, HrStaffMaster
 
-          connection = MySQLdb.connect(
-              host="127.0.0.1",
-              user="root",
-              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
-              charset="utf8mb4",
+          username = os.environ["HR_BROWSER_USERNAME"]
+          password = os.environ["HR_BROWSER_PASSWORD"]
+
+          company = Company.objects.create(
+              company="跃科 GitHub 真实点击验收学校",
+              hq=True,
+              address="长沙市 GitHub 点击验收路 1 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              icon=SimpleUploadedFile(
+                  "runtime-browser-audit.png",
+                  b"runtime-browser-audit",
+                  content_type="image/png",
+              ),
           )
-          try:
-              cursor = connection.cursor()
-              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
-              cursor.execute(
-                  "CREATE DATABASE `test_horilla_db` "
-                  "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-              )
-              cursor.execute(
-                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
-                  "TO 'horilla_user'@'%'"
-              )
-              cursor.execute("FLUSH PRIVILEGES")
-          finally:
-              connection.close()
+          User = get_user_model()
+          user = User.objects.create_superuser(
+              username=username,
+              email="runtime-browser-audit@example.invalid",
+              password=password,
+          )
+          user.is_new_employee = False
+          user.save(update_fields=["is_new_employee"])
+          employee = Employee.objects.create(
+              employee_user_id=user,
+              employee_first_name="GitHub",
+              employee_last_name="点击验收员",
+              email="runtime-browser-employee@example.invalid",
+              phone="13800000003",
+              is_active=True,
+          )
+          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
+              employee_id=employee,
+          )
+          if work_info.company_id_id != company.pk:
+              work_info.company_id = company
+              work_info.save(update_fields=["company_id"])
+
+          person = HrPerson.objects.create(
+              tenant_id=company.pk,
+              legal_name="GitHub 点击验收员",
+              status="ACTIVE",
+          )
+          HrStaffMaster.objects.create(
+              tenant_id=company.pk,
+              person_id=person,
+              staff_no="RUNTIME-BROWSER-001",
+              current_employment_status="ACTIVE",
+              legacy_employee_id=employee.pk,
+          )
+          print(f"seeded company={company.pk} user={user.pk} employee={employee.pk}")
           PY
 
-          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
-            python manage.py migrate --run-syncdb --noinput
-          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
-            python manage.py migrate --check
-
-      - name: Run only real Chromium click-flow tests
-        env:
-          HR_BROWSER_FLOW: "1"
-          HR_BROWSER_ARTIFACT_DIR: artifacts/hr-browser-flow
+      - name: Boot the real Django application
+        shell: bash
         run: |
-          python manage.py test \
-            hr_core_browser_flow_tests.HrCoreBrowserFlowTests \
-            hr_browser_flow_tests.HrBrowserFlowTests \
-            --keepdb --noinput --verbosity 2
+          set -euo pipefail
+          mkdir -p artifacts/hr-browser-flow
+          nohup python manage.py runserver 127.0.0.1:8000 --noreload \
+            > artifacts/hr-browser-flow/django-runserver.log 2>&1 &
+          echo $! > artifacts/hr-browser-flow/django-runserver.pid
 
-      - name: Upload browser trace and click evidence
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/login/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat artifacts/hr-browser-flow/django-runserver.log
+            exit 1
+          fi
+
+      - name: Click HR01-HR18 in real Chromium
+        run: |
+          python scripts/hr_real_browser_click.py
+
+      - name: Stop Django runtime
+        if: always()
+        shell: bash
+        run: |
+          if [ -f artifacts/hr-browser-flow/django-runserver.pid ]; then
+            kill "$(cat artifacts/hr-browser-flow/django-runserver.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload browser trace, screenshots and server log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: hr-real-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
           path: artifacts/hr-browser-flow/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
