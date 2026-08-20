@@ -19,17 +19,15 @@ from horilla.settings.runtime_seals import install_legacy_runtime_seals
 
 from .base import *  # noqa: F401,F403
 
-# Client / deployment overrides are independent. A missing addons.py must not
-# accidentally prevent local_settings.py from loading.
-try:
+# Optional override modules are optional only when the module itself is absent.
+# Never swallow an ImportError raised *inside* an existing override module: doing
+# so can silently drop production secrets/security settings and boot with the
+# base configuration instead of failing closed.
+if find_spec(f"{__package__}.addons") is not None:
     from .addons import *  # noqa: F401,F403
-except ImportError:
-    pass
 
-try:
+if find_spec(f"{__package__}.local_settings") is not None:
     from .local_settings import *  # noqa: F401,F403
-except ImportError:
-    pass
 
 CORE_HR_APPS = [
     "hr_control_center",  # HR01
