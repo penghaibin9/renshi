@@ -3,7 +3,9 @@
 Hard rules:
 - tenant always comes from the server-selected school, never query/body/header input;
 - every endpoint authenticates and checks semantic HR09 permission codes;
-- SELF endpoints derive the current person from the authenticated user's HR03 mapping.
+- SELF endpoints derive the current person from the authenticated user's HR03 mapping;
+- session-authenticated unsafe requests always pass Django CSRF validation, even when
+  a legacy view still carries ``csrf_exempt`` on its outer wrapper.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ from __future__ import annotations
 from functools import wraps
 
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_protect
 
 from hr_staff.context import resolve_tenant_from_request
 
@@ -45,9 +48,19 @@ def require_any_permission(request, *permission_codes: str) -> None:
 
 
 def api_guard(*permission_codes: str):
-    """Resolve tenant + check permission, then expose request.hr09_tenant_id."""
+    """Resolve tenant + permission and enforce CSRF for every unsafe request.
+
+    Several early HR09 function views were decorated ``csrf_exempt`` so JSON POSTs
+    would work during construction.  Those endpoints authenticate with the Django
+    session, therefore leaving the exemption at middleware level would permit
+    cross-site state changes.  The guard wraps the *original* view in
+    ``csrf_protect`` internally; an outer legacy ``csrf_exempt`` may skip the
+    global middleware, but it cannot skip this source-owned enforcement point.
+    """
 
     def decorator(view_func):
+        csrf_checked_view = csrf_protect(view_func)
+
         @wraps(view_func)
         def wrapped(request, *args, **kwargs):
             try:
@@ -61,7 +74,7 @@ def api_guard(*permission_codes: str):
                     status=exc.status,
                 )
             request.hr09_tenant_id = tenant_id
-            return view_func(request, *args, **kwargs)
+            return csrf_checked_view(request, *args, **kwargs)
 
         return wrapped
 

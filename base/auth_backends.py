@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
+from django.db.models import Count
 
 from horilla.horilla_middlewares import _thread_locals, get_selected_company
 from horilla.hr_permissions import (
@@ -10,6 +11,41 @@ from horilla.hr_permissions import (
     permission_aliases,
     semantic_codes_for_codename,
 )
+
+
+def _scoped_group_permission_queryset(user, selected):
+    """Return group permissions valid for the selected tenant scope."""
+    if selected is None:
+        return Permission.objects.none()
+
+    assignments = user.company_group_assignments.all()
+    if selected != "all":
+        assignments = assignments.filter(company_id=selected)
+        return Permission.objects.filter(
+            group__company_assignments__in=assignments
+        ).distinct()
+
+    company_ids = list(assignments.values_list("company_id", flat=True).distinct())
+    if not company_ids:
+        return Permission.objects.none()
+
+    # "All my companies" is a read-only union of tenant data. A permission is
+    # safe in that union only when the user owns the same permission in every
+    # included company. Otherwise a high privilege held in company B could
+    # authorize rows from company A where the user never received that grant.
+    return (
+        Permission.objects.filter(
+            group__company_assignments__user=user,
+            group__company_assignments__company_id__in=company_ids,
+        )
+        .annotate(
+            _granted_company_count=Count(
+                "group__company_assignments__company_id", distinct=True
+            )
+        )
+        .filter(_granted_company_count=len(company_ids))
+        .distinct()
+    )
 
 
 class CompanyScopedBackend(ModelBackend):
@@ -38,17 +74,7 @@ class CompanyScopedBackend(ModelBackend):
     def _get_group_permissions(self, user_obj):
         if not self._scoped_mode():
             return super()._get_group_permissions(user_obj)
-
-        selected = get_selected_company()
-        if selected is None:
-            return Permission.objects.none()
-
-        assignments = user_obj.company_group_assignments.all()
-        if selected != "all":
-            assignments = assignments.filter(company_id=selected)
-        return Permission.objects.filter(
-            group__company_assignments__in=assignments
-        ).distinct()
+        return _scoped_group_permission_queryset(user_obj, get_selected_company())
 
     def _effective_permission_objects(self, user_obj):
         if not getattr(user_obj, "is_active", False) or getattr(
@@ -143,36 +169,56 @@ def get_allowed_company_ids(user):
     return ids
 
 
-def get_write_company_id(user):
-    assigned = get_assigned_company_ids(user)
-    pool = assigned or get_allowed_company_ids(user)
-    if not pool:
-        return None
+def _coerce_company_id(company_id):
     try:
-        work_company_id = user.employee_get.employee_work_info.company_id_id
-        if work_company_id in pool:
-            return work_company_id
-    except Exception:
-        pass
-    return sorted(pool)[0]
+        return int(company_id)
+    except (TypeError, ValueError):
+        return company_id
+
+
+def get_write_company_id(user):
+    """
+    Return the explicitly selected, authorized concrete tenant for a write.
+
+    Read-only ``all`` scope may aggregate data across the user's assigned
+    companies, but writes must never guess a tenant from work-info or from the
+    first assignment. Missing/``all``/unauthorized context therefore returns
+    ``None`` and the caller must require an explicit school selection.
+    """
+    selected = get_selected_company()
+    if selected in (None, "", "all"):
+        return None
+
+    normalized = _coerce_company_id(selected)
+    return normalized if normalized in get_allowed_company_ids(user) else None
 
 
 def resolve_company_id_for_new_record(request=None):
-    """Resolve a concrete write tenant; returns None rather than guessing."""
+    """
+    Resolve one concrete write tenant without inventing one.
+
+    Background jobs/providers are allowed to write under an explicit
+    ``tenant_context(company_id)`` even when there is no HTTP request. Web
+    requests additionally verify that the selected school is within the
+    authenticated user's allowed tenant set.
+    """
     request = request or getattr(_thread_locals, "request", None)
     company = get_selected_company()
-    if company and company != "all":
-        try:
-            return int(company)
-        except (TypeError, ValueError):
-            return company
-    if not request or not getattr(request, "user", None):
+    if company in (None, "", "all"):
         return None
-    if not request.user.is_authenticated or request.user.is_superuser:
+
+    normalized = _coerce_company_id(company)
+    if request is None:
+        return normalized
+
+    user = getattr(request, "user", None)
+    if not user or not getattr(user, "is_authenticated", False):
         return None
-    if company_scoped_active() and company == "all":
-        return get_write_company_id(request.user)
-    return None
+    if getattr(user, "is_superuser", False):
+        return normalized
+    if company_scoped_active() and normalized not in get_allowed_company_ids(user):
+        return None
+    return normalized
 
 
 def stamp_company_on_create(instance, attr="company_id"):
@@ -198,10 +244,7 @@ def _normalize_company_id(company_id=None):
         company_id = get_selected_company()
     if company_id in ("", "all"):
         return None
-    try:
-        return int(company_id) if company_id is not None else None
-    except (TypeError, ValueError):
-        return company_id
+    return _coerce_company_id(company_id) if company_id is not None else None
 
 
 def get_user_groups_for_company(user, company_id=None):
@@ -217,9 +260,26 @@ def get_user_groups_for_company(user, company_id=None):
         return Group.objects.none()
 
     assignments = user.company_group_assignments.all()
+    if explicit == "all":
+        company_ids = list(assignments.values_list("company_id", flat=True).distinct())
+        if not company_ids:
+            return Group.objects.none()
+        return (
+            Group.objects.filter(
+                company_assignments__user=user,
+                company_assignments__company_id__in=company_ids,
+            )
+            .annotate(
+                _assigned_company_count=Count(
+                    "company_assignments__company_id", distinct=True
+                )
+            )
+            .filter(_assigned_company_count=len(company_ids))
+            .distinct()
+        )
+
     normalized = _normalize_company_id(explicit)
-    if normalized is not None:
-        assignments = assignments.filter(company_id=normalized)
+    assignments = assignments.filter(company_id=normalized)
     return Group.objects.filter(
         id__in=assignments.values_list("group_id", flat=True)
     ).distinct()
@@ -245,14 +305,10 @@ def get_effective_permission_codenames(user, company_id=None, include_direct=Tru
     if explicit is None:
         return sorted(codenames)
 
-    assignments = user.company_group_assignments.all()
-    normalized = _normalize_company_id(explicit)
-    if normalized is not None:
-        assignments = assignments.filter(company_id=normalized)
     codenames.update(
-        Permission.objects.filter(
-            group__company_assignments__in=assignments
-        ).values_list("codename", flat=True)
+        _scoped_group_permission_queryset(user, explicit).values_list(
+            "codename", flat=True
+        )
     )
     return sorted(codenames)
 

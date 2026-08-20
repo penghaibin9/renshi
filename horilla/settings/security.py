@@ -62,7 +62,11 @@ def apply_secure_defaults(env, debug: bool) -> dict:
         "SECURE_CONTENT_TYPE_NOSNIFF": True,
         "SECURE_REFERRER_POLICY": "strict-origin-when-cross-origin",
         "SECURE_PROXY_SSL_HEADER": ("HTTP_X_FORWARDED_PROTO", "https"),
-        "SECURE_SSL_REDIRECT": env.bool("SECURE_SSL_REDIRECT", default=False),
+        # DEBUG=False is a production posture in this repository.  Do not let a
+        # missing environment variable silently downgrade transport security;
+        # operators who intentionally terminate without HTTPS must opt out
+        # explicitly with SECURE_SSL_REDIRECT=0.
+        "SECURE_SSL_REDIRECT": env.bool("SECURE_SSL_REDIRECT", default=True),
     }
     if settings["SECURE_SSL_REDIRECT"]:
         settings["SECURE_HSTS_SECONDS"] = env.int(

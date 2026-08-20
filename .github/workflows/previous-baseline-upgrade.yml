@@ -65,9 +65,8 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # main predates the explicit MySQL runtime dependency. The upgrade
-          # gate supplies only the backend driver so the historical schema can
-          # be materialized in the same MySQL engine used in production.
+          # Keep the gate able to materialize an older PR base even if that
+          # historical requirements file did not yet declare the MySQL driver.
           pip install "mysqlclient>=2.2,<3"
 
       - name: Apply baseline-only MySQL migration compatibility shims
@@ -76,123 +75,141 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
           python - <<'PY'
+          import ast
           from pathlib import Path
 
-          base_path = Path("base/migrations/0002_initial.py")
-          base_source = base_path.read_text(encoding="utf-8")
-          base_old = (
-              '        migrations.AlterUniqueTogether(\n'
-              '            name="company",\n'
-              '            unique_together={("company", "address")},\n'
-              '        ),\n'
-          )
-          base_new = (
-              '        # Baseline-only MySQL compatibility shim: MySQL 8.4 cannot\n'
-              '        # create a unique index directly on TEXT address without a prefix\n'
-              '        # length (error 1170). Keep Django migration state canonical while\n'
-              '        # omitting only the impossible historical database DDL.\n'
-              '        migrations.SeparateDatabaseAndState(\n'
-              '            database_operations=[],\n'
-              '            state_operations=[\n'
-              '                migrations.AlterUniqueTogether(\n'
-              '                    name="company",\n'
-              '                    unique_together={("company", "address")},\n'
-              '                ),\n'
-              '            ],\n'
-              '        ),\n'
-          )
-          base_count = base_source.count(base_old)
-          if base_count != 1:
-              raise SystemExit(
-                  f"expected exactly one legacy company/address unique_together, found {base_count}"
-              )
-          base_path.write_text(base_source.replace(base_old, base_new, 1), encoding="utf-8")
 
-          payroll_path = Path("payroll/migrations/0001_initial.py")
-          payroll_source = payroll_path.read_text(encoding="utf-8")
-          payroll_old = (
-              '            options={\n'
-              '                "verbose_name": "Allowance",\n'
-              '                "unique_together": {\n'
-              '                    (\n'
-              '                        "title",\n'
-              '                        "is_taxable",\n'
-              '                        "is_condition_based",\n'
-              '                        "field",\n'
-              '                        "condition",\n'
-              '                        "value",\n'
-              '                        "is_fixed",\n'
-              '                        "amount",\n'
-              '                        "based_on",\n'
-              '                        "rate",\n'
-              '                        "per_attendance_fixed_amount",\n'
-              '                        "shift_id",\n'
-              '                        "shift_per_attendance_amount",\n'
-              '                        "amount_per_one_hr",\n'
-              '                        "work_type_id",\n'
-              '                        "work_type_per_attendance_amount",\n'
-              '                    )\n'
-              '                },\n'
-              '            },\n'
-              '        ),\n'
-              '        migrations.CreateModel(\n'
-              '            name="Deduction",\n'
-          )
-          payroll_new = (
-              '            options={\n'
-              '                "verbose_name": "Allowance",\n'
-              '            },\n'
-              '        ),\n'
-              '        # Baseline-only MySQL compatibility shim: the legacy Allowance\n'
-              '        # 16-column unique index exceeds InnoDB\'s 3072-byte key limit\n'
-              '        # under utf8mb4. Preserve canonical Django state only.\n'
-              '        migrations.SeparateDatabaseAndState(\n'
-              '            database_operations=[],\n'
-              '            state_operations=[\n'
-              '                migrations.AlterUniqueTogether(\n'
-              '                    name="allowance",\n'
-              '                    unique_together={\n'
-              '                        (\n'
-              '                            "title",\n'
-              '                            "is_taxable",\n'
-              '                            "is_condition_based",\n'
-              '                            "field",\n'
-              '                            "condition",\n'
-              '                            "value",\n'
-              '                            "is_fixed",\n'
-              '                            "amount",\n'
-              '                            "based_on",\n'
-              '                            "rate",\n'
-              '                            "per_attendance_fixed_amount",\n'
-              '                            "shift_id",\n'
-              '                            "shift_per_attendance_amount",\n'
-              '                            "amount_per_one_hr",\n'
-              '                            "work_type_id",\n'
-              '                            "work_type_per_attendance_amount",\n'
-              '                        )\n'
-              '                    },\n'
-              '                ),\n'
-              '            ],\n'
-              '        ),\n'
-              '        migrations.CreateModel(\n'
-              '            name="Deduction",\n'
-          )
-          payroll_count = payroll_source.count(payroll_old)
-          if payroll_count != 1:
-              raise SystemExit(
-                  f"expected exactly one legacy Allowance 16-column unique_together, found {payroll_count}"
-              )
-          payroll_path.write_text(
-              payroll_source.replace(payroll_old, payroll_new, 1), encoding="utf-8"
-          )
+          TARGETS = {
+              "base/migrations/0002_initial.py": {
+                  ("company", ("company", "address")),
+              },
+              "payroll/migrations/0001_initial.py": {
+                  (
+                      "allowance",
+                      (
+                          "title",
+                          "is_taxable",
+                          "is_condition_based",
+                          "field",
+                          "condition",
+                          "value",
+                          "is_fixed",
+                          "amount",
+                          "based_on",
+                          "rate",
+                          "per_attendance_fixed_amount",
+                          "shift_id",
+                          "shift_per_attendance_amount",
+                          "amount_per_one_hr",
+                          "work_type_id",
+                          "work_type_per_attendance_amount",
+                      ),
+                  ),
+              },
+          }
+
+
+          def call_name(node):
+              func = node.func
+              if isinstance(func, ast.Attribute):
+                  return func.attr
+              if isinstance(func, ast.Name):
+                  return func.id
+              return ""
+
+
+          def keyword_node(call, name):
+              for keyword in call.keywords:
+                  if keyword.arg == name:
+                      return keyword.value
+              return None
+
+
+          def literal_keyword(call, name, default=None):
+              value = keyword_node(call, name)
+              if value is None:
+                  return default
+              try:
+                  return ast.literal_eval(value)
+              except (ValueError, TypeError, SyntaxError):
+                  return default
+
+
+          class CompatibilityShim(ast.NodeTransformer):
+              def __init__(self, expected):
+                  self.expected = expected
+                  self.seen = set()
+
+              def visit_Call(self, node):
+                  node = self.generic_visit(node)
+                  if call_name(node) != "AlterUniqueTogether":
+                      return node
+
+                  model_name = str(literal_keyword(node, "name", "")).lower()
+                  unique_together = literal_keyword(node, "unique_together", set()) or set()
+                  normalized = {tuple(fields) for fields in unique_together}
+                  matches = {
+                      (model_name, fields)
+                      for candidate_model, fields in self.expected
+                      if candidate_model == model_name and fields in normalized
+                  }
+                  if not matches:
+                      return node
+                  if len(matches) != 1:
+                      raise RuntimeError(
+                          f"ambiguous baseline compatibility target: {sorted(matches)!r}"
+                      )
+
+                  target = next(iter(matches))
+                  if target in self.seen:
+                      raise RuntimeError(f"duplicate baseline compatibility target: {target!r}")
+                  self.seen.add(target)
+
+                  # Preserve Django migration state exactly while omitting only
+                  # the historical MySQL-impossible database DDL. This mutation
+                  # is ephemeral on the checked-out PR base; the PR head itself
+                  # is never rewritten.
+                  wrapped = ast.Call(
+                      func=ast.Attribute(
+                          value=ast.Name(id="migrations", ctx=ast.Load()),
+                          attr="SeparateDatabaseAndState",
+                          ctx=ast.Load(),
+                      ),
+                      args=[],
+                      keywords=[
+                          ast.keyword(arg="database_operations", value=ast.List(elts=[], ctx=ast.Load())),
+                          ast.keyword(
+                              arg="state_operations",
+                              value=ast.List(elts=[node], ctx=ast.Load()),
+                          ),
+                      ],
+                  )
+                  return ast.copy_location(wrapped, node)
+
+
+          for path_text, expected in TARGETS.items():
+              path = Path(path_text)
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=path_text)
+              transformer = CompatibilityShim(expected)
+              tree = transformer.visit(tree)
+              ast.fix_missing_locations(tree)
+
+              missing = expected - transformer.seen
+              if missing:
+                  raise SystemExit(
+                      f"baseline compatibility contract changed in {path_text}; "
+                      f"expected targets not found: {sorted(missing)!r}"
+                  )
+              if transformer.seen != expected:
+                  raise SystemExit(
+                      f"unexpected baseline compatibility targets in {path_text}: "
+                      f"{sorted(transformer.seen - expected)!r}"
+                  )
+
+              path.write_text(ast.unparse(tree) + "\n", encoding="utf-8")
+              print(f"Applied targeted MySQL state-only shim: {path_text} {sorted(transformer.seen)!r}")
           PY
           python -m py_compile \
-            base/migrations/0002_initial.py \
-            payroll/migrations/0001_initial.py
-          git diff --check -- \
-            base/migrations/0002_initial.py \
-            payroll/migrations/0001_initial.py
-          git diff -- \
             base/migrations/0002_initial.py \
             payroll/migrations/0001_initial.py
 

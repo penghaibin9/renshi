@@ -1,5 +1,7 @@
 # 跃科高校人事系统开发栈：MySQL-only。
 # 新手入口：`make dev`；数据库控制台：`make db-shell`。
+# 本文件始终是开发配置（DEBUG=1 / 源码 bind mount）；生产环境必须使用
+# docker-compose.production.yml，不能通过 profile 把本开发栈“切成生产”。
 
 services:
   web:
@@ -80,7 +82,7 @@ services:
     depends_on:
       web:
         condition: service_healthy
-    profiles: ["production"]
+    profiles: ["proxy"]
 
 volumes:
   staticfiles:

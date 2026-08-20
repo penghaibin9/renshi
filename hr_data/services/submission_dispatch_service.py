@@ -10,6 +10,7 @@ to the HTTP layer as an error result rather than raised inside the transaction.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Optional
@@ -20,6 +21,8 @@ from django.utils import timezone
 from django.utils.module_loading import import_string
 
 from hr_data.models import SubmissionSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 class SubmissionDispatchError(Exception):
@@ -57,6 +60,13 @@ class SubmissionDispatchService:
     def _provider_path() -> str:
         return str(getattr(settings, "HR18_SUBMISSION_DISPATCH_PROVIDER", "") or "").strip()
 
+    @staticmethod
+    def _safe_provider_failure(exc: Exception) -> str:
+        # Provider exceptions may contain endpoint URLs, response bodies,
+        # credentials or vendor request IDs. Persist only the class; operators
+        # can correlate the structured server log with submission/tenant.
+        return f"{exc.__class__.__name__}: submission dispatch provider failed"
+
     @transaction.atomic
     def queue(self, submission_id) -> SubmissionDispatchResult:
         snapshot = self._lock(submission_id)
@@ -85,6 +95,12 @@ class SubmissionDispatchService:
         try:
             provider = import_string(provider_path)
         except Exception as exc:
+            logger.warning(
+                "HR18 dispatch provider load failed tenant=%s submission=%s class=%s",
+                self.tenant_id,
+                snapshot.id,
+                exc.__class__.__name__,
+            )
             raise SubmissionDispatchError(
                 "SUBMISSION_DISPATCH_UNAVAILABLE",
                 f"submission dispatch provider cannot be loaded: {type(exc).__name__}",
@@ -101,8 +117,14 @@ class SubmissionDispatchService:
                 actor_user_id=self.actor_user_id,
             )
         except Exception as exc:
+            logger.warning(
+                "HR18 dispatch provider failed tenant=%s submission=%s class=%s",
+                self.tenant_id,
+                snapshot.id,
+                exc.__class__.__name__,
+            )
             snapshot.status = SubmissionSnapshot.Status.DISPATCH_FAILED
-            snapshot.dispatch_error = str(exc)[:2000]
+            snapshot.dispatch_error = self._safe_provider_failure(exc)
             snapshot.updated_by = self.actor_user_id
             snapshot.save(
                 update_fields=[
@@ -116,7 +138,7 @@ class SubmissionDispatchService:
                 snapshot=snapshot,
                 queued=False,
                 dispatch_ref=snapshot.dispatch_ref or "",
-                error=snapshot.dispatch_error or "submission dispatch provider failed",
+                error=snapshot.dispatch_error,
             )
 
         if not isinstance(receipt, Mapping) or receipt.get("queued") is not True:

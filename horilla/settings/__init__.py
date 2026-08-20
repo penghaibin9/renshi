@@ -15,19 +15,19 @@ from importlib.util import find_spec
 
 from django.core.exceptions import ImproperlyConfigured
 
+from horilla.settings.runtime_seals import install_legacy_runtime_seals
+
 from .base import *  # noqa: F401,F403
 
-# Client / deployment overrides are independent. A missing addons.py must not
-# accidentally prevent local_settings.py from loading.
-try:
+# Optional override modules are optional only when the module itself is absent.
+# Never swallow an ImportError raised *inside* an existing override module: doing
+# so can silently drop production secrets/security settings and boot with the
+# base configuration instead of failing closed.
+if find_spec(f"{__package__}.addons") is not None:
     from .addons import *  # noqa: F401,F403
-except ImportError:
-    pass
 
-try:
+if find_spec(f"{__package__}.local_settings") is not None:
     from .local_settings import *  # noqa: F401,F403
-except ImportError:
-    pass
 
 CORE_HR_APPS = [
     "hr_control_center",  # HR01
@@ -60,6 +60,33 @@ CANONICAL_HR_APPS = CORE_HR_APPS + [
 for _app in CANONICAL_HR_APPS:
     if _app not in INSTALLED_APPS:  # noqa: F405
         INSTALLED_APPS.append(_app)  # noqa: F405
+
+# Platform support access is global infrastructure, not an HR Authority.
+if "platform_access" not in INSTALLED_APPS:  # noqa: F405
+    INSTALLED_APPS.append("platform_access")  # noqa: F405
+
+# Replace the legacy company middleware with a compatibility subclass that
+# supports platform-only superusers, then require audited tenant elevation
+# immediately after tenant resolution.
+_company_middleware = "base.middleware.CompanyMiddleware"
+_safe_company_middleware = "platform_access.middleware.SafeCompanyMiddleware"
+_elevation_middleware = "platform_access.middleware.PlatformTenantElevationMiddleware"
+if _company_middleware in MIDDLEWARE:  # noqa: F405
+    _company_index = MIDDLEWARE.index(_company_middleware)  # noqa: F405
+    MIDDLEWARE[_company_index] = _safe_company_middleware  # noqa: F405
+else:
+    _company_index = MIDDLEWARE.index(_safe_company_middleware)  # noqa: F405
+if _elevation_middleware not in MIDDLEWARE:  # noqa: F405
+    MIDDLEWARE.insert(_company_index + 1, _elevation_middleware)  # noqa: F405
+
+PLATFORM_TENANT_ELEVATION_MAX_MINUTES = int(
+    os.getenv("PLATFORM_TENANT_ELEVATION_MAX_MINUTES", "60")
+)
+
+# Install the final retired-Authority write seal after deployment/platform
+# middleware overrides, so neither local settings nor platform elevation wiring
+# can accidentally remove it.
+install_legacy_runtime_seals(globals())
 
 # PATCH-00 / takeover contract: MySQL is the one signing database for dev,
 # CI, migrations and production. Failing here is intentional.

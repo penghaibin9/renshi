@@ -1,29 +1,19 @@
-"""
-hr_qualification/providers/hr08.py —— HR08 外聘教师 eligibility Provider。
-
-总册 §14：正式外聘教师可按国家/地方制度参照双师认定。
-HR08 已交付 → 读取 HrExternalEngagement，输出 eligibility 证据。
-"""
+"""HR08 external-engagement eligibility provider for HR09."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date
 
-from django.utils import timezone
-
+from hr_qualification.constants import ProviderStatus
 from hr_qualification.providers.base import (
     HrEvidenceProvider,
+    ProviderError,
     ProviderEvidenceItem,
     ProviderEvidenceResult,
 )
 
-try:
-    from hr_external.models import HrExternalEngagement
-
-    _HR08_READY = True
-except ImportError:
-    _HR08_READY = False
+PROVIDER_VERSION = "hr08-engagement-evidence-v1"
 
 
 class Hr08EngagementProvider(HrEvidenceProvider):
@@ -40,41 +30,71 @@ class Hr08EngagementProvider(HrEvidenceProvider):
         as_of: date,
         source_version: str | None = None,
     ) -> ProviderEvidenceResult:
-        if not _HR08_READY:
-            return ProviderEvidenceResult.unavailable(
-                reason_code="HR08_NOT_READY",
-                message="HR08 兼职外聘教师模块尚未就绪。",
-            )
-
-        now = datetime.now(timezone.utc)
-        items: list[ProviderEvidenceItem] = []
-
-        engagements = HrExternalEngagement.objects.filter(
-            tenant_id=tenant_id,
-            person_id=person_id,
-            status__in=("ACTIVE", "DRAFT"),
+        from hr_external.public import (
+            ExternalEngagementEvidenceUnavailable,
+            get_formal_engagement_evidence,
         )
 
-        for eng in engagements:
-            duration_days = None
-            if eng.start_at:
-                end = eng.end_at or as_of
-                duration_days = (end - eng.start_at).days
+        try:
+            evidence = get_formal_engagement_evidence(
+                tenant_id=tenant_id,
+                person_id=person_id,
+                as_of=as_of,
+                source_version=source_version,
+            )
+        except ExternalEngagementEvidenceUnavailable as exc:
+            return ProviderEvidenceResult.unavailable(
+                reason_code=exc.code,
+                message=str(exc),
+                provider_version=PROVIDER_VERSION,
+            )
 
+        items = []
+        for engagement in evidence.rows:
+            duration_days = max(0, (as_of - engagement.start_at).days)
             items.append(
                 ProviderEvidenceItem(
                     source_domain="HR08_ENGAGEMENT",
                     source_object_type="HrExternalEngagement",
-                    source_object_id=str(eng.id),
-                    evidence_date=eng.start_at,
-                    title=f"External Engagement #{eng.engagement_no}",
-                    role=eng.category_id.name if eng.category_id_id else "External",
-                    quantitative_value=float(duration_days) if duration_days else None,
-                    verification_status="VERIFIED" if eng.status == "ACTIVE" else "UNVERIFIED",
+                    source_object_id=str(engagement.engagement_id),
+                    evidence_date=engagement.start_at,
+                    title=f"External Engagement #{engagement.engagement_no}",
+                    role=engagement.category_name or engagement.category_code,
+                    quantitative_value=float(duration_days),
+                    verification_status="VERIFIED",
+                    snapshot_json=engagement.snapshot(),
                 )
             )
 
+        source_updated_at = max(
+            (engagement.updated_at for engagement in evidence.rows),
+            default=None,
+        )
+        if evidence.uncertain_engagement_ids:
+            return ProviderEvidenceResult(
+                status=ProviderStatus.PARTIAL,
+                items=items,
+                errors=[
+                    ProviderError(
+                        code="HR08_ENGAGEMENT_HISTORY_UNAVAILABLE",
+                        message=(
+                            "historical HR08 engagement values cannot be proven for: "
+                            + ",".join(
+                                str(value)
+                                for value in evidence.uncertain_engagement_ids
+                            )
+                        ),
+                    )
+                ],
+                source_updated_at=source_updated_at,
+                provider_version=PROVIDER_VERSION,
+            )
         if not items:
-            return ProviderEvidenceResult.not_applicable()
-
-        return ProviderEvidenceResult.ok(items=items, source_updated_at=now)
+            return ProviderEvidenceResult.not_applicable(
+                provider_version=PROVIDER_VERSION
+            )
+        return ProviderEvidenceResult.ok(
+            items=items,
+            source_updated_at=source_updated_at,
+            provider_version=PROVIDER_VERSION,
+        )

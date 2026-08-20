@@ -159,10 +159,13 @@ class HorillaCompanyManager(models.Manager):
             return qs.none() if self._strict() else qs
 
         if company == "all":
-            # Only an authenticated superuser may intentionally request an
-            # unfiltered all-tenant view. Jobs never receive this bypass.
+            # Platform/superuser context is not a break-glass grant. In strict
+            # mode it must not turn an absent concrete school into an
+            # unfiltered tenant query. A platform operator must enter an
+            # explicit tenant context through an audited elevation path before
+            # school-level personnel data becomes visible.
             if request and getattr(request, "user", None) and request.user.is_superuser:
-                return qs
+                return qs.none() if self._strict() else qs
 
             filter_ids = None
             if request:

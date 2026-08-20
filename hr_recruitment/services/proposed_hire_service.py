@@ -21,6 +21,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.db_retry import retry_mysql_transaction
 from hr_recruitment.api.exceptions import PositionCapacityConflictError
 from hr_recruitment.constants import (
     ApplicationCanonicalStatus as S,
@@ -48,6 +49,7 @@ class ProposedHireService:
         self.tenant_id = tenant_id
         self.actor = actor
 
+    @retry_mysql_transaction(attempts=3, base_delay_seconds=0.05)
     @transaction.atomic
     def create(
         self,

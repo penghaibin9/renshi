@@ -1,17 +1,21 @@
 """HR13 review-evidence snapshot lifecycle.
 
-Review materials are frozen evidence for one title application.  HR13 records
+Review materials are frozen evidence for one title application. HR13 records
 what reviewers saw and where it came from, but it does not mutate HR03/09/10/12
-upstream authority facts.  Accepted evidence is immutable; corrections append a
+upstream authority facts. Accepted evidence is immutable; corrections append a
 new snapshot instead of rewriting accepted history.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_title.models import TitleApplicationCase, TitleMaterialSnapshot
 
@@ -62,6 +66,14 @@ class TitleMaterialService:
             raise TitleMaterialError("TITLE_CASE_NOT_FOUND", "application case not found")
         return case
 
+    def _get_case(self, case_id) -> TitleApplicationCase:
+        case = TitleApplicationCase.objects.filter(
+            id=case_id, tenant_id=self.tenant_id
+        ).first()
+        if case is None:
+            raise TitleMaterialError("TITLE_CASE_NOT_FOUND", "application case not found")
+        return case
+
     def _lock_material(self, material_id) -> TitleMaterialSnapshot:
         material = (
             TitleMaterialSnapshot.objects.select_for_update()
@@ -96,6 +108,67 @@ class TitleMaterialService:
                 "TITLE_MATERIAL_SNAPSHOT_INVALID", "snapshot_json must be an object"
             )
         return values
+
+    @staticmethod
+    def _content_hash(snapshot: dict) -> str:
+        raw = json.dumps(
+            snapshot,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def attach_hr12_final_assessment(
+        self,
+        *,
+        application_case_id,
+        assessment_result_id,
+        material_no: str,
+        as_of: date | None = None,
+    ) -> TitleMaterialSnapshot:
+        """Attach one HR12 FINALIZED result through the trusted source boundary.
+
+        Callers provide only identities. HR13 derives the authoritative snapshot
+        from HR12 and refuses tenant/person/as-of/version mismatches instead of
+        trusting arbitrary ``source_domain=HR12`` JSON from the request layer.
+        """
+
+        from hr_assessment.public import (
+            PROVIDER_VERSION,
+            AssessmentEvidenceUnavailable,
+            get_finalized_assessment_evidence,
+        )
+
+        case = self._get_case(application_case_id)
+        try:
+            evidence = get_finalized_assessment_evidence(
+                tenant_id=self.tenant_id,
+                person_id=case.person_id,
+                result_id=assessment_result_id,
+                as_of=as_of or timezone.localdate(),
+                source_version=PROVIDER_VERSION,
+            )
+        except AssessmentEvidenceUnavailable as exc:
+            raise TitleMaterialError(exc.code, str(exc)) from exc
+
+        snapshot = evidence.snapshot()
+        content_hash = evidence.content_hash or self._content_hash(snapshot)
+        return self.attach_snapshot(
+            TitleMaterialInput(
+                material_no=material_no,
+                application_case_id=case.id,
+                material_type="HR12_FINAL_ASSESSMENT",
+                display_name=(
+                    f"正式考核结果（{evidence.assessment_type}/{evidence.grade_code}）"
+                ),
+                content_hash=content_hash,
+                source_domain="HR12",
+                source_ref=str(evidence.result_id),
+                source_version=evidence.source_version,
+                snapshot_json=snapshot,
+            )
+        )
 
     @transaction.atomic
     def attach_snapshot(self, payload: TitleMaterialInput) -> TitleMaterialSnapshot:
