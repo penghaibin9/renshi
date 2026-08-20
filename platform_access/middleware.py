@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 
+from base.auth_backends import company_scoped_active, get_allowed_company_ids
 from base.context_processors import AllCompany
 from base.middleware import CompanyMiddleware as LegacyCompanyMiddleware
 from horilla.horilla_middlewares import get_selected_company, set_selected_company
@@ -29,6 +30,22 @@ def _company_icon_url(company):
         return icon.url if icon and getattr(icon, "name", None) else ""
     except ValueError:
         return ""
+
+
+def _normalize_company_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+def _reset_to_all_scope(request):
+    """Drop any concrete tenant from both session and execution context."""
+    if hasattr(request, "session"):
+        request.session["selected_company"] = "all"
+        request.session.modified = True
+    request.write_company_id = None
+    set_selected_company("all")
 
 
 class SafeCompanyMiddleware(LegacyCompanyMiddleware):
@@ -63,17 +80,64 @@ class SafeCompanyMiddleware(LegacyCompanyMiddleware):
 
 
 class PlatformTenantElevationMiddleware:
-    """Require an audited time-boxed grant before platform users enter a school."""
+    """Enforce the final tenant boundary after legacy company resolution.
+
+    There are two distinct privileged identities in this codebase:
+    - school-bound administrators may legitimately have ``is_superuser=True``
+      but still belong only to their assigned/work-info schools;
+    - platform-only superusers have no Employee identity and may enter one school
+      only through an audited, time-boxed elevation.
+
+    CompanyMiddleware historically exempted every superuser from tenant clamping.
+    This final boundary therefore re-validates concrete school membership for all
+    school-bound users, including school superusers, before any downstream view
+    executes.  It also canonicalizes ``request.write_company_id`` *after* the
+    current ContextVar has been resolved so an ``all`` request can never inherit
+    a write tenant from a previous request context.
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
 
+    def _school_bound_user(self, request, user, selected):
+        # Union/all and missing tenant are always read-only at this boundary.
+        request.write_company_id = None
+        if selected in (None, "", "all"):
+            return None
+
+        normalized = _normalize_company_id(selected)
+        if company_scoped_active():
+            allowed = getattr(request, "allowed_company_ids", None)
+            if allowed is None:
+                allowed = get_allowed_company_ids(user)
+            if normalized not in set(allowed or ()):
+                _reset_to_all_scope(request)
+                return JsonResponse(
+                    {
+                        "detail": (
+                            "The selected school is outside this account's tenant scope."
+                        )
+                    },
+                    status=403,
+                )
+
+        # A concrete, authorized tenant is the only valid implicit web write scope.
+        request.write_company_id = normalized
+        return None
+
     def __call__(self, request):
         user = getattr(request, "user", None)
-        if not is_platform_operator(user):
+        if not user or not getattr(user, "is_authenticated", False):
+            request.write_company_id = None
             return self.get_response(request)
 
         selected = get_selected_company()
+        if not is_platform_operator(user):
+            denied = self._school_bound_user(request, user, selected)
+            return denied if denied is not None else self.get_response(request)
+
+        # Platform-only identities never receive an implicit tenant write scope.
+        request.write_company_id = None
         if selected in (None, "", "all"):
             clear_elevation_session(request)
             if selected == "all" and _is_school_hr_path(request.path_info):
@@ -92,9 +156,7 @@ class PlatformTenantElevationMiddleware:
             request, expected_company_id=selected
         )
         if elevation is None:
-            request.session["selected_company"] = "all"
-            request.session.modified = True
-            set_selected_company("all")
+            _reset_to_all_scope(request)
             return JsonResponse(
                 {
                     "detail": (
@@ -104,4 +166,5 @@ class PlatformTenantElevationMiddleware:
                 status=403,
             )
 
+        request.write_company_id = elevation.company_id
         return self.get_response(request)
