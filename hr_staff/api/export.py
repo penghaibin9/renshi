@@ -117,4 +117,7 @@ def download_export(request, job_id):
     response["Content-Disposition"] = f'attachment; filename="hr03_export_{job_id}.csv"'
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "no-store"
+    # The one-time ticket is accepted in the URL for browser download support;
+    # never let that URL become a Referer on a subsequent request.
+    response["Referrer-Policy"] = "no-referrer"
     return response
