@@ -1,31 +1,67 @@
 # Production overlay for 跃科高校人事系统（MySQL-only）。
 # Usage: cp .env.dist .env && make prod
+# TLS must terminate at an ingress/LB that forwards X-Forwarded-Proto=https.
+
+x-production-env: &production-env
+  DEBUG: "0"
+  HORILLA_ENV: production
+  DB_HOST: db
+  DB_PORT: "3306"
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set CSRF_TRUSTED_ORIGINS in .env}
+  DATABASE_URL: ${DATABASE_URL:?Set MySQL DATABASE_URL in .env}
+  DB_INIT_PASSWORD: ${DB_INIT_PASSWORD:?Set DB_INIT_PASSWORD in .env}
+  REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-1}
+  SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-31536000}
+  PLATFORM_TENANT_ELEVATION_MAX_MINUTES: ${PLATFORM_TENANT_ELEVATION_MAX_MINUTES:-60}
 
 services:
+  # One release job owns schema migration and static collection. Web replicas
+  # start only after it succeeds, avoiding concurrent migrate/collectstatic races.
+  release:
+    build: .
+    env_file:
+      - .env
+    environment: *production-env
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >-
+      python manage.py migrate --noinput &&
+      python manage.py collectstatic --noinput &&
+      python manage.py check
+    volumes:
+      - staticfiles:/app/staticfiles
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   web:
     env_file:
       - .env
     environment: !override
-      DEBUG: "0"
-      HORILLA_ENV: production
-      DB_HOST: db
-      DB_PORT: "3306"
-      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS in .env}
-      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set CSRF_TRUSTED_ORIGINS in .env}
-      DATABASE_URL: ${DATABASE_URL:?Set MySQL DATABASE_URL in .env}
-      DB_INIT_PASSWORD: ${DB_INIT_PASSWORD:?Set DB_INIT_PASSWORD in .env}
-      REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
-      COMPANY_SCOPED_PERMISSIONS: "True"
-      TENANT_FAIL_CLOSED: "True"
-      SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-0}
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-}
       GUNICORN_LOG_LEVEL: ${GUNICORN_LOG_LEVEL:-info}
     volumes: !override
       - staticfiles:/app/staticfiles
       - media:/app/media
-    ports: !override
-      - "8000:8000"
+    ports: !reset []
+    expose:
+      - "8000"
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
     environment:
@@ -47,4 +83,4 @@ services:
         ]
 
   nginx:
-    profiles: !reset
+    profiles: !reset []
