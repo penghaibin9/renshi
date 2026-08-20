@@ -2,7 +2,7 @@
 hr_staff/api/export.py —— 权威导出 API（§24.4/§29.3，P1-h）。
 
 POST /api/hr/v1/staff/export  {purpose, staffIds, fields}     创建导出（需 hr.staff.export）
-GET  /api/hr/v1/staff/export/{job_id}/download?ticket=...     下载（一次性 ticket）
+GET  /api/hr/v1/staff/export/{job_id}/download?ticket=...     下载（申请人 + 权限 + 一次性 ticket）
 敏感字段（work_phone/birth_year）需 hr.staff.export_sensitive 权限。
 """
 
@@ -22,6 +22,7 @@ from hr_staff.api.base import (
 from hr_staff.context import HrStaffContextError
 from hr_staff.permissions import require_hr_staff_permission
 from hr_staff.services.export_service import (
+    ExportContentUnavailable,
     ExportJobNotFound,
     ExportPolicyDenied,
     ExportService,
@@ -50,9 +51,20 @@ def create_export(request):
     purpose = body.get("purpose", "")
     staff_ids = body.get("staffIds", [])
     fields = body.get("fields", [])
+    if not isinstance(staff_ids, list) or not isinstance(fields, list):
+        return error_response(
+            request,
+            "INVALID_REQUEST",
+            "staffIds 和 fields 必须是数组",
+            status=400,
+        )
     has_export_sensitive = request.user.has_perm("hr.staff.export_sensitive")
 
-    svc = ExportService(resp.tenant_id, actor_user_id=request.user.id)
+    svc = ExportService(
+        resp.tenant_id,
+        actor_user_id=request.user.id,
+        context=resp,
+    )
     try:
         job = svc.create_export(
             purpose=purpose,
@@ -62,6 +74,8 @@ def create_export(request):
         )
     except ExportPolicyDenied as exc:
         return error_response(request, exc.code, str(exc), status=403)
+    except ExportContentUnavailable as exc:
+        return error_response(request, exc.code, str(exc), status=503)
 
     payload = api_root(request)
     payload["schemaVersion"] = SCHEMA_EXPORT
@@ -78,21 +92,29 @@ def create_export(request):
 
 
 @require_GET
+@require_hr_staff_permission("hr.staff.export")
 def download_export(request, job_id):
-    """下载导出（一次性 ticket；返回 CSV 文件）。"""
+    """下载导出：权限、申请人、tenant 与一次性 ticket 四重约束。"""
     resp = _make(request)
     if not hasattr(resp, "tenant_id"):
         return resp
     token = request.GET.get("ticket", "")
-    svc = ExportService(resp.tenant_id, actor_user_id=request.user.id)
+    svc = ExportService(
+        resp.tenant_id,
+        actor_user_id=request.user.id,
+        context=resp,
+    )
     try:
         data = svc.consume_download(job_id, token)
     except ExportJobNotFound:
         return error_response(request, "EXPORT_NOT_FOUND", "导出任务不存在", status=404)
     except ExportPolicyDenied as exc:
         return error_response(request, exc.code, str(exc), status=403)
+    except ExportContentUnavailable as exc:
+        return error_response(request, exc.code, str(exc), status=503)
 
     response = HttpResponse(data["content"], content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="hr03_export_{job_id}.csv"'
     response["X-Content-Type-Options"] = "nosniff"
+    response["Cache-Control"] = "no-store"
     return response
