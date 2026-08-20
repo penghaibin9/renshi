@@ -15,6 +15,8 @@ from importlib.util import find_spec
 
 from django.core.exceptions import ImproperlyConfigured
 
+from horilla.settings.runtime_seals import install_legacy_runtime_seals
+
 from .base import *  # noqa: F401,F403
 
 # Client / deployment overrides are independent. A missing addons.py must not
@@ -82,6 +84,11 @@ if _elevation_middleware not in MIDDLEWARE:  # noqa: F405
 PLATFORM_TENANT_ELEVATION_MAX_MINUTES = int(
     os.getenv("PLATFORM_TENANT_ELEVATION_MAX_MINUTES", "60")
 )
+
+# Install the final retired-Authority write seal after deployment/platform
+# middleware overrides, so neither local settings nor platform elevation wiring
+# can accidentally remove it.
+install_legacy_runtime_seals(globals())
 
 # PATCH-00 / takeover contract: MySQL is the one signing database for dev,
 # CI, migrations and production. Failing here is intentional.
