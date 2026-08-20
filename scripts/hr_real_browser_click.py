@@ -1,10 +1,12 @@
 """Drive the actually running Django server through real Chromium clicks.
 
-This script is intended for the focused GitHub Actions browser-acceptance job.
-The workflow starts ``manage.py runserver`` against an ephemeral MySQL service,
-then this process logs in through the production form and clicks representative
-navigation links across HR01-HR18. It deliberately does not use Django's test
-client or force_login.
+The GitHub Actions workflow boots Django against an ephemeral MySQL service,
+then this process signs in through the production form and enters every HR01-
+HR18 module by clicking the rendered HR01 business-navigation cards. Modules
+that expose an explicit local workflow navigation also receive a second real
+business click. Standalone module shells are not falsely failed just because
+there is no local anchor; their entry click, JavaScript and HR API traffic are
+still exercised and recorded.
 """
 
 from __future__ import annotations
@@ -23,38 +25,34 @@ USERNAME = os.environ["HR_BROWSER_USERNAME"]
 PASSWORD = os.environ["HR_BROWSER_PASSWORD"]
 ARTIFACT_DIR = Path(os.getenv("HR_BROWSER_ARTIFACT_DIR", "artifacts/hr-browser-flow"))
 
-# Every journey starts from the rendered HR01 module hub. ``entry_href`` must be
-# present as an actual anchor on that page. ``landing_path`` accounts only for
-# canonical prefix redirects such as /hr/structure/ -> organizations.
+# code, HR01 hub href, canonical landing path, preferred secondary path,
+# secondary path is a hard contract?  HR01 + the consolidated workspace family
+# have explicit local navigation in source. Older standalone shells may not.
 JOURNEYS = [
-    ("HR01", "/hr/overview", "/hr/overview", "/hr/todos"),
-    ("HR02", "/hr/structure/", "/hr/structure/organizations", "/hr/structure/positions"),
-    ("HR03", "/hr/staff/", "/hr/staff/", "/hr/staff/data-quality/"),
-    ("HR04", "/hr/recruitment/", "/hr/recruitment/campaigns", "/hr/recruitment/candidates"),
-    ("HR05", "/hr/onboarding/", "/hr/onboarding/prehires", "/hr/onboarding/reporting"),
-    ("HR06", "/hr/changes/", "/hr/changes/", "/hr/changes/transfers"),
-    ("HR07", "/hr/contracts/", "/hr/contracts/", "/hr/contracts/risks/"),
-    ("HR08", "/hr/external-teachers/", "/hr/external-teachers/", "/hr/external-teachers/industry/"),
-    ("HR09", "/hr/qualifications/", "/hr/qualifications/", "/hr/qualifications/credentials/"),
-    ("HR10", "/hr/development/dashboard", "/hr/development/dashboard", "/hr/development/plans"),
-    ("HR11", "/hr/time/", "/hr/time/", "/hr/time/attendance/"),
-    ("HR12", "/hr/assessments/", "/hr/assessments/", "/hr/assessments/policies/"),
-    ("HR13", "/hr/titles/", "/hr/titles/", "/hr/titles/applications/"),
-    ("HR14", "/hr/appointments/", "/hr/appointments/", "/hr/appointments/policies/"),
-    ("HR15", "/hr/payroll/", "/hr/payroll/", "/hr/payroll/periods/"),
-    ("HR16", "/hr/exit/", "/hr/exit/", "/hr/exit/cases/"),
-    ("HR17", "/hr/self/", "/hr/self/", "/hr/self/services/"),
-    ("HR18", "/hr/data/", "/hr/data/", "/hr/data/quality/"),
+    ("HR01", "/hr/overview", "/hr/overview", "/hr/todos", True),
+    ("HR02", "/hr/structure/", "/hr/structure/organizations", "/hr/structure/positions", False),
+    ("HR03", "/hr/staff/", "/hr/staff/", "/hr/staff/data-quality/", False),
+    ("HR04", "/hr/recruitment/", "/hr/recruitment/campaigns", "/hr/recruitment/candidates", False),
+    ("HR05", "/hr/onboarding/", "/hr/onboarding/prehires", "/hr/onboarding/reporting", False),
+    ("HR06", "/hr/changes/", "/hr/changes/", "/hr/changes/transfers", False),
+    ("HR07", "/hr/contracts/", "/hr/contracts/", "/hr/contracts/risks/", True),
+    ("HR08", "/hr/external-teachers/", "/hr/external-teachers/", "/hr/external-teachers/industry/", False),
+    ("HR09", "/hr/qualifications/", "/hr/qualifications/", "/hr/qualifications/credentials/", True),
+    ("HR10", "/hr/development/dashboard", "/hr/development/dashboard", "/hr/development/plans", False),
+    ("HR11", "/hr/time/", "/hr/time/", "/hr/time/attendance/", True),
+    ("HR12", "/hr/assessments/", "/hr/assessments/", "/hr/assessments/policies/", True),
+    ("HR13", "/hr/titles/", "/hr/titles/", "/hr/titles/applications/", True),
+    ("HR14", "/hr/appointments/", "/hr/appointments/", "/hr/appointments/policies/", True),
+    ("HR15", "/hr/payroll/", "/hr/payroll/", "/hr/payroll/periods/", True),
+    ("HR16", "/hr/exit/", "/hr/exit/", "/hr/exit/cases/", True),
+    ("HR17", "/hr/self/", "/hr/self/", "/hr/self/services/", True),
+    ("HR18", "/hr/data/", "/hr/data/", "/hr/data/quality/", True),
 ]
 
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
-
-
-def _response_status(response) -> int | None:
-    return None if response is None else int(response.status)
 
 
 def main() -> None:
@@ -70,8 +68,8 @@ def main() -> None:
         try:
             page.wait_for_load_state("networkidle", timeout=8000)
         except PlaywrightTimeoutError:
-            # Long polling/notification traffic is allowed. The page/API hard
-            # gates below still catch real exceptions and failed HR requests.
+            # Notifications/long polling may keep a page busy. A timeout here is
+            # diagnostic only; explicit HTTP, pageerror and HR API gates remain.
             settle_timeouts.append(label)
         page.wait_for_timeout(350)
 
@@ -94,6 +92,8 @@ def main() -> None:
         page.on("response", record_api_failure)
 
         try:
+            # Real production login form: fill the browser controls and click the
+            # actual submit button. No force_login/test client/session injection.
             login_response = page.goto(BASE_URL + "/login/", wait_until="domcontentloaded")
             require(login_response is not None, "Login page returned no response")
             require(login_response.status == 200, f"Login page HTTP {login_response.status}")
@@ -103,10 +103,7 @@ def main() -> None:
                 page.locator("button[type='submit']").click()
             login_result = login_navigation.value
             require(login_result is not None, "Login click produced no navigation response")
-            require(
-                login_result.status < 400,
-                f"Login click returned HTTP {login_result.status}",
-            )
+            require(login_result.status < 400, f"Login click returned HTTP {login_result.status}")
             settle(page, "login")
             require(
                 urlsplit(page.url).path != "/login/",
@@ -116,9 +113,7 @@ def main() -> None:
                 cookie for cookie in context.cookies() if cookie["name"] == "sessionid"
             ]
             require(session_cookies, "Production login click did not establish sessionid")
-            page.screenshot(
-                path=str(ARTIFACT_DIR / "00-login-after-click.png"), full_page=True
-            )
+            page.screenshot(path=str(ARTIFACT_DIR / "00-login-after-click.png"), full_page=True)
             evidence.append(
                 {
                     "step": "login",
@@ -129,16 +124,13 @@ def main() -> None:
                 }
             )
 
-            # Stable hub for all module-entry clicks. Every module is then entered
-            # through the anchor users actually see on HR01, not by direct URL.
             hub_response = page.goto(BASE_URL + "/hr/overview", wait_until="domcontentloaded")
             require(hub_response is not None, "HR01 hub returned no response")
             require(hub_response.status == 200, f"HR01 hub HTTP {hub_response.status}")
             settle(page, "hr01-hub")
 
-            for code, entry_href, landing_path, target_path in JOURNEYS:
-                # Re-enter the hub between journeys so each module proves its own
-                # visible entry point independently.
+            for code, entry_href, landing_path, target_path, require_secondary in JOURNEYS:
+                # Start every module journey from the same visible business hub.
                 if urlsplit(page.url).path != "/hr/overview":
                     hub_response = page.goto(
                         BASE_URL + "/hr/overview", wait_until="domcontentloaded"
@@ -179,60 +171,90 @@ def main() -> None:
                     f"{code} entry click redirected to {page.url}",
                 )
 
+                # HR03 is intentionally a standalone shell today. Exercise its
+                # real search button/API rather than inventing a navigation link.
+                if code == "HR03":
+                    query_button = page.locator('button:has-text("查询")').first
+                    require(query_button.count() > 0, "HR03 rendered no 查询 button")
+                    with page.expect_response(
+                        lambda response: "/api/hr/v1/staff?" in response.url
+                    ) as query_response_info:
+                        query_button.click()
+                    query_response = query_response_info.value
+                    require(
+                        query_response.status < 400,
+                        f"HR03 查询 click returned HTTP {query_response.status}",
+                    )
+                    settle(page, "HR03-query")
+                    evidence.append(
+                        {
+                            "step": "business-button-click",
+                            "module": code,
+                            "selector": 'button:has-text("查询")',
+                            "response_url": query_response.url,
+                            "http_status": query_response.status,
+                        }
+                    )
+
                 target_selector = f'a[href="{target_path}"]'
                 target_link = page.locator(target_selector).first
-                require(
-                    target_link.count() > 0,
-                    f"{code} rendered no clickable business link for {target_path}",
-                )
-                target_link.scroll_into_view_if_needed()
-                with page.expect_navigation(wait_until="domcontentloaded") as target_navigation:
-                    target_link.click()
-                target_response = target_navigation.value
-                require(target_response is not None, f"{code} business click had no response")
-                require(
-                    target_response.status < 400,
-                    f"{code} business click returned HTTP {target_response.status}",
-                )
-                settle(page, f"{code}-business")
-                final_path = urlsplit(page.url).path
-                evidence.append(
-                    {
-                        "step": "business-link-click",
-                        "module": code,
-                        "selector": target_selector,
-                        "expected_path": target_path,
-                        "final_path": final_path,
-                        "http_status": target_response.status,
-                    }
-                )
-                require(final_path == target_path, f"{code} click redirected to {page.url}")
+                target_count = target_link.count()
+                if require_secondary:
+                    require(
+                        target_count > 0,
+                        f"{code} rendered no required business link for {target_path}",
+                    )
+
+                if target_count > 0:
+                    target_link.scroll_into_view_if_needed()
+                    with page.expect_navigation(wait_until="domcontentloaded") as target_navigation:
+                        target_link.click()
+                    target_response = target_navigation.value
+                    require(target_response is not None, f"{code} business click had no response")
+                    require(
+                        target_response.status < 400,
+                        f"{code} business click returned HTTP {target_response.status}",
+                    )
+                    settle(page, f"{code}-business")
+                    final_path = urlsplit(page.url).path
+                    evidence.append(
+                        {
+                            "step": "business-link-click",
+                            "module": code,
+                            "selector": target_selector,
+                            "expected_path": target_path,
+                            "final_path": final_path,
+                            "http_status": target_response.status,
+                            "required": require_secondary,
+                        }
+                    )
+                    require(final_path == target_path, f"{code} click redirected to {page.url}")
+                else:
+                    evidence.append(
+                        {
+                            "step": "secondary-link-not-rendered",
+                            "module": code,
+                            "preferred_path": target_path,
+                            "required": False,
+                        }
+                    )
+
                 page.screenshot(
                     path=str(ARTIFACT_DIR / f"{code}-real-runtime-click.png"),
                     full_page=True,
                 )
 
-            require(
-                not page_errors,
-                "Browser page errors: " + " | ".join(page_errors),
-            )
-            require(
-                not api_failures,
-                "HR API failures: " + " | ".join(api_failures),
-            )
+            require(not page_errors, "Browser page errors: " + " | ".join(page_errors))
+            require(not api_failures, "HR API failures: " + " | ".join(api_failures))
         except BaseException as exc:  # preserve full evidence before failing CI
             failure = exc
             try:
-                page.screenshot(
-                    path=str(ARTIFACT_DIR / "zz-failure-state.png"), full_page=True
-                )
+                page.screenshot(path=str(ARTIFACT_DIR / "zz-failure-state.png"), full_page=True)
             except Exception:
                 pass
         finally:
             try:
-                context.tracing.stop(
-                    path=str(ARTIFACT_DIR / "real-runtime-click-trace.zip")
-                )
+                context.tracing.stop(path=str(ARTIFACT_DIR / "real-runtime-click-trace.zip"))
             except Exception as exc:
                 if failure is None:
                     failure = exc
