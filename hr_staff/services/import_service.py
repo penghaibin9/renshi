@@ -8,6 +8,7 @@ hr_staff/services/import_service.py —— 导入 staging 服务（总册 §24�
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Optional
 
 from django.db import transaction
@@ -15,6 +16,9 @@ from django.utils import timezone
 
 from hr_staff.constants import ImportJobStatus
 from hr_staff.models import HrImportIssue, HrImportJob, HrImportRow
+
+COMMIT_LEASE_SECONDS = 30 * 60
+COMMIT_HEARTBEAT_EVERY_ROWS = 25
 
 
 class ImportStateConflict(Exception):
@@ -43,6 +47,8 @@ class ImportService:
         """把上传行解析进 staging（不写 authority）。"""
         if job.tenant_id != self.tenant_id:
             raise ImportStateConflict("导入任务不属于当前学校")
+        if job.status != ImportJobStatus.UPLOADED or job.rows.exists():
+            raise ImportStateConflict("导入任务已经解析，禁止重复写入 staging")
         job.status = ImportJobStatus.VALIDATING
         job.total_rows = len(rows)
         job.save(update_fields=["status", "total_rows"])
@@ -102,13 +108,49 @@ class ImportService:
     # ------------------------------------------------------------------
     # Commit（逐行独立事务 + checkpoint；同人员多表由 row_applier 内部原子）
     # ------------------------------------------------------------------
+    @staticmethod
+    def _checkpoint_time(value):
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+        return parsed
+
+    @classmethod
+    def _commit_lease_is_stale(cls, job, checkpoint, now):
+        heartbeat = cls._checkpoint_time(checkpoint.get("commit_heartbeat_at"))
+        if heartbeat is None:
+            heartbeat = cls._checkpoint_time(checkpoint.get("commit_started_at"))
+        if heartbeat is None:
+            # Backward-compatible recovery for jobs left COMMITTING before the
+            # lease fields existed. updated_at is the best durable heartbeat.
+            heartbeat = job.updated_at
+        if heartbeat is None:
+            return True
+        return heartbeat <= now - timedelta(seconds=COMMIT_LEASE_SECONDS)
+
+    def _save_commit_heartbeat(self, locked, checkpoint):
+        checkpoint["commit_heartbeat_at"] = timezone.now().isoformat()
+        checkpoint["commit_actor_user_id"] = self.actor_user_id
+        locked.checkpoint = checkpoint
+        locked.save(update_fields=["checkpoint"])
+
     def commit(self, job: HrImportJob, row_applier, batch_size: int = 100) -> dict:
-        """提交一个 READY_TO_COMMIT job；同一个 job 只允许一次执行者。
+        """提交 READY_TO_COMMIT job，并可安全恢复失联的 COMMITTING job。
 
         ``row_applier`` 收到 staging 数据副本，并附加两个仅服务端生成的保留键：
         ``_import_job_id`` / ``_import_row_no``。它们形成稳定、job-scoped 的业务来源
         id，避免不同导入任务把 ``import-row-0`` 当成同一来源。
+
+        每一行的 authority 写入与 ``commit_status=COMMITTED`` 在同一个数据库事务
+        内完成，因此进程崩溃不会留下“事实已写、staging 未记账”的半行。COMMITTING
+        状态用 30 分钟持久 heartbeat 租约防止并发执行；租约过期后可从未提交行恢复。
         """
+        now = timezone.now()
         with transaction.atomic():
             locked = HrImportJob.objects.select_for_update().get(
                 tenant_id=self.tenant_id,
@@ -116,17 +158,24 @@ class ImportService:
             )
             if locked.status in (ImportJobStatus.COMPLETED, ImportJobStatus.PARTIAL_FAILED):
                 return self._result_for_job(locked)
-            if locked.status == ImportJobStatus.COMMITTING:
-                raise ImportStateConflict("导入任务正在提交，请勿重复提交")
-            if locked.status != ImportJobStatus.READY_TO_COMMIT:
-                raise ImportStateConflict(f"当前状态 {locked.status} 不允许提交")
-            locked.status = ImportJobStatus.COMMITTING
-            locked.save(update_fields=["status"])
 
-        committed = 0
+            checkpoint = dict(locked.checkpoint or {})
+            if locked.status == ImportJobStatus.COMMITTING:
+                if not self._commit_lease_is_stale(locked, checkpoint, now):
+                    raise ImportStateConflict("导入任务正在提交，请勿重复提交")
+                checkpoint["resumed_at"] = now.isoformat()
+                checkpoint["resume_count"] = int(checkpoint.get("resume_count", 0) or 0) + 1
+            elif locked.status != ImportJobStatus.READY_TO_COMMIT:
+                raise ImportStateConflict(f"当前状态 {locked.status} 不允许提交")
+
+            checkpoint.setdefault("commit_started_at", now.isoformat())
+            checkpoint["commit_heartbeat_at"] = now.isoformat()
+            checkpoint["commit_actor_user_id"] = self.actor_user_id
+            locked.status = ImportJobStatus.COMMITTING
+            locked.checkpoint = checkpoint
+            locked.save(update_fields=["status", "checkpoint"])
+
         validation_failed = locked.rows.filter(is_valid=False).count()
-        commit_failed = 0
-        checkpoint = dict(locked.checkpoint or {})
         processed = 0
 
         valid_rows = locked.rows.filter(is_valid=True).order_by("row_no")
@@ -141,7 +190,6 @@ class ImportService:
                     row_applier(row_payload, checkpoint)
                     row.commit_status = "COMMITTED"
                     row.save(update_fields=["commit_status"])
-                committed += 1
                 checkpoint["last_committed_row"] = row.row_no
             except Exception as exc:
                 safe_message = self._safe_commit_error(exc)
@@ -158,13 +206,20 @@ class ImportService:
                         error_code="COMMIT_FAILED",
                         message=safe_message[:500],
                     )
-                commit_failed += 1
             processed += 1
-            if processed % 50 == 0:
-                locked.checkpoint = checkpoint
-                locked.save(update_fields=["checkpoint"])
+            if processed % COMMIT_HEARTBEAT_EVERY_ROWS == 0:
+                self._save_commit_heartbeat(locked, checkpoint)
 
-        failed = validation_failed + commit_failed
+        # Recount durable row state rather than relying on counters from this
+        # process. That makes stale-lease resume and idempotent replay correct.
+        committed = locked.rows.filter(commit_status="COMMITTED").count()
+        failed = locked.rows.filter(is_valid=False).count()
+        checkpoint["committed_rows"] = committed
+        checkpoint["failed_rows"] = failed
+        checkpoint["commit_finished_at"] = timezone.now().isoformat()
+        checkpoint.pop("commit_heartbeat_at", None)
+        checkpoint.pop("commit_actor_user_id", None)
+
         locked.checkpoint = checkpoint
         locked.committed_by = self.actor_user_id
         locked.committed_at = timezone.now()
@@ -210,8 +265,6 @@ class StaffMasterRowApplier:
 
     @transaction.atomic
     def __call__(self, row_data: dict, checkpoint: dict):
-        from datetime import date
-
         from hr_staff.constants import AssignmentType
         from hr_staff.services.assignment_service import AssignmentService
         from hr_staff.services.employment_service import EmploymentService
@@ -236,7 +289,9 @@ class StaffMasterRowApplier:
             staff_category_code=(row_data.get("staff_category_code") or "TEACHER").strip(),
             source="MIGRATED",
         )
-        effective_from = self._parse_date(row_data.get("effective_from")) or date.today()
+        # Default business date must follow the configured school timezone, not
+        # the container host's calendar date around midnight.
+        effective_from = self._parse_date(row_data.get("effective_from")) or timezone.localdate()
         job_id = str(row_data.get("_import_job_id") or "direct")
         row_no = row_data.get("_import_row_no")
         if row_no is None:
@@ -267,7 +322,6 @@ class StaffMasterRowApplier:
     def _parse_date(value):
         if not value:
             return None
-        from datetime import datetime
 
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
             try:
