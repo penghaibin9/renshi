@@ -33,12 +33,29 @@ class ArchiveTransferService:
             ExitCase.Status.EFFECTIVE,
         }
     )
+    MAX_DESTINATION_TYPE = 64
+    MAX_DESTINATION_NAME = 200
+    MAX_DESTINATION_ADDRESS = 500
+    MAX_TRACKING_NO = 128
+    MAX_ATTACHMENT_REF = 256
+    MAX_RECEIVED_BY = 200
+    MAX_RETURN_REASON = 2000
 
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
         if not tenant_id:
             raise ArchiveTransferError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
         self.tenant_id = int(tenant_id)
         self.actor_user_id = actor_user_id
+
+    @staticmethod
+    def _bounded_text(value, *, field: str, max_length: int) -> str:
+        text = str(value or "").strip()
+        if len(text) > max_length:
+            raise ArchiveTransferError(
+                "ARCHIVE_TRANSFER_FIELD_TOO_LONG",
+                f"{field} is limited to {max_length} characters",
+            )
+        return text
 
     def _lock_case(self, case_id) -> ExitCase:
         case = (
@@ -82,10 +99,32 @@ class ArchiveTransferService:
         supersedes_receipt_id=None,
     ) -> ArchiveTransferReceipt:
         transfer_no = str(transfer_no or "").strip()
-        destination_name = str(destination_name or "").strip()
+        destination_name = self._bounded_text(
+            destination_name,
+            field="destination_name",
+            max_length=self.MAX_DESTINATION_NAME,
+        )
+        destination_type = self._bounded_text(
+            destination_type,
+            field="destination_type",
+            max_length=self.MAX_DESTINATION_TYPE,
+        )
+        destination_address = self._bounded_text(
+            destination_address,
+            field="destination_address",
+            max_length=self.MAX_DESTINATION_ADDRESS,
+        )
         transfer_method = str(transfer_method or "").strip().upper()
-        tracking_no = str(tracking_no or "").strip()
-        archive_attachment_ref = str(archive_attachment_ref or "").strip()
+        tracking_no = self._bounded_text(
+            tracking_no,
+            field="tracking_no",
+            max_length=self.MAX_TRACKING_NO,
+        )
+        archive_attachment_ref = self._bounded_text(
+            archive_attachment_ref,
+            field="archive_attachment_ref",
+            max_length=self.MAX_ATTACHMENT_REF,
+        )
         if not transfer_no or len(transfer_no) > 64:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_NO_INVALID", "transfer_no is required and limited to 64 characters"
@@ -107,9 +146,9 @@ class ArchiveTransferService:
         expected = {
             "case_id": str(case.id),
             "person_id": str(case.person_id),
-            "destination_type": str(destination_type or "").strip(),
+            "destination_type": destination_type,
             "destination_name": destination_name,
-            "destination_address": str(destination_address or "").strip(),
+            "destination_address": destination_address,
             "transfer_method": transfer_method,
             "tracking_no": tracking_no,
             "archive_attachment_ref": archive_attachment_ref,
@@ -169,9 +208,9 @@ class ArchiveTransferService:
             transfer_no=transfer_no,
             case_id=case.id,
             person_id=case.person_id,
-            destination_type=str(destination_type or "").strip(),
+            destination_type=destination_type,
             destination_name=destination_name,
-            destination_address=str(destination_address or "").strip(),
+            destination_address=destination_address,
             transfer_method=transfer_method,
             tracking_no=tracking_no,
             archive_attachment_ref=archive_attachment_ref,
@@ -190,7 +229,11 @@ class ArchiveTransferService:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_INVALID_STATE", f"cannot send receipt in {receipt.status}"
             )
-        evidence = str(archive_attachment_ref or receipt.archive_attachment_ref or "").strip()
+        evidence = self._bounded_text(
+            archive_attachment_ref or receipt.archive_attachment_ref or "",
+            field="archive_attachment_ref",
+            max_length=self.MAX_ATTACHMENT_REF,
+        )
         if not evidence:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_EVIDENCE_REQUIRED",
@@ -240,8 +283,16 @@ class ArchiveTransferService:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_INVALID_STATE", f"cannot receive receipt in {receipt.status}"
             )
-        received_by = str(received_by or "").strip()
-        evidence = str(receipt_attachment_ref or "").strip()
+        received_by = self._bounded_text(
+            received_by,
+            field="received_by",
+            max_length=self.MAX_RECEIVED_BY,
+        )
+        evidence = self._bounded_text(
+            receipt_attachment_ref,
+            field="receipt_attachment_ref",
+            max_length=self.MAX_ATTACHMENT_REF,
+        )
         if not received_by or not evidence:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_RECEIPT_EVIDENCE_REQUIRED",
@@ -292,12 +343,20 @@ class ArchiveTransferService:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_INVALID_STATE", f"cannot return receipt in {receipt.status}"
             )
-        reason = str(reason or "").strip()
+        reason = self._bounded_text(
+            reason,
+            field="return_reason",
+            max_length=self.MAX_RETURN_REASON,
+        )
         if not reason:
             raise ArchiveTransferError(
                 "ARCHIVE_TRANSFER_RETURN_REASON_REQUIRED", "return reason is required"
             )
-        evidence = str(receipt_attachment_ref or "").strip()
+        evidence = self._bounded_text(
+            receipt_attachment_ref,
+            field="receipt_attachment_ref",
+            max_length=self.MAX_ATTACHMENT_REF,
+        )
         receipt.return_reason = reason
         if evidence:
             receipt.receipt_attachment_ref = evidence

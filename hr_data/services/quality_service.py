@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from django.utils.module_loading import import_string
 from hr_data.models import DataQualityFinding, DataQualityRuleVersion, DataQualityRun
 from hr_data.services.source_gate import SourceStatus
 
+
+logger = logging.getLogger(__name__)
 
 _CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 _DOMAIN_RE = re.compile(r"^HR(?:0[1-9]|1[0-8])$")
@@ -268,7 +271,22 @@ class DataQualityExecutionService:
                 actor_user_id=self.actor_user_id,
             )
         except Exception as exc:
-            return SourceStatus.ERROR.value, "", "", (), str(exc)[:2000]
+            logger.exception(
+                "HR18 quality provider failed: tenant=%s domain=%s rule=%s/%s provider=%s error_type=%s",
+                self.tenant_id,
+                rule.source_domain,
+                rule.rule_code,
+                rule.version_no,
+                provider_path,
+                type(exc).__name__,
+            )
+            return (
+                SourceStatus.ERROR.value,
+                "",
+                "",
+                (),
+                "quality provider execution failed",
+            )
         if not isinstance(receipt, Mapping):
             return SourceStatus.ERROR.value, "", "", (), "quality provider returned a non-object receipt"
         source_status = str(receipt.get("status") or "").strip().upper()

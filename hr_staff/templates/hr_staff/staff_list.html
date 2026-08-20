@@ -16,16 +16,19 @@
     * { box-sizing: border-box; }
     body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: var(--hr-bg-page); color: var(--hr-text-primary); }
     .page { max-width: 1480px; margin: 0 auto; padding: 24px; }
-    .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
     .header h1 { font-size: 22px; margin: 0; }
-    .subtitle { color: var(--hr-text-secondary); font-size: 13px; }
+    .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .subtitle { color: var(--hr-text-secondary); font-size: 13px; margin-top: 4px; }
     .stats { display: flex; gap: 24px; padding: 12px 0 16px; border-bottom: 1px solid var(--hr-border-subtle); margin-bottom: 16px; }
     .stat { font-size: 13px; color: var(--hr-text-secondary); }
     .stat b { font-size: 20px; color: var(--hr-text-primary); display: block; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .toolbar input, .toolbar select { padding: 7px 10px; border: 1px solid var(--hr-border-subtle); border-radius: 8px; font-size: 13px; background: #fff; }
-    .btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--hr-border-subtle); background: #fff; font-size: 13px; cursor: pointer; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--hr-border-subtle); background: #fff; color: var(--hr-text-primary); font-size: 13px; cursor: pointer; text-decoration: none; }
+    .btn:hover { background: #f8fafc; }
     .btn.primary { background: var(--hr-color-primary); color: #fff; border-color: var(--hr-color-primary); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
     table { width: 100%; border-collapse: collapse; background: var(--hr-bg-card); border-radius: var(--hr-radius-md); box-shadow: var(--hr-shadow-card); overflow: hidden; font-size: 13px; }
     th { text-align: left; padding: 10px 12px; background: #f9fafb; color: var(--hr-text-secondary); font-weight: 600; border-bottom: 1px solid var(--hr-border-subtle); }
     td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
@@ -38,6 +41,26 @@
     .link { color: var(--hr-color-primary); cursor: pointer; text-decoration: none; }
     .pager { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 13px; color: var(--hr-text-secondary); }
     .empty { text-align: center; padding: 48px; color: var(--hr-text-secondary); }
+    .notice { display: none; margin: 0 0 14px; padding: 10px 12px; border-radius: 9px; font-size: 13px; line-height: 1.55; }
+    .notice.show { display: block; }
+    .notice.info { background: #eff6ff; color: #1d4ed8; }
+    .notice.success { background: #ecfdf3; color: #166534; }
+    .notice.error { background: #fef2f2; color: #991b1b; }
+    .import-panel { display: none; margin: 0 0 16px; padding: 16px; border: 1px solid var(--hr-border-subtle); border-radius: 12px; background: #fff; box-shadow: var(--hr-shadow-card); }
+    .import-panel.open { display: block; }
+    .import-panel h2 { margin: 0 0 5px; font-size: 16px; }
+    .import-panel p { margin: 0 0 12px; color: var(--hr-text-secondary); font-size: 12px; line-height: 1.6; }
+    .import-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .import-summary { margin-top: 12px; font-size: 13px; line-height: 1.6; }
+    .issue-list { margin: 8px 0 0; padding-left: 20px; color: #991b1b; font-size: 12px; }
+    @media (max-width: 760px) {
+      .page { padding: 14px; }
+      .header { flex-direction: column; }
+      .header-actions { justify-content: flex-start; }
+      .stats { overflow-x: auto; }
+      table { min-width: 920px; }
+      .page { overflow-x: auto; }
+    }
   </style>
 </head>
 <body>
@@ -47,11 +70,32 @@
         <h1>教职工名册</h1>
         <div class="subtitle">统一查询学校教职工当前人事事实 · 数据截至 <span id="asOf">--</span></div>
       </div>
-      <div><button class="btn primary">+ 新增</button> <button class="btn">导入</button> <button class="btn">导出</button></div>
+      <div class="header-actions">
+        <a class="btn primary" href="/hr/onboarding/">入职建档</a>
+        <button class="btn" type="button" id="importToggle">导入</button>
+        <button class="btn" type="button" id="exportCurrent">导出当前页</button>
+      </div>
     </div>
+
+    <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+    <section id="importPanel" class="import-panel" aria-label="教职工导入">
+      <h2>批量导入教职工</h2>
+      <p>先上传 CSV 到校验区，确认有效行与错误行后再正式提交。单次最多 5000 行、5 MB；身份证明等敏感字段不会在错误提示中回显。</p>
+      <div class="import-actions">
+        <input type="file" id="importFile" accept=".csv,text/csv">
+        <button class="btn primary" type="button" id="importValidate">上传并校验</button>
+        <button class="btn" type="button" id="importCommit" disabled>确认提交有效行</button>
+        <button class="btn" type="button" id="downloadTemplate">下载 CSV 模板</button>
+        <button class="btn" type="button" id="importClose">关闭</button>
+      </div>
+      <div id="importSummary" class="import-summary"></div>
+      <ol id="importIssues" class="issue-list"></ol>
+    </section>
+
     <div class="stats" id="stats">载入中…</div>
     <div class="toolbar">
-      <input id="keyword" placeholder="姓名/工号/工作手机(权限后)" />
+      <input id="keyword" placeholder="姓名/工号" />
       <select id="status">
         <option value="">全部状态</option>
         <option value="ACTIVE">在职</option>
@@ -64,62 +108,221 @@
         <option value="TEACHER">专任教师</option>
         <option value="ADMIN">行政管理</option>
       </select>
-      <button class="btn primary" onclick="loadRows(1)">查询</button>
+      <button class="btn primary" type="button" id="searchBtn">查询</button>
     </div>
-    <table>
-      <thead>
-        <tr><th>姓名/工号</th><th>单位</th><th>主岗</th><th>人员类别</th><th>状态</th><th>入校日</th><th>未来变更</th></tr>
-      </thead>
-      <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
-    </table>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr><th>姓名/工号</th><th>单位</th><th>主岗</th><th>人员类别</th><th>状态</th><th>入校日</th><th>未来变更</th></tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
     <div class="pager">
-      <button class="btn" onclick="loadRows(page-1)" id="prev">上一页</button>
+      <button class="btn" type="button" id="prev">上一页</button>
       <span id="pageInfo">-</span>
-      <button class="btn" onclick="loadRows(page+1)" id="next">下一页</button>
+      <button class="btn" type="button" id="next">下一页</button>
     </div>
   </div>
+
   <script>
     let page = 1;
+    let lastItems = [];
+    let currentImportJobId = null;
+    const pageSize = 50;
     const statusLabels = {ACTIVE:["在职","active"],PENDING_ENTRY:["待入职","pending"],DEPARTED:["已离职","departed"],RETIRED:["已退休","retired"]};
-    async function loadRows(p, keepKeyword) {
+    const importColumns = ["staff_no","legal_name","gender_code","birth_date","document_number","staff_category_code","relationship_type","effective_from","legacy_department_id"];
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
+
+    function csrfToken() {
+      const row = document.cookie.split(";").map(v => v.trim()).find(v => v.startsWith("csrftoken="));
+      return row ? decodeURIComponent(row.slice("csrftoken=".length)) : "";
+    }
+
+    async function parseJson(resp) {
+      try { return await resp.json(); } catch (_err) { return {}; }
+    }
+
+    function apiMessage(body, fallback) {
+      return body?.error?.message || body?.message || fallback;
+    }
+
+    function showNotice(message, kind="info") {
+      const el = document.getElementById("notice");
+      el.textContent = message;
+      el.className = `notice show ${kind}`;
+    }
+
+    async function loadRows(p) {
       if (p < 1) return;
       page = p;
       const q = new URLSearchParams({
-        page, pageSize: 50,
+        page, pageSize,
         keyword: document.getElementById("keyword").value,
         status: document.getElementById("status").value,
         category: document.getElementById("category").value,
       });
-      const resp = await fetch("/api/hr/v1/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}});
-      if (!resp.ok) { document.getElementById("rows").innerHTML = `<tr><td colspan="7" class="empty">查询失败（${resp.status}）</td></tr>`; return; }
-      const body = await resp.json();
+      const resp = await fetch("/api/hr/v1/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}, credentials:"same-origin"});
+      const body = await parseJson(resp);
+      if (!resp.ok) {
+        lastItems = [];
+        document.getElementById("rows").innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(apiMessage(body, `查询失败（${resp.status}）`))}</td></tr>`;
+        document.getElementById("exportCurrent").disabled = true;
+        return;
+      }
       document.getElementById("asOf").textContent = body.asOf || "-";
       document.getElementById("stats").innerHTML =
-        `<div class="stat"><b>${body.total ?? "-"}</b>在岗/总计</div>` +
+        `<div class="stat"><b>${body.total ?? "-"}</b>总计</div>` +
         `<div class="stat"><b>${body.page ?? 1}</b>当前页</div>` +
-        `<div class="stat">数据口径 <b>${body.dataBasis ?? "-"}</b></div>`;
+        `<div class="stat">数据口径 <b>${escapeHtml(body.dataBasis ?? "-")}</b></div>`;
       const tbody = document.getElementById("rows");
-      if (!body.items || !body.items.length) {
+      lastItems = Array.isArray(body.items) ? body.items : [];
+      document.getElementById("exportCurrent").disabled = lastItems.length === 0;
+      if (!lastItems.length) {
         tbody.innerHTML = `<tr><td colspan="7" class="empty">暂无符合条件的教职工</td></tr>`;
       } else {
-        tbody.innerHTML = body.items.map(r => {
+        tbody.innerHTML = lastItems.map(r => {
           const [label, cls] = statusLabels[r.current_employment_status] || [escapeHtml(r.current_employment_status), ""];
-          return `<tr data-id="${r.staff_id}">
-            <td><span class="name">${escapeHtml(r.legal_name)}</span> <span class="link" style="color:#6b7280">${escapeHtml(r.staff_no)}</span></td>
+          return `<tr data-id="${escapeHtml(r.staff_id)}">
+            <td><span class="name">${escapeHtml(r.legal_name)}</span> <span style="color:#6b7280">${escapeHtml(r.staff_no)}</span></td>
             <td>${escapeHtml(r.org_name || "-")}</td>
             <td>${escapeHtml(r.position_name || "-")}</td>
             <td>${escapeHtml(r.staff_category_code || "-")}</td>
-            <td><span class="badge ${cls}">${escapeHtml(label)}</span></td>
+            <td><span class="badge ${cls}">${label}</span></td>
             <td>${escapeHtml(r.date_joining || "-")}</td>
             <td>${r.has_future_change ? "有未来变更" : "-"}</td>
           </tr>`;
         }).join("");
       }
-      document.getElementById("pageInfo").textContent = `第 ${body.page} / ${Math.max(1, Math.ceil((body.total||0)/50))} 页 · 共 ${body.total || 0} 人`;
+      const pages = Math.max(1, Math.ceil((body.total || 0) / pageSize));
+      document.getElementById("pageInfo").textContent = `第 ${body.page} / ${pages} 页 · 共 ${body.total || 0} 人`;
       document.getElementById("prev").disabled = page <= 1;
+      document.getElementById("next").disabled = page >= pages;
     }
-    function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+    async function exportCurrentPage() {
+      if (!lastItems.length) return;
+      const button = document.getElementById("exportCurrent");
+      button.disabled = true;
+      try {
+        const createResp = await fetch("/api/hr/v1/staff/export", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type":"application/json", "X-CSRFToken": csrfToken(), "X-Requested-With":"XMLHttpRequest"},
+          body: JSON.stringify({
+            purpose: "教职工名册当前页导出",
+            staffIds: lastItems.map(row => row.staff_id),
+            fields: ["staff_no","legal_name","staff_category_code","current_employment_status","org_name","position_name","date_joining"]
+          })
+        });
+        const createBody = await parseJson(createResp);
+        if (!createResp.ok) throw new Error(apiMessage(createBody, `创建导出失败（${createResp.status}）`));
+        const job = createBody.data || {};
+        if (!job.jobId || !job.downloadToken) throw new Error("导出任务返回不完整");
+        const downloadResp = await fetch(`/api/hr/v1/staff/export/${encodeURIComponent(job.jobId)}/download?ticket=${encodeURIComponent(job.downloadToken)}`, {credentials:"same-origin"});
+        if (!downloadResp.ok) {
+          const errorBody = await parseJson(downloadResp);
+          throw new Error(apiMessage(errorBody, `下载失败（${downloadResp.status}）`));
+        }
+        const blob = await downloadResp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `hr03_staff_page_${page}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showNotice(`当前页 ${job.totalRows ?? lastItems.length} 条教职工已导出。`, "success");
+      } catch (err) {
+        showNotice(err.message || "导出失败", "error");
+      } finally {
+        button.disabled = lastItems.length === 0;
+      }
+    }
+
+    async function validateImport() {
+      const file = document.getElementById("importFile").files[0];
+      if (!file) { showNotice("请选择 CSV 文件。", "error"); return; }
+      const button = document.getElementById("importValidate");
+      button.disabled = true;
+      currentImportJobId = null;
+      document.getElementById("importCommit").disabled = true;
+      document.getElementById("importIssues").innerHTML = "";
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const resp = await fetch("/api/hr/v1/staff/import", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"X-CSRFToken": csrfToken(), "X-Requested-With":"XMLHttpRequest"},
+          body: form
+        });
+        const body = await parseJson(resp);
+        if (!resp.ok) throw new Error(apiMessage(body, `校验失败（${resp.status}）`));
+        const data = body.data || {};
+        currentImportJobId = data.jobId || null;
+        document.getElementById("importSummary").textContent = `共 ${data.totalRows ?? 0} 行；有效 ${data.validRows ?? 0} 行；错误 ${data.failedRows ?? 0} 行。当前仅在校验区，尚未写入正式人事数据。`;
+        document.getElementById("importIssues").innerHTML = (data.issues || []).map(issue => `<li>第 ${escapeHtml(issue.rowNo)} 行 · ${escapeHtml(issue.field || "整行")}: ${escapeHtml(issue.error)}</li>`).join("");
+        document.getElementById("importCommit").disabled = !currentImportJobId || !(data.validRows > 0) || data.status !== "READY_TO_COMMIT";
+        showNotice("CSV 校验完成，请核对结果后再确认提交。", data.failedRows ? "info" : "success");
+      } catch (err) {
+        document.getElementById("importSummary").textContent = "";
+        showNotice(err.message || "导入校验失败", "error");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function commitImport() {
+      if (!currentImportJobId) return;
+      const button = document.getElementById("importCommit");
+      button.disabled = true;
+      try {
+        const resp = await fetch(`/api/hr/v1/staff/import/${encodeURIComponent(currentImportJobId)}/commit`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"X-CSRFToken": csrfToken(), "X-Requested-With":"XMLHttpRequest"}
+        });
+        const body = await parseJson(resp);
+        if (!resp.ok) throw new Error(apiMessage(body, `提交失败（${resp.status}）`));
+        const data = body.data || {};
+        document.getElementById("importSummary").textContent = `正式提交完成：成功 ${data.committed ?? 0} 行，失败 ${data.failed ?? 0} 行，共 ${data.total ?? 0} 行。`;
+        currentImportJobId = null;
+        showNotice("导入已提交，名册已重新读取正式数据。", data.failed ? "info" : "success");
+        await loadRows(1);
+      } catch (err) {
+        showNotice(err.message || "导入提交失败", "error");
+        button.disabled = false;
+      }
+    }
+
+    function downloadTemplate() {
+      const csv = "\ufeff" + importColumns.join(",") + "\n";
+      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "hr03_staff_import_template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById("searchBtn").addEventListener("click", () => loadRows(1));
+    document.getElementById("prev").addEventListener("click", () => loadRows(page - 1));
+    document.getElementById("next").addEventListener("click", () => loadRows(page + 1));
     document.getElementById("keyword").addEventListener("keydown", e => { if (e.key === "Enter") loadRows(1); });
+    document.getElementById("exportCurrent").addEventListener("click", exportCurrentPage);
+    document.getElementById("importToggle").addEventListener("click", () => document.getElementById("importPanel").classList.toggle("open"));
+    document.getElementById("importClose").addEventListener("click", () => document.getElementById("importPanel").classList.remove("open"));
+    document.getElementById("importValidate").addEventListener("click", validateImport);
+    document.getElementById("importCommit").addEventListener("click", commitImport);
+    document.getElementById("downloadTemplate").addEventListener("click", downloadTemplate);
     loadRows(1);
   </script>
 </body>

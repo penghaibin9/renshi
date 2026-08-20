@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 
 from hr_staff.context import (
@@ -40,8 +41,7 @@ def api_root(request) -> dict:
         "schemaVersion": SCHEMA_VERSION,
         "requestId": _request_id(request),
         "generatedAt": None,  # 由 _json 填充
-        # P2：暴露学校时区（HR01 §18.1），默认 Asia/Shanghai
-        "schoolTimezone": getattr(request, "hr03_school_timezone", "Asia/Shanghai"),
+        "schoolTimezone": getattr(request, "hr03_school_timezone", settings.TIME_ZONE),
     }
 
 
@@ -78,14 +78,14 @@ def make_staff_context(request, *, authority_mode=None):
             "TENANT_CONTEXT_REQUIRED", "请选择当前学校（多学校账号需明确学校上下文）"
         )
 
-    # P1-c：tenant membership 服务端校验（fail-closed）。
-    # 组织级（COLLEGE/DEPARTMENT）membership 依赖 HR00 权限基建（V1 未建模），
-    # 由数据层 ScopeEnforcer 严格裁剪兜底；此处校验学校级成员资格。
+    # Tenant membership must be affirmative. An empty allowed-company set means
+    # this user belongs to no school; it must never be interpreted as
+    # "unrestricted".
     if not request.user.is_superuser:
         from base.auth_backends import get_allowed_company_ids
 
         allowed = get_allowed_company_ids(request.user)
-        if allowed and tenant_id not in allowed:
+        if tenant_id not in allowed:
             raise HrStaffContextError(
                 "TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校数据"
             )
@@ -107,7 +107,11 @@ def make_staff_context(request, *, authority_mode=None):
 
     scope_staff_ids = request.GET.getlist("staff_ids")
 
-    school_timezone = request.GET.get("school_timezone") or "Asia/Shanghai"
+    # The business date may be selected by the caller for as-of reads, but the
+    # timezone is deployment/tenant configuration, not a client-controlled
+    # query parameter. Until per-school timezone is modeled, use the server's
+    # configured school timezone consistently.
+    school_timezone = settings.TIME_ZONE
     request.hr03_school_timezone = school_timezone
 
     return build_staff_context(

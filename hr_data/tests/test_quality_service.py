@@ -48,7 +48,7 @@ def partial_quality_provider(**kwargs):
 
 
 def failing_quality_provider(**_kwargs):
-    raise RuntimeError("quality provider unavailable")
+    raise RuntimeError("quality provider unavailable: https://internal.example/token=secret")
 
 
 def invalid_quality_provider(**_kwargs):
@@ -248,7 +248,7 @@ class DataQualityExecutionServiceTests(TestCase):
             "HR03": "hr_data.tests.test_quality_service.failing_quality_provider"
         }
     )
-    def test_provider_exception_is_persisted_as_error_not_fake_success(self):
+    def test_provider_exception_is_redacted_and_not_fake_success(self):
         rule = self._rule()
         outcome = DataQualityExecutionService(77).execute(
             run_no="QRUN-ERROR",
@@ -257,7 +257,10 @@ class DataQualityExecutionServiceTests(TestCase):
         )
         self.assertEqual(outcome.run.status, DataQualityRun.Status.ERROR)
         self.assertEqual(outcome.findings, ())
-        self.assertIn("quality provider unavailable", outcome.run.error_message)
+        self.assertEqual(outcome.run.error_message, "quality provider execution failed")
+        self.assertNotIn("internal.example", outcome.run.error_message)
+        self.assertNotIn("secret", outcome.run.error_message)
+        self.assertNotIn("provider unavailable", outcome.run.error_message)
 
     @override_settings(
         HR18_QUALITY_PROVIDERS={

@@ -83,6 +83,11 @@ class SubmissionLifecycleService:
             raise SubmissionLifecycleError(
                 "SUBMISSION_NO_REQUIRED", "submission_no is required"
             )
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_ACTOR_REQUIRED",
+                "formal submission drafts require an authenticated actor",
+            )
         payload_hash = str(payload_hash or "").strip().lower()
         if not _HASH_RE.fullmatch(payload_hash):
             raise SubmissionLifecycleError(
@@ -209,6 +214,21 @@ class SubmissionLifecycleService:
     @transaction.atomic
     def approve(self, submission_id) -> SubmissionSnapshot:
         snapshot = self._lock(submission_id)
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_APPROVER_REQUIRED",
+                "formal submission approval requires an identifiable approver",
+            )
+        if snapshot.created_by is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_CREATOR_UNKNOWN",
+                "formal submission cannot be approved without creator audit identity",
+            )
+        if int(snapshot.created_by) == int(self.actor_user_id):
+            raise SubmissionLifecycleError(
+                "SUBMISSION_SELF_APPROVAL_DENIED",
+                "formal submission creator cannot approve the same submission",
+            )
         return self._transition(
             snapshot,
             expected=SubmissionSnapshot.Status.VALIDATED,
@@ -272,8 +292,13 @@ class SubmissionLifecycleService:
                 "SUBMISSION_DISPATCH_REF_MISMATCH",
                 "dispatch failure must match the queued dispatch_ref",
             )
+        # The worker/provider owns detailed diagnostics. Never persist its raw
+        # exception/response body into a business snapshot because this field is
+        # returned by the HR18 API and may otherwise expose endpoint/auth data.
+        reported = str(error or "").strip()
+        marker = "worker-reported" if reported else "worker-unspecified"
         snapshot.status = SubmissionSnapshot.Status.DISPATCH_FAILED
-        snapshot.dispatch_error = str(error or "dispatch failed")[:2000]
+        snapshot.dispatch_error = f"submission dispatch failed ({marker})"
         snapshot.updated_by = self.actor_user_id
         snapshot.save(
             update_fields=["status", "dispatch_error", "updated_by", "updated_at"]
@@ -283,6 +308,11 @@ class SubmissionLifecycleService:
     @transaction.atomic
     def record_receipt(self, submission_id, *, accepted: bool, receipt_ref: str) -> SubmissionSnapshot:
         snapshot = self._lock(submission_id)
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_RECEIPT_ACTOR_REQUIRED",
+                "external receipt recording requires an identifiable actor",
+            )
         if snapshot.status != SubmissionSnapshot.Status.SUBMITTED:
             raise SubmissionLifecycleError(
                 "SUBMISSION_INVALID_STATE",
@@ -293,6 +323,11 @@ class SubmissionLifecycleService:
             raise SubmissionLifecycleError(
                 "SUBMISSION_RECEIPT_REQUIRED",
                 "receipt_ref is required for an external submission result",
+            )
+        if len(receipt_ref) > 255:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_RECEIPT_INVALID",
+                "receipt_ref exceeds 255 characters",
             )
         snapshot.status = (
             SubmissionSnapshot.Status.ACCEPTED if accepted else SubmissionSnapshot.Status.REJECTED

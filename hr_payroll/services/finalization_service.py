@@ -1,21 +1,20 @@
 """HR15 payroll period finalization guard.
 
-This service intentionally does not pretend that the full calculation engine is
-already present.  It only owns the irreversible boundary that the current
-models can support safely: REVIEWED period → FINALIZED, with row locks and
-amount invariants.  Finalized result rows are never edited here; future retro
-work must append separate delta facts.
+The irreversible REVIEWED -> FINALIZED boundary requires both reconciled payroll
+amounts and the exact HR11 CLOSED time-period snapshot for the same tenant/date
+range. The HR11 source snapshot is frozen onto the payroll period so later HR11
+corrections cannot erase which time facts supported this payroll run.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable
 
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.db_retry import retry_mysql_transaction
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
 
 
@@ -50,6 +49,46 @@ class PayrollFinalizationService:
                 f"result {result.result_no} has no currency",
             )
 
+    @staticmethod
+    def _validate_unique_staff_results(results) -> None:
+        """A payroll run may finalize exactly one base result per staff member.
+
+        Retroactive deltas are appended only after finalization through the
+        adjustment service. Allowing two DRAFT base rows for one staff member to
+        cross the FINALIZED boundary would create ambiguous payroll authority.
+        """
+        counts = {}
+        for result in results:
+            key = str(result.staff_id)
+            counts[key] = counts.get(key, 0) + 1
+        duplicates = sorted(key for key, count in counts.items() if count > 1)
+        if duplicates:
+            raise PayrollFinalizationError(
+                "PAYROLL_RESULT_DUPLICATE_STAFF",
+                "payroll period contains multiple base calculation results for staff: "
+                + ",".join(duplicates),
+            )
+
+    def _time_source_snapshot(self, period: PayrollPeriod) -> dict:
+        from hr_time.public import (
+            PROVIDER_VERSION,
+            TimeCloseEvidenceUnavailable,
+            get_closed_time_period_evidence,
+        )
+
+        try:
+            evidence = get_closed_time_period_evidence(
+                tenant_id=self.tenant_id,
+                start_date=period.start_date,
+                end_date=period.end_date,
+                source_version=PROVIDER_VERSION,
+                for_update=True,
+            )
+        except TimeCloseEvidenceUnavailable as exc:
+            raise PayrollFinalizationError(exc.code, str(exc)) from exc
+        return evidence.snapshot()
+
+    @retry_mysql_transaction(attempts=3, base_delay_seconds=0.05)
     @transaction.atomic
     def finalize_period(self, period_id) -> PayrollFinalizationResult:
         period = (
@@ -77,6 +116,8 @@ class PayrollFinalizationService:
                 f"period status {period.status} cannot be finalized",
             )
 
+        time_source_snapshot = self._time_source_snapshot(period)
+
         results = list(
             PayrollResultFact.objects.select_for_update()
             .filter(
@@ -98,6 +139,7 @@ class PayrollFinalizationService:
                 "period contains results that are not DRAFT at finalization boundary",
             )
 
+        self._validate_unique_staff_results(results)
         for result in results:
             self._validate_result(result)
 
@@ -109,7 +151,15 @@ class PayrollFinalizationService:
 
         period.status = PayrollPeriod.Status.FINALIZED
         period.finalized_at = timezone.now()
-        period.save(update_fields=["status", "finalized_at", "updated_at"])
+        period.time_source_snapshot_json = time_source_snapshot
+        period.save(
+            update_fields=[
+                "status",
+                "finalized_at",
+                "time_source_snapshot_json",
+                "updated_at",
+            ]
+        )
         return PayrollFinalizationResult(
             period=period,
             finalized_result_ids=tuple(finalized_ids),

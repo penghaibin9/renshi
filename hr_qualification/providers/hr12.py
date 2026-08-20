@@ -1,7 +1,7 @@
-"""
-hr_qualification/providers/hr12.py —— HR12 考核结果 Provider（占位 · 总册 §166）。
+"""HR12 finalized assessment provider for HR09 evidence evaluation.
 
-HR12 未就绪时返回 UNAVAILABLE（≠ 0 ≠ false）。
+HR09 consumes only the HR12 source-owned public contract; it does not query HR12
+models directly or infer canonical identity from foreign tables.
 """
 
 from __future__ import annotations
@@ -9,7 +9,13 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from hr_qualification.providers.base import HrEvidenceProvider, ProviderEvidenceResult
+from hr_qualification.providers.base import (
+    HrEvidenceProvider,
+    ProviderEvidenceItem,
+    ProviderEvidenceResult,
+)
+
+PROVIDER_VERSION = "hr12-final-assessment-v1"
 
 
 class Hr12AssessmentProvider(HrEvidenceProvider):
@@ -26,9 +32,59 @@ class Hr12AssessmentProvider(HrEvidenceProvider):
         as_of: date,
         source_version: str | None = None,
     ) -> ProviderEvidenceResult:
-        return ProviderEvidenceResult.unavailable(
-            reason_code="MODULE_NOT_READY",
-            message="HR12 年度与聘期考核模块尚未交付。考核结果将在 HR12 VERIFIED 后提供。",
+        if staff_master_id is None:
+            return ProviderEvidenceResult.unavailable(
+                reason_code="SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+                message="Canonical HR03 StaffMaster is required for HR12 evidence.",
+                provider_version=PROVIDER_VERSION,
+            )
+
+        from hr_assessment.public import (
+            AssessmentEvidenceUnavailable,
+            list_finalized_assessment_evidence,
+        )
+
+        try:
+            evidence_rows = list_finalized_assessment_evidence(
+                tenant_id=tenant_id,
+                person_id=person_id,
+                staff_id=staff_master_id,
+                as_of=as_of,
+                source_version=source_version,
+            )
+        except AssessmentEvidenceUnavailable as exc:
+            return ProviderEvidenceResult.unavailable(
+                reason_code=exc.code,
+                message=str(exc),
+                provider_version=PROVIDER_VERSION,
+            )
+
+        items = [
+            ProviderEvidenceItem(
+                source_domain="HR12",
+                source_object_type="HrFinalAssessmentResult",
+                source_object_id=str(evidence.result_id),
+                evidence_date=evidence.finalized_at.date(),
+                title="正式考核结果",
+                role=evidence.assessment_type,
+                quantitative_value=(
+                    float(evidence.calculated_score)
+                    if evidence.calculated_score is not None
+                    else None
+                ),
+                verification_status="FINALIZED",
+                snapshot_json=evidence.snapshot(),
+            )
+            for evidence in evidence_rows
+        ]
+        source_updated_at = max(
+            (evidence.finalized_at for evidence in evidence_rows),
+            default=None,
+        )
+        return ProviderEvidenceResult.ok(
+            items,
+            source_updated_at=source_updated_at,
+            provider_version=PROVIDER_VERSION,
         )
 
 
