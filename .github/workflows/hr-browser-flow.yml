@@ -140,14 +140,15 @@ jobs:
           print(f"seeded company={company.pk} user={user.pk} employee={employee.pk}")
           PY
 
-      - name: Boot the real Django application
+      - name: Boot real Django and click HR01-HR18
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/hr-browser-flow
-          nohup python manage.py runserver 127.0.0.1:8000 --noreload \
+          python manage.py runserver 127.0.0.1:8000 --noreload \
             > artifacts/hr-browser-flow/django-runserver.log 2>&1 &
-          echo $! > artifacts/hr-browser-flow/django-runserver.pid
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
           ready=0
           for attempt in $(seq 1 60); do
@@ -162,17 +163,7 @@ jobs:
             exit 1
           fi
 
-      - name: Click HR01-HR18 in real Chromium
-        run: |
           python scripts/hr_real_browser_click.py
-
-      - name: Stop Django runtime
-        if: always()
-        shell: bash
-        run: |
-          if [ -f artifacts/hr-browser-flow/django-runserver.pid ]; then
-            kill "$(cat artifacts/hr-browser-flow/django-runserver.pid)" 2>/dev/null || true
-          fi
 
       - name: Upload browser trace, screenshots and server log
         if: always()
