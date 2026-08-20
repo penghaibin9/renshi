@@ -8,6 +8,7 @@ hr_staff/services/import_service.py —— 导入 staging 服务（总册 §24�
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -16,6 +17,8 @@ from django.utils import timezone
 
 from hr_staff.constants import ImportJobStatus
 from hr_staff.models import HrImportIssue, HrImportJob, HrImportRow
+
+logger = logging.getLogger(__name__)
 
 COMMIT_LEASE_SECONDS = 30 * 60
 COMMIT_HEARTBEAT_EVERY_ROWS = 25
@@ -175,9 +178,7 @@ class ImportService:
             locked.checkpoint = checkpoint
             locked.save(update_fields=["status", "checkpoint"])
 
-        validation_failed = locked.rows.filter(is_valid=False).count()
         processed = 0
-
         valid_rows = locked.rows.filter(is_valid=True).order_by("row_no")
         for row in valid_rows.iterator(chunk_size=max(1, min(batch_size, 500))):
             if row.commit_status == "COMMITTED":
@@ -192,6 +193,16 @@ class ImportService:
                     row.save(update_fields=["commit_status"])
                 checkpoint["last_committed_row"] = row.row_no
             except Exception as exc:
+                # Do not persist raw database/service exception text into a row
+                # ledger that is returned to HR users. It can contain SQL object
+                # names, infrastructure details or uploaded identity values.
+                logger.warning(
+                    "HR03 import row commit failed tenant=%s job=%s row=%s class=%s",
+                    self.tenant_id,
+                    locked.id,
+                    row.row_no,
+                    exc.__class__.__name__,
+                )
                 safe_message = self._safe_commit_error(exc)
                 with transaction.atomic():
                     row.commit_status = "FAILED"
@@ -242,12 +253,23 @@ class ImportService:
 
     @staticmethod
     def _safe_commit_error(exc: Exception) -> str:
-        """错误台账保留类型/原因，但绝不回显上传的身份证明明文。"""
+        """Return an actionable but non-secret error suitable for HR ledgers."""
         text = str(exc)
         lowered = text.lower()
-        if "document" in lowered or "identity" in lowered or "证件" in text or "身份证" in text:
+        if (
+            "document" in lowered
+            or "identity" in lowered
+            or "证件" in text
+            or "身份证" in text
+        ):
             return f"{exc.__class__.__name__}: 身份信息校验失败，请检查该行证件字段"
-        return f"{exc.__class__.__name__}: {text}"[:500]
+
+        # These messages are generated locally by StaffMasterRowApplier and do
+        # not echo uploaded values or backend internals.
+        if text == "legal_name 必填" or text.startswith("无效日期格式"):
+            return f"{exc.__class__.__name__}: {text}"[:500]
+
+        return f"{exc.__class__.__name__}: 导入写入失败，请检查该行数据或联系管理员"
 
     @staticmethod
     def _result_for_job(job: HrImportJob) -> dict:
