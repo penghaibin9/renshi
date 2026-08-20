@@ -20,6 +20,7 @@ class SubmissionAuthorityServiceTests(TestCase):
         return AsOfEvidenceSnapshot.objects.create(
             tenant_id=tenant_id,
             evidence_no=f"EVID-{uuid.uuid4().hex[:8]}",
+            definition_kind=AsOfEvidenceSnapshot.DefinitionKind.METRIC,
             definition_code="ACTIVE_STAFF_COUNT",
             definition_version=3,
             as_of_date=date(2026, 8, 1),
@@ -49,6 +50,7 @@ class SubmissionAuthorityServiceTests(TestCase):
         self.assertEqual(snapshot.scope_json["asOfEvidenceId"], str(evidence.id))
         self.assertEqual(snapshot.scope_json["organizationId"], 10)
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DRAFT)
+        self.assertEqual(snapshot.created_by, 9)
 
         replay = service.create_draft(
             submission_no="SUB-2026-001",
@@ -59,10 +61,20 @@ class SubmissionAuthorityServiceTests(TestCase):
         self.assertFalse(replay.created)
         self.assertEqual(replay.snapshot.id, snapshot.id)
 
-    def test_caller_cannot_override_reserved_evidence_identity(self):
+    def test_formal_draft_requires_identifiable_actor(self):
         evidence = self._evidence()
         with self.assertRaises(SubmissionLifecycleError) as ctx:
             SubmissionLifecycleService(77).create_draft(
+                submission_no="SUB-NO-ACTOR",
+                as_of_evidence_id=evidence.id,
+                payload_hash="a" * 64,
+            )
+        self.assertEqual(ctx.exception.code, "SUBMISSION_ACTOR_REQUIRED")
+
+    def test_caller_cannot_override_reserved_evidence_identity(self):
+        evidence = self._evidence()
+        with self.assertRaises(SubmissionLifecycleError) as ctx:
+            SubmissionLifecycleService(77, actor_user_id=9).create_draft(
                 submission_no="SUB-SPOOF",
                 as_of_evidence_id=evidence.id,
                 payload_hash="a" * 64,
@@ -73,7 +85,7 @@ class SubmissionAuthorityServiceTests(TestCase):
 
     def test_cross_tenant_evidence_and_non_sha256_hash_fail_closed(self):
         foreign = self._evidence(tenant_id=88)
-        service = SubmissionLifecycleService(77)
+        service = SubmissionLifecycleService(77, actor_user_id=9)
         with self.assertRaises(SubmissionLifecycleError) as ctx:
             service.create_draft(
                 submission_no="SUB-XTENANT",
@@ -94,20 +106,20 @@ class SubmissionAuthorityServiceTests(TestCase):
 
     def test_partial_evidence_can_be_staged_but_cannot_validate(self):
         evidence = self._evidence(status=AsOfEvidenceSnapshot.Status.PARTIAL)
-        snapshot = SubmissionLifecycleService(77).create_draft(
+        snapshot = SubmissionLifecycleService(77, actor_user_id=9).create_draft(
             submission_no="SUB-PARTIAL",
             as_of_evidence_id=evidence.id,
             payload_hash="a" * 64,
         ).snapshot
         with self.assertRaises(SubmissionLifecycleError) as ctx:
-            SubmissionLifecycleService(77).validate(snapshot.id)
+            SubmissionLifecycleService(77, actor_user_id=9).validate(snapshot.id)
         self.assertEqual(ctx.exception.code, "SUBMISSION_ASOF_INCOMPLETE")
         snapshot.refresh_from_db()
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DRAFT)
 
     def test_same_submission_number_with_different_payload_is_conflict(self):
         evidence = self._evidence()
-        service = SubmissionLifecycleService(77)
+        service = SubmissionLifecycleService(77, actor_user_id=9)
         service.create_draft(
             submission_no="SUB-IDEM",
             as_of_evidence_id=evidence.id,
@@ -121,14 +133,40 @@ class SubmissionAuthorityServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "SUBMISSION_IDEMPOTENCY_CONFLICT")
 
-    def test_submission_permission_exists_after_migrate(self):
-        self.assertTrue(
+    def test_submission_permissions_exist_after_migrate(self):
+        codenames = set(
             Permission.objects.filter(
                 content_type__app_label="hr_data",
                 content_type__model="metricdefinitionversion",
-                codename="hr.data.submit",
-            ).exists()
+                codename__in={
+                    "hr.data.submit",
+                    "hr.data.approve",
+                    "hr.data.receipt",
+                },
+            ).values_list("codename", flat=True)
         )
+        self.assertEqual(
+            codenames,
+            {"hr.data.submit", "hr.data.approve", "hr.data.receipt"},
+        )
+
+    def test_creator_and_approver_must_be_distinct(self):
+        evidence = self._evidence()
+        creator = SubmissionLifecycleService(77, actor_user_id=9)
+        snapshot = creator.create_draft(
+            submission_no="SUB-FOUR-EYES",
+            as_of_evidence_id=evidence.id,
+            payload_hash="a" * 64,
+        ).snapshot
+        creator.validate(snapshot.id)
+
+        with self.assertRaises(SubmissionLifecycleError) as ctx:
+            creator.approve(snapshot.id)
+        self.assertEqual(ctx.exception.code, "SUBMISSION_SELF_APPROVAL_DENIED")
+
+        approved = SubmissionLifecycleService(77, actor_user_id=10).approve(snapshot.id)
+        self.assertEqual(approved.status, SubmissionSnapshot.Status.APPROVED)
+        self.assertEqual(approved.updated_by, 10)
 
 
 class UserStub:
@@ -148,6 +186,7 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         return SimpleNamespace(
             id=submission_id,
             submission_no="SUB-2026-001",
+            definition_kind="METRIC",
             definition_code="ACTIVE_STAFF_COUNT",
             definition_version=3,
             as_of_date=date(2026, 8, 1),
@@ -203,22 +242,39 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
 
     @patch("hr_data.submission_api.SubmissionLifecycleService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
-    def test_validate_and_approve_use_canonical_lifecycle_service(
-        self, _tenant, service_cls
+    def test_validate_keeps_submit_permission(self, tenant_resolver, service_cls):
+        service_cls.return_value.validate.return_value = self._snapshot(
+            self.submission_id, status="VALIDATED"
+        )
+        request = self.factory.post("/validate")
+        request.user = UserStub()
+
+        response = submission_api.validate_submission(request, self.submission_id)
+
+        self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=submission_api.SUBMIT_PERMISSION
+        )
+        service_cls.return_value.validate.assert_called_once_with(self.submission_id)
+
+    @patch("hr_data.submission_api.SubmissionLifecycleService")
+    @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
+    def test_approve_requires_distinct_approval_permission(
+        self, tenant_resolver, service_cls
     ):
-        for function, method_name, status in (
-            (submission_api.validate_submission, "validate", "VALIDATED"),
-            (submission_api.approve_submission, "approve", "APPROVED"),
-        ):
-            snapshot = self._snapshot(self.submission_id, status=status)
-            method = getattr(service_cls.return_value, method_name)
-            method.return_value = snapshot
-            request = self.factory.post("/transition")
-            request.user = UserStub()
-            response = function(request, self.submission_id)
-            self.assertEqual(response.status_code, 200)
-            method.assert_called_once_with(self.submission_id)
-            method.reset_mock()
+        service_cls.return_value.approve.return_value = self._snapshot(
+            self.submission_id, status="APPROVED"
+        )
+        request = self.factory.post("/approve")
+        request.user = UserStub()
+
+        response = submission_api.approve_submission(request, self.submission_id)
+
+        self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=submission_api.APPROVE_PERMISSION
+        )
+        service_cls.return_value.approve.assert_called_once_with(self.submission_id)
 
     @patch("hr_data.submission_api.SubmissionDispatchService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
@@ -251,8 +307,8 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
 
     @patch("hr_data.submission_api.SubmissionLifecycleService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
-    def test_receipt_requires_real_boolean_and_preserves_external_reference(
-        self, _tenant, service_cls
+    def test_receipt_requires_separate_permission_and_real_boolean(
+        self, tenant_resolver, service_cls
     ):
         request = self.factory.post(
             "/receipt",
@@ -262,8 +318,12 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         request.user = UserStub()
         response = submission_api.record_receipt(request, self.submission_id)
         self.assertEqual(response.status_code, 400)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=submission_api.RECEIPT_PERMISSION
+        )
         service_cls.return_value.record_receipt.assert_not_called()
 
+        tenant_resolver.reset_mock()
         snapshot = self._snapshot(
             self.submission_id,
             status="ACCEPTED",
@@ -281,6 +341,9 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         request.user = UserStub()
         response = submission_api.record_receipt(request, self.submission_id)
         self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=submission_api.RECEIPT_PERMISSION
+        )
         service_cls.return_value.record_receipt.assert_called_once_with(
             self.submission_id,
             accepted=True,
