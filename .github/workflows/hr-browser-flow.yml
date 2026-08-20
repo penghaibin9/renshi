@@ -110,6 +110,7 @@ jobs:
           HR_BROWSER_ARTIFACT_DIR: artifacts/hr-browser-flow
         run: |
           python manage.py test \
+            hr_core_browser_flow_tests.HrCoreBrowserFlowTests \
             hr_browser_flow_tests.HrBrowserFlowTests \
             --keepdb --noinput --verbosity 2
 
