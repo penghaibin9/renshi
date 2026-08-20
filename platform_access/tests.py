@@ -1,5 +1,6 @@
 from datetime import timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.sessions.backends.db import SessionStore
@@ -23,7 +24,10 @@ from platform_access.services import (
 )
 
 
-@override_settings(PLATFORM_TENANT_ELEVATION_MAX_MINUTES=60)
+@override_settings(
+    PLATFORM_TENANT_ELEVATION_MAX_MINUTES=60,
+    COMPANY_SCOPED_PERMISSIONS=True,
+)
 class PlatformTenantElevationTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
@@ -45,6 +49,18 @@ class PlatformTenantElevationTests(TestCase):
         request = self.factory.get(path)
         request.user = self.user
         request.session = SessionStore()
+        return request
+
+    def _school_admin_request(self, *, path="/hr/staff/", selected=None):
+        request = self.factory.get(path)
+        request.user = SimpleNamespace(
+            is_authenticated=True,
+            is_superuser=True,
+            employee_get=object(),
+        )
+        request.session = SessionStore()
+        if selected is not None:
+            request.session["selected_company"] = str(selected)
         return request
 
     def test_platform_identity_is_not_equivalent_to_every_superuser(self):
@@ -155,6 +171,7 @@ class PlatformTenantElevationTests(TestCase):
             current_company_id.reset(token)
         self.assertEqual(response.status_code, 403)
         self.assertEqual(request.session["selected_company"], "all")
+        self.assertIsNone(request.write_company_id)
 
     def test_middleware_allows_concrete_tenant_with_active_grant(self):
         request = self._request("/hr/staff/")
@@ -174,3 +191,54 @@ class PlatformTenantElevationTests(TestCase):
             current_company_id.reset(token)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(request.platform_tenant_elevation_active)
+        self.assertEqual(request.write_company_id, self.company.id)
+
+    @patch("platform_access.middleware.get_allowed_company_ids")
+    def test_school_superuser_cannot_cross_into_unassigned_school(self, allowed_ids):
+        allowed_ids.return_value = {self.company.id + 1}
+        request = self._school_admin_request(selected=self.company.id)
+        token = current_company_id.set(self.company.id)
+        try:
+            response = PlatformTenantElevationMiddleware(
+                lambda _request: type("Response", (), {"status_code": 200})()
+            )(request)
+        finally:
+            current_company_id.reset(token)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(request.session["selected_company"], "all")
+        self.assertIsNone(request.write_company_id)
+
+    @patch("platform_access.middleware.get_allowed_company_ids")
+    def test_school_superuser_concrete_allowed_school_becomes_write_scope(
+        self, allowed_ids
+    ):
+        allowed_ids.return_value = {self.company.id}
+        request = self._school_admin_request(selected=self.company.id)
+        request.write_company_id = 999999
+        token = current_company_id.set(self.company.id)
+        try:
+            response = PlatformTenantElevationMiddleware(
+                lambda _request: type("Response", (), {"status_code": 200})()
+            )(request)
+        finally:
+            current_company_id.reset(token)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(request.write_company_id, self.company.id)
+
+    @patch("platform_access.middleware.get_allowed_company_ids")
+    def test_all_scope_never_keeps_stale_write_tenant(self, allowed_ids):
+        allowed_ids.return_value = {self.company.id}
+        request = self._school_admin_request(selected="all")
+        request.write_company_id = self.company.id
+        token = current_company_id.set("all")
+        try:
+            response = PlatformTenantElevationMiddleware(
+                lambda _request: type("Response", (), {"status_code": 200})()
+            )(request)
+        finally:
+            current_company_id.reset(token)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(request.write_company_id)
