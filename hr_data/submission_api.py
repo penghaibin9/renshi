@@ -14,6 +14,8 @@ from .services.submission_dispatch_service import (
 from .services.submission_service import SubmissionLifecycleError, SubmissionLifecycleService
 
 SUBMIT_PERMISSION = "hr.data.submit"
+APPROVE_PERMISSION = "hr.data.approve"
+RECEIPT_PERMISSION = "hr.data.receipt"
 
 
 def _status(code: str) -> int:
@@ -26,8 +28,16 @@ def _status(code: str) -> int:
         "SUBMISSION_ASOF_INCOMPLETE",
         "SUBMISSION_ASYNC_DISPATCH_REQUIRED",
         "SUBMISSION_DISPATCH_REF_MISMATCH",
+        "SUBMISSION_SELF_APPROVAL_DENIED",
+        "SUBMISSION_CREATOR_UNKNOWN",
     }:
         return 409
+    if code in {
+        "SUBMISSION_APPROVER_REQUIRED",
+        "SUBMISSION_RECEIPT_ACTOR_REQUIRED",
+        "SUBMISSION_ACTOR_REQUIRED",
+    }:
+        return 403
     if code in {"SUBMISSION_DISPATCH_UNAVAILABLE"}:
         return 503
     if code in {"SUBMISSION_DISPATCH_FAILED"}:
@@ -62,15 +72,15 @@ def _serialize(snapshot):
     }
 
 
-def _tenant(request):
+def _tenant(request, *, required_permission=SUBMIT_PERMISSION):
     return resolve_request_tenant(
         request,
-        required_permission=SUBMIT_PERMISSION,
+        required_permission=required_permission,
     )
 
 
-def _service(request):
-    tenant_id = _tenant(request)
+def _service(request, *, required_permission=SUBMIT_PERMISSION):
+    tenant_id = _tenant(request, required_permission=required_permission)
     return SubmissionLifecycleService(
         tenant_id,
         actor_user_id=getattr(request.user, "id", None),
@@ -81,7 +91,7 @@ def create_submission(request):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, required_permission=SUBMIT_PERMISSION)
     except HrDataAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -117,11 +127,17 @@ def create_submission(request):
     return response
 
 
-def _transition(request, submission_id, method_name):
+def _transition(
+    request,
+    submission_id,
+    method_name,
+    *,
+    required_permission=SUBMIT_PERMISSION,
+):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, required_permission=required_permission)
     except HrDataAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -140,11 +156,21 @@ def _transition(request, submission_id, method_name):
 
 
 def validate_submission(request, submission_id):
-    return _transition(request, submission_id, "validate")
+    return _transition(
+        request,
+        submission_id,
+        "validate",
+        required_permission=SUBMIT_PERMISSION,
+    )
 
 
 def approve_submission(request, submission_id):
-    return _transition(request, submission_id, "approve")
+    return _transition(
+        request,
+        submission_id,
+        "approve",
+        required_permission=APPROVE_PERMISSION,
+    )
 
 
 def submit_submission(request, submission_id):
@@ -152,7 +178,7 @@ def submit_submission(request, submission_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        tenant_id = _tenant(request)
+        tenant_id = _tenant(request, required_permission=SUBMIT_PERMISSION)
     except HrDataAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -189,7 +215,7 @@ def record_receipt(request, submission_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, required_permission=RECEIPT_PERMISSION)
     except HrDataAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
