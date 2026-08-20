@@ -13,6 +13,7 @@ from hr_staff.services.export_service import (
     ExportContentUnavailable,
     ExportPolicyDenied,
     ExportService,
+    _safe_csv_cell,
 )
 from hr_staff.services.import_service import ImportService
 from hr_staff.tests.factories import make_person, make_staff
@@ -110,6 +111,12 @@ class ExportProductionClosureTests(TestCase):
         job.refresh_from_db()
         self.assertIsNone(job.consumed_at)
         self.assertEqual(job.status, HrExportJob.Status.FAILED)
+
+    def test_csv_formula_payloads_are_forced_to_text(self):
+        self.assertEqual(_safe_csv_cell("=HYPERLINK(\"https://bad\")"), "'=HYPERLINK(\"https://bad\")")
+        self.assertEqual(_safe_csv_cell("  +1+1"), "'  +1+1")
+        self.assertEqual(_safe_csv_cell("@SUM(A1:A2)"), "'@SUM(A1:A2)")
+        self.assertEqual(_safe_csv_cell("normal-name"), "normal-name")
 
 
 class ImportProductionClosureTests(TestCase):
