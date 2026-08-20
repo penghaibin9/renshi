@@ -1,10 +1,8 @@
 name: HR Real Browser Click Flow
 
 on:
-  push:
-    branches: [agent/renshi-real-browser-click-e2e-20260820]
   pull_request:
-    branches: [main]
+    branches: [agent/renshi-e2e-base-20260820]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
