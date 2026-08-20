@@ -103,6 +103,12 @@ def grant_tenant_elevation(
     now = timezone.now()
     expires_at = now + timedelta(minutes=duration_minutes)
     with transaction.atomic():
+        # Lock a row that always exists for this actor. Locking only the current
+        # elevation rows is insufficient when there are none: two simultaneous
+        # requests could both observe an empty active set and create two valid
+        # grants. The actor-row mutex makes the revoke+create sequence truly
+        # single-active even for the first elevation.
+        user.__class__._default_manager.select_for_update().only("pk").get(pk=user.pk)
         active = PlatformTenantElevation.objects.select_for_update().filter(
             actor=user,
             revoked_at__isnull=True,
