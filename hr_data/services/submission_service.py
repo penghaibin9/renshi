@@ -272,8 +272,13 @@ class SubmissionLifecycleService:
                 "SUBMISSION_DISPATCH_REF_MISMATCH",
                 "dispatch failure must match the queued dispatch_ref",
             )
+        # The worker/provider owns detailed diagnostics. Never persist its raw
+        # exception/response body into a business snapshot because this field is
+        # returned by the HR18 API and may otherwise expose endpoint/auth data.
+        reported = str(error or "").strip()
+        marker = "worker-reported" if reported else "worker-unspecified"
         snapshot.status = SubmissionSnapshot.Status.DISPATCH_FAILED
-        snapshot.dispatch_error = str(error or "dispatch failed")[:2000]
+        snapshot.dispatch_error = f"submission dispatch failed ({marker})"
         snapshot.updated_by = self.actor_user_id
         snapshot.save(
             update_fields=["status", "dispatch_error", "updated_by", "updated_at"]
@@ -293,6 +298,11 @@ class SubmissionLifecycleService:
             raise SubmissionLifecycleError(
                 "SUBMISSION_RECEIPT_REQUIRED",
                 "receipt_ref is required for an external submission result",
+            )
+        if len(receipt_ref) > 255:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_RECEIPT_INVALID",
+                "receipt_ref exceeds 255 characters",
             )
         snapshot.status = (
             SubmissionSnapshot.Status.ACCEPTED if accepted else SubmissionSnapshot.Status.REJECTED
