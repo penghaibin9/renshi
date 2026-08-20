@@ -1,5 +1,7 @@
 """Root URL configuration for the Yueke higher-education HR system."""
 
+import logging
+
 import notifications.urls
 from django.contrib import admin
 from django.core.cache import cache
@@ -10,6 +12,8 @@ from django.views.i18n import JavaScriptCatalog
 
 from . import settings
 
+logger = logging.getLogger(__name__)
+
 
 def health_check(request):
     """Cheap liveness probe; does not touch dependencies."""
@@ -17,24 +21,31 @@ def health_check(request):
 
 
 def readiness_check(request):
-    """Readiness probe for the signing database and configured Redis cache."""
+    """Readiness probe for the signing database and configured Redis cache.
+
+    This endpoint is intentionally safe for an unauthenticated load balancer.
+    Dependency exceptions are logged server-side and never reflected to the
+    caller, because driver errors can contain hostnames, database names and
+    other deployment topology details.
+    """
     checks = {}
     try:
         connection.ensure_connection()
         checks["database"] = "ok"
         checks["database_vendor"] = connection.vendor
         if connection.vendor != "mysql":
+            logger.error(
+                "readiness rejected unexpected database vendor=%s",
+                connection.vendor,
+            )
             return JsonResponse(
-                {
-                    "status": "unavailable",
-                    "database": "wrong vendor",
-                    "database_vendor": connection.vendor,
-                },
+                {"status": "unavailable", "database": "unavailable"},
                 status=503,
             )
-    except Exception as exc:
+    except Exception:
+        logger.exception("readiness database check failed")
         return JsonResponse(
-            {"status": "unavailable", "database": str(exc)}, status=503
+            {"status": "unavailable", "database": "unavailable"}, status=503
         )
 
     if getattr(settings, "REDIS_URL", None):
@@ -43,9 +54,11 @@ def readiness_check(request):
             if cache.get("renshi_ready_probe") != "1":
                 raise RuntimeError("cache readback failed")
             checks["cache"] = "ok"
-        except Exception as exc:
+        except Exception:
+            logger.exception("readiness cache check failed")
             return JsonResponse(
-                {"status": "unavailable", "cache": str(exc), **checks}, status=503
+                {"status": "unavailable", "cache": "unavailable", **checks},
+                status=503,
             )
 
     return JsonResponse({"status": "ok", **checks}, status=200)
