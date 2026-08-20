@@ -3,6 +3,7 @@
 import os
 
 from horilla.settings.base import *  # noqa: F401,F403
+from horilla.settings.runtime_seals import install_legacy_runtime_seals
 
 DATABASES = {
     "default": {
@@ -30,3 +31,5 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
+
+install_legacy_runtime_seals(globals())
