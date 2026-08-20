@@ -1,79 +1,99 @@
 # 跃科高校人事管理与教师发展系统
 
 > 仓库：`penghaibin9/renshi`  
-> 底座：Horilla HRMS 2.0（正在逐步接管，不再按 Horilla 上游开发分支规则施工）  
-> 当前开发总线：`agent/renshi-takeover-cleanup-20260810`  
-> 默认稳定分支：`main`（**没有全绿验收，不合并 main**）
+> 底座：Horilla HRMS 2.0（作为 Legacy 底座逐域接管）  
+> 默认稳定分支：`main`  
+> 当前 main 基线：`61fc1d0ece15605a3d14fe72d490c3dd0c1fd2e0`（2026-08-17，PR #2 已合并）
 
 ## 先看这一段
 
-这是一个面向高校/职业院校的人事管理与教师发展系统。仓库最初基于 Horilla 2.0，目前正在把旧 Horilla 能力逐步接管为 HR01~HR18 的高校人事 Authority。
+这是一个面向高校/职业院校的人事管理与教师发展系统。仓库最初基于 Horilla 2.0，目前 HR01~HR18 已经通过总集成 PR #2 进入 `main`。
 
-如果你是第一次打开这个仓库，不要先翻几百个源码文件，也不要直接照旧 Horilla README 操作。请按下面顺序：
+**注意：进入 main 只表示形成了新的集成基线，不等于可以跳过当前 HEAD 的生产复验。** 以后继续施工时，一律以当前代码、当前测试/CI 和 [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) 为准，不再使用已经合并关闭的旧施工分支状态做判断。
+
+第一次打开仓库请按下面顺序：
 
 1. 先读 [`docs/README_新手入口.md`](docs/README_新手入口.md)
-2. 再读 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)
-3. 需要看业务设计时，再进入 [`docs/00_文档总索引.md`](docs/00_文档总索引.md)
-4. 只有在修某一个 HR 模块时，才读该模块的施工总册和代码
+2. 再读 [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md)
+3. 再读 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)
+4. 需要看业务设计时，再进入 [`docs/00_文档总索引.md`](docs/00_文档总索引.md)
 
 ## 当前最重要的事实
 
-### 1. 暂停新增 HR13~HR18 功能
+### 1. PR #2 已经合并，旧“接管分支进行中”描述全部失效
 
-当前优先任务不是继续堆功能，而是把 HR01~HR12 从“模块内完成”收敛成“全系统可运行、可测试、可上线”。
+2026-08-17，HR01~HR18 总集成 PR #2 已合并到 `main`，合并提交为：
 
-### 2. 目标数据库是 MySQL-only
+```text
+61fc1d0ece15605a3d14fe72d490c3dd0c1fd2e0
+```
 
-`docs/00_高校人事系统全局架构与Horilla接管合同.md` 已冻结：开发、测试、CI、迁移验收、生产统一以 MySQL 为目标。
+因此旧文档中以下表述不再是当前事实：
 
-**注意：当前 `docker-compose.yml` 和部分 CI 仍是 PostgreSQL，这是待清理的历史欠账，不代表目标架构。**
+- “当前统一施工线仍是 `agent/renshi-takeover-cleanup-20260810`”
+- “HR07 GitHub 代码交付断层仍未恢复”
+- “docker-compose / CI 仍以 PostgreSQL 为默认基线”
+- “HR09 / HR10 / HR12 尚未进入总集成基线”
 
-### 3. 文档里的 READY 不能代替代码验收
+这些内容只能作为历史施工记录。
 
-以后只认：
+### 2. MySQL-only 已经进入默认开发/CI 基线
+
+当前仓库可直接核验到：
+
+```text
+docker-compose.yml           -> mysql:8.4
+horilla/settings/ci_test.py  -> django.db.backends.mysql
+.github/workflows/           -> MySQL fresh schema / upgrade / Docker smoke 等门禁
+```
+
+生产、开发、测试、迁移、验收仍统一执行 MySQL-only；禁止新增 PostgreSQL 专属 Authority 设计。
+
+### 3. “已集成”不等于“已生产封板”
+
+继续开发前仍然只认当前 HEAD 的可重复证据：
 
 ```text
 当前 Git HEAD
 + Django system check
 + makemigrations --check
-+ MySQL fresh migrate
++ MySQL fresh migrate / upgrade
 + 对应模块测试
 + tenant / permission 负测试
 + 跨域 E2E
-+ GitHub Actions 全绿
++ failure injection / backup-restore（进入生产封板时）
 ```
 
-任何旧报告写着 `READY FOR ACCEPTANCE`，如果当前 HEAD 没有通过上面这些 Gate，就仍然视为未封板。
+任何历史 `READY` / `FINAL` / `ProductionAcceptance` 报告，如果没有当前 HEAD 对应证据，都只能当历史记录。
 
-### 4. API / Permission / Event 只保留一套正式合同
+### 4. 当前优先级是“合并后生产复审”，不是重新铺第二套模块
 
-新代码最终统一到：
+PR #2 已经把 HR01~HR18 放到同一 main 基线上。下一阶段优先做：
 
 ```text
-API:        /api/v1/hr/...
-Permission: hr.<domain>.<resource>.<action>
-Tenant:     fail-closed
-History:    effective-dated / as-of
-Cross-domain write: Provider / Command API / durable Event
+仓库真相收口
+→ tenant / permission / fail-closed 复审
+→ canonical API / event / legacy write 复审
+→ MySQL exact-head migration / regression
+→ 跨域 E2E / failure injection / backup-restore
+→ 再决定下一批业务增强
 ```
 
-旧 `/api/hr/v1/...` 只允许作为迁移期 Legacy Adapter，不再新增业务 handler。
+不要因为模块已经存在，就绕过生产 Gate 继续无限加页面或第二套 Authority。
 
 ## 目录怎么认
-
-### 先认识 6 类目录
 
 ```text
 horilla/                 Django 全局设置、URL、启动配置
 base/                    Horilla 基础能力与多学校/权限底座
-employee/                Horilla 旧员工域（Legacy，逐步被 HR03 等接管）
-hr_* / hr10_development/ 新高校人事模块代码
+employee/                Horilla 旧员工域（Legacy，逐步退出正式写）
+hr_* / hr10_development/ 高校人事 Authority 代码
 
 docs/                    系统设计、总控、模块施工册、验收资料
-.github/workflows/        GitHub Actions 门禁（当前需要重建为 main + MySQL）
+.github/workflows/        GitHub Actions / MySQL 生产门禁
 ```
 
-### HR01~HR12 对应代码目录
+## HR01~HR12 对应代码目录
 
 | 模块 | 业务 | 代码目录 |
 |---|---|---|
@@ -90,22 +110,26 @@ docs/                    系统设计、总控、模块施工册、验收资料
 | HR11 | 考勤与请假 | `hr_time/` |
 | HR12 | 年度与聘期考核 | `hr_assessment/` |
 
-## 新手每天只做这 5 步
+HR13~HR18 已进入总集成基线，具体目录和 Authority 定义以 `docs/00_文档总索引.md` 与各模块施工总册为准。
+
+## 每次施工只做这 6 步
 
 ```bash
-# 1. 看自己在哪个分支
+# 1. 确认当前分支和 HEAD
 git branch --show-current
+git rev-parse HEAD
 
-# 2. 看当前有没有未提交改动
+# 2. 确认没有混入无关改动
 git status
 
-# 3. 一次只改一个阶段/一个模块
-# 不要同时改多个 Authority
+# 3. 先读 docs/CURRENT_STATE.md
 
-# 4. 跑该阶段要求的检查/测试
-# 以 docs/开发顺序_接管版.md 的 Gate 为准
+# 4. 一次只改一个阶段/一个 Authority
+# 不跨域直接写别人的正式模型
 
-# 5. 通过后再提交；仍然不直接合并 main
+# 5. 跑该阶段的精准 Gate，再看 diff
+
+# 6. 通过后再提交；没有生产证据不宣称 READY
 ```
 
 ## 绝对不要做
@@ -114,39 +138,21 @@ git status
 - 不要默认第一所学校或 `all` scope
 - 不要让 Dashboard / Report / Legacy 页面直接改 Authority
 - 不要跨域 import 对方正式模型后 `.save()`
-- 不要把 PostgreSQL/SQLite 测试通过当成 MySQL 已验收
-- 不要看到旧文档写 READY 就继续往后开发
-- 不要在 HR01~HR12 系统收口前继续铺 HR13~HR18
+- 不要把 SQLite/PostgreSQL 测试通过当成 MySQL 已验收
+- 不要看到旧文档写 READY 就直接跳关
+- 不要重新制造第二套 API / Permission / Event 正式合同
 - 不要一次性大范围重写旧 Horilla；必须按 Authority Cutover 逐域退出
 
-## 当前开发顺序
-
-简版：
+## 当前阅读顺序
 
 ```text
-C0 新手化与仓库真相清洗
-→ C1 H0/A0 多学校租户底座
-→ C2 MySQL-only 开发/CI/迁移基线
-→ C3 Django App / URL / API / Permission 全局接管
-→ C4 HR02 + HR03 基础 Authority 封板
-→ C5 HR04 → HR05 → HR07 入人主链
-→ C6 HR06 → HR08 → HR09 → HR10 → HR11 → HR12
-→ C7 HR01 聚合收口
-→ C8 跨域 E2E / Failure Injection / Backup-Restore / Security
-→ 全绿后才开始 HR13
+README_新手入口
+→ CURRENT_STATE
+→ 开发顺序_接管版
+→ 00 全局架构合同
+→ 对应 HRxx 施工总册
+→ 真实代码与当前 Gate
 ```
-
-详细验收条件见 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)。
-
-## 目前不建议直接使用的旧入口
-
-旧 Horilla README 中的这些说明已经不再作为本仓库开发规则：
-
-- `2.0` / `dev/v2.0` 作为开发目标分支
-- PostgreSQL 作为最终生产验收数据库
-- Horilla 原模块目录就是最终 Authority
-
-Horilla 仍然是重要 Legacy 底座，但本仓库的最终裁决以 `docs/00_高校人事系统全局架构与Horilla接管合同.md` 和当前代码 Gate 为准。
 
 ## License
 
