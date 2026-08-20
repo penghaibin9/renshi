@@ -46,6 +46,23 @@ SENSITIVE_EXPORT_FIELDS = frozenset({"work_phone", "birth_year"})
 MAX_SYNC_EXPORT_STAFF = 5000
 
 
+def _safe_csv_cell(value) -> str:
+    """Return an Excel-safe text cell without changing the stored business value.
+
+    CSV files are commonly opened directly in Excel/WPS.  Values beginning with
+    formula sigils can otherwise be interpreted as formulas (including DDE or
+    hyperlink payloads).  Prefixing an apostrophe makes the spreadsheet treat
+    the value as text while preserving what the user sees.  Leading whitespace
+    is inspected as well because spreadsheet parsers can normalize it before
+    formula evaluation.
+    """
+    text = "" if value is None else str(value)
+    significant = text.lstrip(" \t\r\n")
+    if significant.startswith(("=", "+", "-", "@")) or text.startswith(("\t", "\r")):
+        return "'" + text
+    return text
+
+
 class ExportPolicyDenied(Exception):
     code = "EXPORT_POLICY_DENIED"
 
@@ -147,7 +164,9 @@ class ExportService:
                 "work_phone": "",
                 "birth_year": "",
             }
-            rows.append({key: flat.get(key, "") for key in allowed_fields})
+            rows.append(
+                {key: _safe_csv_cell(flat.get(key, "")) for key in allowed_fields}
+            )
 
         buffer = io.StringIO()
         writer = csv.DictWriter(buffer, fieldnames=allowed_fields)
