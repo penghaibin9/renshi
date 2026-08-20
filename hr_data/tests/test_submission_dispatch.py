@@ -19,7 +19,9 @@ def successful_dispatch_provider(*, tenant_id, submission, idempotency_key, acto
 
 
 def failing_dispatch_provider(**_kwargs):
-    raise RuntimeError("message broker unavailable")
+    raise RuntimeError(
+        "https://broker.internal.example/v1?token=secret-token message broker unavailable"
+    )
 
 
 def invalid_dispatch_provider(**_kwargs):
@@ -84,15 +86,20 @@ class SubmissionDispatchServiceTests(TestCase):
             "hr_data.tests.test_submission_dispatch.failing_dispatch_provider"
         )
     )
-    def test_provider_exception_becomes_retryable_dispatch_failed(self):
+    def test_provider_exception_becomes_retryable_dispatch_failed_but_is_redacted(self):
         snapshot = self._snapshot()
         result = SubmissionDispatchService(77).queue(snapshot.id)
 
         self.assertFalse(result.queued)
-        self.assertIn("message broker unavailable", result.error)
+        self.assertEqual(result.error, "RuntimeError: submission dispatch provider failed")
+        self.assertNotIn("secret-token", result.error)
         snapshot.refresh_from_db()
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DISPATCH_FAILED)
-        self.assertIn("message broker unavailable", snapshot.dispatch_error)
+        self.assertEqual(
+            snapshot.dispatch_error,
+            "RuntimeError: submission dispatch provider failed",
+        )
+        self.assertNotIn("broker.internal", snapshot.dispatch_error)
         self.assertEqual(snapshot.dispatch_ref, "")
 
     @override_settings(
