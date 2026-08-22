@@ -101,8 +101,18 @@ class MissingParameterMiddleware:
 
 
 def set_selected_company(company_id):
-    """Set the current tenant id for the active execution context."""
+    """Set the current tenant id and mirror concrete web scope onto the request."""
     current_company_id.set(company_id)
+
+    # CompanyMiddleware owns the canonical browser tenant decision. A number of
+    # HR APIs intentionally read request.tenant_id so that they can fail closed
+    # when no concrete school is selected. Keep that compatibility surface in
+    # sync with the canonical context rather than forcing each HR module to
+    # invent its own session lookup. The explicit ``all`` scope must never turn
+    # into a cross-tenant API id, so mirror it as None.
+    request = _request_var.get()
+    if request is not None:
+        request.tenant_id = None if company_id in (None, "", "all") else int(company_id)
 
 
 def get_selected_company():
