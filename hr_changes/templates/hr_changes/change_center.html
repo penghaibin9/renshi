@@ -20,6 +20,7 @@
     .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
     .tab { padding: 8px 14px; border-radius: 8px; text-decoration: none; font-size: 14px; color: #374151; background: #fff; border: 1px solid #d1d5db; }
     .tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .workspace-label { margin: 0 0 8px; color: #6b7280; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
     table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
     th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
     th { background: #f9fafb; color: #6b7280; font-weight: 600; }
@@ -48,6 +49,15 @@
       <div class="card"><div class="num">{{ stats.effectiveThisMonth }}</div><div class="lbl">本月生效</div></div>
       <div class="card"><div class="num">{{ stats.risks }}</div><div class="lbl">风险</div></div>
     </div>
+    <p class="workspace-label">业务工作区</p>
+    <nav class="tabs" aria-label="人事异动业务工作区">
+      <a class="tab active" href="/hr/changes/">异动中心</a>
+      <a class="tab" href="/hr/changes/transfers">校内调动</a>
+      <a class="tab" href="/hr/changes/job-identity">岗位与身份变更</a>
+      <a class="tab" href="/hr/changes/secondments">借调挂职</a>
+      <a class="tab" href="/hr/changes/ledger">异动台账</a>
+    </nav>
+    <p class="workspace-label">案件视图</p>
     <div class="tabs">
       {% for key, label in view_tabs %}
         <a class="tab {% if view == key %}active{% endif %}" href="/hr/changes/?view={{ key }}">{{ label }}</a>
