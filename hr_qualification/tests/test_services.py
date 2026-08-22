@@ -119,22 +119,31 @@ class ApplicationServiceTest(TestCase):
             status=ApplicationStatus.DRAFT,
         )
 
-    def test_submit_from_draft(self):
-        app = ApplicationService.transition(self.app, ApplicationStatus.SUBMITTED)
-        self.assertEqual(app.status, ApplicationStatus.SUBMITTED)
+    def test_submit_from_draft_requires_dedicated_gate(self):
+        with self.assertRaises(ApplicationError) as cm:
+            ApplicationService.transition(self.app, ApplicationStatus.SUBMITTED)
+        self.assertEqual(cm.exception.code, "APPLICATION_GUARDED_TRANSITION")
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.status, ApplicationStatus.DRAFT)
 
     def test_cannot_jump_to_final(self):
         with self.assertRaises(ApplicationError):
             ApplicationService.transition(self.app, ApplicationStatus.RECOGNIZED)
 
     def test_withdraw(self):
-        ApplicationService.transition(self.app, ApplicationStatus.SUBMITTED)
+        # Submission itself is covered by the dedicated lifecycle-gate suite.
+        # This fixture starts from an already-submitted fact so this unit test
+        # remains focused on the SUBMITTED -> WITHDRAWN state transition.
+        self.app.status = ApplicationStatus.SUBMITTED
+        self.app.save(update_fields=["status", "updated_at"])
         app = ApplicationService.transition(self.app, ApplicationStatus.WITHDRAWN)
         self.assertEqual(app.status, ApplicationStatus.WITHDRAWN)
 
-    def test_submitted_timestamp(self):
-        app = ApplicationService.transition(self.app, ApplicationStatus.SUBMITTED)
-        self.assertIsNotNone(app.submitted_at)
+    def test_guarded_submit_does_not_set_timestamp(self):
+        with self.assertRaises(ApplicationError):
+            ApplicationService.transition(self.app, ApplicationStatus.SUBMITTED)
+        self.app.refresh_from_db()
+        self.assertIsNone(self.app.submitted_at)
 
 
 class RiskServiceTest(TestCase):
