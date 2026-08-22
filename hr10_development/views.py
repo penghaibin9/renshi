@@ -5,18 +5,31 @@ HR10 页面视图（管理端 UI）。
 渲染中文模板；数据经 selectors/API 获取。
 """
 
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
+from horilla.horilla_middlewares import get_selected_company
 from hr10_development.permissions import require_hr10_permission
 from hr10_development.selectors.plan_selector import PlanSelector
+
+
+def _selected_tenant_id() -> int:
+    """Resolve the canonical web tenant and reject union/missing scope."""
+    selected = get_selected_company()
+    if selected in (None, "", "all"):
+        raise PermissionDenied("TENANT_CONTEXT_REQUIRED")
+    try:
+        return int(selected)
+    except (TypeError, ValueError) as exc:
+        raise PermissionDenied("TENANT_CONTEXT_REQUIRED") from exc
 
 
 @require_GET
 @require_hr10_permission("hr.development.plan.view")
 def plan_center(request):
     """发展计划工作台首页。"""
-    tenant_id = getattr(request, "tenant_id", 1)
+    tenant_id = _selected_tenant_id()
     plans = PlanSelector.list_plans(tenant_id=tenant_id)
     stats = PlanSelector.get_summary_stats(tenant_id=tenant_id)
     return render(request, "hr/development/plans.html", {

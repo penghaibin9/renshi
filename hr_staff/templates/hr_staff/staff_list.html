@@ -72,6 +72,7 @@
       </div>
       <div class="header-actions">
         <a class="btn primary" href="/hr/onboarding/">入职建档</a>
+        <a class="btn" href="/hr/staff/data-quality/">数据质量</a>
         <button class="btn" type="button" id="importToggle">导入</button>
         <button class="btn" type="button" id="exportCurrent">导出当前页</button>
       </div>
@@ -187,7 +188,7 @@
         tbody.innerHTML = lastItems.map(r => {
           const [label, cls] = statusLabels[r.current_employment_status] || [escapeHtml(r.current_employment_status), ""];
           return `<tr data-id="${escapeHtml(r.staff_id)}">
-            <td><span class="name">${escapeHtml(r.legal_name)}</span> <span style="color:#6b7280">${escapeHtml(r.staff_no)}</span></td>
+            <td><a class="name link" href="/hr/staff/${encodeURIComponent(r.staff_id)}/">${escapeHtml(r.legal_name)}</a> <span style="color:#6b7280">${escapeHtml(r.staff_no)}</span></td>
             <td>${escapeHtml(r.org_name || "-")}</td>
             <td>${escapeHtml(r.position_name || "-")}</td>
             <td>${escapeHtml(r.staff_category_code || "-")}</td>

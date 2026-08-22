@@ -1,13 +1,21 @@
-{% extends "base.html" %}
+{% extends "index.html" %}
 {% block content %}
 <header class="hr-page-header">
   <h1>{{ page_title }}</h1>
   <div class="hr-page-header__actions">
-    <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-pool' %}">候选池</a>
     <a class="oh-btn oh-btn--primary" href="#">推荐人选</a>
     <a class="oh-btn oh-btn--secondary" href="#">批量导入</a>
   </div>
 </header>
+
+<nav class="hr-filter-bar" aria-label="外聘教师工作区">
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-pool' %}">候选池</a>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-industry-home' %}">产业教授与技能大师</a>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-hiring-home' %}">聘用审批</a>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-tasks-home' %}">教学与服务任务</a>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-renewals-home' %}">续聘中心</a>
+  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-exits-home' %}">退出中心</a>
+</nav>
 
 <section class="hr-kpi-row">
   <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ total }}</span><span class="hr-kpi-card__label">人才库</span></div>

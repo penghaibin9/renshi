@@ -38,6 +38,7 @@ class HrDoubleTeacherEvidencePackage(models.Model):
         choices=EvidencePackageStatus.choices,
         default=EvidencePackageStatus.GENERATED,
     )
+    frozen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

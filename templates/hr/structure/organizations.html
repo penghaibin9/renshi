@@ -13,6 +13,15 @@ HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未
 <div class="hr-page" data-hr-page="structure-orgs">
   {% include "hr/components/page_header.html" with title="组织机构" subtitle="管理学校正式机构、上下级关系与未来生效调整" %}
 
+  <nav class="hr-filter-bar" aria-label="组织机构与编制岗位工作区">
+    <a class="hr-btn" href="/hr/structure/organizations">组织机构</a>
+    <a class="hr-btn" href="/hr/structure/relations">党政组织与业务关系</a>
+    <a class="hr-btn" href="/hr/structure/staffing-plans">编制方案</a>
+    <a class="hr-btn" href="/hr/structure/post-catalogs">岗位目录</a>
+    <a class="hr-btn" href="/hr/structure/positions">岗位编制台账</a>
+    <a class="hr-btn" href="/hr/structure/history">组织岗位历史</a>
+  </nav>
+
   <!-- 历史/未来模式条（默认今天不显示） -->
   <div id="hr-effective-ribbon" data-hr-ribbon></div>
 

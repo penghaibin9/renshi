@@ -61,6 +61,18 @@ for _app, _ui_prefix, _api_prefix in PARALLEL_HR_ROUTES:
         ]
     )
 
+# Named compatibility aliases keep surviving legacy templates renderable
+# without registering the retired payroll URL graph. The adapter preserves
+# query strings, sends GET/HEAD to canonical HR15, and rejects legacy writes.
+urlpatterns.append(
+    path(
+        "payroll/view-reimbursement/",
+        legacy_hr_ui_redirect,
+        {"domain": "payroll", "tail": "view-reimbursement/"},
+        name="view-reimbursement",
+    )
+)
+
 # Retired browser roots remain bookmark-compatible without reviving legacy
 # writers. GET/HEAD land on canonical workspaces; unsafe methods fail closed.
 for _legacy_domain in ("payroll", "offboarding", "report"):

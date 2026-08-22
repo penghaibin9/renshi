@@ -90,7 +90,10 @@ class Hr03BackgroundProviderHardeningTests(TestCase):
         )
 
         self.assertEqual(result.status, ProviderStatus.OK)
-        self.assertEqual(
+        # This contract is about eligibility/exclusion, not presentation order;
+        # the source-owned HR03 contract may deterministically order equal-date
+        # education and degree facts without changing the evidence set.
+        self.assertCountEqual(
             [item.source_object_id for item in result.items],
             [str(expected.id), str(expected_degree.id)],
         )

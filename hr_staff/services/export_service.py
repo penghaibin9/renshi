@@ -216,6 +216,8 @@ class ExportService:
 
     def consume_download(self, job_id, token: str) -> dict:
         """原子消费一次性下载票据；内容确认可读后才烧掉 ticket。"""
+        content_unavailable = False
+        content = None
         with transaction.atomic():
             job = (
                 HrExportJob.objects.select_for_update()
@@ -239,21 +241,28 @@ class ExportService:
 
             content = ExportContentStore.get(job.file_ref)
             if content is None:
+                # Persist the terminal storage failure inside the row-lock
+                # transaction, but raise only after this transaction commits.
+                # Raising here would roll back FAILED -> READY and falsely leave
+                # a missing file advertised as downloadable.
                 job.status = HrExportJob.Status.FAILED
                 job.error = "受控文件存储中找不到导出内容"
                 job.save(update_fields=["status", "error"])
-                raise ExportContentUnavailable("导出文件暂时不可用，请重新发起导出")
+                content_unavailable = True
+            else:
+                job.consumed_at = timezone.now()
+                job.save(update_fields=["consumed_at"])
+                write_audit_event(
+                    tenant_id=self.tenant_id,
+                    action="StaffExportDownloaded",
+                    actor_user_id=self.actor_user_id,
+                    business_type="EXPORT",
+                    business_id=str(job.id),
+                    reason=job.purpose[:200],
+                )
 
-            job.consumed_at = timezone.now()
-            job.save(update_fields=["consumed_at"])
-            write_audit_event(
-                tenant_id=self.tenant_id,
-                action="StaffExportDownloaded",
-                actor_user_id=self.actor_user_id,
-                business_type="EXPORT",
-                business_id=str(job.id),
-                reason=job.purpose[:200],
-            )
+        if content_unavailable:
+            raise ExportContentUnavailable("导出文件暂时不可用，请重新发起导出")
 
         # 一次性票据已原子消费。删除失败不影响本次已经读入内存的响应内容；
         # 后续生命周期清理仍可根据 job.file_ref 重试。
