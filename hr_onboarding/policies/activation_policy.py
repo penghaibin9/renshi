@@ -130,11 +130,18 @@ def evaluate_activation_gate(
         reservation_detail = f"reservation={case.position_reservation_id_id}"
     result.add("POSITION_RESERVATION_VALID", "岗位预占有效", reservation_ok, reservation_detail)
 
-    # 6 组织 as-of 有效
+    # 6 组织 as-of 有效。必须显式携带 tenant_id，禁止只按全局组织主键解析。
     org_ok = True
     org_detail = "无计划组织"
     if case.planned_organization_id_id:
-        org_ok = hr02_effective.org_version_as_of(case.planned_organization_id_id, effective_at) is not None
+        org_ok = (
+            hr02_effective.org_version_as_of(
+                tenant_id,
+                case.planned_organization_id_id,
+                effective_at,
+            )
+            is not None
+        )
         org_detail = f"org={case.planned_organization_id_id}@{effective_at}"
     result.add("ORGANIZATION_ACTIVE", "组织在生效日有效", org_ok, org_detail)
 
