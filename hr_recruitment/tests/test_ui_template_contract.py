@@ -6,18 +6,29 @@ from django.test import SimpleTestCase
 
 
 class RecruitmentUiTemplateContractTests(SimpleTestCase):
-    def test_campaign_console_template_compiles(self):
-        """Keep Django's required extends-first contract covered before browser CI."""
-        template_path = (
-            Path(settings.BASE_DIR)
-            / "templates"
-            / "hr"
-            / "recruitment"
-            / "campaigns"
-            / "console.html"
-        )
-        source = template_path.read_text(encoding="utf-8")
+    TEMPLATE_PATHS = (
+        ("campaigns", "console.html"),
+        ("plans", "plans.html"),
+        ("candidates", "candidates.html"),
+        ("qualification", "qualification.html"),
+        ("assessment", "assessment.html"),
+        ("proposed_hires", "proposed.html"),
+    )
 
-        # Compilation is enough to catch an extends tag placed after another
-        # template tag, without rendering or requiring database-backed loaders.
-        engines["django"].engine.from_string(source)
+    def test_all_recruitment_workspace_templates_compile(self):
+        """Keep Django's extends-first contract covered before browser CI."""
+        for directory, filename in self.TEMPLATE_PATHS:
+            with self.subTest(template=f"{directory}/{filename}"):
+                template_path = (
+                    Path(settings.BASE_DIR)
+                    / "templates"
+                    / "hr"
+                    / "recruitment"
+                    / directory
+                    / filename
+                )
+                source = template_path.read_text(encoding="utf-8")
+
+                # Compilation catches an extends tag placed after any other
+                # template tag without rendering or requiring database loaders.
+                engines["django"].engine.from_string(source)
