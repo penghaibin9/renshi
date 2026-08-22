@@ -28,8 +28,8 @@
     .badge.departed, .badge.retired { background: #fee2e2; color: #991b1b; }
     .asof { margin: 12px 0; padding: 8px 12px; background: var(--hr-color-primary-soft); border-radius: 8px; font-size: 13px; color: #1e40af; display: flex; justify-content: space-between; align-items: center; }
     .asof.warn { background: #fef3c7; color: #92400e; }
-    .nav { display: flex; gap: 4px; border-bottom: 1px solid var(--hr-border-subtle); margin-bottom: 16px; }
-    .nav a { padding: 10px 14px; color: var(--hr-text-secondary); text-decoration: none; font-size: 14px; border-bottom: 2px solid transparent; }
+    .nav { display: flex; gap: 4px; border-bottom: 1px solid var(--hr-border-subtle); margin-bottom: 16px; overflow-x: auto; }
+    .nav a { flex: 0 0 auto; padding: 10px 14px; color: var(--hr-text-secondary); text-decoration: none; font-size: 14px; border-bottom: 2px solid transparent; }
     .nav a.on { color: var(--hr-color-primary); border-bottom-color: var(--hr-color-primary); }
     .grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
     .section-title { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
@@ -56,15 +56,13 @@
       </div>
     </div>
     <div class="asof" id="asofBar">载入中…</div>
-    <div class="nav">
-      <a class="on" href="#">概览</a>
-      <a href="#">人事身份</a>
-      <a href="#">任职履历</a>
-      <a href="#">教育资格</a>
-      <a href="#">材料</a>
-      <a href="#">更正与历史</a>
-      <a href="#">审计</a>
-    </div>
+    <nav class="nav" aria-label="教职工主档工作区">
+      <a class="on" href="/hr/staff/{{ staff_id }}/">概览</a>
+      <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+      <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+      <a href="/hr/staff/{{ staff_id }}/materials">材料</a>
+      <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+    </nav>
     <div class="grid">
       <div>
         <div class="card" style="margin-bottom:16px">
