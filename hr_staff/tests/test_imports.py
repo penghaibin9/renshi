@@ -69,7 +69,10 @@ class ImportServiceTests(TestCase):
             [{"staff_no": f"T20{i}", "legal_name": f"员工{i}"} for i in range(3)],
         )
         self.svc.validate_rows(job, row_validator=lambda r: {})
-        # 预置 checkpoint：row_no=3 表示前两数据行（row_no 2、3）已提交，从第 3 行（row_no 4）续跑
+        # Durable per-row commit state is the recovery authority. The checkpoint
+        # is progress metadata only; rows 2/3 must already be COMMITTED for a
+        # resumed process to skip them safely after a lost heartbeat/process.
+        job.rows.filter(row_no__in=[2, 3]).update(commit_status="COMMITTED")
         job.checkpoint = {"last_committed_row": 3}
         job.save(update_fields=["checkpoint"])
         applied = []
