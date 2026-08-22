@@ -6,12 +6,18 @@ from decimal import Decimal
 
 from django.test import TestCase
 
-from hr_qualification.constants import JurisdictionLevel, RecognitionLevel
+from hr_qualification.constants import (
+    HardOrSoft,
+    JurisdictionLevel,
+    RecognitionLevel,
+    RuleType,
+)
 from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherEvidenceItem,
     HrDoubleTeacherEvidencePackage,
     HrDoubleTeacherRecognitionBatch,
+    HrDoubleTeacherRule,
     HrDoubleTeacherRulePack,
     HrDoubleTeacherRulePackVersion,
 )
@@ -19,6 +25,7 @@ from hr_qualification.services.evidence_service import (
     EvidenceAggregationError,
     EvidenceAggregationService,
 )
+from hr_qualification.services.rule_service import RuleService
 from hr_staff.models import HrPerson, HrStaffMaster
 
 
@@ -46,6 +53,19 @@ class EvidencePackageIntegrityTests(TestCase):
             version_no=1,
             effective_from=date(2026, 1, 1),
         )
+        HrDoubleTeacherRule.objects.create(
+            version_id=version,
+            rule_code=f"RULE-{uuid.uuid4().hex}",
+            dimension_code="TEACHING_ABILITY",
+            level=RecognitionLevel.DOUBLE_TEACHER_JUNIOR,
+            rule_type=RuleType.BOOLEAN_FACT,
+            expected_value_json={"value": True},
+            operator=">=",
+            hard_or_soft=HardOrSoft.HARD,
+            source_provider="HR09_CREDENTIAL",
+            sequence=10,
+        )
+        version = RuleService.publish(version)
         batch = HrDoubleTeacherRecognitionBatch.objects.create(
             tenant_id=self.tenant_id,
             batch_no=f"BATCH-{uuid.uuid4().hex}",
