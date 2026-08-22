@@ -1,12 +1,14 @@
 """HR14 exit participant replay contracts."""
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from django.test import TestCase
+from django.utils import timezone
 
+from hr_appointment.decision_models import AppointmentCollectiveDecision
 from hr_appointment.exit_provider import exit_participant_provider
-from hr_appointment.models import PositionAppointmentFact
+from hr_appointment.models import AppointmentPublicityRecord, PositionAppointmentFact
 from hr_exit.models import ExitCase, ExitEffect, ExitFact
 
 
@@ -15,6 +17,8 @@ class Hr14ExitProviderReplayTests(TestCase):
         self.tenant_id = 77123
         self.person_id = uuid.uuid4()
         self.relationship_id = uuid.uuid4()
+        self.application_case_id = uuid.uuid4()
+        self.position_instance_id = 88001
         self.boundary = date(2026, 9, 1)
         self.case = ExitCase.objects.create(
             tenant_id=self.tenant_id,
@@ -36,12 +40,44 @@ class Hr14ExitProviderReplayTests(TestCase):
             employment_end_date=self.boundary,
             status=ExitFact.Status.EFFECTIVE,
         )
+
+        # PositionAppointmentFact EFFECTIVE is a formal HR14 fact. Build the
+        # same closed-publicity + approved collective-decision authority that
+        # production requires instead of bypassing the effect gate in tests.
+        decided_at = timezone.now()
+        publicity = AppointmentPublicityRecord.objects.create(
+            tenant_id=self.tenant_id,
+            publicity_no=f"PUB-HR14-REPLAY-{uuid.uuid4().hex}",
+            application_case_id=self.application_case_id,
+            ranking_result_id=uuid.uuid4(),
+            batch_no="HR14-REPLAY-BATCH",
+            person_id=self.person_id,
+            position_instance_id=self.position_instance_id,
+            attempt_no=1,
+            start_at=decided_at - timedelta(days=2),
+            end_at=decided_at - timedelta(days=1),
+            status=AppointmentPublicityRecord.Status.CLOSED,
+            closed_at=decided_at - timedelta(days=1),
+        )
+        AppointmentCollectiveDecision.objects.create(
+            tenant_id=self.tenant_id,
+            decision_no=f"DEC-HR14-REPLAY-{uuid.uuid4().hex}",
+            application_case_id=self.application_case_id,
+            publicity=publicity,
+            batch_no="HR14-REPLAY-BATCH",
+            person_id=self.person_id,
+            position_instance_id=self.position_instance_id,
+            outcome=AppointmentCollectiveDecision.Outcome.APPROVED,
+            authority_ref="test:hr14-exit-provider-replay",
+            decision_reason="fixture establishes formal appointment authority",
+            decided_at=decided_at,
+        )
         self.appointment = PositionAppointmentFact.objects.create(
             tenant_id=self.tenant_id,
             appointment_no=f"APT-HR14-{uuid.uuid4().hex}",
             person_id=self.person_id,
-            position_instance_id=88001,
-            application_case_id=uuid.uuid4(),
+            position_instance_id=self.position_instance_id,
+            application_case_id=self.application_case_id,
             level_code="L3",
             effective_from=date(2026, 1, 1),
             status=PositionAppointmentFact.Status.EFFECTIVE,
