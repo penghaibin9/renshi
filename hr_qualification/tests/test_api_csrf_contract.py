@@ -5,13 +5,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.http import JsonResponse
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, TestCase
 from django.views.decorators.csrf import csrf_exempt
 
 from hr_qualification.api.access import api_guard
 
 
-class ApiGuardCsrfContractTests(SimpleTestCase):
+class ApiGuardCsrfContractTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
         self.user = SimpleNamespace(is_authenticated=True, is_superuser=True)
