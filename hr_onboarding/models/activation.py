@@ -17,7 +17,7 @@ from hr_onboarding.constants import ActivationStatus
 
 
 class HrActivationAttempt(models.Model):
-    """激活尝试（事务日志 + 幂等）。"""
+    """激活尝试（事务日志 + tenant-scoped 幂等）。"""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
@@ -27,7 +27,9 @@ class HrActivationAttempt(models.Model):
         related_name="activation_attempts",
     )
     effective_at = models.DateField(null=True, blank=True)
-    idempotency_key = models.CharField(max_length=128, unique=True)
+    # Idempotency keys belong to a school boundary.  Global uniqueness made the
+    # same client-generated key collide across unrelated tenants.
+    idempotency_key = models.CharField(max_length=128)
     status = models.CharField(
         max_length=24,
         choices=ActivationStatus.choices,
@@ -42,6 +44,12 @@ class HrActivationAttempt(models.Model):
     class Meta:
         verbose_name = _("HR Activation Attempt")
         verbose_name_plural = _("HR Activation Attempts")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "idempotency_key"],
+                name="uniq_hr05_activation_tenant_idem",
+            ),
+        ]
         indexes = [
             models.Index(fields=["case", "status"]),
         ]
