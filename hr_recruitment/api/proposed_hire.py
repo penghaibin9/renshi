@@ -29,6 +29,8 @@ from hr_recruitment.api.base import (
     ok,
 )
 from hr_recruitment.api.exceptions import Hr04ApiError
+from hr_recruitment.constants import HandoffStatus
+from hr_recruitment.integrations.hr05 import Hr05OnboardingConsumer
 from hr_recruitment.labels import PROPOSED_HIRE_STATUS_LABELS, status_label
 from hr_recruitment.permissions import require_hr04_permission
 from hr_recruitment.services.handoff_service import HandoffService, HandoffServiceError
@@ -253,10 +255,19 @@ def handoff_to_hr05(request, proposed_hire_id):
         return error(request, "IDEMPOTENCY_KEY_REQUIRED", "handoff 必须携带 Idempotency-Key", 422)
     try:
         service = HandoffService(tenant_id=ctx.tenant_id, actor=str(request.user.id))
+        consumer = Hr05OnboardingConsumer(actor_user_id=request.user.id)
         handoff = service.handoff(
             proposed_hire_id=proposed_hire_id,
             idempotency_key=idempotency_key,
+            hr05_consumer=consumer,
         )
+        if handoff.status != HandoffStatus.CREATED:
+            return error(
+                request,
+                "HANDOFF_NOT_COMPLETED",
+                "HR05 交接未完成，招聘申请未进入交接终态",
+                409,
+            )
         return ok(
             request,
             {
