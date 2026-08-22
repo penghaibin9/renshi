@@ -16,6 +16,7 @@ from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherEvidenceItem,
     HrDoubleTeacherEvidencePackage,
+    HrDoubleTeacherEvidenceRequirement,
     HrDoubleTeacherRecognitionBatch,
     HrDoubleTeacherRule,
     HrDoubleTeacherRulePack,
@@ -53,7 +54,7 @@ class EvidencePackageIntegrityTests(TestCase):
             version_no=1,
             effective_from=date(2026, 1, 1),
         )
-        HrDoubleTeacherRule.objects.create(
+        rule = HrDoubleTeacherRule.objects.create(
             version_id=version,
             rule_code=f"RULE-{uuid.uuid4().hex}",
             dimension_code="TEACHING_ABILITY",
@@ -64,6 +65,13 @@ class EvidencePackageIntegrityTests(TestCase):
             hard_or_soft=HardOrSoft.HARD,
             source_provider="HR09_CREDENTIAL",
             sequence=10,
+        )
+        HrDoubleTeacherEvidenceRequirement.objects.create(
+            rule_id=rule,
+            evidence_category="VOCATIONAL_QUALIFICATION",
+            min_count=1,
+            allowed_source_domains=["HR09_CREDENTIAL"],
+            verification_required=True,
         )
         version = RuleService.publish(version)
         batch = HrDoubleTeacherRecognitionBatch.objects.create(
