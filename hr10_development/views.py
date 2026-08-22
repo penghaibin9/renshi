@@ -5,6 +5,7 @@ HR10 页面视图（管理端 UI）。
 渲染中文模板；数据经 selectors/API 获取。
 """
 
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
@@ -16,7 +17,9 @@ from hr10_development.selectors.plan_selector import PlanSelector
 @require_hr10_permission("hr.development.plan.view")
 def plan_center(request):
     """发展计划工作台首页。"""
-    tenant_id = getattr(request, "tenant_id", 1)
+    tenant_id = getattr(request, "tenant_id", None)
+    if tenant_id is None:
+        raise PermissionDenied("TENANT_CONTEXT_REQUIRED")
     plans = PlanSelector.list_plans(tenant_id=tenant_id)
     stats = PlanSelector.get_summary_stats(tenant_id=tenant_id)
     return render(request, "hr/development/plans.html", {
