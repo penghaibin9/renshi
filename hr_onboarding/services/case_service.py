@@ -80,7 +80,22 @@ class CaseService:
         )
         replay = apply_idempotency(key)
         if replay is not None:
-            return replay
+            # Cache is only an acceleration layer.  Never return a cached
+            # success unless the tenant-scoped Authority row still exists.
+            # This prevents a database reset/restore or cache/DB skew from
+            # producing a false-success response that points at a missing case.
+            replay_case_id = replay.get("case_id") if isinstance(replay, dict) else None
+            if replay_case_id and HrOnboardingCase.objects.filter(
+                tenant_id=self.tenant_id,
+                id=replay_case_id,
+            ).exists():
+                return replay
+            logger.warning(
+                "Ignoring stale HR05 handoff idempotency replay tenant=%s key=%s case=%s",
+                self.tenant_id,
+                key,
+                replay_case_id,
+            )
 
         source_type = request.get("source_type")
         source_id = request.get("source_id")
