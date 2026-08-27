@@ -21,8 +21,10 @@ class Hr05OnboardingConsumerError(Exception):
 class Hr05OnboardingConsumer:
     """Production consumer used by HandoffService.
 
-    Replays are delegated to HR05 CaseService, whose idempotency namespace and
-    database uniqueness constraints are authoritative for onboarding cases.
+    Replays are delegated to HR05 CaseService. If its cache entry has expired
+    but the tenant-scoped source-unique onboarding case still exists, the DB
+    Authority row is recovered instead of turning a successful earlier create
+    into a permanent duplicate failure.
     """
 
     def __init__(self, *, actor_user_id: Optional[int] = None):
@@ -38,6 +40,8 @@ class Hr05OnboardingConsumer:
         if not tenant_id:
             raise Hr05OnboardingConsumerError("tenant_id is required")
 
+        from hr_onboarding.api.exceptions import OnboardingCaseDuplicateError
+        from hr_onboarding.models import HrOnboardingCase
         from hr_onboarding.services.case_service import CaseService
         from hr_recruitment.models import HrProposedHire, HrRecruitmentOffer
 
@@ -92,13 +96,33 @@ class Hr05OnboardingConsumer:
             "preferred_name": "",
         }
 
-        result = CaseService(
+        service = CaseService(
             tenant_id=tenant_id,
             actor_user_id=self.actor_user_id,
-        ).create_case_from_handoff(
-            request,
-            idempotency_key,
         )
+        try:
+            result = service.create_case_from_handoff(
+                request,
+                idempotency_key,
+            )
+        except OnboardingCaseDuplicateError as exc:
+            # Cache is not Authority. A previous HR05 create may have committed
+            # while its cache entry was evicted before HR04 sealed the handoff.
+            # Recover only the exact same tenant + HR04 source tuple; never turn
+            # an unrelated duplicate into a successful replay.
+            existing = HrOnboardingCase.objects.filter(
+                tenant_id=tenant_id,
+                source_type="HR04_HIRE",
+                source_id=str(proposed.id),
+                hr04_proposed_hire_id=str(proposed.id),
+                hr04_application_id=str(application.id),
+            ).first()
+            if existing is None:
+                raise Hr05OnboardingConsumerError(
+                    "duplicate HR05 onboarding case could not be resolved to the same HR04 source"
+                ) from exc
+            return str(existing.id)
+
         case_id = result.get("case_id") if isinstance(result, dict) else None
         if not case_id:
             raise Hr05OnboardingConsumerError("HR05 handoff did not return an onboarding case")
