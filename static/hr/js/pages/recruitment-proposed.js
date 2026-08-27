@@ -2,8 +2,8 @@
  * hr/js/pages/recruitment-proposed.js — HR04-06 拟录用工作台
  *
  * 数据源：GET /api/hr/v1/recruitment/proposed-hires
- * 写动作：POST /api/hr/v1/recruitment/proposed-hires/{id}/handoff-to-hr05
- * 原则：页面只发起正式 HR05 交接；公示、Offer、岗位预占等前置条件仍由后端强校验。
+ * 写动作：POST /api/v1/hr/recruitment/proposed-hires/{id}/handoff-to-hr05
+ * 原则：页面只发起 canonical HR05 正式交接；公示、Offer、岗位预占等前置条件仍由后端强校验。
  */
 (function () {
   "use strict";
@@ -47,7 +47,7 @@
 
     try {
       const response = await window.HrApi.request(
-        `/api/hr/v1/recruitment/proposed-hires/${encodeURIComponent(proposedId)}/handoff-to-hr05`,
+        `/api/v1/hr/recruitment/proposed-hires/${encodeURIComponent(proposedId)}/handoff-to-hr05`,
         {
           method: "POST",
           headers: {

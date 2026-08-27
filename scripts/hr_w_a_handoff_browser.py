@@ -2,8 +2,8 @@
 
 The workflow seeds one handoff-ready proposed hire in ephemeral MySQL, signs in
 through the production login form, opens the real HR04 proposed-hire page and
-clicks the rendered handoff button.  A pass requires the production POST to
-return 201 with a real HR05 case id; no test client or force_login is used.
+clicks the rendered handoff button. A pass requires the canonical production
+POST to return 201 with a real HR05 case id; no test client or force_login is used.
 """
 
 from __future__ import annotations
@@ -38,6 +38,14 @@ def settle(page, label: str, diagnostics: list[str]) -> None:
     page.wait_for_timeout(300)
 
 
+def response_body(response) -> str:
+    """Return a diagnostic response body without masking the original HTTP failure."""
+    try:
+        return response.text()
+    except Exception as exc:  # noqa: BLE001
+        return f"<response body unavailable: {exc}>"
+
+
 def main() -> None:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     evidence: dict[str, object] = {}
@@ -58,7 +66,11 @@ def main() -> None:
         )
 
         def record_api_failure(response) -> None:
-            if "/api/hr/v1/" in response.url and response.status >= 400:
+            path = urlsplit(response.url).path
+            if (
+                path.startswith("/api/hr/v1/")
+                or path.startswith("/api/v1/hr/")
+            ) and response.status >= 400:
                 unexpected_api_failures.append(f"{response.status} {response.url}")
 
         page.on("response", record_api_failure)
@@ -101,17 +113,20 @@ def main() -> None:
                 path=str(ARTIFACT_DIR / "01-before-handoff.png"), full_page=True
             )
 
-            endpoint_suffix = f"/proposed-hires/{proposed_id}/handoff-to-hr05"
+            canonical_path = (
+                f"/api/v1/hr/recruitment/proposed-hires/{proposed_id}/handoff-to-hr05"
+            )
             with page.expect_response(
                 lambda response: response.request.method == "POST"
-                and endpoint_suffix in response.url,
+                and urlsplit(response.url).path == canonical_path,
                 timeout=15000,
             ) as handoff_wait:
                 button.click()
             handoff_response = handoff_wait.value
             require(
                 handoff_response.status == 201,
-                f"HR04 -> HR05 handoff HTTP {handoff_response.status}: {handoff_response.text()}",
+                "HR04 -> HR05 canonical handoff HTTP "
+                f"{handoff_response.status}: {response_body(handoff_response)}",
             )
             payload = handoff_response.json()
             data = payload.get("data") or {}
