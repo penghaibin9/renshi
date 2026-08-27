@@ -1,0 +1,304 @@
+/* HR12 assessment workspace — real data boot for the shared HR V2 shell. */
+(() => {
+  const root = document.querySelector("[data-module='HR12']");
+  if (!root || root.dataset.hr12Booted === 'true') return;
+  root.dataset.hr12Booted = 'true';
+
+  const section = root.dataset.section || 'overview';
+  const zhStatus = {
+    PUBLISHED: '已发布',
+    DRAFT: '草稿',
+    ACTIVE: '有效',
+    INACTIVE: '停用',
+    OK: '已接通',
+    UNAVAILABLE: '暂不可用',
+    PARTIAL: '部分可用',
+  };
+  const sourceNames = {
+    hr03: '教职工主档',
+    hr07: '合同聘用',
+    hr09: '资格资质',
+    hr10: '教师发展',
+    hr11: '考勤时间',
+    academic: '教务数据',
+    research: '科研数据',
+    ethicsFact: '师德事实',
+  };
+  const esc = (value) => String(value ?? '').replace(
+    /[&<>"']/g,
+    (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    })[char],
+  );
+
+  async function getJson(url) {
+    const response = await fetch(url, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    let body = {};
+    try {
+      body = await response.json();
+    } catch (_error) {
+      body = {};
+    }
+    if (!response.ok) {
+      throw new Error(
+        body?.message || body?.error?.message || `请求失败 ${response.status}`,
+      );
+    }
+    return body.data ?? body;
+  }
+
+  function empty(title, message) {
+    return `<div class="hr12-empty"><strong>${esc(title)}</strong>${esc(message)}</div>`;
+  }
+
+  function statusClass(status) {
+    if (status === 'ACTIVE' || status === 'PUBLISHED' || status === 'OK') {
+      return 'hr12-pill--success';
+    }
+    if (
+      status === 'DRAFT' ||
+      status === 'INACTIVE' ||
+      status === 'PARTIAL' ||
+      status === 'UNAVAILABLE'
+    ) {
+      return 'hr12-pill--warning';
+    }
+    return 'hr12-pill--info';
+  }
+
+  function row(name, sub, middle, status) {
+    const shown = zhStatus[status] || status || '—';
+    return `<div class="hr12-row"><div><strong>${esc(name || '未命名')}</strong><small>${esc(sub || '')}</small></div><div class="hr12-row__meta">${esc(middle || '—')}</div><span class="hr12-pill ${statusClass(status)}">${esc(shown)}</span></div>`;
+  }
+
+  function renderSection(policies, indicators) {
+    const title = document.getElementById('workTitle');
+    const description = document.getElementById('workDesc');
+    const box = document.getElementById('workRows');
+    if (!title || !description || !box) return;
+
+    if (section === 'policies') {
+      title.textContent = '制度与指标';
+      description.textContent = '考核制度、指标和评分量表按版本管理；正式发布后保留历史。';
+      const policyRows = policies.map((item) => row(
+        item.name,
+        item.code,
+        item.assessment_domain === 'TERM' ? '聘期考核' : '年度/专项考核',
+        item.status || '—',
+      ));
+      const indicatorRows = indicators.slice(0, 12).map((item) => row(
+        item.name,
+        item.code,
+        item.dimension || '考核指标',
+        item.status || '—',
+      ));
+      const merged = [...policyRows, ...indicatorRows];
+      box.innerHTML = merged.length
+        ? merged.join('')
+        : empty('暂无考核制度或指标', '当前学校还没有可展示的考核制度或有效指标事实。');
+      return;
+    }
+
+    const partialSections = {
+      goals: [
+        '目标任务与平时考核',
+        '目标、进展、检查点和日常考核事实已有数据模型，完整办理接口仍在收口。',
+        '目标任务办理正在接入',
+        '当前不会用静态任务或假进度替代正式目标事实。',
+      ],
+      annual: [
+        '年度考核',
+        '年度考核对象、评议、结果和异议必须形成完整链路。',
+        '年度考核办理正在接入',
+        '年度案件模型已具备，完整批次与评议办理接口仍在收口。',
+      ],
+      term: [
+        '聘期考核',
+        '聘期考核与年度考核分开保存，不能相互覆盖正式结果。',
+        '聘期考核办理正在接入',
+        '聘期案件模型已具备，完整工作流接口仍在收口。',
+      ],
+      ethics: [
+        '师德与专项考核',
+        '师德和专项结论必须有独立事实来源和评审过程。',
+        '师德专项办理正在接入',
+        '未接通师德事实来源前，不从其它评价推断师德结论。',
+      ],
+      review: [
+        '评议与审定',
+        '评议、校准和审定分权处理，最终结果必须保留审批轨迹。',
+        '评议审定工作台正在接入',
+        '不会把普通评价记录直接当作最终审定结果。',
+      ],
+      archive: [
+        '结果与考核档案',
+        '正式结果、更正、异议、通知与归档必须可追溯。',
+        '结果档案工作台正在接入',
+        '归档模型已具备，正式查询与下载权限链仍在收口。',
+      ],
+    };
+
+    if (partialSections[section]) {
+      const [sectionTitle, sectionDescription, emptyTitle, emptyMessage] = partialSections[section];
+      title.textContent = sectionTitle;
+      description.textContent = sectionDescription;
+      box.innerHTML = empty(emptyTitle, emptyMessage);
+      return;
+    }
+
+    title.textContent = '制度与指标概览';
+    description.textContent = '先确认考核依据，再进入目标、年度、聘期、师德和评议工作区。';
+    const merged = [
+      ...policies.slice(0, 4).map((item) => row(
+        item.name,
+        item.code,
+        '考核制度',
+        item.status || '—',
+      )),
+      ...indicators.slice(0, 4).map((item) => row(
+        item.name,
+        item.code,
+        item.dimension || '考核指标',
+        item.status || '—',
+      )),
+    ];
+    box.innerHTML = merged.length
+      ? merged.join('')
+      : empty('暂无可展示的考核依据', '当前学校尚未配置可读取的考核制度或指标。');
+  }
+
+  function renderReadiness(state) {
+    if (section !== 'overview') return;
+    const title = document.getElementById('readinessTitle');
+    const summary = document.getElementById('readinessSummary');
+    if (!title || !summary) return;
+
+    if (state.policyLoaded && state.policies.length === 0) {
+      title.textContent = '尚未形成可展示的考核制度';
+      summary.textContent = '建议先从“制度与指标”确认学校考核依据；页面不会用默认制度替代真实配置。';
+      return;
+    }
+
+    if (
+      state.sourceLoaded &&
+      Object.values(state.sources).some((value) => value !== 'OK')
+    ) {
+      title.textContent = '部分业务来源仍需确认';
+      summary.textContent = '考核依据已读取，但部分来源为“部分可用”或“暂不可用”；进入正式考核前应先确认数据边界。';
+      return;
+    }
+
+    if (
+      state.policyLoaded &&
+      state.indicatorLoaded &&
+      state.scaleLoaded &&
+      state.sourceLoaded
+    ) {
+      title.textContent = '当前考核依据与来源状态已读取';
+      summary.textContent = `已读取 ${state.policies.length} 套制度、${state.indicators.length} 个指标、${state.scales.length} 个量表；可按业务链进入相应工作区。`;
+      return;
+    }
+
+    title.textContent = '仍有考核依据或来源状态无法读取';
+    summary.textContent = '当前存在未知状态；页面不会把读取失败自动显示成 0 条、0 分或“全部正常”。';
+  }
+
+  async function boot() {
+    let policies = [];
+    let indicators = [];
+    let scales = [];
+    let sources = {};
+    let policyLoaded = false;
+    let indicatorLoaded = false;
+    let scaleLoaded = false;
+    let sourceLoaded = false;
+
+    try {
+      const value = await getJson('/api/v1/hr/assessments/policies');
+      policies = Array.isArray(value) ? value : [];
+      policyLoaded = true;
+    } catch (_error) {}
+
+    try {
+      const value = await getJson('/api/v1/hr/assessments/indicators');
+      indicators = Array.isArray(value) ? value : [];
+      indicatorLoaded = true;
+    } catch (_error) {}
+
+    try {
+      const value = await getJson('/api/v1/hr/assessments/rating-scales');
+      scales = Array.isArray(value) ? value : [];
+      scaleLoaded = true;
+    } catch (_error) {}
+
+    try {
+      const value = await getJson('/api/v1/hr/assessments/eligibility');
+      sources = value && typeof value === 'object' ? (value.providerStatus || {}) : {};
+      sourceLoaded = true;
+    } catch (_error) {}
+
+    const policyCount = document.getElementById('policyCount');
+    const indicatorCount = document.getElementById('indicatorCount');
+    const scaleCount = document.getElementById('scaleCount');
+    const sourceHealth = document.getElementById('sourceHealth');
+    const sourceHealthCard = document.getElementById('sourceHealthCard');
+
+    if (policyCount) policyCount.textContent = policyLoaded ? String(policies.length) : '—';
+    if (indicatorCount) indicatorCount.textContent = indicatorLoaded ? String(indicators.length) : '—';
+    if (scaleCount) scaleCount.textContent = scaleLoaded ? String(scales.length) : '—';
+
+    const values = Object.values(sources);
+    if (sourceHealth) {
+      if (!sourceLoaded) {
+        sourceHealth.textContent = '—';
+      } else if (!values.length) {
+        sourceHealth.textContent = '暂无状态';
+      } else if (values.every((value) => value === 'OK')) {
+        sourceHealth.textContent = '全部正常';
+      } else {
+        sourceHealth.textContent = `${values.filter((value) => value === 'OK').length}/${values.length} 已接通`;
+        sourceHealthCard?.classList.add('hr12-kpi--warning');
+      }
+    }
+
+    const sourceStatus = document.getElementById('sourceStatus');
+    if (sourceStatus) {
+      if (!sourceLoaded) {
+        sourceStatus.innerHTML = '<div class="hr12-status-note">当前无法读取数据接入状态；未知状态不会当作正常。</div>';
+      } else if (!Object.keys(sources).length) {
+        sourceStatus.innerHTML = '<div class="hr12-status-note">当前学校暂无可展示的数据来源状态。</div>';
+      } else {
+        sourceStatus.innerHTML = Object.entries(sources).map(([key, value]) => {
+          const className = value === 'OK'
+            ? 'hr12-ok'
+            : (value === 'PARTIAL' ? 'hr12-partial' : 'hr12-off');
+          return `<div class="hr12-cap"><span>${esc(sourceNames[key] || key)}</span><b class="${className}">${esc(zhStatus[value] || value || '暂不可用')}</b></div>`;
+        }).join('');
+      }
+    }
+
+    renderSection(policies, indicators);
+    renderReadiness({
+      policyLoaded,
+      indicatorLoaded,
+      scaleLoaded,
+      sourceLoaded,
+      policies,
+      indicators,
+      scales,
+      sources,
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
+})();
