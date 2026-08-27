@@ -244,7 +244,7 @@ jobs:
               == ApplicationCanonicalStatus.HANDOFF_TO_HR05
           )
           case = HrOnboardingCase.objects.get(tenant_id=TENANT, id=case_id)
-          assert str(case.source_proposed_hire_id) == str(proposed_id)
+          assert str(case.hr04_proposed_hire_id) == str(proposed_id)
 
           reservation = HrPositionReservation.objects.get(
               tenant_id=TENANT,
