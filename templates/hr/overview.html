@@ -4,78 +4,168 @@
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-home.css' %}">
-<script src="{% static 'hr/vendor/apexcharts/apexcharts.min.js' %}"></script>
 
-<div class="hr-page hr-home" data-hr-page="overview">
-  <section class="hr-home__hero" aria-labelledby="hr-home-title">
-    <div>
-      <div class="hr-home__eyebrow">高校人事管理工作台</div>
-      <h1 class="hr-home__title" id="hr-home-title">今天的人事工作，从这里开始</h1>
-      <p class="hr-home__subtitle">先看人员规模、待办和风险，再进入对应业务模块办理。首页只展示当前学校真实数据；数据未接通、来源异常或口径不完整时，会明确提示，不用假数字填满页面。</p>
+<div class="hr-v2-page hr-home" data-hr-page="overview" data-module="HR01">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR01 人事工作台</span>
+    <strong>人事总览</strong>
+  </div>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr-home-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR01 · 学校人事工作台</div>
+      <h1 class="hr-v2-title" id="hr-home-title">今天的人事工作，从重点开始</h1>
+      <p class="hr-v2-subtitle">先看待办、风险和数据状态，再进入对应业务工作区。这里不把“暂不可用”显示成 0，也不把部分来源数据当成完整口径。</p>
     </div>
-    <div class="hr-home__hero-side" aria-label="首页使用提示">
-      <div class="hr-home__hero-tip"><strong>先看重点</strong><span>逾期待办、严重风险和近期人员变化优先处理。</span></div>
-      <div class="hr-home__hero-tip"><strong>再办业务</strong><span>下方 18 个人事模块按业务职责分开，避免入口重复。</span></div>
+    <div class="hr-v2-context" aria-label="当前页面说明">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> 真实业务数据</span>
+      <span class="hr-v2-context__item"><strong>权限</strong> 后端实时判定</span>
+    </div>
+  </header>
+
+  <section class="hr-v2-conclusions" aria-label="今日重点结论">
+    <article class="hr-v2-conclusion" id="hr-priority-todos" data-tone="muted">
+      <div class="hr-v2-conclusion__label"><span>我的待办</span><span>正在读取</span></div>
+      <div class="hr-skeleton hr-home__priority-loading" aria-hidden="true"></div>
+    </article>
+    <article class="hr-v2-conclusion" id="hr-priority-risks" data-tone="muted">
+      <div class="hr-v2-conclusion__label"><span>人事风险</span><span>正在读取</span></div>
+      <div class="hr-skeleton hr-home__priority-loading" aria-hidden="true"></div>
+    </article>
+    <article class="hr-v2-conclusion" id="hr-priority-data" data-tone="muted">
+      <div class="hr-v2-conclusion__label"><span>数据状态</span><span>正在核对</span></div>
+      <div class="hr-skeleton hr-home__priority-loading" aria-hidden="true"></div>
+    </article>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr-business-nav-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr-business-nav-title">人事业务导航</h2>
+        <p>18 个一级模块按学校人事处日常职责分组；模块编号和现有 Django 路由保持不变。</p>
+      </div>
+    </div>
+
+    <div class="hr-home__module-groups">
+      <section class="hr-home__module-group" aria-labelledby="hr-group-foundation">
+        <div class="hr-home__module-group-head">
+          <div><h3 id="hr-group-foundation">总览与人员基础</h3><p>先明确组织、岗位和人员事实，再进入后续业务。</p></div>
+          <span class="hr-home__module-group-no">01</span>
+        </div>
+        <div class="hr-home__modules">
+          <a class="hr-home__module" href="/hr/overview"><span class="hr-home__module-top"><span class="hr-home__module-no">HR01</span><span class="hr-home__module-arrow">→</span></span><h4>人事工作台</h4><p>总览、待办、预警、队伍结构与快捷办理。</p></a>
+          <a class="hr-home__module" href="/hr/structure/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR02</span><span class="hr-home__module-arrow">→</span></span><h4>组织岗位</h4><p>组织架构、编制方案、岗位目录与容量事实。</p></a>
+          <a class="hr-home__module" href="/hr/staff/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR03</span><span class="hr-home__module-arrow">→</span></span><h4>教职工主档</h4><p>人员主档、任职关系、履历、材料与历史更正。</p></a>
+        </div>
+      </section>
+
+      <section class="hr-home__module-group" aria-labelledby="hr-group-entry">
+        <div class="hr-home__module-group-head">
+          <div><h3 id="hr-group-entry">进校与人员流动</h3><p>从用人需求到正式入职，再到校内异动形成完整链路。</p></div>
+          <span class="hr-home__module-group-no">02</span>
+        </div>
+        <div class="hr-home__modules">
+          <a class="hr-home__module" href="/hr/recruitment/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR04</span><span class="hr-home__module-arrow">→</span></span><h4>招聘管理</h4><p>计划、项目、候选人、资格、考察与录用。</p></a>
+          <a class="hr-home__module" href="/hr/onboarding/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR05</span><span class="hr-home__module-arrow">→</span></span><h4>入职管理</h4><p>待报到、报到登记、材料核验、协同与转正。</p></a>
+          <a class="hr-home__module" href="/hr/changes/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR06</span><span class="hr-home__module-arrow">→</span></span><h4>人事异动</h4><p>调动、转岗、借调挂职、生效预览与异动台账。</p></a>
+        </div>
+      </section>
+
+      <section class="hr-home__module-group" aria-labelledby="hr-group-employment">
+        <div class="hr-home__module-group-head">
+          <div><h3 id="hr-group-employment">聘用、资格与发展</h3><p>管理合同关系、外聘队伍、任职资格和教师成长事实。</p></div>
+          <span class="hr-home__module-group-no">03</span>
+        </div>
+        <div class="hr-home__modules">
+          <a class="hr-home__module" href="/hr/contracts/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR07</span><span class="hr-home__module-arrow">→</span></span><h4>合同管理</h4><p>规则、签订续签、变更解除与到期预警。</p></a>
+          <a class="hr-home__module" href="/hr/external-teachers/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR08</span><span class="hr-home__module-arrow">→</span></span><h4>外聘人员</h4><p>外聘教师、产业教授、聘用审批、任务与退出。</p></a>
+          <a class="hr-home__module" href="/hr/qualifications/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR09</span><span class="hr-home__module-arrow">→</span></span><h4>资格资质</h4><p>资格总览、证书台账与资格风险。</p></a>
+          <a class="hr-home__module" href="/hr/development/dashboard"><span class="hr-home__module-top"><span class="hr-home__module-no">HR10</span><span class="hr-home__module-arrow">→</span></span><h4>教师发展</h4><p>发展计划、培训项目、申请、实践与成长档案。</p></a>
+        </div>
+      </section>
+
+      <section class="hr-home__module-group" aria-labelledby="hr-group-process">
+        <div class="hr-home__module-group-head">
+          <div><h3 id="hr-group-process">过程管理与评价</h3><p>围绕日常时间管理与年度、聘期评价形成可追溯过程。</p></div>
+          <span class="hr-home__module-group-no">04</span>
+        </div>
+        <div class="hr-home__modules">
+          <a class="hr-home__module" href="/hr/time/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR11</span><span class="hr-home__module-arrow">→</span></span><h4>考勤时间</h4><p>考勤、排班、请假、加班、月结与风险。</p></a>
+          <a class="hr-home__module" href="/hr/assessments/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR12</span><span class="hr-home__module-arrow">→</span></span><h4>考核管理</h4><p>制度指标、目标、年度、聘期、师德、评议与归档。</p></a>
+        </div>
+      </section>
+
+      <section class="hr-home__module-group" aria-labelledby="hr-group-growth">
+        <div class="hr-home__module-group-head">
+          <div><h3 id="hr-group-growth">职称、聘任与薪酬</h3><p>正式结果必须由各自 Authority 形成，前端不越权推断生效。</p></div>
+          <span class="hr-home__module-group-no">05</span>
+        </div>
+        <div class="hr-home__modules">
+          <a class="hr-home__module" href="/hr/titles/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR13</span><span class="hr-home__module-arrow">→</span></span><h4>职称评审</h4><p>申报、资格、材料、专家、评议、公示、异议与正式结果。</p></a>
+          <a class="hr-home__module" href="/hr/appointments/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR14</span><span class="hr-home__module-arrow">→</span></span><h4>岗位聘任</h4><p>额度、竞聘、排序、公示、正式聘任与聘期变更。</p></a>
+          <a class="hr-home__module" href="/hr/payroll/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR15</span><span class="hr-home__module-arrow">→</span></span><h4>薪酬福利</h4><p>档案、工资期间、核算、规则、结果、支付与对账。</p></a>
+        </div>
+      </section>
+
+      <section class="hr-home__module-group" aria-labelledby="hr-group-service">
+        <div class="hr-home__module-group-head">
+          <div><h3 id="hr-group-service">离校、个人服务与数据</h3><p>完成离校闭环，并向教职工和管理决策提供可信数据服务。</p></div>
+          <span class="hr-home__module-group-no">06</span>
+        </div>
+        <div class="hr-home__modules">
+          <a class="hr-home__module" href="/hr/exit/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR16</span><span class="hr-home__module-arrow">→</span></span><h4>退休与离校</h4><p>离校审批、交接、结算、退休事实、生效与归档。</p></a>
+          <a class="hr-home__module" href="/hr/self/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR17</span><span class="hr-home__module-arrow">→</span></span><h4>教职工服务</h4><p>服务大厅、本人待办、办理进度、文件、工资条与合同。</p></a>
+          <a class="hr-home__module" href="/hr/data/"><span class="hr-home__module-top"><span class="hr-home__module-no">HR18</span><span class="hr-home__module-arrow">→</span></span><h4>人事数据中心</h4><p>指标口径、历史时点、质量、交换、报送与更正。</p></a>
+        </div>
+      </section>
     </div>
   </section>
 
-  <div class="hr-home__section-head">
-    <div><h2>人事业务导航</h2><p>按高校人事日常工作划分，点击即可进入对应工作区。</p></div>
-    <div class="hr-home__section-note">“收口中/视觉验收中”表示页面可进入，但还没达到最终交付标准</div>
-  </div>
+  <section class="hr-v2-section" aria-labelledby="hr-metrics-title">
+    <div class="hr-v2-section__head">
+      <div><h2 id="hr-metrics-title">当前学校关键数据</h2><p>每个数字保留真实来源状态；不可用、部分可用或过期都会明确显示。</p></div>
+    </div>
+    <div class="hr-metric-strip" id="hr-metric-strip" data-hr-region="metrics">
+      {% for i in "123456" %}{% include "hr/components/metric_card.html" with status="loading" %}{% endfor %}
+    </div>
+  </section>
 
-  <nav class="hr-home__modules" aria-label="HR01 至 HR18 人事业务模块">
-    <a class="hr-home__module hr-home__module--progress" href="/hr/overview"><span class="hr-home__module-no">HR01</span><span class="hr-home__module-state">首页优化中</span><h3>人事工作台</h3><p>总览、待办、预警、队伍结构与快捷办理。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/structure/"><span class="hr-home__module-no">HR02</span><span class="hr-home__module-state">收口中</span><h3>组织岗位</h3><p>组织架构、岗位体系、岗位容量与任职基础。</p></a>
-    <a class="hr-home__module" href="/hr/staff/"><span class="hr-home__module-no">HR03</span><span class="hr-home__module-state">可进入</span><h3>教职工主档</h3><p>人员主档、工作信息、任职关系与历史事实。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/recruitment/"><span class="hr-home__module-no">HR04</span><span class="hr-home__module-state">收口中</span><h3>招聘管理</h3><p>招聘需求、候选人、资格审查、录用与入职交接。</p></a>
-    <a class="hr-home__module" href="/hr/onboarding/"><span class="hr-home__module-no">HR05</span><span class="hr-home__module-state">可进入</span><h3>入职管理</h3><p>入职任务、材料、手续、延期与正式到岗。</p></a>
-    <a class="hr-home__module" href="/hr/changes/"><span class="hr-home__module-no">HR06</span><span class="hr-home__module-state">可进入</span><h3>人事异动</h3><p>调岗、调动、转岗与生效过程留痕。</p></a>
+  <section class="hr-v2-section" aria-labelledby="hr-work-title">
+    <div class="hr-v2-section__head">
+      <div><h2 id="hr-work-title">需要处理的工作</h2><p>首页只给结论和入口，具体审批与业务写操作仍回到对应 Authority 工作区完成。</p></div>
+    </div>
+    <div class="hr-v2-two-col">
+      <article class="hr-v2-panel">
+        <div class="hr-v2-panel__head"><div><h3>我的待办</h3><p>逾期优先，再看今天和本周。</p></div><a class="hr-home__inline-link" href="/hr/todos">查看全部 →</a></div>
+        <div id="hr-todo-summary"><div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div></div>
+      </article>
+      <article class="hr-v2-panel">
+        <div class="hr-v2-panel__head"><div><h3>风险提醒</h3><p>严重和高风险优先进入预警中心处理。</p></div><a class="hr-home__inline-link" href="/hr/alerts">查看全部 →</a></div>
+        <div id="hr-risk-summary"><div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div></div>
+      </article>
+    </div>
+  </section>
 
-    <a class="hr-home__module hr-home__module--progress" href="/hr/contracts/"><span class="hr-home__module-no">HR07</span><span class="hr-home__module-state">前端收口中</span><h3>合同管理</h3><p>合同台账、模板规则、签订续签、变更解除与到期预警。</p></a>
-    <a class="hr-home__module" href="/hr/external-teachers/"><span class="hr-home__module-no">HR08</span><span class="hr-home__module-state">可进入</span><h3>外聘人员</h3><p>外聘身份、聘任、资质、评价与历史记录。</p></a>
-    <a class="hr-home__module" href="/hr/qualifications/"><span class="hr-home__module-no">HR09</span><span class="hr-home__module-state">可进入</span><h3>资格资质</h3><p>教师资格、证书台账、双师认定与资格风险工作区。</p></a>
-    <a class="hr-home__module" href="/hr/development/dashboard"><span class="hr-home__module-no">HR10</span><span class="hr-home__module-state">可进入</span><h3>教师发展</h3><p>培养计划、培训实践、发展记录与成果。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/time/"><span class="hr-home__module-no">HR11</span><span class="hr-home__module-state">收口中</span><h3>考勤时间</h3><p>日考勤、排班、请假、加班、月结与风险中心。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/assessments/"><span class="hr-home__module-no">HR12</span><span class="hr-home__module-state">收口中</span><h3>考核管理</h3><p>制度指标、目标、年度、聘期、师德、评议与归档。</p></a>
+  <section class="hr-v2-section" aria-labelledby="hr-actions-title">
+    <div class="hr-v2-section__head">
+      <div><h2 id="hr-actions-title">快捷办理</h2><p>这里仅显示后端已经判定当前账号有权使用的动作。</p></div>
+      <a class="hr-v2-section__action" href="/hr/actions">更多办理 →</a>
+    </div>
+    <div class="hr-v2-action-grid" id="hr-quick-actions">
+      <div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div>
+      <div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div>
+      <div class="hr-skeleton hr-skeleton--panel" aria-hidden="true"></div>
+    </div>
+  </section>
 
-    <a class="hr-home__module hr-home__module--progress" href="/hr/titles/"><span class="hr-home__module-no">HR13</span><span class="hr-home__module-state">视觉验收中</span><h3>职称评审</h3><p>申报、资格审查、评议、公示与正式结果。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/appointments/"><span class="hr-home__module-no">HR14</span><span class="hr-home__module-state">视觉验收中</span><h3>岗位聘任</h3><p>岗位额度、竞聘、评议、公示与正式聘任。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/payroll/"><span class="hr-home__module-no">HR15</span><span class="hr-home__module-state">视觉收口中</span><h3>薪酬福利</h3><p>薪酬档案、工资期间、核算、结果与对账。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/exit/"><span class="hr-home__module-no">HR16</span><span class="hr-home__module-state">视觉验收中</span><h3>退休与离校</h3><p>离校审批、交接、结算、退休与生效协同。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/self/"><span class="hr-home__module-no">HR17</span><span class="hr-home__module-state">视觉验收中</span><h3>教职工服务</h3><p>本人服务、待办、进度、文件、工资条与合同。</p></a>
-    <a class="hr-home__module hr-home__module--progress" href="/hr/data/"><span class="hr-home__module-no">HR18</span><span class="hr-home__module-state">视觉验收中</span><h3>人事数据中心</h3><p>指标口径、数据质量、历史时点、交换与报送。</p></a>
-  </nav>
-
-  <div class="hr-home__section-head">
-    <div><h2>今日人事概览</h2><p>关键数字只取当前学校真实数据，点击卡片可继续查看明细。</p></div>
-  </div>
-  <div class="hr-metric-strip" id="hr-metric-strip" data-hr-region="metrics">
-    {% for i in "123456" %}{% include "hr/components/metric_card.html" with status="loading" %}{% endfor %}
-  </div>
-
-  <div class="hr-overview-grid hr-overview-grid--middle">
-    {% include "hr/components/section_card.html" with title="我的待办" id="hr-todo-summary" status="loading" action_label="查看全部" action_url="/hr/todos" %}
-    {% include "hr/components/section_card.html" with title="风险提醒" id="hr-risk-summary" status="loading" action_label="查看全部" action_url="/hr/alerts" %}
-  </div>
-
-  <div class="hr-overview-grid hr-overview-grid--middle">
-    {% include "hr/components/chart_card.html" with chart_id="hr-headcount-trend" title="人数变化趋势" subtitle="近 12 个月在岗人数、新进与离退变化" status="loading" %}
-    {% include "hr/components/chart_card.html" with chart_id="hr-structure-summary" title="队伍结构摘要" subtitle="职称、学历、年龄与双师结构" status="loading" %}
-  </div>
-
-  <div class="hr-overview-grid hr-overview-grid--middle">
-    {% include "hr/components/section_card.html" with title="最近人事变化" id="hr-recent-changes" status="loading" %}
-    {% include "hr/components/section_card.html" with title="快捷办理" id="hr-quick-actions" status="loading" action_label="更多办理" action_url="/hr/actions" %}
-  </div>
-
-  <div class="hr-home__truth-note"><strong>数据说明</strong><span>首页不会把“暂不可用”显示成 0，也不会把部分来源数据当作完整口径。需要处理的数据问题会保留真实状态，方便后续追查。</span></div>
+  <div class="hr-v2-truth-note"><strong>数据说明</strong><span>页面只负责展示真实业务事实与后端允许的动作。若来源为 PARTIAL、STALE、UNAVAILABLE 或 ERROR，会保留原状态，不用 0、空列表或“成功”文案掩盖问题。</span></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/core/chart.js' %}"></script>
 <script src="{% static 'hr/js/pages/overview.js' %}"></script>
 {% endblock %}
