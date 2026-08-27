@@ -176,7 +176,7 @@ jobs:
 
       - name: Exact HR07 HR08 W-B regression
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
         run: >-
           python manage.py test
           hr_contracts.tests.test_agreement_service
