@@ -6,6 +6,7 @@ from django.urls import include, path, re_path
 
 from horilla.legacy_hr_api import legacy_hr_api_redirect
 from horilla.legacy_hr_ui import legacy_hr_ui_redirect
+from hr_external.api import wb_agreement as hr08_wb_agreement_api
 
 urlpatterns = [
     # HR01~HR07 UI routes
@@ -30,6 +31,13 @@ urlpatterns = [
     path("hr/assessments/", include("hr_assessment.urls")),
     # Canonical APIs for old-root modules HR01/02/03/04/05/06/08/11.
     path("", include("horilla.canonical_hr_api")),
+    # W-B HR08 agreement confirmation is canonical-only; legacy /api/hr/v1 writes
+    # are handled by the global 308 adapter below and land on this same callback.
+    path(
+        "api/v1/hr/external-teachers/hiring-cases/<uuid:case_id>/agreement",
+        hr08_wb_agreement_api.hiring_confirm_agreement,
+        name="hr08-api-wb-hiring-agreement",
+    ),
     # HR07 canonical Agreement Authority API. Recovery-only legacy handlers stay unrouted.
     path("", include("hr_contracts.api_urls")),
     # HR09/10/12 native canonical APIs.
