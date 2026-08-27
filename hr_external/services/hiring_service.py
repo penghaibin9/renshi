@@ -178,6 +178,9 @@ class HiringService:
             agreement_id=agreement_id,
             subject_reference_type="HR08_HIRING_CASE",
             subject_reference_id=str(case.id),
+            subject_person_id=(
+                str(case.proposed_person_id_id) if case.proposed_person_id_id else ""
+            ),
         )
         status = provider.agreement_status_code(result)
         return result, status
@@ -190,6 +193,7 @@ class HiringService:
         agreement_id: str = "",
         subject_reference_type: str = "",
         subject_reference_id: str = "",
+        subject_person_id: str = "",
     ) -> bool:
         """Compatibility boolean gate backed by the real HR07 Provider."""
         provider = AgreementProvider()
@@ -199,6 +203,7 @@ class HiringService:
             agreement_id=agreement_id,
             subject_reference_type=subject_reference_type,
             subject_reference_id=subject_reference_id,
+            subject_person_id=subject_person_id,
         )
         status = provider.agreement_status_code(result)
         return status in (

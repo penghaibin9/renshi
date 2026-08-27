@@ -41,6 +41,7 @@ class AgreementProvider(BaseProvider):
         agreement_id: Optional[str] = None,
         subject_reference_type: str = "",
         subject_reference_id: str = "",
+        subject_person_id: str = "",
         idempotency_key: str = "",
     ) -> ProviderResult:
         self._require_tenant(tenant_id)
@@ -77,6 +78,11 @@ class AgreementProvider(BaseProvider):
                     "HR07 agreement subject is unavailable",
                 )
             if subject_reference_id and agreement.subject_reference_id != str(subject_reference_id):
+                return self.unavailable(
+                    "PROVIDER_UNAVAILABLE",
+                    "HR07 agreement subject is unavailable",
+                )
+            if subject_person_id and str(agreement.subject_person_id) != str(subject_person_id):
                 return self.unavailable(
                     "PROVIDER_UNAVAILABLE",
                     "HR07 agreement subject is unavailable",

@@ -96,28 +96,57 @@ class WBExternalAgreementActivationChainTests(TestCase):
         self.hiring.wait_agreement(self.case)
         self.assertEqual(self.case.status, ExternalHiringStatus.WAITING_AGREEMENT)
 
-    def test_external_person_contract_activates_without_shadow_employee(self):
+    def _make_effective_external_agreement(self, *, agreement_no: str, person_id):
         today = date.today()
-        self._approve_to_waiting_agreement()
-
-        agreement_service = AgreementService(TENANT, actor_user_id=1)
-        agreement = agreement_service.create_external_agreement(
-            agreement_no="WB-EXT-CONTRACT-001",
-            person_id=self.person.id,
+        service = AgreementService(TENANT, actor_user_id=1)
+        agreement = service.create_external_agreement(
+            agreement_no=agreement_no,
+            person_id=person_id,
             subject_reference_type="HR08_HIRING_CASE",
             subject_reference_id=str(self.case.id),
-            agreement_title="W-B 外聘教师合作协议",
+            agreement_title=f"{agreement_no} 外聘合作协议",
             agreement_type=self.category.agreement_type_code,
         )
+        signed = service.sign_initial_version(
+            agreement_id=agreement.id,
+            effective_from=today,
+            effective_to=today + timedelta(days=365),
+            signed_at=timezone.now(),
+            signed_document_ref=f"private://contracts/{agreement_no}.pdf",
+            content_snapshot={
+                "personId": str(person_id),
+                "hiringCaseId": str(self.case.id),
+                "workerKind": "EXTERNAL",
+            },
+            source_business_type="HR08_HIRING_CASE",
+            source_business_id=str(self.case.id),
+        )
+        effective = service.activate_initial_version(
+            agreement_id=agreement.id,
+            version_id=signed.id,
+            as_of=today,
+        )
+        return agreement, effective
+
+    def test_external_person_contract_activates_without_shadow_employee(self):
+        self._approve_to_waiting_agreement()
+
+        agreement, effective = self._make_effective_external_agreement(
+            agreement_no="WB-EXT-CONTRACT-001",
+            person_id=self.person.id,
+        )
+        agreement_service = AgreementService(TENANT, actor_user_id=1)
         replay = agreement_service.create_external_agreement(
             agreement_no="WB-EXT-CONTRACT-001",
             person_id=self.person.id,
             subject_reference_type="HR08_HIRING_CASE",
             subject_reference_id=str(self.case.id),
-            agreement_title="W-B 外聘教师合作协议",
+            agreement_title="WB-EXT-CONTRACT-001 外聘合作协议",
             agreement_type=self.category.agreement_type_code,
         )
         self.assertEqual(replay.id, agreement.id)
+        agreement.refresh_from_db()
+        effective.refresh_from_db()
         self.assertEqual(
             agreement.subject_type,
             HrContractAgreement.SubjectType.EXTERNAL_WORKFORCE,
@@ -125,28 +154,6 @@ class WBExternalAgreementActivationChainTests(TestCase):
         self.assertEqual(agreement.subject_person_id, self.person.id)
         self.assertIsNone(agreement.staff_id)
         self.assertIsNone(agreement.employment_relationship_id)
-
-        signed = agreement_service.sign_initial_version(
-            agreement_id=agreement.id,
-            effective_from=today,
-            effective_to=today + timedelta(days=365),
-            signed_at=timezone.now(),
-            signed_document_ref="private://contracts/wb-external-001.pdf",
-            content_snapshot={
-                "personId": str(self.person.id),
-                "hiringCaseId": str(self.case.id),
-                "workerKind": "EXTERNAL",
-            },
-            source_business_type="HR08_HIRING_CASE",
-            source_business_id=str(self.case.id),
-        )
-        effective = agreement_service.activate_initial_version(
-            agreement_id=agreement.id,
-            version_id=signed.id,
-            as_of=today,
-        )
-        agreement.refresh_from_db()
-        effective.refresh_from_db()
         self.assertEqual(agreement.status, HrContractAgreement.Status.ACTIVE)
         self.assertEqual(effective.status, HrContractVersion.Status.EFFECTIVE)
 
@@ -157,6 +164,7 @@ class WBExternalAgreementActivationChainTests(TestCase):
             agreement_id=str(agreement.id),
             subject_reference_type="HR08_HIRING_CASE",
             subject_reference_id=str(self.case.id),
+            subject_person_id=str(self.person.id),
         )
         self.assertFalse(wrong_tenant.is_available)
         self.assertEqual(
@@ -172,8 +180,8 @@ class WBExternalAgreementActivationChainTests(TestCase):
             category_id=self.category,
             purpose="other case must not steal agreement",
             proposed_person_id=self.person,
-            requested_start=today,
-            requested_end=today + timedelta(days=30),
+            requested_start=date.today(),
+            requested_end=date.today() + timedelta(days=30),
             status=ExternalHiringStatus.WAITING_AGREEMENT,
         )
         with self.assertRaises(AgreementNotReady):
@@ -215,6 +223,31 @@ class WBExternalAgreementActivationChainTests(TestCase):
 
         # Production red line: external workforce shares Person identity only.
         self.assertEqual(HrPerson.objects.filter(tenant_id=TENANT).count(), 1)
+        self.assertEqual(HrStaffMaster.objects.filter(tenant_id=TENANT).count(), 0)
+        self.assertEqual(
+            HrEmploymentRelationship.objects.filter(tenant_id=TENANT).count(),
+            0,
+        )
+
+    def test_agreement_person_must_match_hiring_person(self):
+        self._approve_to_waiting_agreement()
+        other_person = HrPerson.objects.create(
+            tenant_id=TENANT,
+            legal_name="W-B 另一个外聘人",
+        )
+        wrong_agreement, _effective = self._make_effective_external_agreement(
+            agreement_no="WB-EXT-WRONG-PERSON",
+            person_id=other_person.id,
+        )
+
+        with self.assertRaises(AgreementNotReady):
+            self.hiring.confirm_agreement(
+                self.case,
+                agreement_id=str(wrong_agreement.id),
+            )
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, ExternalHiringStatus.WAITING_AGREEMENT)
+        self.assertEqual(self.case.agreement_id, "")
         self.assertEqual(HrStaffMaster.objects.filter(tenant_id=TENANT).count(), 0)
         self.assertEqual(
             HrEmploymentRelationship.objects.filter(tenant_id=TENANT).count(),
