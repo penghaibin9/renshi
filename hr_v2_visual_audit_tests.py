@@ -89,7 +89,9 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
         page_errors: list[str] = []
+        console_errors: list[str] = []
         api_failures: list[str] = []
+        static_failures: list[str] = []
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
@@ -109,15 +111,23 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 )
                 page = context.new_page()
                 page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+                page.on(
+                    "console",
+                    lambda msg: console_errors.append(msg.text)
+                    if msg.type == "error"
+                    else None,
+                )
 
-                def record_api_failure(response):
+                def record_response(response):
                     if (
                         "/api/hr/v1/" in response.url
                         or "/api/v1/hr/" in response.url
                     ) and response.status >= 400:
                         api_failures.append(f"{response.status} {response.url}")
+                    if "/static/hr/js/" in response.url and response.status >= 400:
+                        static_failures.append(f"{response.status} {response.url}")
 
-                page.on("response", record_api_failure)
+                page.on("response", record_response)
 
                 response = page.goto(
                     self.live_server_url + "/hr/overview",
@@ -128,7 +138,43 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page.locator("[data-module='HR01']").count(), 1)
                 self.assertEqual(page.locator(".hr-home__module").count(), 18)
                 self.assertEqual(page.locator(".hr-v2-conclusion").count(), 3)
-                self.assertEqual(page.locator(".hr-v2-conclusion .hr-skeleton").count(), 0)
+
+                # Always retain the failing first paint before assertions so a red
+                # visual gate still leaves concrete browser evidence.
+                page.wait_for_timeout(300)
+                runtime_state = page.evaluate(
+                    """() => ({
+                      readyState: document.readyState,
+                      hasHrApi: Boolean(window.HrApi),
+                      hasHrApiRequest: Boolean(window.HrApi && typeof window.HrApi.request === 'function'),
+                      apiClientScript: Array.from(document.scripts).some((s) => s.src.includes('/hr/js/core/api-client.js')),
+                      overviewScript: Array.from(document.scripts).some((s) => s.src.includes('/hr/js/pages/overview.js')),
+                      skeletonCount: document.querySelectorAll('.hr-v2-conclusion .hr-skeleton').length,
+                      priorityTodoHtml: document.getElementById('hr-priority-todos')?.innerHTML || '',
+                    })"""
+                )
+                page.screenshot(
+                    path=str(self.out_dir / "desktop-overview-diagnostic.png"),
+                    full_page=True,
+                )
+
+                diagnostic = (
+                    f"runtime={runtime_state}; page_errors={page_errors}; "
+                    f"console_errors={console_errors}; api_failures={api_failures}; "
+                    f"static_failures={static_failures}"
+                )
+                self.assertTrue(runtime_state["apiClientScript"], diagnostic)
+                self.assertTrue(runtime_state["overviewScript"], diagnostic)
+                self.assertTrue(runtime_state["hasHrApi"], diagnostic)
+                self.assertTrue(runtime_state["hasHrApiRequest"], diagnostic)
+                self.assertEqual(page_errors, [], diagnostic)
+                self.assertEqual(static_failures, [], diagnostic)
+                self.assertEqual(api_failures, [], diagnostic)
+                self.assertEqual(
+                    page.locator(".hr-v2-conclusion .hr-skeleton").count(),
+                    0,
+                    diagnostic,
+                )
                 page.screenshot(
                     path=str(self.out_dir / "desktop-overview.png"),
                     full_page=True,
@@ -158,7 +204,17 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
             "Browser page errors: " + " | ".join(page_errors),
         )
         self.assertEqual(
+            console_errors,
+            [],
+            "Browser console errors: " + " | ".join(console_errors),
+        )
+        self.assertEqual(
             api_failures,
             [],
             "Canonical HR API failures: " + " | ".join(api_failures),
+        )
+        self.assertEqual(
+            static_failures,
+            [],
+            "HR static JS failures: " + " | ".join(static_failures),
         )
