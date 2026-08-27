@@ -163,9 +163,7 @@
 
   <div class="hr-v2-truth-note"><strong>数据说明</strong><span>页面只负责展示真实业务事实与后端允许的动作。若来源为 PARTIAL、STALE、UNAVAILABLE 或 ERROR，会保留原状态，不用 0、空列表或“成功”文案掩盖问题。</span></div>
 </div>
-{% endblock %}
 
-{% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/overview.js' %}"></script>
 {% endblock %}
