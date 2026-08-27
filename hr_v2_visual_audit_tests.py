@@ -191,8 +191,7 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                     page.locator(".hr-v2-mobile-section-switcher").count(), 1
                 )
                 page.screenshot(
-                    path=str(self.out_dir / "mobile-overview.png"),
-                    full_page=True,
+                    path=str(self.out_dir / "mobile-overview.png"), full_page=True
                 )
                 context.close()
             finally:
@@ -273,7 +272,9 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page.locator(".hr09-process__step").count(), 5)
                 self.assertEqual(page.locator(".hr09-nav a").count(), 6)
                 self.assertEqual(page.locator(".hr09-hero").count(), 0)
-                self.assertEqual(page.locator(".hr09-primary-kpis .hr-v2-kpi").count(), 4)
+                self.assertEqual(
+                    page.locator(".hr09-primary-kpis .hr-v2-kpi").count(), 4
+                )
 
                 loaded_styles = page.evaluate(
                     """() => Array.from(document.styleSheets)
@@ -332,4 +333,141 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
             static_failures,
             [],
             "HR09 static CSS failures: " + " | ".join(static_failures),
+        )
+
+    def test_capture_hr12_v2_desktop_and_mobile(self):
+        """Verify HR12 uses the shared V2 shell without hiding partial states."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+
+        page_errors: list[str] = []
+        static_failures: list[str] = []
+        hr12_dir = self.out_dir.parent / "HR12-V2"
+        hr12_dir.mkdir(parents=True, exist_ok=True)
+        routes = [
+            "/hr/assessments/",
+            "/hr/assessments/policies/",
+            "/hr/assessments/goals/",
+            "/hr/assessments/annual/",
+            "/hr/assessments/term/",
+            "/hr/assessments/ethics/",
+            "/hr/assessments/review/",
+            "/hr/assessments/archive/",
+        ]
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                context = browser.new_context(
+                    viewport={"width": 1440, "height": 1000},
+                    device_scale_factor=1,
+                )
+                context.add_cookies(
+                    [
+                        {
+                            "name": settings.SESSION_COOKIE_NAME,
+                            "value": self.session_cookie,
+                            "url": self.live_server_url,
+                        }
+                    ]
+                )
+                page = context.new_page()
+                page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+
+                def record_response(response):
+                    if "/static/hr/css/" in response.url and response.status >= 400:
+                        static_failures.append(f"{response.status} {response.url}")
+
+                page.on("response", record_response)
+
+                response = page.goto(
+                    self.live_server_url + routes[0],
+                    wait_until="networkidle",
+                )
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(page.locator("[data-module='HR12']").count(), 1)
+                self.assertEqual(page.locator(".hr12-process__step").count(), 6)
+                self.assertEqual(page.locator(".hr12-nav a").count(), 8)
+                self.assertEqual(page.locator(".hr12-hero").count(), 0)
+                self.assertEqual(
+                    page.locator(".hr12-primary-kpis .hr-v2-kpi").count(), 4
+                )
+                self.assertNotEqual(
+                    page.locator("#sourceHealth").inner_text().strip(),
+                    "读取中",
+                    "HR12 boot did not settle after network idle",
+                )
+
+                loaded_styles = page.evaluate(
+                    """() => Array.from(document.styleSheets)
+                      .map((sheet) => sheet.href || '')
+                      .filter(Boolean)"""
+                )
+                diagnostic = (
+                    f"styles={loaded_styles}; page_errors={page_errors}; "
+                    f"static_failures={static_failures}"
+                )
+                self.assertTrue(
+                    any("/hr/css/hr-v2.css" in href for href in loaded_styles),
+                    diagnostic,
+                )
+                self.assertTrue(
+                    any("/hr/css/hr12-assessment.css" in href for href in loaded_styles),
+                    diagnostic,
+                )
+                self.assertEqual(page_errors, [], diagnostic)
+                self.assertEqual(static_failures, [], diagnostic)
+                page.screenshot(
+                    path=str(hr12_dir / "desktop-overview.png"),
+                    full_page=True,
+                )
+
+                for route in routes[1:]:
+                    response = page.goto(
+                        self.live_server_url + route,
+                        wait_until="networkidle",
+                    )
+                    self.assertIsNotNone(response, f"No HTTP response for HR12 {route}")
+                    self.assertEqual(
+                        response.status,
+                        200,
+                        f"HR12 {route} returned HTTP {response.status}",
+                    )
+                    self.assertEqual(
+                        page.locator("[data-module='HR12']").count(),
+                        1,
+                        f"HR12 V2 shell missing at {route}",
+                    )
+
+                page.set_viewport_size({"width": 390, "height": 844})
+                response = page.goto(
+                    self.live_server_url + routes[0],
+                    wait_until="networkidle",
+                )
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(page.locator("[data-module='HR12']").count(), 1)
+                self.assertEqual(
+                    page.locator(".hr-v2-mobile-section-switcher").count(), 1
+                )
+                page.screenshot(
+                    path=str(hr12_dir / "mobile-overview.png"),
+                    full_page=True,
+                )
+                context.close()
+            finally:
+                browser.close()
+
+        self.assertEqual(
+            page_errors,
+            [],
+            "HR12 browser page errors: " + " | ".join(page_errors),
+        )
+        self.assertEqual(
+            static_failures,
+            [],
+            "HR12 static CSS failures: " + " | ".join(static_failures),
         )
