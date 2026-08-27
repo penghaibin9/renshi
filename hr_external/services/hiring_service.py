@@ -6,7 +6,7 @@ hr_external/services/hiring_service.py —— 聘用审批流程（S5，总册 �
 异常：RETURNED/REJECTED/WITHDRAWN/CANCELLED。
 
 Activation（§43）事务：
-1. lock case；2. revalidate dates；3. confirm HR07 agreement state（Provider 占位）；
+1. lock case；2. revalidate dates；3. confirm HR07 agreement state；
 4. create Engagement；5. create Assignment(s)；6. external worker directory projection（S9）；
 7. emit ExternalEngagementActivated（LifecycleEvent）；8. access provisioning requests（S6）；
 9. case → ACTIVATED。
@@ -29,7 +29,6 @@ from hr_external.constants import (
 )
 from hr_external.integrations.hr07 import AgreementProvider
 from hr_external.models import (
-    HrExternalCategory,
     HrExternalEngagement,
     HrExternalEngagementAssignment,
     HrExternalHiringCase,
@@ -55,7 +54,6 @@ class ComplianceBlocked(Exception):
     code = "EXTERNAL_ETHICS_REVIEW_FAILED"
 
 
-# 合法转换（§34）；RETURNED/REJECTED/WITHDRAWN/CANCELLED 由 service 守卫。
 _HIRING_TRANSITIONS = {
     ExternalHiringStatus.DRAFT: {
         ExternalHiringStatus.VALIDATING,
@@ -69,8 +67,6 @@ _HIRING_TRANSITIONS = {
         ExternalHiringStatus.CANCELLED,
     },
     ExternalHiringStatus.SUBMITTED: {
-        # 产品流程把 SUBMITTED 定义为“已提交、等待学院审批”；学院批准后
-        # 可直接进入 HR 审。UNDER_COLLEGE_REVIEW 仍保留给显式开始学院审的客户端。
         ExternalHiringStatus.UNDER_COLLEGE_REVIEW,
         ExternalHiringStatus.UNDER_HR_REVIEW,
         ExternalHiringStatus.RETURNED,
@@ -124,11 +120,9 @@ class HiringService:
         case.save(update_fields=["status", "updated_at"])
 
     def submit(self, case: HrExternalHiringCase):
-        """SUBMITTED（DRAFT→SUBMITTED；进入学院审）。"""
         self._transition(case, ExternalHiringStatus.SUBMITTED)
 
     def return_to_draft(self, case: HrExternalHiringCase, reason: str = ""):
-        """RETURNED（可补正并产生新版本，§22）。"""
         if case.status not in (
             ExternalHiringStatus.SUBMITTED,
             ExternalHiringStatus.UNDER_COLLEGE_REVIEW,
@@ -146,7 +140,6 @@ class HiringService:
         self._transition(case, ExternalHiringStatus.UNDER_SCHOOL_APPROVAL)
 
     def school_approve(self, case: HrExternalHiringCase):
-        """学校批准：必须通过审批前检查（§35）。"""
         if case.status != ExternalHiringStatus.UNDER_SCHOOL_APPROVAL:
             raise InvalidHiringState("case not under school approval")
         profile = _profile_for_case(case)
@@ -160,8 +153,7 @@ class HiringService:
         )
         if result.has_blocker:
             raise ComplianceBlocked(
-                "审批前检查存在 BLOCKER："
-                + "; ".join(c.message for c in result.blockers)
+                "审批前检查存在 BLOCKER：" + "; ".join(c.message for c in result.blockers)
             )
         self._transition(case, ExternalHiringStatus.APPROVED)
 
@@ -169,10 +161,26 @@ class HiringService:
         self._transition(case, ExternalHiringStatus.REJECTED)
 
     def wait_agreement(self, case: HrExternalHiringCase):
-        """APPROVED→WAITING_AGREEMENT（§42 Agreement gate）。"""
         if case.status != ExternalHiringStatus.APPROVED:
             raise InvalidHiringState("case not approved")
         self._transition(case, ExternalHiringStatus.WAITING_AGREEMENT)
+
+    def _agreement_result(
+        self,
+        *,
+        case: HrExternalHiringCase,
+        agreement_id: str,
+    ):
+        provider = AgreementProvider()
+        result = provider.resolve_agreement(
+            tenant_id=case.tenant_id,
+            agreement_type_code=case.category_id.agreement_type_code,
+            agreement_id=agreement_id,
+            subject_reference_type="HR08_HIRING_CASE",
+            subject_reference_id=str(case.id),
+        )
+        status = provider.agreement_status_code(result)
+        return result, status
 
     def agreement_gate(
         self,
@@ -180,32 +188,71 @@ class HiringService:
         tenant_id: int,
         agreement_type_code: str,
         agreement_id: str = "",
+        subject_reference_type: str = "",
+        subject_reference_id: str = "",
     ) -> bool:
-        """HR07 Agreement gate（§42/§93；Provider 占位 UNAVAILABLE → 不通过，禁止 silent fallback）。"""
+        """Compatibility boolean gate backed by the real HR07 Provider."""
         provider = AgreementProvider()
         result = provider.resolve_agreement(
             tenant_id=tenant_id,
             agreement_type_code=agreement_type_code,
             agreement_id=agreement_id,
+            subject_reference_type=subject_reference_type,
+            subject_reference_id=subject_reference_id,
         )
-        status = result.data.get("agreementStatus") if result.is_available else ""
+        status = provider.agreement_status_code(result)
         return status in (
             AgreementProviderStatus.SIGNED.value,
             AgreementProviderStatus.ACTIVE.value,
         )
 
     @transaction.atomic
-    def activate(self, case: HrExternalHiringCase, *, actor_id=None) -> HrExternalEngagement:
-        """ActivateExternalEngagement（§43 事务序列）。
+    def confirm_agreement(
+        self,
+        case: HrExternalHiringCase,
+        *,
+        agreement_id: str,
+    ) -> HrExternalHiringCase:
+        """Bind the exact HR07 external agreement and unlock activation."""
+        locked = (
+            HrExternalHiringCase.objects.select_for_update()
+            .select_related("category_id")
+            .filter(id=case.id, tenant_id=case.tenant_id)
+            .first()
+        )
+        if locked is None:
+            raise HiringCaseNotFound("hiring case not found inside tenant")
+        if locked.status != ExternalHiringStatus.WAITING_AGREEMENT:
+            raise InvalidHiringState("case not waiting for agreement")
+        if not agreement_id:
+            raise AgreementNotReady("agreement reference is required")
 
-        生产级并发防护：对 case 加行锁（select_for_update），
-        双请求同时 activate 时第二个等待锁后读到 ACTIVATED → 拒绝（409）。
-        """
-        case = HrExternalHiringCase.objects.select_for_update().get(id=case.id)
+        _result, status = self._agreement_result(case=locked, agreement_id=agreement_id)
+        if status not in (
+            AgreementProviderStatus.SIGNED.value,
+            AgreementProviderStatus.ACTIVE.value,
+        ):
+            raise AgreementNotReady("agreement not ready for activation")
+
+        locked.agreement_id = str(agreement_id)
+        locked.status = ExternalHiringStatus.READY_TO_ACTIVATE
+        locked.save(update_fields=["agreement_id", "status", "updated_at"])
+        return locked
+
+    @transaction.atomic
+    def activate(self, case: HrExternalHiringCase, *, actor_id=None) -> HrExternalEngagement:
+        """Activate an external engagement only from a tenant-bound ready case."""
+        case = (
+            HrExternalHiringCase.objects.select_for_update()
+            .select_related("category_id")
+            .filter(id=case.id, tenant_id=case.tenant_id)
+            .first()
+        )
+        if case is None:
+            raise HiringCaseNotFound("hiring case not found inside tenant")
         if case.status != ExternalHiringStatus.READY_TO_ACTIVATE:
             raise InvalidHiringState("case not ready to activate")
 
-        # 2) revalidate dates
         if case.requested_end and case.requested_start >= case.requested_end:
             raise InvalidHiringState("EXTERNAL_ENGAGEMENT_DATES_INVALID")
         if case.proposed_person_id is None:
@@ -218,16 +265,21 @@ class HiringService:
         if profile is None:
             raise HiringCaseNotFound("external profile missing for proposed person")
 
-        # 3) confirm HR07 agreement state
-        gate_ok = self.agreement_gate(
-            tenant_id=case.tenant_id,
-            agreement_type_code=case.category_id.agreement_type_code,
-            agreement_id=case.approval_instance_id,
-        )
-        if case.category_id.agreement_requirement == "REQUIRED_BEFORE_ACTIVATION" and not gate_ok:
-            raise AgreementNotReady("agreement not ready for activation")
+        if case.category_id.agreement_requirement == "REQUIRED_BEFORE_ACTIVATION":
+            if not case.agreement_id:
+                raise AgreementNotReady("agreement reference missing")
+            _result, agreement_status = self._agreement_result(
+                case=case,
+                agreement_id=case.agreement_id,
+            )
+            if agreement_status not in (
+                AgreementProviderStatus.SIGNED.value,
+                AgreementProviderStatus.ACTIVE.value,
+            ):
+                raise AgreementNotReady("agreement not ready for activation")
+        else:
+            agreement_status = AgreementProviderStatus.NOT_REQUIRED.value
 
-        # 4) create Engagement
         eng = HrExternalEngagement.objects.create(
             tenant_id=case.tenant_id,
             engagement_no=f"E{case.case_no}",
@@ -242,12 +294,12 @@ class HiringService:
             end_at=case.requested_end,
             review_at=_default_review_at(case.requested_start, case.requested_end),
             workload_cap=case.estimated_workload,
+            agreement_id=case.agreement_id,
             agreement_requirement=case.category_id.agreement_requirement,
-            agreement_status=AgreementProviderStatus.UNAVAILABLE.value,
+            agreement_status=agreement_status,
             status=ExternalEngagementStatus.ACTIVE,
         )
 
-        # 5) create Assignment(s) from planned_assignments_json
         for idx, planned in enumerate(case.planned_assignments_json or []):
             HrExternalEngagementAssignment.objects.create(
                 tenant_id=case.tenant_id,
@@ -264,7 +316,6 @@ class HiringService:
                 status=ExternalAssignmentStatus.ACTIVE,
             )
 
-        # 7) emit ExternalEngagementActivated（LifecycleEvent，§103/00 §15）
         HrExternalLifecycleEvent.objects.create(
             tenant_id=case.tenant_id,
             event_type="ExternalEngagementActivated",
@@ -279,7 +330,6 @@ class HiringService:
             status="PUBLISHED",
         )
 
-        # 9) case → ACTIVATED
         self._transition(case, ExternalHiringStatus.ACTIVATED)
         return eng
 
@@ -293,7 +343,6 @@ def _profile_for_case(case: HrExternalHiringCase) -> Optional[HrExternalTeacherP
 
 
 def _default_review_at(start_at: date, end_at: Optional[date]) -> Optional[date]:
-    """默认 review_at = end_at - 90 天（§59；AlertPolicy 可配）。"""
     if not end_at:
         return None
     from datetime import timedelta

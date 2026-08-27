@@ -1,8 +1,13 @@
 """HR07 contract authority roots.
 
-Legacy ``payroll.Contract`` remains a read-only migration source.  New formal
+Legacy ``payroll.Contract`` remains a read-only migration source. New formal
 contract facts live here and are referenced by scalar provider IDs across
 HR03/HR05/HR06/HR08 rather than cross-domain cascade FKs.
+
+A contract subject is typed. Regular staff contracts remain bound to the
+HR03 Staff + EmploymentRelationship pair; HR08 external-workforce agreements
+bind to the shared tenant-private HrPerson plus an HR08 business reference and
+must not fabricate a formal employment relationship.
 """
 
 from __future__ import annotations
@@ -25,9 +30,22 @@ class HrContractAgreement(HrTenantScopedModel):
         EXPIRED = "EXPIRED", "Expired"
         ARCHIVED = "ARCHIVED", "Archived"
 
+    class SubjectType(models.TextChoices):
+        STAFF_EMPLOYMENT = "STAFF_EMPLOYMENT", "Staff employment"
+        EXTERNAL_WORKFORCE = "EXTERNAL_WORKFORCE", "External workforce"
+
     agreement_no = models.CharField(max_length=64)
-    staff_id = models.UUIDField(db_index=True)
-    employment_relationship_id = models.UUIDField(db_index=True)
+    subject_type = models.CharField(
+        max_length=32,
+        choices=SubjectType.choices,
+        default=SubjectType.STAFF_EMPLOYMENT,
+        db_index=True,
+    )
+    staff_id = models.UUIDField(db_index=True, null=True, blank=True)
+    employment_relationship_id = models.UUIDField(db_index=True, null=True, blank=True)
+    subject_person_id = models.UUIDField(db_index=True, null=True, blank=True)
+    subject_reference_type = models.CharField(max_length=50, blank=True, default="")
+    subject_reference_id = models.CharField(max_length=100, blank=True, default="")
     agreement_title = models.CharField(max_length=200)
     agreement_type = models.CharField(max_length=50)
     status = models.CharField(
@@ -50,6 +68,26 @@ class HrContractAgreement(HrTenantScopedModel):
                 fields=("tenant_id", "legacy_contract_id"),
                 name="uq_hr07_agree_legacy",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        subject_type="STAFF_EMPLOYMENT",
+                        staff_id__isnull=False,
+                        employment_relationship_id__isnull=False,
+                    )
+                    | (
+                        Q(
+                            subject_type="EXTERNAL_WORKFORCE",
+                            staff_id__isnull=True,
+                            employment_relationship_id__isnull=True,
+                            subject_person_id__isnull=False,
+                        )
+                        & ~Q(subject_reference_type="")
+                        & ~Q(subject_reference_id="")
+                    )
+                ),
+                name="ck_hr07_agree_subject_shape",
+            ),
         ]
         indexes = [
             models.Index(
@@ -59,6 +97,15 @@ class HrContractAgreement(HrTenantScopedModel):
             models.Index(
                 fields=("tenant_id", "employment_relationship_id", "status"),
                 name="idx_hr07_agree_rel",
+            ),
+            models.Index(
+                fields=(
+                    "tenant_id",
+                    "subject_type",
+                    "subject_reference_type",
+                    "subject_reference_id",
+                ),
+                name="idx_hr07_agree_subject",
             ),
         ]
 
