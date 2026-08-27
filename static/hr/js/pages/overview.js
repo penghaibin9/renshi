@@ -281,5 +281,16 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", loadOverview);
+  let overviewStarted = false;
+  function startOverview() {
+    if (overviewStarted) return;
+    overviewStarted = true;
+    void loadOverview();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", startOverview, { once: true });
+  } else {
+    startOverview();
+  }
 })();
