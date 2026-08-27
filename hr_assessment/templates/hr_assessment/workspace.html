@@ -3,49 +3,151 @@
 {% block title %}{{ section_title }}{% endblock %}
 
 {% block content %}
-<style>
-.hr12{--p:#3157d5;--ink:#182238;--muted:#687386;--line:#e5eaf2;--bg:#f5f8fc;--card:#fff;--good:#087a55;--warn:#a96312;max-width:1500px;margin:0 auto;padding:24px 28px 40px;color:var(--ink);font-family:Inter,"Microsoft YaHei",sans-serif}.hr12 *{box-sizing:border-box}.hr12-hero{position:relative;overflow:hidden;padding:28px 30px;border-radius:22px;background:linear-gradient(135deg,#1a3470,#3157d5 58%,#6687f3);color:#fff;box-shadow:0 16px 42px rgba(49,87,213,.16)}.hr12-hero:after{content:"考核";position:absolute;right:24px;bottom:-38px;font-size:112px;font-weight:900;color:rgba(255,255,255,.06)}.hr12-eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;color:#dce6ff}.hr12-hero h1{margin:7px 0 5px;font-size:29px;letter-spacing:-.02em}.hr12-hero p{max-width:900px;margin:0;color:#e6edff;line-height:1.7}.hr12-nav{display:flex;gap:8px;overflow:auto;margin:17px 0;padding:5px;border:1px solid var(--line);border-radius:14px;background:#fff;scrollbar-width:thin}.hr12-nav a{flex:0 0 auto;padding:9px 13px;border-radius:10px;color:#526079;text-decoration:none;font-size:13px;font-weight:700;white-space:nowrap}.hr12-nav a:hover{background:#f3f6fc}.hr12-nav a.active{background:var(--p);color:#fff}.hr12-mobile-hint{display:none;color:var(--muted);font-size:11px;margin:-9px 4px 12px}.hr12-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.hr12-kpi{min-height:104px;padding:16px 17px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 5px 18px rgba(26,46,82,.04)}.hr12-kpi span{display:block;color:var(--muted);font-size:12px}.hr12-kpi b{display:block;margin-top:8px;font-size:24px;line-height:1.15}.hr12-kpi small{display:block;margin-top:5px;color:#8a94a5;font-size:11px}.hr12-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,.72fr);gap:16px}.hr12-card{border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 6px 20px rgba(26,46,82,.045);overflow:hidden}.hr12-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line)}.hr12-card-head h2{margin:0;font-size:16px}.hr12-card-head p{margin:4px 0 0;color:var(--muted);font-size:12px}.hr12-list{padding:6px 20px}.hr12-row{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(100px,.65fr) minmax(90px,.45fr);gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid #eff2f6}.hr12-row:last-child{border:0}.hr12-row strong{display:block;font-size:13px}.hr12-row small{display:block;margin-top:3px;color:var(--muted);font-size:11px}.hr12-pill{justify-self:start;padding:4px 9px;border-radius:999px;background:#eef2ff;color:#3e52b5;font-size:11px;font-weight:700}.hr12-empty{padding:34px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.7}.hr12-empty strong{display:block;margin-bottom:5px;color:#3d4b63}.hr12-cap-list{padding:8px 18px}.hr12-cap{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line);font-size:12px}.hr12-cap:last-child{border:0}.hr12-cap b{font-weight:700}.hr12-ok{color:var(--good)}.hr12-off{color:var(--warn)}.hr12-access{margin:14px 0;padding:14px 16px;border:1px solid #ffd7dc;border-radius:14px;background:#fff2f4;color:#a52c39}.hr12-principle{margin-top:16px;padding:13px 15px;border:1px solid #dce6f7;border-radius:14px;background:#f7faff;color:#53627a;font-size:12px;line-height:1.65}.hr12-principle strong{color:#274b91}.hr12-status-note{padding:13px 15px;border-radius:13px;background:#fafbfc;color:var(--muted);font-size:12px;line-height:1.7}@media(max-width:1050px){.hr12-summary{grid-template-columns:repeat(2,1fr)}.hr12-grid{grid-template-columns:1fr}}@media(max-width:680px){.hr12{padding:12px 12px 28px}.hr12-hero{padding:22px 20px;border-radius:18px}.hr12-hero h1{font-size:24px}.hr12-mobile-hint{display:block}.hr12-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.hr12-kpi{min-height:96px;padding:14px}.hr12-kpi b{font-size:21px}.hr12-row{grid-template-columns:1fr 1fr}.hr12-row>*:last-child{grid-column:1/-1}.hr12-card-head{padding:16px}.hr12-list{padding:6px 16px}}
-</style>
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr12-assessment.css' %}">
 
-<div class="hr12">
-  {% if access_error %}<div class="hr12-access">{{ access_error }}</div>{% else %}
-  <section class="hr12-hero">
-    <div class="hr12-eyebrow">高校教职工考核管理</div>
-    <h1>{{ section_title }}</h1>
-    <p>把考核制度、目标任务、年度考核、聘期考核、师德专项、评议审定和结果归档放在同一条可追溯链路上。正式结果不原地覆盖，更正和复核保留历史。</p>
-  </section>
-
-  <nav class="hr12-nav" aria-label="考核管理导航">
-    <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/assessments/">总览</a>
-    <a class="{% if section == 'policies' %}active{% endif %}" href="/hr/assessments/policies/">制度与指标</a>
-    <a class="{% if section == 'goals' %}active{% endif %}" href="/hr/assessments/goals/">目标任务</a>
-    <a class="{% if section == 'annual' %}active{% endif %}" href="/hr/assessments/annual/">年度考核</a>
-    <a class="{% if section == 'term' %}active{% endif %}" href="/hr/assessments/term/">聘期考核</a>
-    <a class="{% if section == 'ethics' %}active{% endif %}" href="/hr/assessments/ethics/">师德专项</a>
-    <a class="{% if section == 'review' %}active{% endif %}" href="/hr/assessments/review/">评议审定</a>
-    <a class="{% if section == 'archive' %}active{% endif %}" href="/hr/assessments/archive/">结果档案</a>
-  </nav>
-  <div class="hr12-mobile-hint">可左右滑动查看更多考核工作区</div>
-
-  <section class="hr12-summary">
-    <div class="hr12-kpi"><span>考核制度</span><b id="policyCount">—</b><small>当前学校制度包</small></div>
-    <div class="hr12-kpi"><span>有效指标</span><b id="indicatorCount">—</b><small>当前可用于考核的指标</small></div>
-    <div class="hr12-kpi"><span>评分量表</span><b id="scaleCount">—</b><small>保留版本与适用范围</small></div>
-    <div class="hr12-kpi"><span>数据接入</span><b id="sourceHealth">读取中</b><small>人员、合同、资格、发展、考勤等来源</small></div>
-  </section>
-
-  <section class="hr12-grid">
-    <div class="hr12-card">
-      <div class="hr12-card-head"><div><h2 id="workTitle">当前工作区</h2><p id="workDesc">正在读取当前学校真实考核数据。</p></div></div>
-      <div class="hr12-list" id="workRows"><div class="hr12-empty">正在读取考核数据…</div></div>
+<div class="hr-v2-page hr12" data-module="HR12" data-section="{{ section }}">
+  {% if access_error %}
+    <div class="hr12-access" role="alert">{{ access_error }}</div>
+  {% else %}
+    <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+      <span>HR12 考核管理</span>
+      <strong>{{ section_title }}</strong>
     </div>
-    <aside class="hr12-card">
-      <div class="hr12-card-head"><div><h2>业务数据接入情况</h2><p>只展示真实接入状态，不用未知数据补 0。</p></div></div>
-      <div class="hr12-cap-list" id="sourceStatus"><div class="hr12-status-note">正在检查当前学校可用数据来源…</div></div>
-    </aside>
-  </section>
 
-  <div class="hr12-principle"><strong>考核数据原则：</strong>考核结果必须能追溯到制度版本、考核周期、对象快照、证据与评议过程；未接通的数据来源会明确提示，不会自动当作“无问题”或“0 分”。</div>
+    <header class="hr-v2-pagehead" aria-labelledby="hr12-title">
+      <div class="hr-v2-pagehead__copy">
+        <div class="hr-v2-eyebrow">HR12 · 教职工考核管理</div>
+        <h1 class="hr-v2-title" id="hr12-title">{{ section_title }}</h1>
+        <p class="hr-v2-subtitle">先确认制度与指标，再按目标、年度、聘期、师德、评议与归档顺序办理。正式结果必须可追溯；未接通的数据不会当作 0 分或“无问题”。</p>
+      </div>
+      <div class="hr-v2-context" aria-label="当前工作区说明">
+        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+        <span class="hr-v2-context__item"><strong>依据</strong> 制度 / 指标 / 量表</span>
+        <span class="hr-v2-context__item"><strong>数据</strong> 真实接入状态</span>
+      </div>
+    </header>
+
+    <nav class="hr12-nav" aria-label="考核管理导航">
+      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/assessments/">工作台</a>
+      <a class="{% if section == 'policies' %}active{% endif %}" href="/hr/assessments/policies/">制度与指标</a>
+      <a class="{% if section == 'goals' %}active{% endif %}" href="/hr/assessments/goals/">目标任务</a>
+      <a class="{% if section == 'annual' %}active{% endif %}" href="/hr/assessments/annual/">年度考核</a>
+      <a class="{% if section == 'term' %}active{% endif %}" href="/hr/assessments/term/">聘期考核</a>
+      <a class="{% if section == 'ethics' %}active{% endif %}" href="/hr/assessments/ethics/">师德专项</a>
+      <a class="{% if section == 'review' %}active{% endif %}" href="/hr/assessments/review/">评议审定</a>
+      <a class="{% if section == 'archive' %}active{% endif %}" href="/hr/assessments/archive/">结果档案</a>
+    </nav>
+    <div class="hr12-mobile-hint">可左右滑动查看更多考核工作区</div>
+
+    <section class="hr-v2-kpis hr12-primary-kpis" aria-label="考核关键结论">
+      <article class="hr-v2-kpi">
+        <div class="hr-v2-kpi__label">考核制度</div>
+        <div class="hr-v2-kpi__value" id="policyCount">—</div>
+        <div class="hr-v2-kpi__note">当前学校可读取的制度包</div>
+      </article>
+      <article class="hr-v2-kpi">
+        <div class="hr-v2-kpi__label">有效指标</div>
+        <div class="hr-v2-kpi__value" id="indicatorCount">—</div>
+        <div class="hr-v2-kpi__note">当前可用于考核的指标事实</div>
+      </article>
+      <article class="hr-v2-kpi">
+        <div class="hr-v2-kpi__label">评分量表</div>
+        <div class="hr-v2-kpi__value" id="scaleCount">—</div>
+        <div class="hr-v2-kpi__note">按版本和适用范围保留</div>
+      </article>
+      <article class="hr-v2-kpi" id="sourceHealthCard">
+        <div class="hr-v2-kpi__label">业务来源</div>
+        <div class="hr-v2-kpi__value" id="sourceHealth">读取中</div>
+        <div class="hr-v2-kpi__note">主档、合同、资格、发展、考勤等</div>
+      </article>
+    </section>
+
+    {% if section == 'overview' %}
+      <section class="hr-v2-section" aria-labelledby="hr12-conclusion-title">
+        <div class="hr-v2-section__head">
+          <div>
+            <h2 id="hr12-conclusion-title">当前结论</h2>
+            <p>只根据当前学校真实可读取的制度与数据来源生成，不把未知状态当正常。</p>
+          </div>
+        </div>
+        <article class="hr12-readiness">
+          <div class="hr12-readiness__copy">
+            <span class="hr12-readiness__label">考核准备状态</span>
+            <h3 id="readinessTitle">正在核对考核依据</h3>
+            <p id="readinessSummary">正在读取制度、指标、评分量表和业务来源状态。</p>
+          </div>
+          <a class="hr12-readiness__action" href="/hr/assessments/policies/">查看制度与指标 →</a>
+        </article>
+      </section>
+
+      <section class="hr-v2-section" aria-labelledby="hr12-chain-title">
+        <div class="hr-v2-section__head">
+          <div>
+            <h2 id="hr12-chain-title">考核业务链</h2>
+            <p>按老师实际办理顺序组织；全部链接现有真实工作区，不新造 URL。</p>
+          </div>
+        </div>
+        <div class="hr12-process" aria-label="考核六段业务链">
+          <a class="hr12-process__step" href="/hr/assessments/policies/">
+            <span class="hr12-process__no">01</span><strong>制度与指标</strong><small>确认制度版本、指标口径和评分量表</small>
+          </a>
+          <a class="hr12-process__step" href="/hr/assessments/goals/">
+            <span class="hr12-process__no">02</span><strong>目标与平时</strong><small>目标任务、进展、检查点和日常事实</small>
+          </a>
+          <a class="hr12-process__step" href="/hr/assessments/annual/">
+            <span class="hr12-process__no">03</span><strong>年度考核</strong><small>年度对象、评议、结果和异议处理</small>
+          </a>
+          <a class="hr12-process__step" href="/hr/assessments/term/">
+            <span class="hr12-process__no">04</span><strong>聘期考核</strong><small>聘期过程与正式结果独立留痕</small>
+          </a>
+          <a class="hr12-process__step" href="/hr/assessments/ethics/">
+            <span class="hr12-process__no">05</span><strong>师德专项</strong><small>独立事实来源、专项评价和证据边界</small>
+          </a>
+          <a class="hr12-process__step" href="/hr/assessments/review/">
+            <span class="hr12-process__no">06</span><strong>评议与结果归档</strong><small>评议、审定后进入正式结果档案</small>
+          </a>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="hr-v2-section" aria-labelledby="hr12-work-title">
+      <div class="hr-v2-section__head">
+        <div>
+          <h2 id="hr12-work-title">当前工作区</h2>
+          <p>只显示当前学校真实可读取数据；尚未接通的办理能力继续明确标注。</p>
+        </div>
+        {% if section == 'review' %}<a class="hr-v2-section__action" href="/hr/assessments/archive/">进入结果档案 →</a>{% endif %}
+      </div>
+      <div class="hr12-workspace-grid">
+        <article class="hr12-panel">
+          <div class="hr12-panel__head">
+            <div>
+              <h2 id="workTitle">{{ section_title }}</h2>
+              <p id="workDesc">正在读取当前学校真实考核数据。</p>
+            </div>
+          </div>
+          <div class="hr12-list" id="workRows">
+            <div class="hr12-empty">正在读取考核数据…</div>
+          </div>
+        </article>
+        <aside class="hr12-panel">
+          <div class="hr12-panel__head">
+            <div>
+              <h2>业务数据接入</h2>
+              <p>PARTIAL / UNAVAILABLE 会原样表达为部分可用 / 暂不可用。</p>
+            </div>
+          </div>
+          <div class="hr12-cap-list" id="sourceStatus">
+            <div class="hr12-status-note">正在检查当前学校可用数据来源…</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <div class="hr12-principle"><strong>考核数据原则：</strong>考核结果必须能追溯到制度版本、考核周期、对象快照、证据与评议过程；未接通的数据来源会明确提示，不会自动当作“无问题”或“0 分”。</div>
   {% endif %}
 </div>
 
@@ -56,31 +158,166 @@
   const zhStatus={PUBLISHED:'已发布',DRAFT:'草稿',ACTIVE:'有效',INACTIVE:'停用',OK:'已接通',UNAVAILABLE:'暂不可用',PARTIAL:'部分可用'};
   const sourceNames={hr03:'教职工主档',hr07:'合同聘用',hr09:'资格资质',hr10:'教师发展',hr11:'考勤时间',academic:'教务数据',research:'科研数据',ethicsFact:'师德事实'};
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  async function getJson(url){const r=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});let body={};try{body=await r.json()}catch(_e){};if(!r.ok)throw new Error(body?.message||body?.error?.message||('请求失败 '+r.status));return body.data??body;}
-  function empty(title,msg){return `<div class="hr12-empty"><strong>${esc(title)}</strong>${esc(msg)}</div>`}
-  function row(name,sub,middle,status){return `<div class="hr12-row"><div><strong>${esc(name)}</strong><small>${esc(sub||'')}</small></div><div>${esc(middle||'—')}</div><span class="hr12-pill">${esc(zhStatus[status]||status||'—')}</span></div>`}
-  function renderSection(policies,indicators,scales){const t=document.getElementById('workTitle'),d=document.getElementById('workDesc'),box=document.getElementById('workRows');
-    if(section==='policies'){t.textContent='制度与指标';d.textContent='考核制度、指标和评分量表按版本管理，正式发布后保留历史。';box.innerHTML=policies.length?policies.map(x=>row(x.name,x.code,x.assessment_domain==='TERM'?'聘期考核':'年度/专项考核','ACTIVE')).join(''):empty('暂无考核制度','当前学校还没有可展示的考核制度包。');return;}
-    if(section==='goals'){t.textContent='目标任务与平时考核';d.textContent='目标、进展、检查点和日常考核事实已有数据模型，完整办理接口仍在收口。';box.innerHTML=empty('目标任务办理正在接入','当前不会用静态任务或假进度替代正式目标事实。');return;}
-    if(section==='annual'){t.textContent='年度考核';d.textContent='年度考核对象、评议、结果和异议必须形成完整链路。';box.innerHTML=empty('年度考核办理正在接入','年度案件模型已具备，完整批次与评议办理接口仍在收口。');return;}
-    if(section==='term'){t.textContent='聘期考核';d.textContent='聘期考核与年度考核分开保存，不能相互覆盖正式结果。';box.innerHTML=empty('聘期考核办理正在接入','聘期案件模型已具备，完整工作流接口仍在收口。');return;}
-    if(section==='ethics'){t.textContent='师德与专项考核';d.textContent='师德和专项结论必须有独立事实来源和评审过程。';box.innerHTML=empty('师德专项办理正在接入','未接通师德事实来源前，不从其它评价推断师德结论。');return;}
-    if(section==='review'){t.textContent='评议与审定';d.textContent='评议、校准和审定分权处理，最终结果必须保留审批轨迹。';box.innerHTML=empty('评议审定工作台正在接入','不会把普通评价记录直接当作最终审定结果。');return;}
-    if(section==='archive'){t.textContent='结果与考核档案';d.textContent='正式结果、更正、异议、通知与归档必须可追溯。';box.innerHTML=empty('结果档案工作台正在接入','归档模型已具备，正式查询与下载权限链仍在收口。');return;}
-    t.textContent='制度与指标概览';d.textContent='先确认考核依据，再进入目标、年度、聘期和评议工作区。';
-    const merged=[...policies.slice(0,4).map(x=>row(x.name,x.code,'考核制度','ACTIVE')),...indicators.slice(0,4).map(x=>row(x.name,x.code,x.dimension||'考核指标','ACTIVE'))];box.innerHTML=merged.length?merged.join(''):empty('暂无可展示的考核依据','当前学校尚未配置考核制度或有效指标。');
+
+  async function getJson(url){
+    const r=await fetch(url,{headers:{'X-Requested-With':'XMLHttpRequest'}});
+    let body={};
+    try{body=await r.json()}catch(_e){}
+    if(!r.ok)throw new Error(body?.message||body?.error?.message||('请求失败 '+r.status));
+    return body.data??body;
   }
-  async function boot(){let policies=[],indicators=[],scales=[];let sources={};
-    try{const p=await getJson('/api/v1/hr/assessments/policies');policies=Array.isArray(p)?p:[]}catch(_e){}
-    try{const i=await getJson('/api/v1/hr/assessments/indicators');indicators=Array.isArray(i)?i:[]}catch(_e){}
-    try{const s=await getJson('/api/v1/hr/assessments/rating-scales');scales=Array.isArray(s)?s:[]}catch(_e){}
-    try{const e=await getJson('/api/v1/hr/assessments/eligibility');sources=e.providerStatus||{}}catch(_e){}
-    document.getElementById('policyCount').textContent=policies.length||'—';document.getElementById('indicatorCount').textContent=indicators.length||'—';document.getElementById('scaleCount').textContent=scales.length||'—';
-    const vals=Object.values(sources);document.getElementById('sourceHealth').textContent=vals.length?(vals.every(v=>v==='OK')?'全部正常':`${vals.filter(v=>v==='OK').length}/${vals.length} 已接通`):'—';
-    const cap=document.getElementById('sourceStatus');cap.innerHTML=Object.keys(sources).length?Object.entries(sources).map(([k,v])=>`<div class="hr12-cap"><span>${esc(sourceNames[k]||k)}</span><b class="${v==='OK'?'hr12-ok':'hr12-off'}">${esc(zhStatus[v]||'暂不可用')}</b></div>`).join(''):'<div class="hr12-status-note">当前无法读取数据接入状态。</div>';
-    renderSection(policies,indicators,scales);
+
+  function empty(title,msg){
+    return `<div class="hr12-empty"><strong>${esc(title)}</strong>${esc(msg)}</div>`;
   }
-  document.addEventListener('DOMContentLoaded',boot);
+
+  function statusClass(status){
+    if(status==='ACTIVE'||status==='PUBLISHED'||status==='OK')return 'hr12-pill--success';
+    if(status==='DRAFT'||status==='INACTIVE'||status==='PARTIAL'||status==='UNAVAILABLE')return 'hr12-pill--warning';
+    return 'hr12-pill--info';
+  }
+
+  function row(name,sub,middle,status){
+    const shown=zhStatus[status]||status||'—';
+    return `<div class="hr12-row"><div><strong>${esc(name||'未命名')}</strong><small>${esc(sub||'')}</small></div><div class="hr12-row__meta">${esc(middle||'—')}</div><span class="hr12-pill ${statusClass(status)}">${esc(shown)}</span></div>`;
+  }
+
+  function renderSection(policies,indicators){
+    const t=document.getElementById('workTitle');
+    const d=document.getElementById('workDesc');
+    const box=document.getElementById('workRows');
+
+    if(section==='policies'){
+      t.textContent='制度与指标';
+      d.textContent='考核制度、指标和评分量表按版本管理；正式发布后保留历史。';
+      const policyRows=policies.map(x=>row(x.name,x.code,x.assessment_domain==='TERM'?'聘期考核':'年度/专项考核',x.status||'—'));
+      const indicatorRows=indicators.slice(0,12).map(x=>row(x.name,x.code,x.dimension||'考核指标',x.status||'—'));
+      const merged=[...policyRows,...indicatorRows];
+      box.innerHTML=merged.length?merged.join(''):empty('暂无考核制度或指标','当前学校还没有可展示的考核制度或有效指标事实。');
+      return;
+    }
+    if(section==='goals'){
+      t.textContent='目标任务与平时考核';
+      d.textContent='目标、进展、检查点和日常考核事实已有数据模型，完整办理接口仍在收口。';
+      box.innerHTML=empty('目标任务办理正在接入','当前不会用静态任务或假进度替代正式目标事实。');
+      return;
+    }
+    if(section==='annual'){
+      t.textContent='年度考核';
+      d.textContent='年度考核对象、评议、结果和异议必须形成完整链路。';
+      box.innerHTML=empty('年度考核办理正在接入','年度案件模型已具备，完整批次与评议办理接口仍在收口。');
+      return;
+    }
+    if(section==='term'){
+      t.textContent='聘期考核';
+      d.textContent='聘期考核与年度考核分开保存，不能相互覆盖正式结果。';
+      box.innerHTML=empty('聘期考核办理正在接入','聘期案件模型已具备，完整工作流接口仍在收口。');
+      return;
+    }
+    if(section==='ethics'){
+      t.textContent='师德与专项考核';
+      d.textContent='师德和专项结论必须有独立事实来源和评审过程。';
+      box.innerHTML=empty('师德专项办理正在接入','未接通师德事实来源前，不从其它评价推断师德结论。');
+      return;
+    }
+    if(section==='review'){
+      t.textContent='评议与审定';
+      d.textContent='评议、校准和审定分权处理，最终结果必须保留审批轨迹。';
+      box.innerHTML=empty('评议审定工作台正在接入','不会把普通评价记录直接当作最终审定结果。');
+      return;
+    }
+    if(section==='archive'){
+      t.textContent='结果与考核档案';
+      d.textContent='正式结果、更正、异议、通知与归档必须可追溯。';
+      box.innerHTML=empty('结果档案工作台正在接入','归档模型已具备，正式查询与下载权限链仍在收口。');
+      return;
+    }
+
+    t.textContent='制度与指标概览';
+    d.textContent='先确认考核依据，再进入目标、年度、聘期、师德和评议工作区。';
+    const merged=[
+      ...policies.slice(0,4).map(x=>row(x.name,x.code,'考核制度',x.status||'—')),
+      ...indicators.slice(0,4).map(x=>row(x.name,x.code,x.dimension||'考核指标',x.status||'—'))
+    ];
+    box.innerHTML=merged.length?merged.join(''):empty('暂无可展示的考核依据','当前学校尚未配置可读取的考核制度或指标。');
+  }
+
+  function renderReadiness({policyLoaded,indicatorLoaded,scaleLoaded,sourceLoaded,policies,indicators,scales,sources}){
+    if(section!=='overview')return;
+    const title=document.getElementById('readinessTitle');
+    const summary=document.getElementById('readinessSummary');
+    if(!title||!summary)return;
+
+    if(policyLoaded&&policies.length===0){
+      title.textContent='尚未形成可展示的考核制度';
+      summary.textContent='建议先从“制度与指标”确认学校考核依据；页面不会用默认制度替代真实配置。';
+      return;
+    }
+
+    if(sourceLoaded&&Object.values(sources).some(v=>v!=='OK')){
+      title.textContent='部分业务来源仍需确认';
+      summary.textContent='考核依据已读取，但部分来源为“部分可用”或“暂不可用”；进入正式考核前应先确认数据边界。';
+      return;
+    }
+
+    if(policyLoaded&&indicatorLoaded&&scaleLoaded&&sourceLoaded){
+      title.textContent='当前考核依据与来源状态已读取';
+      summary.textContent=`已读取 ${policies.length} 套制度、${indicators.length} 个指标、${scales.length} 个量表；可按业务链进入相应工作区。`;
+      return;
+    }
+
+    title.textContent='仍有考核依据或来源状态无法读取';
+    summary.textContent='当前存在未知状态；页面不会把读取失败自动显示成 0 条、0 分或“全部正常”。';
+  }
+
+  async function boot(){
+    let policies=[],indicators=[],scales=[],sources={};
+    let policyLoaded=false,indicatorLoaded=false,scaleLoaded=false,sourceLoaded=false;
+
+    try{const p=await getJson('/api/v1/hr/assessments/policies');policies=Array.isArray(p)?p:[];policyLoaded=true;}catch(_e){}
+    try{const i=await getJson('/api/v1/hr/assessments/indicators');indicators=Array.isArray(i)?i:[];indicatorLoaded=true;}catch(_e){}
+    try{const s=await getJson('/api/v1/hr/assessments/rating-scales');scales=Array.isArray(s)?s:[];scaleLoaded=true;}catch(_e){}
+    try{const e=await getJson('/api/v1/hr/assessments/eligibility');sources=e&&typeof e==='object'?(e.providerStatus||{}):{};sourceLoaded=true;}catch(_e){}
+
+    document.getElementById('policyCount').textContent=policyLoaded?String(policies.length):'—';
+    document.getElementById('indicatorCount').textContent=indicatorLoaded?String(indicators.length):'—';
+    document.getElementById('scaleCount').textContent=scaleLoaded?String(scales.length):'—';
+
+    const vals=Object.values(sources);
+    const sourceHealth=document.getElementById('sourceHealth');
+    const sourceHealthCard=document.getElementById('sourceHealthCard');
+    if(!sourceLoaded){
+      sourceHealth.textContent='—';
+    }else if(!vals.length){
+      sourceHealth.textContent='暂无状态';
+    }else if(vals.every(v=>v==='OK')){
+      sourceHealth.textContent='全部正常';
+    }else{
+      sourceHealth.textContent=`${vals.filter(v=>v==='OK').length}/${vals.length} 已接通`;
+      sourceHealthCard.classList.add('hr12-kpi--warning');
+    }
+
+    const cap=document.getElementById('sourceStatus');
+    if(!sourceLoaded){
+      cap.innerHTML='<div class="hr12-status-note">当前无法读取数据接入状态；未知状态不会当作正常。</div>';
+    }else if(!Object.keys(sources).length){
+      cap.innerHTML='<div class="hr12-status-note">当前学校暂无可展示的数据来源状态。</div>';
+    }else{
+      cap.innerHTML=Object.entries(sources).map(([k,v])=>{
+        const cls=v==='OK'?'hr12-ok':(v==='PARTIAL'?'hr12-partial':'hr12-off');
+        return `<div class="hr12-cap"><span>${esc(sourceNames[k]||k)}</span><b class="${cls}">${esc(zhStatus[v]||v||'暂不可用')}</b></div>`;
+      }).join('');
+    }
+
+    renderSection(policies,indicators);
+    renderReadiness({policyLoaded,indicatorLoaded,scaleLoaded,sourceLoaded,policies,indicators,scales,sources});
+  }
+
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded',boot,{once:true});
+  }else{
+    boot();
+  }
 })();
 </script>
 {% endif %}
