@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
+from hr_onboarding.api.exceptions import OnboardingCaseDuplicateError
 from hr_recruitment.integrations.hr05 import (
     Hr05OnboardingConsumer,
     Hr05OnboardingConsumerError,
@@ -73,6 +74,101 @@ class Hr05OnboardingConsumerTests(SimpleTestCase):
                 "preferred_name": "",
             },
         )
+
+    @patch("hr_onboarding.models.HrOnboardingCase")
+    @patch("hr_onboarding.services.case_service.CaseService")
+    @patch("hr_recruitment.models.HrRecruitmentOffer")
+    @patch("hr_recruitment.models.HrProposedHire")
+    def test_recovers_same_hr05_case_when_cache_was_evicted(
+        self,
+        proposed_model,
+        offer_model,
+        case_service_cls,
+        onboarding_case_model,
+    ):
+        application = SimpleNamespace(
+            id="app-1",
+            candidate_id=SimpleNamespace(legal_name="张老师"),
+        )
+        proposed = SimpleNamespace(
+            id="hire-1",
+            application_id=application,
+            recruitment_position_id=SimpleNamespace(
+                organization_id=101,
+                post_catalog_id=202,
+                position_id=303,
+            ),
+            reservation_id="404",
+        )
+        offer = SimpleNamespace(
+            employment_type="FULL_TIME",
+            expected_report_date=date(2026, 9, 1),
+        )
+        proposed_model.objects.select_related.return_value.filter.return_value.first.return_value = proposed
+        offer_model.objects.filter.return_value.order_by.return_value.first.return_value = offer
+
+        case_service_cls.return_value.create_case_from_handoff.side_effect = (
+            OnboardingCaseDuplicateError("同一 HR04 录用来源已存在 onboarding case")
+        )
+        existing = MagicMock(id="case-existing")
+        onboarding_case_model.objects.filter.return_value.first.return_value = existing
+
+        result = Hr05OnboardingConsumer(actor_user_id=88).handle(
+            tenant_id=77,
+            proposed_hire_id="hire-1",
+            idempotency_key="handoff-after-cache-eviction",
+        )
+
+        self.assertEqual(result, "case-existing")
+        onboarding_case_model.objects.filter.assert_called_once_with(
+            tenant_id=77,
+            source_type="HR04_HIRE",
+            source_id="hire-1",
+            hr04_proposed_hire_id="hire-1",
+            hr04_application_id="app-1",
+        )
+
+    @patch("hr_onboarding.models.HrOnboardingCase")
+    @patch("hr_onboarding.services.case_service.CaseService")
+    @patch("hr_recruitment.models.HrRecruitmentOffer")
+    @patch("hr_recruitment.models.HrProposedHire")
+    def test_does_not_recover_unrelated_duplicate_case(
+        self,
+        proposed_model,
+        offer_model,
+        case_service_cls,
+        onboarding_case_model,
+    ):
+        proposed = SimpleNamespace(
+            id="hire-1",
+            application_id=SimpleNamespace(
+                id="app-1",
+                candidate_id=SimpleNamespace(legal_name="张老师"),
+            ),
+            recruitment_position_id=SimpleNamespace(
+                organization_id=101,
+                post_catalog_id=202,
+                position_id=303,
+            ),
+            reservation_id="404",
+        )
+        offer = SimpleNamespace(
+            employment_type="FULL_TIME",
+            expected_report_date=date(2026, 9, 1),
+        )
+        proposed_model.objects.select_related.return_value.filter.return_value.first.return_value = proposed
+        offer_model.objects.filter.return_value.order_by.return_value.first.return_value = offer
+        case_service_cls.return_value.create_case_from_handoff.side_effect = (
+            OnboardingCaseDuplicateError("duplicate")
+        )
+        onboarding_case_model.objects.filter.return_value.first.return_value = None
+
+        with self.assertRaises(Hr05OnboardingConsumerError):
+            Hr05OnboardingConsumer().handle(
+                tenant_id=77,
+                proposed_hire_id="hire-1",
+                idempotency_key="handoff-conflict",
+            )
 
     def test_requires_concrete_tenant(self):
         with self.assertRaises(Hr05OnboardingConsumerError):
