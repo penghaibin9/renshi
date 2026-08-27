@@ -5,24 +5,30 @@
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr07-contracts.css' %}">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr07-page" data-hr07-section="{{ section }}">
+<div class="hr07-page" data-hr07-section="{{ section }}" data-module="HR07">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR07 合同管理</span>
+    <strong>{{ section_title }}</strong>
+  </div>
+
   <header class="hr07-hero">
     <div>
-      <div class="hr07-eyebrow">HR07 · 合同与聘用</div>
+      <div class="hr07-eyebrow">HR07 · 合同管理</div>
       <h1>{{ section_title }}</h1>
       <p>{{ section_description }}</p>
     </div>
     <div class="hr07-truth-note">
       <strong>正式事实只认 Authority</strong>
-      <span>本工作台不在浏览器重算合同状态，也不恢复旧 `/api/hr/v1` 写入口。</span>
+      <span>页面只展示后端合同生命周期事实和允许动作，不在浏览器重算状态，也不恢复旧写入口。</span>
     </div>
   </header>
 
-  <nav class="hr07-nav" aria-label="合同与聘用工作区">
+  <nav class="hr07-nav" aria-label="合同管理工作区">
     <a href="/hr/contracts/" class="{% if section == 'ledger' %}is-active{% endif %}"><span>01</span>合同台账</a>
     <a href="/hr/contracts/rules/" class="{% if section == 'rules' %}is-active{% endif %}"><span>02</span>合同模板与规则</a>
     <a href="/hr/contracts/signing/" class="{% if section == 'signing' %}is-active{% endif %}"><span>03</span>签订与续签</a>
@@ -138,8 +144,8 @@
       <h2>{{ section_title }}</h2>
       <p>{{ section_description }}</p>
       <div class="hr07-capability__notice">
-        <strong>正式写入口保持 fail-closed</strong>
-        <span>当前工作区只承接已经冻结的 canonical Authority。尚未开放的模板规则或风险办理动作不会回退到旧 `/api/hr/v1` writer，也不会在页面端伪造正式事实。</span>
+        <strong>当前工作区没有开放新的正式写动作</strong>
+        <span>尚未开放的模板规则或风险办理动作不会回退旧 writer，也不会在页面端伪造正式事实；已有读取能力仍按当前 Authority 合同展示。</span>
       </div>
     </div>
   </section>

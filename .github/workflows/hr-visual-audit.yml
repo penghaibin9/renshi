@@ -4,8 +4,15 @@ on:
   push:
     branches: [agent/renshi-takeover-cleanup-20260810]
   pull_request:
-    branches: [main, agent/renshi-takeover-cleanup-20260810]
+    branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "templates/hr/**"
+      - "static/hr/**"
+      - "hr_*/templates/**"
+      - "hr_visual_audit_tests.py"
+      - "hr_v2_visual_audit_tests.py"
+      - ".github/workflows/hr-visual-audit.yml"
 
 permissions:
   contents: read
@@ -27,15 +34,9 @@ env:
 jobs:
   hr-visual-audit:
     if: >-
+      github.event_name == 'pull_request' ||
       (github.event_name == 'push' &&
-       github.ref == 'refs/heads/agent/renshi-takeover-cleanup-20260810') ||
-      github.head_ref == 'agent/renshi-takeover-cleanup-20260810' ||
-      github.head_ref == 'agent/renshi-g-hr13-title' ||
-      github.head_ref == 'agent/renshi-h-hr14-appointment' ||
-      github.head_ref == 'agent/renshi-i-hr15-payroll' ||
-      github.head_ref == 'agent/renshi-j-hr16-exit' ||
-      github.head_ref == 'agent/renshi-k-hr17-self' ||
-      github.head_ref == 'agent/renshi-l-hr18-data'
+       github.ref == 'refs/heads/agent/renshi-takeover-cleanup-20260810')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -148,6 +149,7 @@ jobs:
           HR_VISUAL_ARTIFACT_DIR: artifacts/hr-visual
         run: |
           python manage.py test \
+            hr_v2_visual_audit_tests.HrV2VisualAuditTests \
             hr_visual_audit_tests.HrVisualAuditTests \
             --keepdb --noinput --verbosity 2
 
