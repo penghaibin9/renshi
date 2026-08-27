@@ -23,7 +23,7 @@ from django.test import Client, override_settings
 @skipUnless(os.getenv("HR_VISUAL_AUDIT") == "1", "visual audit is CI-explicit")
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="renshi-v2-visual-media-"))
 class HrV2VisualAuditTests(StaticLiveServerTestCase):
-    """Capture the real HR01 V2 page at desktop and mobile widths."""
+    """Capture migrated HR V2 workspaces at desktop and mobile widths."""
 
     reset_sequences = True
 
@@ -217,4 +217,119 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
             static_failures,
             [],
             "HR static JS failures: " + " | ".join(static_failures),
+        )
+
+    def test_capture_hr09_v2_desktop_and_mobile(self):
+        """Verify the real HR09 workspace uses the shared flat V2 shell."""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+
+        page_errors: list[str] = []
+        console_errors: list[str] = []
+        static_failures: list[str] = []
+        hr09_dir = self.out_dir.parent / "HR09-V2"
+        hr09_dir.mkdir(parents=True, exist_ok=True)
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                context = browser.new_context(
+                    viewport={"width": 1440, "height": 1000},
+                    device_scale_factor=1,
+                )
+                context.add_cookies(
+                    [
+                        {
+                            "name": settings.SESSION_COOKIE_NAME,
+                            "value": self.session_cookie,
+                            "url": self.live_server_url,
+                        }
+                    ]
+                )
+                page = context.new_page()
+                page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+                page.on(
+                    "console",
+                    lambda msg: console_errors.append(msg.text)
+                    if msg.type == "error"
+                    else None,
+                )
+
+                def record_response(response):
+                    if "/static/hr/css/" in response.url and response.status >= 400:
+                        static_failures.append(f"{response.status} {response.url}")
+
+                page.on("response", record_response)
+
+                response = page.goto(
+                    self.live_server_url + "/hr/qualifications/",
+                    wait_until="networkidle",
+                )
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(page.locator("[data-module='HR09']").count(), 1)
+                self.assertEqual(page.locator(".hr09-process__step").count(), 5)
+                self.assertEqual(page.locator(".hr09-nav a").count(), 6)
+                self.assertEqual(page.locator(".hr09-hero").count(), 0)
+                self.assertEqual(page.locator(".hr09-primary-kpis .hr-v2-kpi").count(), 4)
+
+                loaded_styles = page.evaluate(
+                    """() => Array.from(document.styleSheets)
+                      .map((sheet) => sheet.href || '')
+                      .filter(Boolean)"""
+                )
+                diagnostic = (
+                    f"styles={loaded_styles}; page_errors={page_errors}; "
+                    f"console_errors={console_errors}; static_failures={static_failures}"
+                )
+                self.assertTrue(
+                    any("/hr/css/hr-v2.css" in href for href in loaded_styles),
+                    diagnostic,
+                )
+                self.assertTrue(
+                    any("/hr/css/hr09-qualification.css" in href for href in loaded_styles),
+                    diagnostic,
+                )
+                self.assertEqual(page_errors, [], diagnostic)
+                self.assertEqual(static_failures, [], diagnostic)
+                page.screenshot(
+                    path=str(hr09_dir / "desktop-overview.png"),
+                    full_page=True,
+                )
+
+                page.set_viewport_size({"width": 390, "height": 844})
+                response = page.goto(
+                    self.live_server_url + "/hr/qualifications/",
+                    wait_until="networkidle",
+                )
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(page.locator("[data-module='HR09']").count(), 1)
+                self.assertEqual(
+                    page.locator(".hr-v2-mobile-section-switcher").count(), 1
+                )
+                page.screenshot(
+                    path=str(hr09_dir / "mobile-overview.png"),
+                    full_page=True,
+                )
+                context.close()
+            finally:
+                browser.close()
+
+        self.assertEqual(
+            page_errors,
+            [],
+            "HR09 browser page errors: " + " | ".join(page_errors),
+        )
+        self.assertEqual(
+            console_errors,
+            [],
+            "HR09 browser console errors: " + " | ".join(console_errors),
+        )
+        self.assertEqual(
+            static_failures,
+            [],
+            "HR09 static CSS failures: " + " | ".join(static_failures),
         )
