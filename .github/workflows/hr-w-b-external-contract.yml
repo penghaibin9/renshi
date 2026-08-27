@@ -108,7 +108,7 @@ jobs:
           leaves = set(executor.loader.graph.leaf_nodes())
           missing_leaves = expected - leaves
           assert not missing_leaves, ("W-B migration leaf missing", sorted(missing_leaves))
-          applied = MigrationRecorder(connection).applied_migrations()
+          applied = set(MigrationRecorder(connection).applied_migrations())
           missing_applied = expected - applied
           assert not missing_applied, ("W-B migration not applied", sorted(missing_applied))
 
