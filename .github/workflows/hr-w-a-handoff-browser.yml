@@ -90,6 +90,53 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
+      - name: Assert HR05 migration chain materialized
+        run: |
+          python manage.py showmigrations hr_onboarding
+          python manage.py shell <<'PY'
+          from django.db import connection
+          from django.db.migrations.executor import MigrationExecutor
+          from django.db.migrations.recorder import MigrationRecorder
+
+          expected_leaf = (
+              "hr_onboarding",
+              "0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx",
+          )
+          executor = MigrationExecutor(connection)
+          leaves = [
+              node
+              for node in executor.loader.graph.leaf_nodes()
+              if node[0] == "hr_onboarding"
+          ]
+          assert leaves == [expected_leaf], (
+              "HR05 migration graph is missing, split, or not at the expected exact head",
+              leaves,
+          )
+
+          applied = MigrationRecorder(connection).applied_migrations()
+          assert expected_leaf in applied, (
+              "HR05 exact-head migration was not recorded as applied",
+              expected_leaf,
+          )
+
+          tables = set(connection.introspection.table_names())
+          required_tables = {
+              "hr_onboarding_hronboardingcase",
+              "hr_onboarding_hractivationattempt",
+              "hr_onboarding_hronboardingoutboxevent",
+          }
+          missing = required_tables - tables
+          assert not missing, (
+              "HR05 migrate returned success without materializing authority tables",
+              sorted(missing),
+          )
+          print(
+              "HR05 migration materialization PASS",
+              f"leaf={expected_leaf[1]}",
+              f"tables={sorted(required_tables)}",
+          )
+          PY
+
       - name: Seed browser identity and handoff-ready W-A hire
         shell: bash
         run: |
