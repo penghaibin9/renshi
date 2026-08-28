@@ -1,5 +1,16 @@
 {% load static %}
 {% load i18n %}
+<style>
+    /* HR V2 already renders an accurate sticky module/workspace locator on narrow
+       screens. Hiding the generic multi-segment breadcrumb here prevents deep HR
+       routes from wrapping into a tall, stale-looking header while leaving every
+       non-HR page and desktop breadcrumb unchanged. */
+    @media (max-width: 760px) {
+        body:has(.hr-v2-page) #breadcrumbs-container {
+            display: none !important;
+        }
+    }
+</style>
 <ul class="oh-navbar__breadcrumb">
     {% for breadcrumb in breadcrumbs %}
         {% if forloop.last %}
