@@ -15,6 +15,7 @@ on:
       - "hr_visual_audit_tests.py"
       - "hr_v2_visual_audit_tests.py"
       - "hr_v2_phase2_visual_audit_tests.py"
+      - "hr04_v2_visual_audit_tests.py"
       - ".github/workflows/hr-visual-audit.yml"
 
 permissions:
@@ -154,6 +155,7 @@ jobs:
           python manage.py test \
             hr_v2_visual_audit_tests.HrV2VisualAuditTests \
             hr_v2_phase2_visual_audit_tests.HrV2Phase2VisualAuditTests \
+            hr04_v2_visual_audit_tests.Hr04V2VisualAuditTests \
             hr_visual_audit_tests.HrVisualAuditTests \
             --keepdb --noinput --verbosity 2
 
