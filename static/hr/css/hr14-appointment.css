@@ -1,0 +1,611 @@
+/* HR14 岗位聘任 — shared HR V2 visual layer.
+ * Business state and writes remain owned by /api/v1/hr/appointments/*.
+ */
+
+.hr14 {
+  color: var(--hr-text-900);
+}
+
+.hr14 *,
+.hr14 *::before,
+.hr14 *::after {
+  box-sizing: border-box;
+}
+
+.hr14 a {
+  text-decoration: none;
+}
+
+.hr14-error {
+  padding: var(--hr-space-5);
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  border-radius: var(--hr-radius-md);
+  background: rgba(220, 38, 38, 0.05);
+  color: var(--hr-danger);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.hr14-nav {
+  display: flex;
+  gap: var(--hr-space-2);
+  overflow-x: auto;
+  margin: 0 0 var(--hr-space-4);
+  padding: var(--hr-space-1);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-surface);
+  box-shadow: var(--hr-shadow-card);
+  scrollbar-width: thin;
+}
+
+.hr14-nav a {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border-radius: var(--hr-radius-sm);
+  color: var(--hr-text-700);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.hr14-nav a:hover,
+.hr14-nav a:focus-visible {
+  background: var(--hr-primary-50);
+  color: var(--hr-primary-700);
+  outline: none;
+}
+
+.hr14-nav a.active {
+  background: var(--hr-primary-600);
+  color: #fff;
+}
+
+.hr14-mobile-hint {
+  display: none;
+  margin: -8px 4px var(--hr-space-3);
+  color: var(--hr-text-500);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.hr14-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--hr-space-3);
+  margin: 0 0 var(--hr-space-6);
+}
+
+.hr14-kpi {
+  min-width: 0;
+  min-height: 100px;
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-surface);
+  box-shadow: var(--hr-shadow-card);
+}
+
+.hr14-kpi span,
+.hr14-kpi em {
+  display: block;
+}
+
+.hr14-kpi span {
+  color: var(--hr-text-500);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hr14-kpi b {
+  display: block;
+  margin-top: var(--hr-space-2);
+  color: var(--hr-text-900);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 32px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.hr14-kpi em {
+  margin-top: var(--hr-space-1);
+  color: var(--hr-text-500);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 17px;
+}
+
+.hr14-process {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--hr-space-3);
+}
+
+.hr14-process__step {
+  min-width: 0;
+  min-height: 126px;
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-surface);
+  color: inherit;
+  box-shadow: var(--hr-shadow-card);
+}
+
+.hr14-process__step:hover,
+.hr14-process__step:focus-visible {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: var(--hr-primary-50);
+  outline: none;
+}
+
+.hr14-process__no {
+  display: block;
+  margin-bottom: var(--hr-space-3);
+  color: var(--hr-primary-600);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.hr14-process__step b,
+.hr14-process__step small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.hr14-process__step b {
+  color: var(--hr-text-900);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.hr14-process__step small {
+  margin-top: var(--hr-space-2);
+  color: var(--hr-text-500);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hr14-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.62fr);
+  gap: var(--hr-space-4);
+  margin-top: var(--hr-space-4);
+}
+
+.hr14-layout > div,
+.hr14-layout > aside {
+  min-width: 0;
+}
+
+.hr14-card {
+  min-width: 0;
+  padding: var(--hr-space-5);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-surface);
+  box-shadow: var(--hr-shadow-card);
+}
+
+.hr14-card + .hr14-card {
+  margin-top: var(--hr-space-4) !important;
+}
+
+.hr14-card h2 {
+  margin: 0;
+  color: var(--hr-text-900);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.hr14-card > p {
+  margin: var(--hr-space-1) 0 0;
+  color: var(--hr-text-500);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.hr14-priority,
+.hr14-list,
+.hr14-flow {
+  display: grid;
+  gap: var(--hr-space-2);
+  margin-top: var(--hr-space-4);
+}
+
+.hr14-task {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  gap: var(--hr-space-3);
+  align-items: center;
+  padding: var(--hr-space-3);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+}
+
+.hr14-task-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--hr-info);
+}
+
+.hr14-task[data-level="danger"] .hr14-task-dot {
+  background: var(--hr-danger);
+}
+
+.hr14-task[data-level="warning"] .hr14-task-dot {
+  background: var(--hr-warning);
+}
+
+.hr14-task b,
+.hr14-task small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.hr14-task b {
+  color: var(--hr-text-900);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.hr14-task small {
+  margin-top: 2px;
+  color: var(--hr-text-500);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.hr14-task a {
+  color: var(--hr-primary-700);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hr14-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hr-space-2);
+  margin: var(--hr-space-4) 0 var(--hr-space-3);
+}
+
+.hr14-search,
+.hr14-select {
+  min-height: 40px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+  font: inherit;
+  font-size: 13px;
+}
+
+.hr14-search {
+  flex: 1;
+  min-width: 220px;
+  padding: 8px 11px;
+}
+
+.hr14-select {
+  min-width: 150px;
+  padding: 8px 10px;
+}
+
+.hr14-search:focus,
+.hr14-select:focus {
+  border-color: var(--hr-primary-600);
+  outline: 2px solid rgba(37, 99, 235, 0.12);
+  outline-offset: 1px;
+}
+
+.hr14-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.45fr) minmax(110px, 0.75fr) minmax(100px, 0.55fr) 105px;
+  gap: var(--hr-space-3);
+  align-items: center;
+  min-width: 0;
+  padding: var(--hr-space-3);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+}
+
+.hr14-row:hover {
+  background: var(--hr-canvas);
+}
+
+.hr14-row b,
+.hr14-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.hr14-row b {
+  color: var(--hr-text-900);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.hr14-row small,
+.hr14-row .kind {
+  color: var(--hr-text-500);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.hr14-badge {
+  justify-self: start;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--hr-primary-50);
+  color: var(--hr-primary-700);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.hr14-empty {
+  padding: var(--hr-space-7) var(--hr-space-4);
+  border: 1px dashed var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-canvas);
+  color: var(--hr-text-500);
+  text-align: center;
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.hr14-flow a {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: var(--hr-space-2);
+  align-items: center;
+  padding: 9px;
+  border: 1px solid transparent;
+  border-radius: var(--hr-radius-sm);
+  color: var(--hr-text-900);
+}
+
+.hr14-flow a:hover,
+.hr14-flow a:focus-visible {
+  border-color: var(--hr-border);
+  background: var(--hr-primary-50);
+  outline: none;
+}
+
+.hr14-step {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-primary-50);
+  color: var(--hr-primary-700);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hr14-flow b,
+.hr14-flow small {
+  display: block;
+}
+
+.hr14-flow b {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hr14-flow small {
+  color: var(--hr-text-500);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.hr14-cap {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--hr-space-3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hr-border);
+  color: var(--hr-text-700);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hr14-cap:last-child {
+  border-bottom: 0;
+}
+
+.hr14-on {
+  color: var(--hr-success);
+  font-weight: 700;
+}
+
+.hr14-off {
+  color: var(--hr-warning);
+  font-weight: 700;
+}
+
+.hr14-principle {
+  margin-top: var(--hr-space-4);
+  padding: var(--hr-space-4) var(--hr-space-5);
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-primary-50);
+  color: var(--hr-text-700);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.hr14-principle strong {
+  color: var(--hr-primary-700);
+}
+
+/* Preserve all existing HR14 write workflows while visually aligning them
+ * with the common V2 surface and token palette. Child templates load inline
+ * CSS later, so these selectors intentionally carry higher specificity. */
+.hr-v2-page.hr14 .hr14live-history,
+.hr-v2-page.hr14 .hr14term,
+.hr-v2-page.hr14 .hr14effect {
+  margin-top: var(--hr-space-4);
+}
+
+.hr-v2-page.hr14 .hr14live-row,
+.hr-v2-page.hr14 .hr14live-form,
+.hr-v2-page.hr14 .hr14term-box,
+.hr-v2-page.hr14 .hr14term-row,
+.hr-v2-page.hr14 .hr14effect-row {
+  border-color: var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+}
+
+.hr-v2-page.hr14 .hr14live-form,
+.hr-v2-page.hr14 .hr14term-box {
+  background: var(--hr-canvas);
+}
+
+.hr-v2-page.hr14 .hr14live-input,
+.hr-v2-page.hr14 .hr14live-select,
+.hr-v2-page.hr14 .hr14live-textarea,
+.hr-v2-page.hr14 .hr14term-input,
+.hr-v2-page.hr14 .hr14term-select,
+.hr-v2-page.hr14 .hr14term-textarea,
+.hr-v2-page.hr14 .hr14effect-input {
+  border-color: var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+}
+
+.hr-v2-page.hr14 .hr14live-btn,
+.hr-v2-page.hr14 .hr14term-btn {
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-primary-600);
+}
+
+.hr-v2-page.hr14 .hr14live-btn.secondary,
+.hr-v2-page.hr14 .hr14term-btn.secondary {
+  border: 1px solid var(--hr-border);
+  background: var(--hr-surface);
+  color: var(--hr-primary-700);
+}
+
+.hr-v2-page.hr14 .hr14live-btn.danger,
+.hr-v2-page.hr14 .hr14term-btn.danger,
+.hr-v2-page.hr14 .hr14term-btn.warn {
+  border: 1px solid rgba(217, 119, 6, 0.22);
+  background: rgba(217, 119, 6, 0.07);
+  color: var(--hr-warning);
+}
+
+.hr-v2-page.hr14 .hr14effect-btn {
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-success);
+}
+
+.hr-v2-page.hr14 .hr14live-rule,
+.hr-v2-page.hr14 .hr14term-banner {
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  border-radius: var(--hr-radius-sm);
+  background: rgba(217, 119, 6, 0.06);
+  color: var(--hr-text-700);
+}
+
+.hr-v2-page.hr14 .hr14effect-banner {
+  border: 1px solid rgba(22, 163, 74, 0.18);
+  border-radius: var(--hr-radius-sm);
+  background: rgba(22, 163, 74, 0.05);
+  color: var(--hr-text-700);
+}
+
+@media (max-width: 1180px) {
+  .hr14-kpis,
+  .hr14-process {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .hr14-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .hr14-mobile-hint {
+    display: block;
+  }
+
+  .hr14-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--hr-space-2);
+  }
+
+  .hr14-process {
+    grid-template-columns: 1fr;
+    gap: var(--hr-space-2);
+  }
+
+  .hr14-process__step {
+    min-height: 0;
+  }
+
+  .hr14-card {
+    padding: var(--hr-space-4);
+  }
+
+  .hr14-task {
+    grid-template-columns: 9px minmax(0, 1fr);
+  }
+
+  .hr14-task a {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .hr14-toolbar {
+    display: grid;
+  }
+
+  .hr14-search,
+  .hr14-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .hr14-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hr14-row .kind {
+    grid-column: 1;
+  }
+
+  .hr14-row .date {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}
+
+@media (max-width: 390px) {
+  .hr14-row {
+    grid-template-columns: 1fr;
+  }
+
+  .hr14-row .date {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .hr14-badge {
+    justify-self: start;
+  }
+}
