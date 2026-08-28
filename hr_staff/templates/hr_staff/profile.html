@@ -1,171 +1,249 @@
+{% extends "index.html" %}
 {% load static i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>教职工主档 · HR03</title>
-  <style>
-    :root {
-      --hr-color-primary: #2563eb; --hr-color-primary-soft: #eff6ff;
-      --hr-color-success: #16a34a; --hr-color-warning: #d97706; --hr-color-danger: #dc2626;
-      --hr-bg-page: #f5f7fa; --hr-bg-card: #fff; --hr-border-subtle: #e5e7eb;
-      --hr-text-primary: #1f2937; --hr-text-secondary: #6b7280;
-      --hr-radius-md: 12px; --hr-shadow-card: 0 1px 3px rgba(0,0,0,.08);
-    }
-    * { box-sizing: border-box; }
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: var(--hr-bg-page); color: var(--hr-text-primary); }
-    .wrap { max-width: 1480px; margin: 0 auto; padding: 24px; }
-    .back { color: var(--hr-color-primary); text-decoration: none; font-size: 13px; }
-    .card { background: var(--hr-bg-card); border-radius: var(--hr-radius-md); box-shadow: var(--hr-shadow-card); padding: 20px; }
-    .header { display: flex; align-items: center; gap: 16px; margin: 12px 0 16px; }
-    .avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--hr-color-primary-soft); color: var(--hr-color-primary); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 600; }
-    .header h1 { margin: 0; font-size: 24px; }
-    .header .sub { color: var(--hr-text-secondary); font-size: 14px; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
-    .badge.active { background: #dcfce7; color: #166534; }
-    .badge.pending { background: #fef9c3; color: #854d0e; }
-    .badge.departed, .badge.retired { background: #fee2e2; color: #991b1b; }
-    .asof { margin: 12px 0; padding: 8px 12px; background: var(--hr-color-primary-soft); border-radius: 8px; font-size: 13px; color: #1e40af; display: flex; justify-content: space-between; align-items: center; }
-    .asof.warn { background: #fef3c7; color: #92400e; }
-    .nav { display: flex; gap: 4px; border-bottom: 1px solid var(--hr-border-subtle); margin-bottom: 16px; overflow-x: auto; }
-    .nav a { flex: 0 0 auto; padding: 10px 14px; color: var(--hr-text-secondary); text-decoration: none; font-size: 14px; border-bottom: 2px solid transparent; }
-    .nav a.on { color: var(--hr-color-primary); border-bottom-color: var(--hr-color-primary); }
-    .grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
-    .section-title { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
-    .kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; font-size: 13px; }
-    .kv dt { color: var(--hr-text-secondary); }
-    .sensitive { position: relative; }
-    .sensitive .val { filter: blur(4px); user-select: none; }
-    .sensitive.revealed .val { filter: none; }
-    .reveal-btn { font-size: 12px; color: var(--hr-color-primary); background: none; border: none; cursor: pointer; margin-left: 6px; }
-    .risk { border-left: 3px solid var(--hr-color-danger); background: #fef2f2; padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
-    .risk.warn { border-left-color: var(--hr-color-warning); background: #fffbeb; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <a class="back" href="/hr/staff/">← 教职工名册</a>
-    <div class="header">
-      <div class="avatar" id="avatar">?</div>
-      <div>
-        <h1><span id="name">--</span> <span id="staffNo" style="color:#6b7280;font-size:14px"></span>
-          <span class="badge" id="statusBadge">--</span></h1>
-        <div class="sub" id="orgLine">--</div>
-      </div>
-    </div>
-    <div class="asof" id="asofBar">载入中…</div>
-    <nav class="nav" aria-label="教职工主档工作区">
-      <a class="on" href="/hr/staff/{{ staff_id }}/">概览</a>
-      <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
-      <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
-      <a href="/hr/staff/{{ staff_id }}/materials">材料</a>
-      <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
-    </nav>
-    <div class="grid">
-      <div>
-        <div class="card" style="margin-bottom:16px">
-          <h3 class="section-title">当前人事概况</h3>
-          <dl class="kv" id="facts">加载中…</dl>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-          <h3 class="section-title">关键资格</h3>
-          <dl class="kv" id="qualifications"><dd>载入中…</dd></dl>
-        </div>
-      </div>
-      <div>
-        <div id="riskPanel"></div>
-        <div class="card">
-          <h3 class="section-title">身份摘要</h3>
-          <dl class="kv" id="identity">加载中…</dl>
-        </div>
-      </div>
-    </div>
+{% block title %}教职工主档 · HR03{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+
+<div class="hr-v2-page hr03-page" data-module="HR03" data-page="staff-profile" data-staff-id="{{ staff_id }}" data-as-of="{{ as_of }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR03 教职工主档</span>
+    <strong>个人主档</strong>
   </div>
-  <script>
-    const staffId = "{{ staff_id }}";
-    function getCookie(name) {
-      const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
-      return m ? decodeURIComponent(m[1]) : "";
-    }
-    const statusLabels = {ACTIVE:["在职","active"],PENDING_ENTRY:["待入职","pending"],DEPARTED:["已离职","departed"],RETIRED:["已退休","retired"],SUSPENDED:["停职","departed"]};
-    const FIELD_LEVELS = {
-      "identity.document_number": "HIGH_SENSITIVE",
-      "person.birth_date": "SENSITIVE",
-      "contact.personal_mobile": "SENSITIVE",
-      "contact.personal_email": "SENSITIVE",
-    };
-    let revealTimers = {};
-    async function load() {
-      const q = new URLSearchParams({asOf: document.getElementById("asof").dataset.asOf || ""});
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/profile?` + q);
-      if (!resp.ok) { document.getElementById("asofBar").textContent = `加载失败（${resp.status}）`; return; }
-      const body = await resp.json();
-      const d = body.data;
-      const h = d.identityHeader;
-      document.getElementById("name").textContent = h.legalName;
-      document.getElementById("staffNo").textContent = h.staffNo;
-      const [label, cls] = statusLabels[h.employmentStatus] || [h.employmentStatus, ""];
-      const sb = document.getElementById("statusBadge");
-      sb.textContent = label; sb.className = "badge " + cls;
-      document.getElementById("avatar").textContent = (h.legalName || "?").slice(0,1);
-      const pa = d.currentFacts.primaryAssignment;
-      document.getElementById("orgLine").textContent = pa ? `${pa.orgName || "-"} · ${pa.positionName || "-"}` : "无当前主岗";
-      const bar = document.getElementById("asofBar");
-      if (d.isHistoricalView) {
-        bar.className = "asof warn";
-        bar.innerHTML = `历史口径：截至 ${d.asOf}（只读，编辑入口已禁用）<a class="back" href="?">查看当前</a>`;
-      } else {
-        bar.className = "asof";
-        bar.innerHTML = `当前事实 · 截至 ${d.asOf} <span id="asOfInputWrap"><input type="date" id="asOfInput" onchange="goAsOf()" style="padding:4px 8px;border:1px solid #bfdbfe;border-radius:6px"></span>`;
+
+  <div style="margin-bottom:12px">
+    <a class="hr03-btn" href="/hr/staff/">← 返回教职工名册</a>
+  </div>
+
+  <section class="hr03-profile-head" aria-label="教职工身份摘要">
+    <div class="hr03-profile-identity">
+      <div class="hr03-avatar" id="avatar">?</div>
+      <div>
+        <div class="hr03-profile-name">
+          <h1 id="name">--</h1>
+          <span class="badge" id="statusBadge">--</span>
+        </div>
+        <div class="hr03-profile-sub" id="orgLine">正在读取当前单位与岗位…</div>
+        <div class="hr03-profile-meta">工号 <span id="staffNo">--</span> · 当前学校正式人事主档</div>
+      </div>
+    </div>
+    <div class="hr03-actions" aria-label="主档快捷查看">
+      <a class="hr03-btn" href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+      <a class="hr03-btn" href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+      <a class="hr03-btn" href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+      <a class="hr03-btn" href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+    </div>
+  </section>
+
+  <div class="hr03-asof" id="asofBar" aria-live="polite">正在读取当前事实口径…</div>
+
+  <nav class="hr03-profile-nav" aria-label="教职工主档工作区">
+    <a class="on" href="/hr/staff/{{ staff_id }}/">基本档案</a>
+    <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+    <a href="/hr/staff/{{ staff_id }}/backgrounds">学历资格</a>
+    <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+    <a href="/hr/staff/{{ staff_id }}/corrections">更正历史</a>
+    <a href="/hr/staff/data-quality/">数据质量</a>
+  </nav>
+
+  <section class="hr03-profile-grid">
+    <div>
+      <article class="hr03-card">
+        <h3>当前人事概况</h3>
+        <dl class="hr03-kv" id="facts"><dt>状态</dt><dd>加载中…</dd></dl>
+      </article>
+
+      <article class="hr03-card">
+        <h3>学历与资格</h3>
+        <p class="hr-meta" style="margin:0 0 12px">学历、学位、教师资格和其他资格事实统一进入“学历资格”工作区查看，避免主档重复维护另一份事实。</p>
+        <a class="hr03-btn" href="/hr/staff/{{ staff_id }}/backgrounds">查看学历资格 →</a>
+      </article>
+
+      <article class="hr03-card">
+        <h3>材料档案</h3>
+        <p class="hr-meta" style="margin:0 0 12px">身份证明、学历学位、资格证书及其他人事材料按原材料档案权限与审计规则查看。</p>
+        <a class="hr03-btn" href="/hr/staff/{{ staff_id }}/materials">查看材料档案 →</a>
+      </article>
+    </div>
+
+    <aside>
+      <div id="riskPanel"></div>
+
+      <article class="hr03-card">
+        <h3>身份摘要</h3>
+        <dl class="hr03-kv" id="identity"><dt>状态</dt><dd>加载中…</dd></dl>
+      </article>
+
+      <article class="hr03-card">
+        <h3>数据质量</h3>
+        <p class="hr-meta" style="margin:0 0 12px">数据质量异常由正式质量规则产生；主档不会因为字段为空就自行判定“有风险”。</p>
+        <a class="hr03-btn" href="/hr/staff/data-quality/">进入数据质量中心 →</a>
+      </article>
+    </aside>
+  </section>
+
+  <div class="hr03-principle"><strong>主档数据原则：</strong>当前岗位、人员类别、聘用关系、身份信息和历史时点均读取 HR03 Authority；敏感字段原值必须填写查看用途并产生审计记录。</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const root = document.querySelector("[data-module='HR03'][data-page='staff-profile']");
+  const staffId = root?.dataset.staffId || "{{ staff_id }}";
+  const initialAsOf = root?.dataset.asOf || "";
+  const statusLabels = {
+    ACTIVE: ["在职", "active"],
+    PENDING_ENTRY: ["待入职", "pending"],
+    DEPARTED: ["已离职", "departed"],
+    RETIRED: ["已退休", "retired"],
+    SUSPENDED: ["停职", "departed"],
+  };
+  const revealTimers = {};
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[char]));
+  }
+
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+
+  function factRow(label, value) {
+    return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd>`;
+  }
+
+  function renderIdentity(summary) {
+    const box = document.getElementById("identity");
+    if (!box) return;
+    const masked = escapeHtml(summary?.maskedIdentityNo || "-");
+    box.innerHTML = `
+      <dt>身份证</dt>
+      <dd>
+        <span class="sensitive" id="idNo"><span class="val">${masked}</span></span>
+        <button class="reveal-btn" type="button" id="revealIdentity">查看原值</button>
+      </dd>
+      ${factRow("性别", summary?.gender || "-")}
+      ${factRow("出生年份", summary?.birthYear || "-")}`;
+    document.getElementById("revealIdentity")?.addEventListener("click", () => revealSensitive("identity.document_number", "idNo"));
+  }
+
+  async function load() {
+    const asOfBar = document.getElementById("asofBar");
+    const query = new URLSearchParams();
+    if (initialAsOf) query.set("asOf", initialAsOf);
+
+    try {
+      const response = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/profile?${query.toString()}`, {
+        credentials: "same-origin",
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      if (!response.ok) {
+        asOfBar.textContent = `主档加载失败（${response.status}）`;
+        asOfBar.className = "hr03-asof warn";
+        return;
       }
-      const facts = document.getElementById("facts");
-      facts.innerHTML = factRow("主单位", pa ? pa.orgName : "-") + factRow("主岗位", pa ? pa.positionName : "-")
-        + factRow("人员类别", h.staffCategoryCode) + factRow("入校日", d.currentFacts.dateJoining || "-")
-        + factRow("聘用关系", (d.currentFacts.relationships || []).map(r => r.relationshipType).join(", ") || "-")
-        + factRow("兼岗数", (d.currentFacts.concurrentAssignments || []).length);
-      const idBox = document.getElementById("identity");
-      idBox.innerHTML = factRow("身份证", `<span class="sensitive" id="idNo"><span class="val">${d.identitySummary.maskedIdentityNo || "-"}</span></span>`)
-        + factRow("性别", d.identitySummary.gender || "-") + factRow("出生年份", d.identitySummary.birthYear || "-");
+      const body = await response.json();
+      const d = body.data || {};
+      const h = d.identityHeader || {};
+      const currentFacts = d.currentFacts || {};
+      const primaryAssignment = currentFacts.primaryAssignment || null;
+
+      document.getElementById("name").textContent = h.legalName || "未命名教职工";
+      document.getElementById("staffNo").textContent = h.staffNo || "-";
+      document.getElementById("avatar").textContent = (h.legalName || "?").slice(0, 1);
+      const [statusLabel, statusClass] = statusLabels[h.employmentStatus] || [h.employmentStatus || "状态未提供", ""];
+      const badge = document.getElementById("statusBadge");
+      badge.textContent = statusLabel;
+      badge.className = "badge " + statusClass;
+      document.getElementById("orgLine").textContent = primaryAssignment
+        ? `${primaryAssignment.orgName || "未提供单位"} · ${primaryAssignment.positionName || "未提供岗位"}`
+        : "当前没有主岗事实";
+
+      if (d.isHistoricalView) {
+        asOfBar.className = "hr03-asof warn";
+        asOfBar.innerHTML = `历史口径：截至 <strong>${escapeHtml(d.asOf || initialAsOf || "-")}</strong>（只读） <a class="link" href="?">返回当前事实</a>`;
+      } else {
+        asOfBar.className = "hr03-asof";
+        asOfBar.innerHTML = `当前事实 · 截至 <strong>${escapeHtml(d.asOf || "-")}</strong><span><label for="asOfInput" class="hr-meta">查看历史时点　</label><input type="date" id="asOfInput" style="padding:6px 8px;border:1px solid var(--hr-border);border-radius:8px;background:var(--hr-surface);color:var(--hr-text-700)"></span>`;
+        document.getElementById("asOfInput")?.addEventListener("change", goAsOf);
+      }
+
+      document.getElementById("facts").innerHTML =
+        factRow("主单位", primaryAssignment?.orgName || "-") +
+        factRow("主岗位", primaryAssignment?.positionName || "-") +
+        factRow("人员类别", h.staffCategoryCode || "-") +
+        factRow("入校日", currentFacts.dateJoining || "-") +
+        factRow("聘用关系", (currentFacts.relationships || []).map((item) => item.relationshipType).join("、") || "-") +
+        factRow("兼岗数", (currentFacts.concurrentAssignments || []).length);
+
+      renderIdentity(d.identitySummary || {});
+
+      const riskPanel = document.getElementById("riskPanel");
+      if (riskPanel) {
+        if (d.isHistoricalView) {
+          riskPanel.innerHTML = '<div class="risk warn"><strong>当前为历史时点</strong><br>历史视图只读，办理事项请返回当前事实。</div>';
+        } else {
+          riskPanel.innerHTML = '<div class="hr03-card"><h3>当前状态</h3><p class="hr-meta" style="margin:0">当前主档已按正式 Authority 读取。需要判断材料缺失、数据异常或业务风险时，请进入对应业务工作区，不在主档前端自行推断。</p></div>';
+        }
+      }
+    } catch (error) {
+      asOfBar.textContent = error.message || "主档加载失败";
+      asOfBar.className = "hr03-asof warn";
     }
-    function escapeHtml(s) {
-      return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-    }
-    function factRow(k, v) { return `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`; }
-    function goAsOf() {
-      const v = document.getElementById("asOfInput").value;
-      window.location.search = v ? `?asOf=${v}` : "";
-    }
-    async function revealSensitive(fieldCode, elId) {
-      const el = document.getElementById(elId);
-      if (!el) return;
-      const purpose = prompt("请填写查看用途（将记录审计）", "业务核对");
-      if (!purpose) return;
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/sensitive-fields/${fieldCode}/reveal`, {
+  }
+
+  function goAsOf(event) {
+    const value = event?.target?.value || "";
+    window.location.search = value ? `?asOf=${encodeURIComponent(value)}` : "";
+  }
+
+  async function revealSensitive(fieldCode, elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const purpose = window.prompt("请填写查看用途（将记录审计）", "业务核对");
+    if (!purpose) return;
+    try {
+      const response = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/sensitive-fields/${encodeURIComponent(fieldCode)}/reveal`, {
         method: "POST",
+        credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
           "X-Requested-With": "XMLHttpRequest",
           "X-CSRFToken": getCookie("csrftoken"),
         },
-        body: JSON.stringify({purpose}),
+        body: JSON.stringify({ purpose }),
       });
-      if (!resp.ok) { alert("查看失败：" + (await resp.json()).error?.code); return; }
-      const body = await resp.json();
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "查看失败");
       el.classList.add("revealed");
-      el.querySelector(".val").textContent = body.data.value;
-      el.innerHTML += `<button class="reveal-btn" onclick="mask('${elId}')">重新遮罩</button>`;
-      clearTimeout(revealTimers[elId]);
-      revealTimers[elId] = setTimeout(() => mask(elId), (body.data.maskAfterSeconds || 60) * 1000);
+      el.querySelector(".val").textContent = body.data?.value ?? "-";
+      clearTimeout(revealTimers[elementId]);
+      revealTimers[elementId] = window.setTimeout(() => mask(elementId), (body.data?.maskAfterSeconds || 60) * 1000);
+    } catch (error) {
+      window.alert(error.message || "敏感字段查看失败");
     }
-    function mask(elId) {
-      const el = document.getElementById(elId);
-      if (!el) return;
-      el.classList.remove("revealed");
-      el.querySelector(".val").textContent = "••••••••";
-    }
-    load();
-  </script>
-</body>
-</html>
+  }
+
+  function mask(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.classList.remove("revealed");
+    el.querySelector(".val").textContent = "••••••••";
+  }
+
+  function boot() { load(); }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot, { once: true });
+  } else {
+    boot();
+  }
+})();
+</script>
+{% endblock %}
