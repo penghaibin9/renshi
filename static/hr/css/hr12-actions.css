@@ -31,7 +31,7 @@
 .hr12-action-btn {
   min-height: 36px;
   padding: 7px 11px;
-  border: 1px solid var(--hr-border-strong);
+  border: 1px solid var(--hr-border);
   border-radius: var(--hr-radius-sm);
   background: var(--hr-surface);
   color: var(--hr-primary-700);
@@ -105,7 +105,7 @@
   width: 100%;
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid var(--hr-border-strong);
+  border: 1px solid var(--hr-border);
   border-radius: var(--hr-radius-sm);
   background: var(--hr-surface);
   color: var(--hr-text-900);
@@ -115,7 +115,7 @@
 
 .hr12-action-field input:focus,
 .hr12-action-field select:focus {
-  border-color: var(--hr-primary-500);
+  border-color: var(--hr-primary-600);
   outline: 2px solid rgba(37, 99, 235, 0.12);
   outline-offset: 1px;
 }
@@ -198,7 +198,7 @@
   gap: var(--hr-space-2);
   margin-top: var(--hr-space-3);
   padding-top: var(--hr-space-3);
-  border-top: 1px dashed var(--hr-border-strong);
+  border-top: 1px dashed var(--hr-border);
 }
 
 .hr12-action-versions.open {
@@ -218,7 +218,7 @@
 
 .hr12-action-empty {
   padding: var(--hr-space-6) var(--hr-space-4);
-  border: 1px dashed var(--hr-border-strong);
+  border: 1px dashed var(--hr-border);
   border-radius: var(--hr-radius-sm);
   background: var(--hr-canvas);
   color: var(--hr-text-500);
