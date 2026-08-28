@@ -1,11 +1,8 @@
-"""HR12 Assessment — Authority 模型层（生产级）。
-
-全部 45 个模型 + Managers + Admin。
-"""
+"""HR12 Assessment — Authority 模型层（生产级）。"""
 
 # base
 from hr_assessment.models.base import TenantScopedModel, VersionedModel, TenantManager  # noqa: F401
-# policy (13 models)
+# policy
 from hr_assessment.models.policy import (  # noqa: F401
     PolicyPackManager, PolicyVersionManager,
     HrAssessmentPolicyPack, HrAssessmentPolicyVersion,
@@ -14,26 +11,30 @@ from hr_assessment.models.policy import (  # noqa: F401
     HrAssessmentClassificationProfileVersion, HrEvidenceRequirement,
     HrGateRule, HrGateRuleVersion, HrResultRuleVersion, HrExcellentQuotaPolicy,
 )
-# cycle (3)
+# cycle
 from hr_assessment.models.cycle import HrAssessmentCycle, HrCycleSnapshot, HrAssessmentPopulationSnapshot  # noqa: F401
-# goal (8)
+# goal
 from hr_assessment.models.goal import (  # noqa: F401
     HrAssessmentGoalPlan, HrAssessmentGoal, HrGoalVersion, HrGoalMeasure,
     HrGoalAssignment, HrGoalProgressEvent, HrGoalCheckIn, HrRoutineAssessmentEntry,
 )
-# evidence (7)
+# evidence
 from hr_assessment.models.evidence import (  # noqa: F401
     HrAssessmentEvidenceRef, HrMetricSnapshot, HrSelfAssessment,
     HrReviewerAssignment, HrReviewerEvaluation,
     HrQuestionnaireVersion, HrMultiRaterSession,
 )
-# case (6)
+# provider evidence snapshots
+from hr_assessment.models.provider_snapshot import (  # noqa: F401
+    HrProviderSnapshotSet, HrProviderSnapshotItem,
+)
+# case
 from hr_assessment.models.case import (  # noqa: F401
     HrSubjectSnapshot, HrAssessmentCase, HrAnnualAssessmentCase,
     HrTermAssessmentCase, HrSpecialAssessmentCase, HrEthicsAssessmentCase,
     HrAssessmentPublicityCase,
 )
-# result (9)
+# result
 from hr_assessment.models.result import (  # noqa: F401
     HrCalibrationSession, HrCalibrationRevision, HrAssessmentDecisionSession,
     HrFinalAssessmentResult, HrResultNotice, HrAcknowledgement,

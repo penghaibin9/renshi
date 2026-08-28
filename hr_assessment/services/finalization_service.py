@@ -1,17 +1,8 @@
 """HR12 formal assessment finalization boundary.
 
-The service implements only the first immutable FINALIZED result. It does not
-mutate an existing formal result to simulate V2; objection/correction/reassessment
-must use the separate ResultRevision/version workflow.
-
-Finalization is fail-closed over the currently modeled gates:
-- Case is PROPOSED or PUBLICITY inside tenant;
-- all attached evidence/metrics are resolved enough for finalization;
-- every assigned reviewer has a submitted evaluation;
-- collective decision session is completed and explicitly contains the Case;
-- a PUBLICITY case has a completed cycle publicity record.
-
-Unknown/unavailable/conflicting provider states never become PASS.
+Formal results are append-only. Finalization is fail-closed over the current
+provider snapshot, evidence/metric quality, reviewer submissions, decision
+agenda scope and publicity completion.
 """
 
 from __future__ import annotations
@@ -32,6 +23,7 @@ from hr_assessment.models import (
     HrAssessmentPublicityCase,
     HrFinalAssessmentResult,
     HrMetricSnapshot,
+    HrProviderSnapshotSet,
     HrReviewerAssignment,
 )
 
@@ -82,8 +74,37 @@ class AssessmentFinalizationService:
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
+    def _provider_snapshot_blockers(self, *, case: HrAssessmentCase) -> list[dict]:
+        snapshot_set_id = getattr(case, "provider_snapshot_set_id", None)
+        if not snapshot_set_id:
+            return [{"code": "ASSESSMENT_PROVIDER_SNAPSHOT_REQUIRED"}]
+
+        snapshot_set = HrProviderSnapshotSet.objects.filter(
+            id=snapshot_set_id,
+            tenant_id=self.tenant_id,
+            case_id=case.id,
+        ).first()
+        if snapshot_set is None:
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_STATE_DRIFT",
+                    "snapshotSetId": str(snapshot_set_id),
+                }
+            ]
+        if snapshot_set.status != "READY":
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_BLOCKED",
+                    "snapshotSetId": str(snapshot_set.id),
+                    "status": snapshot_set.status,
+                    "providerStatus": snapshot_set.provider_status_json,
+                }
+            ]
+        return []
+
     def _gate_blockers(self, *, case: HrAssessmentCase, decision_session_id) -> list[dict]:
         blockers: list[dict] = []
+        blockers.extend(self._provider_snapshot_blockers(case=case))
 
         unresolved_evidence = HrAssessmentEvidenceRef.objects.filter(
             tenant_id=self.tenant_id,
@@ -127,14 +148,11 @@ class AssessmentFinalizationService:
                 }
             )
 
-        decision = (
-            HrAssessmentDecisionSession.objects.filter(
-                id=decision_session_id,
-                tenant_id=self.tenant_id,
-                cycle_id=case.cycle_id,
-            )
-            .first()
-        )
+        decision = HrAssessmentDecisionSession.objects.filter(
+            id=decision_session_id,
+            tenant_id=self.tenant_id,
+            cycle_id=case.cycle_id,
+        ).first()
         if decision is None:
             blockers.append({"code": "ASSESSMENT_DECISION_SESSION_REQUIRED"})
         elif decision.status not in self.DECISION_COMPLETE:
@@ -145,9 +163,6 @@ class AssessmentFinalizationService:
                 }
             )
         else:
-            # A completed meeting in the same cycle is not sufficient.  The
-            # current case must have been part of that exact decision agenda;
-            # otherwise Case A's meeting could incorrectly finalize Case B.
             case_refs = {str(value) for value in (decision.case_refs_json or [])}
             if str(case.id) not in case_refs:
                 blockers.append(
@@ -171,12 +186,10 @@ class AssessmentFinalizationService:
 
     @transaction.atomic
     def finalize(self, *, case_id, payload: FinalResultInput) -> HrFinalAssessmentResult:
-        """Create the first immutable FINALIZED result for an assessment case."""
-        case = (
-            HrAssessmentCase.objects.select_for_update()
-            .filter(id=case_id, tenant_id=self.tenant_id)
-            .first()
-        )
+        case = HrAssessmentCase.objects.select_for_update().filter(
+            id=case_id,
+            tenant_id=self.tenant_id,
+        ).first()
         if case is None:
             raise AssessmentFinalizationError(
                 "ASSESSMENT_CASE_NOT_FOUND", "assessment case not found inside tenant"
@@ -199,7 +212,6 @@ class AssessmentFinalizationService:
                 "ASSESSMENT_CASE_INVALID_STATE",
                 f"case status {case.status} cannot be finalized",
             )
-
         if not payload.grade_code.strip():
             raise AssessmentFinalizationError(
                 "ASSESSMENT_GRADE_REQUIRED", "formal grade_code is required"
@@ -226,14 +238,11 @@ class AssessmentFinalizationService:
                 blockers=blockers,
             )
 
-        existing = (
-            HrFinalAssessmentResult.objects.select_for_update()
-            .filter(tenant_id=self.tenant_id, case_id=case.id)
-            .first()
-        )
+        existing = HrFinalAssessmentResult.objects.select_for_update().filter(
+            tenant_id=self.tenant_id,
+            case_id=case.id,
+        ).first()
         if existing is not None:
-            # A formal row is append-only/immutable. Presence while the Case is
-            # not FINALIZED is state drift, not an invitation to overwrite it.
             raise AssessmentFinalizationError(
                 "ASSESSMENT_RESULT_ALREADY_EXISTS",
                 "formal result already exists; use revision workflow",
@@ -248,10 +257,9 @@ class AssessmentFinalizationService:
             "displayGrade": payload.display_grade_snapshot,
             "calculatedScore": payload.calculated_score,
             "decisionReason": payload.decision_reason,
-            "policyVersionId": str(case.policy_version_id)
-            if case.policy_version_id
-            else None,
+            "policyVersionId": str(case.policy_version_id) if case.policy_version_id else None,
             "decisionSessionId": str(payload.decision_session_id),
+            "providerSnapshotSetId": str(case.provider_snapshot_set_id),
             "resultVersionNo": 1,
         }
         result = HrFinalAssessmentResult.objects.create(
