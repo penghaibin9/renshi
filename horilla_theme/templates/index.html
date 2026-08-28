@@ -331,6 +331,9 @@
         </div>
         {% include "generic/components.html" %}
         {% include "horilla_theme/components/footer_scripts.html" %}
+        {% block scripts %}
+            <!-- Page-specific scripts (optional) -->
+        {% endblock %}
         <script>
             document.body.addEventListener("showMessages", function () {
                 var b = document.getElementById("reloadMessagesButton");
