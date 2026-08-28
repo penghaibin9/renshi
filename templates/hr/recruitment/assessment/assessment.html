@@ -1,132 +1,59 @@
 {% extends "index.html" %}
-{% comment %}
-HR04-05 考试面试与考察工作台（总册 §12）
-只消费现有 HR04 assessment canonical API；不在模板内复制业务真值。
-{% endcomment %}
 {% load static i18n %}
-
-{% block styles %}
-<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
-<style>
-  .hr04-assessment { max-width: 1480px; margin: 0 auto; padding: 20px 22px 40px; }
-  .hr04-assessment__nav { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 14px; }
-  .hr04-assessment__nav a { flex: 0 0 auto; padding: 9px 13px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; color: #475467; font-size: 13px; font-weight: 700; text-decoration: none; }
-  .hr04-assessment__nav a[aria-current="page"] { border-color: #c7d7ff; background: #eef4ff; color: #2f55c7; }
-  .hr04-assessment__notice { display: flex; align-items: flex-start; gap: 10px; margin: 2px 0 16px; padding: 12px 14px; border: 1px solid #d9e6ff; border-radius: 12px; background: #f6f9ff; color: #344054; font-size: 13px; line-height: 1.6; }
-  .hr04-assessment__notice strong { color: #2348b5; }
-  .hr04-assessment__flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .hr04-assessment__step { position: relative; min-height: 134px; padding: 16px; border: 1px solid #e4e9f2; border-radius: 14px; background: #fff; }
-  .hr04-assessment__step-no { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-bottom: 12px; border-radius: 9px; background: #eef4ff; color: #3157d5; font-weight: 800; font-size: 12px; }
-  .hr04-assessment__step h3 { margin: 0 0 6px; color: #172033; font-size: 15px; }
-  .hr04-assessment__step p { margin: 0; color: #667085; font-size: 12px; line-height: 1.6; }
-  .hr04-assessment__grid { display: grid; grid-template-columns: minmax(320px, .78fr) minmax(0, 1.22fr); gap: 16px; align-items: start; }
-  .hr04-assessment__card { border: 1px solid #e4e9f2; border-radius: 16px; background: #fff; padding: 18px; box-shadow: 0 10px 30px rgba(31,50,81,.05); }
-  .hr04-assessment__card h2 { margin: 0 0 6px; color: #172033; font-size: 17px; }
-  .hr04-assessment__card-desc { margin: 0 0 16px; color: #667085; font-size: 12px; line-height: 1.6; }
-  .hr04-assessment__field { display: grid; gap: 6px; margin-bottom: 12px; }
-  .hr04-assessment__field label { color: #475467; font-size: 12px; font-weight: 700; }
-  .hr04-assessment__field input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #d7dfeb; border-radius: 10px; background: #fff; color: #172033; }
-  .hr04-assessment__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  .hr04-assessment__button { min-height: 40px; padding: 0 15px; border: 0; border-radius: 10px; background: #3157d5; color: #fff; font-weight: 700; cursor: pointer; }
-  .hr04-assessment__button:disabled { cursor: not-allowed; opacity: .55; }
-  .hr04-assessment__result { min-height: 218px; }
-  .hr04-assessment__empty { display: grid; place-items: center; min-height: 180px; padding: 24px; border: 1px dashed #d6deea; border-radius: 12px; color: #667085; text-align: center; }
-  .hr04-assessment__meta { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin: 0 0 14px; }
-  .hr04-assessment__meta-item { padding: 11px 12px; border-radius: 11px; background: #f7f9fc; }
-  .hr04-assessment__meta-item span { display: block; color: #7c879b; font-size: 11px; }
-  .hr04-assessment__meta-item strong { display: block; margin-top: 3px; color: #172033; font-size: 14px; }
-  .hr04-assessment__status { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: 999px; background: #eef4ff; color: #3157d5; font-size: 11px; font-weight: 800; }
-  .hr04-assessment__status--locked { background: #ecfdf3; color: #087443; }
-  .hr04-assessment__score-list { display: grid; gap: 8px; }
-  .hr04-assessment__score { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #e8edf4; border-radius: 10px; }
-  .hr04-assessment__score-name { color: #344054; font-size: 13px; }
-  .hr04-assessment__score-value { color: #172033; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .hr04-assessment__error { padding: 12px 14px; border: 1px solid #fecaca; border-radius: 10px; background: #fff7f7; color: #b42318; font-size: 13px; }
-  .hr04-assessment__guardrails { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 16px; }
-  .hr04-assessment__guardrail { padding: 12px; border: 1px solid #e8edf4; border-radius: 12px; background: #fbfcfe; }
-  .hr04-assessment__guardrail strong { display: block; margin-bottom: 4px; color: #344054; font-size: 12px; }
-  .hr04-assessment__guardrail span { color: #667085; font-size: 11px; line-height: 1.55; }
-  @media (max-width: 980px) { .hr04-assessment__flow { grid-template-columns: repeat(2,minmax(0,1fr)); } .hr04-assessment__grid { grid-template-columns: 1fr; } }
-  @media (max-width: 640px) { .hr04-assessment { padding: 14px 12px 30px; } .hr04-assessment__flow, .hr04-assessment__guardrails, .hr04-assessment__meta { grid-template-columns: 1fr; } }
-</style>
-{% endblock styles %}
+{% comment %}HR04-05 考试面试与考察；只消费现有 canonical assessment API。{% endcomment %}
 
 {% block content %}
-<div class="hr04-assessment" data-module="HR04" data-hr-page="recruitment-assessment">
-  {% include "hr/components/page_header.html" with title="考试面试与考察" subtitle="统一管理评分方案、评审事件、专家评分与结果锁定（HR04-05）" %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-assessment-v2.css' %}">
 
-  <nav class="hr04-assessment__nav" aria-label="招聘与人才引进业务导航">
-    <a href="{% url 'hr04-plans' %}">年度用人计划</a>
-    <a href="{% url 'hr04-campaigns' %}">招聘项目与岗位</a>
-    <a href="{% url 'hr04-candidates' %}">人才库与应聘者</a>
-    <a href="{% url 'hr04-qualification' %}">资格审查</a>
-    <a href="{% url 'hr04-assessment' %}" aria-current="page">考试面试与考察</a>
-    <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
-  </nav>
+<div class="hr-v2-page hr04-page hr04-assessment" data-module="HR04" data-page="recruitment-assessment">
+  <div class="hr-v2-mobile-section-switcher"><span>HR04 招聘管理</span><strong>考试面试与考察</strong></div>
+  <header class="hr-v2-pagehead">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR04 · 招聘管理</div>
+      <h1 class="hr-v2-title">考试面试与考察</h1>
+      <p class="hr-v2-subtitle">统一管理评分方案、评审事件、专家评分与结果锁定。评分、重开、冻结结果仍由后端 Authority 校验，本页不在浏览器重算正式成绩。</p>
+    </div>
+  </header>
 
-  <div class="hr04-assessment__notice" role="note">
-    <div aria-hidden="true">🛡️</div>
-    <div><strong>评审事实不可被 UI 覆盖。</strong> 评分方案、专家分组、利益冲突、评分锁定和结果冻结全部由后端 Authority 校验；本页只呈现并调用现有 canonical API。</div>
-  </div>
+  <nav class="hr04-nav" aria-label="招聘工作区"><a href="/hr/recruitment/plans">年度用人计划</a><a href="/hr/recruitment/campaigns">招聘项目与岗位</a><a href="/hr/recruitment/candidates">人才库与应聘者</a><a href="/hr/recruitment/qualification">资格审查</a><a class="on" href="/hr/recruitment/assessment">考试面试与考察</a><a href="/hr/recruitment/proposed-hires">录用与人才引进</a></nav>
+
+  <div class="hr04-workspace-note" role="note"><strong>评审事实不可被 UI 覆盖</strong>评分方案、专家分组、利益冲突、评分锁定和结果冻结全部由后端 Authority 校验；页面只呈现并调用现有 canonical API。</div>
 
   <section class="hr04-assessment__flow" aria-label="考试面试与考察业务流程">
-    <article class="hr04-assessment__step">
-      <span class="hr04-assessment__step-no">01</span>
-      <h3>冻结评分方案</h3>
-      <p>定义笔试、试讲、面试、技能测试等评分组件与权重；锁定后不允许静默改规则。</p>
-    </article>
-    <article class="hr04-assessment__step">
-      <span class="hr04-assessment__step-no">02</span>
-      <h3>组织评审事件</h3>
-      <p>为考试或面试安排专家与候选人，利益冲突必须先声明并按 Authority 阻断评分。</p>
-    </article>
-    <article class="hr04-assessment__step">
-      <span class="hr04-assessment__step-no">03</span>
-      <h3>评分与锁定</h3>
-      <p>专家仅看到评审所需信息；评分表锁定后任何重开都必须走显式权限与审计。</p>
-    </article>
-    <article class="hr04-assessment__step">
-      <span class="hr04-assessment__step-no">04</span>
-      <h3>冻结岗位结果</h3>
-      <p>汇总评分后冻结岗位结果，再进入体检、考察、拟录用与公示，不以拖拽阶段代替真值。</p>
-    </article>
+    <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">01</span><h3>冻结评分方案</h3><p>定义笔试、试讲、面试、技能测试等评分组件与权重；锁定后不允许静默改规则。</p></article>
+    <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">02</span><h3>组织评审事件</h3><p>安排专家与候选人；存在利益冲突时必须先声明并按 Authority 阻断评分。</p></article>
+    <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">03</span><h3>评分与锁定</h3><p>专家只看到完成评审需要的信息；评分表锁定后重开必须有显式权限与审计。</p></article>
+    <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">04</span><h3>冻结岗位结果</h3><p>汇总评分后冻结岗位结果，再进入考察、拟录用与公示，不以拖拽阶段替代业务真值。</p></article>
   </section>
 
-  <div class="hr04-assessment__grid">
-    <section class="hr04-assessment__card" aria-labelledby="hr04-score-query-title">
-      <h2 id="hr04-score-query-title">评分表查询</h2>
-      <p class="hr04-assessment__card-desc">输入评分表 ID 查看 canonical 评分事实。页面不会缓存或本地重算正式成绩。</p>
-      <form id="hr04-assessment-query" novalidate>
-        <div class="hr04-assessment__field">
-          <label for="hr04-score-sheet-id">评分表 ID</label>
-          <input id="hr04-score-sheet-id" name="score_sheet_id" type="text" inputmode="text" autocomplete="off" placeholder="例如：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required aria-describedby="hr04-score-help">
-          <small id="hr04-score-help" class="hr-meta">可从评审任务、审计记录或相关业务通知中复制。</small>
+  <section class="hr04-assessment__grid">
+    <div class="hr04-panel hr04-assessment__card">
+      <div class="hr04-panel__head"><div><h2>评分表查询</h2><p>输入评分表 ID 查看服务端 canonical 评分事实。</p></div></div>
+      <div class="hr04-content">
+        <form id="hr04-assessment-query" novalidate>
+          <div class="hr04-assessment__field"><label for="hr04-score-sheet-id">评分表 ID</label><input id="hr04-score-sheet-id" class="hr04-input" name="score_sheet_id" autocomplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required><small class="hr-meta">可从评审任务、审计记录或业务通知中复制。</small></div>
+          <button class="hr04-btn primary" id="hr04-score-submit" type="submit">查询评分表</button>
+        </form>
+        <div class="hr04-guardrails">
+          <div class="hr04-guardrail"><strong>最小披露</strong><span>评审人员只访问完成任务所需字段。</span></div>
+          <div class="hr04-guardrail"><strong>利益冲突</strong><span>存在关联关系时必须先声明和处置。</span></div>
+          <div class="hr04-guardrail"><strong>锁定可追溯</strong><span>已锁评分不得直接编辑，重开必须留痕。</span></div>
         </div>
-        <div class="hr04-assessment__actions">
-          <button class="hr04-assessment__button" id="hr04-score-submit" type="submit">查询评分表</button>
-        </div>
-      </form>
-
-      <div class="hr04-assessment__guardrails" aria-label="评分安全规则">
-        <div class="hr04-assessment__guardrail"><strong>最小披露</strong><span>评审人员只访问完成任务所需字段。</span></div>
-        <div class="hr04-assessment__guardrail"><strong>利益冲突</strong><span>存在关联关系时必须先声明和处置。</span></div>
-        <div class="hr04-assessment__guardrail"><strong>锁定可追溯</strong><span>已锁评分不得直接编辑，重开必须留痕。</span></div>
       </div>
-    </section>
+    </div>
 
-    <section class="hr04-assessment__card hr04-assessment__result" aria-labelledby="hr04-score-result-title">
-      <h2 id="hr04-score-result-title">评分事实</h2>
-      <p class="hr04-assessment__card-desc">展示服务端返回的状态、总分与评分分项；字段缺失时保持“—”，不推断业务结论。</p>
-      <div id="hr04-assessment-result" aria-live="polite">
-        <div class="hr04-assessment__empty">输入评分表 ID 后查询。<br>本页不会自动读取其他候选人的评分。</div>
-      </div>
-    </section>
-  </div>
+    <div class="hr04-panel hr04-assessment__card hr04-assessment__result">
+      <div class="hr04-panel__head"><div><h2>评分事实</h2><p>字段缺失保持“—”，不推断业务结论。</p></div></div>
+      <div class="hr04-content" id="hr04-assessment-result" aria-live="polite"><div class="hr04-assessment__empty">输入评分表 ID 后查询。<br>本页不会自动读取其他候选人的评分。</div></div>
+    </div>
+  </section>
+
+  <div class="hr04-principle"><strong>评审原则：</strong>评分分项和总分只展示服务端返回值；没有返回分项时明确提示，不在前端计算“看起来合理”的成绩。</div>
 </div>
-{% endblock content %}
-
-{% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-assessment.js' %}"></script>
-{% endblock scripts %}
+{% endblock %}

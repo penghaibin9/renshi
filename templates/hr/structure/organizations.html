@@ -3,49 +3,93 @@
 {% comment %}
 HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未来）
 
-数据来源：GET /api/hr/v1/structure/organizations/bootstrap + /tree
+数据来源：
+  GET /api/hr/v1/structure/organizations/bootstrap
+  GET /api/hr/v1/structure/organizations/tree
+  GET /api/hr/v1/structure/organizations/{id}
+  GET /api/hr/v1/structure/position-control/summary
+
+视觉原则：遵循 HR UI V2；不伪造编制/风险数字，不改变现有 Authority 与路由语义。
 {% endcomment %}
 
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr02-workspace.css' %}">
 
-<div class="hr-page" data-hr-page="structure-orgs">
-  {% include "hr/components/page_header.html" with title="组织机构" subtitle="管理学校正式机构、上下级关系与未来生效调整" %}
+<div class="hr-v2-page hr02-page" data-module="HR02" data-hr-page="structure-orgs">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR02 组织岗位</span>
+    <strong>组织机构</strong>
+  </div>
 
-  <nav class="hr-filter-bar" aria-label="组织机构与编制岗位工作区">
-    <a class="hr-btn" href="/hr/structure/organizations">组织机构</a>
-    <a class="hr-btn" href="/hr/structure/relations">党政组织与业务关系</a>
-    <a class="hr-btn" href="/hr/structure/staffing-plans">编制方案</a>
-    <a class="hr-btn" href="/hr/structure/post-catalogs">岗位目录</a>
-    <a class="hr-btn" href="/hr/structure/positions">岗位编制台账</a>
-    <a class="hr-btn" href="/hr/structure/history">组织岗位历史</a>
+  <header class="hr-v2-pagehead" aria-labelledby="hr02-org-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR02 · 组织与岗位控制</div>
+      <h1 class="hr-v2-title" id="hr02-org-title">组织机构</h1>
+      <p class="hr-v2-subtitle">从学校正式组织树查看机构、上下级关系和生效状态，并联动岗位编制容量。先看结构，再处理关系、编制和岗位。</p>
+    </div>
+    <div class="hr-v2-context" aria-label="当前数据口径">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>时间</strong> 生效日期口径</span>
+      <span class="hr-v2-context__item"><strong>事实</strong> HR02 Authority</span>
+    </div>
+  </header>
+
+  <nav class="hr02-nav" aria-label="组织机构与编制岗位工作区">
+    <a class="is-active" href="/hr/structure/organizations">组织机构</a>
+    <a href="/hr/structure/relations">党政组织与业务关系</a>
+    <a href="/hr/structure/staffing-plans">编制方案</a>
+    <a href="/hr/structure/post-catalogs">岗位目录</a>
+    <a href="/hr/structure/positions">岗位编制台账</a>
+    <a href="/hr/structure/history">组织岗位历史</a>
   </nav>
+  <div class="hr02-mobile-hint">可左右滑动查看更多组织与岗位工作区</div>
 
-  <!-- 历史/未来模式条（默认今天不显示） -->
+  <section class="hr02-context-strip" aria-label="组织工作区说明">
+    <article><span>当前视图</span><strong>正式组织树</strong><small>查看当前学校生效中的组织事实</small></article>
+    <article><span>选择机构后</span><strong>查看机构详情</strong><small>稳定编码、类型、生效日期、状态与下级数量</small></article>
+    <article><span>岗位联动</span><strong>查看真实容量</strong><small>核定、已占、空缺、冻结、超额均来自后端</small></article>
+  </section>
+
   <div id="hr-effective-ribbon" data-hr-ribbon></div>
 
-  <div class="hr-structure-layout">
-    <!-- 组织树 -->
-    <aside class="hr-structure-tree">
-      <div class="hr-structure-tree__search">
-        <input type="search" id="hr-org-search" class="hr-search-input"
-          placeholder="{% trans '搜索机构/代码' %}" aria-label="{% trans '搜索机构' %}">
+  <section class="hr02-org-layout" aria-label="组织机构工作台">
+    <aside class="hr02-panel hr02-tree-panel">
+      <div class="hr02-panel__head">
+        <div><h2>组织树</h2><p>选择机构查看正式详情；支持按机构名称或稳定编码过滤当前已加载节点。</p></div>
       </div>
-      <div id="hr-org-tree" data-hr-tree
-        data-api-url="{% url 'hr-api-structure-org-tree' %}"
-        aria-label="{% trans '组织树' %}"></div>
+      <div class="hr02-tree-search">
+        <input type="search" id="hr-org-search" class="hr-search-input" placeholder="{% trans '搜索机构/代码' %}" aria-label="{% trans '搜索机构' %}">
+      </div>
+      <div id="hr-org-tree" class="hr02-tree" data-hr-tree data-api-url="{% url 'hr-api-structure-org-tree' %}" aria-label="{% trans '组织树' %}">
+        {% include "hr/components/state_view.html" with state="loading" %}
+      </div>
     </aside>
 
-    <!-- 详情 -->
-    <main class="hr-structure-detail" id="hr-org-detail">
+    <main class="hr02-panel hr02-detail-panel" id="hr-org-detail" aria-live="polite">
       {% include "hr/components/state_view.html" with state="loading" %}
     </main>
-  </div>
-</div>
-{% endblock %}
 
-{% block scripts %}
+    <aside class="hr02-panel hr02-control-panel">
+      <div class="hr02-panel__head">
+        <div><h2>岗位控制摘要</h2><p>这里不制造“正常”结论，只展示当前学校岗位控制接口返回的真实容量。</p></div>
+        <a class="hr-v2-section__action" href="/hr/structure/positions">查看岗位台账 →</a>
+      </div>
+      <div id="hr02-control-summary" class="hr02-control-summary" aria-live="polite">
+        <div class="hr02-state">正在读取岗位容量…</div>
+      </div>
+      <div class="hr02-boundary-note">
+        <strong>怎么看这个区域</strong>
+        <p>“超额”只在后端正式计算为超编时显示风险色；接口不可用时明确提示，不把未知状态显示成 0。</p>
+      </div>
+    </aside>
+  </section>
+
+  <div class="hr02-principle"><strong>组织数据原则：</strong>组织名称、上下级关系、岗位容量和历史调整均以当前学校 Authority 为准；未来生效与历史状态按生效日期区分，前端不自行推断正式状态。</div>
+</div>
+
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/structure/org-tree.js' %}"></script>
 <script src="{% static 'hr/js/structure/organizations.js' %}"></script>
