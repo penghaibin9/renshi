@@ -392,6 +392,103 @@
 }
 
 @media (max-width: 760px) {
+  /*
+   * The active Horilla theme shell defaults to a 13rem pinned sidebar and
+   * writes the same margin inline on .oh-main-content. On a 390px viewport
+   * that consumes more than half the screen. HR V2 keeps the existing global
+   * navigation available as a 4rem icon rail on narrow screens, but it never
+   * allows desktop hover/pin state to expand the rail or steal content width.
+   */
+  #sidebar,
+  #sidebar:hover,
+  #sidebar.sidebar-pinned {
+    width: 4rem !important;
+  }
+
+  .oh-main-content,
+  #sidebar.sidebar-pinned ~ .oh-main-content {
+    margin-left: 4rem !important;
+  }
+
+  .oh-main-header,
+  #sidebar.sidebar-pinned ~ .oh-main-content .oh-main-header {
+    left: 4rem !important;
+  }
+
+  #sidebar ~ #floating-buttons .fab-container,
+  #sidebar:hover ~ #floating-buttons .fab-container,
+  #sidebar.sidebar-pinned ~ #floating-buttons .fab-container {
+    left: 4rem !important;
+  }
+
+  #sidebar .oh-sidebar-label,
+  #sidebar:hover .oh-sidebar-label,
+  #sidebar.sidebar-pinned .oh-sidebar-label,
+  #sidebar .sidebar-chevron,
+  #sidebar:hover .sidebar-chevron,
+  #sidebar.sidebar-pinned .sidebar-chevron {
+    width: 0 !important;
+    flex: 0 0 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  #sidebar > div {
+    padding-right: .25rem !important;
+    padding-left: .25rem !important;
+  }
+
+  #sidebar > div > div:first-child {
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  #sidebar > div > div:first-child > div {
+    flex: 0 0 auto !important;
+    justify-content: center !important;
+    gap: 0 !important;
+  }
+
+  #sidebar #sidebarPinBtn {
+    display: none !important;
+  }
+
+  #sidebar > div > div:first-child img.oh-sidebar-label {
+    width: 2rem !important;
+    height: 2rem !important;
+    flex: 0 0 auto !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+  }
+
+  #sidebar .sideboxmain,
+  #sidebar:hover .sideboxmain,
+  #sidebar.sidebar-pinned .sideboxmain {
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    border-radius: 9999px !important;
+  }
+
+  #sidebar nav {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  #sidebar nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  #sidebar .sidebar-subnav:not(.hidden),
+  #sidebar.sidebar-pinned .sidebar-subnav:not(.hidden) {
+    display: none !important;
+  }
+
   .hr-v2-page { padding: var(--hr-space-4) var(--hr-space-3) var(--hr-space-7); }
   .hr-v2-pagehead { flex-direction: column; gap: var(--hr-space-3); }
   .hr-v2-context { justify-content: flex-start; max-width: none; }
