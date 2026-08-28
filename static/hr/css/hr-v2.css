@@ -398,35 +398,37 @@
    * that consumes more than half the screen. HR V2 keeps the existing global
    * navigation available as a 4rem icon rail on narrow screens, but it never
    * allows desktop hover/pin state to expand the rail or steal content width.
+   * `body` raises specificity above the later inline theme stylesheet, which
+   * also uses !important on the sidebar's pinned width/label state.
    */
-  #sidebar,
-  #sidebar:hover,
-  #sidebar.sidebar-pinned {
+  body #sidebar,
+  body #sidebar:hover,
+  body #sidebar.sidebar-pinned {
     width: 4rem !important;
   }
 
-  .oh-main-content,
-  #sidebar.sidebar-pinned ~ .oh-main-content {
+  body .oh-main-content,
+  body #sidebar.sidebar-pinned ~ .oh-main-content {
     margin-left: 4rem !important;
   }
 
-  .oh-main-header,
-  #sidebar.sidebar-pinned ~ .oh-main-content .oh-main-header {
+  body .oh-main-header,
+  body #sidebar.sidebar-pinned ~ .oh-main-content .oh-main-header {
     left: 4rem !important;
   }
 
-  #sidebar ~ #floating-buttons .fab-container,
-  #sidebar:hover ~ #floating-buttons .fab-container,
-  #sidebar.sidebar-pinned ~ #floating-buttons .fab-container {
+  body #sidebar ~ #floating-buttons .fab-container,
+  body #sidebar:hover ~ #floating-buttons .fab-container,
+  body #sidebar.sidebar-pinned ~ #floating-buttons .fab-container {
     left: 4rem !important;
   }
 
-  #sidebar .oh-sidebar-label,
-  #sidebar:hover .oh-sidebar-label,
-  #sidebar.sidebar-pinned .oh-sidebar-label,
-  #sidebar .sidebar-chevron,
-  #sidebar:hover .sidebar-chevron,
-  #sidebar.sidebar-pinned .sidebar-chevron {
+  body #sidebar .oh-sidebar-label,
+  body #sidebar:hover .oh-sidebar-label,
+  body #sidebar.sidebar-pinned .oh-sidebar-label,
+  body #sidebar .sidebar-chevron,
+  body #sidebar:hover .sidebar-chevron,
+  body #sidebar.sidebar-pinned .sidebar-chevron {
     width: 0 !important;
     flex: 0 0 0 !important;
     overflow: hidden !important;
@@ -434,27 +436,27 @@
     pointer-events: none !important;
   }
 
-  #sidebar > div {
+  body #sidebar > div {
     padding-right: .25rem !important;
     padding-left: .25rem !important;
   }
 
-  #sidebar > div > div:first-child {
+  body #sidebar > div > div:first-child {
     justify-content: center !important;
     gap: 0 !important;
   }
 
-  #sidebar > div > div:first-child > div {
+  body #sidebar > div > div:first-child > div {
     flex: 0 0 auto !important;
     justify-content: center !important;
     gap: 0 !important;
   }
 
-  #sidebar #sidebarPinBtn {
+  body #sidebar #sidebarPinBtn {
     display: none !important;
   }
 
-  #sidebar > div > div:first-child img.oh-sidebar-label {
+  body #sidebar > div > div:first-child img.oh-sidebar-label {
     width: 2rem !important;
     height: 2rem !important;
     flex: 0 0 auto !important;
@@ -462,9 +464,9 @@
     opacity: 1 !important;
   }
 
-  #sidebar .sideboxmain,
-  #sidebar:hover .sideboxmain,
-  #sidebar.sidebar-pinned .sideboxmain {
+  body #sidebar .sideboxmain,
+  body #sidebar:hover .sideboxmain,
+  body #sidebar.sidebar-pinned .sideboxmain {
     width: 2.5rem !important;
     height: 2.5rem !important;
     margin: 0 auto !important;
@@ -475,17 +477,17 @@
     border-radius: 9999px !important;
   }
 
-  #sidebar nav {
+  body #sidebar nav {
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
 
-  #sidebar nav::-webkit-scrollbar {
+  body #sidebar nav::-webkit-scrollbar {
     display: none;
   }
 
-  #sidebar .sidebar-subnav:not(.hidden),
-  #sidebar.sidebar-pinned .sidebar-subnav:not(.hidden) {
+  body #sidebar .sidebar-subnav:not(.hidden),
+  body #sidebar.sidebar-pinned .sidebar-subnav:not(.hidden) {
     display: none !important;
   }
 
