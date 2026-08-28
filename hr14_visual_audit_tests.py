@@ -78,6 +78,7 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
 
     def test_capture_hr14_v2_desktop_and_mobile(self):
         try:
+            from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
             from playwright.sync_api import sync_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
@@ -96,6 +97,8 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
         page_errors: list[str] = []
         console_errors: list[str] = []
         static_failures: list[str] = []
+        page_script_responses: list[str] = []
+        dashboard_responses: list[str] = []
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
@@ -125,6 +128,10 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                 def record_response(response):
                     if "/static/hr/" in response.url and response.status >= 400:
                         static_failures.append(f"{response.status} {response.url}")
+                    if "/static/hr/js/pages/" in response.url:
+                        page_script_responses.append(f"{response.status} {response.url}")
+                    if "/api/v1/hr/appointments/dashboard/" in response.url:
+                        dashboard_responses.append(f"{response.status} {response.url}")
 
                 page.on("response", record_response)
 
@@ -139,13 +146,31 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page.locator(".hr14-process__step").count(), 6)
                 self.assertEqual(page.locator(".hr14-hero").count(), 0)
                 self.assertEqual(page.locator("#hr14-kpis .hr14-kpi").count(), 6)
-                page.wait_for_function(
-                    """() => {
-                      const value = document.querySelector('#hr14-kpis .hr14-kpi b');
-                      return value && value.textContent.trim() !== '—';
-                    }""",
-                    timeout=8000,
+
+                script_sources = page.evaluate(
+                    """() => Array.from(document.scripts)
+                      .map((script) => script.src || '<inline>')"""
                 )
+                booted = page.locator("[data-module='HR14']").get_attribute(
+                    "data-hr14-booted"
+                )
+                try:
+                    page.wait_for_function(
+                        """() => {
+                          const value = document.querySelector('#hr14-kpis .hr14-kpi b');
+                          return value && value.textContent.trim() !== '—';
+                        }""",
+                        timeout=8000,
+                    )
+                except PlaywrightTimeoutError as exc:
+                    diagnostic = (
+                        f"script_sources={script_sources}; booted={booted}; "
+                        f"script_responses={page_script_responses}; "
+                        f"dashboard_responses={dashboard_responses}; "
+                        f"page_errors={page_errors}; console_errors={console_errors}; "
+                        f"static_failures={static_failures}"
+                    )
+                    self.fail(f"HR14 V2 boot did not settle: {diagnostic}; {exc}")
 
                 loaded_styles = page.evaluate(
                     """() => Array.from(document.styleSheets)
@@ -153,8 +178,11 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                       .filter(Boolean)"""
                 )
                 diagnostic = (
-                    f"styles={loaded_styles}; page_errors={page_errors}; "
-                    f"console_errors={console_errors}; static_failures={static_failures}"
+                    f"styles={loaded_styles}; scripts={script_sources}; "
+                    f"script_responses={page_script_responses}; "
+                    f"dashboard_responses={dashboard_responses}; "
+                    f"page_errors={page_errors}; console_errors={console_errors}; "
+                    f"static_failures={static_failures}"
                 )
                 self.assertTrue(
                     any("/hr/css/hr-v2.css" in href for href in loaded_styles),
@@ -164,6 +192,11 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                     any("/hr/css/hr14-appointment.css" in href for href in loaded_styles),
                     diagnostic,
                 )
+                self.assertTrue(
+                    any("/hr/js/pages/hr14-appointment.js" in src for src in script_sources),
+                    diagnostic,
+                )
+                self.assertEqual(booted, "true", diagnostic)
                 self.assertEqual(page_errors, [], diagnostic)
                 self.assertEqual(static_failures, [], diagnostic)
                 page.screenshot(
