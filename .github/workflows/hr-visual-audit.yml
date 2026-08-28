@@ -4,7 +4,9 @@ on:
   push:
     branches: [agent/renshi-takeover-cleanup-20260810]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - agent/w-b-external-agreement-closure-20260827
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "templates/hr/**"
@@ -12,6 +14,7 @@ on:
       - "hr_*/templates/**"
       - "hr_visual_audit_tests.py"
       - "hr_v2_visual_audit_tests.py"
+      - "hr_v2_phase2_visual_audit_tests.py"
       - ".github/workflows/hr-visual-audit.yml"
 
 permissions:
@@ -150,6 +153,7 @@ jobs:
         run: |
           python manage.py test \
             hr_v2_visual_audit_tests.HrV2VisualAuditTests \
+            hr_v2_phase2_visual_audit_tests.HrV2Phase2VisualAuditTests \
             hr_visual_audit_tests.HrVisualAuditTests \
             --keepdb --noinput --verbosity 2
 
