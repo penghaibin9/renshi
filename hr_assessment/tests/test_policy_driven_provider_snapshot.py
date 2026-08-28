@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
@@ -236,6 +237,6 @@ class PolicyDrivenProviderSnapshotTests(TestCase):
         ):
             response = eligibility_probe(request)
         self.assertEqual(response.status_code, 200)
-        payload = response.json()["data"]
+        payload = json.loads(response.content)["data"]
         self.assertEqual(payload["scope"], "CAPABILITY")
         self.assertEqual(payload["providerStatus"]["hr10"], "OK")
