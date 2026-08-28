@@ -24,6 +24,79 @@
     research: '科研数据',
     ethicsFact: '师德事实',
   };
+  const sectionMeta = {
+    policies: {
+      title: '考核制度与指标体系',
+      description: '考核制度、指标和评分量表按版本管理；正式发布后保留历史。',
+      available: '制度 / 指标 / 量表可读取',
+      phaseNote: '这是 HR12 当前真实接入最完整的基础工作区。',
+      next: '进入目标任务与平时考核',
+      nextNote: '目标办理接口仍在收口，进入后会明确显示 PARTIAL。',
+      nextHref: '/hr/assessments/goals/',
+      state: 'READY',
+    },
+    goals: {
+      title: '目标任务与平时考核',
+      description: '目标、进展、检查点和日常考核事实已有数据模型，完整办理接口仍在收口。',
+      available: '页面 / 模型 / 权限边界已具备',
+      phaseNote: '当前可以确认业务边界与依赖，但不能假造目标任务或进度。',
+      next: '进入年度考核',
+      nextNote: '年度考核必须基于真实目标、对象快照与评议事实。',
+      nextHref: '/hr/assessments/annual/',
+      state: 'PARTIAL',
+    },
+    annual: {
+      title: '年度考核',
+      description: '年度考核对象、评议、结果和异议必须形成完整链路。',
+      available: '页面 / 案件模型 / 结果边界已具备',
+      phaseNote: '完整批次、评议和结果办理接口仍在收口。',
+      next: '进入聘期考核',
+      nextNote: '年度结果与聘期结果分开保存，不能相互覆盖。',
+      nextHref: '/hr/assessments/term/',
+      state: 'PARTIAL',
+    },
+    term: {
+      title: '聘期考核',
+      description: '聘期考核与年度考核分开保存，不能相互覆盖正式结果。',
+      available: '页面 / 聘期案件模型 / Authority 边界已具备',
+      phaseNote: 'HR07 聘期和目标快照的完整汇总办理接口仍在收口。',
+      next: '进入师德与专项考核',
+      nextNote: '师德结论必须使用独立事实来源，不从普通评价推断。',
+      nextHref: '/hr/assessments/ethics/',
+      state: 'PARTIAL',
+    },
+    ethics: {
+      title: '师德与专项考核',
+      description: '师德和专项结论必须有独立事实来源、评价过程和证据边界。',
+      available: '页面 / 专项边界 / 来源状态可检查',
+      phaseNote: '未接通师德事实来源时，页面必须继续显示部分可用或暂不可用。',
+      next: '进入评议审定',
+      nextNote: '普通评价不能直接变成最终审定结果。',
+      nextHref: '/hr/assessments/review/',
+      state: 'PARTIAL',
+    },
+    review: {
+      title: '评议审定',
+      description: '评议、校准和审定分权处理，最终结果必须保留审批轨迹。',
+      available: '页面 / 审定边界 / 结果 Authority 已明确',
+      phaseNote: '完整评议队列与审定写接口仍在收口。',
+      next: '进入结果档案',
+      nextNote: '只有正式审定后的结果才能进入档案视图。',
+      nextHref: '/hr/assessments/archive/',
+      state: 'PARTIAL',
+    },
+    archive: {
+      title: '结果与考核档案',
+      description: '正式结果、更正、异议、通知与归档必须可追溯。',
+      available: '页面 / 归档模型 / 审计边界已具备',
+      phaseNote: '正式查询、下载和细粒度权限链仍在收口。',
+      next: '返回评议审定',
+      nextNote: '归档只消费正式结果，不在前端生成或改写 Authority。',
+      nextHref: '/hr/assessments/review/',
+      state: 'PARTIAL',
+    },
+  };
+
   const esc = (value) => String(value ?? '').replace(
     /[&<>"']/g,
     (char) => ({
@@ -50,11 +123,26 @@
         body?.message || body?.error?.message || `请求失败 ${response.status}`,
       );
     }
-    return body.data ?? body;
+    return body?.data ?? body;
   }
 
   function empty(title, message) {
     return `<div class="hr12-empty"><strong>${esc(title)}</strong>${esc(message)}</div>`;
+  }
+
+  function partial(meta) {
+    return `
+      <div class="hr12-partial-state">
+        <div class="hr12-partial-state__top">
+          <strong>${esc(meta.title)}当前为部分可用</strong>
+          <span class="hr12-partial-state__tag">PARTIAL</span>
+        </div>
+        <div class="hr12-partial-state__grid">
+          <div class="hr12-partial-state__item"><b>已经具备</b><span>${esc(meta.available)}</span></div>
+          <div class="hr12-partial-state__item"><b>仍待接入</b><span>${esc(meta.phaseNote)}</span></div>
+          <div class="hr12-partial-state__item"><b>前端不会做</b><span>不会用静态待办、假进度、默认 0 或前端权限猜测替代正式业务数据。</span></div>
+        </div>
+      </div>`;
   }
 
   function statusClass(status) {
@@ -77,6 +165,30 @@
     return `<div class="hr12-row"><div><strong>${esc(name || '未命名')}</strong><small>${esc(sub || '')}</small></div><div class="hr12-row__meta">${esc(middle || '—')}</div><span class="hr12-pill ${statusClass(status)}">${esc(shown)}</span></div>`;
   }
 
+  function renderWorkspaceMeta() {
+    const meta = sectionMeta[section];
+    if (!meta) return;
+
+    const phaseNote = document.getElementById('workspacePhaseNote');
+    const available = document.getElementById('workspaceAvailable');
+    const next = document.getElementById('workspaceNext');
+    const nextNote = document.getElementById('workspaceNextNote');
+    const state = document.getElementById('workspaceState');
+
+    if (phaseNote) phaseNote.textContent = meta.phaseNote;
+    if (available) available.textContent = meta.available;
+    if (next) {
+      next.textContent = meta.next;
+      next.closest('.hr12-summary-card')?.setAttribute('data-next-href', meta.nextHref);
+    }
+    if (nextNote) nextNote.textContent = meta.nextNote;
+    if (state) {
+      state.textContent = meta.state === 'READY' ? '已接入' : '部分可用';
+      state.classList.remove('ready', 'partial', 'unavailable');
+      state.classList.add(meta.state === 'READY' ? 'ready' : 'partial');
+    }
+  }
+
   function renderSection(policies, indicators) {
     const title = document.getElementById('workTitle');
     const description = document.getElementById('workDesc');
@@ -84,8 +196,9 @@
     if (!title || !description || !box) return;
 
     if (section === 'policies') {
-      title.textContent = '制度与指标';
-      description.textContent = '考核制度、指标和评分量表按版本管理；正式发布后保留历史。';
+      const meta = sectionMeta.policies;
+      title.textContent = meta.title;
+      description.textContent = meta.description;
       const policyRows = policies.map((item) => row(
         item.name,
         item.code,
@@ -105,50 +218,11 @@
       return;
     }
 
-    const partialSections = {
-      goals: [
-        '目标任务与平时考核',
-        '目标、进展、检查点和日常考核事实已有数据模型，完整办理接口仍在收口。',
-        '目标任务办理正在接入',
-        '当前不会用静态任务或假进度替代正式目标事实。',
-      ],
-      annual: [
-        '年度考核',
-        '年度考核对象、评议、结果和异议必须形成完整链路。',
-        '年度考核办理正在接入',
-        '年度案件模型已具备，完整批次与评议办理接口仍在收口。',
-      ],
-      term: [
-        '聘期考核',
-        '聘期考核与年度考核分开保存，不能相互覆盖正式结果。',
-        '聘期考核办理正在接入',
-        '聘期案件模型已具备，完整工作流接口仍在收口。',
-      ],
-      ethics: [
-        '师德与专项考核',
-        '师德和专项结论必须有独立事实来源和评审过程。',
-        '师德专项办理正在接入',
-        '未接通师德事实来源前，不从其它评价推断师德结论。',
-      ],
-      review: [
-        '评议与审定',
-        '评议、校准和审定分权处理，最终结果必须保留审批轨迹。',
-        '评议审定工作台正在接入',
-        '不会把普通评价记录直接当作最终审定结果。',
-      ],
-      archive: [
-        '结果与考核档案',
-        '正式结果、更正、异议、通知与归档必须可追溯。',
-        '结果档案工作台正在接入',
-        '归档模型已具备，正式查询与下载权限链仍在收口。',
-      ],
-    };
-
-    if (partialSections[section]) {
-      const [sectionTitle, sectionDescription, emptyTitle, emptyMessage] = partialSections[section];
-      title.textContent = sectionTitle;
-      description.textContent = sectionDescription;
-      box.innerHTML = empty(emptyTitle, emptyMessage);
+    if (sectionMeta[section]) {
+      const meta = sectionMeta[section];
+      title.textContent = meta.title;
+      description.textContent = meta.description;
+      box.innerHTML = partial(meta);
       return;
     }
 
@@ -221,19 +295,19 @@
 
     try {
       const value = await getJson('/api/v1/hr/assessments/policies');
-      policies = Array.isArray(value) ? value : [];
+      policies = Array.isArray(value) ? value : (Array.isArray(value?.items) ? value.items : []);
       policyLoaded = true;
     } catch (_error) {}
 
     try {
       const value = await getJson('/api/v1/hr/assessments/indicators');
-      indicators = Array.isArray(value) ? value : [];
+      indicators = Array.isArray(value) ? value : (Array.isArray(value?.items) ? value.items : []);
       indicatorLoaded = true;
     } catch (_error) {}
 
     try {
       const value = await getJson('/api/v1/hr/assessments/rating-scales');
-      scales = Array.isArray(value) ? value : [];
+      scales = Array.isArray(value) ? value : (Array.isArray(value?.items) ? value.items : []);
       scaleLoaded = true;
     } catch (_error) {}
 
@@ -283,6 +357,7 @@
       }
     }
 
+    renderWorkspaceMeta();
     renderSection(policies, indicators);
     renderReadiness({
       policyLoaded,

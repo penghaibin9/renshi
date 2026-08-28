@@ -4,7 +4,9 @@ on:
   push:
     branches: [agent/renshi-takeover-cleanup-20260810]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - agent/w-b-external-agreement-closure-20260827
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "templates/hr/**"
