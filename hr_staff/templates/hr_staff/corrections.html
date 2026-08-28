@@ -1,126 +1,141 @@
+{% extends "index.html" %}
 {% load static i18n %}
-{% trans "信息更正与历史" as t_title %}
-{% trans "返回主档" as t_back %}
-{% trans "加载中…" as t_loading %}
-{% trans "加载失败" as t_load_failed %}
-{% trans "暂无更正记录" as t_empty %}
-{% trans "查看详情" as t_detail %}
-{% trans "提交" as t_submit %}
-{% trans "审核" as t_review %}
-{% trans "退回" as t_return %}
-{% trans "重新提交" as t_resubmit %}
-{% trans "批准" as t_approve %}
-{% trans "驳回" as t_reject %}
-{% trans "取消" as t_cancel %}
-{% trans "应用" as t_apply %}
-{% trans "状态" as t_status %}
-{% trans "原因" as t_reason %}
-{% trans "影响" as t_impact %}
-{% trans "提交人" as t_submitted_by %}
-{% trans "修改前" as t_before %}
-{% trans "修改后" as t_after %}
-{% trans "操作失败" as t_action_failed %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t_title }} · HR03</title>
-  <style>
-    body { font-family:"Segoe UI","Microsoft YaHei",sans-serif; margin:0; background:#f5f7fa; color:#1f2937; }
-    .wrap { max-width:1200px; margin:0 auto; padding:24px; }
-    .back { color:#2563eb; text-decoration:none; font-size:13px; }
-    .card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:20px; margin-bottom:16px; }
-    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-    .card-header h4 { margin:0; font-size:15px; }
-    .card-meta { font-size:12px; color:#6b7280; line-height:1.6; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; }
-    .badge.DRAFT { background:#f3f4f6; color:#374151; }
-    .badge.SUBMITTED,.badge.RESUBMITTED { background:#eff6ff; color:#1e40af; }
-    .badge.UNDER_REVIEW { background:#fef9c3; color:#854d0e; }
-    .badge.APPROVED,.badge.APPLIED { background:#dcfce7; color:#166534; }
-    .badge.RETURNED { background:#fef3c7; color:#92400e; }
-    .badge.REJECTED,.badge.FAILED { background:#fee2e2; color:#991b1b; }
-    .badge.CANCELLED { background:#f3f4f6; color:#9ca3af; }
-    .badge.APPLYING { background:#eff6ff; color:#2563eb; }
-    .actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
-    .actions button { padding:4px 10px; border-radius:6px; border:1px solid #e5e7eb; background:#fff; font-size:12px; cursor:pointer; }
-    .actions button.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
-    .actions button.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
-    .diff-row { display:flex; gap:8px; align-items:center; padding:4px 0; font-size:13px; }
-    .diff-field { min-width:100px; color:#6b7280; font-size:12px; }
-    .diff-before { background:#fef2f2; padding:2px 8px; border-radius:4px; text-decoration:line-through; }
-    .diff-after { background:#f0fdf4; padding:2px 8px; border-radius:4px; font-weight:600; }
-    .diff-arrow { color:#9ca3af; }
-    .empty { text-align:center; padding:48px; color:#6b7280; }
-    .subtitle { font-size:13px; color:#6b7280; margin:8px 0 16px; }
-  </style>
-</head>
-<body>
-<div class="wrap">
-  <a class="back" href="/hr/staff/{{ staff_id }}/">← {{ t_back }}</a>
-  <div style="margin-top:16px">
-    <h2 style="margin:0 0 4px">{{ t_title }}</h2>
-    <div class="subtitle">更正不是"编辑按钮"；每次更正保留完整 before/after、理由、证据与审批记录，历史可追溯</div>
-  </div>
-  <div id="content">{{ t_loading }}</div>
+{% block title %}信息更正与历史 · HR03{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-secondary.css' %}">
+
+<div class="hr-v2-page hr03-page" data-module="HR03" data-page="corrections" data-staff-id="{{ staff_id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>更正历史</strong></div>
+
+  <header class="hr-v2-pagehead hr03-secondary-head">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title">信息更正与历史</h1>
+      <p class="hr-v2-subtitle">更正不是直接“编辑数据库”。每个 Case（更正事项）保留修改前后、理由、影响、提交人、审批状态和最终应用结果。</p>
+    </div>
+    <div class="hr03-actions"><a class="hr03-btn" href="/hr/staff/{{ staff_id }}/">返回个人主档</a></div>
+  </header>
+
+  <nav class="hr03-profile-nav" aria-label="教职工主档工作区">
+    <a href="/hr/staff/{{ staff_id }}/">基本档案</a>
+    <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+    <a href="/hr/staff/{{ staff_id }}/backgrounds">学历资格</a>
+    <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+    <a class="on" href="/hr/staff/{{ staff_id }}/corrections">更正历史</a>
+    <a href="/hr/staff/data-quality/">数据质量</a>
+  </nav>
+
+  <section class="hr03-panel">
+    <div class="hr03-panel__head"><div><h2>更正事项</h2><p>页面只展示后端返回的允许状态和现有流转；审批与应用仍由原更正接口处理。</p></div></div>
+    <div id="content" class="hr03-record-list" style="padding:16px 20px 20px"><div class="hr03-state">正在读取更正历史…</div></div>
+  </section>
+
+  <div class="hr03-principle"><strong>更正原则：</strong>历史值不会被静默覆盖；DRAFT、审核、退回、批准、应用、失败等状态继续使用现有状态机，前端不跳步、不自行判定可操作动作。</div>
 </div>
+
 <script>
+(function () {
+  "use strict";
   const staffId = "{{ staff_id }}";
-  const L = {empty:"{{ t_empty|escapejs }}", loadFailed:"{{ t_load_failed|escapejs }}", detail:"{{ t_detail|escapejs }}", status:"{{ t_status|escapejs }}", reason:"{{ t_reason|escapejs }}", impact:"{{ t_impact|escapejs }}", submittedBy:"{{ t_submitted_by|escapejs }}", before:"{{ t_before|escapejs }}", after:"{{ t_after|escapejs }}", actionFailed:"{{ t_action_failed|escapejs }}"};
+
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+  }
+
+  function statusClass(status) {
+    if (["APPROVED", "APPLIED"].includes(status)) return "success";
+    if (["UNDER_REVIEW", "RETURNED"].includes(status)) return "warning";
+    if (["REJECTED", "FAILED"].includes(status)) return "danger";
+    if (["SUBMITTED", "RESUBMITTED", "APPLYING"].includes(status)) return "info";
+    return "";
+  }
+
   async function load() {
+    const content = document.getElementById("content");
     try {
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/corrections/list`);
-      if (!resp.ok) { document.getElementById("content").innerHTML = `<div class="card"><div class="empty">${L.loadFailed}（${resp.status}）</div></div>`; return; }
-      const body = await resp.json();
-      const cases = body.data.items || [];
-      if (!cases.length) {
-        document.getElementById("content").innerHTML = `<div class="empty">${L.empty}</div>`;
+      const response = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/corrections/list`, { credentials:"same-origin" });
+      if (!response.ok) {
+        content.innerHTML = `<div class="hr03-state error"><strong>更正记录读取失败</strong><span>HTTP ${response.status}</span></div>`;
         return;
       }
-      document.getElementById("content").innerHTML = cases.map(c => {
-        const itemDiffs = (c.items || []).map(i =>
-          `<div class="diff-row"><span class="diff-field">${escapeHtml(i.fieldCode)}</span><span class="diff-before">${escapeHtml(i.oldValueMasked||"-")}</span><span class="diff-arrow">→</span><span class="diff-after">${escapeHtml(i.newValueMasked||"-")}</span></div>`
-        ).join("");
-        return `<div class="card">
-          <div class="card-header">
-            <h4>${escapeHtml(c.caseNo)} · ${escapeHtml(c.reason||"")}</h4>
-            <span class="badge ${c.status||''}">${escapeHtml(c.statusLabel||c.status||"-")}</span>
-          </div>
-          <div class="card-meta">${L.status}：${escapeHtml(c.status||"-")} · ${L.impact}：${escapeHtml(c.impactLabel||c.impactLevel||"-")} · ${L.submittedBy}：${c.submittedBy||"-"} · ${c.appliedAt||"-"}</div>
-          ${c.applyError ? `<div class="card-meta" style="color:#dc2626">应用失败：${escapeHtml(c.applyError)}</div>` : ""}
-          ${c.returnReason ? `<div class="card-meta">退回原因：${escapeHtml(c.returnReason)}</div>` : ""}
-          ${c.rejectReason ? `<div class="card-meta">驳回原因：${escapeHtml(c.rejectReason)}</div>` : ""}
-          ${itemDiffs ? `<div style="margin-top:8px"><div style="font-size:12px;color:#6b7280;margin-bottom:4px">${L.before} → ${L.after}</div>${itemDiffs}</div>` : ""}
-          <div class="actions">${transitionButtons(c)}</div>
-        </div>`;
-      }).join("");
-    } catch (e) {
-      document.getElementById("content").innerHTML = `<div class="card"><div class="empty">${L.loadFailed}</div></div>`;
+      const body = await response.json();
+      const cases = body?.data?.items || [];
+      if (!cases.length) {
+        content.innerHTML = '<div class="hr03-state"><strong>暂无更正记录</strong><span>没有更正事项时不会生成演示历史。</span></div>';
+        return;
+      }
+      content.innerHTML = cases.map(caseCard).join("");
+    } catch (error) {
+      content.innerHTML = `<div class="hr03-state error"><strong>更正记录读取失败</strong><span>${escapeHtml(error.message || "网络异常")}</span></div>`;
     }
   }
-  function transitionButtons(c) {
-    const id = c.id;
-    const s = c.status;
-    if (s === 'DRAFT') return `<button class="primary" onclick="action('${id}','submit')">{{ t_submit|escapejs }}</button><button class="danger" onclick="action('${id}','cancel')">{{ t_cancel|escapejs }}</button>`;
-    if (s === 'SUBMITTED') return `<button class="primary" onclick="action('${id}','review')">{{ t_review|escapejs }}</button><button onclick="action('${id}','return')">{{ t_return|escapejs }}</button>`;
-    if (s === 'UNDER_REVIEW' || s === 'RESUBMITTED') return `<button class="primary" onclick="action('${id}','approve')">{{ t_approve|escapejs }}</button><button class="danger" onclick="action('${id}','reject')">{{ t_reject|escapejs }}</button><button onclick="action('${id}','return')">{{ t_return|escapejs }}</button>`;
-    if (s === 'RETURNED') return `<button class="primary" onclick="action('${id}','resubmit')">{{ t_resubmit|escapejs }}</button><button class="danger" onclick="action('${id}','cancel')">{{ t_cancel|escapejs }}</button>`;
-    if (s === 'APPROVED') return `<button class="primary" onclick="action('${id}','apply')">{{ t_apply|escapejs }}</button>`;
-    return ""; // REJECTED/APPLIED/FAILED/CANCELLED 不可再操作
+
+  function caseCard(item) {
+    const diffs = (item.items || []).map((diff) => `
+      <div class="hr03-diff-row">
+        <span class="hr03-diff-field">${escapeHtml(diff.fieldCode)}</span>
+        <span class="hr03-diff-before">${escapeHtml(diff.oldValueMasked || "-")}</span>
+        <span class="hr03-diff-arrow">→</span>
+        <span class="hr03-diff-after">${escapeHtml(diff.newValueMasked || "-")}</span>
+      </div>`).join("");
+
+    return `<article class="hr03-record">
+      <div class="hr03-record__head">
+        <div>
+          <div class="hr03-record__title">${escapeHtml(item.caseNo)} · ${escapeHtml(item.reason || "未填写原因")}</div>
+          <div class="hr03-record__meta">影响：${escapeHtml(item.impactLabel || item.impactLevel || "-")} · 提交人：${escapeHtml(item.submittedBy || "-")} · 应用时间：${escapeHtml(item.appliedAt || "-")}</div>
+        </div>
+        <span class="hr03-status ${statusClass(item.status)}">${escapeHtml(item.statusLabel || item.status || "-")}</span>
+      </div>
+      ${item.applyError ? `<div class="hr03-inline-error">应用失败：${escapeHtml(item.applyError)}</div>` : ""}
+      ${item.returnReason ? `<div class="hr03-inline-note">退回原因：${escapeHtml(item.returnReason)}</div>` : ""}
+      ${item.rejectReason ? `<div class="hr03-inline-note">驳回原因：${escapeHtml(item.rejectReason)}</div>` : ""}
+      ${diffs ? `<div class="hr03-diff-list">${diffs}</div>` : ""}
+      <div class="hr03-correction-actions">${transitionButtons(item)}</div>
+    </article>`;
   }
-  async function action(caseId, act) {
-    const reason = (act === 'return' || act === 'reject') ? prompt("请填写原因") : "";
+
+  function transitionButtons(item) {
+    const id = escapeHtml(item.id);
+    const status = item.status;
+    if (status === "DRAFT") return `<button class="hr03-btn primary" type="button" data-case="${id}" data-action="submit">提交</button><button class="hr03-btn hr03-danger-btn" type="button" data-case="${id}" data-action="cancel">取消</button>`;
+    if (status === "SUBMITTED") return `<button class="hr03-btn primary" type="button" data-case="${id}" data-action="review">审核</button><button class="hr03-btn" type="button" data-case="${id}" data-action="return">退回</button>`;
+    if (status === "UNDER_REVIEW" || status === "RESUBMITTED") return `<button class="hr03-btn primary" type="button" data-case="${id}" data-action="approve">批准</button><button class="hr03-btn hr03-danger-btn" type="button" data-case="${id}" data-action="reject">驳回</button><button class="hr03-btn" type="button" data-case="${id}" data-action="return">退回</button>`;
+    if (status === "RETURNED") return `<button class="hr03-btn primary" type="button" data-case="${id}" data-action="resubmit">重新提交</button><button class="hr03-btn hr03-danger-btn" type="button" data-case="${id}" data-action="cancel">取消</button>`;
+    if (status === "APPROVED") return `<button class="hr03-btn primary" type="button" data-case="${id}" data-action="apply">应用</button>`;
+    return "";
+  }
+
+  async function act(caseId, action) {
+    const reason = (action === "return" || action === "reject") ? window.prompt("请填写原因") : "";
+    if ((action === "return" || action === "reject") && !reason) return;
     try {
-      const resp = await fetch(`/api/hr/v1/corrections/${caseId}/${act}`, {
-        method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"}, body:JSON.stringify({reason})
+      const response = await fetch(`/api/hr/v1/corrections/${encodeURIComponent(caseId)}/${encodeURIComponent(action)}`, {
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"},
+        body:JSON.stringify({reason}),
       });
-      if (!resp.ok) { alert(`${L.actionFailed}：`+(await resp.json()).error?.code); return; }
-      load(); // 刷新列表
-    } catch (e) { alert(L.actionFailed); }
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.message || body?.error?.code || "操作失败");
+      await load();
+    } catch (error) {
+      window.alert(error.message || "操作失败");
+    }
   }
-  function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-  load();
+
+  document.getElementById("content").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-case][data-action]");
+    if (!button) return;
+    act(button.dataset.case, button.dataset.action);
+  });
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load, { once:true }); else load();
+})();
 </script>
-</body>
-</html>
+{% endblock %}
