@@ -3,26 +3,70 @@
 {% comment %}
 HR02-05 岗位编制台账 —— 单位岗位供给/空岗/已占/冻结/超限
 
-数据来源：GET /api/hr/v1/structure/positions（DB 分页）
-          GET /api/hr/v1/structure/position-control/summary
+数据来源：
+  GET /api/hr/v1/structure/positions
+  GET /api/hr/v1/structure/position-control/summary
 {% endcomment %}
 
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr02-workspace.css' %}">
 
-<div class="hr-page" data-hr-page="structure-positions">
-  {% include "hr/components/page_header.html" with title="岗位编制台账" subtitle="各单位实际岗位供给、空岗、已占与超限情况" %}
+<div class="hr-v2-page hr02-page" data-module="HR02" data-hr-page="structure-positions">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR02 组织岗位</span>
+    <strong>岗位编制台账</strong>
+  </div>
 
-  <!-- 概览指标 -->
-  {% include "hr/components/section_card.html" with id="hr-position-summary" title="岗位概览" status="loading" %}
+  <header class="hr-v2-pagehead" aria-labelledby="hr02-position-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR02 · 组织与岗位控制</div>
+      <h1 class="hr-v2-title" id="hr02-position-title">岗位编制台账</h1>
+      <p class="hr-v2-subtitle">先看核定、占用、空缺、冻结和超额，再进入岗位明细。占用状态由后端统一派生，前端不自行计算超编。</p>
+    </div>
+    <div class="hr-v2-context" aria-label="当前数据口径">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> Position Control</span>
+      <span class="hr-v2-context__item"><strong>状态</strong> 后端派生</span>
+    </div>
+  </header>
 
-  <!-- 岗位表格 -->
-  {% include "hr/components/section_card.html" with id="hr-position-table" title="岗位列表" status="loading" %}
+  <nav class="hr02-nav" aria-label="组织机构与编制岗位工作区">
+    <a href="/hr/structure/organizations">组织机构</a>
+    <a href="/hr/structure/relations">党政组织与业务关系</a>
+    <a href="/hr/structure/staffing-plans">编制方案</a>
+    <a href="/hr/structure/post-catalogs">岗位目录</a>
+    <a class="is-active" href="/hr/structure/positions">岗位编制台账</a>
+    <a href="/hr/structure/history">组织岗位历史</a>
+  </nav>
+  <div class="hr02-mobile-hint">可左右滑动查看更多组织与岗位工作区</div>
+
+  <section id="hr-position-summary" class="hr02-capacity-grid" aria-label="岗位容量结论">
+    <div class="hr02-state">正在读取岗位容量…</div>
+  </section>
+
+  <section class="hr02-panel hr02-position-panel">
+    <div class="hr02-panel__head">
+      <div>
+        <h2>岗位明细</h2>
+        <p>查看岗位编码、所属机构、岗位标准、等级、FTE、编制数、实际占用与生命周期状态。</p>
+      </div>
+      <button type="button" class="hr02-btn" id="hr-position-refresh">刷新</button>
+    </div>
+    <div class="hr02-toolbar hr02-position-toolbar">
+      <input type="search" id="hr-position-search" placeholder="搜索岗位编码、机构、岗位标准、等级或状态" aria-label="搜索岗位">
+      <span class="hr02-toolbar__meta" id="hr-position-count">正在读取…</span>
+    </div>
+    <div id="hr-position-table" class="hr02-table-wrap" aria-live="polite">
+      <div class="hr02-state">正在读取岗位台账…</div>
+    </div>
+  </section>
+
+  <div class="hr02-principle"><strong>岗位控制原则：</strong>“空缺 / 已满 / 超额 / 冻结”等状态来自服务端正式派生；前端只负责展示、过滤和定位，不依据页面数字重新计算业务结论。</div>
 </div>
-{% endblock %}
 
-{% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/structure/positions.js' %}"></script>
 {% endblock %}
