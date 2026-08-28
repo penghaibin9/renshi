@@ -2,12 +2,14 @@
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
-{% block content %}
+{% block styles %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr12-assessment.css' %}">
+{% endblock styles %}
 
+{% block content %}
 <div class="hr-v2-page hr12" data-module="HR12" data-section="{{ section }}">
   {% if access_error %}
     <div class="hr12-access" role="alert">{{ access_error }}</div>
@@ -150,8 +152,11 @@
     <div class="hr12-principle"><strong>考核数据原则：</strong>考核结果必须能追溯到制度版本、考核周期、对象快照、证据与评议过程；未接通的数据来源会明确提示，不会自动当作“无问题”或“0 分”。</div>
   {% endif %}
 </div>
+{% endblock content %}
 
-{% if not access_error %}
-<script src="{% static 'hr/js/pages/hr12-assessment.js' %}"></script>
-{% endif %}
-{% endblock %}
+{% block scripts %}
+  {% if not access_error %}
+    <script src="{% static 'hr/js/pages/hr12-assessment.js' %}"></script>
+    <script src="{% static 'hr/js/pages/hr12-actions.js' %}"></script>
+  {% endif %}
+{% endblock scripts %}
