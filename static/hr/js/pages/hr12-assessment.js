@@ -5,6 +5,7 @@
   root.dataset.hr12Booted = 'true';
 
   const section = root.dataset.section || 'overview';
+  const REQUEST_TIMEOUT_MS = 6000;
   const zhStatus = {
     PUBLISHED: '已发布',
     DRAFT: '草稿',
@@ -36,21 +37,29 @@
   );
 
   async function getJson(url) {
-    const response = await fetch(url, {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-    });
-    let body = {};
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      body = await response.json();
-    } catch (_error) {
-      body = {};
+      const response = await fetch(url, {
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        signal: controller.signal,
+      });
+      let body = {};
+      try {
+        body = await response.json();
+      } catch (_error) {
+        body = {};
+      }
+      if (!response.ok) {
+        throw new Error(
+          body?.message || body?.error?.message || `请求失败 ${response.status}`,
+        );
+      }
+      return body.data ?? body;
+    } finally {
+      window.clearTimeout(timer);
     }
-    if (!response.ok) {
-      throw new Error(
-        body?.message || body?.error?.message || `请求失败 ${response.status}`,
-      );
-    }
-    return body.data ?? body;
   }
 
   function empty(title, message) {
@@ -210,38 +219,26 @@
   }
 
   async function boot() {
-    let policies = [];
-    let indicators = [];
-    let scales = [];
-    let sources = {};
-    let policyLoaded = false;
-    let indicatorLoaded = false;
-    let scaleLoaded = false;
-    let sourceLoaded = false;
+    const [policyResult, indicatorResult, scaleResult, sourceResult] = await Promise.allSettled([
+      getJson('/api/v1/hr/assessments/policies'),
+      getJson('/api/v1/hr/assessments/indicators'),
+      getJson('/api/v1/hr/assessments/rating-scales'),
+      getJson('/api/v1/hr/assessments/eligibility'),
+    ]);
 
-    try {
-      const value = await getJson('/api/v1/hr/assessments/policies');
-      policies = Array.isArray(value) ? value : [];
-      policyLoaded = true;
-    } catch (_error) {}
-
-    try {
-      const value = await getJson('/api/v1/hr/assessments/indicators');
-      indicators = Array.isArray(value) ? value : [];
-      indicatorLoaded = true;
-    } catch (_error) {}
-
-    try {
-      const value = await getJson('/api/v1/hr/assessments/rating-scales');
-      scales = Array.isArray(value) ? value : [];
-      scaleLoaded = true;
-    } catch (_error) {}
-
-    try {
-      const value = await getJson('/api/v1/hr/assessments/eligibility');
-      sources = value && typeof value === 'object' ? (value.providerStatus || {}) : {};
-      sourceLoaded = true;
-    } catch (_error) {}
+    const policyLoaded = policyResult.status === 'fulfilled';
+    const indicatorLoaded = indicatorResult.status === 'fulfilled';
+    const scaleLoaded = scaleResult.status === 'fulfilled';
+    const sourceLoaded = sourceResult.status === 'fulfilled';
+    const policies = policyLoaded && Array.isArray(policyResult.value) ? policyResult.value : [];
+    const indicators = indicatorLoaded && Array.isArray(indicatorResult.value) ? indicatorResult.value : [];
+    const scales = scaleLoaded && Array.isArray(scaleResult.value) ? scaleResult.value : [];
+    const sourcePayload = sourceLoaded && sourceResult.value && typeof sourceResult.value === 'object'
+      ? sourceResult.value
+      : {};
+    const sources = sourcePayload.providerStatus && typeof sourcePayload.providerStatus === 'object'
+      ? sourcePayload.providerStatus
+      : {};
 
     const policyCount = document.getElementById('policyCount');
     const indicatorCount = document.getElementById('indicatorCount');
@@ -296,9 +293,8 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
-  } else {
-    boot();
-  }
+  // This script is mounted through index.html's bottom `scripts` block, so the
+  // HR12 root is already in the DOM. Start immediately instead of depending on
+  // DOMContentLoaded ordering; all four reads settle independently and time out.
+  boot();
 })();
