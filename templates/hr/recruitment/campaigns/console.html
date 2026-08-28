@@ -1,47 +1,68 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% comment %}
-HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位，总册 5.1/9.2）
-数据走 GET /api/hr/v1/recruitment/console + campaigns
+HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位）
+数据：GET /api/hr/v1/recruitment/console + campaigns
+视觉：招聘全过程驾驶舱；没有后端指标的阶段不显示假数量。
 {% endcomment %}
 
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment.css' %}">
 
-<div class="hr-page" data-hr-page="recruitment-console">
-  {% include "hr/components/page_header.html" with title="招聘与人才引进" subtitle="从年度用人计划到 HR05 报到的招聘事实链" %}
+<div class="hr-v2-page hr04-page" data-module="HR04" data-page="recruitment-console">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘管理</span><strong>招聘项目与岗位</strong></div>
 
-  <nav class="hr-filter-bar" aria-label="招聘与人才引进工作区">
-    <a class="hr-btn" href="/hr/recruitment/plans">年度用人计划</a>
-    <a class="hr-btn" href="/hr/recruitment/campaigns">招聘项目与岗位</a>
-    <a class="hr-btn" href="/hr/recruitment/candidates">人才库与应聘者</a>
-    <a class="hr-btn" href="/hr/recruitment/qualification">资格审查</a>
-    <a class="hr-btn" href="/hr/recruitment/assessment">考试面试与考察</a>
-    <a class="hr-btn" href="/hr/recruitment/proposed-hires">录用与人才引进</a>
+  <header class="hr-v2-pagehead">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR04 · 招聘管理</div>
+      <h1 class="hr-v2-title">招聘全过程驾驶舱</h1>
+      <p class="hr-v2-subtitle">从年度用人计划、招聘项目和候选人，一路跟到资格审查、考试面试、拟录用，再交给 HR05 入职。首页只显示后端已有的真实招聘结论。</p>
+    </div>
+    <div class="hr03-actions">
+      <button class="hr04-btn primary" type="button" data-hr-new-campaign>创建招聘项目</button>
+    </div>
+  </header>
+
+  <nav class="hr04-nav" aria-label="招聘与人才引进工作区">
+    <a href="/hr/recruitment/plans">年度用人计划</a>
+    <a class="on" href="/hr/recruitment/campaigns">招聘项目与岗位</a>
+    <a href="/hr/recruitment/candidates">人才库与应聘者</a>
+    <a href="/hr/recruitment/qualification">资格审查</a>
+    <a href="/hr/recruitment/assessment">考试面试与考察</a>
+    <a href="/hr/recruitment/proposed-hires">录用与人才引进</a>
   </nav>
 
-  <div class="hr-kpi-grid" id="hr04-kpis">
-    {% include "hr/components/metric_card.html" with label="进行中项目" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="开放岗位" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="待资格审核" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="本周选拔" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="待拟录用" status="loading" %}
-  </div>
+  <section class="hr04-kpis" id="hr04-kpis" aria-label="招聘关键结论">
+    <div class="hr04-state"><strong>正在读取招聘结论</strong><span>不会用演示数字填充控制台。</span></div>
+  </section>
 
-  <div class="hr-card">
-    <div class="hr-rec-plan-toolbar">
-      <h2 class="hr-section-title">{% trans "招聘项目" %}</h2>
-      <button class="hr-btn" data-hr-new-campaign>{% trans "新建招聘项目" %}</button>
+  <section class="hr04-flow" aria-label="招聘全过程">
+    <a href="/hr/recruitment/plans"><b>1</b><strong>年度用人计划</strong><span>确认需求、岗位和计划来源</span></a>
+    <a href="/hr/recruitment/campaigns"><b>2</b><strong>招聘项目与岗位</strong><span>发布项目、开放岗位</span></a>
+    <a href="/hr/recruitment/candidates"><b>3</b><strong>人才库与应聘者</strong><span>承接报名和候选人事实</span></a>
+    <a href="/hr/recruitment/qualification"><b>4</b><strong>资格审查</strong><span>核条件、材料与补正</span></a>
+    <a href="/hr/recruitment/assessment"><b>5</b><strong>考试面试与考察</strong><span>安排选拔、评分和考察</span></a>
+    <a href="/hr/recruitment/proposed-hires"><b>6</b><strong>录用与人才引进</strong><span>形成拟录用并交接 HR05</span></a>
+  </section>
+
+  <section class="hr04-main-grid">
+    <div class="hr04-panel">
+      <div class="hr04-panel__head"><div><h2>当前招聘项目</h2><p>项目卡只展示真实项目状态、岗位数和报名截止信息。</p></div></div>
+      <div id="hr04-campaign-list" class="hr04-campaigns"><div class="hr04-state"><strong>正在读取项目</strong><span>请稍候…</span></div></div>
     </div>
-    <div id="hr04-campaign-list" class="hr-rec-campaign-grid">
-      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
-    </div>
-  </div>
+
+    <aside class="hr04-panel">
+      <div class="hr04-panel__head"><div><h2>当前卡点</h2><p>根据控制台现有真实指标生成，不虚构“岗位不足”等判断。</p></div></div>
+      <div id="hr04-focus-list" class="hr04-focus-list"><div class="hr04-state"><strong>正在判断当前卡点</strong><span>请稍候…</span></div></div>
+    </aside>
+  </section>
+
+  <div class="hr04-principle"><strong>招聘数据原则：</strong>控制台当前只使用后端已提供的进行中项目、开放岗位、待资格审核、本周选拔、待拟录用指标。报名总人数、通过率、漏斗转化等没有正式接口时不在前端补算或伪造。</div>
 </div>
-{% endblock %}
 
-{% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-campaigns.js' %}"></script>
 {% endblock %}
