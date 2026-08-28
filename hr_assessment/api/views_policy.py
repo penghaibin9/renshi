@@ -24,6 +24,7 @@ from hr_assessment.selectors import (
     RatingScaleSelector,
 )
 from hr_assessment.service import PolicyPackService
+from hr_assessment.service.evidence import ProviderCollectionOrchestrator
 
 
 def _get_tenant(request: HttpRequest) -> int:
@@ -45,12 +46,9 @@ def eligibility_probe(request: HttpRequest) -> JsonResponse:
     t = _get_tenant(request)
     return JsonResponse(api_success(data={
         "tenantId": t,
-        "providerStatus": {
-            "hr03": "OK", "hr07": "OK", "hr09": "OK",
-            "hr10": "UNAVAILABLE", "hr11": "OK",
-            "academic": "UNAVAILABLE", "research": "UNAVAILABLE",
-            "ethicsFact": "UNAVAILABLE",
-        },
+        "scope": "CAPABILITY",
+        "providerStatus": ProviderCollectionOrchestrator().capability_status(),
+        "evidenceReadiness": "CASE_SCOPED_ONLY",
     }))
 
 

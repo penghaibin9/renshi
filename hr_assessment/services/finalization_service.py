@@ -26,6 +26,7 @@ from hr_assessment.models import (
     HrProviderSnapshotSet,
     HrReviewerAssignment,
 )
+from hr_assessment.service.evidence import EvidenceSnapshotError, PolicyEvidenceResolver
 
 
 class AssessmentFinalizationError(Exception):
@@ -98,6 +99,51 @@ class AssessmentFinalizationService:
                     "snapshotSetId": str(snapshot_set.id),
                     "status": snapshot_set.status,
                     "providerStatus": snapshot_set.provider_status_json,
+                }
+            ]
+
+        authority = snapshot_set.authority_json or {}
+        if not authority:
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_AUTHORITY_REQUIRED",
+                    "snapshotSetId": str(snapshot_set.id),
+                }
+            ]
+        try:
+            plan = PolicyEvidenceResolver(self.tenant_id).resolve_case(case.id)
+        except EvidenceSnapshotError as exc:
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_AUTHORITY_REQUIRED",
+                    "snapshotSetId": str(snapshot_set.id),
+                    "reasonCode": exc.code,
+                    "reason": str(exc),
+                }
+            ]
+
+        drift: dict = {}
+        if authority != plan.authority:
+            drift["authority"] = {
+                "snapshot": authority,
+                "expected": plan.authority,
+            }
+        if list(snapshot_set.required_providers_json or []) != list(plan.required_providers):
+            drift["requiredProviders"] = {
+                "snapshot": list(snapshot_set.required_providers_json or []),
+                "expected": list(plan.required_providers),
+            }
+        if snapshot_set.as_of != plan.as_of:
+            drift["asOf"] = {
+                "snapshot": snapshot_set.as_of.isoformat(),
+                "expected": plan.as_of.isoformat(),
+            }
+        if drift:
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_AUTHORITY_DRIFT",
+                    "snapshotSetId": str(snapshot_set.id),
+                    "drift": drift,
                 }
             ]
         return []

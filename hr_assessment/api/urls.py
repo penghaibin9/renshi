@@ -11,6 +11,11 @@ urlpatterns = [
     # S1 health / probe
     path("api/v1/hr/assessments/ping", probe.ping, name="hr12-api-ping"),
     path("api/v1/hr/assessments/eligibility", probe.eligibility_probe, name="hr12-api-eligibility"),
+    path(
+        "api/v1/hr/assessments/cases/<uuid:case_id>/provider-snapshot",
+        probe.provider_snapshot,
+        name="hr12-api-provider-snapshot",
+    ),
     # S2 Policy
     path("api/v1/hr/assessments/policies", views_policy.policy_list, name="hr12-api-policy-list"),
     path("api/v1/hr/assessments/policies/<uuid:policy_id>", views_policy.policy_detail, name="hr12-api-policy-detail"),

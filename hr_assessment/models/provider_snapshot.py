@@ -16,6 +16,7 @@ class HrProviderSnapshotSet(TenantScopedModel):
 
     case_id = models.UUIDField(db_index=True, verbose_name=_("考核 Case ID"))
     as_of = models.DateTimeField(verbose_name=_("证据 as-of 时间"))
+    authority_json = models.JSONField(default=dict, verbose_name=_("政策与指标 Authority"))
     required_providers_json = models.JSONField(default=list, verbose_name=_("必需 Provider"))
     provider_status_json = models.JSONField(default=dict, verbose_name=_("Provider 状态"))
     content_hash = models.CharField(max_length=64, verbose_name=_("快照集哈希"))
