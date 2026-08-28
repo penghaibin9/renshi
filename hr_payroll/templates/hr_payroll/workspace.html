@@ -1,40 +1,99 @@
 {% extends "index.html" %}
 {% load static %}
+{% block title %}{{ section_title }}{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr15-payroll.css' %}">
+{% endblock styles %}
+
 {% block content %}
-<style>
-.hr15{--p:#0f766e;--ink:#102a2e;--muted:#66777b;--line:#dfe9e8;--bad:#b42318;--warn:#b45309;max-width:1520px;margin:auto;padding:24px}.hr15 *{box-sizing:border-box}.hr15 a{text-decoration:none}.hr15-hero{padding:26px;border:1px solid #d7ebe8;border-radius:22px;background:linear-gradient(135deg,#f7fcfb,#eaf7f5)}.hr15-hero h1{margin:6px 0;font-size:28px}.hr15-kicker{font-size:12px;font-weight:800;letter-spacing:.1em;color:#38867f}.hr15-hero p{margin:0;color:var(--muted);max-width:950px}.hr15-meta,.hr15-nav,.hr15-toolbar{display:flex;gap:8px;flex-wrap:wrap}.hr15-meta{margin-top:14px}.hr15-chip{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fff;color:#52686a;font-size:12px}.hr15-nav{overflow:auto;flex-wrap:nowrap;margin:16px 0 4px;padding-bottom:6px}.hr15-nav a{white-space:nowrap;padding:9px 12px;border:1px solid var(--line);border-radius:10px;color:#53696b;background:#fff;font-weight:700}.hr15-nav a.active,.hr15-nav a:hover{background:#eaf7f5;border-color:#b9dcd7;color:#0b6b63}.hr15-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-top:12px}.hr15-kpi,.hr15-card{border:1px solid var(--line);border-radius:16px;background:#fff}.hr15-kpi{padding:15px;min-height:88px}.hr15-kpi span,.hr15-card p,.hr15-row small{color:var(--muted);font-size:12px}.hr15-kpi b{display:block;margin-top:6px;font-size:23px;overflow-wrap:anywhere}.hr15-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(315px,.75fr);gap:14px;margin-top:14px}.hr15-card{padding:18px}.hr15-card h2{margin:0;font-size:17px}.hr15-card p{margin:4px 0 0}.hr15-tasks,.hr15-list,.hr15-flow{display:grid;gap:8px;margin-top:12px}.hr15-task{display:grid;grid-template-columns:9px 1fr auto;gap:10px;align-items:center;padding:12px;border:1px solid #e8efee;border-radius:12px}.hr15-dot{width:9px;height:9px;border-radius:50%;background:var(--p)}.hr15-task.danger .hr15-dot{background:var(--bad)}.hr15-task.warning .hr15-dot{background:#e88c30}.hr15-task b{display:block}.hr15-task small{color:var(--muted)}.hr15-task a{font-size:12px;color:var(--p);font-weight:800}.hr15-toolbar{margin:14px 0 10px}.hr15-search,.hr15-select{height:38px;border:1px solid #d6e2e0;border-radius:10px;background:#fff;padding:0 11px}.hr15-search{flex:1;min-width:220px}.hr15-row{display:grid;grid-template-columns:minmax(180px,1.25fr) minmax(110px,.75fr) 120px minmax(110px,.7fr);gap:12px;align-items:center;padding:12px;border:1px solid #e8efee;border-radius:12px}.hr15-row:hover{background:#fbfdfd}.hr15-row b{display:block}.hr15-badge{justify-self:start;padding:4px 9px;border-radius:999px;background:#e9f7f4;color:#0c6c63;font-size:12px;font-weight:700}.hr15-empty{padding:30px 18px;text-align:center;color:var(--muted);border:1px dashed #cfe0de;border-radius:12px}.hr15-flow a{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;padding:9px;border-radius:11px;color:var(--ink)}.hr15-flow a:hover{background:#f7fcfb}.hr15-step{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:#e9f7f4;color:var(--p);font-weight:800}.hr15-flow small{color:var(--muted)}.hr15-cap{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)}.hr15-on{color:#047857;font-weight:700}.hr15-off{color:var(--warn);font-weight:700}.hr15-error{padding:16px;border:1px solid #fecdca;background:#fff4f2;color:var(--bad);border-radius:12px}@media(max-width:1180px){.hr15-kpis{grid-template-columns:repeat(3,1fr)}.hr15-layout{grid-template-columns:1fr}}@media(max-width:720px){body.hr15-page .oh-wrapper-main{display:block!important;width:100%!important}body.hr15-page #sidebar{display:none!important}body.hr15-page #main{width:100%!important;max-width:none!important;margin-left:0!important;padding-left:0!important}body.hr15-page .oh-navbar{left:0!important;width:100%!important;max-width:100vw!important}body.hr15-page #main-section,body.hr15-page #main-section-data{width:100%!important;max-width:100%!important;margin-left:0!important;padding-left:0!important}.hr15{width:100%;max-width:100vw;padding:12px;overflow-x:hidden}.hr15-hero{padding:18px;border-radius:18px}.hr15-hero h1{font-size:23px}.hr15-hero p{font-size:13px;line-height:1.65}.hr15-meta{gap:6px}.hr15-chip{font-size:11px}.hr15-nav{margin-top:12px;scrollbar-width:none}.hr15-nav::-webkit-scrollbar{display:none}.hr15-nav a{padding:8px 10px;font-size:12px}.hr15-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.hr15-kpi{padding:12px;min-height:76px}.hr15-kpi b{font-size:19px}.hr15-layout{display:block;margin-top:10px}.hr15-layout aside{margin-top:10px}.hr15-card{padding:14px;border-radius:14px}.hr15-toolbar{display:grid;grid-template-columns:1fr;gap:8px}.hr15-search,.hr15-select{width:100%;min-width:0}.hr15-row{grid-template-columns:minmax(0,1fr) auto;gap:8px}.hr15-row>div:nth-child(2){display:none}.hr15-row>small{grid-column:1/-1}.hr15-task{grid-template-columns:9px minmax(0,1fr)}.hr15-task a{grid-column:2}.hr15-flow a{grid-template-columns:28px minmax(0,1fr) auto}.hr15-flow small{display:block}.hr15-cap{font-size:13px}}
-</style>
-<script>document.body.classList.add('hr15-page');</script>
-<div class="hr15" data-module="HR15" data-section="{{ section }}">
-{% if access_error %}<div class="hr15-error">{{ access_error }}</div>{% else %}
-<section class="hr15-hero"><div class="hr15-kicker">薪酬福利 · 月度结算工作区</div><h1>{{ section_title }}</h1><p>先看哪个工资期间还没封板、最近期间卡在哪一步、正式结果是否已经形成，再进入档案、核算、支付和对账。封板后的工资事实不原地覆盖。</p><div class="hr15-meta"><span class="hr15-chip">当前学校 #{{ tenant_id }}</span><span class="hr15-chip">金额以正式结果为准</span><span class="hr15-chip">调整走差额事实</span></div></section>
-<nav class="hr15-nav"><a class="{% if section == 'overview' %}active{% endif %}" href="/hr/payroll/">总览</a><a class="{% if section == 'profiles' %}active{% endif %}" href="/hr/payroll/profiles/">薪酬档案</a><a class="{% if section == 'periods' %}active{% endif %}" href="/hr/payroll/periods/">工资期间</a><a class="{% if section == 'calculations' %}active{% endif %}" href="/hr/payroll/calculations/">工资核算</a><a class="{% if section == 'rules' %}active{% endif %}" href="/hr/payroll/rules/">薪资规则</a><a class="{% if section == 'allowances' %}active{% endif %}" href="/hr/payroll/allowances/">津补贴</a><a class="{% if section == 'social_security' %}active{% endif %}" href="/hr/payroll/social-security/">社保公积金</a><a class="{% if section == 'results' %}active{% endif %}" href="/hr/payroll/results/">正式结果</a><a class="{% if section == 'payments' %}active{% endif %}" href="/hr/payroll/payments/">支付与工资条</a><a class="{% if section == 'reconciliation' %}active{% endif %}" href="/hr/payroll/reconciliation/">财务对账</a><a class="{% if section == 'legacy_takeover' %}active{% endif %}" href="/hr/payroll/legacy-takeover/">历史系统对账</a></nav>
-<section id="hr15-kpis" class="hr15-kpis"></section>
-<section class="hr15-layout"><div><article class="hr15-card"><h2>本期先处理什么</h2><p>先消除未封板和核算阻塞，再谈支付与对账。</p><div id="hr15-tasks" class="hr15-tasks"><div class="hr15-empty">正在计算本期重点…</div></div></article><article class="hr15-card" style="margin-top:14px"><h2 id="hr15-title">当前工作区</h2><p id="hr15-desc"></p><div class="hr15-toolbar"><input id="hr15-search" class="hr15-search" placeholder="搜索期间、薪酬身份、人员、结果编号…"><select id="hr15-status" class="hr15-select"><option value="">全部状态</option></select></div><div id="hr15-rows" class="hr15-list"><div class="hr15-empty">正在读取真实薪酬数据…</div></div></article></div><aside><article class="hr15-card"><h2>月度最短路径</h2><div class="hr15-flow"><a href="/hr/payroll/profiles/"><span class="hr15-step">1</span><span><b>确认薪酬档案</b><small>工资组、身份、生效区间</small></span><span>›</span></a><a href="/hr/payroll/periods/"><span class="hr15-step">2</span><span><b>建立工资期间</b><small>确定结算边界</small></span><span>›</span></a><a href="/hr/payroll/calculations/"><span class="hr15-step">3</span><span><b>工资核算</b><small>处理输入与异常</small></span><span>›</span></a><a href="/hr/payroll/results/"><span class="hr15-step">4</span><span><b>封板正式结果</b><small>形成正式事实</small></span><span>›</span></a><a href="/hr/payroll/payments/"><span class="hr15-step">5</span><span><b>支付与工资条</b><small>支付状态独立</small></span><span>›</span></a><a href="/hr/payroll/reconciliation/"><span class="hr15-step">6</span><span><b>财务对账</b><small>确认发放一致</small></span><span>›</span></a></div></article><article class="hr15-card" style="margin-top:14px"><h2>能力接通状态</h2><div id="hr15-caps"></div></article></aside></section>
-{% endif %}</div>
-{% endblock %}
-{% block scripts %}{{ block.super }}
-<script>
-(()=>{
-const section='{{ section|escapejs }}';
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const statusLabels={DRAFT:'草稿',ACTIVE:'生效中',INACTIVE:'已停用',OPEN:'开放中',INPUT_FROZEN:'输入已冻结',CALCULATED:'已核算',REVIEWED:'已复核',FINALIZED:'已封板',CLOSED:'已关闭',ADJUSTED:'已调整',REVERSED:'已冲销'};
-const status=v=>statusLabels[v]||v||'—';
-const kpiLabels={activeProfiles:'活动薪酬档案',periods:'工资期间',openPeriods:'未封板期间',finalizedResults:'正式/调整结果',latestPeriodStatus:'最近期间状态',latestPeriodNet:'最近期间实发'};
-const capNames={profile:'薪酬档案',period:'工资期间',resultFact:'正式工资结果',finalization:'封板与追溯',salaryItemRules:'薪资项目与规则',fullCalculation:'工资核算',allowanceBenefits:'津补贴管理',socialInsuranceHousingFund:'社保公积金/年金',payment:'支付与工资条',financeReconciliation:'财务对账',legacyTakeover:'历史工资系统对账'};
-const missingTitles={rules:'薪资规则',allowances:'津补贴',social_security:'社保公积金',payments:'支付与工资条',reconciliation:'财务对账',legacy_takeover:'历史系统对账'};
-const missingText={rules:'薪资项目与规则 Authority 尚未接通。',allowances:'津补贴规则与适用人员事实尚未接通。',social_security:'社保、公积金与年金事实尚未接通。',payments:'支付与工资条事实尚未接通。',reconciliation:'财务对账事实尚未接通。',legacy_takeover:'历史工资系统接管对账尚未接通。'};
-let current=[];
-const profileItems=a=>(a||[]).map(x=>({name:x.payroll_identity_no||'未编号薪酬身份',sub:['人员 '+(x.staff_id||'—'),x.pay_group_code].filter(Boolean).join(' · '),status:x.status,last:x.effective_from||'',kind:'薪酬档案'}));
-const periodItems=a=>(a||[]).map(x=>({name:x.period_code||'未编号期间',sub:[x.start_date,x.end_date].filter(Boolean).join(' → '),status:x.status,last:(x.finalized_at||'').slice(0,10)||'—',kind:'工资期间'}));
-const resultItems=a=>(a||[]).map(x=>({name:x.result_no||'未编号结果',sub:'人员 '+(x.staff_id||'—'),status:x.status,last:[x.currency_code,x.net_amount].filter(v=>v!==undefined&&v!==null).join(' ')||'—',kind:'正式结果'}));
-function render(){const q=document.getElementById('hr15-search').value.trim().toLowerCase(),st=document.getElementById('hr15-status').value;const rows=current.filter(x=>(!st||x.status===st)&&(!q||[x.name,x.sub,x.status,x.last,x.kind].join(' ').toLowerCase().includes(q)));document.getElementById('hr15-rows').innerHTML=rows.length?rows.map(x=>`<div class="hr15-row"><div><b>${esc(x.name)}</b><small>${esc(x.sub)}</small></div><div>${esc(x.kind)}</div><span class="hr15-badge">${esc(status(x.status))}</span><small>${esc(x.last)}</small></div>`).join(''):'<div class="hr15-empty">没有符合筛选条件的记录</div>'}
-function setRows(items){current=items;const states=[...new Set(items.map(x=>x.status).filter(Boolean))].sort();document.getElementById('hr15-status').innerHTML='<option value="">全部状态</option>'+states.map(x=>`<option value="${esc(x)}">${esc(status(x))}</option>`).join('');render()}
-function unavailable(text){current=[];document.getElementById('hr15-status').innerHTML='<option value="">全部状态</option>';document.getElementById('hr15-rows').innerHTML=`<div class="hr15-empty">${esc(text)}</div>`}
-function renderSection(d){const title=document.getElementById('hr15-title'),desc=document.getElementById('hr15-desc');if(section==='profiles'){title.textContent='薪酬档案';desc.textContent='按工资组、身份和生效区间快速定位。';setRows(profileItems(d.recentProfiles));return}if(section==='periods'||section==='calculations'){title.textContent=section==='periods'?'工资期间':'工资核算入口';desc.textContent=section==='periods'?'查看开放、核算、复核与封板状态。':'核算围绕工资期间推进，未接通的计算引擎不伪造完成率。';setRows(periodItems(d.recentPeriods));return}if(section==='results'){title.textContent='正式工资结果';desc.textContent='只认封板或调整后的正式结果。';setRows(resultItems(d.recentResults));return}if(missingText[section]){title.textContent=missingTitles[section];desc.textContent='该子域必须形成独立可追溯事实，不能从最终金额倒推。';unavailable(missingText[section]);return}title.textContent='最近工资期间';desc.textContent='总览先看最近期间，快速判断是否仍有未封板工作。';setRows(periodItems(d.recentPeriods))}
-function renderTasks(d){const s=d.summary||{},out=[];if(Number(s.openPeriods)>0)out.push({level:'danger',title:`${s.openPeriods} 个工资期间尚未封板`,sub:'优先确认输入、核算或复核阻塞。',url:'/hr/payroll/periods/',action:'查看期间'});if(s.latestPeriodStatus&&!['FINALIZED','CLOSED'].includes(String(s.latestPeriodStatus)))out.push({level:'warning',title:`最近期间：${status(s.latestPeriodStatus)}`,sub:'发薪前确认核算、复核与封板完成。',url:'/hr/payroll/calculations/',action:'进入核算'});if(Number(s.finalizedResults)>0)out.push({level:'info',title:`已有 ${s.finalizedResults} 条正式/调整结果`,sub:'支付和对账应消费正式结果，不消费中间计算值。',url:'/hr/payroll/results/',action:'查看结果'});if(!out.length)out.push({level:'info',title:'当前没有明确结算阻塞',sub:'检查最新期间和薪酬档案即可。',url:'/hr/payroll/periods/',action:'查看期间'});document.getElementById('hr15-tasks').innerHTML=out.map(x=>`<div class="hr15-task ${x.level}"><span class="hr15-dot"></span><div><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></div><a href="${x.url}">${x.action} ›</a></div>`).join('')}
-async function boot(){try{const r=await fetch('/api/v1/hr/payroll/dashboard/',{headers:{'X-Requested-With':'XMLHttpRequest'}});if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json();document.getElementById('hr15-kpis').innerHTML=Object.entries(kpiLabels).map(([k,v])=>`<div class="hr15-kpi"><span>${v}</span><b>${esc(d.summary?.[k]??0)}</b></div>`).join('');renderTasks(d);renderSection(d);document.getElementById('hr15-caps').innerHTML=Object.entries(d.capabilities||{}).map(([k,v])=>`<div class="hr15-cap"><span>${capNames[k]||k}</span><span class="${v?'hr15-on':'hr15-off'}">${v?'已接通':'待 Authority'}</span></div>`).join('')}catch(e){document.getElementById('hr15-rows').innerHTML=`<div class="hr15-empty">真实数据读取失败：${esc(e.message)}</div>`}}
-document.getElementById('hr15-search')?.addEventListener('input',render);document.getElementById('hr15-status')?.addEventListener('change',render);if(document.getElementById('hr15-rows'))boot();
-})();
-</script>
-{% endblock %}
+<div class="hr-v2-page hr15" data-module="HR15" data-section="{{ section }}">
+  {% if access_error %}
+    <div class="hr15-error" role="alert">{{ access_error }}</div>
+  {% else %}
+    <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR15 薪酬福利</span><strong>{{ section_title }}</strong></div>
+
+    <header class="hr-v2-pagehead" aria-labelledby="hr15-page-title">
+      <div class="hr-v2-pagehead__copy">
+        <div class="hr-v2-eyebrow">HR15 · 薪酬福利</div>
+        <h1 class="hr-v2-title" id="hr15-page-title">{{ section_title }}</h1>
+        <p class="hr-v2-subtitle">工资核算、封板、支付和财务对账是不同事实。先确认工资期间与薪酬档案，再进入核算和正式结果；未接通的支付、社保或规则能力明确保持“暂不可用”。</p>
+      </div>
+      <div class="hr-v2-context" aria-label="当前工作区说明">
+        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+        <span class="hr-v2-context__item"><strong>正式结果</strong> FINALIZED / ADJUSTED</span>
+        <span class="hr-v2-context__item"><strong>调整</strong> 差额事实追溯</span>
+      </div>
+    </header>
+
+    <nav class="hr15-nav" aria-label="薪酬福利业务导航">
+      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/payroll/">总览</a>
+      <a class="{% if section == 'profiles' %}active{% endif %}" href="/hr/payroll/profiles/">薪酬档案</a>
+      <a class="{% if section == 'periods' %}active{% endif %}" href="/hr/payroll/periods/">工资期间</a>
+      <a class="{% if section == 'calculations' %}active{% endif %}" href="/hr/payroll/calculations/">工资核算</a>
+      <a class="{% if section == 'rules' %}active{% endif %}" href="/hr/payroll/rules/">薪资规则</a>
+      <a class="{% if section == 'allowances' %}active{% endif %}" href="/hr/payroll/allowances/">津补贴</a>
+      <a class="{% if section == 'social_security' %}active{% endif %}" href="/hr/payroll/social-security/">社保公积金</a>
+      <a class="{% if section == 'results' %}active{% endif %}" href="/hr/payroll/results/">正式结果</a>
+      <a class="{% if section == 'payments' %}active{% endif %}" href="/hr/payroll/payments/">支付与工资条</a>
+      <a class="{% if section == 'reconciliation' %}active{% endif %}" href="/hr/payroll/reconciliation/">财务对账</a>
+      <a class="{% if section == 'legacy_takeover' %}active{% endif %}" href="/hr/payroll/legacy-takeover/">历史系统对账</a>
+    </nav>
+    <div class="hr15-mobile-hint">可左右滑动查看更多薪酬工作区</div>
+
+    <section id="hr15-kpis" class="hr15-kpis" aria-label="薪酬关键结论">
+      <article class="hr15-kpi"><span>活动薪酬档案</span><b>—</b><em>正在读取真实档案</em></article>
+      <article class="hr15-kpi"><span>工资期间</span><b>—</b><em>正在读取真实期间</em></article>
+      <article class="hr15-kpi"><span>未封板期间</span><b>—</b><em>正在读取真实状态</em></article>
+      <article class="hr15-kpi"><span>正式/调整结果</span><b>—</b><em>仅正式工资事实</em></article>
+      <article class="hr15-kpi"><span>最近期间状态</span><b>—</b><em>不推断支付状态</em></article>
+      <article class="hr15-kpi"><span>最近期间实发</span><b>—</b><em>正式结果汇总</em></article>
+    </section>
+
+    {% if section == 'overview' %}
+      <section class="hr-v2-section" aria-labelledby="hr15-chain-title">
+        <div class="hr-v2-section__head"><div><h2 id="hr15-chain-title">月度薪酬业务链</h2><p>当前已接通部分以真实 Authority 为准；未接通环节不会用示例金额补齐。</p></div></div>
+        <div class="hr15-process" aria-label="薪酬六段业务链">
+          <a class="hr15-process__step" href="/hr/payroll/profiles/"><span class="hr15-process__no">01</span><b>薪酬档案</b><small>确认工资组、币种和生效区间</small></a>
+          <a class="hr15-process__step" href="/hr/payroll/periods/"><span class="hr15-process__no">02</span><b>工资期间</b><small>建立期间并冻结结算边界</small></a>
+          <a class="hr15-process__step" href="/hr/payroll/calculations/"><span class="hr15-process__no">03</span><b>工资核算</b><small>核算 Authority 未完整接通时明确阻断</small></a>
+          <a class="hr15-process__step" href="/hr/payroll/results/"><span class="hr15-process__no">04</span><b>正式结果</b><small>封板后形成不可随意覆盖的工资事实</small></a>
+          <a class="hr15-process__step" href="/hr/payroll/payments/"><span class="hr15-process__no">05</span><b>支付工资条</b><small>支付事实与工资结果必须分离</small></a>
+          <a class="hr15-process__step" href="/hr/payroll/reconciliation/"><span class="hr15-process__no">06</span><b>财务对账</b><small>银行/财务回执接通后才确认一致</small></a>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="hr-v2-section" aria-labelledby="hr15-work-title">
+      <div class="hr-v2-section__head"><div><h2 id="hr15-work-title">当前薪酬工作区</h2><p>先消除未封板和事实边界问题，再进入支付或历史接管。</p></div></div>
+      <div class="hr15-layout">
+        <div>
+          <article class="hr15-card"><h2>本期先处理什么</h2><p>从真实期间状态和能力合同生成当前优先级。</p><div id="hr15-tasks" class="hr15-tasks"><div class="hr15-empty">正在计算本期重点…</div></div></article>
+          <article class="hr15-card"><h2 id="hr15-title">{{ section_title }}</h2><p id="hr15-desc">正在读取当前学校薪酬事实。</p><div class="hr15-toolbar"><input id="hr15-search" class="hr15-search" type="search" placeholder="搜索期间、薪酬身份、结果编号…" aria-label="搜索当前薪酬工作区"><select id="hr15-status" class="hr15-select" aria-label="按状态筛选"><option value="">全部状态</option></select></div><div id="hr15-rows" class="hr15-list"><div class="hr15-empty">正在读取真实薪酬数据…</div></div></article>
+        </div>
+        <aside>
+          <article class="hr15-card"><h2>月度最短路径</h2><p>正式结果、支付和财务对账严格分层。</p><div class="hr15-flow">
+            <a href="/hr/payroll/profiles/"><span class="hr15-step">1</span><span><b>确认薪酬档案</b><small>工资组与生效区间</small></span><span>›</span></a>
+            <a href="/hr/payroll/periods/"><span class="hr15-step">2</span><span><b>建立工资期间</b><small>确定结算边界</small></span><span>›</span></a>
+            <a href="/hr/payroll/calculations/"><span class="hr15-step">3</span><span><b>工资核算</b><small>处理输入与异常</small></span><span>›</span></a>
+            <a href="/hr/payroll/results/"><span class="hr15-step">4</span><span><b>封板正式结果</b><small>形成正式工资事实</small></span><span>›</span></a>
+            <a href="/hr/payroll/payments/"><span class="hr15-step">5</span><span><b>支付与工资条</b><small>支付状态独立</small></span><span>›</span></a>
+            <a href="/hr/payroll/reconciliation/"><span class="hr15-step">6</span><span><b>财务对账</b><small>回执确认一致</small></span><span>›</span></a>
+          </div></article>
+          <article class="hr15-card"><h2>能力接通状态</h2><p>当前页面明确区分已接通 Authority 与仅保留入口的业务能力。</p><div id="hr15-caps"><div class="hr15-empty">正在检查真实能力…</div></div></article>
+        </aside>
+      </div>
+    </section>
+
+    <div class="hr15-principle"><strong>薪酬事实原则：</strong>测算、复核、封板、支付、工资条和财务回执是不同状态；只有 FINALIZED / ADJUSTED PayrollResultFact 才能作为正式工资金额依据，后续调整必须形成可追溯差额事实。</div>
+  {% endif %}
+</div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-payroll.js' %}"></script>{% endif %}
+{% endblock scripts %}
