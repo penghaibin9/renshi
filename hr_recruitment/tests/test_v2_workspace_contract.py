@@ -38,12 +38,7 @@ class Hr04V2WorkspaceContractTests(SimpleTestCase):
 
     def test_navigation_keeps_all_six_real_routes_on_every_surface(self):
         route_names = (
-            "hr04-plans",
-            "hr04-campaigns",
-            "hr04-candidates",
-            "hr04-qualification",
-            "hr04-assessment",
-            "hr04-proposed-hires",
+            "hr04-plans", "hr04-campaigns", "hr04-candidates", "hr04-qualification", "hr04-assessment", "hr04-proposed-hires",
         )
         for path in self.TEMPLATES:
             source = self._source(path)
@@ -84,11 +79,19 @@ class Hr04V2WorkspaceContractTests(SimpleTestCase):
         self.assertNotIn("新建计划周期（S3 API", plans_script)
         self.assertNotIn('method: "POST"', campaigns_script)
 
-    def test_assessment_inline_style_is_moved_to_shared_hr04_css(self):
+    def test_assessment_visual_details_live_in_shared_css_not_inline_js(self):
         assessment = self._source(self.TEMPLATES[4])
+        assessment_js = self._source("static/hr/js/pages/recruitment-assessment.js")
         css = self._source("static/hr/css/hr04-recruitment-v2.css").lower()
         self.assertNotIn("<style>", assessment)
-        self.assertIn(".hr04-assessment__flow", css)
+        self.assertNotIn(".style.", assessment_js)
+        for token in (
+            ".hr04-assessment__flow",
+            ".hr04-assessment__status",
+            ".hr04-assessment__score-name",
+            ".hr04-assessment__score-value",
+        ):
+            self.assertIn(token, css)
         self.assertNotIn("linear-gradient", css)
         self.assertNotIn("radial-gradient", css)
         self.assertNotIn("backdrop-filter", css)

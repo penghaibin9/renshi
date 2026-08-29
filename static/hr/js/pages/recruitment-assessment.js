@@ -1,30 +1,18 @@
 /**
  * HR04-05 考试面试与考察工作台
- *
- * 只读取 canonical score-sheet detail endpoint。评分、锁定、重开、冻结结果
- * 仍由现有 Authority API 与专门业务入口负责；这里不在浏览器重算正式成绩。
+ * 只读取 canonical score-sheet detail endpoint；正式成绩不在浏览器重算。
  */
 (function () {
   "use strict";
 
-  function byId(id) {
-    return document.getElementById(id);
-  }
-
-  function text(value) {
-    if (value === null || value === undefined || value === "") return "—";
-    return String(value);
-  }
-
+  function byId(id) { return document.getElementById(id); }
+  function text(value) { return value === null || value === undefined || value === "" ? "—" : String(value); }
   function formatDate(value) {
     if (!value) return "—";
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? text(value) : date.toLocaleString();
   }
-
-  function setText(node, value) {
-    if (node) node.textContent = text(value);
-  }
+  function setText(node, value) { if (node) node.textContent = text(value); }
 
   function makeMeta(label, value) {
     const item = document.createElement("div");
@@ -38,38 +26,14 @@
   }
 
   function normalizeScoreRows(data) {
-    const candidates = [
-      data && data.scores,
-      data && data.items,
-      data && data.components,
-      data && data.score_items,
-      data && data.scoreItems,
-    ];
+    const candidates = [data?.scores, data?.items, data?.components, data?.score_items, data?.scoreItems];
     const rows = candidates.find(Array.isArray) || [];
     return rows.map(function (row, index) {
-      if (row === null || row === undefined) {
-        return { name: "评分项 " + (index + 1), value: "—" };
-      }
-      if (typeof row !== "object") {
-        return { name: "评分项 " + (index + 1), value: row };
-      }
+      if (row === null || row === undefined) return {name:"评分项 " + (index + 1), value:"—"};
+      if (typeof row !== "object") return {name:"评分项 " + (index + 1), value:row};
       return {
-        name:
-          row.component_name ||
-          row.componentName ||
-          row.item_name ||
-          row.itemName ||
-          row.name ||
-          row.label ||
-          "评分项 " + (index + 1),
-        value:
-          row.score !== undefined
-            ? row.score
-            : row.value !== undefined
-            ? row.value
-            : row.final_score !== undefined
-            ? row.final_score
-            : row.finalScore,
+        name: row.component_name || row.componentName || row.item_name || row.itemName || row.name || row.label || "评分项 " + (index + 1),
+        value: row.score !== undefined ? row.score : row.value !== undefined ? row.value : row.final_score !== undefined ? row.final_score : row.finalScore,
       };
     });
   }
@@ -92,14 +56,9 @@
   function renderResult(result, payload) {
     result.removeAttribute("aria-busy");
     result.innerHTML = "";
-
-    const data = payload && payload.data ? payload.data : payload || {};
-    const statusValue =
-      data.canonical_status || data.canonicalStatus || data.status || data.state || "UNKNOWN";
-    const locked =
-      data.is_locked === true ||
-      data.isLocked === true ||
-      String(statusValue).toUpperCase() === "LOCKED";
+    const data = payload?.data || payload || {};
+    const statusValue = data.canonical_status || data.canonicalStatus || data.status || data.state || "UNKNOWN";
+    const locked = data.is_locked === true || data.isLocked === true || String(statusValue).toUpperCase() === "LOCKED";
 
     const meta = document.createElement("div");
     meta.className = "hr04-assessment__meta";
@@ -111,7 +70,7 @@
     result.appendChild(meta);
 
     const statusRow = document.createElement("div");
-    statusRow.style.marginBottom = "14px";
+    statusRow.className = "hr04-assessment__status-row";
     const status = document.createElement("span");
     status.className = "hr04-assessment__status" + (locked ? " hr04-assessment__status--locked" : "");
     status.textContent = locked ? "已锁定" : text(statusValue);
@@ -120,8 +79,7 @@
     const total = data.total_score !== undefined ? data.total_score : data.totalScore;
     if (total !== undefined && total !== null) {
       const totalText = document.createElement("strong");
-      totalText.style.marginLeft = "10px";
-      totalText.style.color = "#172033";
+      totalText.className = "hr04-assessment__total";
       totalText.textContent = "总分 " + text(total);
       statusRow.appendChild(totalText);
     }
@@ -160,15 +118,10 @@
     renderLoading(result);
     if (submit) submit.disabled = true;
     try {
-      const response = await window.HrApi.request(
-        "/api/hr/v1/recruitment/assessment/score-sheets/" + encodeURIComponent(scoreSheetId)
-      );
+      const response = await window.HrApi.request("/api/hr/v1/recruitment/assessment/score-sheets/" + encodeURIComponent(scoreSheetId));
       renderResult(result, response);
     } catch (error) {
-      const message =
-        window.HrApi && typeof window.HrApi.apiErrorToMessage === "function"
-          ? window.HrApi.apiErrorToMessage(error)
-          : "评分表读取失败";
+      const message = window.HrApi && typeof window.HrApi.apiErrorToMessage === "function" ? window.HrApi.apiErrorToMessage(error) : "评分表读取失败";
       renderError(result, message);
     } finally {
       if (submit) submit.disabled = false;
@@ -179,7 +132,6 @@
     const form = byId("hr04-assessment-query");
     const input = byId("hr04-score-sheet-id");
     if (!form || !input) return;
-
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       const value = input.value.trim();
@@ -193,9 +145,5 @@
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init, { once: true });
-  } else {
-    init();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, {once:true}); else init();
 })();
