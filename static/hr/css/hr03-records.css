@@ -1,0 +1,303 @@
+/* HR03 V2: education, materials, corrections and data-quality workspaces. */
+
+.hr03-record-tabs,
+.hr03-record-filter {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--hr-space-4);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--hr-v2-line);
+  scrollbar-width: thin;
+}
+
+.hr03-record-tabs button,
+.hr03-record-filter button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--hr-v2-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hr03-record-tabs button:hover,
+.hr03-record-filter button:hover,
+.hr03-record-tabs button.is-active,
+.hr03-record-filter button.is-active {
+  color: var(--hr-v2-accent-strong);
+}
+
+.hr03-record-tabs button.is-active,
+.hr03-record-filter button.is-active {
+  border-bottom-color: var(--hr-v2-accent);
+}
+
+.hr03-record-list,
+.hr03-record-group {
+  display: grid;
+  gap: var(--hr-space-3);
+}
+
+.hr03-record-group + .hr03-record-group {
+  margin-top: var(--hr-space-5);
+}
+
+.hr03-record-group__title {
+  margin: 0;
+  padding-bottom: var(--hr-space-2);
+  border-bottom: 1px solid var(--hr-v2-line);
+  color: var(--hr-v2-ink);
+  font-size: 14px;
+}
+
+.hr03-record-card {
+  min-width: 0;
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-v2-line);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+}
+
+.hr03-record-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--hr-space-3);
+}
+
+.hr03-record-card__title {
+  color: var(--hr-v2-ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.hr03-record-card__meta,
+.hr03-record-card__extra {
+  margin-top: 5px;
+  color: var(--hr-v2-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.hr03-record-card__extra {
+  color: var(--hr-v2-text);
+}
+
+.hr03-record-badge,
+.hr03-sensitivity {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--hr-v2-canvas);
+  color: var(--hr-v2-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.hr03-record-badge.VERIFIED,
+.hr03-record-badge.VALID,
+.hr03-record-badge.APPROVED,
+.hr03-record-badge.APPLIED {
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.hr03-record-badge.PENDING,
+.hr03-record-badge.UNDER_REVIEW,
+.hr03-record-badge.RETURNED,
+.hr03-record-badge.EXPIRING {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.hr03-record-badge.EXPIRED,
+.hr03-record-badge.REJECTED,
+.hr03-record-badge.FAILED {
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.hr03-record-badge.SUBMITTED,
+.hr03-record-badge.RESUBMITTED,
+.hr03-record-badge.APPLYING {
+  background: var(--hr-v2-accent-soft);
+  color: var(--hr-v2-accent-strong);
+}
+
+.hr03-sensitivity.SENSITIVE {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.hr03-sensitivity.HIGH_SENSITIVE {
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.hr03-sensitivity.RESTRICTED_HR {
+  background: var(--hr-v2-accent-soft);
+  color: var(--hr-v2-accent-strong);
+}
+
+.hr03-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hr-space-2);
+  margin-top: var(--hr-space-3);
+}
+
+.hr03-record-actions button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--hr-v2-line);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+  color: var(--hr-v2-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hr03-record-actions button.primary {
+  border-color: var(--hr-v2-accent);
+  background: var(--hr-v2-accent);
+  color: #fff;
+}
+
+.hr03-record-actions button.danger {
+  border-color: var(--hr-danger);
+  background: var(--hr-danger);
+  color: #fff;
+}
+
+.hr03-version-panel {
+  margin-bottom: var(--hr-space-4);
+}
+
+.hr03-version-row {
+  padding: var(--hr-space-2) 0;
+  border-bottom: 1px solid var(--hr-v2-line);
+  color: var(--hr-v2-text);
+  font-size: 12px;
+}
+
+.hr03-diff-list {
+  display: grid;
+  gap: var(--hr-space-2);
+  margin-top: var(--hr-space-3);
+}
+
+.hr03-diff-row {
+  display: grid;
+  grid-template-columns: minmax(100px, .35fr) minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--hr-space-2);
+  align-items: center;
+  font-size: 12px;
+}
+
+.hr03-diff-field {
+  color: var(--hr-v2-muted);
+}
+
+.hr03-diff-before,
+.hr03-diff-after {
+  padding: 4px 7px;
+  border-radius: var(--hr-radius-sm);
+  overflow-wrap: anywhere;
+}
+
+.hr03-diff-before {
+  background: #fff1f2;
+  color: #991b1b;
+  text-decoration: line-through;
+}
+
+.hr03-diff-after {
+  background: #f0fdf4;
+  color: #166534;
+  font-weight: 700;
+}
+
+.hr03-diff-arrow {
+  color: var(--hr-v2-muted);
+}
+
+.hr03-quality-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--hr-space-3);
+}
+
+.hr03-quality-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--hr-v2-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hr03-quality-form input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--hr-v2-line);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+  color: var(--hr-v2-text);
+  font: inherit;
+}
+
+.hr03-quality-issue {
+  display: grid;
+  gap: 4px;
+  padding: var(--hr-space-3) var(--hr-space-4);
+  border: 1px solid var(--hr-v2-line);
+  border-left: 3px solid var(--hr-warning);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+  font-size: 12px;
+}
+
+.hr03-quality-issue[data-severity="HIGH"] {
+  border-left-color: var(--hr-danger);
+}
+
+.hr03-quality-issue strong {
+  color: var(--hr-v2-ink);
+}
+
+.hr03-quality-issue span {
+  color: var(--hr-v2-muted);
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .hr03-record-card__head {
+    flex-direction: column;
+  }
+
+  .hr03-diff-row {
+    grid-template-columns: 1fr;
+    padding-bottom: var(--hr-space-2);
+    border-bottom: 1px solid var(--hr-v2-line);
+  }
+
+  .hr03-diff-arrow {
+    display: none;
+  }
+
+  .hr03-quality-form,
+  .hr03-quality-form label {
+    width: 100%;
+  }
+}
