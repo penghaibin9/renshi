@@ -120,14 +120,16 @@
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const data = await response.json();
       const rows = data.recentQualificationDecisions || [];
+      const caseLabels = new Map((data.recentApplications || []).map((x) => [String(x.id), `${x.case_no} · ${x.requested_title_name || x.requested_title_code}`]));
+      const decisionLabels = {ELIGIBLE:'资格通过', RETURNED:'退回补正', REJECTED:'未通过'};
       const target = card.querySelector('.hr13e-history-list');
       target.innerHTML = rows.length ? rows.map((x) => {
         const decisionNo = x.decision_no || '未编号决定';
         const attempt = x.attempt_no ? `第 ${x.attempt_no} 轮` : '轮次—';
-        const caseRef = x.application_case_id || '—';
+        const caseRef = caseLabels.get(String(x.application_case_id)) || '关联职称申报';
         const reason = x.reason || x.reason_code || '无补充说明';
         const date = (x.decided_at || '').slice(0, 10) || '—';
-        return `<div class="hr13e-history-row"><div><b>${esc(decisionNo)}</b><small>${esc(attempt)} · ${esc(reason)}</small></div><small class="hr13e-history-case">案件 ${esc(caseRef)}</small><span class="hr13e-history-badge">${esc(x.decision || '—')}</span><small class="hr13e-history-date">${esc(date)}</small></div>`;
+        return `<div class="hr13e-history-row"><div><b>${esc(decisionNo)}</b><small>${esc(attempt)} · ${esc(reason)}</small></div><small class="hr13e-history-case">${esc(caseRef)}</small><span class="hr13e-history-badge">${esc(decisionLabels[x.decision] || '状态待确认')}</span><small class="hr13e-history-date">${esc(date)}</small></div>`;
       }).join('') : '<div class="hr13e-history-empty">当前没有已形成的资格审查决定；待审案件仍在上方队列中。</div>';
     } catch (error) {
       const target = card.querySelector('.hr13e-history-list');

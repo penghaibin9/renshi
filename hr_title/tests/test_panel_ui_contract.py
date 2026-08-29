@@ -23,6 +23,8 @@ class Hr13PanelUiContractTests(SimpleTestCase):
         template = get_template("hr_title/workspace_f.html")
         source = Path(template.origin.name).read_text(encoding="utf-8")
 
-        self.assertIn("没有名册权限时不会退化成手填 UUID", source)
-        self.assertIn("不允许手填身份绕过 Provider", source)
-        self.assertIn("Ballot 提交后不可原地修改", source)
+        self.assertIn("没有名册权限时不会退化成手填内部标识", source)
+        self.assertIn("不允许手填身份绕过正式名册", source)
+        self.assertIn("评议票提交后不可原地修改", source)
+        self.assertIn("data-conflict-note", source)
+        self.assertNotIn("window.prompt", source)

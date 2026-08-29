@@ -586,3 +586,12 @@
     justify-self: start;
   }
 }
+
+.hr13.hr13c .hr13f-conflict-note {
+  flex: 1 1 180px;
+  min-height: 36px;
+}
+
+.hr13.hr13c .hr13f-ballot-history {
+  margin-top: var(--hr-space-3);
+}

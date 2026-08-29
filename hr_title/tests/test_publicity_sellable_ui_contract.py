@@ -22,6 +22,6 @@ class Hr13PublicitySellableUiContractTests(TestCase):
         source = Path(template.origin.name).read_text(encoding="utf-8")
 
         self.assertIn("不再用申报状态冒充复核事实", source)
-        self.assertIn("仅 CLOSED 且无阻断异议才允许形成正式职称结果", source)
+        self.assertIn("仅已关闭且无阻断异议时才允许形成正式职称结果", source)
         self.assertIn("recentPublicities", source)
         self.assertIn("recentAppeals", source)

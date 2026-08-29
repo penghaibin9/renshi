@@ -17,11 +17,13 @@ class Hr13MaterialUiContractTests(SimpleTestCase):
         self.assertIn("已验收材料冻结", source)
         self.assertNotIn("section === 'materials' || section === 'appeals'", source)
 
-    def test_appeal_still_fails_honestly_until_authority_exists(self):
+    def test_appeal_workspace_reads_independent_appeal_facts(self):
         source = (
             Path(settings.BASE_DIR)
             / "hr_title/templates/hr_title/workspace_d.html"
         ).read_text(encoding="utf-8")
 
         self.assertIn("if (section === 'appeals')", source)
-        self.assertIn("异议复核事实尚待 Authority 接通", source)
+        self.assertIn("d.recentAppeals", source)
+        self.assertIn("每条异议独立留痕", source)
+        self.assertNotIn("异议复核事实尚待 Authority 接通", source)

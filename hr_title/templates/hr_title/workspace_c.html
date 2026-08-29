@@ -33,15 +33,15 @@
     </header>
 
     <nav class="hr13-nav" aria-label="职称评审业务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/titles/">总览</a>
-      <a class="{% if section == 'applications' %}active{% endif %}" href="/hr/titles/applications/">职称申报</a>
-      <a class="{% if section == 'eligibility' %}active{% endif %}" href="/hr/titles/eligibility/">资格审查</a>
-      <a class="{% if section == 'materials' %}active{% endif %}" href="/hr/titles/materials/">材料成果</a>
-      <a class="{% if section == 'experts' %}active{% endif %}" href="/hr/titles/experts/">专家评委</a>
-      <a class="{% if section == 'deliberation' %}active{% endif %}" href="/hr/titles/deliberation/">评议表决</a>
-      <a class="{% if section == 'publicity' %}active{% endif %}" href="/hr/titles/publicity/">结果公示</a>
-      <a class="{% if section == 'appeals' %}active{% endif %}" href="/hr/titles/appeals/">异议复核</a>
-      <a class="{% if section == 'results' %}active{% endif %}" href="/hr/titles/results/">正式结果</a>
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_title:overview' %}">总览</a>
+      <a class="{% if section == 'applications' %}active{% endif %}" href="{% url 'hr_title:applications' %}">职称申报</a>
+      <a class="{% if section == 'eligibility' %}active{% endif %}" href="{% url 'hr_title:eligibility' %}">资格审查</a>
+      <a class="{% if section == 'materials' %}active{% endif %}" href="{% url 'hr_title:materials' %}">材料成果</a>
+      <a class="{% if section == 'experts' %}active{% endif %}" href="{% url 'hr_title:experts' %}">专家评委</a>
+      <a class="{% if section == 'deliberation' %}active{% endif %}" href="{% url 'hr_title:deliberation' %}">评议表决</a>
+      <a class="{% if section == 'publicity' %}active{% endif %}" href="{% url 'hr_title:publicity' %}">结果公示</a>
+      <a class="{% if section == 'appeals' %}active{% endif %}" href="{% url 'hr_title:appeals' %}">异议复核</a>
+      <a class="{% if section == 'results' %}active{% endif %}" href="{% url 'hr_title:results' %}">正式结果</a>
     </nav>
     <div class="hr13-mobile-hint">可左右滑动查看更多职称评审工作区</div>
 
@@ -73,7 +73,7 @@
             <span class="hr13-process__no">03</span><b>材料与成果</b><small>材料快照、来源、版本和验收状态可追溯</small>
           </a>
           <a class="hr13-process__step" href="/hr/titles/experts/">
-            <span class="hr13-process__no">04</span><b>专家与评议</b><small>专家分配、回避、Ballot 与法定票数独立记录</small>
+            <span class="hr13-process__no">04</span><b>专家与评议</b><small>专家分配、回避、评议票与法定票数独立记录</small>
           </a>
           <a class="hr13-process__step" href="/hr/titles/publicity/">
             <span class="hr13-process__no">05</span><b>公示与异议</b><small>开放公示、异议复核完成后才能继续生效</small>
@@ -143,7 +143,7 @@
       </div>
     </section>
 
-    <div class="hr13-principle"><strong>职称结果原则：</strong>资格通过、专家推荐、委员会票决和公示状态都只是过程事实；只有通过正式结果 Authority 生效的记录才是可用于任职、聘任和档案的职称结果。</div>
+    <div class="hr13-principle"><strong>职称结果原则：</strong>资格通过、专家推荐、委员会票决和公示状态都只是过程事实；只有正式生效的结果记录才可用于任职、聘任和档案。</div>
   {% endif %}
 </div>
 {% endblock content %}

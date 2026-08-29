@@ -60,7 +60,7 @@ class Hr13UiContractTests(TestCase):
             self.assertEqual(resolve(path).view_name, name)
 
     def test_workspace_templates_compile(self):
-        for name in ("workspace.html", "workspace_d.html", "workspace_e.html", "workspace_f.html", "workspace_g.html"):
+        for name in ("workspace_c.html", "workspace_d.html", "workspace_e.html", "workspace_f.html", "workspace_g.html", "workspace_h.html"):
             self.assertIsNotNone(get_template(f"hr_title/{name}"))
 
     def test_workspace_f_contains_real_panel_authority_actions(self):
@@ -72,7 +72,7 @@ class Hr13UiContractTests(TestCase):
         source = Path(get_template("hr_title/workspace_g.html").origin.name).read_text(encoding="utf-8")
         for token in ("/publicities/", "/appeals/", "/resolve/", "/close/", "/cancel/", "publicityNo", "appealNo", "outcome"):
             self.assertIn(token, source)
-        self.assertIn("Case=PUBLICITY 不是充分条件", source)
+        self.assertIn("进入公示阶段并不等于职称已生效", source)
 
     def _global_mobile_shell_source(self):
         return (Path(settings.BASE_DIR) / "static/src/js/customHeaderScripts.js").read_text(encoding="utf-8")
@@ -109,3 +109,22 @@ class Hr13UiContractTests(TestCase):
         source = Path(get_template("hr_title/workspace_g.html").origin.name).read_text(encoding="utf-8")
         self.assertNotIn("sidebar.style.display", source)
         self.assertNotIn("shell.remove()", source)
+
+    def test_live_hr13_workspace_avoids_unsafe_or_opaque_user_interactions(self):
+        sources = "\n".join(
+            Path(get_template(f"hr_title/{name}").origin.name).read_text(encoding="utf-8")
+            for name in (
+                "workspace_c.html",
+                "workspace_d.html",
+                "workspace_e.html",
+                "workspace_f.html",
+                "workspace_g.html",
+                "workspace_h.html",
+            )
+        )
+        self.assertNotIn("window.prompt", sources)
+        self.assertNotIn("window.alert", sources)
+        self.assertNotIn("案件 ${esc(x.application_case_id)}", sources)
+        self.assertNotIn("Case=PUBLICITY", sources)
+        self.assertNotIn("linear-gradient", sources)
+        self.assertNotIn("radial-gradient", sources)

@@ -22,6 +22,9 @@
   const csrf = () => document.cookie.split('; ').find((x) => x.startsWith('csrftoken='))?.split('=')[1] || '';
   let dashboard = null;
   let staffRows = [];
+  const statusLabels = {OPEN:'进行中', CLOSED:'已结算', ASSIGNED:'待响应', ACCEPTED:'已接受', DECLINED:'已回避'};
+  const roleLabels = {EXPERT:'专家', COMMITTEE:'评委', CHAIR:'主任委员'};
+  const recommendationLabels = {PASS:'通过', FAIL:'不通过', ABSTAIN:'弃权'};
 
   async function jsonFetch(url, options={}) {
     const response = await fetch(url, {credentials:'same-origin', ...options});
@@ -87,7 +90,7 @@
 
   function caseOptions() {
     const rows = eligibleCases();
-    return rows.length ? rows.map((x) => `<option value="${esc(x.id)}">${esc(x.case_no)} · ${esc(x.requested_title_name || x.requested_title_code)} · ${esc(x.status)}</option>`).join('') : '<option value="">暂无可开启评审的案件</option>';
+    return rows.length ? rows.map((x) => `<option value="${esc(x.id)}">${esc(x.case_no)} · ${esc(x.requested_title_name || x.requested_title_code)}</option>`).join('') : '<option value="">暂无可开启评审的案件</option>';
   }
   function roundOptions() {
     const rows = openRounds();
@@ -105,7 +108,7 @@
       const tally = x.status === 'OPEN'
         ? `法定 ${x.required_ballots} 票 · 通过线 ${x.required_pass_votes} 票`
         : `实投 ${closed.ballots ?? '—'} · 通过 ${closed.passVotes ?? '—'} · 反对 ${closed.failVotes ?? '—'} · 弃权 ${closed.abstentions ?? '—'}`;
-      return `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.round_no)}</b><small>第 ${esc(x.attempt_no)} 轮 · ${esc(tally)}</small></div><span class="hr13f-badge">${esc(x.status)}</span></div>${x.status === 'OPEN' && section === 'deliberation' ? `<div class="hr13f-actions"><button class="hr13f-btn secondary" data-close-round="${esc(x.id)}">结算本轮票决</button></div>` : ''}</div>`;
+      return `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.round_no)}</b><small>第 ${esc(x.attempt_no)} 轮 · ${esc(tally)}</small></div><span class="hr13f-badge">${esc(statusLabels[x.status] || '状态待确认')}</span></div>${x.status === 'OPEN' && section === 'deliberation' ? `<div class="hr13f-actions"><button class="hr13f-btn secondary" data-close-round="${esc(x.id)}">结算本轮票决</button></div>` : ''}</div>`;
     }).join('');
   }
 
@@ -114,25 +117,25 @@
     if (!rows.length) return '<div class="hr13f-note">当前还没有专家分配记录。</div>';
     return rows.map((x) => {
       const actions = x.status === 'ASSIGNED' && section === 'experts'
-        ? `<div class="hr13f-actions"><button class="hr13f-btn secondary" data-accept="${esc(x.id)}">接受评审</button><button class="hr13f-btn warn" data-conflict="${esc(x.id)}">申报回避</button></div>` : '';
-      return `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.assignment_no)} · ${esc(staffLabel(x.reviewer_staff_id))}</b><small>${esc(x.reviewer_role)}${x.conflict_declared ? ' · 已声明利益冲突' : ''}</small></div><span class="hr13f-badge">${esc(x.status)}</span></div>${actions}</div>`;
+        ? `<div class="hr13f-actions"><button class="hr13f-btn secondary" data-accept="${esc(x.id)}">接受评审</button><input class="hr13f-input hr13f-conflict-note" data-conflict-note placeholder="填写回避原因"><button class="hr13f-btn warn" data-conflict="${esc(x.id)}">申报回避</button></div>` : '';
+      return `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.assignment_no)} · ${esc(staffLabel(x.reviewer_staff_id))}</b><small>${esc(roleLabels[x.reviewer_role] || '评审成员')}${x.conflict_declared ? ' · 已声明利益冲突' : ''}</small></div><span class="hr13f-badge">${esc(statusLabels[x.status] || '状态待确认')}</span></div>${actions}</div>`;
     }).join('');
   }
 
   function ballotsHtml() {
     const rows = dashboard?.recentReviewBallots || [];
-    if (!rows.length) return '<div class="hr13f-note">当前还没有已提交票决。Ballot 提交后不可原地修改。</div>';
-    return rows.map((x) => `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.ballot_no)} · ${esc(x.recommendation)}</b><small>${x.score !== null && x.score !== undefined ? `评分 ${esc(x.score)} · ` : ''}${esc(x.rationale || '无补充意见')}</small></div><span class="hr13f-badge">已提交</span></div></div>`).join('');
+    if (!rows.length) return '<div class="hr13f-note">当前还没有已提交票决。评议票提交后不可原地修改。</div>';
+    return rows.map((x) => `<div class="hr13f-row"><div class="hr13f-row-head"><div><b>${esc(x.ballot_no)} · ${esc(recommendationLabels[x.recommendation] || '结论待确认')}</b><small>${x.score !== null && x.score !== undefined ? `评分 ${esc(x.score)} · ` : ''}${esc(x.rationale || '无补充意见')}</small></div><span class="hr13f-badge">已提交</span></div></div>`).join('');
   }
 
   function expertControls() {
-    return `<div class="hr13f-grid"><section class="hr13f-box" id="hr13f-round-box"><h3>开启专家评审轮次</h3><p>仅资格通过或上一轮未通过的案件可开启；法定票数和通过线创建后冻结。</p><form id="hr13f-round-form" class="hr13f-form"><select class="hr13f-select wide" name="caseId" required>${caseOptions()}</select><input class="hr13f-input" name="roundNo" placeholder="评审轮次编号" required><input class="hr13f-input" name="requiredBallots" type="number" min="1" value="3" required><input class="hr13f-input" name="requiredPassVotes" type="number" min="1" value="2" required><button class="hr13f-btn" type="submit">开启评审轮次</button></form></section><section class="hr13f-box" id="hr13f-assignment-box"><h3>分配专家 / 评委</h3><p>专家来自 HR03 正式教职工名册；没有名册权限时不会退化成手填 UUID。</p><form id="hr13f-assignment-form" class="hr13f-form"><select class="hr13f-select wide" name="roundId" required>${roundOptions()}</select><input id="hr13f-staff-search" class="hr13f-input wide" placeholder="按姓名/工号搜索 HR03 名册"><select id="hr13f-staff" class="hr13f-select wide" name="reviewerStaffId" required>${staffOptions()}</select><input class="hr13f-input" name="assignmentNo" placeholder="分配编号" required><select class="hr13f-select" name="reviewerRole"><option value="EXPERT">专家</option><option value="COMMITTEE">评委</option><option value="CHAIR">主任委员</option></select><button class="hr13f-btn" type="submit">确认分配</button></form></section></div>`;
+    return `<div class="hr13f-grid"><section class="hr13f-box" id="hr13f-round-box"><h3>开启专家评审轮次</h3><p>仅资格通过或上一轮未通过的案件可开启；法定票数和通过线创建后冻结。</p><form id="hr13f-round-form" class="hr13f-form"><select class="hr13f-select wide" name="caseId" required>${caseOptions()}</select><input class="hr13f-input" name="roundNo" placeholder="评审轮次编号" required><input class="hr13f-input" name="requiredBallots" type="number" min="1" value="3" required><input class="hr13f-input" name="requiredPassVotes" type="number" min="1" value="2" required><button class="hr13f-btn" type="submit">开启评审轮次</button></form></section><section class="hr13f-box" id="hr13f-assignment-box"><h3>分配专家 / 评委</h3><p>专家来自 HR03 正式教职工名册；没有名册权限时不会退化成手填内部标识。</p><form id="hr13f-assignment-form" class="hr13f-form"><select class="hr13f-select wide" name="roundId" required>${roundOptions()}</select><input id="hr13f-staff-search" class="hr13f-input wide" placeholder="按姓名/工号搜索 HR03 名册"><select id="hr13f-staff" class="hr13f-select wide" name="reviewerStaffId" required>${staffOptions()}</select><input class="hr13f-input" name="assignmentNo" placeholder="分配编号" required><select class="hr13f-select" name="reviewerRole"><option value="EXPERT">专家</option><option value="COMMITTEE">评委</option><option value="CHAIR">主任委员</option></select><button class="hr13f-btn" type="submit">确认分配</button></form></section></div>`;
   }
 
   function ballotControls() {
     const eligibleAssignments = (dashboard?.recentReviewAssignments || []).filter((a) => a.status === 'ACCEPTED' && !a.conflict_declared && !((dashboard?.recentReviewBallots || []).some((b) => String(b.assignment_id) === String(a.id))));
     const options = eligibleAssignments.length ? eligibleAssignments.map((x) => `<option value="${esc(x.id)}">${esc(x.assignment_no)} · ${esc(staffLabel(x.reviewer_staff_id))}</option>`).join('') : '<option value="">暂无待投票的已接受专家</option>';
-    return `<section class="hr13f-box" id="hr13f-ballot-box"><h3>提交评议票</h3><p>仅已接受且未回避的专家可投票；同一分配只能提交一次 Ballot。</p><form id="hr13f-ballot-form" class="hr13f-form"><select class="hr13f-select wide" name="assignmentId" required>${options}</select><input class="hr13f-input" name="ballotNo" placeholder="票决编号" required><select class="hr13f-select" name="recommendation"><option value="PASS">通过</option><option value="FAIL">不通过</option><option value="ABSTAIN">弃权</option></select><input class="hr13f-input" name="score" type="number" step="0.01" placeholder="评分（可选）"><textarea class="hr13f-textarea wide" name="rationale" placeholder="评议意见（可选）"></textarea><button class="hr13f-btn" type="submit">提交不可变票决</button></form></section>`;
+    return `<section class="hr13f-box" id="hr13f-ballot-box"><h3>提交评议票</h3><p>仅已接受且未回避的专家可投票；同一分配只能提交一次评议票。</p><form id="hr13f-ballot-form" class="hr13f-form"><select class="hr13f-select wide" name="assignmentId" required>${options}</select><input class="hr13f-input" name="ballotNo" placeholder="票决编号" required><select class="hr13f-select" name="recommendation"><option value="PASS">通过</option><option value="FAIL">不通过</option><option value="ABSTAIN">弃权</option></select><input class="hr13f-input" name="score" type="number" step="0.01" placeholder="评分（可选）"><textarea class="hr13f-textarea wide" name="rationale" placeholder="评议意见（可选）"></textarea><button class="hr13f-btn" type="submit">提交不可变票决</button></form></section>`;
   }
 
   function renderWorkspace(staffError=null) {
@@ -146,8 +149,8 @@
       work.appendChild(card);
     }
     card.innerHTML = section === 'experts'
-      ? `<h2>专家评审 Authority</h2><p>真实评审轮次、专家分配、利益冲突与接受/拒绝状态均独立留痕。</p>${expertControls()}${staffError ? `<div class="hr13f-error">HR03 名册不可用：${esc(staffError.code || staffError.message)}。当前只展示已有专家记录，不允许手填身份绕过 Provider。</div>` : ''}<div class="hr13f-grid"><section class="hr13f-box"><h3>评审轮次</h3><div class="hr13f-list">${roundsHtml()}</div></section><section class="hr13f-box"><h3>专家分配</h3><div class="hr13f-list">${assignmentsHtml()}</div></section></div>`
-      : `<h2>评议与表决 Authority</h2><p>票决门槛、每位专家 Ballot 和最终票数快照均来自真实 Authority；未达到法定票数无法关单。</p><div class="hr13f-grid">${ballotControls()}<section class="hr13f-box"><h3>评审轮次 / 关单</h3><div class="hr13f-list">${roundsHtml()}</div></section></div><section class="hr13f-box" style="margin-top:12px"><h3>已提交票决</h3><div class="hr13f-list">${ballotsHtml()}</div></section>`;
+      ? `<h2>专家评审办理</h2><p>真实评审轮次、专家分配、利益冲突与接受/拒绝状态均独立留痕。</p>${expertControls()}${staffError ? `<div class="hr13f-error">HR03 名册不可用：${esc(staffError.code || staffError.message)}。当前只展示已有专家记录，不允许手填身份绕过正式名册。</div>` : ''}<div class="hr13f-grid"><section class="hr13f-box"><h3>评审轮次</h3><div class="hr13f-list">${roundsHtml()}</div></section><section class="hr13f-box"><h3>专家分配</h3><div class="hr13f-list">${assignmentsHtml()}</div></section></div>`
+      : `<h2>评议与表决办理</h2><p>票决门槛、每位专家评议票和最终票数快照均来自正式记录；未达到法定票数无法关单。</p><div class="hr13f-grid">${ballotControls()}<section class="hr13f-box"><h3>评审轮次 / 关单</h3><div class="hr13f-list">${roundsHtml()}</div></section></div><section class="hr13f-box hr13f-ballot-history"><h3>已提交票决</h3><div class="hr13f-list">${ballotsHtml()}</div></section>`;
     bindActions(card);
   }
 
@@ -173,7 +176,8 @@
       try { await post(`/api/v1/hr/titles/review-assignments/${encodeURIComponent(button.dataset.accept)}/respond/`, {accept:true, conflictDeclared:false, conflictNote:''}); await reload(); } catch (e) { statusMessage(card, `${e.code}: ${e.message}`); }
     }));
     card.querySelectorAll('[data-conflict]').forEach((button) => button.addEventListener('click', async () => {
-      const reason = window.prompt('请填写回避原因（必填）', ''); if (!reason?.trim()) return;
+      const reason = button.closest('.hr13f-actions')?.querySelector('[data-conflict-note]')?.value || '';
+      if (!reason.trim()) { statusMessage(button.closest('.hr13f-row'), '请先填写回避原因。'); return; }
       try { await post(`/api/v1/hr/titles/review-assignments/${encodeURIComponent(button.dataset.conflict)}/respond/`, {accept:false, conflictDeclared:true, conflictNote:reason.trim()}); await reload(); } catch (e) { statusMessage(card, `${e.code}: ${e.message}`); }
     }));
     card.querySelectorAll('[data-close-round]').forEach((button) => button.addEventListener('click', async () => {
@@ -194,7 +198,7 @@
       if (work) {
         const card = document.createElement('article');
         card.className = 'hr13c-card hr13f-panel';
-        card.innerHTML = `<h2>专家评审 Authority</h2><div class="hr13f-error">真实评审数据读取失败：${esc(error.code || error.message)}</div>`;
+        card.innerHTML = `<h2>专家评审办理</h2><div class="hr13f-error">真实评审数据读取失败：${esc(error.code || error.message)}</div>`;
         work.appendChild(card);
       }
     }

@@ -83,19 +83,20 @@ class Hr13VisualAuditTests(StaticLiveServerTestCase):
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
         routes = [
-            "/hr/titles/",
-            "/hr/titles/applications/",
-            "/hr/titles/eligibility/",
-            "/hr/titles/materials/",
-            "/hr/titles/experts/",
-            "/hr/titles/deliberation/",
-            "/hr/titles/publicity/",
-            "/hr/titles/appeals/",
-            "/hr/titles/results/",
+            ("overview", "/hr/titles/"),
+            ("applications", "/hr/titles/applications/"),
+            ("eligibility", "/hr/titles/eligibility/"),
+            ("materials", "/hr/titles/materials/"),
+            ("experts", "/hr/titles/experts/"),
+            ("deliberation", "/hr/titles/deliberation/"),
+            ("publicity", "/hr/titles/publicity/"),
+            ("appeals", "/hr/titles/appeals/"),
+            ("results", "/hr/titles/results/"),
         ]
         page_errors: list[str] = []
         console_errors: list[str] = []
         static_failures: list[str] = []
+        api_failures: list[str] = []
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
@@ -123,13 +124,15 @@ class Hr13VisualAuditTests(StaticLiveServerTestCase):
                 )
 
                 def record_response(response):
-                    if "/static/hr/css/" in response.url and response.status >= 400:
+                    if "/static/hr/" in response.url and response.status >= 400:
                         static_failures.append(f"{response.status} {response.url}")
+                    if "/api/v1/hr/titles/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
 
                 page.on("response", record_response)
 
                 response = page.goto(
-                    self.live_server_url + routes[0],
+                    self.live_server_url + routes[0][1],
                     wait_until="networkidle",
                 )
                 self.assertIsNotNone(response)
@@ -171,7 +174,7 @@ class Hr13VisualAuditTests(StaticLiveServerTestCase):
                     full_page=True,
                 )
 
-                for route in routes[1:]:
+                for route_name, route in routes[1:]:
                     response = page.goto(
                         self.live_server_url + route,
                         wait_until="networkidle",
@@ -187,22 +190,27 @@ class Hr13VisualAuditTests(StaticLiveServerTestCase):
                         1,
                         f"HR13 V2 shell missing at {route}",
                     )
+                    page.screenshot(
+                        path=str(self.out_dir / f"desktop-{route_name}.png"),
+                        full_page=True,
+                    )
 
                 page.set_viewport_size({"width": 390, "height": 844})
-                response = page.goto(
-                    self.live_server_url + routes[0],
-                    wait_until="networkidle",
-                )
-                self.assertIsNotNone(response)
-                self.assertEqual(response.status, 200)
-                self.assertEqual(page.locator("[data-module='HR13']").count(), 1)
-                self.assertEqual(
-                    page.locator(".hr-v2-mobile-section-switcher").count(), 1
-                )
-                page.screenshot(
-                    path=str(self.out_dir / "mobile-overview.png"),
-                    full_page=True,
-                )
+                for route_name, route in routes:
+                    response = page.goto(
+                        self.live_server_url + route,
+                        wait_until="networkidle",
+                    )
+                    self.assertIsNotNone(response)
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(page.locator("[data-module='HR13']").count(), 1)
+                    self.assertEqual(
+                        page.locator(".hr-v2-mobile-section-switcher").count(), 1
+                    )
+                    page.screenshot(
+                        path=str(self.out_dir / f"mobile-{route_name}.png"),
+                        full_page=True,
+                    )
                 context.close()
             finally:
                 browser.close()
@@ -221,4 +229,9 @@ class Hr13VisualAuditTests(StaticLiveServerTestCase):
             static_failures,
             [],
             "HR13 static CSS failures: " + " | ".join(static_failures),
+        )
+        self.assertEqual(
+            api_failures,
+            [],
+            "HR13 API failures: " + " | ".join(api_failures),
         )

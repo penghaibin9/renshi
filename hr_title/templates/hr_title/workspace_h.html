@@ -9,6 +9,7 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[c]));
+  const statusLabels = {OPEN:'进行中', CLOSED:'已关闭', CANCELLED:'已取消', UPHELD:'异议成立', REJECTED:'异议不成立', WITHDRAWN:'已撤回'};
   let snapshot = null;
 
   const caseLabel = (caseId) => {
@@ -25,7 +26,7 @@
     return rows.length ? rows.map((x) =>
       `<div class="hr13g-row"><div><b>${esc(x.publicity_no)}</b><small>${esc(caseLabel(x.application_case_id))}</small></div>` +
       `<small class="detail">${esc(String(x.start_at || '').slice(0,16))} → ${esc(String(x.end_at || '').slice(0,16))}</small>` +
-      `<span class="hr13g-badge ${x.status === 'CLOSED' ? 'good' : x.status === 'CANCELLED' ? 'warn' : ''}">${esc(x.status)}</span>` +
+      `<span class="hr13g-badge ${x.status === 'CLOSED' ? 'good' : x.status === 'CANCELLED' ? 'warn' : ''}">${esc(statusLabels[x.status] || '状态待确认')}</span>` +
       `<small class="date">${esc(String(x.created_at || '').slice(0,10))}</small></div>`
     ).join('') : '<div class="hr13g-empty">当前没有公示记录</div>';
   }
@@ -35,7 +36,7 @@
     return rows.length ? rows.map((x) =>
       `<div class="hr13g-row"><div><b>${esc(x.appeal_no)}</b><small>${esc(publicityLabel(x.publicity_id))} · ${esc(x.appellant_ref || '未标注异议人')}</small></div>` +
       `<small class="detail">${esc(x.reason || '—')}${x.resolution ? ' · ' + esc(x.resolution) : ''}</small>` +
-      `<span class="hr13g-badge ${x.status === 'UPHELD' ? 'warn' : x.status === 'REJECTED' || x.status === 'WITHDRAWN' ? 'good' : ''}">${esc(x.status)}</span>` +
+      `<span class="hr13g-badge ${x.status === 'UPHELD' ? 'warn' : x.status === 'REJECTED' || x.status === 'WITHDRAWN' ? 'good' : ''}">${esc(statusLabels[x.status] || '状态待确认')}</span>` +
       `<small class="date">${esc(String(x.created_at || '').slice(0,10))}</small></div>`
     ).join('') : '<div class="hr13g-empty">当前没有异议记录</div>';
   }
@@ -50,7 +51,7 @@
     if (!title || !desc || !rows) return;
     if (section === 'publicity') {
       title.textContent = '真实结果公示';
-      desc.textContent = '公示窗口、状态和关单均来自 TitlePublicityRecord；仅 CLOSED 且无阻断异议才允许形成正式职称结果。';
+      desc.textContent = '公示窗口、状态和关单均来自正式记录；仅已关闭且无阻断异议时才允许形成正式职称结果。';
       rows.innerHTML = publicitiesHtml();
     } else {
       title.textContent = '异议与复核';

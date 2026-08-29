@@ -30,6 +30,13 @@
     qualificationReview: '资格审查明细', materials: '材料与代表性成果', expertPanel: '专家/评委组',
     deliberationVote: '评议表决', publicity: '公示记录', appealReview: '异议复核'
   };
+  const statusLabels = {
+    DRAFT:'草稿', SUBMITTED:'待资格审查', RETURNED:'退回补正', ELIGIBLE:'资格通过',
+    REJECTED:'未通过', UNDER_REVIEW:'评审中', PROPOSED:'拟通过', PUBLICITY:'公示中',
+    EFFECTIVE:'已生效', REVOKED:'已撤销', ACCEPTED:'已验收', SUPERSEDED:'已替代',
+    OPEN:'处理中', UPHELD:'异议成立', WITHDRAWN:'已撤回', CLOSED:'已关闭', CANCELLED:'已取消'
+  };
+  const sourceLabels = {SELF:'本人提交', HR12:'年度考核', HR10:'教师发展', HR09:'资格资质'};
   let current = [];
 
   const app = (a) => (a || []).map((x) => ({
@@ -39,7 +46,7 @@
   }));
   const material = (a) => (a || []).map((x) => ({
     name: x.display_name || x.material_no || '未命名材料',
-    sub: [x.material_no, x.material_type, x.source_domain, x.source_ref].filter(Boolean).join(' · '),
+    sub: [x.material_no, x.material_type, sourceLabels[x.source_domain] || '正式业务来源'].filter(Boolean).join(' · '),
     status: x.status, date: (x.updated_at || '').slice(0, 10), kind: '评审材料快照'
   }));
   const res = (a) => (a || []).map((x) => ({
@@ -64,7 +71,7 @@
       [x.name, x.sub, x.status, x.date, x.kind].join(' ').toLowerCase().includes(q)));
     target.innerHTML = rows.length ? rows.map((x) =>
       `<div class="hr13c-row"><div><b>${esc(x.name)}</b><small>${esc(x.sub || '—')}</small></div>` +
-      `<div class="kind">${esc(x.kind)}</div><span class="hr13c-badge">${esc(x.status || '—')}</span>` +
+      `<div class="kind">${esc(x.kind)}</div><span class="hr13c-badge">${esc(statusLabels[x.status] || '状态待确认')}</span>` +
       `<small class="date">${esc(x.date || '—')}</small></div>`
     ).join('') : '<div class="hr13c-empty">没有符合当前筛选条件的记录</div>';
   }
@@ -75,7 +82,7 @@
     if (!select) return;
     const states = [...new Set(rows.map((x) => x.status).filter(Boolean))].sort();
     select.innerHTML = '<option value="">全部状态</option>' +
-      states.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join('');
+      states.map((x) => `<option value="${esc(x)}">${esc(statusLabels[x] || '状态待确认')}</option>`).join('');
     render();
   }
 
@@ -105,7 +112,7 @@
     }
     if (section === 'experts' || section === 'deliberation') {
       t.textContent = section === 'experts' ? '专家评审相关申报' : '评议表决相关申报';
-      p.textContent = '只用真实 UNDER_REVIEW 形成队列，不伪造专家、评分或投票。';
+      p.textContent = '只用真实进入评审状态的申报形成队列，不伪造专家、评分或投票。';
       setRows(app(d.recentApplications).filter((x) => x.status === 'UNDER_REVIEW')); return;
     }
     if (section === 'publicity') {
@@ -117,8 +124,14 @@
     }
     if (section === 'appeals') {
       t.textContent = '异议与复核';
-      p.textContent = '独立 Authority 未接通时不拿申报状态冒充业务事实。';
-      unavailable('异议复核事实尚待 Authority 接通；入口保留用于正式施工。'); return;
+      p.textContent = '每条异议独立留痕，处理结论不会覆盖原评审事实。';
+      setRows((d.recentAppeals || []).map((x) => ({
+        name: x.appeal_no || '未编号异议',
+        sub: [x.appellant_ref || '异议人未标注', x.reason].filter(Boolean).join(' · '),
+        status: x.status,
+        date: (x.created_at || '').slice(0, 10),
+        kind: '异议复核',
+      }))); return;
     }
     t.textContent = '最近制度版本'; p.textContent = '总览先确认制度口径，再处理资格、评审、公示与正式结果。';
     setRows(pol(d.recentPolicies));
@@ -152,7 +165,7 @@
       tasks(d); sectionRows(d);
       const capTarget = document.getElementById('hr13c-caps');
       if (capTarget) capTarget.innerHTML = Object.entries(d.capabilities || {}).map(([k,v]) =>
-        `<div class="hr13c-cap"><span>${caps[k] || k}</span><span class="${v ? 'hr13c-on' : 'hr13c-off'}">${v ? '已接通' : '待 Authority'}</span></div>`
+        `<div class="hr13c-cap"><span>${caps[k] || k}</span><span class="${v ? 'hr13c-on' : 'hr13c-off'}">${v ? '已接通' : '暂不可用'}</span></div>`
       ).join('');
     } catch (e) {
       rows.innerHTML = `<div class="hr13c-empty">真实数据读取失败：${esc(e.message)}</div>`;
