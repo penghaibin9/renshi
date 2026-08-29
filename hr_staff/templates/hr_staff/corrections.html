@@ -1,10 +1,8 @@
+{% extends "index.html" %}
 {% load static i18n %}
 {% trans "信息更正与历史" as t_title %}
-{% trans "返回主档" as t_back %}
-{% trans "加载中…" as t_loading %}
 {% trans "加载失败" as t_load_failed %}
 {% trans "暂无更正记录" as t_empty %}
-{% trans "查看详情" as t_detail %}
 {% trans "提交" as t_submit %}
 {% trans "审核" as t_review %}
 {% trans "退回" as t_return %}
@@ -13,114 +11,145 @@
 {% trans "驳回" as t_reject %}
 {% trans "取消" as t_cancel %}
 {% trans "应用" as t_apply %}
-{% trans "状态" as t_status %}
-{% trans "原因" as t_reason %}
-{% trans "影响" as t_impact %}
-{% trans "提交人" as t_submitted_by %}
-{% trans "修改前" as t_before %}
-{% trans "修改后" as t_after %}
 {% trans "操作失败" as t_action_failed %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t_title }} · HR03</title>
-  <style>
-    body { font-family:"Segoe UI","Microsoft YaHei",sans-serif; margin:0; background:#f5f7fa; color:#1f2937; }
-    .wrap { max-width:1200px; margin:0 auto; padding:24px; }
-    .back { color:#2563eb; text-decoration:none; font-size:13px; }
-    .card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:20px; margin-bottom:16px; }
-    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-    .card-header h4 { margin:0; font-size:15px; }
-    .card-meta { font-size:12px; color:#6b7280; line-height:1.6; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; }
-    .badge.DRAFT { background:#f3f4f6; color:#374151; }
-    .badge.SUBMITTED,.badge.RESUBMITTED { background:#eff6ff; color:#1e40af; }
-    .badge.UNDER_REVIEW { background:#fef9c3; color:#854d0e; }
-    .badge.APPROVED,.badge.APPLIED { background:#dcfce7; color:#166534; }
-    .badge.RETURNED { background:#fef3c7; color:#92400e; }
-    .badge.REJECTED,.badge.FAILED { background:#fee2e2; color:#991b1b; }
-    .badge.CANCELLED { background:#f3f4f6; color:#9ca3af; }
-    .badge.APPLYING { background:#eff6ff; color:#2563eb; }
-    .actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
-    .actions button { padding:4px 10px; border-radius:6px; border:1px solid #e5e7eb; background:#fff; font-size:12px; cursor:pointer; }
-    .actions button.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
-    .actions button.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
-    .diff-row { display:flex; gap:8px; align-items:center; padding:4px 0; font-size:13px; }
-    .diff-field { min-width:100px; color:#6b7280; font-size:12px; }
-    .diff-before { background:#fef2f2; padding:2px 8px; border-radius:4px; text-decoration:line-through; }
-    .diff-after { background:#f0fdf4; padding:2px 8px; border-radius:4px; font-weight:600; }
-    .diff-arrow { color:#9ca3af; }
-    .empty { text-align:center; padding:48px; color:#6b7280; }
-    .subtitle { font-size:13px; color:#6b7280; margin:8px 0 16px; }
-  </style>
-</head>
-<body>
-<div class="wrap">
-  <a class="back" href="/hr/staff/{{ staff_id }}/">← {{ t_back }}</a>
-  <div style="margin-top:16px">
-    <h2 style="margin:0 0 4px">{{ t_title }}</h2>
-    <div class="subtitle">更正不是"编辑按钮"；每次更正保留完整 before/after、理由、证据与审批记录，历史可追溯</div>
-  </div>
-  <div id="content">{{ t_loading }}</div>
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-records.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="corrections" data-staff-id="{{ staff_id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-correction-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-correction-title">{{ t_title }}</h1>
+      <p class="hr-v2-subtitle">更正不是直接编辑历史事实。每个 Case 保留 before/after、理由、影响级别、审批状态和最终应用结果；页面只暴露当前状态允许的 transition。</p>
+    </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前教职工</span>
+      <span class="hr-v2-context__item"><strong>流程</strong> 状态机驱动</span>
+      <span class="hr-v2-context__item"><strong>历史</strong> 可追溯</span>
+    </div>
+  </header>
+
+  <a class="hr03-profile-back" href="/hr/staff/{{ staff_id }}/">← 返回个人主档</a>
+
+  <nav class="hr03-person-nav" aria-label="教职工个人主档工作区">
+    <a href="/hr/staff/{{ staff_id }}/">概览</a>
+    <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+    <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+    <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+    <a class="is-active" href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+  </nav>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-cases-title">
+    <div class="hr-v2-section__head">
+      <div><h2 id="hr03-cases-title">更正 Case</h2><p>最多读取后端当前返回的 100 条正式记录；按钮由 Case 状态决定。</p></div>
+    </div>
+    <div id="content" class="hr03-record-list">
+      <div class="hr-v2-state"><strong>正在读取更正历史</strong><span>正在确认 Case 状态、字段差异和应用结果。</span></div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>流程边界</strong><span>前端不直接更新主档事实；submit/review/return/resubmit/approve/reject/cancel/apply 全部走现有 CorrectionService 状态机和后端权限校验。</span></div>
 </div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
 <script>
-  const staffId = "{{ staff_id }}";
-  const L = {empty:"{{ t_empty|escapejs }}", loadFailed:"{{ t_load_failed|escapejs }}", detail:"{{ t_detail|escapejs }}", status:"{{ t_status|escapejs }}", reason:"{{ t_reason|escapejs }}", impact:"{{ t_impact|escapejs }}", submittedBy:"{{ t_submitted_by|escapejs }}", before:"{{ t_before|escapejs }}", after:"{{ t_after|escapejs }}", actionFailed:"{{ t_action_failed|escapejs }}"};
+(function () {
+  "use strict";
+  const root = document.querySelector('[data-module="HR03"][data-section="corrections"]');
+  if (!root) return;
+  const staffId = root.dataset.staffId;
+  const L = {empty:"{{ t_empty|escapejs }}", loadFailed:"{{ t_load_failed|escapejs }}", actionFailed:"{{ t_action_failed|escapejs }}"};
+
+  function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  function csrfToken() {
+    const row = document.cookie.split(";").map(value => value.trim()).find(value => value.startsWith("csrftoken="));
+    return row ? decodeURIComponent(row.slice("csrftoken=".length)) : "";
+  }
+  function actionButton(caseId, action, label, tone) {
+    return `<button type="button" class="${tone || ""}" data-case-id="${escapeHtml(caseId)}" data-action="${action}">${label}</button>`;
+  }
+  function transitionButtons(item) {
+    const id = item.id;
+    const status = item.status;
+    if (status === "DRAFT") return actionButton(id,"submit","{{ t_submit|escapejs }}","primary") + actionButton(id,"cancel","{{ t_cancel|escapejs }}","danger");
+    if (status === "SUBMITTED") return actionButton(id,"review","{{ t_review|escapejs }}","primary") + actionButton(id,"return","{{ t_return|escapejs }}","");
+    if (status === "UNDER_REVIEW" || status === "RESUBMITTED") return actionButton(id,"approve","{{ t_approve|escapejs }}","primary") + actionButton(id,"reject","{{ t_reject|escapejs }}","danger") + actionButton(id,"return","{{ t_return|escapejs }}","");
+    if (status === "RETURNED") return actionButton(id,"resubmit","{{ t_resubmit|escapejs }}","primary") + actionButton(id,"cancel","{{ t_cancel|escapejs }}","danger");
+    if (status === "APPROVED") return actionButton(id,"apply","{{ t_apply|escapejs }}","primary");
+    return "";
+  }
+
   async function load() {
+    const content = document.getElementById("content");
     try {
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/corrections/list`);
-      if (!resp.ok) { document.getElementById("content").innerHTML = `<div class="card"><div class="empty">${L.loadFailed}（${resp.status}）</div></div>`; return; }
+      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/corrections/list`, {credentials:"same-origin"});
+      if (!resp.ok) { content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>HTTP ${resp.status}</span></div>`; return; }
       const body = await resp.json();
-      const cases = body.data.items || [];
-      if (!cases.length) {
-        document.getElementById("content").innerHTML = `<div class="empty">${L.empty}</div>`;
-        return;
-      }
-      document.getElementById("content").innerHTML = cases.map(c => {
-        const itemDiffs = (c.items || []).map(i =>
-          `<div class="diff-row"><span class="diff-field">${escapeHtml(i.fieldCode)}</span><span class="diff-before">${escapeHtml(i.oldValueMasked||"-")}</span><span class="diff-arrow">→</span><span class="diff-after">${escapeHtml(i.newValueMasked||"-")}</span></div>`
-        ).join("");
-        return `<div class="card">
-          <div class="card-header">
-            <h4>${escapeHtml(c.caseNo)} · ${escapeHtml(c.reason||"")}</h4>
-            <span class="badge ${c.status||''}">${escapeHtml(c.statusLabel||c.status||"-")}</span>
+      const cases = Array.isArray(body.data?.items) ? body.data.items : [];
+      if (!cases.length) { content.innerHTML = `<div class="hr-v2-state"><strong>${L.empty}</strong><span>当前 Authority 没有返回更正 Case。</span></div>`; return; }
+      content.innerHTML = cases.map(item => {
+        const diffs = Array.isArray(item.items) ? item.items.map(diff => `
+          <div class="hr03-diff-row">
+            <span class="hr03-diff-field">${escapeHtml(diff.fieldCode)}</span>
+            <span class="hr03-diff-before">${escapeHtml(diff.oldValueMasked || "—")}</span>
+            <span class="hr03-diff-arrow">→</span>
+            <span class="hr03-diff-after">${escapeHtml(diff.newValueMasked || "—")}</span>
+          </div>`).join("") : "";
+        return `<article class="hr03-record-card">
+          <div class="hr03-record-card__head">
+            <div class="hr03-record-card__title">${escapeHtml(item.caseNo || "—")} · ${escapeHtml(item.reason || "")}</div>
+            <span class="hr03-record-badge ${escapeHtml(item.status || "")}">${escapeHtml(item.statusLabel || item.status || "—")}</span>
           </div>
-          <div class="card-meta">${L.status}：${escapeHtml(c.status||"-")} · ${L.impact}：${escapeHtml(c.impactLabel||c.impactLevel||"-")} · ${L.submittedBy}：${c.submittedBy||"-"} · ${c.appliedAt||"-"}</div>
-          ${c.applyError ? `<div class="card-meta" style="color:#dc2626">应用失败：${escapeHtml(c.applyError)}</div>` : ""}
-          ${c.returnReason ? `<div class="card-meta">退回原因：${escapeHtml(c.returnReason)}</div>` : ""}
-          ${c.rejectReason ? `<div class="card-meta">驳回原因：${escapeHtml(c.rejectReason)}</div>` : ""}
-          ${itemDiffs ? `<div style="margin-top:8px"><div style="font-size:12px;color:#6b7280;margin-bottom:4px">${L.before} → ${L.after}</div>${itemDiffs}</div>` : ""}
-          <div class="actions">${transitionButtons(c)}</div>
-        </div>`;
+          <div class="hr03-record-card__meta">状态：${escapeHtml(item.status || "—")} · 影响：${escapeHtml(item.impactLabel || item.impactLevel || "—")} · 提交人：${escapeHtml(item.submittedBy || "—")} · 应用时间：${escapeHtml(item.appliedAt || "—")}</div>
+          ${item.applyError ? `<div class="hr03-record-card__extra" style="color:var(--hr-danger)">应用失败：${escapeHtml(item.applyError)}</div>` : ""}
+          ${item.returnReason ? `<div class="hr03-record-card__extra">退回原因：${escapeHtml(item.returnReason)}</div>` : ""}
+          ${item.rejectReason ? `<div class="hr03-record-card__extra">驳回原因：${escapeHtml(item.rejectReason)}</div>` : ""}
+          ${diffs ? `<div class="hr03-diff-list">${diffs}</div>` : ""}
+          <div class="hr03-record-actions">${transitionButtons(item)}</div>
+        </article>`;
       }).join("");
-    } catch (e) {
-      document.getElementById("content").innerHTML = `<div class="card"><div class="empty">${L.loadFailed}</div></div>`;
+    } catch (_error) {
+      content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>更正接口请求失败。</span></div>`;
     }
   }
-  function transitionButtons(c) {
-    const id = c.id;
-    const s = c.status;
-    if (s === 'DRAFT') return `<button class="primary" onclick="action('${id}','submit')">{{ t_submit|escapejs }}</button><button class="danger" onclick="action('${id}','cancel')">{{ t_cancel|escapejs }}</button>`;
-    if (s === 'SUBMITTED') return `<button class="primary" onclick="action('${id}','review')">{{ t_review|escapejs }}</button><button onclick="action('${id}','return')">{{ t_return|escapejs }}</button>`;
-    if (s === 'UNDER_REVIEW' || s === 'RESUBMITTED') return `<button class="primary" onclick="action('${id}','approve')">{{ t_approve|escapejs }}</button><button class="danger" onclick="action('${id}','reject')">{{ t_reject|escapejs }}</button><button onclick="action('${id}','return')">{{ t_return|escapejs }}</button>`;
-    if (s === 'RETURNED') return `<button class="primary" onclick="action('${id}','resubmit')">{{ t_resubmit|escapejs }}</button><button class="danger" onclick="action('${id}','cancel')">{{ t_cancel|escapejs }}</button>`;
-    if (s === 'APPROVED') return `<button class="primary" onclick="action('${id}','apply')">{{ t_apply|escapejs }}</button>`;
-    return ""; // REJECTED/APPLIED/FAILED/CANCELLED 不可再操作
-  }
-  async function action(caseId, act) {
-    const reason = (act === 'return' || act === 'reject') ? prompt("请填写原因") : "";
+
+  async function runAction(caseId, action) {
+    const needsReason = action === "return" || action === "reject";
+    const reason = needsReason ? prompt("请填写原因") : "";
+    if (needsReason && !reason) return;
     try {
-      const resp = await fetch(`/api/hr/v1/corrections/${caseId}/${act}`, {
-        method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"}, body:JSON.stringify({reason})
+      const resp = await fetch(`/api/hr/v1/corrections/${encodeURIComponent(caseId)}/${action}`, {
+        method:"POST",
+        credentials:"same-origin",
+        headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest","X-CSRFToken":csrfToken()},
+        body:JSON.stringify({reason})
       });
-      if (!resp.ok) { alert(`${L.actionFailed}：`+(await resp.json()).error?.code); return; }
-      load(); // 刷新列表
-    } catch (e) { alert(L.actionFailed); }
+      if (!resp.ok) { alert(`${L.actionFailed}：` + ((await resp.json()).error?.code || resp.status)); return; }
+      await load();
+    } catch (_error) {
+      alert(L.actionFailed);
+    }
   }
-  function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  document.getElementById("content").addEventListener("click", event => {
+    const button = event.target.closest("button[data-action][data-case-id]");
+    if (!button) return;
+    runAction(button.dataset.caseId, button.dataset.action);
+  });
   load();
+})();
 </script>
-</body>
-</html>
+{% endblock scripts %}
