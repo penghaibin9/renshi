@@ -43,6 +43,13 @@
     }
 </script>
 <script src="{% static 'horilla_theme/assets/js/footerScripts.js' %}"></script>
+<script>
+    // The shared footer runs after the page content, so it can mark HR V2 pages
+    // without relying on relational CSS selectors or route-name heuristics.
+    if (document.querySelector('.hr-v2-page')) {
+      document.body.classList.add('hr-v2-shell');
+    }
+</script>
 
 <!-- Product tour engine (horilla_tour) -->
 {% if request.user.is_authenticated %}
