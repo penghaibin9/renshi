@@ -160,6 +160,13 @@ class Hr03V2WorkspaceContractTests(SimpleTestCase):
             with self.subTest(child=child):
                 self.assertIn(f'("{child}", "{child}")', browser)
         self.assertIn("staff-child-workspace-click", browser)
+        self.assertIn("profile-real-runtime-click.png", browser)
+
+    def test_profile_outer_shell_is_flat_not_card_inside_card(self):
+        css = self._source("static/hr/css/hr03-profile.css")
+        self.assertIn(".hr03-page > section.hr-v2-panel", css)
+        self.assertIn("box-shadow: none", css)
+        self.assertIn("background: transparent", css)
 
     def test_hr03_css_stays_on_flat_v2_foundation(self):
         css = "\n".join(self._source(path).lower() for path in self.CSS_PATHS)
