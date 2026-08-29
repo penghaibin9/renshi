@@ -1,87 +1,14 @@
 {% extends "index.html" %}
-{% load i18n %}
-{% block title %}{% trans "试用与转正" %} — {{ probation.case_no|default:_("未编号") }}{% endblock %}
+{% load static i18n %}
+{% block title %}{% trans "试用详情" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">{% endblock styles %}
 {% block content %}
-<div class="hr-page" id="probationPage" data-probation-id="{{ probation.id }}">
-  <div class="hr-page-header">
-    <h1>{% trans "试用与转正" %}</h1>
-    <div class="hr-probation-stats">
-      <span class="hr-stat">{% trans "试用中" %}：{{ stats.in_progress|default:0 }}</span>
-      <span class="hr-stat hr-stat--warning">{% trans "30 天内到期" %}：{{ stats.due_30|default:0 }}</span>
-      <span class="hr-stat hr-stat--info">{% trans "待评价" %}：{{ stats.review_due|default:0 }}</span>
-      <span class="hr-stat hr-stat--warning">{% trans "延期" %}：{{ stats.extended|default:0 }}</span>
-      <span class="hr-stat hr-stat--danger">{% trans "异常" %}：{{ stats.failed|default:0 }}</span>
-    </div>
-  </div>
-  <div class="hr-grid hr-grid--2col">
-    <div class="hr-card">
-      <h3>{% trans "基本事实" %}</h3>
-      <dl class="hr-dl">
-        <dt>{% trans "入职单" %}</dt><dd>{{ probation.case_no|default:"—" }}</dd>
-        <dt>{% trans "开始日期" %}</dt><dd>{{ probation.start_date|date:"Y-m-d" }}</dd>
-        <dt>{% trans "计划转正日" %}</dt><dd>{{ probation.planned_end_date|date:"Y-m-d" }}</dd>
-        <dt>{% trans "当前状态" %}</dt><dd><span class="hr-badge hr-badge--{{ probation.status_class }}">{% firstof probation.status_label probation.status "—" %}</span></dd>
-        <dt>{% trans "试用结果" %}</dt><dd>{% firstof probation.result_label probation.result "—" %}</dd>
-        <dt>{% trans "延长次数" %}</dt><dd>{{ probation.extension_count|default:0 }}</dd>
-      </dl>
-    </div>
-    <div class="hr-card">
-      {% include "hr/onboarding/components/probation_timeline.html" %}
-    </div>
-  </div>
-  <div class="hr-tabs">
-    <nav class="hr-tabs__nav" role="tablist">
-      <button class="hr-tabs__tab active" data-panel="goals" role="tab" aria-selected="true">{% trans "试用目标" %}</button>
-      <button class="hr-tabs__tab" data-panel="self" role="tab">{% trans "员工自评" %}</button>
-      <button class="hr-tabs__tab" data-panel="college" role="tab">{% trans "学院评价" %}</button>
-      <button class="hr-tabs__tab" data-panel="hr-review" role="tab">{% trans "审核" %}</button>
-      <button class="hr-tabs__tab" data-panel="extensions" role="tab">{% trans "延长记录" %}</button>
-    </nav>
-    <div class="hr-tabs__panel active" id="panel-goals" role="tabpanel">
-      <ul class="hr-goal-list">
-        {% for goal in goals %}
-        <li class="hr-goal-list__item">
-          <strong>{{ goal.title }}</strong>
-          <span class="hr-badge">{{ goal.category }}</span>
-          <p>{{ goal.description }}</p>
-        </li>
-        {% empty %}
-        <li class="hr-empty">{% trans "暂无试用目标" %}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    <div class="hr-tabs__panel" id="panel-self" role="tabpanel" hidden>
-      {% for review in reviews_by_type.SELF %}
-      <div class="hr-card"><p>{{ review.content }}</p><small>{{ review.submitted_at|date:"Y-m-d H:i" }}</small></div>
-      {% empty %}
-      <div class="hr-card"><textarea class="oh-input w-100" rows="4" placeholder="{% trans '请输入自评内容' %}" data-review-type="SELF"></textarea>
-      <button class="oh-btn oh-btn--primary" data-action="submit-review" data-review-type="SELF">{% trans "提交自评" %}</button></div>
-      {% endfor %}
-    </div>
-    <div class="hr-tabs__panel" id="panel-college" role="tabpanel" hidden>
-      {% for review in reviews_by_type.COLLEGE %}
-      <div class="hr-card"><p>{{ review.content }}</p><small>{{ review.submitted_at|date:"Y-m-d H:i" }}</small></div>
-      {% endfor %}
-    </div>
-    <div class="hr-tabs__panel" id="panel-hr-review" role="tabpanel" hidden>
-      {% for review in reviews_by_type.HR %}
-      <div class="hr-card"><p>{{ review.content }}</p><small>{{ review.submitted_at|date:"Y-m-d H:i" }}</small></div>
-      {% endfor %}
-    </div>
-    <div class="hr-tabs__panel" id="panel-extensions" role="tabpanel" hidden>
-      <ol class="hr-timeline">
-        {% for ext in extensions %}
-        <li class="hr-timeline__item">
-          <span class="hr-timeline__dot" aria-hidden="true"></span>
-          <div><strong>{{ ext.old_end_date|date:"Y-m-d" }} → {{ ext.new_end_date|date:"Y-m-d" }}</strong>
-          <p>{{ ext.reason }}</p></div>
-        </li>
-        {% empty %}
-        <li class="hr-empty">{% trans "无延长记录" %}</li>
-        {% endfor %}
-      </ol>
-    </div>
-  </div>
-  {% include "hr/onboarding/components/probation_decision_bar.html" %}
+<div class="hr-v2-page hr05-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probation-detail" data-probation-id="{{ probation.id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>试用详情</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">当前 canonical API 提供试用记录列表与写入命令，但尚无单条详情 GET 契约；本页只从 tenant-scope 列表中定位当前记录，不编造评价、目标或决策明细。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>Probation</strong> {{ probation.id }}</span><span class="hr-v2-context__item"><strong>事实</strong> canonical list API</span></div></header>
+  {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}
+  <section class="hr05-panel"><div id="hr05-probation-detail" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>从当前学校可见试用列表定位该记录。</span></div></div><div id="hr05-probation-links" class="hr05-actions"></div></section>
+  <div class="hr05-truth-note"><strong>能力边界</strong><span>评价提交、转正确认、延期与不通过 API 已存在，但在缺少可核验详情读模型前，本页不展示伪造的评价表单或统计数字。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
+{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probation-detail.js' %}"></script>{% endblock scripts %}
