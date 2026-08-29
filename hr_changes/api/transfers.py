@@ -47,6 +47,14 @@ def _body(request):
         raise ChangeServiceError("CHANGE_INVALID_PAYLOAD", "请求体不是合法 JSON")
 
 
+@require_http_methods(["GET", "POST"])
+def transfer_collection(request):
+    """同一路径按 method 分派，确保已实现的 create writer 可从正式路由到达。"""
+    if request.method == "POST":
+        return transfer_create(request)
+    return transfer_list(request)
+
+
 @require_GET
 @require_hr_change_permission("hr.change.transfer.create")
 def transfer_list(request):

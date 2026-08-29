@@ -56,6 +56,14 @@ IDENTITY_ACTIONS = (
 )
 
 
+@require_http_methods(["GET", "POST"])
+def identity_change_collection(request):
+    """同一路径按 method 分派，避免 create writer 成为不可达死代码。"""
+    if request.method == "POST":
+        return identity_change_create(request)
+    return identity_change_list(request)
+
+
 @require_GET
 @require_hr_change_permission("hr.change.identity_change.create")
 def identity_change_list(request):

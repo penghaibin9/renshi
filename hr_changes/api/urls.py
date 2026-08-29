@@ -78,7 +78,7 @@ urlpatterns = [
     # ---- S4 校内调动 ----
     path(
         "api/hr/v1/changes/transfers",
-        transfers_api.transfer_list,
+        transfers_api.transfer_collection,
         name="hr06-api-transfers-list",
     ),
     path(
@@ -99,7 +99,7 @@ urlpatterns = [
     # ---- S5 岗位与身份变更 ----
     path(
         "api/hr/v1/changes/identity-changes",
-        identity_api.identity_change_list,
+        identity_api.identity_change_collection,
         name="hr06-api-identity-list",
     ),
     path(
