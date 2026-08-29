@@ -8,6 +8,7 @@ from hr_contracts.events import (
     EVENT_AGREEMENT_CREATED,
     EVENT_AGREEMENT_EFFECTIVE,
     EVENT_AGREEMENT_SIGNED,
+    EVENT_AGREEMENT_TERMINATED,
 )
 from hr_contracts.permissions import (
     PERM_AGREEMENT_ACTIVATE,
@@ -33,6 +34,7 @@ def test_hr07_canonical_routes_are_registered_without_recovery_only_modules():
             "<uuid:version_id>/activate"
         ),
         "api/v1/hr/contracts/cases",
+        "api/v1/hr/contracts/cases/<uuid:case_id>",
         "api/v1/hr/contracts/cases/<uuid:case_id>/submit",
         "api/v1/hr/contracts/cases/<uuid:case_id>/approve",
         "api/v1/hr/contracts/cases/<uuid:case_id>/versions/sign",
@@ -67,6 +69,7 @@ def test_hr07_events_use_global_registry():
         EVENT_AGREEMENT_CREATED,
         EVENT_AGREEMENT_SIGNED,
         EVENT_AGREEMENT_EFFECTIVE,
+        EVENT_AGREEMENT_TERMINATED,
     ):
         definition = global_event_registry.get(event_name, 1)
         assert definition.module_code == "HR07"

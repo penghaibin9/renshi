@@ -16,6 +16,12 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_contracts.events import (
+    EVENT_AGREEMENT_CREATED,
+    EVENT_AGREEMENT_EFFECTIVE,
+    EVENT_AGREEMENT_SIGNED,
+)
 from hr_contracts.models import HrContractAgreement, HrContractVersion
 
 
@@ -111,7 +117,7 @@ class AgreementService:
                 )
             return existing
 
-        return HrContractAgreement.objects.create(
+        agreement = HrContractAgreement.objects.create(
             tenant_id=self.tenant_id,
             agreement_no=agreement_no,
             staff_id=staff_id,
@@ -124,6 +130,19 @@ class AgreementService:
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_CREATED,
+            payload={
+                "agreementId": str(agreement.id),
+                "agreementNo": agreement.agreement_no,
+                "staffId": str(agreement.staff_id),
+                "employmentRelationshipId": str(
+                    agreement.employment_relationship_id
+                ),
+            },
+        )
+        return agreement
 
     @staticmethod
     def _content_hash(content_snapshot: dict) -> str:
@@ -208,6 +227,18 @@ class AgreementService:
         agreement.save(
             update_fields=["current_version_no", "status", "updated_by", "updated_at"]
         )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_SIGNED,
+            payload={
+                "agreementId": str(agreement.id),
+                "versionId": str(version.id),
+                "versionNo": version.version_no,
+                "staffId": str(agreement.staff_id),
+                "effectiveDate": version.effective_from.isoformat(),
+                "contentHash": version.content_hash,
+            },
+        )
         return version
 
     @transaction.atomic
@@ -275,4 +306,15 @@ class AgreementService:
         agreement.status = HrContractAgreement.Status.ACTIVE
         agreement.updated_by = self.actor_user_id
         agreement.save(update_fields=["status", "updated_by", "updated_at"])
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_EFFECTIVE,
+            payload={
+                "agreementId": str(agreement.id),
+                "versionId": str(version.id),
+                "versionNo": version.version_no,
+                "staffId": str(agreement.staff_id),
+                "effectiveDate": version.effective_from.isoformat(),
+            },
+        )
         return version

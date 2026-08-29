@@ -29,8 +29,13 @@ urlpatterns = [
     ),
     path(
         "api/v1/hr/contracts/cases",
-        lifecycle.case_create,
-        name="hr07-case-create",
+        lifecycle.case_collection,
+        name="hr07-case-collection",
+    ),
+    path(
+        "api/v1/hr/contracts/cases/<uuid:case_id>",
+        lifecycle.case_detail,
+        name="hr07-case-detail",
     ),
     path(
         "api/v1/hr/contracts/cases/<uuid:case_id>/submit",

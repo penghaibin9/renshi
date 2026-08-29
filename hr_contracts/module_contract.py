@@ -25,11 +25,14 @@ RECOVERED_CORE_PARTS = (
     "Authority models",
     "0001 migration 历史",
     "AgreementService 首签/生效写边界",
+    "续签/变更/解除正式版本追加写链",
     "/api/v1/hr/contracts/agreements Canonical API",
+    "/api/v1/hr/contracts/cases Canonical API",
     "Canonical Permission/Event definitions",
+    "共享 durable event/outbox 投递",
+    "Authority UI 正式入口",
 )
 REMAINING_CORE_PARTS = (
-    "续签/变更/解除正式版本追加写链",
-    "durable event/outbox 投递",
-    "Authority UI 正式入口",
+    "模板与规则 Authority",
+    "到期预警与风险处置 Authority",
 )

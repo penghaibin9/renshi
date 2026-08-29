@@ -3,17 +3,17 @@
 <div class="hr07-lifecycle-divider"></div>
 <div class="hr07-card__head hr07-card__head--compact">
   <div>
-    <h3>继续办理已有 Case</h3>
-    <p>提交、审批、签署、激活/解除分别校验自己的 canonical permission；没有权限时后端直接拒绝，不在前端放宽。</p>
+    <h3>业务单办理</h3>
+    <p>从当前学校已有 Case 中选择，或在上方新建。页面只开放当前状态允许的下一步；每一步仍由后端独立校验 canonical permission。</p>
   </div>
 </div>
 <form class="hr07-sign-form" data-lifecycle-action-form>
-  <label><span>Case UUID</span><input name="caseId" required placeholder="创建 Case 后自动回填，也可粘贴已有 Case UUID"></label>
-  <label><span>Successor Version UUID</span><input name="versionId" placeholder="签署新版本后自动回填；激活时必填"></label>
+  <label class="is-wide"><span>选择业务单</span><select name="caseId" data-case-select required><option value="">正在读取 Case Authority…</option></select></label>
+  <input name="versionId" type="hidden">
   <label><span>执行日期</span><input name="asOf" type="date"><small>留空时由后端按当前学校日期判断。</small></label>
   <label><span>签署时间</span><input name="signedAt" type="datetime-local"><small>仅“签署新版本”使用。</small></label>
-  <label><span>签署文件引用</span><input name="signedDocumentRef" placeholder="private object/file reference"></label>
-  <label class="is-wide"><span>签署内容快照（JSON）</span><textarea name="contentSnapshot" placeholder='例如 {"clauses":["..."],"salary":"..."}'></textarea></label>
+  <label><span>签署文件凭证</span><input name="signedDocumentRef" placeholder="例如电子签回执号或受控文件编号"></label>
+  <label class="is-wide"><span>已签署内容摘要</span><textarea name="contentSnapshot" placeholder="记录已签署版本的条款摘要；正式文件由受控凭证关联。"></textarea></label>
   <div class="hr07-form-actions hr07-form-actions--wrap">
     <button class="hr07-btn" type="button" data-case-action="submit">提交 Case</button>
     <button class="hr07-btn" type="button" data-case-action="approve">审批通过</button>

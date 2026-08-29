@@ -14,6 +14,12 @@ from typing import Optional
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_contracts.events import (
+    EVENT_AGREEMENT_EFFECTIVE,
+    EVENT_AGREEMENT_SIGNED,
+    EVENT_AGREEMENT_TERMINATED,
+)
 from hr_contracts.models import HrContractAgreement, HrContractCase, HrContractVersion
 from hr_contracts.services.agreement_service import AgreementService, ContractServiceError
 
@@ -295,6 +301,20 @@ class ContractLifecycleService:
         case.status = HrContractCase.Status.EFFECT_PENDING
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_SIGNED,
+            payload={
+                "agreementId": str(agreement.id),
+                "versionId": str(version.id),
+                "versionNo": version.version_no,
+                "staffId": str(agreement.staff_id),
+                "effectiveDate": version.effective_from.isoformat(),
+                "contentHash": version.content_hash,
+                "sourceCaseId": str(case.id),
+                "sourceCaseType": case.case_type,
+            },
+        )
         return version
 
     @transaction.atomic
@@ -393,6 +413,19 @@ class ContractLifecycleService:
                 "updated_at",
             ]
         )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_EFFECTIVE,
+            payload={
+                "agreementId": str(agreement.id),
+                "versionId": str(version.id),
+                "versionNo": version.version_no,
+                "staffId": str(agreement.staff_id),
+                "effectiveDate": version.effective_from.isoformat(),
+                "sourceCaseId": str(case.id),
+                "sourceCaseType": case.case_type,
+            },
+        )
         return version
 
     @transaction.atomic
@@ -466,5 +499,17 @@ class ContractLifecycleService:
                 "updated_by",
                 "updated_at",
             ]
+        )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_TERMINATED,
+            payload={
+                "agreementId": str(agreement.id),
+                "versionId": str(current.id),
+                "versionNo": current.version_no,
+                "staffId": str(agreement.staff_id),
+                "effectiveDate": terminate_on.isoformat(),
+                "sourceCaseId": str(case.id),
+            },
         )
         return case

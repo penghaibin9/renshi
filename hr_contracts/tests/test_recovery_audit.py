@@ -19,9 +19,11 @@ class Hr07RecoveryAuditTests(SimpleTestCase):
         self.assertIn("models.py", snapshot["missing"])
         self.assertIn("migrations", snapshot["missing"])
 
-    def test_current_contract_remains_fail_closed(self):
+    def test_current_contract_is_registered_but_not_misreported_as_fully_ready(self):
         snapshot = assert_recovery_gate_consistent()
 
-        self.assertEqual(module_contract.RECOVERY_STATE, "INCOMPLETE")
-        self.assertFalse(module_contract.SAFE_TO_REGISTER)
+        self.assertEqual(
+            module_contract.RECOVERY_STATE, "CANONICAL_AGREEMENT_ACTIVE"
+        )
+        self.assertTrue(module_contract.SAFE_TO_REGISTER)
         self.assertFalse(snapshot["registrationAllowed"])

@@ -6,7 +6,7 @@ from datetime import datetime
 
 from django.utils.dateparse import parse_date, parse_datetime
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from hr_contracts.api.base import (
     api_error,
@@ -22,6 +22,7 @@ from hr_contracts.permissions import (
     PERM_CASE_SIGN,
     PERM_CASE_SUBMIT,
     PERM_CASE_TERMINATE,
+    PERM_AGREEMENT_VIEW,
     enforce_contract_permission,
 )
 from hr_contracts.services.agreement_service import ContractServiceError
@@ -50,7 +51,17 @@ def _datetime(value, name):
 
 
 def _case_data(item: HrContractCase):
-    return {
+    successor = (
+        HrContractVersion.objects.filter(
+            tenant_id=item.tenant_id,
+            agreement_id=item.agreement_id,
+            source_business_type=item.case_type,
+            source_business_id=str(item.id),
+        )
+        .order_by("-version_no")
+        .first()
+    )
+    data = {
         "id": str(item.id),
         "caseNo": item.case_no,
         "agreementId": str(item.agreement_id),
@@ -71,7 +82,12 @@ def _case_data(item: HrContractCase):
         "approvedAt": item.approved_at.isoformat() if item.approved_at else None,
         "effectReceipt": item.effect_receipt_json,
         "lastEffectError": item.last_effect_error,
+        "agreementNo": item.agreement.agreement_no,
+        "agreementTitle": item.agreement.agreement_title,
+        "updatedAt": item.updated_at.isoformat() if item.updated_at else None,
     }
+    data["successorVersion"] = _version_data(successor) if successor else None
+    return data
 
 
 def _version_data(item: HrContractVersion):
@@ -109,9 +125,34 @@ def _service(request):
 
 
 @csrf_exempt
-@require_POST
-def case_create(request):
-    enforce_contract_permission(request, PERM_CASE_CREATE)
+@require_http_methods(["GET", "POST"])
+def case_collection(request):
+    enforce_contract_permission(
+        request, PERM_AGREEMENT_VIEW if request.method == "GET" else PERM_CASE_CREATE
+    )
+    if request.method == "GET":
+        tenant_id = resolve_contract_tenant(request)
+        items = HrContractCase.objects.filter(tenant_id=tenant_id).select_related(
+            "agreement"
+        )
+        case_type = request.GET.get("case_type")
+        status = request.GET.get("status")
+        agreement_id = request.GET.get("agreement_id")
+        if case_type:
+            items = items.filter(case_type=case_type)
+        if status:
+            items = items.filter(status=status)
+        if agreement_id:
+            items = items.filter(agreement_id=agreement_id)
+        try:
+            limit = max(1, min(int(request.GET.get("limit", "100")), 500))
+        except (TypeError, ValueError):
+            return api_error(
+                request, "INVALID_REQUEST", "limit must be an integer", status=400
+            )
+        items = items.order_by("-updated_at", "-id")[:limit]
+        return api_success(request, [_case_data(item) for item in items])
+
     try:
         body = json_body(request)
         item = _service(request).create_case(
@@ -135,6 +176,22 @@ def case_create(request):
         return _service_error(request, exc)
     except (TypeError, ValueError) as exc:
         return api_error(request, "INVALID_REQUEST", str(exc), status=400)
+
+
+@require_GET
+def case_detail(request, case_id):
+    enforce_contract_permission(request, PERM_AGREEMENT_VIEW)
+    tenant_id = resolve_contract_tenant(request)
+    item = (
+        HrContractCase.objects.filter(id=case_id, tenant_id=tenant_id)
+        .select_related("agreement")
+        .first()
+    )
+    if item is None:
+        return api_error(
+            request, "CONTRACT_CASE_NOT_FOUND", "contract case not found", status=404
+        )
+    return api_success(request, _case_data(item))
 
 
 @csrf_exempt

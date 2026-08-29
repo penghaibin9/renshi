@@ -16,11 +16,11 @@
     <strong>{{ section_title }}</strong>
   </div>
 
-  <header class="hr07-hero">
-    <div>
-      <div class="hr07-eyebrow">HR07 · 合同管理</div>
-      <h1>{{ section_title }}</h1>
-      <p>{{ section_description }}</p>
+  <header class="hr-v2-pagehead" aria-labelledby="hr07-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR07 · 合同管理</div>
+      <h1 class="hr-v2-title" id="hr07-title">{{ section_title }}</h1>
+      <p class="hr-v2-subtitle">{{ section_description }}</p>
     </div>
     <div class="hr07-truth-note">
       <strong>正式事实只认 Authority</strong>
@@ -37,11 +37,11 @@
   </nav>
 
   {% if section == 'ledger' or section == 'signing' %}
-  <section class="hr07-kpis" aria-label="合同概览">
-    <article><span>合同总数</span><strong id="hr07-kpi-total">—</strong><small>当前学校</small></article>
-    <article><span>有效合同</span><strong id="hr07-kpi-active">—</strong><small>Authority 状态</small></article>
-    <article><span>待签/待生效</span><strong id="hr07-kpi-pending">—</strong><small>需要继续办理</small></article>
-    <article><span>最近更新</span><strong id="hr07-kpi-updated">—</strong><small>合同主档更新时间</small></article>
+  <section class="hr-v2-kpis hr07-kpis" aria-label="合同概览">
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">已加载合同</div><div class="hr-v2-kpi__value" id="hr07-kpi-total">—</div><div class="hr-v2-kpi__note">当前学校 Authority</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">有效合同</div><div class="hr-v2-kpi__value" id="hr07-kpi-active">—</div><div class="hr-v2-kpi__note">主档状态为有效</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">待签 / 待生效</div><div class="hr-v2-kpi__value" id="hr07-kpi-pending">—</div><div class="hr-v2-kpi__note">需要继续办理</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">最近更新</div><div class="hr-v2-kpi__value hr07-kpi-date" id="hr07-kpi-updated">—</div><div class="hr-v2-kpi__note">主档更新时间</div></article>
   </section>
   {% endif %}
 
@@ -56,10 +56,12 @@
       <div class="hr07-form-grid">
         <label><span>合同编号</span><input name="agreementNo" required placeholder="例如 HT-2026-001"></label>
         <label><span>合同名称</span><input name="title" required placeholder="例如 专任教师聘用合同"></label>
-        <label><span>合同类型</span><input name="agreementType" required placeholder="例如 FIXED_TERM"></label>
-        <label><span>教职工 UUID</span><input name="staffId" required></label>
-        <label><span>聘用关系 UUID</span><input name="employmentRelationshipId" required></label>
-        <label><span>Legacy Contract ID</span><input name="legacyContractId" placeholder="可选，仅迁移映射"></label>
+        <label><span>合同类型</span><select name="agreementType" required><option value="">请选择合同类型</option><option value="PUBLIC_INSTITUTION_EMPLOYMENT">事业单位聘用合同</option><option value="LABOR_CONTRACT">劳动合同</option><option value="FIXED_TERM">固定期限聘用合同</option><option value="OPEN_ENDED">无固定期限合同</option><option value="LABOR_DISPATCH">劳务协议</option><option value="EXTERNAL_TEACHER">外聘教师协议</option><option value="TALENT_INTRODUCTION">人才引进协议</option><option value="SUPPLEMENTARY">补充协议</option><option value="CONFIDENTIALITY">保密协议</option><option value="INTELLECTUAL_PROPERTY">知识产权协议</option><option value="PROBATION">试用期协议</option><option value="OTHER">其他</option></select></label>
+        <label class="is-wide"><span>选择教职工</span><div class="hr07-picker-query"><input id="hr07-staff-keyword" type="search" autocomplete="off" placeholder="输入姓名或工号"><button class="hr07-btn" id="hr07-staff-search" type="button">查询 HR03 名册</button></div></label>
+        <div class="hr07-picker-results is-wide" id="hr07-staff-results" hidden></div>
+        <div class="hr07-selected is-wide" id="hr07-selected-staff" hidden></div>
+        <input name="staffId" type="hidden">
+        <label><span>当前有效聘用关系</span><select name="employmentRelationshipId" required disabled><option value="">请先选择教职工</option></select></label>
       </div>
       <div class="hr07-form-actions">
         <button type="submit" class="hr07-btn hr07-btn--primary">创建主档</button>
@@ -85,8 +87,8 @@
 
     <div class="hr07-table-wrap">
       <table class="hr07-table">
-        <thead><tr><th>合同编号</th><th>合同名称</th><th>类型</th><th>状态</th><th>当前版本</th><th>最近更新</th><th>操作</th></tr></thead>
-        <tbody id="hr07-ledger-body"><tr><td colspan="7" class="hr07-loading">正在读取合同 Authority…</td></tr></tbody>
+        <thead><tr><th>合同编号</th><th>合同名称</th><th>教职工</th><th>类型</th><th>状态</th><th>当前版本</th><th>最近更新</th><th>操作</th></tr></thead>
+        <tbody id="hr07-ledger-body"><tr><td colspan="8" class="hr07-loading">正在读取合同 Authority…</td></tr></tbody>
       </table>
     </div>
   </section>
@@ -98,9 +100,9 @@
 
   {% elif section == 'signing' %}
   <section class="hr07-card">
-    <div class="hr07-card__head"><div><h2>首版签署与生效</h2><p>输入合同 UUID 后读取正式版本，再通过 Agreement Authority 完成首版签署与生效。</p></div></div>
+    <div class="hr07-card__head"><div><h2>首版签署与生效</h2><p>从合同台账选择主档，再通过 Agreement Authority 冻结首个签署版本并按生效日激活。</p></div></div>
     <form id="hr07-sign-query" class="hr07-query-row">
-      <label><span>合同 UUID</span><input id="hr07-sign-agreement-id" required></label>
+      <label><span>待签 / 待生效合同</span><select id="hr07-sign-agreement-id" required><option value="">正在读取合同 Authority…</option></select></label>
       <button class="hr07-btn hr07-btn--primary" type="submit">读取合同</button>
     </form>
     <div id="hr07-sign-workspace" class="hr07-inline-state">尚未选择合同。</div>
@@ -110,11 +112,11 @@
     <div class="hr07-card__head"><div><h2>续签业务单</h2><p>续签先形成独立 Case，经提交、审批后冻结 successor version，再到生效日切换正式版本；不覆盖原合同版本。</p></div></div>
     <form class="hr07-sign-form" data-lifecycle-create-form>
       <input type="hidden" name="caseType" value="RENEW">
-      <label><span>合同 UUID</span><input name="agreementId" required></label>
+      <label><span>选择有效合同</span><select name="agreementId" data-agreement-select data-statuses="ACTIVE,EXPIRING,RENEWAL_IN_PROGRESS" required><option value="">正在读取合同 Authority…</option></select></label>
       <label><span>业务单编号</span><input name="caseNo" required placeholder="例如 RENEW-2026-001"></label>
       <label><span>拟生效日期</span><input name="requestedEffectiveFrom" type="date" required></label>
       <label><span>拟到期日期</span><input name="requestedEffectiveTo" type="date"></label>
-      <label><span>原因代码</span><input name="reasonCode" placeholder="例如 NORMAL_RENEWAL"></label>
+      <label><span>续签原因</span><select name="reasonCode"><option value="NORMAL_RENEWAL">正常续签</option><option value="TERM_ADJUSTMENT">聘期调整</option><option value="OTHER">其他</option></select></label>
       <label class="is-wide"><span>续签说明</span><textarea name="reasonText" placeholder="记录续签依据和说明"></textarea></label>
       <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">发起续签 Case</button><span class="hr07-form-message" data-lifecycle-create-message></span></div>
     </form>
@@ -126,26 +128,38 @@
     <div class="hr07-card__head"><div><h2>合同变更与解除</h2><p>变更与解除均走独立 Case；变更生成追加版本，解除在批准且到达生效日后终止当前正式版本。</p></div></div>
     <form class="hr07-sign-form" data-lifecycle-create-form>
       <label><span>业务类型</span><select name="caseType" required><option value="CHANGE">合同变更</option><option value="TERMINATE">合同解除/终止</option></select></label>
-      <label><span>合同 UUID</span><input name="agreementId" required></label>
+      <label><span>选择有效合同</span><select name="agreementId" data-agreement-select data-statuses="ACTIVE,EXPIRING,RENEWAL_IN_PROGRESS" required><option value="">正在读取合同 Authority…</option></select></label>
       <label><span>业务单编号</span><input name="caseNo" required placeholder="例如 CHANGE-2026-001"></label>
       <label><span>拟生效日期</span><input name="requestedEffectiveFrom" type="date" required></label>
       <label><span>拟到期日期</span><input name="requestedEffectiveTo" type="date"></label>
-      <label><span>原因代码</span><input name="reasonCode" placeholder="例如 JOB_CHANGE / AGREED_TERMINATION"></label>
+      <label><span>办理原因</span><select name="reasonCode"><option value="JOB_CHANGE">岗位或职责变化</option><option value="TERM_ADJUSTMENT">期限调整</option><option value="AGREED_TERMINATION">协商解除</option><option value="STATUTORY_TERMINATION">法定终止</option><option value="OTHER">其他</option></select></label>
       <label class="is-wide"><span>业务说明</span><textarea name="reasonText" placeholder="记录变更或解除依据"></textarea></label>
       <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">发起业务 Case</button><span class="hr07-form-message" data-lifecycle-create-message></span></div>
     </form>
     {% include "hr_contracts/lifecycle_actions.html" %}
   </section>
 
-  {% else %}
+  {% elif section == 'rules' %}
   <section class="hr07-card hr07-capability">
-    <div class="hr07-capability__icon" aria-hidden="true">{{ section|slice:":1"|upper }}</div>
+    <div class="hr07-capability__icon" aria-hidden="true">R</div>
     <div>
       <h2>{{ section_title }}</h2>
       <p>{{ section_description }}</p>
       <div class="hr07-capability__notice">
-        <strong>当前工作区没有开放新的正式写动作</strong>
-        <span>尚未开放的模板规则或风险办理动作不会回退旧 writer，也不会在页面端伪造正式事实；已有读取能力仍按当前 Authority 合同展示。</span>
+        <strong>模板与规则 Authority 尚未恢复</strong>
+        <span>当前 canonical 路由只注册合同主档、正式版本和 lifecycle Case；旧模板代码引用的模型与权限契约并不存在，因此本页不展示假模板，也不恢复旧 writer。</span>
+      </div>
+    </div>
+  </section>
+  {% else %}
+  <section class="hr07-card hr07-capability">
+    <div class="hr07-capability__icon" aria-hidden="true">!</div>
+    <div>
+      <h2>{{ section_title }}</h2>
+      <p>{{ section_description }}</p>
+      <div class="hr07-capability__notice">
+        <strong>到期预警 Authority 尚未恢复</strong>
+        <span>现有 canonical API 没有风险案件、预警策略或处置回执读取端点。本页不会用浏览器日期推算风险或伪造“待处理”数量；合同有效期仍可在合同台账详情中核对。</span>
       </div>
     </div>
   </section>

@@ -25,8 +25,9 @@ class ContractLifecycleServiceTests(TestCase):
         )
 
     @patch("hr_contracts.services.lifecycle_service.HrContractVersion.objects")
+    @patch("hr_contracts.services.lifecycle_service.emit_registered_event")
     def test_renewal_signs_append_only_successor_without_overwriting_previous(
-        self, version_objects
+        self, emit_event, version_objects
     ):
         case = MagicMock()
         case.id = "case-1"
@@ -107,7 +108,8 @@ class ContractLifecycleServiceTests(TestCase):
         self.assertEqual(cm.exception.code, "CONTRACT_NOT_EFFECTIVE_YET")
         version.save.assert_not_called()
 
-    def test_activation_supersedes_previous_then_publishes_successor(self):
+    @patch("hr_contracts.services.lifecycle_service.emit_registered_event")
+    def test_activation_supersedes_previous_then_publishes_successor(self, emit_event):
         case = MagicMock()
         case.id = "case-1"
         case.status = HrContractCase.Status.EFFECT_PENDING
@@ -154,7 +156,8 @@ class ContractLifecycleServiceTests(TestCase):
         self.assertEqual(agreement.status, HrContractAgreement.Status.ACTIVE)
         self.assertEqual(case.status, HrContractCase.Status.EFFECTIVE)
 
-    def test_termination_requires_approved_case_and_effective_date(self):
+    @patch("hr_contracts.services.lifecycle_service.emit_registered_event")
+    def test_termination_requires_approved_case_and_effective_date(self, emit_event):
         case = MagicMock()
         case.case_type = HrContractCase.CaseType.TERMINATE
         case.status = HrContractCase.Status.APPROVED

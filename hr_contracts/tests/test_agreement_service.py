@@ -40,8 +40,9 @@ class AgreementServiceTests(TestCase):
 
     @patch("hr_contracts.services.agreement_service.HrContractVersion.objects")
     @patch("hr_contracts.services.agreement_service.HrContractAgreement.objects")
+    @patch("hr_contracts.services.agreement_service.emit_registered_event")
     def test_initial_sign_freezes_hash_and_cannot_overwrite_existing_version(
-        self, agreement_objects, version_objects
+        self, emit_event, agreement_objects, version_objects
     ):
         agreement = MagicMock()
         agreement.id = "agreement-1"
@@ -112,8 +113,9 @@ class AgreementServiceTests(TestCase):
 
     @patch("hr_contracts.services.agreement_service.HrContractVersion.objects")
     @patch("hr_contracts.services.agreement_service.HrContractAgreement.objects")
+    @patch("hr_contracts.services.agreement_service.emit_registered_event")
     def test_activation_is_locked_tenant_scoped_and_idempotent(
-        self, agreement_objects, version_objects
+        self, emit_event, agreement_objects, version_objects
     ):
         agreement = MagicMock()
         agreement.id = "agreement-1"
