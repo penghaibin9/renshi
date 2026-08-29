@@ -215,47 +215,35 @@ class Hr09VisualAuditTests(StaticLiveServerTestCase):
                 page = context.new_page()
                 self.monitor(page, page_errors, console_errors, api_failures, static_failures)
 
+                def click_write_and_wait(button_name, response_suffix, expected_status):
+                    """Wait for HR09's delayed reload as well as the write response."""
+                    with page.expect_navigation(wait_until="networkidle") as navigation:
+                        with page.expect_response(
+                            lambda response: response.url.endswith(response_suffix)
+                        ) as api_response:
+                            page.get_by_role("button", name=button_name).click()
+                    self.assertEqual(api_response.value.status, expected_status)
+                    self.assertEqual(navigation.value.status, 200)
+
                 page.goto(self.live_server_url + "/hr/qualifications/credentials/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/submit-verification")) as submitted:
-                    page.get_by_role("button", name="提交核验").click()
-                self.assertEqual(submitted.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                click_write_and_wait("提交核验", "/submit-verification", 200)
                 page.get_by_role("button", name="登记核验").click()
-                with page.expect_response(lambda response: response.url.endswith("/verify")) as verified:
-                    page.get_by_role("button", name="保存核验").click()
-                self.assertEqual(verified.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                click_write_and_wait("保存核验", "/verify", 200)
 
                 page.goto(self.live_server_url + "/hr/double-teacher/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/advance")) as advanced:
-                    page.get_by_role("button", name="发布批次").click()
-                self.assertEqual(advanced.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                click_write_and_wait("发布批次", "/advance", 200)
 
                 page.goto(self.live_server_url + "/hr/double-teacher/recognitions/", wait_until="networkidle")
                 page.get_by_role("button", name="发起复核").click()
-                with page.expect_response(lambda response: response.url.endswith("/recheck")) as opened:
-                    page.get_by_role("button", name="创建复核案例").click()
-                self.assertEqual(opened.value.status, 201)
-                page.wait_for_load_state("networkidle")
+                click_write_and_wait("创建复核案例", "/recheck", 201)
                 page.get_by_role("button", name="登记复核结论").click()
-                with page.expect_response(lambda response: response.url.endswith("/decide")) as decided:
-                    page.get_by_role("button", name="保存复核结论").click()
-                self.assertEqual(decided.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                click_write_and_wait("保存复核结论", "/decide", 200)
 
                 page.goto(self.live_server_url + "/hr/qualifications/risks/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/acknowledge")) as acknowledged:
-                    page.get_by_role("button", name="确认接单").click()
-                self.assertEqual(acknowledged.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                click_write_and_wait("确认接单", "/acknowledge", 200)
                 page.get_by_role("button", name="解决风险").click()
                 page.locator("[data-resolution]").fill("已完成证书原件核验并留存核验记录。")
-                with page.expect_response(lambda response: response.url.endswith("/resolve")) as resolved:
-                    page.get_by_role("button", name="确认已解决").click()
-                self.assertEqual(resolved.value.status, 200)
-                page.wait_for_load_state("networkidle")
-                page.wait_for_timeout(800)
+                click_write_and_wait("确认已解决", "/resolve", 200)
                 page.evaluate("window.scrollTo(0, 0)")
                 page.screenshot(path=str(self.out_dir / "desktop-real-actions-complete.png"), full_page=True)
                 context.close()
