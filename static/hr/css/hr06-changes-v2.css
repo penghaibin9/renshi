@@ -65,5 +65,15 @@
 .hr06-error-panel { max-width: 720px; border-top: 1px solid var(--hr-border, #dfe3ea); padding: 24px 0; }
 .hr06-error-panel h2 { margin: 14px 0 8px; font-size: 18px; }
 .hr06-error-panel p { color: var(--hr-text-secondary, #6b7280); line-height: 1.7; }
-@media (max-width: 960px) { .hr06-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hr06-staff-option { grid-template-columns: 1fr; gap: 4px; } .hr06-detail-grid { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .hr06-summary, .hr06-form-grid, .hr06-steps { grid-template-columns: 1fr; } .hr06-toolbar, .hr06-section-head, .hr06-submit-panel, .hr06-search-row { flex-direction: column; align-items: stretch; } .hr06-truth-note, .hr06-kv, .hr06-timeline li { flex-direction: column; } .hr06-kv strong { text-align: left; } }
+.hr06-capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.hr06-capability { border-top: 3px solid var(--hr-border, #dfe3ea); padding: 12px 2px 0; }
+.hr06-capability[data-state="ready"] { border-color: var(--hr-success, #067647); }
+.hr06-capability[data-state="blocked"] { border-color: var(--hr-danger, #b42318); }
+.hr06-capability[data-state="pending"] { border-color: var(--hr-warning, #b54708); }
+.hr06-capability strong, .hr06-capability span, .hr06-capability small { display: block; }
+.hr06-capability span { margin-top: 5px; font-size: 13px; font-weight: 700; }
+.hr06-capability small { margin-top: 5px; color: var(--hr-text-secondary, #6b7280); line-height: 1.6; }
+.hr06-identity-builder { margin: 0; }
+.hr06-identity-target { align-items: start; }
+@media (max-width: 960px) { .hr06-summary, .hr06-capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hr06-staff-option { grid-template-columns: 1fr; gap: 4px; } .hr06-detail-grid { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .hr06-summary, .hr06-form-grid, .hr06-steps, .hr06-capability-grid { grid-template-columns: 1fr; } .hr06-toolbar, .hr06-section-head, .hr06-submit-panel, .hr06-search-row { flex-direction: column; align-items: stretch; } .hr06-truth-note, .hr06-kv, .hr06-timeline li { flex-direction: column; } .hr06-kv strong { text-align: left; } }

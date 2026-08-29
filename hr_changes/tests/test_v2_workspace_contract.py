@@ -25,8 +25,10 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         }
         self.center = self.templates["change_center.html"]
         self.new = self.templates["change_new.html"]
+        self.identity = self.templates["job_identity.html"]
         self.nav = (template_root / "components/v2_nav.html").read_text(encoding="utf-8")
         self.script = (root / "static/hr/js/pages/hr06-change-new.js").read_text(encoding="utf-8")
+        self.identity_script = (root / "static/hr/js/pages/hr06-identity.js").read_text(encoding="utf-8")
         self.css = (root / "static/hr/css/hr06-changes-v2.css").read_text(encoding="utf-8")
 
     def test_all_hr06_surfaces_use_shared_v2_shell(self):
@@ -71,7 +73,26 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("TransferService", self.new)
         self.assertIn("DRAFT 草稿", self.new)
 
-    def test_create_page_never_uses_fake_submit_link_or_raw_identity_ids(self):
+    def test_identity_builder_only_opens_authority_proven_actions(self):
+        self.assertIn("hr06-identity.js", self.identity)
+        self.assertIn('id="hr06-identity-staff-keyword"', self.identity)
+        self.assertIn('id="hr06-identity-action"', self.identity)
+        self.assertIn('id="hr06-identity-target-fields"', self.identity)
+        self.assertIn('id="hr06-identity-create"', self.identity)
+        self.assertIn("人员类别变更、用工性质变更", self.identity)
+        self.assertIn("岗位类别变更、工作地点变更", self.identity)
+        self.assertIn("Hr06ApplySupportProvider", self.identity)
+        self.assertIn('"EMPLOYEE_CATEGORY_CHANGE"', self.identity_script)
+        self.assertIn('"EMPLOYMENT_TYPE_CHANGE"', self.identity_script)
+        self.assertIn("SUPPORTED_IDENTITY_ACTIONS", self.identity_script)
+        self.assertIn("identityOptions", self.identity_script)
+        self.assertIn("proposed_value_ref", self.identity_script)
+        self.assertIn("/api/v1/hr/changes/identity-changes", self.identity_script)
+        self.assertIn("/api/v1/hr/staff", self.identity_script)
+        self.assertIn("/profile", self.identity_script)
+        self.assertNotIn("/api/hr/v1/", self.identity_script)
+
+    def test_create_pages_never_use_fake_submit_links_or_raw_identity_ids(self):
         self.assertIn('id="hr06-create-draft"', self.new)
         self.assertIn('id="hr06-staff-keyword"', self.new)
         self.assertNotIn('href="/hr/changes/">提交</a>', self.new)
@@ -80,6 +101,9 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertNotIn('name="targetOrgId"', self.new)
         self.assertNotIn('name="targetPositionId"', self.new)
         self.assertNotIn("待接入 HR03 人员选择器", self.new)
+        self.assertNotIn('name="staffMasterId"', self.identity)
+        self.assertNotIn('name="staffCategoryCode"', self.identity)
+        self.assertNotIn('name="relationshipType"', self.identity)
 
     def test_transfer_types_do_not_create_incomplete_generic_drafts(self):
         self.assertIn('"ORG_TRANSFER"', self.script)
@@ -112,6 +136,7 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("warnings", preview)
         self.assertIn("requested_effective_at", self.templates["future_changes.html"])
         self.assertIn("it.statusLabel", self.templates["transfers.html"])
+        self.assertIn("it.statusLabel", self.identity)
         self.assertIn("stats.overdue", self.templates["secondments.html"])
         self.assertIn("it.appliedAt", self.templates["ledger.html"])
         self.assertIn("error_code", self.templates["error.html"])
@@ -134,4 +159,5 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("@media (max-width: 720px)", self.css)
         self.assertIn(".hr06-detail-grid", self.css)
         self.assertIn(".hr06-impact-item--blocker", self.css)
+        self.assertIn(".hr06-capability-grid", self.css)
         self.assertNotIn("display: none", self.css)

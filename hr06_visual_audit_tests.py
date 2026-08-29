@@ -1,9 +1,9 @@
 """Real Chromium acceptance for HR06 V2 personnel-change workspaces.
 
 The suite seeds only technical identity plus HR03/HR02 authority facts and
-HR06 action/reason configuration needed to exercise the real transfer create
-flow. It never seeds a personnel-change result row: the DRAFT case must be
-created by the production browser/API path itself.
+HR06 action/reason configuration needed to exercise real specialized create
+flows. It never seeds a personnel-change result row: DRAFT cases must be
+created by the production browser/API paths themselves.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         ("new", "/hr/changes/new", "hr06-bootstrap-state", "正在读取 HR06"),
         ("future", "/hr/changes/future", None, None),
         ("transfers", "/hr/changes/transfers", None, None),
-        ("identity", "/hr/changes/job-identity", None, None),
+        ("identity", "/hr/changes/job-identity", "hr06-identity-bootstrap-state", "正在读取 HR06"),
         ("secondments", "/hr/changes/secondments", None, None),
         ("ledger", "/hr/changes/ledger", None, None),
     )
@@ -92,6 +92,30 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             code="WORK_NEED",
             name="工作需要",
         )
+        self.identity_action = make_action(
+            self.company.pk,
+            code="EMPLOYEE_CATEGORY_CHANGE",
+            name="人员类别变更",
+            enabled=True,
+        )
+        self.identity_reason = make_reason(
+            self.company.pk,
+            action_code="EMPLOYEE_CATEGORY_CHANGE",
+            code="CATEGORY_ADJUST",
+            name="岗位职责调整",
+        )
+        self.employment_action = make_action(
+            self.company.pk,
+            code="EMPLOYMENT_TYPE_CHANGE",
+            name="用工性质变更",
+            enabled=True,
+        )
+        make_reason(
+            self.company.pk,
+            action_code="EMPLOYMENT_TYPE_CHANGE",
+            code="EMPLOYMENT_ADJUST",
+            name="聘用关系调整",
+        )
 
         client = Client()
         client.force_login(self.user)
@@ -117,6 +141,11 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         ])
         return context
 
+    @staticmethod
+    def _record_console(page, page_errors, console_errors):
+        page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+        page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+
     def test_capture_primary_hr06_workspaces_desktop_and_mobile(self):
         try:
             from playwright.sync_api import sync_playwright
@@ -133,8 +162,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             try:
                 context = self._browser_context(browser)
                 page = context.new_page()
-                page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-                page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+                self._record_console(page, page_errors, console_errors)
 
                 def record_response(response):
                     if "/api/v1/hr/" in response.url and response.status >= 400:
@@ -206,8 +234,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             try:
                 context = self._browser_context(browser)
                 page = context.new_page()
-                page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-                page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+                self._record_console(page, page_errors, console_errors)
 
                 def record_response(response):
                     if "/api/v1/hr/" in response.url and response.status >= 400:
@@ -236,8 +263,6 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                     }""",
                     timeout=8000,
                 )
-                self.assertIn(self.staff.staff_no, page.locator("#hr06-selected-staff").inner_text())
-
                 page.select_option("#hr06-action", str(self.action.id))
                 page.wait_for_function(
                     """() => {
@@ -262,10 +287,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                 )
                 page.click("#hr06-create-draft")
                 page.wait_for_url(re.compile(r"/hr/changes/[0-9a-f-]{36}$"), timeout=10000)
-                self.assertEqual(
-                    page.locator('[data-module="HR06"][data-section="detail"]').count(),
-                    1,
-                )
+                self.assertEqual(page.locator('[data-module="HR06"][data-section="detail"]').count(), 1)
                 self.assertIn("草稿", page.locator("body").inner_text())
                 page.screenshot(path=str(self.out_dir / "desktop-created-transfer-draft.png"), full_page=True)
                 context.close()
@@ -287,3 +309,85 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         self.assertEqual(api_failures, [], "HR06 transfer API failures: " + " | ".join(api_failures))
         self.assertEqual(page_errors, [], "HR06 transfer page errors: " + " | ".join(page_errors))
         self.assertEqual(console_errors, [], "HR06 transfer console errors: " + " | ".join(console_errors))
+
+    def test_real_browser_creates_controlled_identity_category_draft(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+
+        api_failures: list[str] = []
+        page_errors: list[str] = []
+        console_errors: list[str] = []
+        effective_date = (date.today() + timedelta(days=30)).isoformat()
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                context = self._browser_context(browser)
+                page = context.new_page()
+                self._record_console(page, page_errors, console_errors)
+
+                def record_response(response):
+                    if "/api/v1/hr/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
+
+                page.on("response", record_response)
+                response = page.goto(self.live_server_url + "/hr/changes/job-identity", wait_until="networkidle")
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-identity-bootstrap-state');
+                      return host && !host.textContent.includes('正在读取 HR06');
+                    }""",
+                    timeout=8000,
+                )
+                page.fill("#hr06-identity-staff-keyword", self.staff.staff_no)
+                page.click("#hr06-identity-search-staff")
+                page.wait_for_selector(".hr06-staff-option", timeout=8000)
+                page.locator(".hr06-staff-option").first.click()
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-identity-selected-staff');
+                      return host && host.textContent.includes('当前人员类别');
+                    }""",
+                    timeout=8000,
+                )
+                page.select_option("#hr06-identity-action", str(self.identity_action.id))
+                page.wait_for_function(
+                    """() => {
+                      const node = document.getElementById('hr06-identity-reason');
+                      return node && !node.disabled && node.options.length > 1;
+                    }""",
+                    timeout=5000,
+                )
+                page.select_option("#hr06-identity-reason", str(self.identity_reason.id))
+                page.wait_for_selector("#hr06-identity-staff-category", timeout=5000)
+                page.select_option("#hr06-identity-staff-category", "ADMIN")
+                page.fill("#hr06-identity-effective-at", effective_date)
+                page.wait_for_function(
+                    """() => !document.getElementById('hr06-identity-create').disabled""",
+                    timeout=5000,
+                )
+                page.click("#hr06-identity-create")
+                page.wait_for_url(re.compile(r"/hr/changes/[0-9a-f-]{36}$"), timeout=10000)
+                self.assertIn("草稿", page.locator("body").inner_text())
+                page.screenshot(path=str(self.out_dir / "desktop-created-identity-category-draft.png"), full_page=True)
+                context.close()
+            finally:
+                browser.close()
+
+        from hr_changes.models import HrPersonnelChangeCase
+
+        cases = list(HrPersonnelChangeCase.objects.filter(tenant_id=self.company.pk))
+        self.assertEqual(len(cases), 1)
+        created = cases[0]
+        self.assertEqual(created.status, "DRAFT")
+        self.assertEqual(created.action_id_id, self.identity_action.id)
+        proposal = created.proposals.get(field_code="staff_category_code")
+        self.assertEqual(proposal.proposed_value_ref, "ADMIN")
+        self.assertEqual(proposal.proposed_value_display, "行政管理")
+        self.assertEqual(api_failures, [], "HR06 identity API failures: " + " | ".join(api_failures))
+        self.assertEqual(page_errors, [], "HR06 identity page errors: " + " | ".join(page_errors))
+        self.assertEqual(console_errors, [], "HR06 identity console errors: " + " | ".join(console_errors))

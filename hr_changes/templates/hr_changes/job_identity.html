@@ -1,14 +1,84 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% block title %}{% trans "岗位与身份变更" %}{% endblock %}
-{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
+{% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr06-page" data-module="HR06" data-section="identity" data-hr-page="change-identity">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>岗位与身份变更</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr06-identity-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-identity-title">岗位与身份变更</h1><p class="hr-v2-subtitle">覆盖岗位类别、人员类别、用工性质、直属上级、工作地点、兼岗与主岗切换；聘任与薪酬正式事实仍分别归 HR14 / HR15。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>事实来源</strong> HR06 案件</span><span class="hr-v2-context__item"><strong>跨域边界</strong> 不代写 HR14/HR15</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-identity-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR06 · 人事异动</div>
+      <h1 class="hr-v2-title" id="hr06-identity-title">岗位与身份变更</h1>
+      <p class="hr-v2-subtitle">只开放已证明能够写入 HR03 Authority 的动作。创建仍然只形成 DRAFT，校验、审批与正式生效保持独立。</p>
+    </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>人员事实</strong> HR03 Authority</span>
+      <span class="hr-v2-context__item"><strong>动作配置</strong> HR06 tenant 配置</span>
+    </div>
+  </header>
+
   {% include "hr_changes/components/v2_nav.html" with active="identity" %}
-  <section class="hr06-panel"><div class="hr06-toolbar"><div><h2>身份类异动案件</h2><p>列表按当前 tenant 过滤并限定 identity action 集合。</p></div><a class="hr06-button" href="{% url 'hr06-change-new' %}">创建身份变更草稿</a></div>
-  {% if cases %}<div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>案件号</th><th>人员</th><th>异动类型</th><th>目标</th><th>计划生效日</th><th>状态</th></tr></thead><tbody>{% for c in cases %}<tr><td><a class="hr06-link" href="{% url 'hr06-change-detail' c.id %}">{{ c.case_no }}</a></td><td><strong>{{ c.staff_master_id.person_id.legal_name }}</strong><span class="hr06-muted">{{ c.staff_master_id.staff_no }}</span></td><td>{{ c.action_id.name }}</td><td>{% if c.target_org_id %}{{ c.target_org_id.stable_code }}{% else %}—{% endif %}</td><td>{{ c.requested_effective_at|date:"Y-m-d" }}</td><td><span class="hr06-status">{{ c.get_status_display }}</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="hr06-empty"><strong>暂无岗位或身份变更记录</strong><span>当前学校没有匹配的身份类案件。</span></div>{% endif %}
+
+  <section class="hr06-panel">
+    <div class="hr06-section-head"><div><h2>当前可执行能力</h2><p>页面不会因为动作已存在于枚举就假装可用；必须同时具备创建服务、影响 gate 与 Authority writer。</p></div></div>
+    <div class="hr06-capability-grid">
+      <div class="hr06-capability" data-state="ready"><strong>已开放</strong><span>人员类别变更、用工性质变更</span><small>已有 HR03 Authority writer，并由端到端 Apply 测试锁定。</small></div>
+      <div class="hr06-capability" data-state="blocked"><strong>明确阻断</strong><span>岗位类别变更、工作地点变更</span><small>现有 Hr06ApplySupportProvider 明确 BLOCKER；未接 writer 前禁止标记已生效。</small></div>
+      <div class="hr06-capability" data-state="pending"><strong>专项收口中</strong><span>直属上级、兼岗、主岗切换</span><small>已有部分服务，但完整生效不变量尚未通过本轮浏览器与 Authority 验收，因此暂不开放创建。</small></div>
+    </div>
   </section>
+
+  <form id="hr06-identity-create-form" class="hr06-identity-builder" novalidate>
+    {% csrf_token %}
+    <section class="hr06-panel">
+      <div class="hr06-section-head"><div><h2>1. 选择人员</h2><p>从当前 tenant/scope 可见的 HR03 名册搜索；选中后读取 profile，展示当前人员类别与聘用关系。</p></div></div>
+      <div class="hr06-search-row">
+        <label class="hr06-field hr06-field--grow"><span>姓名 / 工号</span><input id="hr06-identity-staff-keyword" type="search" autocomplete="off" placeholder="例如：张老师 / T20260018"></label>
+        <button class="hr06-button hr06-button--secondary" type="button" id="hr06-identity-search-staff">搜索人员</button>
+      </div>
+      <div id="hr06-identity-staff-results" class="hr06-staff-results" aria-live="polite"><div class="hr06-state"><strong>尚未搜索</strong><span>输入姓名或工号后搜索当前可见人员。</span></div></div>
+      <div id="hr06-identity-selected-staff" class="hr06-selected" hidden aria-live="polite"></div>
+    </section>
+
+    <section class="hr06-panel">
+      <div class="hr06-section-head"><div><h2>2. 选择动作与目标事实</h2><p>动作/原因来自 HR06 bootstrap；人员类别、聘用关系与用工类型的机器值来自 HR03 constants，经服务端受控字典下发。</p></div></div>
+      <div class="hr06-form-grid">
+        <label class="hr06-field"><span>身份变更类型</span><select id="hr06-identity-action" disabled><option value="">正在读取服务端配置</option></select></label>
+        <label class="hr06-field"><span>变更原因</span><select id="hr06-identity-reason" disabled><option value="">请先选择变更类型</option></select></label>
+        <label class="hr06-field"><span>计划生效日</span><input id="hr06-identity-effective-at" type="date"></label>
+        <label class="hr06-field"><span>优先级</span><select id="hr06-identity-priority" disabled><option value="NORMAL">普通</option></select></label>
+      </div>
+      <div id="hr06-identity-target-fields" class="hr06-form-grid hr06-identity-target" aria-live="polite"><div class="hr06-state"><strong>等待选择动作</strong><span>目标字段会按已验证的 Authority writer 动态出现。</span></div></div>
+      <div id="hr06-identity-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在读取 HR06 身份变更配置…</span></div>
+    </section>
+
+    <section class="hr06-panel hr06-submit-panel">
+      <div><h2>3. 创建身份变更草稿</h2><p>只创建受控 proposals，不直接修改 HR03；后续仍必须经过影响预览、审批与生效事务。</p></div>
+      <button class="hr06-button" type="button" id="hr06-identity-create" disabled>创建身份变更草稿</button>
+      <div id="hr06-identity-create-result" class="hr06-meta" aria-live="polite"><span>尚未创建</span></div>
+    </section>
+  </form>
+
+  <section class="hr06-panel">
+    <div class="hr06-toolbar"><div><h2>身份类异动台账</h2><p>以下案件来自统一 IdentitySelector，状态与动作使用 HR06 中文 label，不读取浏览器拼装结果。</p></div><span class="hr06-muted">共 {{ total }} 条</span></div>
+    {% if items %}
+    <div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>案件号</th><th>人员</th><th>异动类型</th><th>目标</th><th>计划生效日</th><th>状态</th></tr></thead><tbody>
+      {% for it in items %}<tr><td><a class="hr06-link" href="{% url 'hr06-change-detail' it.id %}">{{ it.caseNo }}</a></td><td><strong>{{ it.staffName }}</strong><span class="hr06-muted">{{ it.staffNo }}</span></td><td>{{ it.actionLabel }}</td><td>{{ it.target|default:"—" }}</td><td>{{ it.requestedEffectiveAt }}</td><td><span class="hr06-status">{{ it.statusLabel }}</span></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="hr06-empty"><strong>暂无岗位或身份变更记录</strong><span>当前学校还没有匹配的身份类案件；上方可创建已开放动作的 DRAFT 草稿。</span></div>{% endif %}
+  </section>
+
+  <div class="hr06-truth-note"><strong>Authority 边界</strong><span>页面只提交受控机器值与展示 label；服务端会再次校验 tenant、权限、动作/原因归属、字段目录与 HR03 枚举，不接受任意字符串作为正式身份事实。</span></div>
 </div>
 {% endblock content %}
+{% block scripts %}
+{{ block.super }}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr06-identity.js' %}"></script>
+{% endblock scripts %}
