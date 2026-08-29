@@ -1,0 +1,79 @@
+/* HR03 V2: assignment and employment history timeline. */
+
+.hr03-history-timeline {
+  position: relative;
+  display: grid;
+  gap: var(--hr-space-4);
+  padding-left: 28px;
+}
+
+.hr03-history-timeline::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--hr-v2-line);
+}
+
+.hr03-history-item {
+  position: relative;
+  min-width: 0;
+  padding: var(--hr-space-3) var(--hr-space-4);
+  border: 1px solid var(--hr-v2-line);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+}
+
+.hr03-history-item::before {
+  content: "";
+  position: absolute;
+  left: -25px;
+  top: 18px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--hr-v2-surface);
+  border-radius: 50%;
+  background: var(--hr-v2-accent);
+  box-shadow: 0 0 0 1px var(--hr-v2-line);
+}
+
+.hr03-history-item.concurrent::before {
+  background: var(--hr-warning);
+}
+
+.hr03-history-item.ended::before {
+  background: var(--hr-v2-muted);
+}
+
+.hr03-history-kind {
+  color: var(--hr-v2-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hr03-history-period {
+  margin-top: 3px;
+  color: var(--hr-v2-ink);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.hr03-history-detail {
+  margin-top: 4px;
+  color: var(--hr-v2-text);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .hr03-history-timeline {
+    padding-left: 24px;
+  }
+
+  .hr03-history-item::before {
+    left: -21px;
+  }
+}
