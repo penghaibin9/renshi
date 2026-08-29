@@ -7,6 +7,7 @@ from django.shortcuts import render
 
 from hr_time.constants import ALL_TIME_PERMISSIONS
 from hr_time.context import build_hr_time_context, resolve_tenant_from_request
+from hr_staff.models import HrStaffMaster
 from hr_time.models import (
     HrAttendanceDayFact,
     HrAttendanceException,
@@ -38,9 +39,29 @@ def _can_view_time(user) -> bool:
     return any(user.has_perm(code) for code, _label in ALL_TIME_PERMISSIONS)
 
 
-def _serialize_day_fact(item):
+def _staff_labels(tenant_id, staff_ids):
+    rows = (
+        HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            legacy_employee_id__in={value for value in staff_ids if value is not None},
+        )
+        .select_related("person_id")
+        .order_by("person_id__legal_name", "staff_no")
+    )
     return {
-        "staff": item.staff_master_id,
+        row.legacy_employee_id: f"{row.person_id.legal_name} · {row.staff_no}"
+        for row in rows
+    }
+
+
+def _staff_label(labels, staff_id):
+    return labels.get(staff_id, "人员档案暂不可用")
+
+
+def _serialize_day_fact(item, labels):
+    return {
+        "id": item.id,
+        "staff": _staff_label(labels, item.staff_master_id),
         "date": item.business_date,
         "status": item.get_status_display(),
         "minutes": item.credited_minutes,
@@ -48,23 +69,39 @@ def _serialize_day_fact(item):
     }
 
 
-def _serialize_leave(item):
+def _serialize_leave(item, labels):
     return {
-        "staff": item.staff_master_id,
+        "id": item.id,
+        "staff": _staff_label(labels, item.staff_master_id),
         "date": f"{item.start_at} 至 {item.end_at}",
         "status": item.get_status_display(),
+        "status_code": item.status,
         "amount": f"{item.requested_amount} {item.get_unit_display()}",
         "type": getattr(item.leave_type, "name", "请假"),
     }
 
 
-def _serialize_overtime(item):
+def _serialize_overtime(item, labels):
     return {
-        "staff": item.staff_master_id,
+        "id": item.id,
+        "staff": _staff_label(labels, item.staff_master_id),
         "date": item.requested_start_at,
         "status": item.get_status_display(),
+        "status_code": item.status,
         "minutes": item.planned_minutes,
         "reason": item.reason,
+    }
+
+
+def _serialize_exception(item, labels):
+    return {
+        "id": item.id,
+        "staff": _staff_label(labels, item.staff_master_id),
+        "date": item.business_date,
+        "status": item.get_status_display(),
+        "status_code": item.status,
+        "exception": item.get_exception_code_display(),
+        "note": item.resolution_note,
     }
 
 
@@ -103,13 +140,13 @@ def workspace(request, section="overview"):
     risks = HrTimeRiskCase.objects.filter(tenant_id=tenant_id)
 
     active_schedules = schedules.filter(effective_from__lte=today).filter(
-        Q(effective_to__isnull=True) | Q(effective_to__gte=today)
+        Q(effective_to__isnull=True) | Q(effective_to__gt=today)
     )
 
     summary = {
         "today_facts": day_facts.filter(business_date=today).count(),
         "open_exceptions": exceptions.filter(status__in=["OPEN", "REVIEWING"]).count(),
-        "pending_leave": leaves.filter(status__in=["SUBMITTED", "RETURNED"]).count(),
+        "pending_leave": leaves.filter(status__in=["SUBMITTED", "UNDER_REVIEW"]).count(),
         "pending_overtime": overtime_requests.filter(status="SUBMITTED").count(),
         "active_schedules": active_schedules.count(),
         "open_close_periods": close_periods.filter(status__in=["OPEN", "PRE_CLOSE", "REOPENED"]).count(),
@@ -117,22 +154,36 @@ def workspace(request, section="overview"):
         "verified_overtime": overtime_facts.filter(verification_status="VERIFIED").count(),
     }
 
+    staff_ids = set(day_facts.values_list("staff_master_id", flat=True))
+    staff_ids.update(exceptions.values_list("staff_master_id", flat=True))
+    staff_ids.update(leaves.values_list("staff_master_id", flat=True))
+    staff_ids.update(overtime_requests.values_list("staff_master_id", flat=True))
+    staff_ids.update(schedules.values_list("staff_master_id", flat=True))
+    staff_ids.update(risks.values_list("staff_master_id", flat=True))
+    labels = _staff_labels(tenant_id, staff_ids)
+
     recent = []
-    if section in ("overview", "attendance"):
-        recent = [_serialize_day_fact(x) for x in day_facts.order_by("-business_date", "-id")[:12]]
+    if section == "overview":
+        recent = [_serialize_day_fact(x, labels) for x in day_facts.order_by("-business_date", "-id")[:12]]
+    elif section == "attendance":
+        recent = [
+            _serialize_exception(x, labels)
+            for x in exceptions.order_by("-business_date", "-id")[:12]
+        ]
     elif section == "leave":
         recent = [
-            _serialize_leave(x)
+            _serialize_leave(x, labels)
             for x in leaves.select_related("leave_type").order_by("-created_at")[:12]
         ]
     elif section == "overtime":
-        recent = [_serialize_overtime(x) for x in overtime_requests.order_by("-created_at")[:12]]
+        recent = [_serialize_overtime(x, labels) for x in overtime_requests.order_by("-created_at")[:12]]
     elif section == "schedule":
         recent = [
             {
-                "staff": x.staff_master_id,
+                "id": x.id,
+                "staff": _staff_label(labels, x.staff_master_id),
                 "date": f"{x.effective_from} 至 {x.effective_to or '长期'}",
-                "status": "当前生效" if x.effective_from <= today and (x.effective_to is None or x.effective_to >= today) else "历史/未来",
+                "status": "当前生效" if x.effective_from <= today and (x.effective_to is None or x.effective_to > today) else "历史/未来",
                 "source": x.source,
             }
             for x in schedules.order_by("-effective_from", "-id")[:12]
@@ -140,19 +191,25 @@ def workspace(request, section="overview"):
     elif section == "close":
         recent = [
             {
+                "id": x.id,
                 "date": f"{x.start_date} 至 {x.end_date}",
                 "status": x.get_status_display(),
                 "closed_at": x.closed_at,
+                "status_code": x.status,
             }
             for x in close_periods.order_by("-end_date", "-id")[:12]
         ]
     elif section == "risks":
         recent = [
             {
-                "staff": x.staff_master_id,
+                "id": x.id,
+                "staff": _staff_label(labels, x.staff_master_id),
                 "date": x.created_at,
                 "status": x.get_status_display(),
+                "status_code": x.status,
                 "risk": x.get_risk_code_display(),
+                "severity": x.get_severity_display(),
+                "summary": x.summary,
             }
             for x in risks.order_by("-created_at")[:12]
         ]

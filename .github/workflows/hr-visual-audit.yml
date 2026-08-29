@@ -20,6 +20,7 @@ on:
       - "hr06_visual_audit_tests.py"
       - "hr09_visual_audit_tests.py"
       - "hr10_visual_audit_tests.py"
+      - "hr11_visual_audit_tests.py"
       - "hr13_visual_audit_tests.py"
       - "hr14_visual_audit_tests.py"
       - "hr15_visual_audit_tests.py"
@@ -171,6 +172,7 @@ jobs:
             hr08_visual_audit_tests.Hr08VisualAuditTests \
             hr09_visual_audit_tests.Hr09VisualAuditTests \
             hr10_visual_audit_tests.Hr10VisualAuditTests \
+            hr11_visual_audit_tests.Hr11VisualAuditTests \
             hr13_visual_audit_tests.Hr13VisualAuditTests \
             hr14_visual_audit_tests.Hr14VisualAuditTests \
             hr15_visual_audit_tests.Hr15VisualAuditTests \

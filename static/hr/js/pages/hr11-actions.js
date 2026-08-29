@@ -1,20 +1,164 @@
 (() => {
   'use strict';
-  const root=document.querySelector('.hr11');
-  if(!root||root.dataset.capabilityLayer==='true')return;
-  root.dataset.capabilityLayer='true';
-  const path=location.pathname;
-  const section=path.startsWith('/hr/time/attendance')?'attendance':path.startsWith('/hr/time/schedule')?'schedule':path.startsWith('/hr/time/leave')?'leave':path.startsWith('/hr/time/overtime')?'overtime':path.startsWith('/hr/time/close')?'close':path.startsWith('/hr/time/risks')?'risks':'overview';
-  const FLOWS={
-    overview:{title:'HR11 时间事实闭环',desc:'考勤、排班、请假、加班和月结都已有正式事实模型；当前 canonical 写 API 尚未注册，管理端保持真实只读。',steps:[['1 · 日历排班','确定应出勤时间'],['2 · 原始事件','打卡/设备/补录来源'],['3 · 规则评估','形成异常与日事实'],['4 · 审批核验','请假/加班/更正'],['5 · 月结','冻结正式期间事实']]},
-    attendance:{title:'日考勤与异常办理链',desc:'原始打卡不能直接改成“正常”；必须经过规则评估、异常处理和正式日事实。',steps:[['1 · 原始打卡','设备/移动/补录'],['2 · 匹配排班','学校日历与班次'],['3 · 异常识别','迟到/缺卡/冲突'],['4 · 更正审核','保留原因与证据'],['5 · 日事实','形成可月结结果']]},
-    schedule:{title:'日历与排班办理链',desc:'排班决定“应该工作多久”，不能由考勤结果反向覆盖历史班次。',steps:[['1 · 工作日历','节假日与学校制度'],['2 · 班次模板','工作时段/休息'],['3 · 人员排班','按有效期分配'],['4 · 冲突检查','重叠与跨日'],['5 · 生效历史','保留过去排班']]},
-    leave:{title:'请假与销假办理链',desc:'退回与拒绝是不同终态；批准请假只形成请假事实，日考勤仍需按规则重新评估。',steps:[['1 · 草稿','类型/时间/原因'],['2 · 提交','进入审批'],['3 · 批准/退回','分开保留历史'],['4 · 销假/更正','不覆盖原批准'],['5 · 考勤消费','影响对应日事实']]},
-    overtime:{title:'加班与调休办理链',desc:'批准的计划时长不等于实际加班；最终结算必须使用核验后的实际事实。',steps:[['1 · 加班申请','计划时段与原因'],['2 · 审批','是否允许加班'],['3 · 实际核验','真实开始/结束'],['4 · 补偿选择','调休/薪酬依据'],['5 · 月结消费','只消费已核验事实']]},
-    close:{title:'月结与更正办理链',desc:'期间一旦关闭，普通页面不能直接改历史；更正应形成新批次/新快照。',steps:[['1 · 开启期间','确定月份与范围'],['2 · 预关闭','检查异常/未决申请'],['3 · 正式关闭','冻结日事实'],['4 · 下游消费','薪酬/统计读取'],['5 · 更正批次','追加修正而非覆盖']]},
-    risks:{title:'考勤风险闭环',desc:'风险确认只表示已接单；解决必须回到源事实并留下处理证据。',steps:[['1 · 风险检测','缺卡/冲突/超时'],['2 · 分级','严重度与截止'],['3 · 确认接单','明确责任人'],['4 · 源头修复','更正/审批/排班'],['5 · 关闭','新事实证明已解决']]}
+  const root = document.querySelector('.hr11');
+  if (!root || root.dataset.actionsReady === 'true') return;
+  root.dataset.actionsReady = 'true';
+
+  const dialog = root.querySelector('[data-dialog]');
+  const form = root.querySelector('[data-dialog-form]');
+  const fields = root.querySelector('[data-dialog-fields]');
+  const title = root.querySelector('[data-dialog-title]');
+  const feedback = root.querySelector('[data-feedback]');
+  let pending = null;
+  let choices = null;
+
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[char]);
+  const csrfToken = () => document.cookie.split('; ').find((part) => part.startsWith('csrftoken='))?.split('=').slice(1).join('=') || '';
+  const setFeedback = (message, isError = false) => {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.classList.toggle('is-error', isError);
   };
-  const spec=FLOWS[section]||FLOWS.overview;
-  const host=document.createElement('section');host.className='hr11-capability-card';host.innerHTML=`<h2>${spec.title}</h2><p>${spec.desc}</p><div class="hr11-flow">${spec.steps.map(([a,b])=>`<div class="hr11-flow-step"><b>${a}</b><span>${b}</span></div>`).join('')}</div><div class="hr11-boundary-grid"><div class="hr11-boundary"><strong>当前可做</strong><span>查看当前学校真实 HR11 数据、状态与风险。</span></div><div class="hr11-boundary"><strong>当前不可做</strong><span>浏览器不能绕过未注册 API 直接写 ORM 或调用 legacy handler。</span></div><div class="hr11-boundary"><strong>后续接线</strong><span>canonical 写 API 注册后，本工作区直接承接真实办理动作。</span></div></div><div class="hr11-capability-state" data-state>正在核对 HR11 canonical capability…</div>`;root.appendChild(host);
-  fetch('/api/v1/hr/time/health',{credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}}).then(async r=>{let p={};try{p=await r.json()}catch(_e){};const box=host.querySelector('[data-state]');if(r.ok){box.classList.add('ok');box.textContent='HR11 模块健康探针可用；当前业务写端点仍未注册，因此本页保持 fail-closed 只读。'}else{box.textContent=`HR11 health 不可用（HTTP ${r.status}）；页面不会回退旧写入口。`}}).catch(()=>{host.querySelector('[data-state]').textContent='HR11 health 暂不可读取；页面继续保持 fail-closed。'});
+  const field = (label, name, type = 'text', help = '', required = true) => `<label class="hr11-field"><span>${escapeHtml(label)}</span><input name="${escapeHtml(name)}" type="${escapeHtml(type)}" ${required ? 'required' : ''}>${help ? `<small>${escapeHtml(help)}</small>` : ''}</label>`;
+  const textarea = (label, name, help = '') => `<label class="hr11-field"><span>${escapeHtml(label)}</span><textarea name="${escapeHtml(name)}" required></textarea>${help ? `<small>${escapeHtml(help)}</small>` : ''}</label>`;
+  const select = (label, name, options, required = true) => `<label class="hr11-field"><span>${escapeHtml(label)}</span><select name="${escapeHtml(name)}" ${required ? 'required' : ''}><option value="">请选择</option>${options.map((item) => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`).join('')}</select></label>`;
+
+  async function request(url, payload = {}) {
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify(payload)
+    });
+    let body = {};
+    try { body = await response.json(); } catch (_error) { /* explicit fallback below */ }
+    if (!response.ok) {
+      const error = new Error(body.error?.message || `办理失败（HTTP ${response.status}）`);
+      error.details = body.error?.details || {};
+      throw error;
+    }
+    return body.data || {};
+  }
+
+  async function loadChoices() {
+    if (choices) return choices;
+    const response = await fetch('/api/v1/hr/time/workbench/choices', {
+      credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error?.message || '暂时无法读取当前学校排班选项');
+    choices = body.data;
+    return choices;
+  }
+
+  function openDialog(config) {
+    pending = config;
+    title.textContent = config.title;
+    fields.innerHTML = config.fields;
+    dialog.showModal();
+    fields.querySelector('input,select,textarea')?.focus();
+  }
+
+  function endpoint(action, recordId) {
+    const [domain, verb] = action.split('-');
+    const domains = {
+      exception: 'exceptions', leave: 'leaves', overtime: 'overtime',
+      close: 'close-periods', risk: 'risks'
+    };
+    return `/api/v1/hr/time/${domains[domain]}/${recordId}/${verb}`;
+  }
+
+  async function runAction(action, recordId, payload = {}, button = null) {
+    if (button) button.disabled = true;
+    setFeedback('正在提交到 HR11 Authority…');
+    try {
+      const data = await request(endpoint(action, recordId), payload);
+      if (action === 'close-precheck') {
+        if (data.ready) setFeedback('预检通过：当前期间没有阻断项，可以正式关闭。');
+        else setFeedback(`预检未通过：${data.blockers.map((item) => `${item.code} ${item.count} 项`).join('；')}`, true);
+        if (button) button.disabled = false;
+        return;
+      }
+      setFeedback(`办理成功：${data.statusLabel || data.status || '已写入正式事实'}`);
+      window.setTimeout(() => window.location.reload(), 250);
+    } catch (error) {
+      const blockers = error.details?.blockers || [];
+      const suffix = blockers.length ? `（${blockers.map((item) => `${item.code} ${item.count} 项`).join('；')}）` : '';
+      setFeedback(`${error.message}${suffix}`, true);
+      if (button) button.disabled = false;
+    }
+  }
+
+  const dialogSpecs = {
+    'exception-resolve': {title: '解决考勤异常', fields: textarea('处理说明', 'note', '请记录核验依据，不会覆盖原始打卡。')},
+    'exception-dismiss': {title: '排除考勤异常', fields: textarea('排除说明', 'note', '说明为何该异常不成立。')},
+    'leave-reject': {title: '拒绝请假申请', fields: textarea('拒绝原因', 'reason', '拒绝是终局决定，与退回修改不同。')},
+    'leave-return': {title: '办理销假', fields: field('实际返岗日期', 'actualReturnAt', 'date', '销假会形成独立 case，不覆盖原批准记录。')},
+    'close-reopen': {title: '申请重开月结', fields: textarea('重开原因', 'reason', '系统会形成更正批次并保留旧快照。')},
+    'risk-resolve': {title: '解决考勤风险', fields: textarea('解决说明', 'note', '请记录源事实修复与核验依据。')}
+  };
+
+  root.addEventListener('click', async (event) => {
+    const closeButton = event.target.closest('[data-dialog-close]');
+    if (closeButton) { dialog.close(); pending = null; return; }
+
+    const scheduleButton = event.target.closest('[data-open-schedule]');
+    if (scheduleButton) {
+      scheduleButton.disabled = true;
+      setFeedback('正在读取当前学校业务选项…');
+      try {
+        const data = await loadChoices();
+        openDialog({
+          kind: 'schedule', title: '新建生效排班',
+          fields: select('人员', 'staffId', data.staff) +
+            select('工作日历版本', 'calendarVersionId', data.calendarVersions, false) +
+            select('班次版本', 'shiftVersionId', data.shiftVersions, false) +
+            field('生效日期', 'effectiveFrom', 'date') +
+            field('失效日期', 'effectiveTo', 'date', '可留空，表示长期生效。', false)
+        });
+        setFeedback('已载入当前学校人员、日历与班次。');
+      } catch (error) { setFeedback(error.message, true); }
+      scheduleButton.disabled = false;
+      return;
+    }
+
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const action = button.dataset.action;
+    const recordId = button.closest('[data-record-id]')?.dataset.recordId;
+    if (!recordId) return;
+    if (dialogSpecs[action]) {
+      openDialog({...dialogSpecs[action], kind: 'action', action, recordId, button});
+      return;
+    }
+    await runAction(action, recordId, {}, button);
+  });
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!pending) return;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const submit = root.querySelector('[data-dialog-submit]');
+    submit.disabled = true;
+    if (pending.kind === 'schedule') {
+      setFeedback('正在校验排班冲突并创建…');
+      try {
+        await request('/api/v1/hr/time/schedules/create', payload);
+        dialog.close();
+        setFeedback('排班已创建并写入当前学校正式数据。');
+        window.setTimeout(() => window.location.reload(), 250);
+      } catch (error) { setFeedback(error.message, true); submit.disabled = false; }
+      return;
+    }
+    dialog.close();
+    submit.disabled = false;
+    await runAction(pending.action, pending.recordId, payload, pending.button);
+    pending = null;
+  });
 })();

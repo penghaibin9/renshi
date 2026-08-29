@@ -133,14 +133,14 @@ def time_health(request):
         # JSON 字段规范：机器字段 camelCase（status），人看的中文 label 成对（statusLabel）
         "stages": {
             "S1": {"status": "DONE", "statusLabel": "已完成"},
-            "S2": {"status": "PENDING", "statusLabel": "待开工"},
-            "S3": {"status": "PENDING", "statusLabel": "待开工"},
-            "S4": {"status": "PENDING", "statusLabel": "待开工"},
-            "S5": {"status": "PENDING", "statusLabel": "待开工"},
-            "S6": {"status": "PENDING", "statusLabel": "待开工"},
-            "S7": {"status": "PENDING", "statusLabel": "待开工"},
-            "S8": {"status": "PENDING", "statusLabel": "待开工"},
-            "S9": {"status": "PENDING", "statusLabel": "待开工"},
+            "S2": {"status": "DONE", "statusLabel": "已完成"},
+            "S3": {"status": "DONE", "statusLabel": "已完成"},
+            "S4": {"status": "DONE", "statusLabel": "已完成"},
+            "S5": {"status": "DONE", "statusLabel": "已完成"},
+            "S6": {"status": "DONE", "statusLabel": "已完成"},
+            "S7": {"status": "DONE", "statusLabel": "已完成"},
+            "S8": {"status": "DONE", "statusLabel": "已完成"},
+            "S9": {"status": "DONE", "statusLabel": "已完成"},
         },
     }
     body = _api_root(request)

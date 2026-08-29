@@ -5,46 +5,115 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr11-actions.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr11-workspace.css' %}">
-<div class="hr11" data-module="HR11">
-{% if access_error %}<div class="hr11-access">{{ access_error }}</div>{% else %}
-<div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR11 考勤时间</span><strong>{{ section_title }}</strong></div>
-<section class="hr11-hero"><div><div class="hr11-eyebrow">HR11 · 考勤时间</div><h1>{{ section_title }}</h1><p>统一管理工作日历、排班、日考勤、异常更正、请假、加班调休和月结。原始打卡不直接等于正式考勤结果，已经月结的事实不能被普通编辑覆盖。</p></div></section>
-<nav class="hr11-nav" aria-label="考勤时间导航">
-<a class="{% if section == 'overview' %}active{% endif %}" href="/hr/time/">总览</a><a class="{% if section == 'attendance' %}active{% endif %}" href="/hr/time/attendance/">日考勤与异常</a><a class="{% if section == 'schedule' %}active{% endif %}" href="/hr/time/schedule/">日历与排班</a><a class="{% if section == 'leave' %}active{% endif %}" href="/hr/time/leave/">请假与销假</a><a class="{% if section == 'overtime' %}active{% endif %}" href="/hr/time/overtime/">加班与调休</a><a class="{% if section == 'close' %}active{% endif %}" href="/hr/time/close/">月结与结算</a><a class="{% if section == 'risks' %}active{% endif %}" href="/hr/time/risks/">风险中心</a>
-</nav><div class="hr11-mobile-hint">可左右滑动查看更多时间管理工作区</div>
-<section class="hr11-summary">
-<div class="hr11-kpi"><span>今日考勤事实</span><b>{{ summary.today_facts }}</b><small>{{ today }} 当前学校正式日考勤</small></div>
-<div class="hr11-kpi"><span>待处理考勤异常</span><b>{{ summary.open_exceptions }}</b><small>待处理与复核中的异常</small></div>
-<div class="hr11-kpi"><span>待处理请假</span><b>{{ summary.pending_leave }}</b><small>已提交或退回修改的申请</small></div>
-<div class="hr11-kpi"><span>待审批加班</span><b>{{ summary.pending_overtime }}</b><small>批准不等于实际加班时长</small></div>
-<div class="hr11-kpi"><span>当前生效排班</span><b>{{ summary.active_schedules }}</b><small>按学校日期判断当前排班</small></div>
-<div class="hr11-kpi"><span>待完成月结</span><b>{{ summary.open_close_periods }}</b><small>开启、预关闭或重开期间</small></div>
-<div class="hr11-kpi"><span>未关闭风险</span><b>{{ summary.open_risks }}</b><small>风险事实单独跟踪处理</small></div>
-<div class="hr11-kpi"><span>已核验加班事实</span><b>{{ summary.verified_overtime }}</b><small>只统计已经核验的实际加班</small></div>
-</section>
-<section class="hr11-grid">
-<div class="hr11-card"><div class="hr11-card-head"><div><h2>{% if section == 'attendance' %}最近日考勤事实{% elif section == 'schedule' %}最近排班{% elif section == 'leave' %}最近请假申请{% elif section == 'overtime' %}最近加班申请{% elif section == 'close' %}最近月结期间{% elif section == 'risks' %}最近考勤风险{% else %}最近日考勤事实{% endif %}</h2><p>以下内容均来自当前学校 HR11 正式数据表，不使用演示记录。</p></div></div><div class="hr11-list">
-{% if recent %}
-{% for item in recent %}
-<div class="hr11-row">
-<div>
-<strong>{% if section == 'close' %}{{ item.date }}{% elif section == 'risks' %}{{ item.risk }}{% elif section == 'leave' %}{{ item.type }} · 人员 {{ item.staff }}{% else %}人员 {{ item.staff|default:"—" }}{% endif %}</strong>
-<small>{% if section == 'attendance' or section == 'overview' %}{{ item.date }} · 记入工时 {{ item.minutes }} 分钟{% elif section == 'schedule' %}{{ item.date }}{% elif section == 'leave' %}{{ item.date }} · {{ item.amount }}{% elif section == 'overtime' %}{{ item.date|date:"Y-m-d H:i" }} · 计划 {{ item.minutes }} 分钟{% elif section == 'close' %}月结期间{% elif section == 'risks' %}{{ item.date|date:"Y-m-d H:i" }}{% endif %}</small>
-</div>
-<div>{% if section == 'overtime' %}{{ item.reason|default:"—" }}{% elif section == 'schedule' %}来源 {{ item.source|default:"—" }}{% elif section == 'attendance' or section == 'overview' %}{% if item.finalized %}已冻结{% else %}未冻结{% endif %}{% elif section == 'close' %}{% if item.closed_at %}{{ item.closed_at|date:"Y-m-d H:i" }}{% else %}尚未关闭{% endif %}{% else %}当前学校{% endif %}</div>
-<span class="hr11-pill">{{ item.status }}</span>
-</div>
-{% endfor %}
-{% else %}<div class="hr11-empty"><strong>当前没有可展示的正式记录</strong>这是当前学校真实空状态，不会为了页面好看生成考勤、请假或加班数据。</div>{% endif %}
-</div></div>
-<aside class="hr11-card"><div class="hr11-card-head"><div><h2>业务规则说明</h2><p>老师办理时最容易混淆的几个关键点。</p></div></div><div class="hr11-guide">
-<div class="hr11-guide-item"><strong>打卡记录 ≠ 正式考勤</strong><span>设备打卡先经过排班、日历、规则与异常评估，最终形成日考勤事实。</span></div>
-<div class="hr11-guide-item"><strong>批准加班 ≠ 实际加班</strong><span>实际加班还要与真实工作时间和适用规则核验，避免把申请时长直接用于结算。</span></div>
-<div class="hr11-guide-item"><strong>退回 ≠ 拒绝</strong><span>请假退回后允许按原申请链修改；拒绝是终局处理，二者保留不同历史。</span></div>
-<div class="hr11-guide-item"><strong>月结后不能直接改</strong><span>已关闭期间需要走更正批次并生成新快照，旧结论继续可追溯。</span></div>
-</div></aside>
-</section>
-<div class="hr11-principle"><strong>时间数据原则：</strong>所有“今天、本月、历史时点”按当前学校时区计算；没有明确学校上下文时拒绝读取，不跨学校自动兜底。</div>
-{% endif %}</div>
+
+<main class="hr-v2-page hr11" data-module="HR11" data-section="{{ section }}">
+  {% if access_error %}
+    <div class="hr11-access" role="alert">{{ access_error }}</div>
+  {% else %}
+    <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR11 考勤时间</span><strong>{{ section_title }}</strong></div>
+    <header class="hr-v2-pagehead" aria-labelledby="hr11-title">
+      <div class="hr-v2-pagehead__copy">
+        <div class="hr-v2-eyebrow">HR11 · 考勤与时间事实</div>
+        <h1 class="hr-v2-title" id="hr11-title">{{ section_title }}</h1>
+        <p class="hr-v2-subtitle">连接工作日历、排班、日考勤、异常更正、请假、加班调休和月结；批准、核验与正式事实始终分开记录。</p>
+      </div>
+      <div class="hr-v2-context" aria-label="数据口径">
+        <span class="hr-v2-context__item"><strong>业务日</strong> {{ today }}</span>
+        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+        <span class="hr-v2-context__item"><strong>写入</strong> Authority 状态机</span>
+      </div>
+    </header>
+
+    <nav class="hr11-nav" aria-label="考勤时间工作区导航">
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_time:hr11-overview' %}">时间总览</a>
+      <a class="{% if section == 'attendance' %}active{% endif %}" href="{% url 'hr_time:hr11-attendance' %}">日考勤与异常</a>
+      <a class="{% if section == 'schedule' %}active{% endif %}" href="{% url 'hr_time:hr11-schedule' %}">日历与排班</a>
+      <a class="{% if section == 'leave' %}active{% endif %}" href="{% url 'hr_time:hr11-leave' %}">请假与销假</a>
+      <a class="{% if section == 'overtime' %}active{% endif %}" href="{% url 'hr_time:hr11-overtime' %}">加班与调休</a>
+      <a class="{% if section == 'close' %}active{% endif %}" href="{% url 'hr_time:hr11-close' %}">月结与结算</a>
+      <a class="{% if section == 'risks' %}active{% endif %}" href="{% url 'hr_time:hr11-risks' %}">风险中心</a>
+    </nav>
+    <p class="hr11-mobile-hint">可左右滑动查看更多工作区</p>
+
+    <section class="hr11-summary" aria-label="当前学校时间摘要">
+      <article class="hr11-kpi"><span>今日正式日考勤</span><b>{{ summary.today_facts }}</b><small>{{ today }} 已形成的日事实</small></article>
+      <article class="hr11-kpi"><span>待处理考勤异常</span><b>{{ summary.open_exceptions }}</b><small>待处理与复核中的异常</small></article>
+      <article class="hr11-kpi"><span>待审批请假</span><b>{{ summary.pending_leave }}</b><small>已提交或审批中的申请</small></article>
+      <article class="hr11-kpi"><span>待审批加班</span><b>{{ summary.pending_overtime }}</b><small>申请时长不等于实际加班</small></article>
+      <article class="hr11-kpi"><span>当前生效排班</span><b>{{ summary.active_schedules }}</b><small>按学校业务日判断</small></article>
+      <article class="hr11-kpi"><span>待完成月结</span><b>{{ summary.open_close_periods }}</b><small>开启、预关闭或重开期间</small></article>
+      <article class="hr11-kpi"><span>未关闭风险</span><b>{{ summary.open_risks }}</b><small>需回到源事实闭环</small></article>
+      <article class="hr11-kpi"><span>已核验加班事实</span><b>{{ summary.verified_overtime }}</b><small>可供结算规则继续消费</small></article>
+    </section>
+
+    <section class="hr11-workbar" aria-label="本页办理入口">
+      <div><span>当前办理区</span><strong>{% if section == 'overview' %}跨域时间事实监控{% elif section == 'attendance' %}异常确认与解决{% elif section == 'schedule' %}生效排班创建{% elif section == 'leave' %}请假提交、审批与销假{% elif section == 'overtime' %}加班申请审批{% elif section == 'close' %}关账预检、关闭与重开{% else %}风险确认与解决{% endif %}</strong></div>
+      {% if section == 'schedule' %}<button class="hr11-button hr11-button--primary" type="button" data-open-schedule>新建生效排班</button>{% endif %}
+      <div class="hr11-feedback" data-feedback role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="hr11-grid">
+      <article class="hr11-card">
+        <header class="hr11-card-head"><div>
+          <h2>{% if section == 'attendance' %}最近考勤异常{% elif section == 'schedule' %}最近排班{% elif section == 'leave' %}最近请假申请{% elif section == 'overtime' %}最近加班申请{% elif section == 'close' %}最近月结期间{% elif section == 'risks' %}最近考勤风险{% else %}最近日考勤事实{% endif %}</h2>
+          <p>仅展示当前学校 Authority 记录；状态变更完成后从服务端重新读取。</p>
+        </div></header>
+        <div class="hr11-list">
+          {% for item in recent %}
+            <article class="hr11-row" data-record-id="{{ item.id }}">
+              <div class="hr11-row__main">
+                <strong>{% if section == 'close' %}{{ item.date }}{% elif section == 'risks' %}{{ item.risk }}{% elif section == 'leave' %}{{ item.type }} · {{ item.staff }}{% elif section == 'attendance' %}{{ item.exception }} · {{ item.staff }}{% else %}{{ item.staff|default:"人员档案暂不可用" }}{% endif %}</strong>
+                <small>{% if section == 'overview' %}{{ item.date }} · 记入工时 {{ item.minutes }} 分钟{% elif section == 'attendance' %}{{ item.date }}{% if item.note %} · {{ item.note }}{% endif %}{% elif section == 'schedule' %}{{ item.date }} · 来源 {{ item.source|default:"—" }}{% elif section == 'leave' %}{{ item.date }} · {{ item.amount }}{% elif section == 'overtime' %}{{ item.date|date:"Y-m-d H:i" }} · 计划 {{ item.minutes }} 分钟{% elif section == 'close' %}{% if item.closed_at %}关闭于 {{ item.closed_at|date:"Y-m-d H:i" }}{% else %}尚未正式关闭{% endif %}{% elif section == 'risks' %}{{ item.severity }} · {{ item.summary|default:"暂无补充摘要" }}{% endif %}</small>
+              </div>
+              <span class="hr11-pill" data-status>{{ item.status }}</span>
+              <div class="hr11-row__actions">
+                {% if section == 'overview' %}<span class="hr11-row__note">{% if item.finalized %}已月结冻结{% else %}尚未冻结{% endif %}</span>
+                {% elif section == 'attendance' and item.status_code == 'OPEN' %}<button type="button" data-action="exception-review">进入复核</button><button type="button" data-action="exception-resolve">解决异常</button>
+                {% elif section == 'attendance' and item.status_code == 'REVIEWING' %}<button type="button" data-action="exception-resolve">解决异常</button><button type="button" data-action="exception-dismiss">排除异常</button>
+                {% elif section == 'leave' and item.status_code == 'DRAFT' or section == 'leave' and item.status_code == 'RETURNED' %}<button type="button" data-action="leave-submit">提交审批</button>
+                {% elif section == 'leave' and item.status_code == 'SUBMITTED' %}<button type="button" data-action="leave-approve">批准</button><button type="button" data-action="leave-reject">拒绝</button>
+                {% elif section == 'leave' and item.status_code == 'APPROVED' %}<button type="button" data-action="leave-return">办理销假</button>
+                {% elif section == 'overtime' and item.status_code == 'SUBMITTED' %}<button type="button" data-action="overtime-approve">批准申请</button><button type="button" data-action="overtime-reject">拒绝申请</button>
+                {% elif section == 'close' and item.status_code != 'CLOSED' %}<button type="button" data-action="close-precheck">关账预检</button><button type="button" data-action="close-close">正式关闭</button>
+                {% elif section == 'close' and item.status_code == 'CLOSED' %}<button type="button" data-action="close-reopen">申请重开</button>
+                {% elif section == 'risks' and item.status_code == 'OPEN' %}<button type="button" data-action="risk-acknowledge">确认接单</button><button type="button" data-action="risk-resolve">解决风险</button>
+                {% elif section == 'risks' and item.status_code == 'ACKNOWLEDGED' %}<button type="button" data-action="risk-resolve">解决风险</button>
+                {% else %}<span class="hr11-row__note">当前无待办动作</span>{% endif %}
+              </div>
+            </article>
+          {% empty %}<div class="hr11-empty"><strong>当前没有可展示的正式记录</strong><span>这是当前学校真实空状态，不生成演示考勤、请假或加班数据。</span></div>{% endfor %}
+        </div>
+      </article>
+
+      <aside class="hr11-card">
+        <header class="hr11-card-head"><div><h2>办理边界</h2><p>页面动作不会绕过这些事实规则。</p></div></header>
+        <div class="hr11-guide">
+          <div class="hr11-guide-item"><strong>打卡记录 ≠ 正式考勤</strong><span>先匹配日历与排班，再评估异常并形成日事实。</span></div>
+          <div class="hr11-guide-item"><strong>批准加班 ≠ 实际加班</strong><span>最终结算只使用核验后的实际时段与可结算分钟。</span></div>
+          <div class="hr11-guide-item"><strong>退回 ≠ 拒绝</strong><span>退回允许保留原链修改；拒绝是终局决定。</span></div>
+          <div class="hr11-guide-item"><strong>月结后不能直接改</strong><span>重开会形成更正批次和新快照，旧快照继续保留。</span></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="hr11-capability-card">
+      <h2>HR11 时间事实闭环</h2><p>所有步骤均使用当前学校的正式数据，失败时保留原状态并返回明确错误。</p>
+      <div class="hr11-flow">
+        <div class="hr11-flow-step"><b>1 · 日历排班</b><span>确定应出勤时间</span></div><div class="hr11-flow-step"><b>2 · 原始事件</b><span>保留打卡与来源</span></div><div class="hr11-flow-step"><b>3 · 规则评估</b><span>形成异常与日事实</span></div><div class="hr11-flow-step"><b>4 · 审批核验</b><span>处理请假、加班与更正</span></div><div class="hr11-flow-step"><b>5 · 月结快照</b><span>冻结可追溯期间事实</span></div>
+      </div>
+    </section>
+    <div class="hr-v2-truth-note"><strong>数据边界</strong><span>本工作区不展示跨校对象，不接受内部 ID 手工输入；日期按学校时区计算，状态由服务端重新校验。</span></div>
+
+    <dialog class="hr11-dialog" data-dialog aria-labelledby="hr11-dialog-title">
+      <form method="dialog" data-dialog-form>
+        <header><div><span>HR11 办理</span><h2 id="hr11-dialog-title" data-dialog-title>填写办理信息</h2></div><button type="button" data-dialog-close aria-label="关闭">×</button></header>
+        <div data-dialog-fields></div>
+        <footer><button type="button" class="hr11-button" data-dialog-close>取消</button><button type="submit" class="hr11-button hr11-button--primary" data-dialog-submit>确认办理</button></footer>
+      </form>
+    </dialog>
+  {% endif %}
+</main>
+<script src="{% static 'hr/js/pages/hr11-actions.js' %}"></script>
 {% endblock %}
