@@ -20,12 +20,14 @@
       const res = await window.HrApi.request("/api/hr/v1/structure/position-control/summary");
       if (!res.ok) throw new Error("summary failed");
       const d = res.data;
-      el.innerHTML = `<div class="hr-summary-numbers">
-        <span class="hr-summary-number"><b>${d.authorized ?? "—"}</b> 核定岗位</span>
-        <span class="hr-summary-number"><b>${d.occupied ?? "—"}</b> 已占</span>
-        <span class="hr-summary-number"><b>${d.vacant ?? "—"}</b> 空缺</span>
-        <span class="hr-summary-number"><b>${d.frozen ?? "—"}</b> 冻结</span>
-        <span class="hr-summary-number hr-risk-danger"><b>${d.over ?? "—"}</b> 超额</span>
+      const frozenTone = Number(d.frozen || 0) > 0 ? ' data-tone="warning"' : "";
+      const overTone = Number(d.over || 0) > 0 ? ' data-tone="danger"' : "";
+      el.innerHTML = `<div class="hr02-position-kpis">
+        <div class="hr-v2-summary-cell"><strong>${d.authorized ?? "—"}</strong><span>核定岗位</span></div>
+        <div class="hr-v2-summary-cell"><strong>${d.occupied ?? "—"}</strong><span>已占</span></div>
+        <div class="hr-v2-summary-cell"><strong>${d.vacant ?? "—"}</strong><span>空缺</span></div>
+        <div class="hr-v2-summary-cell"${frozenTone}><strong>${d.frozen ?? "—"}</strong><span>冻结</span></div>
+        <div class="hr-v2-summary-cell"${overTone}><strong>${d.over ?? "—"}</strong><span>超额</span></div>
       </div>`;
     } catch (e) {
       el.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
