@@ -348,15 +348,31 @@ class ApplyService:
             )
 
         elif action == ChangeActionCode.MANAGER_CHANGE:
-            assignment_service.switch_primary(
-                employment_relationship_id=_current_rel(self.tenant_id, case),
+            current_primary = _primary_assignment_as_of(
+                self.tenant_id,
+                case,
+                eff,
+            )
+            if current_primary is None:
+                raise ApplyServiceError(
+                    "ASSIGNMENT_NOT_FOUND",
+                    "生效日未找到可继承的当前主岗",
+                )
+            new_primary = assignment_service.switch_primary(
+                employment_relationship_id=current_primary.employment_relationship_id,
                 effective_from=eff,
-                organization_id=target_org,
-                position_id=target_pos,
+                organization_id=current_primary.organization_id,
+                position_id=current_primary.position_id,
+                post_catalog_id=current_primary.post_catalog_id,
+                legacy_department_id=current_primary.legacy_department_id,
+                legacy_job_position_id=current_primary.legacy_job_position_id,
+                assignment_role_code=current_primary.assignment_role_code,
+                fte=current_primary.fte,
                 reporting_staff_id=reporting_staff,
                 source_business_type=biz_type,
                 source_business_id=biz_id,
             )
+            target_fact_ids.append(str(new_primary.id))
 
         elif action in (
             ChangeActionCode.TEMPORARY_SECONDMENT,
@@ -468,6 +484,17 @@ def _current_primary(tenant_id, case):
     return EffectiveDatedQueryService(tenant_id).primary_assignment_as_of(
         case.staff_master_id_id,
         date.today(),
+    )
+
+
+def _primary_assignment_as_of(tenant_id, case, as_of):
+    from hr_staff.services.effective_dated_query_service import (
+        EffectiveDatedQueryService,
+    )
+
+    return EffectiveDatedQueryService(tenant_id).primary_assignment_as_of(
+        case.staff_master_id_id,
+        as_of,
     )
 
 

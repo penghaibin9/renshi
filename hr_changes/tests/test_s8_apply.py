@@ -2,6 +2,7 @@
 
 import json
 from datetime import date
+from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -135,6 +136,104 @@ class ApplyTransferTests(TestCase):
         rel.save()
         result = ApplyService(TENANT).apply_case(case.id)
         self.assertEqual(result.status, CaseStatus.APPLY_FAILED)
+
+
+class ApplyManagerChangeTests(TestCase):
+    """直属上级变更只替换 manager，并保留完整 HR03 主岗事实。"""
+
+    def test_manager_change_preserves_primary_assignment_authority(self):
+        from hr_staff.models import HrOutboxEvent, HrStaffAuditEvent
+        from hr_staff.services.effective_dated_query_service import (
+            EffectiveDatedQueryService,
+        )
+
+        staff = make_staff(TENANT, make_person(TENANT, "被调整教师"), "T8207")
+        old_manager = make_staff(TENANT, make_person(TENANT, "原直属上级"), "T8208")
+        new_manager = make_staff(TENANT, make_person(TENANT, "新直属上级"), "T8209")
+        org = make_org(TENANT, "JSXY-MGR", "计算机学院", date(2020, 1, 1))
+        position = make_position(TENANT, org, "JS-MGR-P01", max_incumbents=2)
+        relationship = EmploymentService(TENANT).start_relationship(
+            staff_id=staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        original = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="PRIMARY",
+            effective_from=date(2024, 9, 1),
+            organization_id=org,
+            position_id=position,
+            post_catalog_id=position.post_catalog_version_id,
+            legacy_department_id=8207,
+            legacy_job_position_id=9207,
+            assignment_role_code="TEACHING",
+            fte=Decimal("0.80"),
+            reporting_staff_id=old_manager,
+            source_business_type=FIXTURE_SOURCE,
+        )
+
+        action = make_action(TENANT, ChangeActionCode.MANAGER_CHANGE)
+        reason = make_reason(TENANT, ChangeActionCode.MANAGER_CHANGE)
+        service = ChangeService(TENANT, actor_user_id=1)
+        case = service.create_case(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[
+                {
+                    "domain": "assignment",
+                    "field_code": "reporting_staff",
+                    "proposed_value_ref": str(new_manager.id),
+                }
+            ],
+            source_org_id=org,
+            source_position_id=position,
+        )
+        self.assertEqual(case.status, CaseStatus.DRAFT)
+        case = service.submit(case.id)
+        case = service.start_approval(case.id)
+        case = service.approve_all(case.id)
+        self.assertEqual(case.status, CaseStatus.APPROVED_WAITING_EFFECTIVE)
+
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+        self.assertEqual(case.status, CaseStatus.EFFECTIVE)
+
+        current = EffectiveDatedQueryService(TENANT).primary_assignment_as_of(
+            staff.id,
+            date.today(),
+        )
+        self.assertIsNotNone(current)
+        self.assertNotEqual(current.id, original.id)
+        self.assertEqual(current.organization_id_id, original.organization_id_id)
+        self.assertEqual(current.position_id_id, original.position_id_id)
+        self.assertEqual(current.post_catalog_id_id, original.post_catalog_id_id)
+        self.assertEqual(current.legacy_department_id, original.legacy_department_id)
+        self.assertEqual(current.legacy_job_position_id, original.legacy_job_position_id)
+        self.assertEqual(current.assignment_role_code, original.assignment_role_code)
+        self.assertEqual(current.fte, original.fte)
+        self.assertEqual(current.reporting_staff_id_id, new_manager.id)
+
+        original.refresh_from_db()
+        self.assertEqual(original.effective_to, date.today())
+        staff.refresh_from_db()
+        self.assertEqual(staff.primary_assignment_id, current.id)
+        self.assertTrue(
+            HrStaffAuditEvent.objects.filter(
+                tenant_id=TENANT,
+                staff_id=staff.id,
+                action="PrimaryAssignmentChanged",
+                business_type="HR06_TRANSFER",
+                business_id=case.case_no,
+            ).exists()
+        )
+        self.assertTrue(
+            HrOutboxEvent.objects.filter(
+                tenant_id=TENANT,
+                event_type="PrimaryAssignmentChanged",
+                payload_json__assignmentId=str(current.id),
+            ).exists()
+        )
 
 
 class RebaseServiceTests(TestCase):
