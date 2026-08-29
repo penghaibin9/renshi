@@ -7,11 +7,21 @@ from django.test import SimpleTestCase
 class Hr06V2WorkspaceContractTests(SimpleTestCase):
     def setUp(self):
         root = Path(settings.BASE_DIR)
-        self.center = (root / "hr_changes/templates/hr_changes/change_center.html").read_text(encoding="utf-8")
-        self.new = (root / "hr_changes/templates/hr_changes/change_new.html").read_text(encoding="utf-8")
-        self.nav = (root / "hr_changes/templates/hr_changes/components/v2_nav.html").read_text(encoding="utf-8")
-        self.script = (root / "static/hr/js/pages/hr06-change-new.js").read_text(encoding="utf-8")
-        self.css = (root / "static/hr/css/hr06-changes-v2.css").read_text(encoding="utf-8")
+        self.center = (
+            root / "hr_changes/templates/hr_changes/change_center.html"
+        ).read_text(encoding="utf-8")
+        self.new = (root / "hr_changes/templates/hr_changes/change_new.html").read_text(
+            encoding="utf-8"
+        )
+        self.nav = (
+            root / "hr_changes/templates/hr_changes/components/v2_nav.html"
+        ).read_text(encoding="utf-8")
+        self.script = (root / "static/hr/js/pages/hr06-change-new.js").read_text(
+            encoding="utf-8"
+        )
+        self.css = (root / "static/hr/css/hr06-changes-v2.css").read_text(
+            encoding="utf-8"
+        )
 
     def test_center_and_create_use_shared_v2_shell(self):
         for content in (self.center, self.new):
@@ -51,11 +61,18 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn('id="hr06-create-draft"', self.new)
         self.assertIn('id="hr06-staff-keyword"', self.new)
         self.assertNotIn('href="/hr/changes/">提交</a>', self.new)
-        self.assertNotIn("人员 UUID", self.new)
+        self.assertNotIn('id="hr06-staff-id"', self.new)
+        self.assertNotIn('name="staffMasterId"', self.new)
         self.assertNotIn("staff_master_id", self.new)
 
     def test_center_preserves_server_side_truthful_read_model(self):
-        for token in ("stats.myTodos", "stats.underApproval", "stats.waitingEffective", "stats.effectiveThisMonth", "stats.risks"):
+        for token in (
+            "stats.myTodos",
+            "stats.underApproval",
+            "stats.waitingEffective",
+            "stats.effectiveThisMonth",
+            "stats.risks",
+        ):
             self.assertIn(token, self.center)
         self.assertIn("it.statusLabel", self.center)
         self.assertIn("it.actionLabel", self.center)
