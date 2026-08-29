@@ -153,11 +153,9 @@
     <div class="hr12-principle"><strong>考核数据原则：</strong>考核结果必须能追溯到制度版本、考核周期、对象快照、证据与评议过程；未接通的数据来源会明确提示，不会自动当作“无问题”或“0 分”。</div>
   {% endif %}
 </div>
+{% if not access_error %}
+  {# HR12 boots directly after its root so script execution cannot depend on a theme block. #}
+  <script src="{% static 'hr/js/pages/hr12-assessment.js' %}"></script>
+  <script src="{% static 'hr/js/pages/hr12-actions.js' %}"></script>
+{% endif %}
 {% endblock content %}
-
-{% block scripts %}
-  {% if not access_error %}
-    <script src="{% static 'hr/js/pages/hr12-assessment.js' %}"></script>
-    <script src="{% static 'hr/js/pages/hr12-actions.js' %}"></script>
-  {% endif %}
-{% endblock scripts %}
