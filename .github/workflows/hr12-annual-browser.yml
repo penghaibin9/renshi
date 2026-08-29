@@ -30,6 +30,7 @@ env:
   CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
+  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
   HR_BROWSER_USERNAME: hr12-annual-auditor
   HR_BROWSER_PASSWORD: hr12-annual-only-password
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
@@ -94,9 +95,54 @@ jobs:
           python manage.py migrate --noinput
           python manage.py migrate --check
 
+      - name: Provision isolated HR12 Django test database
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute(
+                  "CREATE DATABASE `test_horilla_db` "
+                  "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+              )
+              cursor.execute(
+                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
+                  "TO 'horilla_user'@'%'"
+              )
+              cursor.execute("FLUSH PRIVILEGES")
+          finally:
+              connection.close()
+          PY
+
+          # Reuse the exact fresh-migration schema already verified above, then
+          # materialize only unmigrated app tables inside the isolated test DB.
+          # This matches the repository's GREEN MySQL contract/visual gates and
+          # avoids granting the application user global database privileges.
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --no-tablespaces horilla_db' \
+            | docker exec -i "$mysql_container" sh -c \
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --run-syncdb --noinput
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --check
+
       - name: Run precise HR12 Annual API tests
         run: |
-          python manage.py test hr_assessment.tests.test_annual_api --noinput --verbosity 2
+          python manage.py test hr_assessment.tests.test_annual_api --keepdb --noinput --verbosity 2
 
       - name: Seed one real HR12 Annual authority chain
         shell: bash
