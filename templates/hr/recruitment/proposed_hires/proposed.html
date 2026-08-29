@@ -1,27 +1,51 @@
 {% extends "index.html" %}
-{% comment %}
-HR04-06 拟录用工作台（总册 13.2）
-数据走 GET /api/hr/v1/recruitment/proposed-hires
-{% endcomment %}
 {% load static i18n %}
 
-{% block content %}
+{% block styles %}
+{{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}">
+{% endblock styles %}
 
-<div class="hr-page" data-hr-page="recruitment-proposed">
-  {% include "hr/components/page_header.html" with title="拟录用与人才引进" subtitle="拟录用 → 公示 → Offer → HR05 交接（HR04-06）" %}
+{% block content %}
+<div class="hr-v2-page hr04-page" data-module="HR04" data-section="proposed-hires" data-hr-page="recruitment-proposed">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>录用与人才引进</strong></div>
 
-  <div class="hr-card">
-    <h2 class="hr-section-title">{% trans "拟录用" %}</h2>
-    <div id="hr04-proposed-list" class="hr-rec-proposed-table">
-      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr04-proposed-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR04 · 招聘与人才引进</div>
+      <h1 class="hr-v2-title" id="hr04-proposed-title">录用与人才引进</h1>
+      <p class="hr-v2-subtitle">查看岗位排名、综合成绩、审批状态与预占事实。拟录用、公示、Offer 和 HR05 交接保持为不同业务阶段。</p>
     </div>
-  </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>审批</strong> 后端状态</span>
+      <span class="hr-v2-context__item"><strong>交接</strong> HR05</span>
+    </div>
+  </header>
+
+  <nav class="hr04-nav" aria-label="招聘与人才引进工作区">
+    <a href="{% url 'hr04-plans' %}">年度用人计划</a>
+    <a href="{% url 'hr04-campaigns' %}">招聘项目与岗位</a>
+    <a href="{% url 'hr04-candidates' %}">人才库与应聘者</a>
+    <a href="{% url 'hr04-qualification' %}">资格审查</a>
+    <a href="{% url 'hr04-assessment' %}">考试面试与考察</a>
+    <a href="{% url 'hr04-proposed-hires' %}" aria-current="page">录用与人才引进</a>
+  </nav>
+
+  <section class="hr04-panel">
+    <div class="hr04-panel__head"><div><h2>{% trans "拟录用" %}</h2><p>排名与成绩只展示服务端已形成的正式结果，不在浏览器中重算。</p></div></div>
+    <div id="hr04-proposed-list" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取拟录用结果</strong><span>等待正式审批与预占事实。</span></div></div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>录用边界</strong><span>“拟录用”不等于“已入职”；公示、Offer、预占与 HR05 报到交接必须按各自正式状态推进。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
 
 {% block scripts %}
+{{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-proposed.js' %}"></script>
-{% endblock %}
+{% endblock scripts %}

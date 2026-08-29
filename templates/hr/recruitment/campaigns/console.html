@@ -1,47 +1,62 @@
 {% extends "index.html" %}
 {% load static i18n %}
-{% comment %}
-HR04 招聘控制台（默认入口 = HR04-02 招聘项目与岗位，总册 5.1/9.2）
-数据走 GET /api/hr/v1/recruitment/console + campaigns
-{% endcomment %}
 
-{% block content %}
+{% block styles %}
+{{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}">
+{% endblock styles %}
 
-<div class="hr-page" data-hr-page="recruitment-console">
-  {% include "hr/components/page_header.html" with title="招聘与人才引进" subtitle="从年度用人计划到 HR05 报到的招聘事实链" %}
+{% block content %}
+<div class="hr-v2-page hr04-page" data-module="HR04" data-section="campaigns" data-hr-page="recruitment-console">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>招聘项目与岗位</strong></div>
 
-  <nav class="hr-filter-bar" aria-label="招聘与人才引进工作区">
-    <a class="hr-btn" href="/hr/recruitment/plans">年度用人计划</a>
-    <a class="hr-btn" href="/hr/recruitment/campaigns">招聘项目与岗位</a>
-    <a class="hr-btn" href="/hr/recruitment/candidates">人才库与应聘者</a>
-    <a class="hr-btn" href="/hr/recruitment/qualification">资格审查</a>
-    <a class="hr-btn" href="/hr/recruitment/assessment">考试面试与考察</a>
-    <a class="hr-btn" href="/hr/recruitment/proposed-hires">录用与人才引进</a>
+  <header class="hr-v2-pagehead" aria-labelledby="hr04-campaign-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR04 · 招聘与人才引进</div>
+      <h1 class="hr-v2-title" id="hr04-campaign-title">招聘项目与岗位</h1>
+      <p class="hr-v2-subtitle">从已批准的用人计划进入招聘项目、岗位开放和候选申请。首屏数字全部来自招聘 console，不用前端拼装业务结论。</p>
+    </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> 招聘 console</span>
+      <span class="hr-v2-context__item"><strong>创建</strong> 暂不可用</span>
+    </div>
+  </header>
+
+  <nav class="hr04-nav" aria-label="招聘与人才引进工作区">
+    <a href="{% url 'hr04-plans' %}">年度用人计划</a>
+    <a href="{% url 'hr04-campaigns' %}" aria-current="page">招聘项目与岗位</a>
+    <a href="{% url 'hr04-candidates' %}">人才库与应聘者</a>
+    <a href="{% url 'hr04-qualification' %}">资格审查</a>
+    <a href="{% url 'hr04-assessment' %}">考试面试与考察</a>
+    <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
   </nav>
 
-  <div class="hr-kpi-grid" id="hr04-kpis">
-    {% include "hr/components/metric_card.html" with label="进行中项目" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="开放岗位" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="待资格审核" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="本周选拔" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="待拟录用" status="loading" %}
+  <div id="hr04-kpis" class="hr04-metric-grid" aria-live="polite">
+    <div class="hr04-state"><strong>正在读取招聘概况</strong><span>等待服务端 console 返回真实统计。</span></div>
   </div>
 
-  <div class="hr-card">
-    <div class="hr-rec-plan-toolbar">
-      <h2 class="hr-section-title">{% trans "招聘项目" %}</h2>
-      <button class="hr-btn" data-hr-new-campaign>{% trans "新建招聘项目" %}</button>
+  <div class="hr04-unavailable" role="note"><strong>创建入口：</strong><span>当前后端同路径 GET/POST 路由存在可达性缺口，因此不向用户呈现一个会稳定失败的“新建招聘项目”流程；已有项目查询继续正常工作。</span></div>
+
+  <section class="hr04-panel">
+    <div class="hr04-toolbar">
+      <div><h2>{% trans "招聘项目" %}</h2><p>查看服务端返回的项目状态、岗位数量和报名截止日。</p></div>
+      <button class="hr04-action" type="button" data-hr-new-campaign disabled aria-disabled="true">{% trans "新建招聘项目" %}</button>
     </div>
-    <div id="hr04-campaign-list" class="hr-rec-campaign-grid">
-      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    <div id="hr04-campaign-list" class="hr04-campaign-grid">
+      <div class="hr04-state"><strong>正在读取招聘项目</strong><span>等待正式项目列表。</span></div>
     </div>
-  </div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>状态边界</strong><span>岗位开放、项目发布与取消等状态只能由后端状态机确认；页面不会用拖拽、颜色或本地变量替代正式状态。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
 
 {% block scripts %}
+{{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-campaigns.js' %}"></script>
-{% endblock %}
+{% endblock scripts %}

@@ -1,34 +1,55 @@
 {% extends "index.html" %}
-{% comment %}
-HR04-04 资格审查工作台（总册 11.1）
-数据走 GET /api/hr/v1/recruitment/qualification/workbench
-{% endcomment %}
 {% load static i18n %}
 
-{% block content %}
+{% block styles %}
+{{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}">
+{% endblock styles %}
 
-<div class="hr-page" data-hr-page="recruitment-qualification">
-  {% include "hr/components/page_header.html" with title="资格审查" subtitle="系统预检只建议，最终结论需人工审核（HR04-04）" %}
+{% block content %}
+<div class="hr-v2-page hr04-page" data-module="HR04" data-section="qualification" data-hr-page="recruitment-qualification">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>资格审查</strong></div>
 
-  <div class="hr-metric-strip" id="hr04-qual-stats">
-    {% include "hr/components/metric_card.html" with label="待审核" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="资格通过" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="退回补件" status="loading" %}
-    {% include "hr/components/metric_card.html" with label="不合格" status="loading" %}
-  </div>
-
-  <div class="hr-card">
-    <h2 class="hr-section-title">{% trans "审核队列" %}</h2>
-    <div id="hr04-qual-queue" class="hr-rec-qual-queue">
-      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr04-qualification-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR04 · 招聘与人才引进</div>
+      <h1 class="hr-v2-title" id="hr04-qualification-title">资格审查</h1>
+      <p class="hr-v2-subtitle">系统预检只提供辅助信息，资格通过、退回补件与不合格均必须由授权审核人员形成正式结论。</p>
     </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>预检</strong> 仅建议</span>
+      <span class="hr-v2-context__item"><strong>结论</strong> 人工审核</span>
+    </div>
+  </header>
+
+  <nav class="hr04-nav" aria-label="招聘与人才引进工作区">
+    <a href="{% url 'hr04-plans' %}">年度用人计划</a>
+    <a href="{% url 'hr04-campaigns' %}">招聘项目与岗位</a>
+    <a href="{% url 'hr04-candidates' %}">人才库与应聘者</a>
+    <a href="{% url 'hr04-qualification' %}" aria-current="page">资格审查</a>
+    <a href="{% url 'hr04-assessment' %}">考试面试与考察</a>
+    <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
+  </nav>
+
+  <div id="hr04-qual-stats" class="hr04-metric-grid hr04-metric-grid--four" aria-live="polite">
+    <div class="hr04-state"><strong>正在读取资格审查概况</strong><span>等待服务端 workbench 返回正式统计。</span></div>
   </div>
+
+  <section class="hr04-panel">
+    <div class="hr04-panel__head"><div><h2>{% trans "审核队列" %}</h2><p>展示申请号、候选人、岗位、正式状态和提交时间。</p></div></div>
+    <div id="hr04-qual-queue" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取审核队列</strong><span>预检不会自动生成最终资格结论。</span></div></div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>审核边界</strong><span>RETURNED 与 DISQUALIFIED 等决定必须满足后端原因/缺项要求并留痕；前端不根据材料缺失自行判定候选人资格。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
 
 {% block scripts %}
+{{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-qualification.js' %}"></script>
-{% endblock %}
+{% endblock scripts %}

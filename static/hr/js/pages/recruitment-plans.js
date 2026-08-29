@@ -1,97 +1,65 @@
-/**
- * hr/js/pages/recruitment-plans.js — HR04-01 年度用人计划页面
- *
- * 数据源：GET /api/hr/v1/recruitment/plans（周期）+ GET /api/hr/v1/recruitment/plans/{id}（需求）
- * 原则：页面薄、状态可解释、403/TENANT 用 api-client 错误码显示，不 mock。
- */
+/** HR04-01 年度用人计划：读取正式周期与需求；创建入口在路由契约修复前保持不可用。 */
 (function () {
   "use strict";
 
-  function $(sel, root) {
-    return (root || document).querySelector(sel);
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, function (char) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char];
+    });
+  }
+  function safeStatusClass(value) {
+    return String(value || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "unknown";
+  }
+  function stateHtml(title, detail, isError) {
+    return '<div class="hr04-state"' + (isError ? ' data-state="error"' : "") + '><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail || "") + '</span></div>';
   }
 
   async function loadCycles() {
     const container = $("#hr04-plan-cycles");
     if (!container) return;
     try {
-      const res = await window.HrApi.request("/api/hr/v1/recruitment/plans", { params: { year: "", status: "" } });
-      const cycles = (res.data && res.data.cycles) || [];
+      const res = await window.HrApi.request("/api/hr/v1/recruitment/plans", {params:{year:"", status:""}});
+      const cycles = res.data?.cycles || [];
       if (!cycles.length) {
-        container.innerHTML =
-          '<div class="hr-state-view"><p class="hr-meta">暂无计划周期，请新建</p></div>';
+        container.innerHTML = stateHtml("暂无计划周期", "当前学校没有返回正式计划周期。", false);
+        $("#hr04-plan-requests").innerHTML = stateHtml("暂无需求可读", "需要先存在正式计划周期。", false);
         return;
       }
-      container.innerHTML = cycles
-        .map(
-          (c) =>
-            `<div class="hr-rec-plan-cycle" data-id="${c.id}">
-               <span class="hr-rec-badge hr-rec-badge--${(c.status || "").toLowerCase()}">${c.statusLabel || c.status}</span>
-               <strong>${c.year} ${c.title}</strong>
-               <span class="hr-meta">${c.start_date || ""}</span>
-             </div>`
-        )
-        .join("");
-      // 首个周期加载需求
-      const first = cycles[0];
-      if (first) loadRequests(first.id);
+      container.innerHTML = cycles.map(function (cycle) {
+        return '<div class="hr-rec-plan-cycle" data-id="' + escapeHtml(cycle.id) + '"><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(cycle.status) + '">' +
+          escapeHtml(cycle.statusLabel || cycle.status || "—") + '</span> <strong>' + escapeHtml(cycle.year ?? "—") + ' ' + escapeHtml(cycle.title || "—") +
+          '</strong> <span class="hr-meta">' + escapeHtml(cycle.start_date || "—") + '</span></div>';
+      }).join("");
+      loadRequests(cycles[0].id);
     } catch (err) {
-      container.innerHTML =
-        '<div class="hr-state-view"><p class="hr-meta">' +
-        (window.HrApi.apiErrorToMessage(err) || "加载失败") +
-        "</p></div>";
+      container.innerHTML = stateHtml("计划周期读取失败", window.HrApi.apiErrorToMessage(err) || "请求失败", true);
     }
   }
 
   async function loadRequests(cycleId) {
     const container = $("#hr04-plan-requests");
     if (!container) return;
-    container.innerHTML = '<div class="hr-state-view"><p class="hr-meta">加载中…</p></div>';
+    container.innerHTML = stateHtml("正在读取需求", "等待当前计划周期的正式需求列表。", false);
     try {
-      const res = await window.HrApi.request(`/api/hr/v1/recruitment/plans/${cycleId}`);
-      const items = (res.data && res.data.items) || [];
+      const res = await window.HrApi.request("/api/hr/v1/recruitment/plans/" + encodeURIComponent(cycleId));
+      const items = res.data?.items || [];
       if (!items.length) {
-        container.innerHTML =
-          '<div class="hr-state-view"><p class="hr-meta">该周期暂无需求申请</p></div>';
+        container.innerHTML = stateHtml("该周期暂无需求申请", "服务端没有返回需求记录。", false);
         return;
       }
-      container.innerHTML =
-        "<table class=\"hr-table\"><thead><tr>" +
-        "<th>学院</th><th>申请</th><th>批准</th><th>状态</th><th>提交时间</th></tr></thead><tbody>" +
-        items
-          .map(
-            (r) =>
-              `<tr>
-                 <td>${r.organization_name || "—"}</td>
-                 <td>${r.total_requested}</td>
-                 <td>${r.total_approved}</td>
-                 <td><span class="hr-rec-badge hr-rec-badge--${(r.status || "").toLowerCase()}">${r.statusLabel || r.status}</span></td>
-                 <td>${r.submitted_at ? new Date(r.submitted_at).toLocaleString() : "—"}</td>
-               </tr>`
-          )
-          .join("") +
-        "</tbody></table>";
+      container.innerHTML = '<table class="hr-table"><thead><tr><th>学院</th><th>申请</th><th>批准</th><th>状态</th><th>提交时间</th></tr></thead><tbody>' +
+        items.map(function (row) {
+          const submitted = row.submitted_at ? new Date(row.submitted_at).toLocaleString() : "—";
+          return '<tr><td>' + escapeHtml(row.organization_name || "—") + '</td><td>' + escapeHtml(row.total_requested ?? "—") + '</td><td>' +
+            escapeHtml(row.total_approved ?? "—") + '</td><td><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(row.status) + '">' +
+            escapeHtml(row.statusLabel || row.status || "—") + '</span></td><td>' + escapeHtml(submitted) + '</td></tr>';
+        }).join("") + '</tbody></table>';
     } catch (err) {
-      container.innerHTML =
-        '<div class="hr-state-view"><p class="hr-meta">' +
-        (window.HrApi.apiErrorToMessage(err) || "加载失败") +
-        "</p></div>";
+      container.innerHTML = stateHtml("需求列表读取失败", window.HrApi.apiErrorToMessage(err) || "请求失败", true);
     }
   }
 
-  function init() {
-    const btn = $("[data-hr-new-cycle]");
-    if (btn) {
-      btn.addEventListener("click", function () {
-        window.alert("新建计划周期（S3 API：POST /api/hr/v1/recruitment/plans）");
-      });
-    }
-    loadCycles();
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
+  function init() { loadCycles(); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

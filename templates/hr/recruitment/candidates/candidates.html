@@ -1,30 +1,56 @@
 {% extends "index.html" %}
-{% comment %}
-HR04-03 人才库（总册 10.2）
-数据走 GET /api/hr/v1/recruitment/candidates
-{% endcomment %}
 {% load static i18n %}
 
-{% block content %}
+{% block styles %}
+{{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}">
+{% endblock styles %}
 
-<div class="hr-page" data-hr-page="recruitment-candidates">
-  {% include "hr/components/page_header.html" with title="人才库与应聘者" subtitle="候选自然人与应聘申请分离（HR04-03）" %}
+{% block content %}
+<div class="hr-v2-page hr04-page" data-module="HR04" data-section="candidates" data-hr-page="recruitment-candidates">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>人才库与应聘者</strong></div>
 
-  <div class="hr-card">
-    <div class="hr-rec-plan-toolbar">
-      <h2 class="hr-section-title">{% trans "候选人" %}</h2>
-      <input class="hr-input" id="hr04-candidate-keyword" placeholder="{% trans '搜索姓名/编号/邮箱' %}" />
+  <header class="hr-v2-pagehead" aria-labelledby="hr04-candidates-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR04 · 招聘与人才引进</div>
+      <h1 class="hr-v2-title" id="hr04-candidates-title">人才库与应聘者</h1>
+      <p class="hr-v2-subtitle">按姓名、候选编号或邮箱检索候选自然人。列表只展示完成当前招聘工作所需摘要，手机号继续使用服务端脱敏值。</p>
     </div>
-    <div id="hr04-candidate-list" class="hr-rec-candidate-table">
-      <div class="hr-state-view"><p class="hr-meta">{% trans "数据加载中…" %}</p></div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>隐私</strong> 手机号脱敏</span>
+      <span class="hr-v2-context__item"><strong>搜索</strong> 服务端查询</span>
     </div>
-  </div>
+  </header>
+
+  <nav class="hr04-nav" aria-label="招聘与人才引进工作区">
+    <a href="{% url 'hr04-plans' %}">年度用人计划</a>
+    <a href="{% url 'hr04-campaigns' %}">招聘项目与岗位</a>
+    <a href="{% url 'hr04-candidates' %}" aria-current="page">人才库与应聘者</a>
+    <a href="{% url 'hr04-qualification' %}">资格审查</a>
+    <a href="{% url 'hr04-assessment' %}">考试面试与考察</a>
+    <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
+  </nav>
+
+  <section class="hr04-panel">
+    <div class="hr04-toolbar">
+      <div><h2>{% trans "候选人" %}</h2><p>搜索结果来自 canonical candidate API，不读取身份证或简历正文。</p></div>
+      <input class="hr04-search" id="hr04-candidate-keyword" placeholder="{% trans '搜索姓名/编号/邮箱' %}" autocomplete="off">
+    </div>
+    <div id="hr04-candidate-list" class="hr04-table-wrap">
+      <div class="hr04-state"><strong>正在读取候选人</strong><span>默认读取当前学校可见候选摘要。</span></div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>最小披露</strong><span>候选人列表不展示身份证明明文、简历正文等高敏材料；任何进一步披露继续依赖后端授权与审计。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
 
 {% block scripts %}
+{{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-candidates.js' %}"></script>
-{% endblock %}
+{% endblock scripts %}
