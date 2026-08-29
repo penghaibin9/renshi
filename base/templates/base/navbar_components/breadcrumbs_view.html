@@ -1,15 +1,5 @@
 {% load static %}
 {% load i18n %}
-<style>
-    /* HR V2 marks its shared shell after page content is mounted. On narrow
-       screens the V2 page itself already renders the authoritative workspace
-       locator, so hide the generic breadcrumb only for that explicit shell. */
-    @media (max-width: 760px) {
-        body.hr-v2-shell #breadcrumbs-container {
-            display: none !important;
-        }
-    }
-</style>
 <ul class="oh-navbar__breadcrumb">
     {% for breadcrumb in breadcrumbs %}
         {% if forloop.last %}
