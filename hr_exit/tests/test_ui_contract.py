@@ -1,9 +1,11 @@
+from pathlib import Path
+
 from django.template.loader import get_template
-from django.test import SimpleTestCase
+from django.test import TestCase
 from django.urls import resolve, reverse
 
 
-class Hr16UiContractTests(SimpleTestCase):
+class Hr16UiContractTests(TestCase):
     def test_workspace_routes_are_registered(self):
         expected = {
             "hr_exit:overview": "/hr/exit/",
@@ -27,3 +29,27 @@ class Hr16UiContractTests(SimpleTestCase):
 
     def test_workspace_template_compiles(self):
         self.assertIsNotNone(get_template("hr_exit/workspace.html"))
+
+    def test_active_workspace_is_single_external_script_shell(self):
+        template = get_template("hr_exit/workspace.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertIn('{% extends "index.html" %}', source)
+        self.assertIn('data-module="HR16"', source)
+        self.assertIn("data-can-manage", source)
+        self.assertIn("data-can-handover", source)
+        self.assertIn("data-can-effect", source)
+        self.assertIn("hr16-actions.js", source)
+        self.assertNotIn("<style", source)
+        self.assertNotIn("style=", source)
+        self.assertNotIn("<script>", source)
+        for forbidden in ("Effect Saga", "ExitFact", "RetirementFact", "Provider"):
+            self.assertNotIn(forbidden, source)
+
+    def test_actions_use_real_boundaries_without_raw_identity_inputs(self):
+        source = Path("static/hr/js/pages/hr16-actions.js").read_text(encoding="utf-8")
+        for boundary in ("'submit'", "'approve'", "/handover-items/", "/apply-effect/", "/retirement/"):
+            self.assertIn(boundary, source)
+        for forbidden in ("Person UUID", "Relationship UUID", "Staff UUID", "location.reload", "prompt(", "alert("):
+            self.assertNotIn(forbidden, source)
+        self.assertIn("可信人员与任职关系选择器", source)
+        self.assertIn("可信证据上传器", source)

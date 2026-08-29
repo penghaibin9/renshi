@@ -59,7 +59,10 @@ def finalize_retirement(request, exit_fact_id):
         return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
     statutory_date = None
     if payload.get("statutoryDate"):
-        statutory_date = parse_date(str(payload["statutoryDate"]))
+        try:
+            statutory_date = parse_date(str(payload["statutoryDate"]))
+        except ValueError:
+            statutory_date = None
         if statutory_date is None:
             return _error(
                 "RETIREMENT_STATUTORY_DATE_INVALID",
