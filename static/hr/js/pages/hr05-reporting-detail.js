@@ -15,7 +15,6 @@
   }
   function newIdempotencyKey() { if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID(); return "hr05-" + Date.now() + "-" + Math.random().toString(16).slice(2); }
   function localDateTimeValue(date) { const pad = function (n) { return String(n).padStart(2, "0"); }; return date.getFullYear() + "-" + pad(date.getMonth()+1) + "-" + pad(date.getDate()) + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()); }
-  function localDateValue(date) { const pad = function (n) { return String(n).padStart(2, "0"); }; return date.getFullYear() + "-" + pad(date.getMonth()+1) + "-" + pad(date.getDate()); }
   function toIsoInstant(localValue) { if (!localValue) return ""; const parsed = new Date(localValue); return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString(); }
   const root = $('[data-hr-page="onboarding-reporting-detail"]'); if (!root) return; const caseId = root.dataset.caseId || "";
 
@@ -36,7 +35,7 @@
   }
   async function activateCase() {
     const button = $("#hr05-activate-case"); const result = $("#hr05-activation-result"); button.disabled = true; result.innerHTML = '<span>正在执行正式生效…</span>';
-    try { await postForm("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId) + "/activate", {effective_at:localDateValue(new Date())}, {"Idempotency-Key":newIdempotencyKey()}); result.innerHTML = '<span>正式生效请求已由服务端完成</span>'; await Promise.all([loadCase(), loadGate()]); }
+    try { await postForm("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId) + "/activate", {}, {"Idempotency-Key":newIdempotencyKey()}); result.innerHTML = '<span>正式生效请求已由服务端完成</span>'; await Promise.all([loadCase(), loadGate()]); }
     catch (err) { result.innerHTML = '<span>' + escapeHtml(errorMessage(err)) + '</span>'; await loadGate(); }
   }
   function init() { const at = $("#hr05-report-at"); if (at && !at.value) at.value = localDateTimeValue(new Date()); $("#hr05-confirm-report")?.addEventListener("click", confirmReport); $("#hr05-activate-case")?.addEventListener("click", activateCase); loadCase(); loadGate(); }

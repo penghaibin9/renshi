@@ -90,6 +90,8 @@ class Hr05V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("function toIsoInstant", script)
         self.assertIn("parsed.toISOString()", script)
         self.assertIn("actual_report_at:actual", script)
+        self.assertIn('encodeURIComponent(caseId) + "/activate", {},', script)
+        self.assertNotIn("effective_at:localDate", script)
 
     def test_probation_detail_does_not_fabricate_unreadable_review_state(self):
         template = self._source(self.SURFACES[7])
