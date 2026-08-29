@@ -1,5 +1,16 @@
 /* HR03 V2: individual staff profile. */
 
+/* The profile template keeps one semantic wrapper around identity/as-of/nav and
+   its inner business panels. Flatten only that direct wrapper so real content
+   never renders as a card-inside-card hierarchy. */
+.hr03-page > section.hr-v2-panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .hr03-profile-back {
   display: inline-flex;
   margin-bottom: var(--hr-space-3);
