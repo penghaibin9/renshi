@@ -1,57 +1,108 @@
+{% extends "index.html" %}
 {% load static i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>任职与身份履历 · HR03</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
-    .back { color: #2563eb; text-decoration: none; font-size: 13px; }
-    .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 20px; margin-top: 16px; }
-    .tl { position: relative; padding-left: 24px; }
-    .tl::before { content: ""; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; background: #e5e7eb; }
-    .tl-item { position: relative; margin-bottom: 18px; }
-    .tl-item::before { content: ""; position: absolute; left: -22px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: #2563eb; }
-    .tl-item.concurrent::before { background: #d97706; }
-    .tl-item.ended::before { background: #9ca3af; }
-    .kind { font-size: 12px; color: #6b7280; }
-    .period { font-size: 13px; font-weight: 600; }
-    .detail { font-size: 13px; color: #374151; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <a class="back" href="/hr/staff/{{ staff_id }}/">← 返回主档</a>
-    <div class="card">
-      <h2 style="margin:0 0 4px">任职与身份履历</h2>
-      <div style="font-size:13px;color:#6b7280">截至 <span id="asOf">{{ as_of }}</span> · 只读（历史更正走信息更正流程）</div>
-    </div>
-    <div class="card">
-      <div class="tl" id="timeline">加载中…</div>
-    </div>
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-history.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="assignments" data-staff-id="{{ staff_id }}" data-as-of="{{ as_of }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR03 教职工主档</span>
+    <strong>任职履历</strong>
   </div>
-  <script>
-    const staffId = "{{ staff_id }}";
-    const typeLabels = {PRIMARY:"主岗",CONCURRENT:"兼岗",TEMPORARY:"临时",SECONDMENT:"借调",relationship:"聘用关系",assignment:"任职段",status:"状态"};
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-history-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-history-title">任职与身份履历</h1>
+      <p class="hr-v2-subtitle">按 effective-dated 事实查看聘用关系、主岗、兼岗和历史结束段。这里是只读履历视图；历史更正必须进入正式更正流程，不在浏览器直接改写历史事实。</p>
+    </div>
+    <div class="hr-v2-context" aria-label="当前工作区说明">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前教职工</span>
+      <span class="hr-v2-context__item"><strong>截至</strong> {{ as_of|default:"当前" }}</span>
+      <span class="hr-v2-context__item"><strong>模式</strong> 只读履历</span>
+    </div>
+  </header>
+
+  <a class="hr03-profile-back" href="/hr/staff/{{ staff_id }}/">← 返回个人主档</a>
+
+  <nav class="hr03-person-nav" aria-label="教职工个人主档工作区">
+    <a href="/hr/staff/{{ staff_id }}/">概览</a>
+    <a class="is-active" href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+    <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+    <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+    <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+  </nav>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-timeline-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr03-timeline-title">正式任职时间线</h2>
+        <p>按后端 timeline API 返回顺序展示；没有历史段就保持真实空态。</p>
+      </div>
+    </div>
+    <div class="hr-v2-panel">
+      <div class="hr03-history-timeline" id="timeline">
+        <div class="hr-v2-state"><strong>正在读取任职履历</strong><span>正在查询正式聘用关系与任职段。</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note">
+    <strong>事实边界</strong>
+    <span>任职履历只读取 `/api/hr/v1/staff/{staffId}/timeline` 的正式结果。结束段、兼岗和聘用关系不会被前端重新推导；需要修正历史时进入更正流程。</span>
+  </div>
+</div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+  (function () {
+    "use strict";
+
+    const root = document.querySelector('[data-module="HR03"][data-section="assignments"]');
+    if (!root) return;
+    const staffId = root.dataset.staffId;
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    }
+
     async function load() {
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/timeline`);
-      if (!resp.ok) { document.getElementById("timeline").textContent = "加载失败（" + resp.status + "）"; return; }
+      const timeline = document.getElementById("timeline");
+      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/timeline`, {credentials:"same-origin"});
+      if (!resp.ok) {
+        timeline.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>任职履历读取失败</strong><span>HTTP ${resp.status}</span></div>`;
+        return;
+      }
       const body = await resp.json();
-      const events = body.data.events || [];
-      if (!events.length) { document.getElementById("timeline").textContent = "暂无任职履历"; return; }
-      document.getElementById("timeline").innerHTML = events.map(e => {
-        const cls = e.kind === "assignment" ? (e.label.startsWith("兼") ? "concurrent" : (e.status === "ENDED" ? "ended" : "")) : "";
-        return `<div class="tl-item ${cls}">
-          <div class="kind">${e.kind === "relationship" ? "聘用关系" : "任职段"}</div>
-          <div class="period">${e.effective_from || "-"} → ${e.effective_to || "至今"}</div>
-          <div class="detail">${escapeHtml(e.label)} · ${e.status || ""}</div>
-        </div>`;
+      const events = Array.isArray(body.data?.events) ? body.data.events : [];
+      if (!events.length) {
+        timeline.innerHTML = '<div class="hr-v2-state"><strong>暂无任职履历</strong><span>当前 Authority 没有返回聘用关系或任职历史段。</span></div>';
+        return;
+      }
+      timeline.innerHTML = events.map(event => {
+        const cls = event.kind === "assignment"
+          ? (String(event.label || "").startsWith("兼") ? "concurrent" : (event.status === "ENDED" ? "ended" : ""))
+          : "";
+        const kind = event.kind === "relationship" ? "聘用关系" : "任职段";
+        return `<article class="hr03-history-item ${cls}">
+          <div class="hr03-history-kind">${kind}</div>
+          <div class="hr03-history-period">${escapeHtml(event.effective_from || "—")} → ${escapeHtml(event.effective_to || "至今")}</div>
+          <div class="hr03-history-detail">${escapeHtml(event.label || "—")} · ${escapeHtml(event.status || "—")}</div>
+        </article>`;
       }).join("");
     }
-    function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
     load();
-  </script>
-</body>
-</html>
+  })();
+</script>
+{% endblock scripts %}
