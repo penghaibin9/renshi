@@ -50,25 +50,44 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         ):
             self.assertIn(route_name, self.nav)
 
-    def test_create_flow_uses_canonical_authorities_and_draft_semantics(self):
-        self.assertIn("/api/v1/hr/changes/bootstrap", self.script)
-        self.assertIn("/api/v1/hr/staff", self.script)
-        self.assertIn("/api/v1/hr/changes", self.script)
+    def test_create_flow_uses_canonical_authorities_and_transfer_service(self):
+        for path in (
+            "/api/v1/hr/changes/bootstrap",
+            "/api/v1/hr/staff",
+            "/api/v1/hr/structure/organizations/bootstrap",
+            "/api/v1/hr/structure/organizations/tree",
+            "/api/v1/hr/structure/positions",
+            "/api/v1/hr/changes/transfers",
+        ):
+            self.assertIn(path, self.script)
+        self.assertIn("/profile", self.script)
         self.assertNotIn("/api/hr/v1/", self.script)
         self.assertIn("staffMasterId: state.selectedStaff.staff_id", self.script)
         self.assertIn("requestedEffectiveAt: effectiveAt.value", self.script)
-        self.assertIn("proposals: []", self.script)
-        self.assertIn("创建异动草稿", self.new)
+        self.assertNotIn("proposals: []", self.script)
+        self.assertIn("TRANSFER_ACTIONS", self.script)
+        self.assertIn('id="hr06-target-org"', self.new)
+        self.assertIn('id="hr06-target-position"', self.new)
+        self.assertIn("TransferService", self.new)
         self.assertIn("DRAFT 草稿", self.new)
-        self.assertNotIn("待接入 HR03 人员选择器", self.new)
 
-    def test_create_page_never_uses_fake_submit_link_or_raw_staff_uuid_input(self):
+    def test_create_page_never_uses_fake_submit_link_or_raw_identity_ids(self):
         self.assertIn('id="hr06-create-draft"', self.new)
         self.assertIn('id="hr06-staff-keyword"', self.new)
         self.assertNotIn('href="/hr/changes/">提交</a>', self.new)
         self.assertNotIn('id="hr06-staff-id"', self.new)
         self.assertNotIn('name="staffMasterId"', self.new)
-        self.assertNotIn("staff_master_id", self.new)
+        self.assertNotIn('name="targetOrgId"', self.new)
+        self.assertNotIn('name="targetPositionId"', self.new)
+        self.assertNotIn("待接入 HR03 人员选择器", self.new)
+
+    def test_transfer_types_do_not_create_incomplete_generic_drafts(self):
+        self.assertIn('"ORG_TRANSFER"', self.script)
+        self.assertIn('"POSITION_TRANSFER"', self.script)
+        self.assertIn('"ORG_POSITION_TRANSFER"', self.script)
+        self.assertIn("item.enabled && TRANSFER_ACTIONS.has(item.code)", self.script)
+        self.assertIn("未创建任何草稿", self.script)
+        self.assertIn("服务端生成受管字段 proposals", self.new)
 
     def test_center_preserves_server_side_truthful_read_model(self):
         for token in (

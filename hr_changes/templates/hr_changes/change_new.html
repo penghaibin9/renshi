@@ -16,10 +16,11 @@
     <div class="hr-v2-pagehead__copy">
       <div class="hr-v2-eyebrow">HR06 · 人事异动</div>
       <h1 class="hr-v2-title" id="hr06-new-title">创建异动草稿</h1>
-      <p class="hr-v2-subtitle">先从 HR03 权威名册选择人员，再选择当前学校已启用的异动类型与原因。这里仅创建 DRAFT 草稿，不会跳过校验直接进入审批。</p>
+      <p class="hr-v2-subtitle">从 HR03 权威名册选择人员，再使用 HR02 当前组织/岗位事实补齐目标范围。本页只开放已经接通完整目标字段与专用服务的校内调动类型，不生成信息不完整的空草稿。</p>
     </div>
     <div class="hr-v2-context">
       <span class="hr-v2-context__item"><strong>人员来源</strong> HR03 Authority</span>
+      <span class="hr-v2-context__item"><strong>组织岗位</strong> HR02 Authority</span>
       <span class="hr-v2-context__item"><strong>结果</strong> DRAFT 草稿</span>
     </div>
   </header>
@@ -29,12 +30,12 @@
   <ol class="hr06-steps" aria-label="创建异动草稿步骤">
     <li aria-current="step"><strong>1</strong><span>选择人员</span></li>
     <li><strong>2</strong><span>类型与原因</span></li>
-    <li><strong>3</strong><span>计划生效日</span></li>
+    <li><strong>3</strong><span>目标与日期</span></li>
     <li><strong>4</strong><span>创建草稿</span></li>
   </ol>
 
   <section class="hr06-panel">
-    <div class="hr06-section-head"><div><h2>1. 选择人员</h2><p>姓名或工号搜索只读取当前 tenant/scope 可见的 HR03 人员，不允许手工录入人员 UUID。</p></div></div>
+    <div class="hr06-section-head"><div><h2>1. 选择人员</h2><p>姓名或工号搜索只读取当前 tenant/scope 可见的 HR03 人员，不允许手工录入人员 UUID。选中后会再读取该人员当前主岗事实。</p></div></div>
     <div class="hr06-search-row">
       <label class="hr06-field hr06-field--grow"><span>姓名 / 工号</span><input id="hr06-staff-keyword" type="search" autocomplete="off" placeholder="例如：张老师 / T20260018"></label>
       <button class="hr06-button hr06-button--secondary" type="button" id="hr06-search-staff">搜索人员</button>
@@ -44,7 +45,7 @@
   </section>
 
   <section class="hr06-panel">
-    <div class="hr06-section-head"><div><h2>2. 类型、原因与计划日期</h2><p>异动类型与原因来自 HR06 bootstrap；停用类型不会进入可选列表，原因会随类型联动。</p></div></div>
+    <div class="hr06-section-head"><div><h2>2. 类型与原因</h2><p>类型与原因来自 HR06 bootstrap。当前只展示已接通 TransferService 的三类校内调动，其他动作不会以缺字段方式创建。</p></div></div>
     <div class="hr06-form-grid">
       <label class="hr06-field"><span>异动类型</span><select id="hr06-action" disabled><option value="">正在读取服务端配置</option></select></label>
       <label class="hr06-field"><span>异动原因</span><select id="hr06-reason" disabled><option value="">请先选择异动类型</option></select></label>
@@ -54,13 +55,22 @@
     <div id="hr06-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在读取 HR06 异动配置…</span></div>
   </section>
 
+  <section class="hr06-panel" id="hr06-transfer-fields" hidden>
+    <div class="hr06-section-head"><div><h2>3. 调动目标</h2><p>组织与岗位均从 HR02 Authority 读取。岗位调动限定在当前主岗组织内；组织+岗位调动先选目标组织，再读取该组织岗位。</p></div></div>
+    <div class="hr06-form-grid">
+      <label class="hr06-field" id="hr06-target-org-field"><span>目标组织</span><select id="hr06-target-org" disabled><option value="">请选择目标组织</option></select></label>
+      <label class="hr06-field" id="hr06-target-position-field"><span>目标岗位</span><select id="hr06-target-position" disabled><option value="">请选择目标岗位</option></select></label>
+    </div>
+    <div id="hr06-transfer-state" class="hr06-meta" aria-live="polite"><span>选择人员与调动类型后读取目标范围。</span></div>
+  </section>
+
   <section class="hr06-panel hr06-submit-panel">
-    <div><h2>3. 创建草稿</h2><p>创建后进入案件详情继续补充目标岗位/组织、受管字段和影响预览；本按钮不会自动提交审批。</p></div>
-    <button class="hr06-button" type="button" id="hr06-create-draft" disabled>创建异动草稿</button>
+    <div><h2>4. 创建草稿</h2><p>三类调动通过专用 TransferService 创建，由服务端生成受管字段 proposals。创建后仍只是 DRAFT，后续 validation、岗位预占、审批与正式生效继续独立执行。</p></div>
+    <button class="hr06-button" type="button" id="hr06-create-draft" disabled>创建调动草稿</button>
     <div id="hr06-create-result" class="hr06-meta" aria-live="polite"><span>尚未创建</span></div>
   </section>
 
-  <div class="hr06-truth-note"><strong>Authority 边界</strong><span>前端只收集创建草稿所需最小字段；服务端仍会重新校验 tenant、权限、动作/原因归属、人员归属与生效日期规则。</span></div>
+  <div class="hr06-truth-note"><strong>Authority 边界</strong><span>浏览器不接受任意 staff/org/position ID。人员必须来自 HR03 搜索，组织/岗位必须来自 HR02 当前 tenant 读模型，创建时服务端再次校验动作、原因和目标归属。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}

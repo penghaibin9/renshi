@@ -1,9 +1,9 @@
 """Real Chromium acceptance for HR06 V2 personnel-change workspaces.
 
-The suite creates only the technical school/user identity plus the minimum
-HR03 person and HR06 action/reason configuration required to exercise the real
-create flow. It never seeds a personnel-change result row: the DRAFT case in
-the click test must be created by the production browser/API path itself.
+The suite seeds only technical identity plus HR03/HR02 authority facts and
+HR06 action/reason configuration needed to exercise the real transfer create
+flow. It never seeds a personnel-change result row: the DRAFT case must be
+created by the production browser/API path itself.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
     def setUp(self):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
-        from hr_changes.tests.factories import make_action, make_reason
+        from hr_changes.tests.factories import make_action, make_org, make_reason
         from hr_staff.tests.factories import make_person, make_staff
 
         User = get_user_model()
@@ -50,11 +50,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             state="Hunan",
             city="Changsha",
             zip="410000",
-            icon=SimpleUploadedFile(
-                "hr06-visual.png",
-                b"hr06-visual",
-                content_type="image/png",
-            ),
+            icon=SimpleUploadedFile("hr06-visual.png", b"hr06-visual", content_type="image/png"),
         )
         self.user = User.objects.create_superuser(
             username="hr06-visual-auditor",
@@ -71,15 +67,19 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             phone="13800000006",
             is_active=True,
         )
-        work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
-            employee_id=self.employee,
-        )
+        work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(employee_id=self.employee)
         if work_info.company_id_id != self.company.pk:
             work_info.company_id = self.company
             work_info.save(update_fields=["company_id"])
 
         person = make_person(self.company.pk, "真实创建测试教师")
         self.staff = make_staff(self.company.pk, person, "HR06-CLICK-001")
+        self.target_org = make_org(
+            self.company.pk,
+            "VISUAL-TARGET",
+            "视觉目标学院",
+            date(2020, 1, 1),
+        )
         self.action = make_action(
             self.company.pk,
             code="ORG_TRANSFER",
@@ -100,9 +100,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         session["otp_code_verified"] = True
         session.save()
         self.session_cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
-        self.out_dir = Path(
-            os.getenv("HR_VISUAL_ARTIFACT_DIR", "artifacts/hr-visual")
-        ) / "HR06-V2"
+        self.out_dir = Path(os.getenv("HR_VISUAL_ARTIFACT_DIR", "artifacts/hr-visual")) / "HR06-V2"
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
     def _browser_context(self, browser, *, viewport=None):
@@ -110,15 +108,13 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             viewport=viewport or {"width": 1440, "height": 1000},
             device_scale_factor=1,
         )
-        context.add_cookies(
-            [
-                {
-                    "name": settings.SESSION_COOKIE_NAME,
-                    "value": self.session_cookie,
-                    "url": self.live_server_url,
-                }
-            ]
-        )
+        context.add_cookies([
+            {
+                "name": settings.SESSION_COOKIE_NAME,
+                "value": self.session_cookie,
+                "url": self.live_server_url,
+            }
+        ])
         return context
 
     def test_capture_primary_hr06_workspaces_desktop_and_mobile(self):
@@ -138,12 +134,7 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                 context = self._browser_context(browser)
                 page = context.new_page()
                 page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-                page.on(
-                    "console",
-                    lambda msg: console_errors.append(msg.text)
-                    if msg.type == "error"
-                    else None,
-                )
+                page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
                 def record_response(response):
                     if "/api/v1/hr/" in response.url and response.status >= 400:
@@ -152,18 +143,12 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                         static_failures.append(f"{response.status} {response.url}")
 
                 page.on("response", record_response)
-
                 for section, route, settle_id, loading_text in self.ROUTES:
-                    response = page.goto(
-                        self.live_server_url + route,
-                        wait_until="networkidle",
-                    )
+                    response = page.goto(self.live_server_url + route, wait_until="networkidle")
                     self.assertIsNotNone(response, route)
                     self.assertEqual(response.status, 200, route)
                     self.assertEqual(
-                        page.locator(
-                            f'[data-module="HR06"][data-section="{section}"]'
-                        ).count(),
+                        page.locator(f'[data-module="HR06"][data-section="{section}"]').count(),
                         1,
                         route,
                     )
@@ -177,24 +162,14 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                             arg=[settle_id, loading_text],
                             timeout=8000,
                         )
-                    page.screenshot(
-                        path=str(self.out_dir / f"desktop-{section}.png"),
-                        full_page=True,
-                    )
+                    page.screenshot(path=str(self.out_dir / f"desktop-{section}.png"), full_page=True)
 
                 page.set_viewport_size({"width": 390, "height": 844})
                 for section, route, settle_id, loading_text in self.ROUTES:
-                    response = page.goto(
-                        self.live_server_url + route,
-                        wait_until="networkidle",
-                    )
+                    response = page.goto(self.live_server_url + route, wait_until="networkidle")
                     self.assertIsNotNone(response, route)
                     self.assertEqual(response.status, 200, route)
-                    self.assertEqual(
-                        page.locator(".hr-v2-mobile-section-switcher").count(),
-                        1,
-                        route,
-                    )
+                    self.assertEqual(page.locator(".hr-v2-mobile-section-switcher").count(), 1, route)
                     self.assertEqual(page.locator(".hr06-nav a").count(), 7, route)
                     if settle_id and loading_text:
                         page.wait_for_function(
@@ -205,32 +180,17 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                             arg=[settle_id, loading_text],
                             timeout=8000,
                         )
-                    page.screenshot(
-                        path=str(self.out_dir / f"mobile-{section}.png"),
-                        full_page=True,
-                    )
+                    page.screenshot(path=str(self.out_dir / f"mobile-{section}.png"), full_page=True)
                 context.close()
             finally:
                 browser.close()
 
         self.assertEqual(page_errors, [], "HR06 page errors: " + " | ".join(page_errors))
-        self.assertEqual(
-            console_errors,
-            [],
-            "HR06 console errors: " + " | ".join(console_errors),
-        )
-        self.assertEqual(
-            api_failures,
-            [],
-            "HR06 canonical API failures: " + " | ".join(api_failures),
-        )
-        self.assertEqual(
-            static_failures,
-            [],
-            "HR06 static resource failures: " + " | ".join(static_failures),
-        )
+        self.assertEqual(console_errors, [], "HR06 console errors: " + " | ".join(console_errors))
+        self.assertEqual(api_failures, [], "HR06 canonical API failures: " + " | ".join(api_failures))
+        self.assertEqual(static_failures, [], "HR06 static resource failures: " + " | ".join(static_failures))
 
-    def test_real_browser_searches_staff_and_creates_draft(self):
+    def test_real_browser_creates_transfer_draft_through_authorities(self):
         try:
             from playwright.sync_api import sync_playwright
         except ImportError as exc:  # pragma: no cover
@@ -247,22 +207,14 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                 context = self._browser_context(browser)
                 page = context.new_page()
                 page.on("pageerror", lambda exc: page_errors.append(str(exc)))
-                page.on(
-                    "console",
-                    lambda msg: console_errors.append(msg.text)
-                    if msg.type == "error"
-                    else None,
-                )
+                page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
                 def record_response(response):
                     if "/api/v1/hr/" in response.url and response.status >= 400:
                         api_failures.append(f"{response.status} {response.url}")
 
                 page.on("response", record_response)
-                response = page.goto(
-                    self.live_server_url + "/hr/changes/new",
-                    wait_until="networkidle",
-                )
+                response = page.goto(self.live_server_url + "/hr/changes/new", wait_until="networkidle")
                 self.assertIsNotNone(response)
                 self.assertEqual(response.status, 200)
                 page.wait_for_function(
@@ -277,10 +229,14 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                 page.click("#hr06-search-staff")
                 page.wait_for_selector(".hr06-staff-option", timeout=8000)
                 page.locator(".hr06-staff-option").first.click()
-                self.assertIn(
-                    self.staff.staff_no,
-                    page.locator("#hr06-selected-staff").inner_text(),
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-selected-staff');
+                      return host && !host.textContent.includes('正在读取 HR03');
+                    }""",
+                    timeout=8000,
                 )
+                self.assertIn(self.staff.staff_no, page.locator("#hr06-selected-staff").inner_text())
 
                 page.select_option("#hr06-action", str(self.action.id))
                 page.wait_for_function(
@@ -291,27 +247,27 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
                     timeout=5000,
                 )
                 page.select_option("#hr06-reason", str(self.reason.id))
+                page.wait_for_function(
+                    """() => {
+                      const node = document.getElementById('hr06-target-org');
+                      return node && !node.disabled && node.options.length > 1;
+                    }""",
+                    timeout=8000,
+                )
+                page.select_option("#hr06-target-org", str(self.target_org.id))
                 page.fill("#hr06-effective-at", effective_date)
                 page.wait_for_function(
                     """() => !document.getElementById('hr06-create-draft').disabled""",
                     timeout=5000,
                 )
                 page.click("#hr06-create-draft")
-                page.wait_for_url(
-                    re.compile(r"/hr/changes/[0-9a-f-]{36}$"),
-                    timeout=10000,
-                )
+                page.wait_for_url(re.compile(r"/hr/changes/[0-9a-f-]{36}$"), timeout=10000)
                 self.assertEqual(
-                    page.locator(
-                        '[data-module="HR06"][data-section="detail"]'
-                    ).count(),
+                    page.locator('[data-module="HR06"][data-section="detail"]').count(),
                     1,
                 )
                 self.assertIn("草稿", page.locator("body").inner_text())
-                page.screenshot(
-                    path=str(self.out_dir / "desktop-created-draft-detail.png"),
-                    full_page=True,
-                )
+                page.screenshot(path=str(self.out_dir / "desktop-created-transfer-draft.png"), full_page=True)
                 context.close()
             finally:
                 browser.close()
@@ -325,11 +281,9 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         self.assertEqual(created.staff_master_id_id, self.staff.id)
         self.assertEqual(created.action_id_id, self.action.id)
         self.assertEqual(created.reason_id_id, self.reason.id)
+        self.assertEqual(created.target_org_id_id, self.target_org.id)
         self.assertEqual(created.requested_effective_at.isoformat(), effective_date)
-        self.assertEqual(api_failures, [], "HR06 create API failures: " + " | ".join(api_failures))
-        self.assertEqual(page_errors, [], "HR06 create page errors: " + " | ".join(page_errors))
-        self.assertEqual(
-            console_errors,
-            [],
-            "HR06 create console errors: " + " | ".join(console_errors),
-        )
+        self.assertEqual(created.proposals.filter(field_code="organization").count(), 1)
+        self.assertEqual(api_failures, [], "HR06 transfer API failures: " + " | ".join(api_failures))
+        self.assertEqual(page_errors, [], "HR06 transfer page errors: " + " | ".join(page_errors))
+        self.assertEqual(console_errors, [], "HR06 transfer console errors: " + " | ".join(console_errors))
