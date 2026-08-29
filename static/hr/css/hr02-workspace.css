@@ -259,6 +259,21 @@
   color: var(--hr02-accent-strong);
 }
 
+/* organizations.js injects the legacy section-card shell after a node is
+   selected. The V2 detail container is already the card boundary, so flatten
+   only that immediate dynamic wrapper to avoid a panel-inside-panel look. */
+.hr02-page .hr-structure-detail > .hr-section-card.hr-card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.hr02-page .hr-structure-detail > .hr-section-card .hr-section-card__header {
+  margin-bottom: var(--hr-space-4);
+}
+
 .hr02-page .hr-org-detail-grid {
   display: grid;
   grid-template-columns: minmax(100px, .35fr) minmax(0, 1fr);
