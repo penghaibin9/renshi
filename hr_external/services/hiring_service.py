@@ -2,7 +2,7 @@
 hr_external/services/hiring_service.py —— 聘用审批流程（S5，总册 §32-43）。
 
 状态机（§34）：DRAFT→VALIDATING→SUBMITTED→UNDER_COLLEGE_REVIEW→UNDER_HR_REVIEW
-→UNDER_SCHOOL_APPROVAL→APPROVED→WAITING_AGREEMENT→READY_TO_ACTIVATE→ACTIVATED。
+→UNDER_SCHOOL_APPROVAL→APPROVED→WAITING_AGREEMENT/READY_TO_ACTIVATE→ACTIVATED。
 异常：RETURNED/REJECTED/WITHDRAWN/CANCELLED。
 
 Activation（§43）事务：
@@ -22,6 +22,7 @@ from django.db import transaction
 
 from hr_external.constants import (
     AgreementProviderStatus,
+    AgreementRequirement,
     ExternalAssignmentStatus,
     ExternalAssignmentType,
     ExternalEngagementStatus,
@@ -90,6 +91,7 @@ _HIRING_TRANSITIONS = {
     },
     ExternalHiringStatus.APPROVED: {
         ExternalHiringStatus.WAITING_AGREEMENT,
+        ExternalHiringStatus.READY_TO_ACTIVATE,
         ExternalHiringStatus.CANCELLED,
     },
     ExternalHiringStatus.WAITING_AGREEMENT: {
@@ -161,9 +163,21 @@ class HiringService:
         self._transition(case, ExternalHiringStatus.REJECTED)
 
     def wait_agreement(self, case: HrExternalHiringCase):
+        """Route an approved case according to its explicit agreement policy."""
         if case.status != ExternalHiringStatus.APPROVED:
             raise InvalidHiringState("case not approved")
-        self._transition(case, ExternalHiringStatus.WAITING_AGREEMENT)
+
+        requirement = case.category_id.agreement_requirement
+        if requirement == AgreementRequirement.REQUIRED_BEFORE_ACTIVATION:
+            self._transition(case, ExternalHiringStatus.WAITING_AGREEMENT)
+            return
+        if requirement in (
+            AgreementRequirement.NOT_REQUIRED,
+            AgreementRequirement.REQUIRED_AFTER_ACTIVATION_GRACE,
+        ):
+            self._transition(case, ExternalHiringStatus.READY_TO_ACTIVATE)
+            return
+        raise InvalidHiringState(f"unsupported agreement requirement: {requirement}")
 
     def _agreement_result(
         self,
@@ -270,7 +284,8 @@ class HiringService:
         if profile is None:
             raise HiringCaseNotFound("external profile missing for proposed person")
 
-        if case.category_id.agreement_requirement == "REQUIRED_BEFORE_ACTIVATION":
+        requirement = case.category_id.agreement_requirement
+        if requirement == AgreementRequirement.REQUIRED_BEFORE_ACTIVATION:
             if not case.agreement_id:
                 raise AgreementNotReady("agreement reference missing")
             _result, agreement_status = self._agreement_result(
@@ -282,8 +297,18 @@ class HiringService:
                 AgreementProviderStatus.ACTIVE.value,
             ):
                 raise AgreementNotReady("agreement not ready for activation")
-        else:
+        elif requirement == AgreementRequirement.NOT_REQUIRED:
             agreement_status = AgreementProviderStatus.NOT_REQUIRED.value
+        elif requirement == AgreementRequirement.REQUIRED_AFTER_ACTIVATION_GRACE:
+            if case.agreement_id:
+                _result, agreement_status = self._agreement_result(
+                    case=case,
+                    agreement_id=case.agreement_id,
+                )
+            else:
+                agreement_status = AgreementProviderStatus.UNAVAILABLE.value
+        else:
+            raise InvalidHiringState(f"unsupported agreement requirement: {requirement}")
 
         eng = HrExternalEngagement.objects.create(
             tenant_id=case.tenant_id,
@@ -300,7 +325,7 @@ class HiringService:
             review_at=_default_review_at(case.requested_start, case.requested_end),
             workload_cap=case.estimated_workload,
             agreement_id=case.agreement_id,
-            agreement_requirement=case.category_id.agreement_requirement,
+            agreement_requirement=requirement,
             agreement_status=agreement_status,
             status=ExternalEngagementStatus.ACTIVE,
         )
