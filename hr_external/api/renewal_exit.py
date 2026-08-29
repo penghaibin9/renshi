@@ -65,7 +65,9 @@ def renewal_list(request):
     if err:
         return err
     status = request.GET.get("status", "")
-    qs = HrExternalRenewalReview.objects.filter(tenant_id=ctx.tenant_id)
+    qs = HrExternalRenewalReview.objects.filter(tenant_id=ctx.tenant_id).select_related(
+        "engagement_id__external_profile_id__person_id"
+    )
     if status:
         qs = qs.filter(status=status)
     qs = qs.order_by("review_due_at")[:200]
@@ -75,6 +77,8 @@ def renewal_list(request):
             {
                 "id": str(r.id),
                 "engagementId": str(r.engagement_id_id),
+                "engagementNo": r.engagement_id.engagement_no,
+                "personName": r.engagement_id.external_profile_id.person_id.legal_name,
                 "reviewDueAt": r.review_due_at.isoformat(),
                 "status": r.status,
                 "statusLabel": renewal_status_label(r.status),
@@ -214,6 +218,36 @@ def exit_create(request, engagement_id):
         "statusLabel": exit_status_label(case.status),
     }
     return json_response(request, body, status=201)
+
+
+@require_hr_external_permission("hr08.exit.manage")
+def exit_prepare(request, exit_id):
+    """POST advances the auditable pre-exit review one state at a time."""
+    ctx, err = _ctx(request)
+    if err:
+        return err
+    case = HrExternalExitCase.objects.filter(
+        tenant_id=ctx.tenant_id, id=exit_id
+    ).first()
+    if case is None:
+        return error_response(request, "INVALID_REQUEST", "退出单不存在", 404)
+    service = ExitService()
+    try:
+        if case.status == "PLANNED":
+            service.submit_review(case)
+        elif case.status == "UNDER_REVIEW":
+            service.approve_exit(case)
+        else:
+            raise ExitStateConflict("case cannot advance review from current state")
+    except ExitStateConflict as exc:
+        return error_response(request, exc.code, str(exc), 409)
+    body = api_root(request)
+    body["data"] = {
+        "id": str(case.id),
+        "status": case.status,
+        "statusLabel": exit_status_label(case.status),
+    }
+    return json_response(request, body)
 
 
 @require_hr_external_permission("hr08.exit.manage")

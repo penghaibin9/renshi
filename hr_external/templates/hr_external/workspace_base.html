@@ -1,0 +1,23 @@
+{% extends "index.html" %}
+{% load static %}
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr08-workspace.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<main class="hr-v2-page hr08-page" data-module="HR08" data-hr08-page="{{ section }}">
+  {% include "hr_external/_v2_header.html" %}
+  {% block workspace_content %}{% endblock workspace_content %}
+</main>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
+<script src="{% static 'hr/js/pages/hr08-workspace.js' %}"></script>
+{% if section == "hiring" and case %}<script src="{% static 'hr/js/pages/hr08-wb-agreement.js' %}"></script>{% endif %}
+{% endblock scripts %}

@@ -157,6 +157,11 @@ urlpatterns = [
         name="hr08-api-task-submit",
     ),
     path(
+        "api/hr/v1/external-teachers/tasks/<uuid:task_id>/start",
+        tasks_api.task_start,
+        name="hr08-api-task-start",
+    ),
+    path(
         "api/hr/v1/external-teachers/tasks/<uuid:task_id>/verify",
         tasks_api.task_verify,
         name="hr08-api-task-verify",
@@ -181,6 +186,11 @@ urlpatterns = [
         "api/hr/v1/external-teachers/exits/<uuid:exit_id>/complete",
         renewal_exit_api.exit_complete,
         name="hr08-api-exit-complete",
+    ),
+    path(
+        "api/hr/v1/external-teachers/exits/<uuid:exit_id>/prepare",
+        renewal_exit_api.exit_prepare,
+        name="hr08-api-exit-prepare",
     ),
     path(
         "api/hr/v1/external-teachers/exits/<uuid:exit_id>",

@@ -1,28 +1,6 @@
-{% extends "index.html" %}
-{% block content %}
-<header class="hr-page-header">
-  <h1>{{ page_title }}</h1>
-  <p class="hr-page-subtitle">退出与权限回收（§63-70）：退出不删除历史，只停账号/权限/教务未来排课</p>
-</header>
-
-<div class="hr-table-wrap">
-<table class="hr-data-table">
-  <thead>
-    <tr><th>人员</th><th>退出原因</th><th>计划结束</th><th>实际结束</th><th>状态</th></tr>
-  </thead>
-  <tbody>
-    {% for c in cases %}
-    <tr>
-      <td>{{ c.engagement_id.external_profile_id.person_id.legal_name }}</td>
-      <td>{{ c.exit_reason }}</td>
-      <td>{{ c.planned_end_at|date:"Y-m-d"|default:"-" }}</td>
-      <td>{{ c.actual_end_at|date:"Y-m-d"|default:"-" }}</td>
-      <td>{{ c.status }}</td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="5" class="hr-empty">暂无退出单</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-{% endblock %}
+{% extends "hr_external/workspace_base.html" %}
+{% block workspace_content %}
+<section class="hr08-card"><div class="hr08-card__head"><div><h2>退出与权限回收</h2><p>退出只结束所选聘期并触发下游回收；历史任务、成果、评价和协议继续保留。</p></div>{% if can_exit_manage %}<button class="hr08-btn hr08-btn--primary" type="button" data-open-panel="exit-create">发起退出</button>{% endif %}</div>
+{% if can_exit_manage %}<form class="hr08-form" data-panel="exit-create" data-exit-create hidden><div class="hr08-form-grid"><label class="is-wide"><span>外聘人员与聘期</span><select name="engagementId" required><option value="">请选择当前聘期</option>{% for option in engagement_options %}<option value="{{ option.id }}">{{ option.label }} · {{ option.status_label }} · {{ option.start_at|date:"Y-m-d" }} 至 {{ option.end_at|date:"Y-m-d"|default:"长期" }}</option>{% endfor %}</select></label><label><span>退出原因</span><select name="exitReason"><option value="TERM_COMPLETED">聘期届满</option><option value="NO_RENEWAL">不予续聘</option><option value="PERSON_WITHDRAWAL">本人退出</option><option value="SCHOOL_TERMINATION">学校终止</option><option value="TASK_COMPLETED">任务完成</option><option value="ROLE_CONVERTED">角色转换</option><option value="REGULAR_HIRE">转为正式</option><option value="COMPLIANCE_REASON">合规原因</option><option value="OTHER">其他</option></select></label><label><span>计划结束日</span><input name="plannedEndAt" type="date"></label><label class="is-wide"><span>清退策略说明</span><input name="clearancePolicy" placeholder="例如 标准账号、门禁和教务权限回收"></label></div><div class="hr08-form-actions"><button class="hr08-btn hr08-btn--primary" type="submit">创建退出单</button><button class="hr08-btn" type="button" data-close-panel="exit-create">取消</button><span class="hr08-message" role="status"></span></div></form>{% endif %}
+<div class="hr08-table-wrap"><table class="hr08-table"><thead><tr><th>外聘人员</th><th>聘期编号</th><th>退出原因</th><th>计划结束</th><th>实际结束</th><th>状态</th></tr></thead><tbody>{% for c in cases %}<tr data-exit-id="{{ c.id }}"><td><strong>{{ c.person_name }}</strong></td><td>{{ c.engagement_no }}</td><td>{{ c.exit_reason_label }}</td><td>{{ c.planned_end_at|date:"Y-m-d"|default:"未填写" }}</td><td>{{ c.actual_end_at|date:"Y-m-d"|default:"尚未结束" }}</td><td><span class="hr08-status">{{ c.status_label }}</span></td></tr>{% empty %}<tr><td colspan="6" class="hr08-empty">暂无退出单。</td></tr>{% endfor %}</tbody></table></div><div class="hr08-live-actions" data-exit-actions><div class="hr08-loading">正在读取可办理退出单…</div></div></section>
+{% endblock workspace_content %}

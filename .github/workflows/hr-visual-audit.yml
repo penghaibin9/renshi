@@ -165,6 +165,7 @@ jobs:
             hr_v2_shell_regression_tests.HrV2ShellRegressionTests \
             hr05_visual_audit_tests.Hr05VisualAuditTests \
             hr06_visual_audit_tests.Hr06VisualAuditTests \
+            hr08_visual_audit_tests.Hr08VisualAuditTests \
             hr13_visual_audit_tests.Hr13VisualAuditTests \
             hr14_visual_audit_tests.Hr14VisualAuditTests \
             hr15_visual_audit_tests.Hr15VisualAuditTests \

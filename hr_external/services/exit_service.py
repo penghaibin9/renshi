@@ -86,6 +86,20 @@ class ExitService:
         case.actual_end_at = case.actual_end_at or date.today()
         case.save(update_fields=["status", "actual_end_at", "updated_at"])
 
+    def submit_review(self, case: HrExternalExitCase):
+        """PLANNED → UNDER_REVIEW without ending the engagement."""
+        if case.status != ExitStatus.PLANNED:
+            raise ExitStateConflict("case not in planned state")
+        case.status = ExitStatus.UNDER_REVIEW
+        case.save(update_fields=["status", "updated_at"])
+
+    def approve_exit(self, case: HrExternalExitCase):
+        """UNDER_REVIEW → READY_TO_EXIT; finalization stays a separate action."""
+        if case.status != ExitStatus.UNDER_REVIEW:
+            raise ExitStateConflict("case not under review")
+        case.status = ExitStatus.READY_TO_EXIT
+        case.save(update_fields=["status", "updated_at"])
+
     @transaction.atomic
     def finalize_exit(
         self,

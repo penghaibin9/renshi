@@ -86,6 +86,8 @@ def _task_row(t: HrExternalServiceTask) -> dict:
     return {
         "id": str(t.id),
         "engagementId": str(t.engagement_id_id),
+        "engagementNo": t.engagement_id.engagement_no,
+        "personName": t.engagement_id.external_profile_id.person_id.legal_name,
         "taskType": t.task_type,
         "taskTypeLabel": _TASK_TYPE_LABELS.get(t.task_type, t.task_type),
         "sourceDomain": t.source_domain,
@@ -128,7 +130,9 @@ def task_list(request):
     if err:
         return err
     status = request.GET.get("status", "")
-    qs = HrExternalServiceTask.objects.filter(tenant_id=ctx.tenant_id).select_related("engagement_id")
+    qs = HrExternalServiceTask.objects.filter(tenant_id=ctx.tenant_id).select_related(
+        "engagement_id__external_profile_id__person_id"
+    )
     if status:
         qs = qs.filter(status=status)
     qs = qs.order_by("-updated_at")[:200]
@@ -148,7 +152,8 @@ def task_create(request):
         return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON", 400)
 
     try:
-        t = TaskService().create_task(
+        service = TaskService()
+        t = service.create_task(
             tenant_id=ctx.tenant_id,
             engagement_id=payload.get("engagementId"),
             assignment_id=payload.get("assignmentId"),
@@ -166,6 +171,7 @@ def task_create(request):
             reviewer_id=payload.get("reviewerId"),
             settlement_eligible=bool(payload.get("settlementEligible", False)),
         )
+        service.assign(t)
     except (TaskOutsideEngagement, ValueError) as exc:
         return _err_response(request, exc)
 
@@ -215,6 +221,20 @@ def task_accept(request, task_id):
 
     try:
         TaskService().accept(t, action, payload.get("reason") or "")
+    except TaskStateConflict as exc:
+        return _err_response(request, exc)
+    body = api_root(request)
+    body["data"] = _task_row(t)
+    return json_response(request, body)
+
+
+@require_hr_external_permission("hr08.task.view")
+def task_start(request, task_id):
+    ctx, t, err = _get_task(request, task_id)
+    if err:
+        return err
+    try:
+        TaskService().start(t)
     except TaskStateConflict as exc:
         return _err_response(request, exc)
     body = api_root(request)

@@ -54,19 +54,27 @@ def main() -> None:
             detail_url = f"{BASE_URL}/hr/external-teachers/hiring/{case_id}/"
             detail_response = page.goto(detail_url, wait_until="domcontentloaded")
             require(detail_response is not None and detail_response.status == 200, "W-B detail page failed")
-            page.wait_for_selector('[data-case-status="WAITING_AGREEMENT"]', timeout=10000)
-            page.wait_for_selector('[data-wb-confirm-agreement]', timeout=10000)
-            page.locator('[data-wb-agreement-id]').fill(agreement_id)
+            page.wait_for_selector(
+                '[data-agreement-workspace][data-case-status="WAITING_AGREEMENT"]',
+                timeout=10000,
+            )
+            page.wait_for_selector('[data-agreement-form]', timeout=10000)
+            page.locator('[data-agreement-form] select[name="agreementId"]').select_option(
+                agreement_id
+            )
             page.screenshot(path=str(ARTIFACT_DIR / "01-waiting-agreement.png"), full_page=True)
 
             agreement_api = f"/api/v1/hr/external-teachers/hiring-cases/{case_id}/agreement"
             with page.expect_response(
                 lambda response: agreement_api in response.url and response.request.method == "POST"
             ) as agreement_response_info:
-                page.locator('[data-wb-confirm-agreement]').click()
+                page.locator('[data-agreement-form] button[type="submit"]').click()
             agreement_response = agreement_response_info.value
             require(agreement_response.status == 200, f"agreement confirm HTTP {agreement_response.status}")
-            page.wait_for_selector('[data-case-status="READY_TO_ACTIVATE"]', timeout=10000)
+            page.wait_for_selector(
+                '[data-agreement-workspace][data-case-status="READY_TO_ACTIVATE"]',
+                timeout=10000,
+            )
             evidence.append(
                 {
                     "step": "confirm-agreement",
@@ -86,7 +94,10 @@ def main() -> None:
                 activation_button.click()
             activation_response = activation_response_info.value
             require(activation_response.status == 200, f"activation HTTP {activation_response.status}")
-            page.wait_for_selector('[data-case-status="ACTIVATED"]', timeout=12000)
+            page.wait_for_selector(
+                '[data-agreement-workspace][data-case-status="ACTIVATED"]',
+                timeout=12000,
+            )
             evidence.append(
                 {
                     "step": "activate-engagement",

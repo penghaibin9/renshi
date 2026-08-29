@@ -1,56 +1,6 @@
-{% extends "index.html" %}
-{% block content %}
-<header class="hr-page-header">
-  <h1>{{ eng.external_profile_id.person_id.legal_name }}</h1>
-  <p class="hr-page-subtitle">
-    {% include "hr_external/components/external_category_badge.html" with category_code=eng.category_id.code category_name=eng.category_id.name %}
-    聘期 {% include "hr_external/components/engagement_period.html" with start_at=eng.start_at end_at=eng.end_at %}
-    状态 {% include "hr_external/components/engagement_status_badge.html" with status=eng.status %}
-  </p>
-  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-industry-home' %}">← 产业教授与技能大师</a>
-</header>
-
-<div class="hr-detail-grid">
-  <section class="hr-panel">
-    <h2>产业背景</h2>
-    {% if industry_profile %}
-    <dl class="hr-def-list">
-      <dt>当前雇主</dt><dd>{{ industry_profile.current_employer|default:"-" }}</dd>
-      <dt>当前行业角色</dt><dd>{{ industry_profile.current_industry_role|default:"-" }}</dd>
-      <dt>行业年限</dt><dd>{{ industry_profile.industry_experience_years|default:"-" }}</dd>
-      <dt>重大项目</dt><dd>{{ industry_profile.major_projects|join:"；"|default:"-" }}</dd>
-      <dt>专利/产品</dt><dd>{{ industry_profile.patents_products|join:"；"|default:"-" }}</dd>
-      <dt>技术奖项</dt><dd>{{ industry_profile.technical_awards|join:"；"|default:"-" }}</dd>
-      <dt>行业领域</dt><dd>{{ industry_profile.industry_domains|join:"、"|default:"-" }}</dd>
-      <dt>技能</dt><dd>{{ industry_profile.skills|join:"、"|default:"-" }}</dd>
-    </dl>
-    {% else %}
-    <p class="hr-muted">尚未建立专项产业档案</p>
-    {% endif %}
-  </section>
-
-  <section class="hr-panel hr-panel--wide">
-    <h2>专项成果（{{ contributions|length }}）</h2>
-    <div class="hr-table-wrap">
-    <table class="hr-data-table">
-      <thead>
-        <tr><th>标题</th><th>类型</th><th>期间</th><th>核验状态</th><th>状态</th></tr>
-      </thead>
-      <tbody>
-        {% for c in contributions %}
-        <tr>
-          <td>{{ c.title }}</td>
-          <td>{{ c.contribution_type }}</td>
-          <td>{{ c.period|default:"-" }}</td>
-          <td>{{ c.verification_status }}</td>
-          <td>{{ c.status }}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="5" class="hr-empty">暂无专项成果</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </section>
-</div>
-{% endblock %}
+{% extends "hr_external/workspace_base.html" %}
+{% block workspace_content %}
+<section class="hr08-profile-hero"><div><span class="hr08-overline">{{ eng.engagement_no }}</span><h2>{{ eng.external_profile_id.person_id.legal_name }}</h2><p>{{ eng.category_id.name|default:"产业人才" }} · {{ eng.start_at|date:"Y-m-d" }} 至 {{ eng.end_at|date:"Y-m-d"|default:"长期" }} · {{ engagement_status_label }}</p></div><a class="hr08-btn" href="{% url 'hr08-industry-home' %}">返回产业人才</a></section>
+<section class="hr08-card"><div class="hr08-card__head"><div><h2>产业背景</h2><p>专项档案是履历事实，不替代成果核验。</p></div></div>{% if industry_profile %}<dl class="hr08-def-list hr08-def-list--columns"><dt>当前雇主</dt><dd>{{ industry_profile.current_employer|default:"未填写" }}</dd><dt>当前行业角色</dt><dd>{{ industry_profile.current_industry_role|default:"未填写" }}</dd><dt>行业年限</dt><dd>{{ industry_profile.industry_experience_years|default:"未填写" }}</dd><dt>行业领域</dt><dd>{{ industry_profile.industry_domains|join:"、"|default:"未填写" }}</dd><dt>技能</dt><dd>{{ industry_profile.skills|join:"、"|default:"未填写" }}</dd><dt>重大项目</dt><dd>{{ industry_profile.major_projects|join:"；"|default:"未填写" }}</dd><dt>专利 / 产品</dt><dd>{{ industry_profile.patents_products|join:"；"|default:"未填写" }}</dd><dt>技术奖项</dt><dd>{{ industry_profile.technical_awards|join:"；"|default:"未填写" }}</dd></dl>{% else %}<div class="hr08-empty">尚未建立专项产业档案。</div>{% endif %}</section>
+<section class="hr08-card"><div class="hr08-card__head"><div><h2>专项成果</h2><p>只有完成核验的记录才是正式成果结论。</p></div></div><div class="hr08-table-wrap"><table class="hr08-table"><thead><tr><th>标题</th><th>成果类型</th><th>期间</th><th>证据核验</th><th>业务状态</th></tr></thead><tbody>{% for c in contributions %}<tr><td><strong>{{ c.title }}</strong></td><td>{{ c.type_label }}</td><td>{{ c.period|default:"未填写" }}</td><td>{{ c.verification_label }}</td><td><span class="hr08-status">{{ c.status_label }}</span></td></tr>{% empty %}<tr><td colspan="5" class="hr08-empty">暂无专项成果。</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock workspace_content %}

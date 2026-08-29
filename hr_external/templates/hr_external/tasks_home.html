@@ -1,50 +1,9 @@
-{% extends "index.html" %}
-{% block content %}
-<header class="hr-page-header">
-  <h1>{{ page_title }}</h1>
-  <p class="hr-page-subtitle">外聘教师任务矩阵（§54）：履职、验收、工作量与结算依据</p>
-</header>
-
-<section class="hr-kpi-row">
-  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.in_progress }}</span><span class="hr-kpi-card__label">进行中</span></div>
-  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.under_review }}</span><span class="hr-kpi-card__label">待验收</span></div>
-  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.overdue }}</span><span class="hr-kpi-card__label">超期</span></div>
-  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ counts.completed }}</span><span class="hr-kpi-card__label">已完成</span></div>
-</section>
-
-<form class="hr-filter-bar" method="get" action="{% url 'hr08-tasks-home' %}">
-  <select name="status" aria-label="任务状态">
-    <option value="">全部状态</option>
-    <option value="ASSIGNED" {% if current_status == "ASSIGNED" %}selected{% endif %}>已分配</option>
-    <option value="ACCEPTED" {% if current_status == "ACCEPTED" %}selected{% endif %}>已接受</option>
-    <option value="IN_PROGRESS" {% if current_status == "IN_PROGRESS" %}selected{% endif %}>进行中</option>
-    <option value="SUBMITTED" {% if current_status == "SUBMITTED" %}selected{% endif %}>已提交</option>
-    <option value="UNDER_REVIEW" {% if current_status == "UNDER_REVIEW" %}selected{% endif %}>验收中</option>
-    <option value="COMPLETED" {% if current_status == "COMPLETED" %}selected{% endif %}>已完成</option>
-  </select>
-  <button class="oh-btn oh-btn--primary" type="submit">筛选</button>
-</form>
-
-<div class="hr-table-wrap">
-<table class="hr-data-table">
-  <thead>
-    <tr><th>人员</th><th>任务类型</th><th>任务标题</th><th>来源</th><th>计划量</th><th>计划周期</th><th>状态</th></tr>
-  </thead>
-  <tbody>
-    {% for t in tasks %}
-    <tr>
-      <td>{{ t.engagement_id.external_profile_id.person_id.legal_name }}</td>
-      <td>{{ t.task_type }}</td>
-      <td>{{ t.title }}</td>
-      <td>{{ t.source_domain }}{% if t.source_object_id %}:{{ t.source_object_id }}{% endif %}</td>
-      <td>{{ t.planned_quantity|default:"-" }} {{ t.planned_unit }}</td>
-      <td>{{ t.planned_start|date:"Y-m-d" }} ~ {{ t.planned_end|date:"Y-m-d"|default:"-" }}</td>
-      <td>{{ t.status }}</td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="7" class="hr-empty">暂无任务</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-{% endblock %}
+{% extends "hr_external/workspace_base.html" %}
+{% block workspace_content %}
+<section class="hr-v2-kpis hr08-kpis" aria-label="任务概览"><article class="hr-v2-kpi"><div class="hr-v2-kpi__label">进行中</div><div class="hr-v2-kpi__value">{{ counts.in_progress }}</div><div class="hr-v2-kpi__note">已分配 / 已接受 / 履行中</div></article><article class="hr-v2-kpi"><div class="hr-v2-kpi__label">待验收</div><div class="hr-v2-kpi__value">{{ counts.under_review }}</div><div class="hr-v2-kpi__note">等待正式验收</div></article><article class="hr-v2-kpi"><div class="hr-v2-kpi__label">已超期</div><div class="hr-v2-kpi__value">{{ counts.overdue }}</div><div class="hr-v2-kpi__note">按计划结束日统计</div></article><article class="hr-v2-kpi"><div class="hr-v2-kpi__label">已完成</div><div class="hr-v2-kpi__value">{{ counts.completed }}</div><div class="hr-v2-kpi__note">已通过验收</div></article></section>
+<section class="hr08-card"><div class="hr08-card__head"><div><h2>任务矩阵</h2><p>任务只关联已建档聘期；教务来源只保存引用，不改写教务事实。</p></div>{% if can_task_manage %}<button class="hr08-btn hr08-btn--primary" type="button" data-open-panel="task-create">新建任务</button>{% endif %}</div>
+{% if can_task_manage %}<form class="hr08-form" data-panel="task-create" data-task-create hidden><div class="hr08-form-grid"><label class="is-wide"><span>外聘人员与聘期</span><select name="engagementId" required><option value="">请选择有效聘期</option>{% for option in engagement_options %}<option value="{{ option.id }}" data-owner-org="{{ option.owner_org_id }}">{{ option.label }} · {{ option.status_label }} · {{ option.start_at|date:"Y-m-d" }} 至 {{ option.end_at|date:"Y-m-d"|default:"长期" }}</option>{% endfor %}</select></label><label><span>任务类型</span><select name="taskType"><option value="TEACHING">教学</option><option value="PRACTICE_GUIDANCE">实训指导</option><option value="INDUSTRY_MENTOR">产业导师</option><option value="PROGRAM_DEVELOPMENT">专业建设</option><option value="RESEARCH_COLLABORATION">科研合作</option><option value="SKILL_TRAINING">技能培训</option><option value="FACULTY_DEVELOPMENT">教师发展</option><option value="STUDENT_MENTORING">学生指导</option><option value="OTHER">其他</option></select></label><label><span>任务标题</span><input name="title" required placeholder="例如 2026 秋季企业实践指导"></label><label><span>开始日期</span><input name="plannedStart" type="date" required></label><label><span>结束日期</span><input name="plannedEnd" type="date"></label><label><span>计划数量</span><input name="plannedQuantity" type="number" min="0" step="0.01"></label><label><span>单位</span><input name="plannedUnit" placeholder="课时 / 次 / 天"></label><label class="is-wide"><span>任务说明</span><textarea name="description" placeholder="说明任务范围、交付物和验收要求"></textarea></label><label class="hr08-checkbox is-wide"><input name="settlementEligible" type="checkbox"><span>完成核验后可作为结算依据（实际金额由 HR15 / 财务负责）</span></label></div><div class="hr08-form-actions"><button class="hr08-btn hr08-btn--primary" type="submit">创建任务</button><button class="hr08-btn" type="button" data-close-panel="task-create">取消</button><span class="hr08-message" role="status"></span></div></form>{% endif %}
+<form class="hr08-toolbar" method="get" action="{% url 'hr08-tasks-home' %}"><select name="status" aria-label="任务状态"><option value="">全部状态</option><option value="ASSIGNED">已分配</option><option value="ACCEPTED">已接受</option><option value="IN_PROGRESS">进行中</option><option value="SUBMITTED">已提交</option><option value="UNDER_REVIEW">验收中</option><option value="COMPLETED">已完成</option></select><button class="hr08-btn" type="submit">筛选</button></form>
+<div class="hr08-table-wrap"><table class="hr08-table"><thead><tr><th>外聘人员</th><th>任务</th><th>来源</th><th>计划量</th><th>计划周期</th><th>状态</th></tr></thead><tbody>{% for t in tasks %}<tr><td><strong>{{ t.person_name }}</strong><small>{{ t.engagement_no }}</small></td><td><strong>{{ t.title }}</strong><small>{{ t.task_type_label }}</small></td><td>{{ t.source_label }}</td><td>{{ t.planned_quantity|default:"未填写" }} {{ t.planned_unit }}</td><td>{{ t.planned_start|date:"Y-m-d" }} 至 {{ t.planned_end|date:"Y-m-d"|default:"未设结束" }}</td><td><span class="hr08-status">{{ t.status_label }}</span></td></tr>{% empty %}<tr><td colspan="6" class="hr08-empty">暂无任务。</td></tr>{% endfor %}</tbody></table></div>
+<div class="hr08-live-actions" data-task-actions data-can-verify="{{ can_task_verify|yesno:'true,false' }}"><div class="hr08-loading">正在读取可办理任务…</div></div></section>
+{% endblock workspace_content %}

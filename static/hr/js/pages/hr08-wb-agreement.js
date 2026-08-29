@@ -1,76 +1,82 @@
 (() => {
   'use strict';
 
-  const root = document.querySelector('[data-hr08-page="hiring-detail"]');
-  if (!root || root.dataset.caseStatus !== 'WAITING_AGREEMENT') return;
+  const workspace = document.querySelector('[data-agreement-workspace]');
+  if (!workspace || workspace.dataset.bound === 'true') return;
+  workspace.dataset.bound = 'true';
+  const zone = workspace.querySelector('[data-agreement-zone]');
+  const caseId = workspace.dataset.caseId;
+  const status = workspace.dataset.caseStatus;
+  const cookie = (name) => document.cookie.split(';').map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1) || '';
 
-  const caseId = root.dataset.caseId;
-  const grid = root.querySelector('.hr-detail-grid');
-  if (!caseId || !grid || grid.querySelector('[data-wb-agreement-panel]')) return;
+  function show(message, kind = '') {
+    zone.innerHTML = '';
+    const notice = document.createElement('div');
+    notice.className = `hr08-notice${kind ? ` is-${kind}` : ''}`;
+    notice.textContent = message;
+    zone.appendChild(notice);
+  }
 
-  const cookie = (name) => document.cookie
-    .split(';')
-    .map((item) => item.trim())
-    .find((item) => item.startsWith(`${name}=`))
-    ?.slice(name.length + 1) || '';
+  async function payload(response) {
+    let value = {};
+    try { value = await response.json(); } catch (_error) { /* status remains authoritative */ }
+    if (!response.ok) {
+      const error = value.error || {};
+      throw new Error([error.code, error.message].filter(Boolean).join(' · ') || `请求失败（${response.status}）`);
+    }
+    return value.data ?? value;
+  }
 
-  const panel = document.createElement('section');
-  panel.className = 'hr-panel hr-panel--wide';
-  panel.dataset.wbAgreementPanel = 'true';
-  panel.innerHTML = `
-    <h2>确认 HR07 正式协议</h2>
-    <p class="hr-muted">仅接受与当前学校、当前聘用单、当前候选人同时绑定且已签署/生效的 HR07 协议。确认后才进入待激活。</p>
-    <div class="hr08-action-toolbar">
-      <input class="oh-input" data-wb-agreement-id type="text" autocomplete="off" placeholder="HR07 协议 UUID">
-      <button class="hr08-action-btn primary" data-wb-confirm-agreement type="button">确认 HR07 协议</button>
-    </div>
-    <div class="hr08-action-result" data-wb-agreement-result></div>
-  `;
-  grid.appendChild(panel);
-
-  const input = panel.querySelector('[data-wb-agreement-id]');
-  const button = panel.querySelector('[data-wb-confirm-agreement]');
-  const result = panel.querySelector('[data-wb-agreement-result]');
-
-  button.addEventListener('click', async () => {
-    const agreementId = String(input.value || '').trim();
-    if (!agreementId) {
-      result.className = 'hr08-action-result show error';
-      result.textContent = '请填写 HR07 协议 UUID。';
+  async function boot() {
+    if (status !== 'WAITING_AGREEMENT') {
+      show(status === 'READY_TO_ACTIVATE' || status === 'ACTIVATED'
+        ? '正式协议已经确认，可在上方继续激活或核对已生效聘期。'
+        : '当前审批阶段尚未进入正式协议确认。');
       return;
     }
-
-    button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = '确认中…';
     try {
-      const response = await fetch(
-        `/api/v1/hr/external-teachers/hiring-cases/${encodeURIComponent(caseId)}/agreement`,
-        {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRFToken': decodeURIComponent(cookie('csrftoken')),
-          },
-          body: JSON.stringify({agreementId}),
-        },
-      );
-      let payload = {};
-      try { payload = await response.json(); } catch (_error) {}
-      if (!response.ok) {
-        const error = payload.error || {};
-        throw new Error([error.code, error.message].filter(Boolean).join(' · ') || `HTTP ${response.status}`);
+      const response = await fetch(`/api/v1/hr/external-teachers/hiring-cases/${encodeURIComponent(caseId)}/agreement-options`, {
+        credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'},
+      });
+      const data = await payload(response);
+      const items = data.items || [];
+      if (!items.length) {
+        show('HR07 当前没有与本申请精确绑定且满足确认条件的正式协议。请先在合同管理完成协议签署。');
+        return;
       }
-      result.className = 'hr08-action-result show ok';
-      result.textContent = 'HR07 协议已确认，正在进入待激活状态。';
-      window.location.reload();
-    } catch (error) {
-      result.className = 'hr08-action-result show error';
-      result.textContent = error.message;
-      button.disabled = false;
-      button.textContent = originalText;
-    }
-  });
+      zone.innerHTML = '<form class="hr08-inline-form is-open" data-agreement-form><select name="agreementId" required aria-label="选择正式协议"><option value="">请选择 HR07 正式协议</option></select><button class="hr08-btn hr08-btn--primary" type="submit">确认协议并进入待激活</button></form>';
+      const form = zone.querySelector('[data-agreement-form]');
+      const select = form.elements.agreementId;
+      items.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = `${item.agreementNo} · ${item.title} · ${item.effectiveFrom || '生效日未填写'} 至 ${item.effectiveTo || '长期'}`;
+        select.appendChild(option);
+      });
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        const original = button.textContent;
+        button.textContent = '确认中…';
+        try {
+          const confirmed = await fetch(`/api/v1/hr/external-teachers/hiring-cases/${encodeURIComponent(caseId)}/agreement`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': decodeURIComponent(cookie('csrftoken'))},
+            body: JSON.stringify({agreementId: select.value}),
+          });
+          await payload(confirmed);
+          window.sessionStorage.setItem('hr08-flash', 'HR07 正式协议已确认，申请进入待激活。');
+          window.location.reload();
+        } catch (error) {
+          show(error.message, 'error');
+          button.disabled = false;
+          button.textContent = original;
+        }
+      });
+    } catch (error) { show(error.message, 'error'); }
+  }
+
+  boot();
 })();

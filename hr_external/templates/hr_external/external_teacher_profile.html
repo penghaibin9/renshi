@@ -1,64 +1,9 @@
-{% extends "index.html" %}
-{% block content %}
-<header class="hr-page-header">
-  <h1>{{ profile.person_id.legal_name }}</h1>
-  <p class="hr-page-subtitle">
-    {% include "hr_external/components/external_category_badge.html" with category_code=profile.primary_category.code category_name=profile.primary_category.name %}
-    {{ profile.highest_professional_title|default:"" }} · {{ profile.industry_domain|default:"" }}
-  </p>
-  <p class="hr-page-subtitle">
-    来源：{{ profile.source_organization_name|default:"-" }} ｜ 外聘编号：{{ profile.external_teacher_no }}
-    ｜ 当前状态：{{ profile.current_engagement_status|default:"未受聘" }}
-  </p>
-  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-home' %}">← 外聘教师库</a>
-</header>
-
-<div class="hr-detail-grid">
-  <section class="hr-panel">
-    <h2>基本资料</h2>
-    <dl class="hr-def-list">
-      <dt>来源单位类型</dt><dd>{{ profile.source_organization_type|default:"-" }}</dd>
-      <dt>来源职务</dt><dd>{{ profile.source_position_title|default:"-" }}</dd>
-      <dt>专业领域</dt><dd>{{ profile.industry_domain|default:"-" }}</dd>
-      <dt>最高职称</dt><dd>{{ profile.highest_professional_title|default:"-" }}</dd>
-      <dt>最高技能等级</dt><dd>{{ profile.highest_skill_level|default:"-" }}</dd>
-      <dt>候选状态</dt><dd>{{ profile.candidate_pool_status }}</dd>
-      <dt>伦理状态</dt><dd>{{ profile.ethics_status }}</dd>
-      <dt>身份核验</dt><dd>{{ profile.identity_verification_status }}</dd>
-    </dl>
-  </section>
-
-  <section class="hr-panel">
-    <h2>专业能力标签</h2>
-    {% for tag in profile.expertise_tags %}
-    <span class="oh-tag">{{ tag }}</span>
-    {% empty %}
-    <p class="hr-muted">暂无标签</p>
-    {% endfor %}
-  </section>
-
-  <section class="hr-panel hr-panel--wide">
-    <h2>受聘历史（{{ engagements|length }}）</h2>
-    <div class="hr-table-wrap">
-    <table class="hr-data-table">
-      <thead>
-        <tr><th>编号</th><th>类别</th><th>学院</th><th>聘期</th><th>状态</th></tr>
-      </thead>
-      <tbody>
-        {% for eng in engagements %}
-        <tr>
-          <td>{{ eng.engagement_no }}</td>
-          <td>{{ eng.category_id.name|default:eng.category_id.code }}</td>
-          <td>{{ eng.host_organization_id }}</td>
-          <td>{% include "hr_external/components/engagement_period.html" with start_at=eng.start_at end_at=eng.end_at %}</td>
-          <td>{% include "hr_external/components/engagement_status_badge.html" with status=eng.status %}</td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="5" class="hr-empty">暂无受聘记录</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </section>
+{% extends "hr_external/workspace_base.html" %}
+{% block workspace_content %}
+<section class="hr08-profile-hero"><div><span class="hr08-overline">{{ profile.external_teacher_no }}</span><h2>{{ profile.person_id.legal_name }}</h2><p>{{ profile.primary_category.name|default:"未分类" }} · {{ profile.highest_professional_title|default:"职称未填写" }} · {{ profile.industry_domain|default:"领域未填写" }}</p></div><a class="hr08-btn" href="{% url 'hr08-home' %}">返回人才库</a></section>
+<div class="hr08-detail-grid">
+  <section class="hr08-card"><div class="hr08-card__head"><div><h2>基本资料</h2><p>外聘人才主档中的非敏感业务信息。</p></div></div><dl class="hr08-def-list"><dt>来源单位</dt><dd>{{ profile.source_organization_name|default:"未填写" }}</dd><dt>来源职务</dt><dd>{{ profile.source_position_title|default:"未填写" }}</dd><dt>专业领域</dt><dd>{{ profile.industry_domain|default:"未填写" }}</dd><dt>最高职称</dt><dd>{{ profile.highest_professional_title|default:"未填写" }}</dd><dt>最高技能等级</dt><dd>{{ profile.highest_skill_level|default:"未填写" }}</dd><dt>候选状态</dt><dd>{{ pool_status_label }}</dd><dt>合作状态</dt><dd>{{ engagement_status_label }}</dd><dt>伦理检查</dt><dd>{{ ethics_status_label }}</dd><dt>身份核验</dt><dd>{{ identity_status_label }}</dd></dl></section>
+  <section class="hr08-card"><div class="hr08-card__head"><div><h2>专业能力标签</h2><p>用于人才检索，不代替资质或合规结论。</p></div></div><div class="hr08-tags">{% for tag in profile.expertise_tags %}<span>{{ tag }}</span>{% empty %}<p class="hr08-empty-inline">暂无能力标签。</p>{% endfor %}</div></section>
 </div>
-{% endblock %}
+<section class="hr08-card"><div class="hr08-card__head"><div><h2>受聘历史</h2><p>每个聘期都是独立事实，退出或续聘不会覆盖历史。</p></div></div><div class="hr08-table-wrap"><table class="hr08-table"><thead><tr><th>聘期编号</th><th>类别</th><th>主办组织</th><th>聘期</th><th>状态</th></tr></thead><tbody>{% for eng in engagements %}<tr><td>{{ eng.engagement_no }}</td><td>{{ eng.category_name }}</td><td>{{ eng.organization_name }}</td><td>{{ eng.start_at|date:"Y-m-d" }} 至 {{ eng.end_at|date:"Y-m-d"|default:"长期" }}</td><td><span class="hr08-status">{{ eng.status_label }}</span></td></tr>{% empty %}<tr><td colspan="5" class="hr08-empty">尚无受聘记录。</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock workspace_content %}

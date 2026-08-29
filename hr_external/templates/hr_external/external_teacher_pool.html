@@ -1,32 +1,8 @@
-{% extends "index.html" %}
-{% block content %}
-<header class="hr-page-header">
-  <h1>{{ page_title }}</h1>
-  <a class="oh-btn oh-btn--secondary" href="{% url 'hr08-home' %}">← 外聘教师库</a>
-</header>
-
-<section class="hr-kpi-row">
-  <div class="hr-kpi-card"><span class="hr-kpi-card__value">{{ total }}</span><span class="hr-kpi-card__label">候选池</span></div>
+{% extends "hr_external/workspace_base.html" %}
+{% block workspace_content %}
+<section class="hr08-card">
+  <div class="hr08-card__head"><div><h2>候选人才</h2><p>共 {{ total }} 份档案。发起聘用必须进入正式聘用审批页并选择有效组织与期限。</p></div>{% if can_hiring_create %}<a class="hr08-btn hr08-btn--primary" href="{% url 'hr08-hiring-home' %}">进入聘用申请</a>{% endif %}</div>
+  <form class="hr08-toolbar" method="get" action="{% url 'hr08-pool' %}"><label class="hr08-search"><span class="sr-only">搜索候选人</span><input type="search" name="keyword" value="{{ request.GET.keyword }}" placeholder="搜索姓名或外聘编号"></label><select name="pool_status" aria-label="候选状态"><option value="">全部状态</option><option value="AVAILABLE">可聘</option><option value="UNDER_REVIEW">待核验</option><option value="TEMPORARILY_UNAVAILABLE">暂停合作</option></select><button class="hr08-btn" type="submit">筛选</button></form>
+  <div class="hr08-table-wrap"><table class="hr08-table"><thead><tr><th>人才</th><th>来源单位</th><th>专业领域</th><th>候选状态</th><th>操作</th></tr></thead><tbody>{% for item in items %}<tr><td><strong>{{ item.legalName }}</strong><small>{{ item.externalTeacherNo }}</small></td><td>{{ item.sourceOrganization|default:"未填写" }}</td><td>{{ item.industryDomain|default:"未填写" }}</td><td><span class="hr08-status">{{ item.poolStatusLabel }}</span></td><td><a class="hr08-link" href="{% url 'hr08-profile-detail' item.id %}">核对档案</a></td></tr>{% empty %}<tr><td colspan="5" class="hr08-empty">当前候选池为空。</td></tr>{% endfor %}</tbody></table></div>
 </section>
-
-<div class="hr-table-wrap">
-<table class="hr-data-table">
-  <thead>
-    <tr><th>姓名</th><th>来源单位</th><th>领域</th><th>状态</th><th>操作</th></tr>
-  </thead>
-  <tbody>
-    {% for item in items %}
-    <tr>
-      <td><a href="{% url 'hr08-profile-detail' item.id %}">{{ item.legalName }}</a></td>
-      <td>{{ item.sourceOrganization|default:"-" }}</td>
-      <td>{{ item.industryDomain|default:"-" }}</td>
-      <td>{{ item.poolStatus|default:"-" }}</td>
-      <td><a class="oh-btn oh-btn--small oh-btn--primary" href="#">发起聘用</a></td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="5" class="hr-empty">候选池为空</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-{% endblock %}
+{% endblock workspace_content %}

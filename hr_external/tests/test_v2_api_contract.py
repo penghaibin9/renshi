@@ -9,8 +9,13 @@ from unittest.mock import patch
 
 from django.test import RequestFactory, TestCase
 
-from hr_external.api import hiring, tasks
-from hr_external.models import HrExternalHiringCase
+from hr_external.api import hiring, renewal_exit, tasks
+from hr_external.models import (
+    HrExternalEngagement,
+    HrExternalExitCase,
+    HrExternalHiringCase,
+    HrExternalServiceTask,
+)
 from hr_external.services.category_service import CategoryService
 from hr_external.services.profile_service import ProfileService
 from hr_staff.models import HrPerson
@@ -110,3 +115,75 @@ class Hr08HiringCreateBoundaryTests(TestCase):
         payload = json.loads(response.content)
         self.assertEqual(payload["error"]["code"], "EXTERNAL_PROFILE_NOT_FOUND")
         self.assertFalse(HrExternalHiringCase.objects.filter(tenant_id=self.TENANT).exists())
+
+
+class Hr08ActionClosureTests(TestCase):
+    TENANT = 8810
+
+    def setUp(self):
+        self.factory = RequestFactory()
+        CategoryService().ensure_default_categories(self.TENANT)
+        self.person = HrPerson.objects.create(
+            tenant_id=self.TENANT,
+            legal_name="V2 办理闭环候选人",
+        )
+        self.profile = ProfileService().create_profile(
+            tenant_id=self.TENANT,
+            person_id=self.person.id,
+            primary_category_code="OTHER",
+        )
+        self.engagement = HrExternalEngagement.objects.create(
+            tenant_id=self.TENANT,
+            engagement_no="ENG-V2-CLOSURE",
+            person_id=self.person,
+            external_profile_id=self.profile,
+            category_id=self.profile.primary_category,
+            host_organization_id=881001,
+            start_at=date.today(),
+            status="ACTIVE",
+        )
+        self.user = SimpleNamespace(is_authenticated=True, is_superuser=True)
+        self.context = SimpleNamespace(tenant_id=self.TENANT, user_id=82)
+
+    def test_task_create_immediately_forms_an_assigned_actionable_task(self):
+        request = self.factory.post(
+            "/api/v1/hr/external-teachers/tasks",
+            data=json.dumps(
+                {
+                    "engagementId": str(self.engagement.id),
+                    "taskType": "TEACHING",
+                    "title": "V2 可办理任务",
+                    "plannedStart": date.today().isoformat(),
+                    "ownerOrgId": 881001,
+                }
+            ),
+            content_type="application/json",
+        )
+        request.user = self.user
+        with patch.object(tasks, "_ctx", return_value=(self.context, None)):
+            response = tasks.task_create(request)
+        self.assertEqual(response.status_code, 201)
+        task = HrExternalServiceTask.objects.get(tenant_id=self.TENANT)
+        self.assertEqual(task.status, "ASSIGNED")
+
+    def test_exit_review_advances_one_auditable_state_per_request(self):
+        case = HrExternalExitCase.objects.create(
+            tenant_id=self.TENANT,
+            engagement_id=self.engagement,
+            exit_reason="TERM_COMPLETED",
+            planned_end_at=date.today(),
+            status="PLANNED",
+        )
+        request = self.factory.post(
+            f"/api/v1/hr/external-teachers/exits/{case.id}/prepare"
+        )
+        request.user = self.user
+        with patch.object(
+            renewal_exit, "_ctx", return_value=(self.context, None)
+        ):
+            first = renewal_exit.exit_prepare(request, case.id)
+            second = renewal_exit.exit_prepare(request, case.id)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        case.refresh_from_db()
+        self.assertEqual(case.status, "READY_TO_EXIT")
