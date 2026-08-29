@@ -16,6 +16,7 @@ from hr10_development.constants import DevelopmentErrorCode, PlanLifecycleStatus
 from hr10_development.models.plan import HrDevelopmentPlan
 from hr10_development.models.plan_version import HrDevelopmentPlanVersion
 from hr10_development.services.plan_service import PlanService
+from hr_staff.models import HrStaffMaster
 
 
 def _plan_to_dict(plan: HrDevelopmentPlan) -> dict:
@@ -132,15 +133,23 @@ def create_plan(request):
             error("MISSING_FIELD", "planNo 必填"), status=400
         )
 
+    plan_type = body.get("planType", "SCHOOL")
+    staff_id = body.get("staffMasterId")
+    if plan_type == "INDIVIDUAL" and not HrStaffMaster.objects.filter(
+        tenant_id=tenant_id,
+        legacy_employee_id=staff_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "教师不存在"), status=404)
+
     plan = PlanService.create_plan(
         tenant_id=tenant_id,
         plan_no=plan_no,
-        plan_type=body.get("planType", "SCHOOL"),
+        plan_type=plan_type,
         start_date=body.get("startDate"),
         end_date=body.get("endDate"),
         cycle_type=body.get("cycleType", "ANNUAL"),
         owner_org_id=body.get("ownerOrgId"),
-        staff_master_id=body.get("staffMasterId"),
+        staff_master_id=staff_id if plan_type == "INDIVIDUAL" else None,
         created_by=request.user if request.user.is_authenticated else None,
     )
     return JsonResponse(success(_plan_to_dict(plan)), status=201)
@@ -203,14 +212,19 @@ def approve_plan(request, plan_id):
             status=404,
         )
 
-    if plan.lifecycle_status != PlanLifecycleStatus.UNDER_REVIEW:
+    if plan.lifecycle_status not in [
+        PlanLifecycleStatus.READY_FOR_REVIEW,
+        PlanLifecycleStatus.UNDER_REVIEW,
+    ]:
         return JsonResponse(
             error(DevelopmentErrorCode.VERSION_CONFLICT, "计划不在审核中状态"),
             status=409,
         )
 
-    ok = PlanService.transition(plan, PlanLifecycleStatus.APPROVED,
-                                actor=request.user if request.user.is_authenticated else None)
+    actor = request.user if request.user.is_authenticated else None
+    if plan.lifecycle_status == PlanLifecycleStatus.READY_FOR_REVIEW:
+        PlanService.transition(plan, PlanLifecycleStatus.UNDER_REVIEW, actor=actor)
+    ok = PlanService.transition(plan, PlanLifecycleStatus.APPROVED, actor=actor)
     if not ok:
         return JsonResponse(
             error(DevelopmentErrorCode.VERSION_CONFLICT, "状态转换失败"),

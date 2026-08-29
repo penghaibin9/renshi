@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Optional
 
+from django.utils import timezone
+
 from hr_assessment.providers.base import (
     BaseAssessmentProvider,
     ProviderContext,
@@ -26,6 +28,8 @@ def _empty_result(source_version: str) -> ProviderResult:
 def _ctx_as_of_date(ctx: ProviderContext) -> date:
     value = ctx.as_of
     if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            return timezone.localtime(value).date()
         return value.date()
     if isinstance(value, date):
         return value

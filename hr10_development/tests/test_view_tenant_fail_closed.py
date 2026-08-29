@@ -30,14 +30,16 @@ class Hr10ViewTenantFailClosedTests(SimpleTestCase):
             plan_center(self._request())
 
     @patch("hr10_development.views.render", return_value="rendered")
+    @patch("hr10_development.views._workspace_context", return_value={})
     @patch("hr10_development.views.PlanSelector.get_summary_stats", return_value={})
     @patch("hr10_development.views.PlanSelector.list_plans", return_value=[])
     @patch("hr10_development.views.get_selected_company", return_value="17")
     def test_plan_center_uses_selected_company_tenant(
-        self, selected_company, list_plans, get_summary_stats, render
+        self, selected_company, list_plans, get_summary_stats, workspace_context, render
     ):
         response = plan_center(self._request())
 
         self.assertEqual(response, "rendered")
         list_plans.assert_called_once_with(tenant_id=17)
         get_summary_stats.assert_called_once_with(tenant_id=17)
+        workspace_context.assert_called_once_with(17, "plans", "教师发展计划")

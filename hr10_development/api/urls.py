@@ -10,7 +10,7 @@ from django.urls import path
 from hr10_development.api import (
     health, plans, programs, requests as request_api,
     enrollments, practice, practice_process, development_records, dashboard,
-    internal, imports,
+    internal, imports, workbench,
 )
 
 app_name = "hr10_development_api"
@@ -18,6 +18,7 @@ app_name = "hr10_development_api"
 urlpatterns = [
     # Health
     path("api/v1/hr/development/health", health.health_check, name="health"),
+    path("api/v1/hr/development/workbench/choices", workbench.choices, name="workbench-choices"),
 
     # ============ S2: Plans ============
     path("api/v1/hr/development/plans", plans.list_plans, name="plan-list"),

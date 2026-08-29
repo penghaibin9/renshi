@@ -1,14 +1,6 @@
 {% extends "hr/development/base.html" %}
-{% block title %}培训项目{% endblock %}
-{% block title_zh %}培训项目{% endblock %}
-{% block content %}
-<div class="toolbar">
-  <a class="btn btn-primary" href="/api/v1/hr/development/programs/create">新建项目</a>
-  <a class="btn" href="/api/v1/hr/development/offerings/create">新建班次</a>
-</div>
-<div class="empty">
-  培训项目管理：校内培训 / 校外培训 / 访学研修 / 线上学习 / 企业实践基地培训。
-  <br><br>
-  <a class="btn" href="/api/v1/hr/development/programs">查看项目列表 (API)</a>
-</div>
+{% block workspace_content %}
+<section class="hr10-section">
+  <div class="hr10-section__head"><h2>培训项目与班次</h2><p>项目定义课程和完成规则，班次定义具体时间、地点、容量与报名窗口。</p></div>
+</section>
 {% endblock %}

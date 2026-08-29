@@ -1,19 +1,12 @@
 {% extends "hr/development/base.html" %}
-{% block title %}教师发展档案{% endblock %}
-{% block title_zh %}教师发展档案{% endblock %}
-{% block content %}
-<div class="toolbar">
-  <span class="badge badge-primary">教职工 ID: {{ staff_id }}</span>
-  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}">档案摘要 (API)</a>
-  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}/facts">已核验事实 (API)</a>
-  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}/compliance">合规评估 (API)</a>
-  <a class="btn" href="/api/v1/hr/development/development-records/{{ staff_id }}/risks">风险 (API)</a>
-</div>
-<div class="empty">
-  发展档案聚合视图：
-  <br><br>
-  · 发展概览 · 发展计划 · 培训/研修 · 进修 · 企业实践 · 成果转化
-  <br>
-  · 学时/学分/实践时长分账 · 资格证据引用 · 风险 · 历史更正 · 审计
-</div>
+{% block workspace_content %}
+<section class="hr10-insights hr10-section" data-hr10-insights="record" data-staff-id="{{ staff_id }}">
+  <div class="hr10-record-person"><div><strong>{{ staff_label }}</strong><span>当前学校教师发展档案</span></div><span>仅展示已授权、已核验或明确标记状态的发展事实</span></div>
+  <div class="hr10-summary" data-summary><div class="hr10-empty">正在读取发展档案摘要…</div></div>
+  <div class="hr10-result" data-error role="alert"></div>
+  <section class="hr10-panel"><div class="hr10-panel-head"><div><h3>已核验发展事实</h3><p>培训、进修、企业实践和发展成果按事实类型分开记录。</p></div></div><div class="hr10-list" data-facts></div></section>
+  <section class="hr10-panel"><div class="hr10-panel-head"><div><h3>学时与实践时长分账</h3><p>保留原始值、标准化值、统计窗口和转换规则版本。</p></div></div><div class="hr10-list" data-ledger></div></section>
+  <section class="hr10-panel"><div class="hr10-panel-head"><div><h3>合规评估</h3><p>按当前时点和适用规则判断，不以空数据表示合规。</p></div></div><div class="hr10-list" data-compliance></div></section>
+  <section class="hr10-panel"><div class="hr10-panel-head"><div><h3>发展风险</h3><p>只展示当前学校真实风险案例及其办理状态。</p></div></div><div class="hr10-list" data-risks></div></section>
+</section>
 {% endblock %}

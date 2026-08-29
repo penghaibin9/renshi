@@ -1,97 +1,52 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}{{ page_title|default:"教师发展" }}{% endblock %} · 跃科高校人事系统</title>
-  <style>
-    :root {
-      --primary: #2563eb;
-      --bg: #f8fafc;
-      --card: #ffffff;
-      --border: #e2e8f0;
-      --text: #1e293b;
-      --muted: #64748b;
-      --danger: #dc2626;
-      --success: #16a34a;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: "Microsoft YaHei", -apple-system, sans-serif; background: var(--bg); color: var(--text); }
-    .topbar {
-      background: var(--card); border-bottom: 1px solid var(--border);
-      padding: 12px 24px; display: flex; align-items: center; gap: 16px;
-    }
-    .topbar h1 { font-size: 18px; color: var(--text); }
-    .topbar .crumb { color: var(--muted); font-size: 13px; }
-    .topbar .crumb a { color: var(--primary); text-decoration: none; }
-    nav {
-      background: var(--card); border-bottom: 1px solid var(--border);
-      padding: 0 24px; display: flex; gap: 4px; flex-wrap: wrap;
-    }
-    nav a {
-      padding: 10px 16px; color: var(--muted); text-decoration: none;
-      font-size: 14px; border-bottom: 2px solid transparent;
-    }
-    nav a.active, nav a:hover { color: var(--primary); border-bottom-color: var(--primary); }
-    main { padding: 24px; max-width: 1440px; margin: 0 auto; }
-    .stats {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 16px; margin-bottom: 24px;
-    }
-    .stat-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-      padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    }
-    .stat-card .label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
-    .stat-card .value { font-size: 26px; font-weight: 600; color: var(--text); }
-    .toolbar { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-    .btn {
-      padding: 8px 16px; border-radius: 6px; border: 1px solid var(--border);
-      background: var(--card); color: var(--text); cursor: pointer; font-size: 14px;
-    }
-    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
-    .btn-primary:hover { opacity: 0.9; }
-    table {
-      width: 100%; border-collapse: collapse; background: var(--card);
-      border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
-    }
-    th, td { padding: 12px 16px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--border); }
-    th { background: #f1f5f9; color: var(--muted); font-weight: 600; }
-    tr:last-child td { border-bottom: none; }
-    .badge {
-      display: inline-block; padding: 3px 10px; border-radius: 999px;
-      font-size: 12px; background: #e2e8f0; color: var(--muted);
-    }
-    .badge-success { background: #dcfce7; color: var(--success); }
-    .badge-danger { background: #fee2e2; color: var(--danger); }
-    .badge-primary { background: #dbeafe; color: var(--primary); }
-    .empty {
-      text-align: center; padding: 48px; color: var(--muted);
-      background: var(--card); border: 1px dashed var(--border); border-radius: 8px;
-    }
-    @media (max-width: 768px) {
-      main { padding: 12px; }
-      .topbar { padding: 10px 16px; }
-      table { font-size: 12px; }
-      th, td { padding: 8px 10px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <span class="crumb"><a href="/hr/development/dashboard">教师发展</a></span>
-    <h1>{% block title_zh %}{{ page_title|default:"教师发展" }}{% endblock %}</h1>
+{% extends "index.html" %}
+{% load static %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr10-actions.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr10-workspace.css' %}">
+
+<div class="hr-v2-page hr10" data-module="HR10" data-section="{{ hr10_page }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR10 教师发展</span>
+    <strong>{{ page_title }}</strong>
   </div>
-  <nav>
-    <a href="/hr/development/dashboard">发展总览</a>
-    <a href="/hr/development/plans" {% if request.path == '/hr/development/plans' %}class="active"{% endif %}>教师发展计划</a>
-    <a href="/hr/development/programs" {% if request.path == '/hr/development/programs' %}class="active"{% endif %}>培训项目</a>
-    <a href="/hr/development/requests" {% if request.path == '/hr/development/requests' %}class="active"{% endif %}>报名与审批</a>
-    <a href="/hr/development/enterprise-practice" {% if request.path == '/hr/development/enterprise-practice' %}class="active"{% endif %}>企业实践</a>
-    <a href="/hr/development/records/1">发展档案</a>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr10-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR10 · 培训进修与企业实践</div>
+      <h1 class="hr-v2-title" id="hr10-title">{{ page_title }}</h1>
+      <p class="hr-v2-subtitle">从发展计划出发，连接培训项目、报名审批、企业实践和已核验发展档案。计划数、学时与风险均来自当前学校的真实业务事实。</p>
+    </div>
+    <div class="hr-v2-context" aria-label="当前工作区说明">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> 已核验事实</span>
+      <span class="hr-v2-context__item"><strong>权限</strong> 服务端实时判定</span>
+    </div>
+  </header>
+
+  <nav class="hr10-nav" aria-label="教师发展工作区导航">
+    <a href="{% url 'hr10_development:development-dashboard' %}" {% if hr10_page == 'dashboard' %}class="active"{% endif %}>发展总览</a>
+    <a href="{% url 'hr10_development:development-plans' %}" {% if hr10_page == 'plans' %}class="active"{% endif %}>发展计划</a>
+    <a href="{% url 'hr10_development:development-programs' %}" {% if hr10_page == 'programs' %}class="active"{% endif %}>培训项目</a>
+    <a href="{% url 'hr10_development:development-requests' %}" {% if hr10_page == 'requests' %}class="active"{% endif %}>报名与审批</a>
+    <a href="{% url 'hr10_development:development-practice' %}" {% if hr10_page == 'practice' %}class="active"{% endif %}>企业实践</a>
+    {% if record_url %}<a href="{{ record_url }}" {% if hr10_page == 'record' %}class="active"{% endif %}>发展档案</a>{% else %}<span class="disabled">发展档案</span>{% endif %}
   </nav>
-  <main>
-    {% block content %}{% endblock %}
-  </main>
-</body>
-</html>
+  <div class="hr10-mobile-hint">可左右滑动查看更多工作区</div>
+
+  <div class="hr10-workspace" data-hr10-page="{{ hr10_page }}">
+    {% block workspace_content %}{% endblock %}
+  </div>
+
+  <div class="hr-v2-truth-note">
+    <strong>数据边界</strong>
+    <span>本工作区只处理当前学校的 HR10 Authority 数据；页面选择器展示业务名称，服务端仍会重新校验学校、权限和状态。</span>
+  </div>
+  {{ staff_options|json_script:"hr10-staff-options" }}
+</div>
+<script src="{% static 'hr/js/pages/hr10-actions.js' %}"></script>
+{% if hr10_page == 'dashboard' or hr10_page == 'record' %}<script src="{% static 'hr/js/pages/hr10-insights.js' %}"></script>{% endif %}
+{% endblock %}

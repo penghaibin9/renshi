@@ -12,6 +12,7 @@ on:
       - "hr_assessment/models/**"
       - "hr_assessment/service/**"
       - "hr_assessment/services/**"
+      - "hr_assessment/providers/**"
       - "hr_assessment/templates/hr_assessment/workspace.html"
       - "static/hr/js/pages/hr12-assessment.js"
 

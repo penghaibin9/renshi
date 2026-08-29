@@ -24,6 +24,8 @@ from hr10_development.models.practice_models import (
     HrEnterprisePracticePlan,
 )
 from hr10_development.services.practice_process_service import PracticeProcessService
+from hr10_development.models.provider_org import HrDevelopmentProviderOrganization
+from hr_staff.models import HrStaffMaster
 
 
 def _project_to_dict(p: HrEnterprisePracticeProject) -> dict:
@@ -89,6 +91,11 @@ def create_project(request):
 
     if not body.get("projectNo") or not body.get("title") or not body.get("providerOrgId"):
         return JsonResponse(error("MISSING_FIELD", "projectNo/title/providerOrgId 必填"), status=400)
+    if not HrDevelopmentProviderOrganization.objects.filter(
+        id=body["providerOrgId"],
+        tenant_id=tenant_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "企业或实践基地不存在"), status=404)
 
     p = HrEnterprisePracticeProject.objects.create(
         tenant_id=tenant_id,
@@ -186,11 +193,28 @@ def create_placement(request):
     except json.JSONDecodeError:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
 
+    project = HrEnterprisePracticeProject.objects.filter(
+        id=body.get("projectId"),
+        tenant_id=tenant_id,
+    ).first()
+    version = HrEnterprisePracticeProjectVersion.objects.filter(
+        id=body.get("projectVersionId"),
+        tenant_id=tenant_id,
+        project_id=project.id if project else None,
+    ).first()
+    scene = HrPracticePositionScene.objects.filter(
+        id=body.get("sceneId"),
+        tenant_id=tenant_id,
+        project_version_id=version.id if version else None,
+    ).first()
+    if not project or not version or not scene:
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "实践项目、版本或岗位场景不存在"), status=404)
+
     placement = HrEnterprisePracticePlacement.objects.create(
         tenant_id=tenant_id,
-        project_id=body["projectId"],
-        project_version_id=body["projectVersionId"],
-        scene_id=body["sceneId"],
+        project_id=project.id,
+        project_version_id=version.id,
+        scene_id=scene.id,
         batch_no=body.get("batchNo", "B-1"),
         start_date=body["startDate"],
         end_date=body["endDate"],
@@ -214,15 +238,39 @@ def create_assignment(request):
     except json.JSONDecodeError:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
 
+    placement = HrEnterprisePracticePlacement.objects.filter(
+        id=body.get("placementId"),
+        tenant_id=tenant_id,
+    ).first()
+    staff_id = body.get("staffMasterId")
+    scene_id = body.get("assignedSceneId")
+    mentor_id = body.get("enterpriseMentorId")
+    if not placement or not HrStaffMaster.objects.filter(
+        tenant_id=tenant_id,
+        legacy_employee_id=staff_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "实践批次或教师不存在"), status=404)
+    if not HrPracticePositionScene.objects.filter(
+        id=scene_id,
+        tenant_id=tenant_id,
+        project_version_id=placement.project_version_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "岗位场景不存在"), status=404)
+    if not HrEnterprisePracticeMentor.objects.filter(
+        id=mentor_id,
+        tenant_id=tenant_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "企业导师不存在"), status=404)
+
     assignment = HrEnterprisePracticeAssignment.objects.create(
         tenant_id=tenant_id,
-        placement_id=body["placementId"],
-        staff_master_id=body["staffMasterId"],
+        placement_id=placement.id,
+        staff_master_id=staff_id,
         request_id=body.get("requestId"),
         development_need_id=body.get("developmentNeedId"),
         assignment_status=AssignmentStatus.APPROVED,
-        assigned_scene_id=body.get("assignedSceneId", 0),
-        enterprise_mentor_id=body.get("enterpriseMentorId", 0),
+        assigned_scene_id=scene_id,
+        enterprise_mentor_id=mentor_id,
         planned_hours=body.get("plannedHours", 0),
         planned_days=body.get("plannedDays", 0),
         created_by=request.user if request.user.is_authenticated else None,

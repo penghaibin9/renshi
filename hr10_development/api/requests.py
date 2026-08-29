@@ -18,6 +18,8 @@ from hr10_development.services.approval_service import ApprovalService
 from hr10_development.services.enrollment_service import EnrollmentService, check_self_approval
 from hr10_development.models.offering import HrLearningOffering
 from hr10_development.models.enrollment import HrLearningEnrollment
+from hr10_development.models.learning_program import HrLearningProgram
+from hr_staff.models import HrStaffMaster
 
 
 def _request_to_dict(r: HrTrainingRequest) -> dict:
@@ -84,13 +86,26 @@ def create_request(request):
     except json.JSONDecodeError:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
 
+    staff_id = body.get("staffMasterId")
+    if not HrStaffMaster.objects.filter(
+        tenant_id=tenant_id,
+        legacy_employee_id=staff_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "教师不存在"), status=404)
+    program_id = body.get("programId")
+    if program_id and not HrLearningProgram.objects.filter(id=program_id, tenant_id=tenant_id).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "培训项目不存在"), status=404)
+    offering_id = body.get("offeringId")
+    if offering_id and not HrLearningOffering.objects.filter(id=offering_id, tenant_id=tenant_id).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "培训班次不存在"), status=404)
+
     r = HrTrainingRequest.objects.create(
         tenant_id=tenant_id,
         request_no=body.get("requestNo", f"REQ-{datetime.now(timezone.utc).timestamp():.0f}"),
-        staff_master_id=body.get("staffMasterId"),
+        staff_master_id=staff_id,
         request_type=body.get("requestType", "INTERNAL_PROGRAM"),
-        program_id=body.get("programId"),
-        offering_id=body.get("offeringId"),
+        program_id=program_id,
+        offering_id=offering_id,
         development_need_id=body.get("developmentNeedId"),
         plan_target_id=body.get("planTargetId"),
         estimated_cost=body.get("estimatedCost"),

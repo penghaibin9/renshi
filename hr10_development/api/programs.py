@@ -14,6 +14,8 @@ from hr10_development.api.envelope import success, error
 from hr10_development.constants import DevelopmentErrorCode
 from hr10_development.models.learning_program import HrLearningProgram
 from hr10_development.models.offering import HrLearningOffering
+from hr10_development.models.program_version import HrLearningProgramVersion
+from hr10_development.models.provider_org import HrDevelopmentProviderOrganization
 
 
 def _program_to_dict(p: HrLearningProgram) -> dict:
@@ -95,13 +97,20 @@ def create_program(request):
     if not body.get("programCode") or not body.get("title"):
         return JsonResponse(error("MISSING_FIELD", "programCode 和 title 必填"), status=400)
 
+    provider_org_id = body.get("providerOrgId")
+    if provider_org_id and not HrDevelopmentProviderOrganization.objects.filter(
+        id=provider_org_id,
+        tenant_id=tenant_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "提供机构不存在"), status=404)
+
     p = HrLearningProgram.objects.create(
         tenant_id=tenant_id,
         program_code=body["programCode"],
         title=body["title"],
         activity_type=body.get("activityType", "INTERNAL_TRAINING"),
         owner_org_id=body.get("ownerOrgId"),
-        provider_org_id=body.get("providerOrgId"),
+        provider_org_id=provider_org_id,
         target_population_rule_id=body.get("targetPopulationRuleId", ""),
         created_by=request.user if request.user.is_authenticated else None,
         updated_by=request.user if request.user.is_authenticated else None,
@@ -121,9 +130,19 @@ def create_offering(request):
     except json.JSONDecodeError:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
 
+    program_version = HrLearningProgramVersion.objects.filter(
+        id=body.get("programVersionId"),
+        tenant_id=tenant_id,
+    ).first()
+    if not program_version or not HrLearningProgram.objects.filter(
+        id=program_version.program_id,
+        tenant_id=tenant_id,
+    ).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "培训项目版本不存在"), status=404)
+
     o = HrLearningOffering.objects.create(
         tenant_id=tenant_id,
-        program_version_id=body["programVersionId"],
+        program_version_id=program_version.id,
         offering_no=body["offeringNo"],
         delivery_mode=body.get("deliveryMode", "ONSITE"),
         venue=body.get("venue", ""),
@@ -194,7 +213,7 @@ def get_offering_capacity(request, offering_id):
         "waitlistCapacity": o.waitlist_capacity,
         "confirmedCount": confirmed,
         "waitlistedCount": waitlisted,
-        "availableSeats": o.capacity,
+        "availableSeats": max(o.capacity - confirmed, 0),
         "status": o.lifecycle_status,
     }))
 
@@ -234,7 +253,6 @@ def create_program_version(request, program_id):
     if not p:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "项目不存在"), status=404)
 
-    from hr10_development.models.program_version import HrLearningProgramVersion
     from hr10_development.constants import ProgramVersionStatus
     latest = HrLearningProgramVersion.objects.filter(program_id=p.id).order_by("-version_no").first()
     next_no = (latest.version_no + 1) if latest else 1

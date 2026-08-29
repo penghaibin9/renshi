@@ -1,0 +1,20 @@
+.hr10 * { box-sizing: border-box; }
+.hr10-nav { display:flex; gap:var(--hr-space-2); overflow-x:auto; margin:0 0 var(--hr-space-4); padding:var(--hr-space-1); border:1px solid var(--hr-border); border-radius:var(--hr-radius-md); background:var(--hr-surface); box-shadow:var(--hr-shadow-card); scrollbar-width:thin; }
+.hr10-nav a,.hr10-nav .disabled { flex:0 0 auto; padding:9px 13px; border-radius:var(--hr-radius-sm); color:var(--hr-text-500); font-size:13px; font-weight:600; line-height:20px; text-decoration:none; white-space:nowrap; }
+.hr10-nav a:hover { background:var(--hr-primary-50); color:var(--hr-primary-700); }
+.hr10-nav a.active { background:var(--hr-primary-600); color:#fff; }
+.hr10-nav .disabled { color:var(--hr-text-300); cursor:not-allowed; }
+.hr10-mobile-hint { display:none; margin:-8px 4px var(--hr-space-4); color:var(--hr-text-500); font-size:11px; }
+.hr10-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--hr-space-3); }
+.hr10-summary .hr10-kpi { min-height:110px; padding:var(--hr-space-4); border:1px solid var(--hr-border); border-radius:var(--hr-radius-md); background:#fff; box-shadow:var(--hr-shadow-card); }
+.hr10-summary .hr10-kpi span { color:var(--hr-text-500); font-size:11px; font-weight:700; }
+.hr10-summary .hr10-kpi strong { display:block; margin-top:var(--hr-space-2); color:var(--hr-text-900); font-size:26px; font-weight:800; }
+.hr10-summary .hr10-kpi small { display:block; margin-top:var(--hr-space-2); color:var(--hr-text-500); font-size:11px; }
+.hr10-section { display:grid; gap:var(--hr-space-3); }
+.hr10-section__head h2 { margin:0; color:var(--hr-text-900); font-size:16px; }
+.hr10-section__head p { margin:4px 0 0; color:var(--hr-text-500); font-size:12px; line-height:19px; }
+.hr10-record-person { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border:1px solid var(--hr-border); border-radius:var(--hr-radius-md); background:#fff; }
+.hr10-record-person strong { font-size:14px; }
+.hr10-record-person span { color:var(--hr-text-500); font-size:11px; }
+@media(max-width:900px){.hr10-summary{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:680px){.hr10-mobile-hint{display:block}.hr10-summary{grid-template-columns:1fr}.hr10-record-person{align-items:flex-start;flex-direction:column}}

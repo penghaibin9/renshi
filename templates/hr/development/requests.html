@@ -1,15 +1,6 @@
 {% extends "hr/development/base.html" %}
-{% block title %}培训报名与审批{% endblock %}
-{% block title_zh %}培训报名与审批{% endblock %}
-{% block content %}
-<div class="toolbar">
-  <a class="btn btn-primary" href="/api/v1/hr/development/requests/create">新建申请</a>
-</div>
-<div class="empty">
-  培训报名与审批工作台：
-  <br><br>
-  · 待我审批 · 待预算 · 待报名 · 候补 · 完成待核验
-  <br><br>
-  <a class="btn" href="/api/v1/hr/development/requests">查看申请列表 (API)</a>
-</div>
+{% block workspace_content %}
+<section class="hr10-section">
+  <div class="hr10-section__head"><h2>培训报名与审批</h2><p>从开放班次和当前学校教职工中发起申请，按提交、审批、预算与报名状态办理。</p></div>
+</section>
 {% endblock %}

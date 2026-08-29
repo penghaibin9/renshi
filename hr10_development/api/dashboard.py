@@ -8,6 +8,7 @@ hr10_development/api/dashboard.py
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
+from django.utils import timezone
 
 from hr10_development.api.envelope import success, error
 from hr10_development.constants import DevelopmentErrorCode, MetricCode, FactType
@@ -27,14 +28,15 @@ def plan_metrics(request, plan_id):
     if not plan:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "计划不存在"), status=404)
 
+    as_of = timezone.localdate().isoformat()
     return JsonResponse(success({
         "planId": plan_id,
         "planNo": plan.plan_no,
         "metrics": [
             {"metricCode": "PLAN_PROGRESS", "label": "计划执行进度", "labelZh": "计划执行进度",
-             "value": plan.lifecycle_status, "asOf": "2026-08-09"},
+             "value": plan.lifecycle_status, "asOf": as_of},
             {"metricCode": "PLAN_VERSION", "label": "计划版本", "labelZh": "计划版本",
-             "value": plan.current_version_id, "asOf": "2026-08-09"},
+             "value": plan.current_version_id, "asOf": as_of},
         ],
     }))
 
@@ -87,7 +89,7 @@ def dashboard(request):
             {"metricCode": "OPEN_RISKS", "value": open_risks, "unit": "COUNT",
              "label": "未解决风险", "labelZh": "未解决风险"},
         ],
-        "asOf": "2026-08-09",
+        "asOf": timezone.localdate().isoformat(),
         "source": "hr10_development",
     }
     return JsonResponse(success(data))
@@ -113,7 +115,9 @@ def metric_detail(request, metric_code):
                 "DOCUMENT_VERIFIED", "MANUAL_COMMITTEE_VERIFIED",
             ],
         ).count()
-        value = round((verified / total * 100), 2) if total else 0.0
+        value = round((verified / total * 100), 2) if total else None
+        available = bool(total)
+        denominator = f"当前学校发展事实 {total} 条"
     elif metric_code == MetricCode.AVG_VERIFIED_TRAINING_HOURS:
         from hr10_development.models.development_fact import HrDevelopmentFact
         facts = HrDevelopmentFact.objects.filter(
@@ -121,7 +125,9 @@ def metric_detail(request, metric_code):
         )
         total_hours = sum(float(f.verified_hours or 0) for f in facts[:2000])
         staff_count = facts.values("staff_master_id").distinct().count()
-        value = round(total_hours / staff_count, 2) if staff_count else 0.0
+        value = round(total_hours / staff_count, 2) if staff_count else None
+        available = bool(staff_count)
+        denominator = f"有培训完成事实的教师 {staff_count} 人"
     else:
         return JsonResponse(error("UNKNOWN_METRIC", f"未知指标: {metric_code}"), status=404)
 
@@ -129,6 +135,8 @@ def metric_detail(request, metric_code):
         "metricCode": metric_code,
         "metricLabel": dict(MetricCode.choices).get(metric_code, metric_code),
         "value": value,
-        "asOf": "2026-08-09",
-        "denominator": "适用人群(asOf)",
+        "available": available,
+        "asOf": timezone.localdate().isoformat(),
+        "denominator": denominator,
+        "explanation": "暂无适用数据，不能据此计算指标。" if not available else "按当前学校已核验数据计算。",
     }))

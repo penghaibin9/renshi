@@ -1,24 +1,11 @@
 {% extends "hr/development/base.html" %}
-{% block title %}教师发展总览{% endblock %}
-{% block title_zh %}教师发展总览{% endblock %}
-{% block content %}
-<div class="stats">
-  <div class="stat-card"><div class="label">在执行计划</div><div class="value">—</div></div>
-  <div class="stat-card"><div class="label">开放培训项目</div><div class="value">—</div></div>
-  <div class="stat-card"><div class="label">进行中企业实践</div><div class="value">—</div></div>
-  <div class="stat-card"><div class="label">已核验发展事实</div><div class="value">—</div></div>
-  <div class="stat-card"><div class="label">未解决风险</div><div class="value">—</div></div>
-</div>
-<div class="toolbar">
-  <a class="btn" href="/api/v1/hr/development/dashboard">Dashboard 数据 (API)</a>
-  <a class="btn" href="/api/v1/hr/development/metrics/TRAINING_COVERAGE_RATE">培训覆盖率 (API)</a>
-  <a class="btn" href="/api/v1/hr/development/metrics/AVG_VERIFIED_TRAINING_HOURS">人均培训学时 (API)</a>
-</div>
-<div class="empty">
-  教师发展总览 Dashboard：数据由 API 实时加载。
-  <br><br>
-  · 年度培训覆盖率 · 必修完成率 · 人均已核验培训学时
-  <br>
-  · 专业课教师企业实践覆盖率 · 实践合规率 · 成果转化率
-</div>
+{% block workspace_content %}
+<section class="hr10-insights hr10-section" data-hr10-insights="dashboard">
+  <div class="hr10-summary" data-metrics aria-label="教师发展关键指标"><div class="hr10-empty">正在读取当前学校发展指标…</div></div>
+  <div class="hr10-result" data-error role="alert"></div>
+  <section class="hr10-panel">
+    <div class="hr10-panel-head"><div><h3>指标口径与时点</h3><p data-asof>正在读取数据时点…</p></div></div>
+    <div class="hr10-list" data-detail-metrics><div class="hr10-empty">正在读取培训覆盖率与核验学时…</div></div>
+  </section>
+</section>
 {% endblock %}

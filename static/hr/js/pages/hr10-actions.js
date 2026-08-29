@@ -1,49 +1,372 @@
 (() => {
   'use strict';
-  const root=document.querySelector('.hr10-workspace[data-hr10-page]');
-  if(!root||root.dataset.bound==='true')return;
-  root.dataset.bound='true';
-  const page=root.dataset.hr10Page;
-  const API='/api/v1/hr/development';
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const cookie=name=>document.cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.slice(name.length+1)||'';
-  async function call(path,{method='GET',body}={}){const o={method,credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}};if(method!=='GET'&&method!=='HEAD')o.headers['X-CSRFToken']=decodeURIComponent(cookie('csrftoken'));if(body!==undefined){o.headers['Content-Type']='application/json';o.body=JSON.stringify(body)}const r=await fetch(`${API}${path}`,o);let p={};try{p=await r.json()}catch(_e){}if(!r.ok){const e=p.error||{};throw new Error([e.code,e.message].filter(Boolean).join(' · ')||`HTTP ${r.status}`)}return p.data??p}
-  const get=path=>call(path);const post=(path,body={})=>call(path,{method:'POST',body});
-  function panel(title,desc){const h=document.createElement('section');h.className='hr10-panel';h.innerHTML=`<div class="hr10-panel-head"><div><h3>${esc(title)}</h3><p>${esc(desc)}</p></div></div><div class="hr10-result"></div>`;root.appendChild(h);return h}
-  function result(h,k,m){const e=h.querySelector('.hr10-result');e.className=`hr10-result show ${k}`;e.textContent=m}
-  function busy(b,on){if(!b)return;if(on){b.dataset.t=b.textContent;b.textContent='处理中…';b.disabled=true}else{b.textContent=b.dataset.t||b.textContent;b.disabled=false}}
-  function reload(h,m){result(h,'ok',m);setTimeout(()=>location.reload(),650)}
-  function field(l,input,help='',full=false){return `<div class="hr10-field${full?' full':''}"><label>${esc(l)}</label>${input}${help?`<span class="hr10-help">${esc(help)}</span>`:''}</div>`}
-  function toggle(h,id){h.querySelectorAll('.hr10-form').forEach(f=>f.classList.toggle('open',f.id===id&&!f.classList.contains('open')))}
-  function json(v,label,fallback={}){const raw=String(v||'').trim();if(!raw)return fallback;try{return JSON.parse(raw)}catch(_e){throw new Error(`${label} 必须是合法 JSON`)}}
-  function action(btn,host,url,body,msg){busy(btn,true);post(url,body).then(x=>reload(host,msg(x))).catch(e=>{result(host,'error',e.message);busy(btn,false)})}
 
-  async function plans(){
-    const host=panel('发展计划办理','计划状态由 Authority 控制；新版本冻结目标、预算、政策与人群快照，不在审核后原地覆盖。');
-    host.insertAdjacentHTML('beforeend',`<div class="hr10-toolbar"><button class="hr10-btn primary" data-open="plan-create" type="button">新建发展计划</button></div><form class="hr10-form" id="plan-create"><div class="hr10-grid">${field('计划编号','<input name="planNo" required placeholder="DEV-2026-01">')}${field('计划类型','<select name="planType"><option>SCHOOL</option><option>ORG</option><option>INDIVIDUAL</option></select>')}${field('周期类型','<select name="cycleType"><option>ANNUAL</option><option>MULTI_YEAR</option><option>TERM</option><option>CUSTOM</option></select>')}${field('责任组织 ID','<input name="ownerOrgId" placeholder="组织计划可填">')}${field('Staff ID','<input name="staffMasterId" placeholder="个人计划可填">')}${field('开始日期','<input name="startDate" type="date">')}${field('结束日期','<input name="endDate" type="date">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存计划草稿</button></div></form><div class="hr10-list" data-list><div class="hr10-empty">正在读取计划…</div></div>`);
-    host.querySelector('[data-open]').onclick=()=>toggle(host,'plan-create');host.querySelector('#plan-create').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]'),d=new FormData(f);busy(b,true);try{const x=await post('/plans/create',{planNo:d.get('planNo'),planType:d.get('planType'),cycleType:d.get('cycleType'),ownerOrgId:d.get('ownerOrgId')||null,staffMasterId:d.get('staffMasterId')||null,startDate:d.get('startDate')||null,endDate:d.get('endDate')||null});reload(host,`${x.planNo} 已创建为 ${x.lifecycleStatusLabel||x.lifecycleStatus}`)}catch(err){result(host,'error',err.message);busy(b,false)}};
-    try{const items=await get('/plans'),list=host.querySelector('[data-list]');list.innerHTML=items.length?'':'<div class="hr10-empty">当前没有发展计划。</div>';items.forEach(p=>{const row=document.createElement('div');row.className='hr10-row';const s=p.lifecycleStatus;const buttons=[];if(['DRAFT','RETURNED'].includes(s))buttons.push(['submit','提交审核','primary']);if(s==='UNDER_REVIEW'){buttons.push(['approve','批准','success'],['return','退回',''],['reject','拒绝','danger'])}if(s==='APPROVED')buttons.push(['publish','发布','primary']);if(['ACTIVE','CLOSING'].includes(s))buttons.push(['close','关闭计划','danger']);row.innerHTML=`<div class="hr10-row-main"><div><b>${esc(p.planNo)}</b><small>${esc(p.planTypeLabel||p.planType)} · ${esc(p.cycleType)}${p.staffMasterId?` · Staff ${esc(p.staffMasterId)}`:''}</small></div><div><span class="hr10-badge">${esc(p.lifecycleStatusLabel||s)}</span><small>${esc(p.startDate||'—')} ~ ${esc(p.endDate||'—')}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">新版本</button>${buttons.map(([a,l,c])=>`<button class="hr10-btn ${c}" data-action="${a}" type="button">${l}</button>`).join('')}</div></div><div class="hr10-inline" data-version-form><textarea data-objectives placeholder='目标 JSON，例如 {"focus":"双师型"}'></textarea><input data-effective type="date" aria-label="版本生效日期"><button class="hr10-btn primary" data-save-version type="button">保存版本</button></div>`;row.querySelector('[data-version]').onclick=()=>row.querySelector('[data-version-form]').classList.toggle('open');row.querySelector('[data-save-version]').onclick=e=>{const b=e.currentTarget;let objectives;try{objectives=json(row.querySelector('[data-objectives]').value,'目标 JSON',{})}catch(err){result(host,'error',err.message);return}action(b,host,`/plans/${p.id}/versions`,{objectivesJson:objectives,effectiveFrom:row.querySelector('[data-effective]').value||null},x=>`${p.planNo} 已形成版本 v${x.versionNo}`)};row.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b,host,`/plans/${p.id}/${b.dataset.action}`,{},x=>`${x.planNo} 已推进到 ${x.lifecycleStatusLabel||x.lifecycleStatus}`));list.appendChild(row)})}catch(err){result(host,'error',err.message)}
+  const workspace = document.querySelector('.hr10-workspace[data-hr10-page]');
+  if (!workspace || workspace.dataset.actionsBound === 'true') return;
+  workspace.dataset.actionsBound = 'true';
+
+  const API = '/api/v1/hr/development';
+  const page = workspace.dataset.hr10Page;
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
+  const csrf = () => document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '';
+
+  async function request(path, options = {}) {
+    const response = await fetch(`${API}${path}`, {
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrf(),
+        'X-Requested-With': 'XMLHttpRequest',
+        ...(options.headers || {})
+      },
+      ...options
+    });
+    let payload = {};
+    try { payload = await response.json(); } catch (_error) { /* handled below */ }
+    if (!response.ok) {
+      const detail = payload.error || {};
+      throw new Error([detail.code, detail.message].filter(Boolean).join(' · ') || `请求失败（${response.status}）`);
+    }
+    return payload.data ?? payload;
   }
 
-  async function programs(){
-    const host=panel('培训项目与班次','项目定义与班次分开：项目版本冻结课程与完成规则；具体班次再配置时间、地点、容量和报名窗口。');
-    host.insertAdjacentHTML('beforeend',`<div class="hr10-toolbar"><button class="hr10-btn primary" data-open="program-create" type="button">新建培训项目</button><button class="hr10-btn" data-open="offering-create" type="button">新建培训班次</button><button class="hr10-btn" data-open="offering-manage" type="button">按 ID 管理班次</button></div><form class="hr10-form" id="program-create"><div class="hr10-grid">${field('项目代码','<input name="programCode" required placeholder="TRN-2026-AI">')}${field('项目名称','<input name="title" required placeholder="AI 教学能力提升">')}${field('活动类型','<select name="activityType"><option>INTERNAL_TRAINING</option><option>EXTERNAL_TRAINING</option><option>VISITING_STUDY</option><option>ONLINE_LEARNING</option></select>')}${field('责任组织 ID','<input name="ownerOrgId">')}${field('Provider 组织 ID','<input name="providerOrgId">')}${field('目标人群规则 ID','<input name="targetPopulationRuleId">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存项目</button></div></form><form class="hr10-form" id="offering-create"><div class="hr10-grid">${field('项目版本 ID','<input name="programVersionId" required placeholder="先在项目上创建版本">')}${field('班次号','<input name="offeringNo" required placeholder="OFF-2026-001">')}${field('授课方式','<select name="deliveryMode"><option>ONSITE</option><option>ONLINE</option><option>BLENDED</option></select>')}${field('地点','<input name="venue">')}${field('开始时间','<input name="startAt" type="datetime-local">')}${field('结束时间','<input name="endAt" type="datetime-local">')}${field('报名开放','<input name="enrollmentOpenAt" type="datetime-local">')}${field('报名截止','<input name="enrollmentCloseAt" type="datetime-local">')}${field('容量','<input name="capacity" type="number" min="0" value="0">')}${field('候补容量','<input name="waitlistCapacity" type="number" min="0" value="0">')}${field('人均估算成本','<input name="estimatedCostPerPerson" type="number" step="0.01">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">创建班次</button></div></form><form class="hr10-form" id="offering-manage"><div class="hr10-grid">${field('班次 ID','<input name="offeringId" required placeholder="Offering ID">')}</div><div class="hr10-toolbar"><button class="hr10-btn" data-load type="button">查询容量</button><button class="hr10-btn primary" data-open-enroll type="button">开放报名</button><button class="hr10-btn danger" data-cancel type="button">取消班次</button></div></form><div class="hr10-list" data-list><div class="hr10-empty">正在读取项目…</div></div>`);
-    host.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>toggle(host,b.dataset.open));host.querySelector('#program-create').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]'),d=new FormData(f);action(b,host,'/programs/create',{programCode:d.get('programCode'),title:d.get('title'),activityType:d.get('activityType'),ownerOrgId:d.get('ownerOrgId')||null,providerOrgId:d.get('providerOrgId')||null,targetPopulationRuleId:d.get('targetPopulationRuleId')||''},x=>`${x.title} 已创建为 ${x.lifecycleStatusLabel||x.lifecycleStatus}`)};host.querySelector('#offering-create').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]'),d=new FormData(f);action(b,host,'/offerings/create',{programVersionId:d.get('programVersionId'),offeringNo:d.get('offeringNo'),deliveryMode:d.get('deliveryMode'),venue:d.get('venue'),startAt:d.get('startAt')||null,endAt:d.get('endAt')||null,enrollmentOpenAt:d.get('enrollmentOpenAt')||null,enrollmentCloseAt:d.get('enrollmentCloseAt')||null,capacity:Number(d.get('capacity')||0),waitlistCapacity:Number(d.get('waitlistCapacity')||0),estimatedCostPerPerson:d.get('estimatedCostPerPerson')||null},x=>`班次 ${x.offeringNo} 已创建，ID ${x.id}`)};const om=host.querySelector('#offering-manage'),oid=()=>om.elements.offeringId.value.trim();om.querySelector('[data-load]').onclick=async e=>{const b=e.currentTarget;if(!oid())return result(host,'error','请填写班次 ID');busy(b,true);try{const x=await get(`/offerings/${oid()}/capacity`);result(host,'info',`容量 ${x.capacity}，已确认 ${x.confirmedCount}，候补 ${x.waitlistedCount}，当前 ${x.status}`);busy(b,false)}catch(err){result(host,'error',err.message);busy(b,false)}};om.querySelector('[data-open-enroll]').onclick=e=>{if(!oid())return result(host,'error','请填写班次 ID');action(e.currentTarget,host,`/offerings/${oid()}/open-enrollment`,{},x=>`班次已变为 ${x.lifecycleStatusLabel||x.lifecycleStatus}`)};om.querySelector('[data-cancel]').onclick=e=>{if(!oid())return result(host,'error','请填写班次 ID');action(e.currentTarget,host,`/offerings/${oid()}/cancel`,{},x=>`班次已变为 ${x.lifecycleStatusLabel||x.lifecycleStatus}`)};
-    try{const items=await get('/programs'),list=host.querySelector('[data-list]');list.innerHTML=items.length?'':'<div class="hr10-empty">当前没有培训项目。</div>';items.forEach(p=>{const row=document.createElement('div');row.className='hr10-row';row.innerHTML=`<div class="hr10-row-main"><div><b>${esc(p.title)}</b><small>${esc(p.programCode)} · ${esc(p.activityType)}</small></div><div><span class="hr10-badge">${esc(p.lifecycleStatusLabel||p.lifecycleStatus)}</span><small>当前版本 ${esc(p.currentVersionId||'尚未创建')}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">创建版本</button><button class="hr10-btn primary" data-publish type="button">发布项目</button></div></div><div class="hr10-inline" data-version-form><textarea data-objectives placeholder='目标 JSON'></textarea><textarea data-completion placeholder='完成规则 JSON'></textarea><button class="hr10-btn primary" data-save type="button">保存版本</button></div>`;row.querySelector('[data-version]').onclick=()=>row.querySelector('[data-version-form]').classList.toggle('open');row.querySelector('[data-save]').onclick=e=>{let o,c;try{o=json(row.querySelector('[data-objectives]').value,'目标 JSON',{});c=json(row.querySelector('[data-completion]').value,'完成规则 JSON',{})}catch(err){result(host,'error',err.message);return}action(e.currentTarget,host,`/programs/${p.id}/versions`,{objectivesJson:o,completionRuleJson:c},x=>`${p.title} 已形成版本 v${x.versionNo}`)};row.querySelector('[data-publish]').onclick=e=>action(e.currentTarget,host,`/programs/${p.id}/publish`,{},x=>`${x.title} 已发布`);list.appendChild(row)})}catch(err){result(host,'error',err.message)}
+  const get = path => request(path);
+  const post = (path, body = {}) => request(path, {method: 'POST', body: JSON.stringify(body)});
+  const option = (item, selected = false) => `<option value="${esc(item.value)}"${selected ? ' selected' : ''}>${esc(item.label)}</option>`;
+  const select = (name, items, label, required = true) => `<select name="${esc(name)}" ${required ? 'required' : ''} aria-label="${esc(label)}"><option value="">请选择${esc(label)}</option>${items.map(item => option(item)).join('')}</select>`;
+  const field = (label, control, full = false, help = '') => `<div class="hr10-field${full ? ' full' : ''}"><label>${esc(label)}</label>${control}${help ? `<small class="hr10-help">${esc(help)}</small>` : ''}</div>`;
+  const formValue = (form, name) => form.elements[name]?.value?.trim() || '';
+  const toNumber = value => value === '' ? undefined : Number(value);
+  const labelMap = items => new Map((items || []).map(item => [String(item.value), item.label]));
+  let choices = {};
+
+  function panel(title, description) {
+    const host = document.createElement('section');
+    host.className = 'hr10-panel';
+    host.innerHTML = `<div class="hr10-panel-head"><div><h3>${esc(title)}</h3><p>${esc(description)}</p></div></div><div class="hr10-result" role="status" aria-live="polite"></div>`;
+    workspace.appendChild(host);
+    return host;
   }
 
-  async function requests(){
-    const host=panel('培训报名与审批','申请与报名分开：先形成 TrainingRequest，再按工作流审批；班次名额由 EnrollmentService 并发控制，禁止自审批。');
-    host.insertAdjacentHTML('beforeend',`<div class="hr10-toolbar"><button class="hr10-btn primary" data-open="request-create" type="button">新建培训申请</button><button class="hr10-btn" data-open="enroll-form" type="button">班次报名/候补</button></div><form class="hr10-form" id="request-create"><div class="hr10-grid">${field('申请号','<input name="requestNo" placeholder="留空自动生成">')}${field('Staff ID','<input name="staffMasterId" required placeholder="Staff ID">')}${field('申请类型','<select name="requestType"><option>INTERNAL_PROGRAM</option><option>EXTERNAL_PROGRAM</option><option>VISITING_STUDY</option><option>ONLINE_LEARNING</option></select>')}${field('Program ID','<input name="programId">')}${field('Offering ID','<input name="offeringId">')}${field('预计成本','<input name="estimatedCost" type="number" step="0.01">')}${field('请假需求','<select name="leaveRequired"><option value="false">不需要</option><option value="true">需要</option></select>')}${field('申请理由','<textarea name="reason"></textarea>','',true)}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存申请草稿</button></div></form><form class="hr10-form" id="enroll-form"><div class="hr10-grid">${field('Offering ID','<input name="offeringId" required>')}${field('Staff ID','<input name="staffMasterId" required>')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" data-enroll type="button">报名</button><button class="hr10-btn" data-waitlist type="button">加入候补</button></div></form><div class="hr10-list" data-list><div class="hr10-empty">正在读取申请…</div></div>`);host.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>toggle(host,b.dataset.open));host.querySelector('#request-create').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]'),d=new FormData(f);action(b,host,'/requests/create',{requestNo:d.get('requestNo')||undefined,staffMasterId:d.get('staffMasterId'),requestType:d.get('requestType'),programId:d.get('programId')||null,offeringId:d.get('offeringId')||null,estimatedCost:d.get('estimatedCost')||null,leaveRequired:d.get('leaveRequired')==='true',reason:d.get('reason')},x=>`${x.requestNo} 已创建为 ${x.lifecycleStatusLabel||x.lifecycleStatus}`)};const ef=host.querySelector('#enroll-form'),enrollBody=()=>({staffMasterId:ef.elements.staffMasterId.value.trim()});ef.querySelector('[data-enroll]').onclick=e=>{const id=ef.elements.offeringId.value.trim();if(!id)return result(host,'error','请填写 Offering ID');action(e.currentTarget,host,`/offerings/${id}/enroll`,enrollBody(),x=>`报名记录 ${x.id}：${x.status}`)};ef.querySelector('[data-waitlist]').onclick=e=>{const id=ef.elements.offeringId.value.trim();if(!id)return result(host,'error','请填写 Offering ID');action(e.currentTarget,host,`/offerings/${id}/waitlist`,enrollBody(),x=>`候补记录 ${x.id}：${x.status}`)};
-    try{const items=await get('/requests'),list=host.querySelector('[data-list]');list.innerHTML=items.length?'':'<div class="hr10-empty">当前没有培训申请。</div>';items.forEach(r=>{const s=r.lifecycleStatus,review=s&&s.includes('REVIEW');const buttons=[];if(s==='DRAFT')buttons.push(['submit','提交申请','primary']);if(review)buttons.push(['approve','批准','success'],['return','退回',''],['reject','拒绝','danger']);if(!['APPROVED','REJECTED','WITHDRAWN','COMPLETED'].includes(s))buttons.push(['withdraw','撤回','danger']);const row=document.createElement('div');row.className='hr10-row';row.innerHTML=`<div class="hr10-row-main"><div><b>${esc(r.requestNo)}</b><small>Staff ${esc(r.staffMasterId)} · ${esc(r.requestTypeLabel||r.requestType)} · Program ${esc(r.programId||'—')}</small></div><div><span class="hr10-badge">${esc(r.lifecycleStatusLabel||s)}</span><small>审批步骤 ${esc(r.currentApprovalStep)} · 成本 ${esc(r.estimatedCost||'—')}</small></div><div class="hr10-row-actions">${buttons.map(([a,l,c])=>`<button class="hr10-btn ${c}" data-action="${a}" type="button">${l}</button>`).join('')}</div></div>`;row.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b,host,`/requests/${r.id}/${b.dataset.action}`,{},x=>`${x.requestNo} 已推进到 ${x.lifecycleStatusLabel||x.lifecycleStatus}`));list.appendChild(row)})}catch(err){result(host,'error',err.message)}
+  function result(host, type, message) {
+    const box = host.querySelector('.hr10-result');
+    box.className = `hr10-result show ${type}`;
+    box.textContent = message;
   }
 
-  async function practice(){
-    const host=panel('企业实践办理','实践项目、批次、派出和过程证据分层管理；开始实践前由服务端检查前置条件，完成必须经过企业/学校评价与核验时长。');
-    host.insertAdjacentHTML('beforeend',`<div class="hr10-toolbar"><button class="hr10-btn primary" data-open="project-create" type="button">新建实践项目</button><button class="hr10-btn" data-open="placement-create" type="button">新建实践批次</button><button class="hr10-btn" data-open="assignment-create" type="button">新建教师派出</button><button class="hr10-btn" data-open="assignment-manage" type="button">派出过程办理</button></div><form class="hr10-form" id="project-create"><div class="hr10-grid">${field('项目编号','<input name="projectNo" required placeholder="PRA-2026-01">')}${field('项目名称','<input name="title" required placeholder="智能制造企业实践">')}${field('企业/Provider 组织 ID','<input name="providerOrgId" required>')}${field('责任组织 ID','<input name="ownerOrgId">')}${field('专业类别','<input name="specialtyCategory">')}${field('实践基地引用','<input name="practiceBaseRef">')}${field('计划开始','<input name="plannedStartDate" type="date">')}${field('计划结束','<input name="plannedEndDate" type="date">')}${field('容量','<input name="capacity" type="number" min="0" value="0">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存项目草稿</button></div></form><form class="hr10-form" id="placement-create"><div class="hr10-grid">${field('Project ID','<input name="projectId" required>')}${field('Project Version ID','<input name="projectVersionId" required>')}${field('Scene ID','<input name="sceneId" required>')}${field('批次号','<input name="batchNo" required value="B-1">')}${field('开始日期','<input name="startDate" type="date" required>')}${field('结束日期','<input name="endDate" type="date" required>')}${field('容量','<input name="capacity" type="number" min="0" value="0">')}${field('地点','<input name="venue">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">创建批次</button></div></form><form class="hr10-form" id="assignment-create"><div class="hr10-grid">${field('Placement ID','<input name="placementId" required>')}${field('Staff ID','<input name="staffMasterId" required>')}${field('Scene ID','<input name="assignedSceneId" required>')}${field('企业导师 ID','<input name="enterpriseMentorId" required>')}${field('计划小时','<input name="plannedHours" type="number" min="0" value="0">')}${field('计划天数','<input name="plannedDays" type="number" min="0" value="0">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">创建派出</button></div></form><form class="hr10-form" id="assignment-manage"><div class="hr10-grid">${field('Assignment ID','<input name="assignmentId" required>')}${field('暂停原因','<input name="reason" placeholder="仅暂停时需要">')}${field('责任方','<input name="responsibleParty" placeholder="学校/企业/个人">')}</div><div class="hr10-toolbar"><button class="hr10-btn primary" data-start type="button">开始实践</button><button class="hr10-btn" data-suspend type="button">暂停</button><button class="hr10-btn" data-resume type="button">恢复</button><button class="hr10-btn" data-precheck type="button">完成前检查</button></div><div class="hr10-inline open"><input data-activity-date type="date" aria-label="活动日期"><input data-activity-title placeholder="活动标题"><button class="hr10-btn" data-add-activity type="button">记录活动</button></div><div class="hr10-inline open"><input data-evidence-type placeholder="证据类型"><input data-external-ref placeholder="文件/外部引用"><button class="hr10-btn" data-add-evidence type="button">追加证据</button></div><div class="hr10-inline open"><input data-project-version placeholder="Project Version ID"><input data-verified-hours type="number" step="0.1" placeholder="核验小时"><button class="hr10-btn success" data-finalize type="button">最终核定</button></div></form><div class="hr10-list" data-list><div class="hr10-empty">正在读取实践项目…</div></div>`);
-    host.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>toggle(host,b.dataset.open));const formBody=(f,names)=>{const d=new FormData(f),o={};names.forEach(n=>{const v=d.get(n);if(v!==''&&v!==null)o[n]=v});return o};host.querySelector('#project-create').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]');action(b,host,'/practice-projects/create',formBody(f,['projectNo','title','providerOrgId','ownerOrgId','specialtyCategory','practiceBaseRef','plannedStartDate','plannedEndDate','capacity']),x=>`${x.projectNo} 已创建为 ${x.lifecycleStatusLabel||x.lifecycleStatus}`)};host.querySelector('#placement-create').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]');action(b,host,'/practice-placements/create',formBody(f,['projectId','projectVersionId','sceneId','batchNo','startDate','endDate','capacity','venue']),x=>`实践批次 ${x.batchNo} 已创建，ID ${x.id}`)};host.querySelector('#assignment-create').onsubmit=e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('[type="submit"]');action(b,host,'/practice-assignments/create',formBody(f,['placementId','staffMasterId','assignedSceneId','enterpriseMentorId','plannedHours','plannedDays']),x=>`教师派出已创建：${x.id} · ${x.assignmentStatusLabel||x.assignmentStatus}`)};const af=host.querySelector('#assignment-manage'),aid=()=>af.elements.assignmentId.value.trim();const requireId=()=>{if(!aid()){result(host,'error','请填写 Assignment ID');return false}return true};af.querySelector('[data-start]').onclick=e=>requireId()&&action(e.currentTarget,host,`/practice-assignments/${aid()}/start`,{},x=>`派出已推进到 ${x.assignmentStatusLabel||x.assignmentStatus}`);af.querySelector('[data-suspend]').onclick=e=>requireId()&&action(e.currentTarget,host,`/practice-assignments/${aid()}/suspend`,{reason:af.elements.reason.value,responsibleParty:af.elements.responsibleParty.value},x=>`派出已暂停：${x.assignmentStatus}`);af.querySelector('[data-resume]').onclick=e=>requireId()&&action(e.currentTarget,host,`/practice-assignments/${aid()}/resume`,{},x=>`派出已恢复：${x.assignmentStatus}`);af.querySelector('[data-precheck]').onclick=async e=>{if(!requireId())return;const b=e.currentTarget;busy(b,true);try{const x=await post(`/practice-assignments/${aid()}/submit-completion`,{});result(host,x.ready||x.passed?'ok':'info',`完成前检查：${JSON.stringify(x)}`);busy(b,false)}catch(err){result(host,'error',err.message);busy(b,false)}};af.querySelector('[data-add-activity]').onclick=e=>requireId()&&action(e.currentTarget,host,`/practice-assignments/${aid()}/activities`,{activityDate:af.querySelector('[data-activity-date]').value,activityType:'PRACTICE_TASK',title:af.querySelector('[data-activity-title]').value,source:'HR'},x=>`活动记录已保存：${x.status}`);af.querySelector('[data-add-evidence]').onclick=e=>requireId()&&action(e.currentTarget,host,`/practice-assignments/${aid()}/evidence`,{evidenceType:af.querySelector('[data-evidence-type]').value,externalRef:af.querySelector('[data-external-ref]').value,source:'HR'},x=>`证据已保存：${x.status}`);af.querySelector('[data-finalize]').onclick=e=>requireId()&&action(e.currentTarget,host,`/practice-assignments/${aid()}/finalize`,{projectVersionId:af.querySelector('[data-project-version]').value,verifiedHours:Number(af.querySelector('[data-verified-hours]').value||0),verifiedDays:0,completionStatus:'PASS',rubricResultJson:{},finalComment:'HR 管理端最终核定'},x=>`实践评价已最终核定：${x.completionStatus}`);
-    try{const items=await get('/practice-projects'),list=host.querySelector('[data-list]');list.innerHTML=items.length?'':'<div class="hr10-empty">当前没有企业实践项目。</div>';items.forEach(p=>{const row=document.createElement('div');row.className='hr10-row';row.innerHTML=`<div class="hr10-row-main"><div><b>${esc(p.title)}</b><small>${esc(p.projectNo)} · ${esc(p.specialtyCategory||'未分类')} · Provider ${esc(p.providerOrgId)}</small></div><div><span class="hr10-badge">${esc(p.lifecycleStatusLabel||p.lifecycleStatus)}</span><small>${esc(p.plannedStartDate||'—')} ~ ${esc(p.plannedEndDate||'—')} · 容量 ${esc(p.capacity)}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">项目版本</button><button class="hr10-btn primary" data-publish type="button">发布</button></div></div><div class="hr10-inline" data-version-form><textarea data-objectives placeholder='目标 JSON'></textarea><textarea data-safety placeholder='安全要求 JSON'></textarea><button class="hr10-btn primary" data-save type="button">保存版本</button></div>`;row.querySelector('[data-version]').onclick=()=>row.querySelector('[data-version-form]').classList.toggle('open');row.querySelector('[data-save]').onclick=e=>{let o,s;try{o=json(row.querySelector('[data-objectives]').value,'目标 JSON',{});s=json(row.querySelector('[data-safety]').value,'安全要求 JSON',{})}catch(err){result(host,'error',err.message);return}action(e.currentTarget,host,`/practice-projects/${p.id}/versions`,{objectivesJson:o,safetyRequirementsJson:s},x=>`${p.projectNo} 已形成版本 v${x.versionNo}`)};row.querySelector('[data-publish]').onclick=e=>action(e.currentTarget,host,`/practice-projects/${p.id}/publish`,{},x=>`${x.projectNo} 已发布`);list.appendChild(row)})}catch(err){result(host,'error',err.message)}
+  function busy(button, state) {
+    button.disabled = state;
+    if (state) {
+      button.dataset.originalText = button.textContent;
+      button.textContent = '处理中…';
+    } else if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+    }
   }
 
-  (async()=>{if(page==='plans')await plans();else if(page==='programs')await programs();else if(page==='requests')await requests();else if(page==='practice')await practice()})().catch(err=>{const h=panel('HR10 工作区加载失败','不会回退旧 API 页面。');result(h,'error',err.message)});
+  async function act(button, host, path, body, message, after) {
+    busy(button, true);
+    try {
+      const data = await post(path, body);
+      result(host, 'ok', typeof message === 'function' ? message(data) : message);
+      if (after) await after(data);
+      return data;
+    } catch (error) {
+      result(host, 'error', error.message);
+      return null;
+    } finally {
+      busy(button, false);
+    }
+  }
+
+  async function loadChoices() {
+    choices = await get('/workbench/choices');
+    return choices;
+  }
+
+  function toggle(host, id) {
+    host.querySelector(`#${id}`)?.classList.toggle('open');
+  }
+
+  async function plans() {
+    const host = panel('计划全流程办理', '创建学校或个人发展计划，以业务对象推进版本、审核与发布。');
+    const staff = choices.staff || [];
+    host.insertAdjacentHTML('beforeend', `
+      <div class="hr10-toolbar"><button class="hr10-btn primary" data-open="plan-create" type="button">新建发展计划</button></div>
+      <form class="hr10-form" id="plan-create" data-plan-create>
+        <div class="hr10-grid">
+          ${field('计划编号', '<input name="planNo" required placeholder="DEV-2026-01">')}
+          ${field('计划类型', '<select name="planType"><option value="SCHOOL">学校计划</option><option value="INDIVIDUAL">个人计划</option></select>')}
+          ${field('计划教师', select('staffMasterId', staff, '教师', false), false, '仅个人计划需要选择教师。')}
+          ${field('周期', '<select name="cycleType"><option value="ANNUAL">年度</option><option value="SEMESTER">学期</option><option value="CUSTOM">自定义</option></select>')}
+          ${field('开始日期', '<input name="startDate" type="date" required>')}
+          ${field('结束日期', '<input name="endDate" type="date" required>')}
+        </div>
+        <div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存计划草稿</button></div>
+      </form>
+      <div class="hr10-list" data-list><div class="hr10-empty">正在读取发展计划…</div></div>`);
+    host.querySelector('[data-open]').onclick = () => toggle(host, 'plan-create');
+    const createForm = host.querySelector('[data-plan-create]');
+    const syncStaff = () => {
+      const individual = formValue(createForm, 'planType') === 'INDIVIDUAL';
+      createForm.elements.staffMasterId.required = individual;
+      createForm.elements.staffMasterId.closest('.hr10-field').hidden = !individual;
+    };
+    createForm.elements.planType.onchange = syncStaff;
+    syncStaff();
+    createForm.onsubmit = async event => {
+      event.preventDefault();
+      const button = createForm.querySelector('[type="submit"]');
+      const type = formValue(createForm, 'planType');
+      const body = {
+        planNo: formValue(createForm, 'planNo'),
+        planType: type,
+        cycleType: formValue(createForm, 'cycleType'),
+        startDate: formValue(createForm, 'startDate'),
+        endDate: formValue(createForm, 'endDate')
+      };
+      if (type === 'INDIVIDUAL') body.staffMasterId = formValue(createForm, 'staffMasterId');
+      await act(button, host, '/plans/create', body, data => `${data.planNo} 已保存为草稿。`, render);
+    };
+
+    async function render() {
+      const items = await get('/plans');
+      const staffLabels = labelMap(staff);
+      const list = host.querySelector('[data-list]');
+      list.innerHTML = items.length ? '' : '<div class="hr10-empty">当前没有发展计划。</div>';
+      items.forEach(item => {
+        const row = document.createElement('article');
+        row.className = 'hr10-row';
+        const owner = item.planType === 'INDIVIDUAL' ? (staffLabels.get(String(item.staffMasterId)) || '个人计划') : '学校计划';
+        const actions = [];
+        if (item.lifecycleStatus === 'DRAFT' || item.lifecycleStatus === 'RETURNED') actions.push(['version', '完善目标', ''], ['submit', '提交审核', 'primary']);
+        if (['READY_FOR_REVIEW', 'UNDER_REVIEW'].includes(item.lifecycleStatus)) actions.push(['approve', '审核通过', 'success'], ['return', '退回', 'danger']);
+        if (item.lifecycleStatus === 'APPROVED') actions.push(['publish', '发布', 'primary']);
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.planNo)}</b><small>${esc(item.planTypeLabel)} · ${esc(owner)}</small></div><div><span class="hr10-badge">${esc(item.lifecycleStatusLabel)}</span><small>${esc(item.startDate || '—')} 至 ${esc(item.endDate || '—')}</small></div><div class="hr10-row-actions">${actions.map(([name, text, kind]) => `<button class="hr10-btn ${kind}" data-action="${name}" type="button">${text}</button>`).join('')}</div></div><div class="hr10-inline" data-version-form><input data-goal placeholder="本周期重点发展目标"><input data-target placeholder="预期成果"><button class="hr10-btn primary" data-save-version type="button">保存目标版本</button></div>`;
+        row.querySelector('[data-action="version"]')?.addEventListener('click', () => row.querySelector('[data-version-form]').classList.toggle('open'));
+        row.querySelector('[data-save-version]')?.addEventListener('click', event => {
+          const goal = row.querySelector('[data-goal]').value.trim();
+          const target = row.querySelector('[data-target]').value.trim();
+          if (!goal) return result(host, 'error', '请填写本周期重点发展目标。');
+          act(event.currentTarget, host, `/plans/${item.id}/versions`, {objectivesJson: {goal, target}}, data => `${item.planNo} 已保存目标版本 v${data.versionNo}。`, render);
+        });
+        row.querySelectorAll('[data-action]:not([data-action="version"])').forEach(button => {
+          button.onclick = () => act(button, host, `/plans/${item.id}/${button.dataset.action}`, {}, data => `${data.planNo} 已推进到${data.lifecycleStatusLabel}。`, render);
+        });
+        list.appendChild(row);
+      });
+    }
+    await render();
+  }
+
+  async function programs() {
+    const host = panel('培训项目与班次', '用项目名称、版本和班次办理发布与报名开放，不要求用户识别数据库编号。');
+    host.insertAdjacentHTML('beforeend', `
+      <div class="hr10-toolbar"><button class="hr10-btn primary" data-open="program-create" type="button">新建培训项目</button><button class="hr10-btn" data-open="offering-create" type="button">新建培训班次</button></div>
+      <form class="hr10-form" id="program-create" data-program-create><div class="hr10-grid">
+        ${field('项目编码', '<input name="programCode" required placeholder="TR-2026-01">')}
+        ${field('项目名称', '<input name="title" required placeholder="数智教学能力提升">')}
+        ${field('活动类型', '<select name="activityType"><option value="INTERNAL_TRAINING">校内培训</option><option value="EXTERNAL_TRAINING">校外培训</option><option value="ACADEMIC_EXCHANGE">学术交流</option></select>')}
+        ${field('提供机构', select('providerOrgId', choices.providers || [], '提供机构', false), false, '校内自办项目可不选。')}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存项目草稿</button></div></form>
+      <form class="hr10-form" id="offering-create" data-offering-create><div class="hr10-grid">
+        ${field('项目版本', select('programVersionId', choices.programVersions || [], '已形成版本的培训项目'))}
+        ${field('班次编号', '<input name="offeringNo" required placeholder="CLS-2026-01">')}
+        ${field('授课方式', '<select name="deliveryMode"><option value="ONSITE">线下</option><option value="ONLINE">线上</option><option value="BLENDED">混合</option></select>')}
+        ${field('地点或平台', '<input name="venue" placeholder="教师发展中心">')}
+        ${field('开始时间', '<input name="startAt" type="datetime-local" required>')}
+        ${field('结束时间', '<input name="endAt" type="datetime-local" required>')}
+        ${field('正式名额', '<input name="capacity" type="number" min="0" value="30">')}
+        ${field('候补名额', '<input name="waitlistCapacity" type="number" min="0" value="5">')}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">创建培训班次</button></div></form>
+      <div class="hr10-list" data-program-list><div class="hr10-empty">正在读取培训项目…</div></div>
+      <div class="hr10-list" data-offering-list></div>`);
+    host.querySelectorAll('[data-open]').forEach(button => button.onclick = () => toggle(host, button.dataset.open));
+    host.querySelector('[data-program-create]').onsubmit = async event => {
+      event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('[type="submit"]');
+      const body = {programCode: formValue(form, 'programCode'), title: formValue(form, 'title'), activityType: formValue(form, 'activityType')};
+      const provider = formValue(form, 'providerOrgId'); if (provider) body.providerOrgId = provider;
+      await act(button, host, '/programs/create', body, data => `${data.title} 已保存为草稿。`, refresh);
+    };
+    host.querySelector('[data-offering-create]').onsubmit = async event => {
+      event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('[type="submit"]');
+      await act(button, host, '/offerings/create', {
+        programVersionId: formValue(form, 'programVersionId'), offeringNo: formValue(form, 'offeringNo'),
+        deliveryMode: formValue(form, 'deliveryMode'), venue: formValue(form, 'venue'), startAt: formValue(form, 'startAt'),
+        endAt: formValue(form, 'endAt'), capacity: toNumber(formValue(form, 'capacity')), waitlistCapacity: toNumber(formValue(form, 'waitlistCapacity'))
+      }, data => `${data.offeringNo} 已创建。`, refresh);
+    };
+
+    async function refresh() {
+      await loadChoices();
+      const programs = await get('/programs');
+      const providers = labelMap(choices.providers);
+      const list = host.querySelector('[data-program-list]');
+      list.innerHTML = programs.length ? '' : '<div class="hr10-empty">当前没有培训项目。</div>';
+      programs.forEach(item => {
+        const row = document.createElement('article'); row.className = 'hr10-row';
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.title)}</b><small>${esc(item.programCode)} · ${esc(item.activityType)}</small></div><div><span class="hr10-badge">${esc(item.lifecycleStatusLabel)}</span><small>${esc(providers.get(String(item.providerOrgId)) || '校内自办')}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">形成版本</button>${item.lifecycleStatus === 'DRAFT' ? '<button class="hr10-btn primary" data-publish type="button">发布项目</button>' : ''}</div></div><div class="hr10-inline" data-version-form><input data-objective placeholder="培训目标"><input data-curriculum placeholder="核心课程内容"><button class="hr10-btn primary" data-save type="button">保存项目版本</button></div>`;
+        row.querySelector('[data-version]').onclick = () => row.querySelector('[data-version-form]').classList.toggle('open');
+        row.querySelector('[data-save]').onclick = event => {
+          const objective = row.querySelector('[data-objective]').value.trim(); const curriculum = row.querySelector('[data-curriculum]').value.trim();
+          if (!objective) return result(host, 'error', '请填写培训目标。');
+          act(event.currentTarget, host, `/programs/${item.id}/versions`, {objectivesJson: {objective}, curriculumJson: {summary: curriculum}}, data => `${item.title} 已形成 v${data.versionNo}。`, refresh);
+        };
+        row.querySelector('[data-publish]')?.addEventListener('click', event => act(event.currentTarget, host, `/programs/${item.id}/publish`, {}, data => `${data.title} 已发布。`, refresh));
+        list.appendChild(row);
+      });
+      const offerings = choices.offerings || [];
+      const offeringList = host.querySelector('[data-offering-list]');
+      offeringList.innerHTML = offerings.length ? '<h4>培训班次</h4>' : '';
+      offerings.forEach(item => {
+        const row = document.createElement('article'); row.className = 'hr10-row';
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.label)}</b><small>培训班次</small></div><div><span class="hr10-badge">${esc(item.status)}</span></div><div class="hr10-row-actions">${item.status !== 'OPEN' ? '<button class="hr10-btn primary" data-open-enrollment type="button">开放报名</button>' : ''}${item.status !== 'CANCELLED' ? '<button class="hr10-btn danger" data-cancel type="button">取消班次</button>' : ''}</div></div>`;
+        row.querySelector('[data-open-enrollment]')?.addEventListener('click', event => act(event.currentTarget, host, `/offerings/${item.value}/open-enrollment`, {}, '班次已开放报名。', refresh));
+        row.querySelector('[data-cancel]')?.addEventListener('click', event => act(event.currentTarget, host, `/offerings/${item.value}/cancel`, {}, '班次已取消。', refresh));
+        offeringList.appendChild(row);
+      });
+      const versionSelect = host.querySelector('[data-offering-create] select[name="programVersionId"]');
+      versionSelect.innerHTML = `<option value="">请选择已形成版本的培训项目</option>${(choices.programVersions || []).map(item => option(item)).join('')}`;
+    }
+    await refresh();
+  }
+
+  async function requests() {
+    const host = panel('培训报名与审批', '按教师、培训项目和开放班次创建申请，并在同一行推进审核。');
+    host.insertAdjacentHTML('beforeend', `
+      <div class="hr10-toolbar"><button class="hr10-btn primary" data-open="request-create" type="button">新建培训申请</button></div>
+      <form class="hr10-form" id="request-create" data-request-create><div class="hr10-grid">
+        ${field('申请编号', '<input name="requestNo" placeholder="留空自动生成">')}
+        ${field('申请教师', select('staffMasterId', choices.staff || [], '教师'))}
+        ${field('培训项目', select('programId', choices.programs || [], '培训项目'))}
+        ${field('培训班次', select('offeringId', choices.offerings || [], '培训班次', false), false, '尚未排班时可暂不选择。')}
+        ${field('预计费用', '<input name="estimatedCost" type="number" min="0" step="0.01">')}
+        ${field('需要请假', '<select name="leaveRequired"><option value="false">否</option><option value="true">是</option></select>')}
+        ${field('申请理由', '<textarea name="reason" required placeholder="说明培训与岗位发展的关系"></textarea>', true)}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存申请草稿</button></div></form>
+      <div class="hr10-list" data-list><div class="hr10-empty">正在读取培训申请…</div></div>`);
+    host.querySelector('[data-open]').onclick = () => toggle(host, 'request-create');
+    host.querySelector('[data-request-create]').onsubmit = async event => {
+      event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('[type="submit"]');
+      const body = {
+        staffMasterId: formValue(form, 'staffMasterId'), programId: formValue(form, 'programId'),
+        reason: formValue(form, 'reason'), leaveRequired: formValue(form, 'leaveRequired') === 'true'
+      };
+      ['requestNo', 'offeringId', 'estimatedCost'].forEach(name => { const value = formValue(form, name); if (value) body[name] = value; });
+      await act(button, host, '/requests/create', body, data => `${data.requestNo} 已保存为草稿。`, render);
+    };
+
+    async function render() {
+      const items = await get('/requests');
+      const staff = labelMap(choices.staff), programs = labelMap(choices.programs), offerings = labelMap(choices.offerings);
+      const list = host.querySelector('[data-list]'); list.innerHTML = items.length ? '' : '<div class="hr10-empty">当前没有培训申请。</div>';
+      items.forEach(item => {
+        const actions = [];
+        if (['DRAFT', 'RETURNED'].includes(item.lifecycleStatus)) actions.push(['submit', '提交审核', 'primary']);
+        if (['SUBMITTED', 'UNDER_MANAGER_REVIEW', 'UNDER_HR_REVIEW', 'UNDER_REVIEW'].includes(item.lifecycleStatus)) actions.push(['approve', '审核通过', 'success'], ['return', '退回', 'danger']);
+        if (!['APPROVED', 'REJECTED', 'WITHDRAWN'].includes(item.lifecycleStatus)) actions.push(['withdraw', '撤回', '']);
+        const row = document.createElement('article'); row.className = 'hr10-row';
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.requestNo)}</b><small>${esc(staff.get(String(item.staffMasterId)) || '教师')} · ${esc(programs.get(String(item.programId)) || '培训项目')}</small></div><div><span class="hr10-badge">${esc(item.lifecycleStatusLabel)}</span><small>${esc(offerings.get(String(item.offeringId)) || '尚未安排班次')}</small></div><div class="hr10-row-actions">${actions.map(([name, text, kind]) => `<button class="hr10-btn ${kind}" data-action="${name}" type="button">${text}</button>`).join('')}</div></div>`;
+        row.querySelectorAll('[data-action]').forEach(button => button.onclick = () => act(button, host, `/requests/${item.id}/${button.dataset.action}`, {}, data => `${data.requestNo} 已推进到${data.lifecycleStatusLabel}。`, render));
+        list.appendChild(row);
+      });
+    }
+    await render();
+  }
+
+  async function practice() {
+    const host = panel('企业实践办理', '按实践基地、岗位场景和教师办理项目、批次与派出，全程使用学校内业务名称。');
+    host.insertAdjacentHTML('beforeend', `
+      <div class="hr10-toolbar"><button class="hr10-btn primary" data-open="project-create" type="button">新建实践项目</button><button class="hr10-btn" data-open="placement-create" type="button">新建实践批次</button><button class="hr10-btn" data-open="assignment-create" type="button">新建教师派出</button><button class="hr10-btn" data-open="assignment-manage" type="button">办理派出过程</button></div>
+      <form class="hr10-form" id="project-create"><div class="hr10-grid">
+        ${field('项目编号', '<input name="projectNo" required placeholder="PRA-2026-01">')}${field('项目名称', '<input name="title" required placeholder="智能制造企业实践">')}
+        ${field('企业或实践基地', select('providerOrgId', choices.providers || [], '企业或实践基地'))}${field('专业类别', '<input name="specialtyCategory" placeholder="智能制造">')}
+        ${field('计划开始', '<input name="plannedStartDate" type="date">')}${field('计划结束', '<input name="plannedEndDate" type="date">')}${field('容量', '<input name="capacity" type="number" min="0" value="10">')}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">保存项目草稿</button></div></form>
+      <form class="hr10-form" id="placement-create"><div class="hr10-grid">
+        ${field('实践项目', select('projectId', choices.practiceProjects || [], '已形成版本的实践项目'))}${field('岗位场景', select('sceneId', choices.practiceScenes || [], '岗位场景'))}
+        ${field('批次号', '<input name="batchNo" required value="B-1">')}${field('地点', '<input name="venue">')}${field('开始日期', '<input name="startDate" type="date" required>')}${field('结束日期', '<input name="endDate" type="date" required>')}${field('容量', '<input name="capacity" type="number" min="0" value="10">')}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">创建实践批次</button></div></form>
+      <form class="hr10-form" id="assignment-create"><div class="hr10-grid">
+        ${field('实践批次', select('placementId', choices.practicePlacements || [], '实践批次'))}${field('派出教师', select('staffMasterId', choices.staff || [], '教师'))}
+        ${field('岗位场景', select('assignedSceneId', choices.practiceScenes || [], '岗位场景'))}${field('企业导师', select('enterpriseMentorId', choices.practiceMentors || [], '企业导师'))}
+        ${field('计划小时', '<input name="plannedHours" type="number" min="0" value="40">')}${field('计划天数', '<input name="plannedDays" type="number" min="0" value="5">')}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" type="submit">创建教师派出</button></div></form>
+      <form class="hr10-form" id="assignment-manage"><div class="hr10-grid">
+        ${field('教师派出记录', select('assignmentId', choices.practiceAssignments || [], '教师派出记录'))}${field('暂停原因', '<input name="reason" placeholder="仅暂停时填写">')}${field('责任方', '<select name="responsibleParty"><option value="">请选择</option><option value="SCHOOL">学校</option><option value="ENTERPRISE">企业</option><option value="PERSON">个人</option></select>')}
+      </div><div class="hr10-toolbar"><button class="hr10-btn primary" data-start type="button">开始实践</button><button class="hr10-btn" data-suspend type="button">暂停</button><button class="hr10-btn" data-resume type="button">恢复</button><button class="hr10-btn" data-precheck type="button">完成前检查</button></div>
+      <div class="hr10-inline open"><input data-activity-date type="date" aria-label="活动日期"><input data-activity-title placeholder="活动标题"><button class="hr10-btn" data-add-activity type="button">记录活动</button></div>
+      <div class="hr10-inline open"><select data-evidence-type aria-label="证据类型"><option value="WORK_LOG">工作日志</option><option value="OUTPUT">实践成果</option><option value="ATTENDANCE">考勤证明</option></select><input data-external-ref placeholder="文件或归档引用"><button class="hr10-btn" data-add-evidence type="button">追加证据</button></div>
+      <div class="hr10-inline open"><input data-verified-hours type="number" min="0" step="0.1" placeholder="核验小时"><button class="hr10-btn success" data-finalize type="button">最终核定</button></div></form>
+      <div class="hr10-list" data-list><div class="hr10-empty">正在读取实践项目…</div></div>`);
+    host.querySelectorAll('[data-open]').forEach(button => button.onclick = () => toggle(host, button.dataset.open));
+    const projectForm = host.querySelector('#project-create');
+    projectForm.onsubmit = async event => {
+      event.preventDefault(); const button = projectForm.querySelector('[type="submit"]');
+      const body = {}; ['projectNo', 'title', 'providerOrgId', 'specialtyCategory', 'plannedStartDate', 'plannedEndDate', 'capacity'].forEach(name => { const value = formValue(projectForm, name); if (value) body[name] = value; });
+      await act(button, host, '/practice-projects/create', body, data => `${data.title} 已保存为草稿。`, refresh);
+    };
+    const placementForm = host.querySelector('#placement-create');
+    placementForm.onsubmit = async event => {
+      event.preventDefault(); const button = placementForm.querySelector('[type="submit"]');
+      const project = (choices.practiceProjects || []).find(item => String(item.value) === formValue(placementForm, 'projectId'));
+      const scene = (choices.practiceScenes || []).find(item => String(item.value) === formValue(placementForm, 'sceneId'));
+      if (!project || !scene || String(scene.projectVersionValue) !== String(project.versionValue)) return result(host, 'error', '请选择属于该实践项目版本的岗位场景。');
+      await act(button, host, '/practice-placements/create', {projectId: project.value, projectVersionId: project.versionValue, sceneId: scene.value, batchNo: formValue(placementForm, 'batchNo'), startDate: formValue(placementForm, 'startDate'), endDate: formValue(placementForm, 'endDate'), capacity: toNumber(formValue(placementForm, 'capacity')), venue: formValue(placementForm, 'venue')}, data => `${data.batchNo} 实践批次已创建。`, refresh);
+    };
+    const assignmentForm = host.querySelector('#assignment-create');
+    assignmentForm.onsubmit = async event => {
+      event.preventDefault(); const button = assignmentForm.querySelector('[type="submit"]');
+      const placement = (choices.practicePlacements || []).find(item => String(item.value) === formValue(assignmentForm, 'placementId'));
+      const scene = (choices.practiceScenes || []).find(item => String(item.value) === formValue(assignmentForm, 'assignedSceneId'));
+      if (!placement || !scene || String(scene.projectVersionValue) !== String(placement.projectVersionValue)) return result(host, 'error', '请选择属于该实践批次的岗位场景。');
+      await act(button, host, '/practice-assignments/create', {placementId: placement.value, staffMasterId: formValue(assignmentForm, 'staffMasterId'), assignedSceneId: scene.value, enterpriseMentorId: formValue(assignmentForm, 'enterpriseMentorId'), plannedHours: toNumber(formValue(assignmentForm, 'plannedHours')), plannedDays: toNumber(formValue(assignmentForm, 'plannedDays'))}, data => `教师派出已创建，当前为${data.assignmentStatusLabel}。`, refresh);
+    };
+    const manage = host.querySelector('#assignment-manage');
+    const selectedAssignment = () => (choices.practiceAssignments || []).find(item => String(item.value) === formValue(manage, 'assignmentId'));
+    const requireAssignment = () => { const item = selectedAssignment(); if (!item) result(host, 'error', '请选择教师派出记录。'); return item; };
+    manage.querySelector('[data-start]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/start`, {}, data => `实践已推进到${data.assignmentStatusLabel}。`, refresh); };
+    manage.querySelector('[data-suspend]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/suspend`, {reason: formValue(manage, 'reason'), responsibleParty: formValue(manage, 'responsibleParty')}, '实践已暂停。', refresh); };
+    manage.querySelector('[data-resume]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/resume`, {}, '实践已恢复。', refresh); };
+    manage.querySelector('[data-precheck]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/submit-completion`, {}, data => data.ready || data.passed ? '完成前检查已通过。' : '仍有前置条件未满足。'); };
+    manage.querySelector('[data-add-activity]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/activities`, {activityDate: manage.querySelector('[data-activity-date]').value, activityType: 'PRACTICE_TASK', title: manage.querySelector('[data-activity-title]').value, source: 'HR'}, '实践活动已记录。'); };
+    manage.querySelector('[data-add-evidence]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/evidence`, {evidenceType: manage.querySelector('[data-evidence-type]').value, externalRef: manage.querySelector('[data-external-ref]').value, source: 'HR'}, '实践证据已追加。'); };
+    manage.querySelector('[data-finalize]').onclick = event => { const item = requireAssignment(); if (item) act(event.currentTarget, host, `/practice-assignments/${item.value}/finalize`, {projectVersionId: item.projectVersionValue, verifiedHours: Number(manage.querySelector('[data-verified-hours]').value || 0), verifiedDays: 0, completionStatus: 'PASS', rubricResultJson: {}, finalComment: 'HR 管理端最终核定'}, '实践评价已最终核定。', refresh); };
+
+    async function refresh() {
+      await loadChoices();
+      const items = await get('/practice-projects');
+      const providers = labelMap(choices.providers);
+      const list = host.querySelector('[data-list]'); list.innerHTML = items.length ? '' : '<div class="hr10-empty">当前没有企业实践项目。</div>';
+      items.forEach(item => {
+        const row = document.createElement('article'); row.className = 'hr10-row';
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.title)}</b><small>${esc(item.projectNo)} · ${esc(item.specialtyCategory || '未分类')}</small></div><div><span class="hr10-badge">${esc(item.lifecycleStatusLabel)}</span><small>${esc(providers.get(String(item.providerOrgId)) || '实践基地')} · 容量 ${esc(item.capacity)}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">形成项目版本</button>${item.lifecycleStatus !== 'PUBLISHED' ? '<button class="hr10-btn primary" data-publish type="button">发布项目</button>' : ''}</div></div><div class="hr10-inline" data-version-form><input data-objective placeholder="实践目标"><input data-safety placeholder="安全要求"><button class="hr10-btn primary" data-save type="button">保存项目版本</button></div>`;
+        row.querySelector('[data-version]').onclick = () => row.querySelector('[data-version-form]').classList.toggle('open');
+        row.querySelector('[data-save]').onclick = event => { const objective = row.querySelector('[data-objective]').value.trim(); if (!objective) return result(host, 'error', '请填写实践目标。'); act(event.currentTarget, host, `/practice-projects/${item.id}/versions`, {objectivesJson: {objective}, safetyRequirementsJson: {summary: row.querySelector('[data-safety]').value.trim()}}, data => `${item.title} 已形成 v${data.versionNo}。`, refresh); };
+        row.querySelector('[data-publish]')?.addEventListener('click', event => act(event.currentTarget, host, `/practice-projects/${item.id}/publish`, {}, data => `${data.title} 已发布。`, refresh));
+        list.appendChild(row);
+      });
+      const selectSources = [
+        ['#placement-create select[name="projectId"]', choices.practiceProjects], ['#placement-create select[name="sceneId"]', choices.practiceScenes],
+        ['#assignment-create select[name="placementId"]', choices.practicePlacements], ['#assignment-create select[name="assignedSceneId"]', choices.practiceScenes],
+        ['#assignment-create select[name="enterpriseMentorId"]', choices.practiceMentors], ['#assignment-manage select[name="assignmentId"]', choices.practiceAssignments]
+      ];
+      selectSources.forEach(([selector, items]) => { const control = host.querySelector(selector); if (control) control.innerHTML = `<option value="">请选择</option>${(items || []).map(item => option(item)).join('')}`; });
+    }
+    await refresh();
+  }
+
+  (async () => {
+    if (!['plans', 'programs', 'requests', 'practice'].includes(page)) return;
+    await loadChoices();
+    if (page === 'plans') await plans();
+    if (page === 'programs') await programs();
+    if (page === 'requests') await requests();
+    if (page === 'practice') await practice();
+  })().catch(error => {
+    const host = panel('工作区加载失败', '页面不会回退到内部接口。');
+    result(host, 'error', error.message);
+  });
 })();

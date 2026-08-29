@@ -1,18 +1,2 @@
-{% extends "hr/development/base_ui.html" %}
-{% load static %}
-{% block title %}企业实践{% endblock %}
-{% block title_zh %}企业实践{% endblock %}
-{% block content %}
-<div class="hr10-workspace" data-hr10-page="practice">
-  <section class="hr10-hero">
-    <div><h2>教师企业实践</h2><p>从实践项目、版本、批次、教师派出到过程活动、证据、评价和最终核定形成一条完整事实链；开始实践和最终完成都由服务端检查前置条件。</p></div>
-    <span class="hr10-hero-badge">企业实践 Authority</span>
-  </section>
-  <section class="hr10-panel">
-    <h3>实践闭环</h3><p>项目定义“做什么”，批次定义“什么时候在哪里做”，派出定义“谁去做”，过程证据与双边评价决定最终核定。</p>
-    <div class="hr10-steps"><div class="hr10-step"><b>1 · 项目</b><span>目标、岗位场景、安全要求</span></div><div class="hr10-step"><b>2 · 批次</b><span>时间、地点与容量</span></div><div class="hr10-step"><b>3 · 派出</b><span>教师、导师与计划工作量</span></div><div class="hr10-step"><b>4 · 过程</b><span>活动、证据、暂停/恢复</span></div><div class="hr10-step"><b>5 · 核定</b><span>企业/学校评价与核验时长</span></div></div>
-  </section>
-  <div class="hr10-note"><strong>事实边界：</strong>前端不会用“上传了材料”直接判定实践完成；最终结果必须经过 completion precheck 和正式评价核定。</div>
-</div>
-{% endblock %}
-{% block scripts %}<script src="{% static 'hr/js/pages/hr10-actions.js' %}" defer></script>{% endblock %}
+{% extends "hr/development/base.html" %}
+{% block workspace_content %}<section class="hr10-section"><div class="hr10-section__head"><h2>企业实践项目</h2><p>依次形成实践项目、批次、教师派出、过程证据和最终核定，不把活动记录冒充已完成实践。</p></div></section>{% endblock %}
