@@ -15,6 +15,7 @@ on:
       - "hr_visual_audit_tests.py"
       - "hr_v2_visual_audit_tests.py"
       - "hr_v2_shell_regression_tests.py"
+      - "hr05_visual_audit_tests.py"
       - "hr13_visual_audit_tests.py"
       - "hr14_visual_audit_tests.py"
       - "hr15_visual_audit_tests.py"
@@ -161,6 +162,7 @@ jobs:
           python manage.py test \
             hr_v2_visual_audit_tests.HrV2VisualAuditTests \
             hr_v2_shell_regression_tests.HrV2ShellRegressionTests \
+            hr05_visual_audit_tests.Hr05VisualAuditTests \
             hr13_visual_audit_tests.Hr13VisualAuditTests \
             hr14_visual_audit_tests.Hr14VisualAuditTests \
             hr15_visual_audit_tests.Hr15VisualAuditTests \
