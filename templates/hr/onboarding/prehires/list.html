@@ -1,49 +1,47 @@
 {% extends "index.html" %}
-{% load i18n %}
+{% load static i18n %}
 
 {% block title %}{% trans "待报到人员" %}{% endblock %}
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">
+{% endblock styles %}
 
 {% block content %}
-<div class="hr-page">
-  <div class="hr-page-header">
-    <h1>{% trans "待报到人员" %}</h1>
-    <p class="hr-page-subtitle">{% trans "管理已录用但尚未正式到校的新教工（HR05-01）" %}</p>
-  </div>
-
-  <nav class="hr-filter-bar" aria-label="入职管理工作区">
-    <a class="hr-btn" href="/hr/onboarding/prehires">待报到人员</a>
-    <a class="hr-btn" href="/hr/onboarding/reporting">报到登记</a>
-    <a class="hr-btn" href="/hr/onboarding/materials">材料核验</a>
-    <a class="hr-btn" href="/hr/onboarding/collaboration">协同任务</a>
-    <a class="hr-btn" href="/hr/onboarding/probations">试用与转正</a>
-  </nav>
-
-  <div class="hr-card">
-    <div class="hr-freshness" data-source-updated-at data-calculated-at data-status="OK">
-      {% trans "数据口径：HrOnboardingCase 权威（待报到/意愿/延期/风险）" %}
+<div class="hr-v2-page hr05-page" data-module="HR05" data-section="prehires" data-hr-page="onboarding-prehires">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>待报到人员</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-prehires-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR05 · 入职管理</div>
+      <h1 class="hr-v2-title" id="hr05-prehires-title">待报到人员</h1>
+      <p class="hr-v2-subtitle">读取当前学校可见的入职 case，按服务端 tenant/scope 过滤；列表不展示身份证明等高敏明文。</p>
     </div>
-  </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>来源</strong> canonical cases API</span>
+      <span class="hr-v2-context__item"><strong>范围</strong> 服务端裁剪</span>
+      <span class="hr-v2-context__item"><strong>状态</strong> 实时读取</span>
+    </div>
+  </header>
+  {% include "hr/onboarding/components/v2_nav.html" with active="prehires" %}
 
-  <div class="hr-card">
-    <table class="hr-table" id="prehireTable">
-      <thead>
-        <tr>
-          <th>{% trans "入职单编号" %}</th>
-          <th>{% trans "来源" %}</th>
-          <th>{% trans "人员类别" %}</th>
-          <th>{% trans "预计报到" %}</th>
-          <th>{% trans "状态" %}</th>
-          <th>{% trans "人员匹配" %}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td colspan="6" class="hr-empty">
-            {% trans "S3 后端已就绪：列表数据由 /api/hr/v1/onboarding/cases 提供（tenant+scope 服务端裁剪）。" %}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <section class="hr05-panel">
+    <div class="hr05-toolbar">
+      <div class="hr05-toolbar__copy"><h2>入职 case</h2><p>可按入职单编号或来源编号搜索，搜索条件直接发送给服务端。</p></div>
+      <input class="hr05-search" id="hr05-prehire-keyword" placeholder="搜索入职单/来源编号" autocomplete="off">
+    </div>
+    <div id="hr05-prehire-list" class="hr05-table-wrap" aria-live="polite">
+      <div class="hr05-state"><strong>正在读取待报到人员</strong><span>等待 canonical cases API 返回当前学校可见数据。</span></div>
+    </div>
+  </section>
+  <div class="hr05-truth-note"><strong>真实性边界</strong><span>空列表表示 API 已成功返回且没有匹配数据；请求失败会明确显示失败状态，不再用占位文案冒充业务数据。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr05-prehires.js' %}"></script>
+{% endblock scripts %}

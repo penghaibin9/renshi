@@ -1,51 +1,14 @@
 {% extends "index.html" %}
-{% load i18n %}
+{% load static i18n %}
 {% block title %}{% trans "入职材料核验" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">{% endblock styles %}
 {% block content %}
-<div class="hr-page" id="materialsPage">
-  <div class="hr-page-header">
-    <h1>{% trans "材料核验工作台" %}</h1>
-    <div class="hr-material-stats">
-      <span class="hr-stat">{% trans "全部" %}：{{ stats.total|default:0 }}</span>
-      <span class="hr-stat hr-stat--pending">{% trans "待核验" %}：{{ stats.pending|default:0 }}</span>
-      <span class="hr-stat hr-stat--returned">{% trans "缺件" %}：{{ stats.returned|default:0 }}</span>
-      <span class="hr-stat hr-stat--expired">{% trans "已过期" %}：{{ stats.expired|default:0 }}</span>
-    </div>
-  </div>
-  <div class="hr-grid hr-grid--material">
-    <div class="hr-card hr-material-sidebar">
-      <h3>{% trans "材料目录" %}</h3>
-      <ul class="hr-checklist" id="materialList">
-        {% for item in materials %}
-        <li class="hr-checklist__item {% if item.status == 'VERIFIED' or item.status == 'WAIVED' %}hr-checklist__item--ok{% else %}hr-checklist__item--no{% endif %}"
-            data-material-id="{{ item.id }}" role="button" tabindex="0">
-          <span class="hr-checklist__label">{{ item.label }}</span>
-          <span class="hr-checklist__phase">{% firstof item.blocking_phase_label item.blocking_phase "—" %}</span>
-          <span class="hr-checklist__status">{% firstof item.status_label item.status "—" %}</span>
-        </li>
-        {% empty %}
-        <li class="hr-empty">{% trans "暂无材料要求" %}</li>
-        {% endfor %}
-      </ul>
-      <div class="hr-material-filters">
-        <button class="oh-btn oh-btn--small" data-filter="pending">{% trans "仅看待核验" %}</button>
-        <button class="oh-btn oh-btn--small" data-filter="missing">{% trans "缺件" %}</button>
-        <button class="oh-btn oh-btn--small" data-filter="next" id="btnNext">{% trans "下一项" %}</button>
-      </div>
-    </div>
-    <div class="hr-card hr-material-preview">
-      <h3>{% trans "文件预览" %}</h3>
-      <div class="hr-material-preview__frame" id="previewFrame">
-        <p class="hr-empty">{% trans "请从左侧选择材料以预览" %}</p>
-      </div>
-    </div>
-    <div class="hr-card hr-material-actions">
-      <h3>{% trans "核验动作" %}</h3>
-      <div id="materialDetail" data-empty="true">
-        <p class="hr-empty">{% trans "请选择一项材料" %}</p>
-      </div>
-      {% include "hr/onboarding/components/material_verification_panel.html" with material=selected_material %}
-    </div>
-  </div>
+<div class="hr-v2-page hr05-page" data-module="HR05" data-section="materials" data-hr-page="onboarding-materials">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>材料核验</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-materials-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-materials-title">材料核验</h1><p class="hr-v2-subtitle">按明确的入职 case 读取材料清单；没有选择 case 时保持“未加载”，不把未知统计展示为 0。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>数据</strong> canonical materials API</span><span class="hr-v2-context__item"><strong>下载</strong> ticket 控制</span></div></header>
+  {% include "hr/onboarding/components/v2_nav.html" with active="materials" %}
+  <section class="hr05-panel"><div class="hr05-case-picker"><label>入职 case ID<input class="hr05-input" id="hr05-material-case-id" placeholder="从待报到列表进入时自动带入" autocomplete="off"></label><button class="hr05-button" id="hr05-load-materials" type="button">读取材料</button></div><div id="hr05-material-summary" class="hr05-meta"><span>统计状态：未加载</span></div><div id="hr05-material-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>请选择入职 case</strong><span>从待报到人员页点击“材料”，或在上方输入可见 case ID。</span></div></div></section>
+  <div class="hr05-truth-note"><strong>真实性边界</strong><span>材料状态仅在 API 成功后统计；请求失败不会显示“全部 0”。核验、退回、豁免与下载继续由后端权限和 ticket 契约控制。</span></div>
 </div>
-{% endblock %}
+{% endblock content %}
+{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-materials.js' %}"></script>{% endblock scripts %}

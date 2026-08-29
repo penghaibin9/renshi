@@ -1,0 +1,7 @@
+<nav class="hr05-nav" aria-label="入职管理工作区">
+  <a href="{% url 'hr05-prehires' %}"{% if active == 'prehires' %} aria-current="page"{% endif %}>待报到人员</a>
+  <a href="{% url 'hr05-reporting' %}"{% if active == 'reporting' %} aria-current="page"{% endif %}>报到登记</a>
+  <a href="{% url 'hr05-material-workspace' %}"{% if active == 'materials' %} aria-current="page"{% endif %}>材料核验</a>
+  <a href="{% url 'hr05-collaboration-center' %}"{% if active == 'collaboration' %} aria-current="page"{% endif %}>协同任务</a>
+  <a href="{% url 'hr05-probations' %}"{% if active == 'probations' %} aria-current="page"{% endif %}>试用与转正</a>
+</nav>

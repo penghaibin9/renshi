@@ -27,8 +27,8 @@ def hr05_case_detail(request, case_id):
 @login_required
 @require_hr05_permission("hr05.case.view")
 def hr05_reporting(request):
-    """HR05-02 报到登记列表（数据由 /api/hr/v1/onboarding/cases 提供）。"""
-    return render(request, "hr/onboarding/reporting/checkin.html", {"case": {}})
+    """HR05-02 报到登记列表；禁止用空 case 渲染单 case 写操作页。"""
+    return render(request, "hr/onboarding/reporting/list.html")
 
 
 @login_required
@@ -41,22 +41,22 @@ def hr05_report_checkin(request, case_id):
 @login_required
 @require_hr05_permission("hr05.material.review")
 def hr05_material_workspace(request):
-    """HR05-03 材料核验工作台（三栏证据工作台）。"""
-    return render(request, "hr/onboarding/materials/workspace.html", {"stats": {}})
+    """HR05-03 材料核验工作台；由浏览器显式选择 case 后读取 canonical API。"""
+    return render(request, "hr/onboarding/materials/workspace.html")
 
 
 @login_required
 @require_hr05_permission("hr05.task.manage")
 def hr05_collaboration_center(request):
-    """HR05-04 协同任务中心（矩阵 + 我的任务）。"""
-    return render(request, "hr/onboarding/collaboration/center.html", {"stats": {}, "my_tasks": []})
+    """HR05-04 协同任务中心；由浏览器显式选择 case 后读取 canonical API。"""
+    return render(request, "hr/onboarding/collaboration/center.html")
 
 
 @login_required
 @require_hr05_permission("hr05.probation.manage")
 def hr05_probation_list(request):
-    """HR05-05 试用转正列表（统计 + 表格）。"""
-    return render(request, "hr/onboarding/probations/detail.html", {"stats": {}})
+    """HR05-05 试用转正列表（真实列表 API，不复用单条详情模板）。"""
+    return render(request, "hr/onboarding/probations/list.html")
 
 
 @login_required
