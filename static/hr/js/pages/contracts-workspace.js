@@ -88,8 +88,15 @@
   }
 
   function agreementLabel(row) {
-    const staff = [row.staffName, row.staffNo].filter(Boolean).join(" · ");
-    return `${text(row.agreementNo)} · ${text(row.title)}${staff ? " · " + staff : ""}`;
+    const subject = [row.staffName, row.staffNo].filter(Boolean).join(" · ");
+    return `${text(row.agreementNo)} · ${text(row.title)}${subject ? " · " + subject : ""}`;
+  }
+
+  function subjectMeta(row) {
+    if (row.subjectType === "EXTERNAL_WORKFORCE") {
+      return `外聘主体 · ${text(row.subjectReferenceType, "HR08")}`;
+    }
+    return text(row.staffNo);
   }
 
   function updateKpis(rows) {
@@ -122,7 +129,7 @@
     }
     body.innerHTML = rows.map((row) => `<tr>
       <td><strong>${escapeHtml(row.agreementNo)}</strong></td><td>${escapeHtml(row.title)}</td>
-      <td><strong>${escapeHtml(row.staffName)}</strong><small class="hr07-cell-note">${escapeHtml(row.staffNo)}</small></td>
+      <td><strong>${escapeHtml(row.staffName)}</strong><small class="hr07-cell-note">${escapeHtml(subjectMeta(row))}</small></td>
       <td>${escapeHtml(row.agreementType)}</td>
       <td><span class="hr07-status" data-status="${escapeHtml(row.status)}">${escapeHtml(statusLabel(row.status))}</span></td>
       <td>V${escapeHtml(row.currentVersionNo || 0)}</td><td>${escapeHtml(dateTime(row.updatedAt))}</td>
@@ -186,9 +193,15 @@
     try {
       const row = await request(API + "/" + encodeURIComponent(id));
       if (title) title.textContent = text(row.agreementNo) + " · " + text(row.title);
+      const subjectValue = row.subjectType === "EXTERNAL_WORKFORCE"
+        ? escapeHtml(row.staffName)
+        : `${escapeHtml(row.staffName)} · ${escapeHtml(row.staffNo)}`;
+      const relationshipValue = row.subjectType === "EXTERNAL_WORKFORCE"
+        ? `${escapeHtml(row.subjectReferenceType)} · ${escapeHtml(row.subjectReferenceId)}`
+        : `${escapeHtml(row.relationshipType)} / ${escapeHtml(row.employmentType)}`;
       content.innerHTML = `<div class="hr07-detail-grid">
-        <div><span>教职工</span><strong>${escapeHtml(row.staffName)} · ${escapeHtml(row.staffNo)}</strong></div>
-        <div><span>聘用关系</span><strong>${escapeHtml(row.relationshipType)} / ${escapeHtml(row.employmentType)}</strong></div>
+        <div><span>合同主体</span><strong>${subjectValue}</strong></div>
+        <div><span>${row.subjectType === "EXTERNAL_WORKFORCE" ? "来源业务" : "聘用关系"}</span><strong>${relationshipValue}</strong></div>
         <div><span>合同类型</span><strong>${escapeHtml(row.agreementType)}</strong></div>
         <div><span>状态</span><strong>${escapeHtml(statusLabel(row.status))}</strong></div>
       </div><h3>合同版本</h3>${renderVersions(row.versions)}`;
@@ -305,7 +318,7 @@
       const detail = await request(API + "/" + encodeURIComponent(id));
       box.className = "hr07-sign-panel";
       box.innerHTML = `<div class="hr07-detail-grid"><div><span>合同</span><strong>${escapeHtml(detail.agreementNo)}</strong></div>
-        <div><span>教职工</span><strong>${escapeHtml(detail.staffName)} · ${escapeHtml(detail.staffNo)}</strong></div>
+        <div><span>合同主体</span><strong>${escapeHtml(detail.staffName)}${detail.staffNo ? " · " + escapeHtml(detail.staffNo) : " · 外聘主体"}</strong></div>
         <div><span>状态</span><strong>${escapeHtml(statusLabel(detail.status))}</strong></div>
         <div><span>当前版本</span><strong>V${escapeHtml(detail.currentVersionNo || 0)}</strong></div></div>${signingForm(detail)}`;
       const signForm = document.getElementById("hr07-sign-form");
