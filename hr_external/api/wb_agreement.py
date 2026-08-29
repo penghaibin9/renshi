@@ -9,6 +9,7 @@ from hr_external.models import HrExternalHiringCase
 from hr_external.permissions import require_hr_external_permission
 from hr_external.services.audit_service import write_external_audit
 from hr_external.services.hiring_service import AgreementNotReady, HiringService, InvalidHiringState
+from hr_external.integrations.hr07 import AgreementProvider
 
 
 def _ctx(request):
@@ -18,6 +19,48 @@ def _ctx(request):
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
         return None, error_response(request, code, str(exc), status)
+
+
+@require_hr_external_permission("hr08.hiring.approve")
+def hiring_agreement_options(request, case_id):
+    """Return HR07 agreements already bound to this exact HR08 hiring case."""
+    if request.method != "GET":
+        return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET", 405)
+    ctx, err = _ctx(request)
+    if err:
+        return err
+    case = (
+        HrExternalHiringCase.objects.filter(tenant_id=ctx.tenant_id, id=case_id)
+        .select_related("category_id", "proposed_person_id")
+        .first()
+    )
+    if case is None:
+        return error_response(
+            request,
+            "EXTERNAL_HIRING_CASE_NOT_FOUND",
+            "聘用审批单不存在",
+            404,
+        )
+    if case.proposed_person_id_id is None:
+        return error_response(request, "EXTERNAL_PROFILE_NOT_FOUND", "候选人档案不可用", 409)
+
+    result = AgreementProvider().list_ready_agreements(
+        tenant_id=ctx.tenant_id,
+        agreement_type_code=case.category_id.agreement_type_code,
+        subject_reference_type="HR08_HIRING_CASE",
+        subject_reference_id=str(case.id),
+        subject_person_id=str(case.proposed_person_id_id),
+    )
+    if not result.is_available:
+        return error_response(
+            request,
+            result.error_code or "PROVIDER_UNAVAILABLE",
+            result.error_message or "HR07 协议服务暂不可用",
+            503,
+        )
+    body = api_root(request)
+    body["data"] = result.data or {"items": []}
+    return json_response(request, body)
 
 
 @require_hr_external_permission("hr08.hiring.approve")

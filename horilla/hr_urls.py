@@ -34,6 +34,11 @@ urlpatterns = [
     # W-B HR08 agreement confirmation is canonical-only; legacy /api/hr/v1 writes
     # are handled by the global 308 adapter below and land on this same callback.
     path(
+        "api/v1/hr/external-teachers/hiring-cases/<uuid:case_id>/agreement-options",
+        hr08_wb_agreement_api.hiring_agreement_options,
+        name="hr08-api-wb-hiring-agreement-options",
+    ),
+    path(
         "api/v1/hr/external-teachers/hiring-cases/<uuid:case_id>/agreement",
         hr08_wb_agreement_api.hiring_confirm_agreement,
         name="hr08-api-wb-hiring-agreement",

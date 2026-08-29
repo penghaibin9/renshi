@@ -106,7 +106,7 @@ urlpatterns = [
     ),
     path(
         "api/hr/v1/external-teachers/hiring-cases",
-        hiring_api.hiring_create,
+        hiring_api.hiring_collection,
         name="hr08-api-hiring-create",
     ),
     # ---- HR08-S6 IAM/教务集成 ----
@@ -168,7 +168,7 @@ urlpatterns = [
     ),
     path(
         "api/hr/v1/external-teachers/tasks",
-        tasks_api.task_create,
+        tasks_api.task_collection,
         name="hr08-api-task-create",
     ),
     path(

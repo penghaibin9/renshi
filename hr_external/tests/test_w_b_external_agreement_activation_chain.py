@@ -157,6 +157,19 @@ class WBExternalAgreementActivationChainTests(TestCase):
         self.assertEqual(agreement.status, HrContractAgreement.Status.ACTIVE)
         self.assertEqual(effective.status, HrContractVersion.Status.EFFECTIVE)
 
+        options = AgreementProvider().list_ready_agreements(
+            tenant_id=TENANT,
+            agreement_type_code=self.category.agreement_type_code,
+            subject_reference_type="HR08_HIRING_CASE",
+            subject_reference_id=str(self.case.id),
+            subject_person_id=str(self.person.id),
+        )
+        self.assertTrue(options.is_available)
+        self.assertEqual(
+            [item["id"] for item in options.data["items"]],
+            [str(agreement.id)],
+        )
+
         provider = AgreementProvider()
         wrong_tenant = provider.resolve_agreement(
             tenant_id=TENANT + 1,

@@ -113,6 +113,15 @@ def _err_response(request, exc):
     return error_response(request, code, str(exc), status)
 
 
+def task_collection(request):
+    """Canonical collection dispatcher: GET lists; POST creates."""
+    if request.method == "GET":
+        return task_list(request)
+    if request.method == "POST":
+        return task_create(request)
+    return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET 或 POST", 405)
+
+
 @require_hr_external_permission("hr08.task.view")
 def task_list(request):
     ctx, err = _ctx(request)

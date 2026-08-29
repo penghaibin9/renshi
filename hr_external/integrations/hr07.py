@@ -33,6 +33,84 @@ class AgreementProvider(BaseProvider):
         HrContractAgreement.Status.ARCHIVED: AgreementProviderStatus.TERMINATED.value,
     }
 
+    def list_ready_agreements(
+        self,
+        *,
+        tenant_id: int,
+        agreement_type_code: str,
+        subject_reference_type: str,
+        subject_reference_id: str,
+        subject_person_id: str,
+    ) -> ProviderResult:
+        """List exact subject-bound HR07 agreements eligible for confirmation."""
+        self._require_tenant(tenant_id)
+        try:
+            agreements = list(
+                HrContractAgreement.objects.filter(
+                    tenant_id=tenant_id,
+                    subject_type=HrContractAgreement.SubjectType.EXTERNAL_WORKFORCE,
+                    subject_reference_type=subject_reference_type,
+                    subject_reference_id=str(subject_reference_id),
+                    subject_person_id=subject_person_id,
+                    agreement_type=agreement_type_code,
+                    status__in=(
+                        HrContractAgreement.Status.SIGNED_WAITING_EFFECTIVE,
+                        HrContractAgreement.Status.ACTIVE,
+                        HrContractAgreement.Status.EXPIRING,
+                        HrContractAgreement.Status.RENEWAL_IN_PROGRESS,
+                    ),
+                ).order_by("-updated_at")[:20]
+            )
+            version_keys = [
+                (agreement.id, agreement.current_version_no)
+                for agreement in agreements
+                if agreement.current_version_no
+            ]
+            versions = {
+                (version.agreement_id, version.version_no): version
+                for version in HrContractVersion.objects.filter(
+                    tenant_id=tenant_id,
+                    agreement_id__in=[key[0] for key in version_keys],
+                    version_no__in=[key[1] for key in version_keys],
+                )
+            }
+            items = []
+            for agreement in agreements:
+                version = versions.get((agreement.id, agreement.current_version_no))
+                if version is None:
+                    continue
+                items.append(
+                    {
+                        "id": str(agreement.id),
+                        "agreementNo": agreement.agreement_no,
+                        "title": agreement.agreement_title,
+                        "agreementStatus": self._STATUS_MAP.get(
+                            agreement.status,
+                            AgreementProviderStatus.UNAVAILABLE.value,
+                        ),
+                        "effectiveFrom": (
+                            version.effective_from.isoformat()
+                            if version.effective_from
+                            else None
+                        ),
+                        "effectiveTo": (
+                            version.effective_to.isoformat()
+                            if version.effective_to
+                            else None
+                        ),
+                    }
+                )
+            return ProviderResult(
+                status=ProviderStatus.OK,
+                data={"items": items},
+                source_version="hr07-external-agreement-list-v1",
+            )
+        except DatabaseError:
+            return self.unavailable(
+                "PROVIDER_UNAVAILABLE",
+                "HR07 agreement provider database unavailable",
+            )
+
     def resolve_agreement(
         self,
         *,

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import date
 
 from django.utils.dateparse import parse_date
 
@@ -27,7 +28,11 @@ from hr_external.api.base import (
 )
 from hr_external.constants import ExternalHiringStatus
 from hr_external.display_labels import category_label
-from hr_external.models import HrExternalHiringCase, HrExternalTeacherProfile
+from hr_external.models import (
+    HrExternalCategory,
+    HrExternalHiringCase,
+    HrExternalTeacherProfile,
+)
 from hr_external.permissions import require_hr_external_permission
 
 _HIRING_STATUS_LABELS = {
@@ -86,6 +91,15 @@ def _case_row(case: HrExternalHiringCase) -> dict:
     }
 
 
+def hiring_collection(request):
+    """Canonical collection dispatcher: GET lists; POST creates."""
+    if request.method == "GET":
+        return hiring_list(request)
+    if request.method == "POST":
+        return hiring_create(request)
+    return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET 或 POST", 405)
+
+
 @require_hr_external_permission("hr08.hiring.review")
 def hiring_list(request):
     ctx, err = _ctx(request)
@@ -113,17 +127,66 @@ def hiring_create(request):
     except json.JSONDecodeError:
         return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON", 400)
 
+    requested_start = parse_date(payload.get("requestedStart") or "")
+    requested_end = parse_date(payload.get("requestedEnd") or "") if payload.get("requestedEnd") else None
+    if requested_start is None:
+        return error_response(request, "INVALID_REQUEST", "拟聘开始日期必填且必须有效", 400)
+    if requested_end is not None and requested_end <= requested_start:
+        return error_response(request, "INVALID_REQUEST", "拟聘结束日期必须晚于开始日期", 400)
+
+    category = HrExternalCategory.objects.filter(
+        tenant_id=ctx.tenant_id,
+        id=payload.get("categoryId"),
+    ).first()
+    if category is None:
+        return error_response(request, "EXTERNAL_CATEGORY_INVALID", "外聘类别不可用", 400)
+
+    profile_qs = HrExternalTeacherProfile.objects.filter(tenant_id=ctx.tenant_id)
+    if payload.get("proposedProfileId"):
+        profile = profile_qs.filter(id=payload.get("proposedProfileId")).select_related("person_id").first()
+    else:
+        profile = profile_qs.filter(
+            person_id_id=payload.get("proposedPersonId")
+        ).select_related("person_id").first()
+    if profile is None:
+        return error_response(request, "EXTERNAL_PROFILE_NOT_FOUND", "候选外聘档案不可用", 400)
+
+    try:
+        request_org_id = int(payload.get("requestOrgId"))
+    except (TypeError, ValueError):
+        return error_response(request, "INVALID_REQUEST", "申请学院必填", 400)
+
+    from hr_structure.public import (
+        OrganizationEvidenceUnavailable,
+        get_organization_evidence,
+    )
+
+    try:
+        organization_evidence = get_organization_evidence(
+            tenant_id=ctx.tenant_id,
+            organization_ids=[request_org_id],
+            as_of=requested_start or date.today(),
+        )
+    except OrganizationEvidenceUnavailable as exc:
+        return error_response(request, exc.code, str(exc), 409)
+    if organization_evidence.missing_organization_ids:
+        return error_response(request, "INVALID_REQUEST", "申请学院不是当前有效 HR02 组织", 400)
+
+    planned_assignments = payload.get("plannedAssignments") or []
+    if not isinstance(planned_assignments, list):
+        return error_response(request, "INVALID_REQUEST", "拟任任务必须为列表", 400)
+
     case = HrExternalHiringCase.objects.create(
         tenant_id=ctx.tenant_id,
         case_no=f"C{uuid.uuid4().hex[:8].upper()}",
-        request_org_id=payload.get("requestOrgId"),
+        request_org_id=request_org_id,
         requester_id=ctx.user_id or 0,
-        category_id=payload.get("categoryId"),
+        category_id=category,
         purpose=payload.get("purpose") or "",
-        proposed_person_id_id=payload.get("proposedPersonId"),
-        requested_start=parse_date(payload["requestedStart"]) if payload.get("requestedStart") else None,
-        requested_end=parse_date(payload["requestedEnd"]) if payload.get("requestedEnd") else None,
-        planned_assignments_json=payload.get("plannedAssignments") or [],
+        proposed_person_id=profile.person_id,
+        requested_start=requested_start,
+        requested_end=requested_end,
+        planned_assignments_json=planned_assignments,
         estimated_workload=payload.get("estimatedWorkload"),
         estimated_cost_reference=payload.get("estimatedCostReference") or "",
         status=ExternalHiringStatus.DRAFT,
