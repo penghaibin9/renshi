@@ -1,12 +1,11 @@
 {% load static %}
 {% load i18n %}
 <style>
-    /* HR V2 already renders an accurate sticky module/workspace locator on narrow
-       screens. Hiding the generic multi-segment breadcrumb here prevents deep HR
-       routes from wrapping into a tall, stale-looking header while leaving every
-       non-HR page and desktop breadcrumb unchanged. */
+    /* HR V2 marks its shared shell after page content is mounted. On narrow
+       screens the V2 page itself already renders the authoritative workspace
+       locator, so hide the generic breadcrumb only for that explicit shell. */
     @media (max-width: 760px) {
-        body:has(.hr-v2-page) #breadcrumbs-container {
+        body.hr-v2-shell #breadcrumbs-container {
             display: none !important;
         }
     }
