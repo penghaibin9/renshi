@@ -16,6 +16,7 @@
   function newIdempotencyKey() { if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID(); return "hr05-" + Date.now() + "-" + Math.random().toString(16).slice(2); }
   function localDateTimeValue(date) { const pad = function (n) { return String(n).padStart(2, "0"); }; return date.getFullYear() + "-" + pad(date.getMonth()+1) + "-" + pad(date.getDate()) + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()); }
   function localDateValue(date) { const pad = function (n) { return String(n).padStart(2, "0"); }; return date.getFullYear() + "-" + pad(date.getMonth()+1) + "-" + pad(date.getDate()); }
+  function toIsoInstant(localValue) { if (!localValue) return ""; const parsed = new Date(localValue); return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString(); }
   const root = $('[data-hr-page="onboarding-reporting-detail"]'); if (!root) return; const caseId = root.dataset.caseId || "";
 
   async function loadCase() {
@@ -29,7 +30,7 @@
     catch (err) { host.innerHTML = stateHtml("Activation Gate 读取失败", errorMessage(err), true); }
   }
   async function confirmReport() {
-    const button = $("#hr05-confirm-report"); const result = $("#hr05-report-result"); const actual = $("#hr05-report-at")?.value || ""; if (!actual) { result.innerHTML = '<span>请填写实际到校时间</span>'; return; } button.disabled = true; result.innerHTML = '<span>正在确认报到…</span>';
+    const button = $("#hr05-confirm-report"); const result = $("#hr05-report-result"); const localActual = $("#hr05-report-at")?.value || ""; const actual = toIsoInstant(localActual); if (!actual) { result.innerHTML = '<span>请填写有效的实际到校时间</span>'; return; } button.disabled = true; result.innerHTML = '<span>正在确认报到…</span>';
     try { await postForm("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId) + "/report", {actual_report_at:actual,location:$("#hr05-report-location")?.value || "",checked_identity:$("#hr05-identity-check")?.checked ? "true" : "false",notes:$("#hr05-report-notes")?.value || ""}); result.innerHTML = '<span>报到事实已由服务端确认</span>'; await Promise.all([loadCase(), loadGate()]); }
     catch (err) { result.innerHTML = '<span>' + escapeHtml(errorMessage(err)) + '</span>'; } finally { button.disabled = false; }
   }

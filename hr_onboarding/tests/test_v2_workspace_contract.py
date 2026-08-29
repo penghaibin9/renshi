@@ -78,7 +78,7 @@ class Hr05V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("任务统计：未加载", self._source(self.SURFACES[5]))
         self.assertIn("试用统计：正在读取", self._source(self.SURFACES[6]))
 
-    def test_reporting_detail_uses_real_form_posts_and_idempotent_activation(self):
+    def test_reporting_detail_uses_real_form_posts_idempotency_and_aware_timestamp(self):
         template = self._source(self.SURFACES[3])
         script = self._source(self.SCRIPTS[3])
         self.assertNotIn("btnDraft", template)
@@ -87,6 +87,9 @@ class Hr05V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn('method:"POST"', script)
         self.assertIn('"Idempotency-Key"', script)
         self.assertIn("application/x-www-form-urlencoded", script)
+        self.assertIn("function toIsoInstant", script)
+        self.assertIn("parsed.toISOString()", script)
+        self.assertIn("actual_report_at:actual", script)
 
     def test_probation_detail_does_not_fabricate_unreadable_review_state(self):
         template = self._source(self.SURFACES[7])
