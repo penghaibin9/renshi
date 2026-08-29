@@ -3,10 +3,10 @@
 The GitHub Actions workflow boots Django against an ephemeral MySQL service,
 then this process signs in through the production form and enters every HR01-
 HR18 module by clicking the rendered HR01 business-navigation cards. Modules
-that expose an explicit local workflow navigation also receive a second real
-business click. Standalone module shells are not falsely failed just because
-there is no local anchor; their entry click, JavaScript and HR API traffic are
-still exercised and recorded.
+that expose explicit local workflows receive real business clicks as well; HR03
+uses the technical browser identity seeded by the workflow to traverse the real
+roster, profile and person-level workspaces without manufacturing business KPI
+or result rows.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ PASSWORD = os.environ["HR_BROWSER_PASSWORD"]
 ARTIFACT_DIR = Path(os.getenv("HR_BROWSER_ARTIFACT_DIR", "artifacts/hr-browser-flow"))
 
 # code, HR01 hub href, canonical landing path, preferred secondary path,
-# secondary path is a hard contract?  HR01 + the consolidated workspace family
-# have explicit local navigation in source. Older standalone shells may not.
+# secondary path is a hard contract? Consolidated workspace families expose
+# explicit local navigation; older standalone shells may still lack one.
 JOURNEYS = [
     ("HR01", "/hr/overview", "/hr/overview", "/hr/todos", True),
     ("HR02", "/hr/structure/", "/hr/structure/organizations", "/hr/structure/positions", False),
@@ -171,9 +171,11 @@ def main() -> None:
                     f"{code} entry click redirected to {page.url}",
                 )
 
-                # HR03 is intentionally a standalone shell today. Exercise its
-                # real search button/API rather than inventing a navigation link.
                 if code == "HR03":
+                    require(
+                        page.locator('[data-module="HR03"][data-section="roster"]').count() == 1,
+                        "HR03 roster did not mount the V2 workspace shell",
+                    )
                     query_button = page.locator('button:has-text("查询")').first
                     require(query_button.count() > 0, "HR03 rendered no 查询 button")
                     with page.expect_response(
@@ -195,6 +197,132 @@ def main() -> None:
                             "http_status": query_response.status,
                         }
                     )
+
+                    # The workflow seeds one technical HrStaffMaster linked to the
+                    # browser identity. Use that real row to exercise profile and
+                    # all read-only child workspaces; no product KPI/result data is
+                    # manufactured merely to make screenshots non-empty.
+                    profile_link = page.locator('#rows a[href^="/hr/staff/"]').first
+                    require(profile_link.count() > 0, "HR03 roster rendered no real staff profile link")
+                    profile_href = profile_link.get_attribute("href")
+                    require(
+                        bool(profile_href) and profile_href != "/hr/staff/data-quality/",
+                        f"HR03 profile link is invalid: {profile_href}",
+                    )
+                    with page.expect_navigation(wait_until="domcontentloaded") as profile_navigation:
+                        profile_link.click()
+                    profile_response = profile_navigation.value
+                    require(profile_response is not None, "HR03 profile click had no response")
+                    require(
+                        profile_response.status < 400,
+                        f"HR03 profile click returned HTTP {profile_response.status}",
+                    )
+                    settle(page, "HR03-profile")
+                    require(
+                        urlsplit(page.url).path == profile_href,
+                        f"HR03 profile click redirected to {page.url}",
+                    )
+                    require(
+                        page.locator('[data-module="HR03"][data-section="profile"]').count() == 1,
+                        "HR03 profile did not mount the V2 workspace shell",
+                    )
+                    page.wait_for_function(
+                        """() => {
+                          const badge = document.getElementById('statusBadge');
+                          return badge && !['读取中', ''].includes(badge.textContent.trim());
+                        }""",
+                        timeout=8000,
+                    )
+                    evidence.append(
+                        {
+                            "step": "staff-profile-click",
+                            "module": code,
+                            "selector": '#rows a[href^="/hr/staff/"]',
+                            "expected_path": profile_href,
+                            "final_path": urlsplit(page.url).path,
+                            "http_status": profile_response.status,
+                        }
+                    )
+                    page.screenshot(
+                        path=str(ARTIFACT_DIR / "HR03-profile-real-runtime-click.png"),
+                        full_page=True,
+                    )
+
+                    profile_base = profile_href.rstrip("/")
+                    for child_slug, child_section in (
+                        ("assignments", "assignments"),
+                        ("backgrounds", "backgrounds"),
+                        ("materials", "materials"),
+                        ("corrections", "corrections"),
+                    ):
+                        child_path = f"{profile_base}/{child_slug}"
+                        child_selector = f'a[href="{child_path}"]'
+                        child_link = page.locator(child_selector).first
+                        require(
+                            child_link.count() > 0,
+                            f"HR03 profile rendered no {child_slug} link {child_path}",
+                        )
+                        with page.expect_navigation(wait_until="domcontentloaded") as child_navigation:
+                            child_link.click()
+                        child_response = child_navigation.value
+                        require(child_response is not None, f"HR03 {child_slug} click had no response")
+                        require(
+                            child_response.status < 400,
+                            f"HR03 {child_slug} click returned HTTP {child_response.status}",
+                        )
+                        settle(page, f"HR03-{child_slug}")
+                        require(
+                            urlsplit(page.url).path == child_path,
+                            f"HR03 {child_slug} click redirected to {page.url}",
+                        )
+                        require(
+                            page.locator(
+                                f'[data-module="HR03"][data-section="{child_section}"]'
+                            ).count()
+                            == 1,
+                            f"HR03 {child_slug} did not mount the V2 workspace shell",
+                        )
+                        evidence.append(
+                            {
+                                "step": "staff-child-workspace-click",
+                                "module": code,
+                                "workspace": child_slug,
+                                "selector": child_selector,
+                                "expected_path": child_path,
+                                "final_path": urlsplit(page.url).path,
+                                "http_status": child_response.status,
+                            }
+                        )
+                        page.screenshot(
+                            path=str(
+                                ARTIFACT_DIR
+                                / f"HR03-{child_slug}-real-runtime-click.png"
+                            ),
+                            full_page=True,
+                        )
+
+                        back_selector = f'a[href="{profile_href}"]'
+                        back_link = page.locator(back_selector).first
+                        require(
+                            back_link.count() > 0,
+                            f"HR03 {child_slug} rendered no return-to-profile link",
+                        )
+                        with page.expect_navigation(wait_until="domcontentloaded") as back_navigation:
+                            back_link.click()
+                        back_response = back_navigation.value
+                        require(
+                            back_response is not None,
+                            f"HR03 {child_slug} return click had no response",
+                        )
+                        require(
+                            back_response.status < 400,
+                            f"HR03 {child_slug} return click HTTP {back_response.status}",
+                        )
+                        settle(page, f"HR03-{child_slug}-return")
+                        require(
+                            urlsplit(page.url).path == profile_href,
+                            f"HR03 {child_slug} return redirected to {page.url}",
+                        )
 
                 target_selector = f'a[href="{target_path}"]'
                 target_link = page.locator(target_selector).first
