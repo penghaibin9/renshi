@@ -1,132 +1,152 @@
+{% extends "index.html" %}
 {% load static i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>教职工名册 · HR03</title>
-  <style>
-    :root {
-      --hr-color-primary: #2563eb; --hr-color-primary-soft: #eff6ff;
-      --hr-color-success: #16a34a; --hr-color-warning: #d97706; --hr-color-danger: #dc2626;
-      --hr-bg-page: #f5f7fa; --hr-bg-card: #fff; --hr-border-subtle: #e5e7eb;
-      --hr-text-primary: #1f2937; --hr-text-secondary: #6b7280;
-      --hr-radius-md: 12px; --hr-shadow-card: 0 1px 3px rgba(0,0,0,.08);
-    }
-    * { box-sizing: border-box; }
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: var(--hr-bg-page); color: var(--hr-text-primary); }
-    .page { max-width: 1480px; margin: 0 auto; padding: 24px; }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-    .header h1 { font-size: 22px; margin: 0; }
-    .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-    .subtitle { color: var(--hr-text-secondary); font-size: 13px; margin-top: 4px; }
-    .stats { display: flex; gap: 24px; padding: 12px 0 16px; border-bottom: 1px solid var(--hr-border-subtle); margin-bottom: 16px; }
-    .stat { font-size: 13px; color: var(--hr-text-secondary); }
-    .stat b { font-size: 20px; color: var(--hr-text-primary); display: block; }
-    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
-    .toolbar input, .toolbar select { padding: 7px 10px; border: 1px solid var(--hr-border-subtle); border-radius: 8px; font-size: 13px; background: #fff; }
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--hr-border-subtle); background: #fff; color: var(--hr-text-primary); font-size: 13px; cursor: pointer; text-decoration: none; }
-    .btn:hover { background: #f8fafc; }
-    .btn.primary { background: var(--hr-color-primary); color: #fff; border-color: var(--hr-color-primary); }
-    .btn:disabled { opacity: .55; cursor: not-allowed; }
-    table { width: 100%; border-collapse: collapse; background: var(--hr-bg-card); border-radius: var(--hr-radius-md); box-shadow: var(--hr-shadow-card); overflow: hidden; font-size: 13px; }
-    th { text-align: left; padding: 10px 12px; background: #f9fafb; color: var(--hr-text-secondary); font-weight: 600; border-bottom: 1px solid var(--hr-border-subtle); }
-    td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
-    tr:hover td { background: #f8fafc; }
-    .name { font-weight: 600; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
-    .badge.active { background: #dcfce7; color: #166534; }
-    .badge.pending { background: #fef9c3; color: #854d0e; }
-    .badge.departed, .badge.retired { background: #fee2e2; color: #991b1b; }
-    .link { color: var(--hr-color-primary); cursor: pointer; text-decoration: none; }
-    .pager { display: flex; gap: 8px; align-items: center; margin-top: 16px; font-size: 13px; color: var(--hr-text-secondary); }
-    .empty { text-align: center; padding: 48px; color: var(--hr-text-secondary); }
-    .notice { display: none; margin: 0 0 14px; padding: 10px 12px; border-radius: 9px; font-size: 13px; line-height: 1.55; }
-    .notice.show { display: block; }
-    .notice.info { background: #eff6ff; color: #1d4ed8; }
-    .notice.success { background: #ecfdf3; color: #166534; }
-    .notice.error { background: #fef2f2; color: #991b1b; }
-    .import-panel { display: none; margin: 0 0 16px; padding: 16px; border: 1px solid var(--hr-border-subtle); border-radius: 12px; background: #fff; box-shadow: var(--hr-shadow-card); }
-    .import-panel.open { display: block; }
-    .import-panel h2 { margin: 0 0 5px; font-size: 16px; }
-    .import-panel p { margin: 0 0 12px; color: var(--hr-text-secondary); font-size: 12px; line-height: 1.6; }
-    .import-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .import-summary { margin-top: 12px; font-size: 13px; line-height: 1.6; }
-    .issue-list { margin: 8px 0 0; padding-left: 20px; color: #991b1b; font-size: 12px; }
-    @media (max-width: 760px) {
-      .page { padding: 14px; }
-      .header { flex-direction: column; }
-      .header-actions { justify-content: flex-start; }
-      .stats { overflow-x: auto; }
-      table { min-width: 920px; }
-      .page { overflow-x: auto; }
-    }
-  </style>
-</head>
-<body>
-  <div class="page">
-    <div class="header">
-      <div>
-        <h1>教职工名册</h1>
-        <div class="subtitle">统一查询学校教职工当前人事事实 · 数据截至 <span id="asOf">--</span></div>
-      </div>
-      <div class="header-actions">
-        <a class="btn primary" href="/hr/onboarding/">入职建档</a>
-        <a class="btn" href="/hr/staff/data-quality/">数据质量</a>
-        <button class="btn" type="button" id="importToggle">导入</button>
-        <button class="btn" type="button" id="exportCurrent">导出当前页</button>
-      </div>
-    </div>
 
-    <div id="notice" class="notice" role="status" aria-live="polite"></div>
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+{% endblock styles %}
 
-    <section id="importPanel" class="import-panel" aria-label="教职工导入">
-      <h2>批量导入教职工</h2>
-      <p>先上传 CSV 到校验区，确认有效行与错误行后再正式提交。单次最多 5000 行、5 MB；身份证明等敏感字段不会在错误提示中回显。</p>
-      <div class="import-actions">
-        <input type="file" id="importFile" accept=".csv,text/csv">
-        <button class="btn primary" type="button" id="importValidate">上传并校验</button>
-        <button class="btn" type="button" id="importCommit" disabled>确认提交有效行</button>
-        <button class="btn" type="button" id="downloadTemplate">下载 CSV 模板</button>
-        <button class="btn" type="button" id="importClose">关闭</button>
-      </div>
-      <div id="importSummary" class="import-summary"></div>
-      <ol id="importIssues" class="issue-list"></ol>
-    </section>
-
-    <div class="stats" id="stats">载入中…</div>
-    <div class="toolbar">
-      <input id="keyword" placeholder="姓名/工号" />
-      <select id="status">
-        <option value="">全部状态</option>
-        <option value="ACTIVE">在职</option>
-        <option value="PENDING_ENTRY">待入职</option>
-        <option value="DEPARTED">已离职</option>
-        <option value="RETIRED">已退休</option>
-      </select>
-      <select id="category">
-        <option value="">人员类别</option>
-        <option value="TEACHER">专任教师</option>
-        <option value="ADMIN">行政管理</option>
-      </select>
-      <button class="btn primary" type="button" id="searchBtn">查询</button>
-    </div>
-    <div style="overflow-x:auto">
-      <table>
-        <thead>
-          <tr><th>姓名/工号</th><th>单位</th><th>主岗</th><th>人员类别</th><th>状态</th><th>入校日</th><th>未来变更</th></tr>
-        </thead>
-        <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="pager">
-      <button class="btn" type="button" id="prev">上一页</button>
-      <span id="pageInfo">-</span>
-      <button class="btn" type="button" id="next">下一页</button>
-    </div>
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="roster">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR03 教职工主档</span>
+    <strong>教职工名册</strong>
   </div>
 
-  <script>
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-title">教职工名册</h1>
+      <p class="hr-v2-subtitle">统一查询当前学校教职工正式人事事实。先确认人员状态、单位与主岗，再进入个人主档查看任职履历、教育资格、材料和更正历史；未来变更保持显式标记。</p>
+    </div>
+    <div class="hr-v2-context" aria-label="当前工作区说明">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>事实</strong> 人员主档</span>
+      <span class="hr-v2-context__item"><strong>权限</strong> Authority 实时判定</span>
+    </div>
+  </header>
+
+  <nav class="hr03-nav" aria-label="教职工主档工作区导航">
+    <a class="is-active" href="/hr/staff/">教职工名册</a>
+    <a href="/hr/staff/data-quality/">数据质量</a>
+  </nav>
+
+  <div class="hr03-actions" aria-label="名册操作">
+    <a class="btn primary" href="/hr/onboarding/">入职建档</a>
+    <button class="btn" type="button" id="importToggle">批量导入</button>
+    <button class="btn" type="button" id="exportCurrent">导出当前页</button>
+  </div>
+
+  <div id="notice" class="hr03-notice" role="status" aria-live="polite"></div>
+
+  <section id="importPanel" class="hr-v2-panel hr03-import-panel" aria-labelledby="hr03-import-title">
+    <div class="hr-v2-panel__head">
+      <div>
+        <h3 id="hr03-import-title">批量导入教职工</h3>
+        <p>先上传 CSV 到校验区，确认有效行与错误行后再正式提交。单次最多 5000 行、5 MB；身份证明等敏感字段不会在错误提示中回显。</p>
+      </div>
+    </div>
+    <div class="hr03-import-actions">
+      <div class="hr03-import-file"><input type="file" id="importFile" accept=".csv,text/csv"></div>
+      <button class="btn primary" type="button" id="importValidate">上传并校验</button>
+      <button class="btn" type="button" id="importCommit" disabled>确认提交有效行</button>
+      <button class="btn" type="button" id="downloadTemplate">下载 CSV 模板</button>
+      <button class="btn" type="button" id="importClose">关闭</button>
+    </div>
+    <div id="importSummary" class="hr03-import-summary"></div>
+    <ol id="importIssues" class="hr03-issue-list"></ol>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-summary-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr03-summary-title">当前名册结论</h2>
+        <p>所有数量均由当前学校名册接口返回；页面不预填零值，也不把未知状态伪装成正常。</p>
+      </div>
+      <span class="hr-v2-section__action">数据截至 <strong id="asOf">—</strong></span>
+    </div>
+    <div class="hr-v2-summary-row hr03-stats" id="stats">
+      <div class="hr-v2-state"><strong>正在读取正式名册</strong><span>正在确认人数、页码与数据口径。</span></div>
+    </div>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-filter-title">
+    <div class="hr-v2-panel hr03-filter-panel">
+      <div class="hr-v2-panel__head">
+        <div>
+          <h3 id="hr03-filter-title">查询条件</h3>
+          <p>按姓名/工号、在职状态和人员类别缩小当前学校数据范围。</p>
+        </div>
+      </div>
+      <div class="hr03-toolbar">
+        <div class="hr03-field">
+          <label for="keyword">姓名 / 工号</label>
+          <input id="keyword" placeholder="输入姓名或工号" autocomplete="off">
+        </div>
+        <div class="hr03-field">
+          <label for="status">人员状态</label>
+          <select id="status">
+            <option value="">全部状态</option>
+            <option value="ACTIVE">在职</option>
+            <option value="PENDING_ENTRY">待入职</option>
+            <option value="DEPARTED">已离职</option>
+            <option value="RETIRED">已退休</option>
+          </select>
+        </div>
+        <div class="hr03-field">
+          <label for="category">人员类别</label>
+          <select id="category">
+            <option value="">全部类别</option>
+            <option value="TEACHER">专任教师</option>
+            <option value="ADMIN">行政管理</option>
+          </select>
+        </div>
+        <button class="btn primary" type="button" id="searchBtn">查询</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-ledger-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr03-ledger-title">教职工正式名册</h2>
+        <p>点击姓名进入个人主档；单位、主岗、人员类别和未来变更均读取正式接口结果。</p>
+      </div>
+      <a class="hr-v2-section__action" href="/hr/staff/data-quality/">查看数据质量 →</a>
+    </div>
+    <div class="hr-v2-panel hr03-ledger-panel">
+      <div class="hr03-table-wrap">
+        <table class="hr03-table">
+          <thead>
+            <tr><th>姓名 / 工号</th><th>单位</th><th>主岗</th><th>人员类别</th><th>状态</th><th>入校日</th><th>未来变更</th></tr>
+          </thead>
+          <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="hr03-pager">
+        <button class="btn" type="button" id="prev">上一页</button>
+        <span id="pageInfo">—</span>
+        <button class="btn" type="button" id="next">下一页</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note">
+    <strong>事实边界</strong>
+    <span>名册只展示当前 HR03 Authority 返回的正式人员事实。导入先校验后提交；导出按当前页真实 staffId 创建受控下载任务；个人敏感字段不在名册页展开。</span>
+  </div>
+</div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
+<script>
+  (function () {
+    "use strict";
+
     let page = 1;
     let lastItems = [];
     let currentImportJobId = null;
@@ -154,7 +174,7 @@
     function showNotice(message, kind="info") {
       const el = document.getElementById("notice");
       el.textContent = message;
-      el.className = `notice show ${kind}`;
+      el.className = `hr03-notice show ${kind}`;
     }
 
     async function loadRows(p) {
@@ -171,14 +191,15 @@
       if (!resp.ok) {
         lastItems = [];
         document.getElementById("rows").innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(apiMessage(body, `查询失败（${resp.status}）`))}</td></tr>`;
+        document.getElementById("stats").innerHTML = `<div class="hr-v2-state" data-state="error"><strong>名册读取失败</strong><span>${escapeHtml(apiMessage(body, `HTTP ${resp.status}`))}</span></div>`;
         document.getElementById("exportCurrent").disabled = true;
         return;
       }
-      document.getElementById("asOf").textContent = body.asOf || "-";
+      document.getElementById("asOf").textContent = body.asOf || "—";
       document.getElementById("stats").innerHTML =
-        `<div class="stat"><b>${body.total ?? "-"}</b>总计</div>` +
-        `<div class="stat"><b>${body.page ?? 1}</b>当前页</div>` +
-        `<div class="stat">数据口径 <b>${escapeHtml(body.dataBasis ?? "-")}</b></div>`;
+        `<div class="hr-v2-summary-cell"><strong>${body.total ?? "—"}</strong><span>符合当前条件的教职工</span></div>` +
+        `<div class="hr-v2-summary-cell"><strong>${body.page ?? "—"}</strong><span>当前页</span></div>` +
+        `<div class="hr-v2-summary-cell"><strong>${escapeHtml(body.dataBasis ?? "—")}</strong><span>数据口径</span></div>`;
       const tbody = document.getElementById("rows");
       lastItems = Array.isArray(body.items) ? body.items : [];
       document.getElementById("exportCurrent").disabled = lastItems.length === 0;
@@ -188,13 +209,13 @@
         tbody.innerHTML = lastItems.map(r => {
           const [label, cls] = statusLabels[r.current_employment_status] || [escapeHtml(r.current_employment_status), ""];
           return `<tr data-id="${escapeHtml(r.staff_id)}">
-            <td><a class="name link" href="/hr/staff/${encodeURIComponent(r.staff_id)}/">${escapeHtml(r.legal_name)}</a> <span style="color:#6b7280">${escapeHtml(r.staff_no)}</span></td>
-            <td>${escapeHtml(r.org_name || "-")}</td>
-            <td>${escapeHtml(r.position_name || "-")}</td>
-            <td>${escapeHtml(r.staff_category_code || "-")}</td>
+            <td><a class="name link" href="/hr/staff/${encodeURIComponent(r.staff_id)}/">${escapeHtml(r.legal_name)}</a> <span class="hr-meta">${escapeHtml(r.staff_no)}</span></td>
+            <td>${escapeHtml(r.org_name || "—")}</td>
+            <td>${escapeHtml(r.position_name || "—")}</td>
+            <td>${escapeHtml(r.staff_category_code || "—")}</td>
             <td><span class="badge ${cls}">${label}</span></td>
-            <td>${escapeHtml(r.date_joining || "-")}</td>
-            <td>${r.has_future_change ? "有未来变更" : "-"}</td>
+            <td>${escapeHtml(r.date_joining || "—")}</td>
+            <td>${r.has_future_change ? "有未来变更" : "—"}</td>
           </tr>`;
         }).join("");
       }
@@ -325,6 +346,6 @@
     document.getElementById("importCommit").addEventListener("click", commitImport);
     document.getElementById("downloadTemplate").addEventListener("click", downloadTemplate);
     loadRows(1);
-  </script>
-</body>
-</html>
+  })();
+</script>
+{% endblock scripts %}
