@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import date, timedelta
+from decimal import Decimal
 from pathlib import Path
 from unittest import skipUnless
 
@@ -119,6 +120,21 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             post_catalog_id=self.source_position.post_catalog_version_id,
             source_business_type="MIGRATION_VERIFIED",
         )
+        self.secondary_position = make_position(
+            self.company.pk,
+            self.target_org,
+            "VISUAL-SECONDARY-POSITION",
+        )
+        self.secondary_assignment = AssignmentService(self.company.pk).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type=AssignmentType.CONCURRENT,
+            effective_from=date(2025, 9, 1),
+            organization_id=self.target_org,
+            position_id=self.secondary_position,
+            post_catalog_id=self.secondary_position.post_catalog_version_id,
+            fte=Decimal("0.20"),
+            source_business_type="MIGRATION_VERIFIED",
+        )
         self.action = make_action(
             self.company.pk,
             code="ORG_TRANSFER",
@@ -166,6 +182,18 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             action_code="TEMPORARY_SECONDMENT",
             code="TEMPORARY_WORK_NEED",
             name="临时工作需要",
+        )
+        self.end_secondary_action = make_action(
+            self.company.pk,
+            code="END_SECONDARY_ASSIGNMENT",
+            name="结束兼岗",
+            enabled=True,
+        )
+        self.end_secondary_reason = make_reason(
+            self.company.pk,
+            action_code="END_SECONDARY_ASSIGNMENT",
+            code="SECONDARY_DUTY_END",
+            name="兼岗任务结束",
         )
 
         client = Client()
@@ -544,3 +572,95 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         self.assertEqual(api_failures, [], "HR06 temporary API failures: " + " | ".join(api_failures))
         self.assertEqual(page_errors, [], "HR06 temporary page errors: " + " | ".join(page_errors))
         self.assertEqual(console_errors, [], "HR06 temporary console errors: " + " | ".join(console_errors))
+
+    def test_real_browser_selects_exact_concurrent_assignment_for_end_draft(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+
+        api_failures: list[str] = []
+        page_errors: list[str] = []
+        console_errors: list[str] = []
+        effective_date = (date.today() + timedelta(days=30)).isoformat()
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                context = self._browser_context(browser)
+                page = context.new_page()
+                self._record_console(page, page_errors, console_errors)
+
+                def record_response(response):
+                    if "/api/v1/hr/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
+
+                page.on("response", record_response)
+                response = page.goto(self.live_server_url + "/hr/changes/job-identity", wait_until="networkidle")
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-identity-bootstrap-state');
+                      return host && !host.textContent.includes('正在读取 HR06');
+                    }""",
+                    timeout=8000,
+                )
+                page.fill("#hr06-identity-staff-keyword", self.staff.staff_no)
+                page.click("#hr06-identity-search-staff")
+                page.wait_for_selector(".hr06-staff-option", timeout=8000)
+                page.locator(".hr06-staff-option").first.click()
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-identity-selected-staff');
+                      return host && host.textContent.includes('当前人员类别');
+                    }""",
+                    timeout=8000,
+                )
+                page.fill("#hr06-identity-effective-at", effective_date)
+                page.select_option("#hr06-identity-action", str(self.end_secondary_action.id))
+                page.wait_for_function(
+                    """() => {
+                      const node = document.getElementById('hr06-identity-reason');
+                      return node && !node.disabled && node.options.length > 1;
+                    }""",
+                    timeout=5000,
+                )
+                page.select_option("#hr06-identity-reason", str(self.end_secondary_reason.id))
+                page.wait_for_function(
+                    """() => {
+                      const node = document.getElementById('hr06-identity-source-assignment');
+                      return node && !node.disabled && node.options.length > 1;
+                    }""",
+                    timeout=8000,
+                )
+                page.select_option("#hr06-identity-source-assignment", str(self.secondary_assignment.id))
+                page.wait_for_function(
+                    """() => !document.getElementById('hr06-identity-create').disabled""",
+                    timeout=5000,
+                )
+                page.click("#hr06-identity-create")
+                page.wait_for_url(re.compile(r"/hr/changes/[0-9a-f-]{36}$"), timeout=10000)
+                self.assertIn("草稿", page.locator("body").inner_text())
+                page.screenshot(path=str(self.out_dir / "desktop-created-end-secondary-draft.png"), full_page=True)
+                context.close()
+            finally:
+                browser.close()
+
+        from hr_changes.models import HrPersonnelChangeCase
+
+        cases = list(HrPersonnelChangeCase.objects.filter(tenant_id=self.company.pk))
+        self.assertEqual(len(cases), 1)
+        created = cases[0]
+        self.assertEqual(created.status, "DRAFT")
+        self.assertEqual(created.staff_master_id_id, self.staff.id)
+        self.assertEqual(created.action_id_id, self.end_secondary_action.id)
+        self.assertEqual(created.reason_id_id, self.end_secondary_reason.id)
+        self.assertEqual(created.source_assignment_id_id, self.secondary_assignment.id)
+        self.assertEqual(created.source_org_id_id, self.target_org.id)
+        self.assertEqual(created.source_position_id_id, self.secondary_position.id)
+        proposal = created.proposals.get(field_code="effective_to")
+        self.assertEqual(proposal.proposed_value_ref, effective_date)
+        self.assertEqual(api_failures, [], "HR06 end-secondary API failures: " + " | ".join(api_failures))
+        self.assertEqual(page_errors, [], "HR06 end-secondary page errors: " + " | ".join(page_errors))
+        self.assertEqual(console_errors, [], "HR06 end-secondary console errors: " + " | ".join(console_errors))

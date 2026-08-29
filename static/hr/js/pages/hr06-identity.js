@@ -4,8 +4,19 @@
   const SUPPORTED_IDENTITY_ACTIONS = new Set([
     "EMPLOYEE_CATEGORY_CHANGE",
     "EMPLOYMENT_TYPE_CHANGE",
+    "MANAGER_CHANGE",
+    "PRIMARY_ASSIGNMENT_SWITCH",
+    "ADD_SECONDARY_ASSIGNMENT",
+    "END_SECONDARY_ASSIGNMENT",
   ]);
-  const state = { bootstrap: null, selectedStaff: null, profile: null };
+  const state = {
+    bootstrap: null,
+    selectedStaff: null,
+    selectedManager: null,
+    profile: null,
+    organizations: null,
+    organizationPromise: null,
+  };
 
   const keywordInput = document.getElementById("hr06-identity-staff-keyword");
   const searchButton = document.getElementById("hr06-identity-search-staff");
@@ -57,6 +68,11 @@
     const facts = state.profile && state.profile.currentFacts;
     const relationships = (facts && facts.relationships) || [];
     return relationships.length ? relationships[0] : null;
+  }
+
+  function currentPrimary() {
+    const facts = state.profile && state.profile.currentFacts;
+    return facts && facts.primaryAssignment ? facts.primaryAssignment : null;
   }
 
   function optionLabel(group, code) {
@@ -125,6 +141,7 @@
 
   async function chooseStaff(item) {
     state.selectedStaff = item;
+    state.selectedManager = null;
     state.profile = null;
     selectedStaff.hidden = false;
     selectedStaff.textContent = "正在读取 HR03 当前身份事实…";
@@ -144,7 +161,7 @@
       const facts = document.createElement("span");
       facts.textContent = `当前人员类别：${optionLabel("staffCategories", header.staffCategoryCode)} · 当前聘用关系：${relationship ? optionLabel("relationshipTypes", relationship.relationshipType) : "未返回开放关系"}`;
       selectedStaff.append(title, facts);
-      renderTargetFields();
+      await renderTargetFields();
     } catch (error) {
       setMeta(selectedStaff, window.HrApi.apiErrorToMessage(error), "error");
     }
@@ -190,7 +207,229 @@
     return select;
   }
 
-  function renderTargetFields() {
+  function appendNumberField(id, labelText, value) {
+    const label = document.createElement("label");
+    label.className = "hr06-field";
+    const span = document.createElement("span");
+    span.textContent = labelText;
+    const input = document.createElement("input");
+    input.id = id;
+    input.type = "number";
+    input.min = "0.01";
+    input.max = "0.50";
+    input.step = "0.01";
+    input.value = value;
+    input.addEventListener("input", updateCreateAvailability);
+    label.append(span, input);
+    targetFields.appendChild(label);
+    return input;
+  }
+
+  function appendState(titleText, detailText, stateName) {
+    const node = document.createElement("div");
+    node.className = "hr06-state";
+    if (stateName) node.dataset.state = stateName;
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const detail = document.createElement("span");
+    detail.textContent = detailText;
+    node.append(title, detail);
+    targetFields.appendChild(node);
+    return node;
+  }
+
+  async function fetchOrganizations() {
+    if (state.organizations) return state.organizations;
+    if (state.organizationPromise) return state.organizationPromise;
+    state.organizationPromise = (async () => {
+      const bootstrap = await window.HrApi.request(
+        "/api/v1/hr/structure/organizations/bootstrap",
+        { retries: 1 }
+      );
+      const root = bootstrap.data && bootstrap.data.root;
+      if (!root || !root.id) throw new Error("HR02_ORG_ROOT_UNAVAILABLE");
+      const items = [{ id: String(root.id), code: root.code || "", name: root.name || root.code }];
+      const queue = [String(root.id)];
+      const visited = new Set();
+      while (queue.length && items.length < 300) {
+        const parentId = queue.shift();
+        if (visited.has(parentId)) continue;
+        visited.add(parentId);
+        const response = await window.HrApi.request(
+          "/api/v1/hr/structure/organizations/tree",
+          { params: { parent_id: parentId }, retries: 1 }
+        );
+        ((response.data && response.data.nodes) || []).forEach((node) => {
+          const id = String(node.id);
+          if (!items.some((item) => item.id === id)) {
+            items.push({ id, code: node.stable_code || "", name: node.name || node.stable_code || id });
+          }
+          if (node.has_children) queue.push(id);
+        });
+      }
+      state.organizations = items;
+      return items;
+    })();
+    try {
+      return await state.organizationPromise;
+    } finally {
+      state.organizationPromise = null;
+    }
+  }
+
+  async function fetchPositions(organizationId) {
+    if (!organizationId) return [];
+    const items = [];
+    let page = 1;
+    let total = 0;
+    do {
+      const response = await window.HrApi.request("/api/v1/hr/structure/positions", {
+        params: { organizationId, lifecycleStatus: "ACTIVE", page, page_size: 100 },
+        retries: 1,
+      });
+      const batch = (response.data && response.data.items) || [];
+      total = Number(response.data && response.data.total) || batch.length;
+      items.push(...batch);
+      page += 1;
+    } while (items.length < total && page <= 10);
+    return items;
+  }
+
+  async function appendAssignmentTargetFields(actionCode) {
+    const organizations = await fetchOrganizations();
+    const orgSelect = appendSelectField(
+      "hr06-identity-target-org",
+      actionCode === "ADD_SECONDARY_ASSIGNMENT" ? "兼岗组织" : "新主岗组织",
+      [],
+      "请选择 HR02 组织",
+      false
+    );
+    organizations.forEach((item) => {
+      addOption(orgSelect, item.id, `${item.name}${item.code ? ` · ${item.code}` : ""}`);
+    });
+    const positionSelect = appendSelectField(
+      "hr06-identity-target-position",
+      actionCode === "ADD_SECONDARY_ASSIGNMENT" ? "兼岗岗位" : "新主岗岗位",
+      [],
+      "请先选择组织",
+      false
+    );
+    positionSelect.disabled = true;
+    orgSelect.addEventListener("change", async () => {
+      resetSelect(positionSelect, "正在读取 HR02 岗位…");
+      positionSelect.disabled = true;
+      try {
+        const positions = await fetchPositions(orgSelect.value);
+        resetSelect(positionSelect, positions.length ? "请选择在用岗位" : "该组织没有在用岗位");
+        positions.forEach((item) => {
+          const label = item.positionCode || item.position_code || item.id;
+          addOption(positionSelect, item.id, label);
+        });
+        positionSelect.disabled = positions.length === 0;
+      } catch (error) {
+        resetSelect(positionSelect, window.HrApi.apiErrorToMessage(error));
+      }
+      updateCreateAvailability();
+    });
+    if (actionCode === "ADD_SECONDARY_ASSIGNMENT") {
+      appendNumberField("hr06-identity-fte", "兼岗 FTE（总 FTE 上限 1.50）", "0.20");
+    }
+  }
+
+  function appendManagerFields() {
+    state.selectedManager = null;
+    const wrapper = document.createElement("div");
+    wrapper.className = "hr06-field hr06-field--grow";
+    const label = document.createElement("span");
+    label.textContent = "新直属上级（从 HR03 搜索）";
+    const input = document.createElement("input");
+    input.id = "hr06-identity-manager-keyword";
+    input.type = "search";
+    input.placeholder = "输入主管姓名或工号";
+    const button = document.createElement("button");
+    button.id = "hr06-identity-search-manager";
+    button.type = "button";
+    button.className = "hr06-button hr06-button--secondary";
+    button.textContent = "搜索主管";
+    const results = document.createElement("div");
+    results.id = "hr06-identity-manager-results";
+    results.className = "hr06-staff-results";
+    results.textContent = "尚未选择主管";
+    button.addEventListener("click", async () => {
+      const keyword = input.value.trim();
+      if (!keyword) return;
+      button.disabled = true;
+      results.textContent = "正在从 HR03 搜索主管…";
+      try {
+        const response = await window.HrApi.request("/api/v1/hr/staff", {
+          params: { keyword, page: 1, pageSize: 20 },
+          retries: 1,
+        });
+        const items = ((response.data && response.data.items) || []).filter(
+          (item) => !state.selectedStaff || item.staff_id !== state.selectedStaff.staff_id
+        );
+        results.replaceChildren();
+        if (!items.length) {
+          results.textContent = "没有可选择的其他教职工。";
+        }
+        items.forEach((item) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "hr06-staff-option";
+          option.textContent = `${item.legal_name || "未命名"} · ${item.staff_no || "无工号"}`;
+          option.addEventListener("click", () => {
+            state.selectedManager = item;
+            results.replaceChildren();
+            const selected = document.createElement("strong");
+            selected.textContent = `已选择主管：${item.legal_name || "未命名"}（${item.staff_no || "无工号"}）`;
+            results.appendChild(selected);
+            updateCreateAvailability();
+          });
+          results.appendChild(option);
+        });
+      } catch (error) {
+        results.textContent = window.HrApi.apiErrorToMessage(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    wrapper.append(label, input, button, results);
+    targetFields.appendChild(wrapper);
+  }
+
+  async function appendConcurrentAssignmentFields() {
+    const select = appendSelectField(
+      "hr06-identity-source-assignment",
+      "要结束的当前兼岗",
+      [],
+      "正在读取 HR03 当前兼岗…",
+      false
+    );
+    select.disabled = true;
+    if (!state.selectedStaff) return;
+    try {
+      const response = await window.HrApi.request(
+        `/api/v1/hr/staff/${encodeURIComponent(state.selectedStaff.staff_id)}/assignments`,
+        { params: effectiveAt.value ? { asOf: effectiveAt.value } : {}, retries: 1 }
+      );
+      const active = (response.data && response.data.data && response.data.data.active) || [];
+      const concurrent = active.filter((item) => item.assignmentType === "CONCURRENT");
+      resetSelect(select, concurrent.length ? "请选择真实兼岗" : "生效日没有可结束的兼岗");
+      concurrent.forEach((item) => {
+        addOption(
+          select,
+          item.id,
+          `${item.orgName || "组织未返回"} · ${item.positionName || "岗位未返回"} · FTE ${item.fte || "—"}`
+        );
+      });
+      select.disabled = concurrent.length === 0;
+    } catch (error) {
+      resetSelect(select, window.HrApi.apiErrorToMessage(error));
+    }
+    updateCreateAvailability();
+  }
+
+  async function renderTargetFields() {
     targetFields.replaceChildren();
     const actionCode = selectedActionCode();
     const options = (state.bootstrap && state.bootstrap.identityOptions) || {};
@@ -246,6 +485,27 @@
       );
       employmentSelect.dataset.currentValue = relationship.employmentType || "";
     }
+    if (actionCode === "MANAGER_CHANGE") {
+      if (!currentPrimary()) {
+        appendState("当前没有可继承的主岗", "直属上级变更必须基于 HR03 当前主岗形成新事实段。", "error");
+      } else {
+        appendManagerFields();
+      }
+    }
+    if (actionCode === "PRIMARY_ASSIGNMENT_SWITCH" || actionCode === "ADD_SECONDARY_ASSIGNMENT") {
+      if (!currentRelationship()) {
+        appendState("当前没有开放聘用关系", "不能创建主岗或兼岗任职事实。", "error");
+      } else {
+        try {
+          await appendAssignmentTargetFields(actionCode);
+        } catch (error) {
+          appendState("HR02 目标读取失败", window.HrApi.apiErrorToMessage(error), "error");
+        }
+      }
+    }
+    if (actionCode === "END_SECONDARY_ASSIGNMENT") {
+      await appendConcurrentAssignmentFields();
+    }
     updateCreateAvailability();
   }
 
@@ -264,6 +524,27 @@
         employment && employment.value && employment.value !== employment.dataset.currentValue
       );
       return relationshipChanged || employmentChanged;
+    }
+    if (actionCode === "MANAGER_CHANGE") {
+      return Boolean(state.selectedManager && currentPrimary());
+    }
+    if (actionCode === "PRIMARY_ASSIGNMENT_SWITCH") {
+      const organization = document.getElementById("hr06-identity-target-org");
+      const position = document.getElementById("hr06-identity-target-position");
+      return Boolean(organization && organization.value && position && position.value);
+    }
+    if (actionCode === "ADD_SECONDARY_ASSIGNMENT") {
+      const organization = document.getElementById("hr06-identity-target-org");
+      const position = document.getElementById("hr06-identity-target-position");
+      const fte = document.getElementById("hr06-identity-fte");
+      return Boolean(
+        organization && organization.value && position && position.value &&
+        fte && Number(fte.value) > 0 && Number(fte.value) <= 0.5
+      );
+    }
+    if (actionCode === "END_SECONDARY_ASSIGNMENT") {
+      const assignment = document.getElementById("hr06-identity-source-assignment");
+      return Boolean(assignment && assignment.value);
     }
     return false;
   }
@@ -314,6 +595,54 @@
       }
       return proposals;
     }
+    if (actionCode === "MANAGER_CHANGE") {
+      return [
+        {
+          domain: "assignment",
+          field_code: "reporting_staff",
+          proposed_value_ref: state.selectedManager.staff_id,
+          proposed_value_display: state.selectedManager.legal_name || state.selectedManager.staff_no,
+        },
+      ];
+    }
+    if (actionCode === "PRIMARY_ASSIGNMENT_SWITCH" || actionCode === "ADD_SECONDARY_ASSIGNMENT") {
+      const organization = document.getElementById("hr06-identity-target-org");
+      const position = document.getElementById("hr06-identity-target-position");
+      const proposals = [
+        {
+          domain: "assignment",
+          field_code: "organization",
+          proposed_value_ref: organization.value,
+          proposed_value_display: organization.selectedOptions[0].textContent,
+        },
+        {
+          domain: "assignment",
+          field_code: "position",
+          proposed_value_ref: position.value,
+          proposed_value_display: position.selectedOptions[0].textContent,
+        },
+      ];
+      if (actionCode === "ADD_SECONDARY_ASSIGNMENT") {
+        const fte = document.getElementById("hr06-identity-fte");
+        proposals.push({
+          domain: "assignment",
+          field_code: "fte",
+          proposed_value_ref: fte.value,
+          proposed_value_display: fte.value,
+        });
+      }
+      return proposals;
+    }
+    if (actionCode === "END_SECONDARY_ASSIGNMENT") {
+      return [
+        {
+          domain: "relationship",
+          field_code: "effective_to",
+          proposed_value_ref: effectiveAt.value,
+          proposed_value_display: effectiveAt.value,
+        },
+      ];
+    }
     return [];
   }
 
@@ -326,16 +655,20 @@
     createButton.disabled = true;
     setMeta(createResult, "正在创建身份变更草稿…");
     try {
+      const body = {
+        staffMasterId: state.selectedStaff.staff_id,
+        actionId: actionSelect.value,
+        reasonId: reasonSelect.value,
+        requestedEffectiveAt: effectiveAt.value,
+        priority: prioritySelect.value || "NORMAL",
+        proposals: buildProposals(),
+      };
+      if (selectedActionCode() === "END_SECONDARY_ASSIGNMENT") {
+        body.sourceAssignmentId = document.getElementById("hr06-identity-source-assignment").value;
+      }
       const response = await window.HrApi.request("/api/v1/hr/changes/identity-changes", {
         method: "POST",
-        body: {
-          staffMasterId: state.selectedStaff.staff_id,
-          actionId: actionSelect.value,
-          reasonId: reasonSelect.value,
-          requestedEffectiveAt: effectiveAt.value,
-          priority: prioritySelect.value || "NORMAL",
-          proposals: buildProposals(),
-        },
+        body,
       });
       const created = response.data && response.data.data;
       if (!created || !created.id) throw new Error("HR06_IDENTITY_CREATE_RESPONSE_INVALID");
@@ -362,7 +695,7 @@
       }
       prioritySelect.disabled = false;
       fillReasons();
-      renderTargetFields();
+      await renderTargetFields();
       setMeta(bootstrapState, "身份动作、原因与 HR03 受控字典已从当前学校服务端读取。", "success");
     } catch (error) {
       setMeta(bootstrapState, window.HrApi.apiErrorToMessage(error), "error");
@@ -373,12 +706,19 @@
     }
   }
 
-  actionSelect.addEventListener("change", () => {
+  actionSelect.addEventListener("change", async () => {
+    state.selectedManager = null;
     fillReasons();
-    renderTargetFields();
+    await renderTargetFields();
   });
   reasonSelect.addEventListener("change", updateCreateAvailability);
-  effectiveAt.addEventListener("change", updateCreateAvailability);
+  effectiveAt.addEventListener("change", async () => {
+    if (selectedActionCode() === "END_SECONDARY_ASSIGNMENT") {
+      await renderTargetFields();
+    } else {
+      updateCreateAvailability();
+    }
+  });
   searchButton.addEventListener("click", searchStaff);
   keywordInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {

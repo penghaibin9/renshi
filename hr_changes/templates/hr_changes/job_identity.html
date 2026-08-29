@@ -28,9 +28,9 @@
   <section class="hr06-panel">
     <div class="hr06-section-head"><div><h2>当前可执行能力</h2><p>页面不会因为动作已存在于枚举就假装可用；必须同时具备创建服务、影响 gate 与 Authority writer。</p></div></div>
     <div class="hr06-capability-grid">
-      <div class="hr06-capability" data-state="ready"><strong>已开放</strong><span>人员类别变更、用工性质变更</span><small>已有 HR03 Authority writer，并由端到端 Apply 测试锁定。</small></div>
+      <div class="hr06-capability" data-state="ready"><strong>已开放</strong><span>人员类别、用工性质、直属上级、主岗切换、新增/结束兼岗</span><small>均已有 HR03 Authority writer 与端到端 Apply 回归；组织岗位、主管和兼岗只能从权威选择器取得。</small></div>
       <div class="hr06-capability" data-state="blocked"><strong>明确阻断</strong><span>岗位类别变更、工作地点变更</span><small>现有 Hr06ApplySupportProvider 明确 BLOCKER；未接 writer 前禁止标记已生效。</small></div>
-      <div class="hr06-capability" data-state="pending"><strong>专项收口中</strong><span>直属上级、兼岗、主岗切换</span><small>已有部分服务，但完整生效不变量尚未通过本轮浏览器与 Authority 验收，因此暂不开放创建。</small></div>
+      <div class="hr06-capability" data-state="pending"><strong>岗位容量</strong><span>主岗切换与新增兼岗必须预占</span><small>DRAFT 创建后仍需 HR02 PositionGate reservation；缺少或提交失败时 Apply 会 fail-closed。</small></div>
     </div>
   </section>
 
@@ -47,7 +47,7 @@
     </section>
 
     <section class="hr06-panel">
-      <div class="hr06-section-head"><div><h2>2. 选择动作与目标事实</h2><p>动作/原因来自 HR06 bootstrap；人员类别、聘用关系与用工类型的机器值来自 HR03 constants，经服务端受控字典下发。</p></div></div>
+      <div class="hr06-section-head"><div><h2>2. 选择动作与目标事实</h2><p>动作/原因来自 HR06 bootstrap；枚举来自 HR03 constants，主管/兼岗来自 HR03，组织/岗位来自 HR02，页面不接受手填内部 ID。</p></div></div>
       <div class="hr06-form-grid">
         <label class="hr06-field"><span>身份变更类型</span><select id="hr06-identity-action" disabled><option value="">正在读取服务端配置</option></select></label>
         <label class="hr06-field"><span>变更原因</span><select id="hr06-identity-reason" disabled><option value="">请先选择变更类型</option></select></label>

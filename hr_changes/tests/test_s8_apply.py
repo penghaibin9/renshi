@@ -465,6 +465,8 @@ class ApplyEndSecondaryAssignmentTests(TestCase):
             proposals=[],
             source_assignment_id=selected.id,
         )
+        self.assertEqual(case.source_org_id_id, selected.organization_id_id)
+        self.assertEqual(case.source_position_id_id, selected.position_id_id)
 
         service = ChangeService(TENANT, actor_user_id=1)
         case = service.submit(case.id)

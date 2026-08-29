@@ -80,17 +80,28 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn('id="hr06-identity-action"', self.identity)
         self.assertIn('id="hr06-identity-target-fields"', self.identity)
         self.assertIn('id="hr06-identity-create"', self.identity)
-        self.assertIn("人员类别变更、用工性质变更", self.identity)
+        self.assertIn("人员类别、用工性质、直属上级、主岗切换、新增/结束兼岗", self.identity)
         self.assertIn("岗位类别变更、工作地点变更", self.identity)
         self.assertIn("Hr06ApplySupportProvider", self.identity)
         self.assertIn('"EMPLOYEE_CATEGORY_CHANGE"', self.identity_script)
         self.assertIn('"EMPLOYMENT_TYPE_CHANGE"', self.identity_script)
+        for action_code in (
+            "MANAGER_CHANGE",
+            "PRIMARY_ASSIGNMENT_SWITCH",
+            "ADD_SECONDARY_ASSIGNMENT",
+            "END_SECONDARY_ASSIGNMENT",
+        ):
+            self.assertIn(f'"{action_code}"', self.identity_script)
         self.assertIn("SUPPORTED_IDENTITY_ACTIONS", self.identity_script)
         self.assertIn("identityOptions", self.identity_script)
         self.assertIn("proposed_value_ref", self.identity_script)
         self.assertIn("/api/v1/hr/changes/identity-changes", self.identity_script)
         self.assertIn("/api/v1/hr/staff", self.identity_script)
         self.assertIn("/profile", self.identity_script)
+        self.assertIn("/assignments", self.identity_script)
+        self.assertIn("/api/v1/hr/structure/organizations/bootstrap", self.identity_script)
+        self.assertIn("/api/v1/hr/structure/positions", self.identity_script)
+        self.assertIn("body.sourceAssignmentId", self.identity_script)
         self.assertNotIn("/api/hr/v1/", self.identity_script)
 
     def test_temporary_builder_uses_authorities_and_dedicated_writer(self):

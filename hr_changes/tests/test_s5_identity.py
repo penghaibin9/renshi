@@ -127,6 +127,70 @@ class IdentityChangeServiceTests(TestCase):
             )
         self.assertEqual(caught.exception.code, "CHANGE_INVALID_PAYLOAD")
 
+    def test_add_secondary_rejects_invalid_or_excess_total_fte(self):
+        from decimal import Decimal
+
+        from hr_staff.constants import AssignmentType
+        from hr_staff.services.assignment_service import AssignmentService
+
+        source_org = make_org(TENANT, "FTE-SOURCE", "主岗学院", date(2020, 1, 1))
+        target_org = make_org(TENANT, "FTE-TARGET", "兼岗学院", date(2020, 1, 1))
+        source_position = make_position(TENANT, source_org, "FTE-SOURCE-P", max_incumbents=1)
+        target_position = make_position(TENANT, target_org, "FTE-TARGET-P", max_incumbents=1)
+        AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=self.rel,
+            assignment_type=AssignmentType.PRIMARY,
+            effective_from=date(2024, 9, 1),
+            organization_id=source_org,
+            position_id=source_position,
+            fte=Decimal("1.00"),
+            source_business_type="MIGRATION_VERIFIED",
+        )
+        for value in (None, "not-a-number", "0", "0.51"):
+            with self.subTest(value=value):
+                proposals = [
+                    {"domain": "assignment", "field_code": "organization", "proposed_value_ref": str(target_org.id)},
+                    {"domain": "assignment", "field_code": "position", "proposed_value_ref": str(target_position.id)},
+                ]
+                if value is not None:
+                    proposals.append({"domain": "assignment", "field_code": "fte", "proposed_value_ref": value})
+                with self.assertRaises(ChangeServiceError) as caught:
+                    self._create(ChangeActionCode.ADD_SECONDARY_ASSIGNMENT, proposals)
+                self.assertEqual(caught.exception.code, "CHANGE_INVALID_PAYLOAD")
+
+    def test_assignment_target_position_must_belong_to_selected_org(self):
+        target_org = make_org(TENANT, "ORG-MATCH", "目标学院", date(2020, 1, 1))
+        other_org = make_org(TENANT, "ORG-OTHER", "其他学院", date(2020, 1, 1))
+        position = make_position(TENANT, other_org, "OTHER-POSITION", max_incumbents=1)
+        with self.assertRaises(ChangeServiceError) as caught:
+            self._create(
+                ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
+                [
+                    {"domain": "assignment", "field_code": "organization", "proposed_value_ref": str(target_org.id)},
+                    {"domain": "assignment", "field_code": "position", "proposed_value_ref": str(position.id)},
+                ],
+            )
+        self.assertEqual(caught.exception.code, "CHANGE_TARGET_POSITION_INVALID")
+
+    def test_manager_change_requires_other_staff_in_same_tenant(self):
+        action_code = ChangeActionCode.MANAGER_CHANGE
+        manager = make_staff(TENANT, make_person(TENANT, "真实主管"), "T6002")
+        case = self._create(
+            action_code,
+            [{"domain": "assignment", "field_code": "reporting_staff", "proposed_value_ref": str(manager.id)}],
+        )
+        proposal = case.proposals.get(field_code="reporting_staff")
+        self.assertEqual(proposal.proposed_value_ref, str(manager.id))
+        self.assertEqual(proposal.proposed_value_display, "真实主管")
+        for invalid in (self.staff.id, make_staff(2, make_person(2, "跨校主管"), "OTHER-MANAGER").id):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ChangeServiceError) as caught:
+                    self._create(
+                        action_code,
+                        [{"domain": "assignment", "field_code": "reporting_staff", "proposed_value_ref": str(invalid)}],
+                    )
+                self.assertEqual(caught.exception.code, "CHANGE_INVALID_PAYLOAD")
+
     def test_primary_switch_sets_canonical_refs_and_requires_position_gate(self):
         from hr_changes.integrations.hr02 import PositionGate
 

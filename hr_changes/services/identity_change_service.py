@@ -11,6 +11,7 @@ hr_changes/services/identity_change_service.py —— 岗位与身份变更服�
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from hr_changes.constants import ChangeActionCode
@@ -55,6 +56,31 @@ class IdentityChangeService:
                 )
         self._validate_controlled_values(action.code, proposals)
 
+        if action.code == ChangeActionCode.MANAGER_CHANGE:
+            manager_ref = next(
+                (
+                    proposal.get("proposed_value_ref")
+                    for proposal in proposals
+                    if proposal.get("field_code") == "reporting_staff"
+                ),
+                None,
+            )
+            from hr_staff.models import HrStaffMaster
+
+            manager = HrStaffMaster.objects.filter(
+                tenant_id=self.tenant_id,
+                id=manager_ref,
+            ).select_related("person_id").first()
+            staff_ref = getattr(staff_master_id, "pk", staff_master_id)
+            if manager is None or str(manager.id) == str(staff_ref):
+                raise ChangeServiceError(
+                    "CHANGE_INVALID_PAYLOAD",
+                    "直属上级必须选择当前学校内另一名真实教职工",
+                )
+            for proposal in proposals:
+                if proposal.get("field_code") == "reporting_staff":
+                    proposal["proposed_value_display"] = manager.person_id.legal_name
+
         if action.code == ChangeActionCode.ADD_SECONDARY_ASSIGNMENT:
             has_org = any(
                 proposal.get("field_code") == "organization" for proposal in proposals
@@ -66,7 +92,46 @@ class IdentityChangeService:
                 raise ChangeServiceError(
                     "CHANGE_INVALID_PAYLOAD", "增加兼岗必须指定目标组织与岗位"
                 )
+            fte_ref = next(
+                (
+                    proposal.get("proposed_value_ref")
+                    for proposal in proposals
+                    if proposal.get("field_code") == "fte"
+                ),
+                None,
+            )
+            try:
+                fte = Decimal(str(fte_ref))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ChangeServiceError(
+                    "CHANGE_INVALID_PAYLOAD",
+                    "增加兼岗必须填写有效 FTE",
+                ) from exc
+            if fte <= 0:
+                raise ChangeServiceError(
+                    "CHANGE_INVALID_PAYLOAD",
+                    "兼岗 FTE 必须大于 0",
+                )
+            from hr_staff.services.effective_dated_query_service import (
+                EffectiveDatedQueryService,
+            )
 
+            staff_ref = getattr(staff_master_id, "pk", staff_master_id)
+            effective_at = _parse_effective_date(requested_effective_at)
+            current_fte = sum(
+                (assignment.fte for assignment in EffectiveDatedQueryService(
+                    self.tenant_id
+                ).assignments_as_of(staff_ref, effective_at)),
+                Decimal("0"),
+            )
+            if current_fte + fte > Decimal("1.50"):
+                raise ChangeServiceError(
+                    "CHANGE_INVALID_PAYLOAD",
+                    "新增兼岗后总 FTE 超过 HR03 策略上限 1.50",
+                )
+
+        source_org_id = None
+        source_position_id = None
         if action.code == ChangeActionCode.END_SECONDARY_ASSIGNMENT:
             from hr_staff.constants import AssignmentType
             from hr_staff.services.effective_dated_query_service import (
@@ -91,6 +156,8 @@ class IdentityChangeService:
                     "取消兼岗必须选择该人员生效中的真实兼岗",
                 )
             source_assignment_id = source_assignment
+            source_org_id = source_assignment.organization_id
+            source_position_id = source_assignment.position_id
 
         proposal_refs = {
             proposal.get("field_code"): proposal.get("proposed_value_ref")
@@ -104,6 +171,36 @@ class IdentityChangeService:
         ):
             target_org_id = proposal_refs.get("organization")
             target_position_id = proposal_refs.get("position")
+            from hr_structure.models import HrOrganization, HrPosition
+
+            target_org = HrOrganization.objects.filter(
+                tenant_id=self.tenant_id,
+                id=target_org_id,
+                identity_status="ACTIVE",
+            ).first()
+            target_position = HrPosition.objects.filter(
+                tenant_id=self.tenant_id,
+                id=target_position_id,
+                lifecycle_status="ACTIVE",
+            ).first()
+            if target_org is None:
+                raise ChangeServiceError(
+                    "CHANGE_TARGET_ORG_INVALID",
+                    "目标组织必须属于当前学校且处于在用状态",
+                )
+            if (
+                target_position is None
+                or target_position.organization_id_id != target_org.id
+            ):
+                raise ChangeServiceError(
+                    "CHANGE_TARGET_POSITION_INVALID",
+                    "目标岗位必须是所选 HR02 组织下的在用岗位",
+                )
+            for proposal in proposals:
+                if proposal.get("field_code") == "organization":
+                    proposal["proposed_value_display"] = target_org.stable_code
+                elif proposal.get("field_code") == "position":
+                    proposal["proposed_value_display"] = target_position.position_code
 
         return ChangeService(
             self.tenant_id, actor_user_id=self.actor_user_id
@@ -115,6 +212,8 @@ class IdentityChangeService:
             proposals=proposals,
             target_org_id=target_org_id,
             target_position_id=target_position_id,
+            source_org_id=source_org_id,
+            source_position_id=source_position_id,
             source_assignment_id=source_assignment_id,
             priority=priority,
         )
