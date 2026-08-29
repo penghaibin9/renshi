@@ -26,7 +26,7 @@
 
   /**
    * @param {string} url
-   * @param {object} options { method, params, body, timeoutMs, signal, retries }
+   * @param {object} options { method, params, body, headers, timeoutMs, signal, retries }
    * @returns {Promise<{ok:boolean, status:number, data:any, requestId?:string, code?:string}>}
    */
   async function request(url, options = {}) {
@@ -34,6 +34,7 @@
       method = "GET",
       params = null,
       body = null,
+      headers: customHeaders = {},
       timeoutMs = DEFAULT_TIMEOUT_MS,
       signal = null,
       retries = 0,
@@ -49,11 +50,16 @@
       if (s) target += (target.includes("?") ? "&" : "?") + s;
     }
 
-    const headers = { "X-Requested-With": "XMLHttpRequest" };
-    if (body) headers["Content-Type"] = "application/json";
+    const requestHeaders = {
+      ...customHeaders,
+      "X-Requested-With": "XMLHttpRequest",
+    };
+    if (body && !requestHeaders["Content-Type"]) {
+      requestHeaders["Content-Type"] = "application/json";
+    }
 
     const csrf = getCookie("csrftoken");
-    if (csrf) headers["X-CSRFToken"] = csrf;
+    if (csrf) requestHeaders["X-CSRFToken"] = csrf;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -79,7 +85,7 @@
 
         const resp = await fetch(target, {
           method,
-          headers,
+          headers: requestHeaders,
           body: body ? JSON.stringify(body) : null,
           signal: combined.signal,
           credentials: "same-origin",

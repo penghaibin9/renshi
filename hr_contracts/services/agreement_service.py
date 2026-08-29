@@ -1,8 +1,9 @@
-"""HR07 initial agreement signing/effect boundary.
+"""HR07 agreement signing/effect boundaries.
 
-This is the first recovered Authority write path.  It deliberately handles the
-initial contract only; renewal/change/termination will append later versions
-instead of mutating the original formal content.
+Regular staff contracts remain bound to HR03 Staff + EmploymentRelationship.
+External-workforce agreements are first-class HR07 agreements too, but bind to
+the shared HrPerson plus an HR08 business reference and never fabricate a
+formal employment relationship.
 """
 
 from __future__ import annotations
@@ -38,14 +39,28 @@ class AgreementService:
         self.tenant_id = tenant_id
         self.actor_user_id = actor_user_id
 
+    @staticmethod
+    def _subject_event_payload(agreement) -> dict:
+        payload = {"subjectType": agreement.subject_type}
+        if agreement.staff_id:
+            payload["staffId"] = str(agreement.staff_id)
+        if agreement.employment_relationship_id:
+            payload["employmentRelationshipId"] = str(
+                agreement.employment_relationship_id
+            )
+        if agreement.subject_person_id:
+            payload["subjectPersonId"] = str(agreement.subject_person_id)
+        if agreement.subject_reference_type:
+            payload["subjectReferenceType"] = agreement.subject_reference_type
+        if agreement.subject_reference_id:
+            payload["subjectReferenceId"] = agreement.subject_reference_id
+        return payload
+
     def _validate_staff_relationship(self, *, staff_id, relationship_id, as_of: date):
         from hr_staff.constants import RelationshipStatus
         from hr_staff.models import HrEmploymentRelationship, HrStaffMaster
 
-        staff = (
-            HrStaffMaster.objects.filter(id=staff_id, tenant_id=self.tenant_id)
-            .first()
-        )
+        staff = HrStaffMaster.objects.filter(id=staff_id, tenant_id=self.tenant_id).first()
         if staff is None:
             raise ContractServiceError(
                 "CONTRACT_STAFF_NOT_FOUND",
@@ -70,6 +85,17 @@ class AgreementService:
             )
         return staff, relationship
 
+    def _validate_external_person(self, *, person_id):
+        from hr_staff.models import HrPerson
+
+        person = HrPerson.objects.filter(id=person_id, tenant_id=self.tenant_id).first()
+        if person is None:
+            raise ContractServiceError(
+                "CONTRACT_EXTERNAL_PERSON_NOT_FOUND",
+                "HR03 person identity not found inside tenant",
+            )
+        return person
+
     @transaction.atomic
     def create_agreement(
         self,
@@ -82,7 +108,7 @@ class AgreementService:
         legacy_contract_id: Optional[int] = None,
         as_of: Optional[date] = None,
     ) -> HrContractAgreement:
-        """Create an idempotent HR07 agreement root after HR03 identity validation."""
+        """Create an idempotent regular-employment agreement after HR03 validation."""
         effective_day = as_of or date.today()
         self._validate_staff_relationship(
             staff_id=staff_id,
@@ -97,6 +123,7 @@ class AgreementService:
         )
         if existing is not None:
             expected = (
+                HrContractAgreement.SubjectType.STAFF_EMPLOYMENT,
                 str(staff_id),
                 str(employment_relationship_id),
                 agreement_title,
@@ -104,6 +131,7 @@ class AgreementService:
                 legacy_contract_id,
             )
             observed = (
+                existing.subject_type,
                 str(existing.staff_id),
                 str(existing.employment_relationship_id),
                 existing.agreement_title,
@@ -120,6 +148,7 @@ class AgreementService:
         agreement = HrContractAgreement.objects.create(
             tenant_id=self.tenant_id,
             agreement_no=agreement_no,
+            subject_type=HrContractAgreement.SubjectType.STAFF_EMPLOYMENT,
             staff_id=staff_id,
             employment_relationship_id=employment_relationship_id,
             agreement_title=agreement_title,
@@ -136,10 +165,84 @@ class AgreementService:
             payload={
                 "agreementId": str(agreement.id),
                 "agreementNo": agreement.agreement_no,
-                "staffId": str(agreement.staff_id),
-                "employmentRelationshipId": str(
-                    agreement.employment_relationship_id
-                ),
+                **self._subject_event_payload(agreement),
+            },
+        )
+        return agreement
+
+    @transaction.atomic
+    def create_external_agreement(
+        self,
+        *,
+        agreement_no: str,
+        person_id,
+        subject_reference_type: str,
+        subject_reference_id: str,
+        agreement_title: str,
+        agreement_type: str,
+    ) -> HrContractAgreement:
+        """Create an HR08 agreement without inventing HR03 staff/employment facts."""
+        self._validate_external_person(person_id=person_id)
+        subject_reference_type = (subject_reference_type or "").strip()
+        subject_reference_id = str(subject_reference_id or "").strip()
+        if not subject_reference_type or not subject_reference_id:
+            raise ContractServiceError(
+                "CONTRACT_EXTERNAL_SUBJECT_REFERENCE_REQUIRED",
+                "external agreement requires a source business reference",
+            )
+
+        existing = (
+            HrContractAgreement.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, agreement_no=agreement_no)
+            .first()
+        )
+        if existing is not None:
+            expected = (
+                HrContractAgreement.SubjectType.EXTERNAL_WORKFORCE,
+                str(person_id),
+                subject_reference_type,
+                subject_reference_id,
+                agreement_title,
+                agreement_type,
+            )
+            observed = (
+                existing.subject_type,
+                str(existing.subject_person_id),
+                existing.subject_reference_type,
+                existing.subject_reference_id,
+                existing.agreement_title,
+                existing.agreement_type,
+            )
+            if observed != expected:
+                raise ContractServiceError(
+                    "CONTRACT_IDEMPOTENCY_CONFLICT",
+                    "agreement_no already belongs to a different contract payload",
+                )
+            return existing
+
+        agreement = HrContractAgreement.objects.create(
+            tenant_id=self.tenant_id,
+            agreement_no=agreement_no,
+            subject_type=HrContractAgreement.SubjectType.EXTERNAL_WORKFORCE,
+            staff_id=None,
+            employment_relationship_id=None,
+            subject_person_id=person_id,
+            subject_reference_type=subject_reference_type,
+            subject_reference_id=subject_reference_id,
+            agreement_title=agreement_title,
+            agreement_type=agreement_type,
+            status=HrContractAgreement.Status.DRAFT,
+            current_version_no=0,
+            created_by=self.actor_user_id,
+            updated_by=self.actor_user_id,
+        )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_AGREEMENT_CREATED,
+            payload={
+                "agreementId": str(agreement.id),
+                "agreementNo": agreement.agreement_no,
+                **self._subject_event_payload(agreement),
             },
         )
         return agreement
@@ -234,9 +337,9 @@ class AgreementService:
                 "agreementId": str(agreement.id),
                 "versionId": str(version.id),
                 "versionNo": version.version_no,
-                "staffId": str(agreement.staff_id),
                 "effectiveDate": version.effective_from.isoformat(),
                 "contentHash": version.content_hash,
+                **self._subject_event_payload(agreement),
             },
         )
         return version
@@ -313,8 +416,8 @@ class AgreementService:
                 "agreementId": str(agreement.id),
                 "versionId": str(version.id),
                 "versionNo": version.version_no,
-                "staffId": str(agreement.staff_id),
                 "effectiveDate": version.effective_from.isoformat(),
+                **self._subject_event_payload(agreement),
             },
         )
         return version

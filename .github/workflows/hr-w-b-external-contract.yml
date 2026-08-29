@@ -1,0 +1,187 @@
+name: W-B HR08 External Agreement Gate
+
+on:
+  pull_request:
+    branches: [agent/w-a-hire-to-change-closure-20260822]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/hr-w-b-external-contract.yml"
+      - "hr_contracts/**"
+      - "hr_external/**"
+      - "hr_staff/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hr-w-b-external-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
+
+jobs:
+  external-agreement-db-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: horilla_db
+          MYSQL_USER: horilla_user
+          MYSQL_PASSWORD: horilla_pass
+          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install application dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ensure local settings stub
+        run: |
+          if [ ! -f horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for W-B MySQL gate' > horilla/settings/local_settings.py
+          fi
+
+      - name: Syntax gate for W-B ownership
+        run: |
+          python -m py_compile \
+            hr_contracts/models.py \
+            hr_contracts/services/agreement_service.py \
+            hr_contracts/migrations/0002_external_workforce_agreement_subject.py \
+            hr_external/models/hiring.py \
+            hr_external/integrations/hr07.py \
+            hr_external/services/hiring_service.py \
+            hr_external/migrations/0016_external_hiring_agreement_id.py \
+            hr_external/tests/test_w_b_external_agreement_activation_chain.py
+
+      - name: Migration drift gate
+        run: python manage.py makemigrations --check --dry-run --noinput --verbosity 2
+
+      - name: Fresh MySQL migrate
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+
+      - name: Assert W-B schema materialized
+        run: |
+          python manage.py shell <<'PY'
+          from django.db import connection
+          from django.db.migrations.executor import MigrationExecutor
+          from django.db.migrations.recorder import MigrationRecorder
+
+          expected = {
+              ("hr_contracts", "0002_external_workforce_agreement_subject"),
+              ("hr_external", "0016_external_hiring_agreement_id"),
+          }
+          executor = MigrationExecutor(connection)
+          leaves = set(executor.loader.graph.leaf_nodes())
+          missing_leaves = expected - leaves
+          assert not missing_leaves, ("W-B migration leaf missing", sorted(missing_leaves))
+          applied = set(MigrationRecorder(connection).applied_migrations())
+          missing_applied = expected - applied
+          assert not missing_applied, ("W-B migration not applied", sorted(missing_applied))
+
+          with connection.cursor() as cursor:
+              contract_cols = {
+                  c.name for c in connection.introspection.get_table_description(
+                      cursor, "hr07_contract_agreement"
+                  )
+              }
+              hiring_cols = {
+                  c.name for c in connection.introspection.get_table_description(
+                      cursor, "hr_external_hrexternalhiringcase"
+                  )
+              }
+          assert {
+              "subject_type",
+              "subject_person_id",
+              "subject_reference_type",
+              "subject_reference_id",
+          } <= contract_cols, contract_cols
+          assert "agreement_id" in hiring_cols, hiring_cols
+          print("W-B schema materialization PASS")
+          PY
+
+      - name: Provision focused test database from verified schema
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute(
+                  "CREATE DATABASE `test_horilla_db` "
+                  "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+              )
+              cursor.execute(
+                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
+                  "TO 'horilla_user'@'%'"
+              )
+              cursor.execute("FLUSH PRIVILEGES")
+          finally:
+              connection.close()
+          PY
+
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers horilla_db' \
+            | docker exec -i "$mysql_container" sh -c \
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --run-syncdb --noinput
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --check
+
+      - name: Exact HR07 HR08 W-B regression
+        env:
+          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+        run: >-
+          python manage.py test
+          hr_contracts.tests.test_agreement_service
+          hr_external.tests.test_s5
+          hr_external.tests.test_engagement_concurrency_and_overlap
+          hr_external.tests.test_w_b_external_agreement_activation_chain
+          hr_changes.tests.test_w_a_full_hire_contract_change_chain
+          --keepdb --noinput --verbosity 2

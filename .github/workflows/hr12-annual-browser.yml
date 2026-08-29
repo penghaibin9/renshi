@@ -1,0 +1,397 @@
+name: HR12 Annual Real Browser Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/hr12-annual-browser.yml"
+      - "scripts/hr12_annual_browser.py"
+      - "hr_assessment/api/urls.py"
+      - "hr_assessment/api/views_assessment.py"
+      - "hr_assessment/models/**"
+      - "hr_assessment/service/**"
+      - "hr_assessment/services/**"
+      - "hr_assessment/templates/hr_assessment/workspace.html"
+      - "static/hr/js/pages/hr12-assessment.js"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hr12-annual-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
+  HR_BROWSER_USERNAME: hr12-annual-auditor
+  HR_BROWSER_PASSWORD: hr12-annual-only-password
+  HR_BROWSER_BASE_URL: http://127.0.0.1:8000
+  HR_BROWSER_ARTIFACT_DIR: artifacts/hr12-annual-browser
+
+jobs:
+  annual-formal-result:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: horilla_db
+          MYSQL_USER: horilla_user
+          MYSQL_PASSWORD: horilla_pass
+          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Syntax gate for HR12 Annual ownership
+        run: |
+          python -m py_compile \
+            hr_assessment/api/views_assessment.py \
+            hr_assessment/tests/test_annual_api.py \
+            scripts/hr12_annual_browser.py
+
+      - name: Install application and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Ensure local settings stub
+        run: |
+          if [ ! -f horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for HR12 Annual browser gate' > horilla/settings/local_settings.py
+          fi
+
+      - name: Migrate real ephemeral MySQL runtime
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+
+      - name: Provision isolated HR12 Django test database
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute(
+                  "CREATE DATABASE `test_horilla_db` "
+                  "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+              )
+              cursor.execute(
+                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
+                  "TO 'horilla_user'@'%'"
+              )
+              cursor.execute("FLUSH PRIVILEGES")
+          finally:
+              connection.close()
+          PY
+
+          # Reuse the exact fresh-migration schema already verified above, then
+          # materialize only unmigrated app tables inside the isolated test DB.
+          # This matches the repository's GREEN MySQL contract/visual gates and
+          # avoids granting the application user global database privileges.
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --no-tablespaces horilla_db' \
+            | docker exec -i "$mysql_container" sh -c \
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --run-syncdb --noinput
+          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+            python manage.py migrate --check
+
+      - name: Run precise HR12 Annual API tests
+        run: |
+          python manage.py test hr_assessment.tests.test_annual_api --keepdb --noinput --verbosity 2
+
+      - name: Seed one real HR12 Annual authority chain
+        shell: bash
+        run: |
+          mkdir -p artifacts/hr12-annual-browser
+          python manage.py shell <<'PY'
+          import json
+          import os
+          import uuid
+          from datetime import timedelta
+          from decimal import Decimal
+          from pathlib import Path
+
+          from django.contrib.auth import get_user_model
+          from django.core.files.uploadedfile import SimpleUploadedFile
+          from django.utils import timezone
+
+          from base.models import Company
+          from employee.models import Employee, EmployeeWorkInformation
+          from hr_assessment.models import (
+              HrAnnualAssessmentCase,
+              HrAssessmentDecisionSession,
+              HrAssessmentPolicyPack,
+              HrAssessmentPolicyVersion,
+              HrAssessmentCycle,
+              HrIndicatorDefinition,
+              HrIndicatorSetVersion,
+              HrIndicatorVersion,
+              HrReviewerAssignment,
+              HrReviewerEvaluation,
+          )
+          from hr_assessment.models.policy import HrIndicatorBinding
+          from hr_staff.models import HrPerson, HrStaffMaster
+
+          username = os.environ["HR_BROWSER_USERNAME"]
+          password = os.environ["HR_BROWSER_PASSWORD"]
+          now = timezone.now()
+
+          company = Company.objects.create(
+              company="跃科 HR12 年度考核验收学校",
+              hq=True,
+              address="长沙市 HR12 验收路 12 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              icon=SimpleUploadedFile("hr12.png", b"hr12", content_type="image/png"),
+          )
+          User = get_user_model()
+          user = User.objects.create_superuser(
+              username=username,
+              email="hr12-browser@example.invalid",
+              password=password,
+          )
+          user.is_new_employee = False
+          user.save(update_fields=["is_new_employee"])
+          employee = Employee.objects.create(
+              employee_user_id=user,
+              employee_first_name="HR12",
+              employee_last_name="年度验收员",
+              email="hr12-browser-employee@example.invalid",
+              phone="13800000012",
+              is_active=True,
+          )
+          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(employee_id=employee)
+          work_info.company_id = company
+          work_info.save(update_fields=["company_id"])
+
+          actor_person = HrPerson.objects.create(
+              tenant_id=company.pk,
+              legal_name="HR12 年度验收员",
+              status="ACTIVE",
+          )
+          actor_staff = HrStaffMaster.objects.create(
+              tenant_id=company.pk,
+              person_id=actor_person,
+              staff_no="HR12-AUDITOR",
+              current_employment_status="ACTIVE",
+              legacy_employee_id=employee.pk,
+          )
+          subject_person = HrPerson.objects.create(
+              tenant_id=company.pk,
+              legal_name="年度考核教师甲",
+              status="ACTIVE",
+          )
+          subject_staff = HrStaffMaster.objects.create(
+              tenant_id=company.pk,
+              person_id=subject_person,
+              staff_no="HR12-SUBJECT-001",
+              current_employment_status="ACTIVE",
+          )
+
+          indicator_set = HrIndicatorSetVersion.objects.create(
+              tenant_id=company.pk,
+              name="HR12 Annual Browser 指标集",
+              version_no=1,
+              status="PUBLISHED",
+              total_weight=Decimal("1.00"),
+          )
+          policy_pack = HrAssessmentPolicyPack.objects.create(
+              tenant_id=company.pk,
+              code="HR12-ANNUAL-BROWSER",
+              name="HR12 Annual Browser 正式政策",
+              assessment_domain="ANNUAL",
+          )
+          policy = HrAssessmentPolicyVersion.objects.create(
+              tenant_id=company.pk,
+              policy_pack=policy_pack,
+              version_no=1,
+              status="PUBLISHED",
+              effective_from=now.date(),
+              assessment_types=["ANNUAL"],
+              rating_scale_version_id=uuid.uuid4(),
+              indicator_set_version_id=indicator_set.id,
+              workflow_version_id=uuid.uuid4(),
+          )
+          definition = HrIndicatorDefinition.objects.create(
+              tenant_id=company.pk,
+              code="HR12-REVIEW",
+              name="年度综合评议",
+              dimension="PERFORMANCE",
+          )
+          indicator = HrIndicatorVersion.objects.create(
+              tenant_id=company.pk,
+              indicator=definition,
+              version_no=1,
+              status="PUBLISHED",
+              name="年度综合评议",
+              dimension="PERFORMANCE",
+              value_type="NUMBER",
+              source_provider="REVIEWER",
+              valid_from=now.date(),
+          )
+          HrIndicatorBinding.objects.create(
+              id=uuid.uuid4(),
+              indicator_set=indicator_set,
+              indicator_version=indicator,
+              weight=Decimal("1.0000"),
+              required=True,
+          )
+
+          cycle = HrAssessmentCycle.objects.create(
+              tenant_id=company.pk,
+              cycle_no="HR12-ANNUAL-BROWSER-2026",
+              assessment_type="ANNUAL",
+              name="2026 年度考核浏览器验收",
+              business_year=2026,
+              start_at=now - timedelta(days=180),
+              end_at=now,
+              policy_version_id=policy.id,
+              lifecycle_status="ACTIVE",
+          )
+          case = HrAnnualAssessmentCase.objects.create(
+              tenant_id=company.pk,
+              assessment_type="ANNUAL",
+              cycle=cycle,
+              staff_id=subject_staff.id,
+              policy_version_id=policy.id,
+              status="PROPOSED",
+              business_year=2026,
+          )
+          assignment = HrReviewerAssignment.objects.create(
+              tenant_id=company.pk,
+              case_id=case.id,
+              reviewer_role="HR_REVIEWER",
+              reviewer_staff_id=actor_staff.id,
+              status="COMPLETED",
+          )
+          HrReviewerEvaluation.objects.create(
+              tenant_id=company.pk,
+              assignment=assignment,
+              rating_json={"gradeCode": "QUALIFIED"},
+              comment="真实年度评议已提交",
+              recommendation="QUALIFIED",
+              submitted_at=now,
+          )
+          decision = HrAssessmentDecisionSession.objects.create(
+              tenant_id=company.pk,
+              cycle_id=cycle.id,
+              meeting_at=now,
+              participants_json=[str(actor_staff.id)],
+              case_refs_json=[str(case.id)],
+              status="COMPLETED",
+          )
+
+          Path("artifacts/hr12-annual-browser/seed.json").write_text(
+              json.dumps({
+                  "tenant_id": company.pk,
+                  "case_id": str(case.id),
+                  "staff_id": str(subject_staff.id),
+                  "decision_session_id": str(decision.id),
+              }),
+              encoding="utf-8",
+          )
+          print(f"HR12 annual browser seed case={case.id} staff={subject_staff.id}")
+          PY
+
+      - name: Boot Django and click evidence then formal finalization
+        shell: bash
+        run: |
+          python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/hr12-annual-browser/server.log 2>&1 &
+          echo $! > artifacts/hr12-annual-browser/server.pid
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8000/login/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          python scripts/hr12_annual_browser.py
+
+      - name: Seal HR12 Annual facts in MySQL
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          from pathlib import Path
+
+          from hr_assessment.models import HrAssessmentCase, HrFinalAssessmentResult, HrProviderSnapshotSet
+
+          seed = json.loads(Path("artifacts/hr12-annual-browser/seed.json").read_text(encoding="utf-8"))
+          tenant_id = seed["tenant_id"]
+          case_id = seed["case_id"]
+          decision_id = seed["decision_session_id"]
+
+          case = HrAssessmentCase.objects.get(id=case_id, tenant_id=tenant_id)
+          assert case.status == "FINALIZED", case.status
+          assert case.provider_snapshot_set_id, "provider snapshot was not attached"
+          snapshot = HrProviderSnapshotSet.objects.get(
+              id=case.provider_snapshot_set_id,
+              tenant_id=tenant_id,
+              case_id=case.id,
+          )
+          assert snapshot.status == "READY", snapshot.status
+          assert snapshot.authority_json, "snapshot authority missing"
+          assert snapshot.required_providers_json == ["person"], snapshot.required_providers_json
+          result = HrFinalAssessmentResult.objects.get(tenant_id=tenant_id, case_id=case.id)
+          assert result.status == "FINALIZED", result.status
+          assert result.grade_code == "QUALIFIED", result.grade_code
+          assert str(result.decision_session_id) == decision_id
+          assert result.result_version_no == 1
+          assert len(result.content_hash) == 64
+          assert HrFinalAssessmentResult.objects.filter(tenant_id=tenant_id, case_id=case.id).count() == 1
+          print("HR12 Annual browser MySQL seal PASS")
+          PY
+
+      - name: Upload HR12 Annual browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr12-annual-browser-${{ github.run_id }}
+          path: artifacts/hr12-annual-browser/
+          if-no-files-found: warn

@@ -19,6 +19,7 @@ class AssessmentFinalizationServiceTests(TestCase):
         case.assessment_type = "ANNUAL"
         case.cycle_id = "00000000-0000-0000-0000-000000000201"
         case.policy_version_id = "00000000-0000-0000-0000-000000000301"
+        case.provider_snapshot_set_id = None
         return case
 
     def _payload(self):
@@ -146,6 +147,7 @@ class AssessmentFinalizationServiceTests(TestCase):
         )
         codes = {item["code"] for item in blockers}
 
+        self.assertIn("ASSESSMENT_PROVIDER_SNAPSHOT_REQUIRED", codes)
         self.assertIn("ASSESSMENT_EVIDENCE_UNRESOLVED", codes)
         self.assertIn("ASSESSMENT_METRIC_UNAVAILABLE", codes)
         self.assertIn("ASSESSMENT_REVIEWER_SUBMISSION_MISSING", codes)

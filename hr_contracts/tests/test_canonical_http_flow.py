@@ -234,6 +234,43 @@ class Hr07CanonicalHttpFlowTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["error"]["code"], "CONTRACT_CASE_NOT_FOUND")
 
+    def test_external_workforce_agreement_uses_person_label_without_fake_staff(self):
+        external_person = HrPerson.objects.create(
+            tenant_id=self.company.pk,
+            legal_name="外聘专家周岚",
+            status="ACTIVE",
+        )
+        agreement = AgreementService(
+            self.company.pk, self.user.pk
+        ).create_external_agreement(
+            agreement_no="EXT-2026-07001",
+            person_id=external_person.id,
+            subject_reference_type="HR08_HIRING_CASE",
+            subject_reference_id="hiring-case-07001",
+            agreement_title="外聘专家合作协议",
+            agreement_type="EXTERNAL_TEACHER",
+        )
+
+        response = self.client.get(
+            f"/api/v1/hr/contracts/agreements/{agreement.id}"
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        data = response.json()["data"]
+        self.assertEqual(data["subjectType"], "EXTERNAL_WORKFORCE")
+        self.assertEqual(data["staffName"], "外聘专家周岚")
+        self.assertIsNone(data["staffId"])
+        self.assertIsNone(data["employmentRelationshipId"])
+        event = HrOutboxEvent.objects.get(
+            tenant_id=self.company.pk,
+            event_type=EVENT_AGREEMENT_CREATED,
+            payload_json__agreementId=str(agreement.id),
+        )
+        self.assertNotIn("staffId", event.payload_json)
+        self.assertEqual(
+            event.payload_json["subjectPersonId"], str(external_person.id)
+        )
+
     def test_outbox_failure_rolls_back_formal_signing_fact(self):
         agreement = HrContractAgreement.objects.create(
             tenant_id=self.company.pk,

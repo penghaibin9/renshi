@@ -31,6 +31,10 @@ class ContractLifecycleService:
         self.tenant_id = int(tenant_id)
         self.actor_user_id = actor_user_id
 
+    @staticmethod
+    def _subject_event_payload(agreement) -> dict:
+        return AgreementService._subject_event_payload(agreement)
+
     def _agreement(self, agreement_id):
         item = (
             HrContractAgreement.objects.select_for_update()
@@ -308,11 +312,11 @@ class ContractLifecycleService:
                 "agreementId": str(agreement.id),
                 "versionId": str(version.id),
                 "versionNo": version.version_no,
-                "staffId": str(agreement.staff_id),
                 "effectiveDate": version.effective_from.isoformat(),
                 "contentHash": version.content_hash,
                 "sourceCaseId": str(case.id),
                 "sourceCaseType": case.case_type,
+                **self._subject_event_payload(agreement),
             },
         )
         return version
@@ -420,10 +424,10 @@ class ContractLifecycleService:
                 "agreementId": str(agreement.id),
                 "versionId": str(version.id),
                 "versionNo": version.version_no,
-                "staffId": str(agreement.staff_id),
                 "effectiveDate": version.effective_from.isoformat(),
                 "sourceCaseId": str(case.id),
                 "sourceCaseType": case.case_type,
+                **self._subject_event_payload(agreement),
             },
         )
         return version
@@ -507,9 +511,9 @@ class ContractLifecycleService:
                 "agreementId": str(agreement.id),
                 "versionId": str(current.id),
                 "versionNo": current.version_no,
-                "staffId": str(agreement.staff_id),
                 "effectiveDate": terminate_on.isoformat(),
                 "sourceCaseId": str(case.id),
+                **self._subject_event_payload(agreement),
             },
         )
         return case

@@ -1,0 +1,342 @@
+name: W-B HR08 Real Browser Gate
+
+on:
+  pull_request:
+    branches: [agent/w-a-hire-to-change-closure-20260822]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/hr-w-b-browser.yml"
+      - "scripts/hr_w_b_external_browser.py"
+      - "horilla/hr_urls.py"
+      - "horilla_theme/templates/hr_external/hiring_detail.html"
+      - "static/hr/js/pages/hr08-wb-agreement.js"
+      - "hr_external/api/wb_agreement.py"
+      - "hr_external/services/hiring_service.py"
+      - "hr_external/integrations/hr07.py"
+      - "hr_contracts/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hr-w-b-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  HR_BROWSER_USERNAME: wb-browser-auditor
+  HR_BROWSER_PASSWORD: wb-browser-only-password
+  HR_BROWSER_BASE_URL: http://127.0.0.1:8000
+  HR_BROWSER_ARTIFACT_DIR: artifacts/hr-w-b-browser
+
+jobs:
+  real-agreement-activation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: horilla_db
+          MYSQL_USER: horilla_user
+          MYSQL_PASSWORD: horilla_pass
+          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Syntax gate for W-B browser ownership
+        run: |
+          python -m py_compile \
+            hr_external/api/wb_agreement.py \
+            scripts/hr_w_b_external_browser.py
+
+      - name: Install application and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Ensure local settings stub
+        run: |
+          if [ ! -f horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for W-B browser gate' > horilla/settings/local_settings.py
+          fi
+
+      - name: Migrate real ephemeral MySQL runtime
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+
+      - name: Seed one real W-B tenant/person/agreement chain
+        shell: bash
+        run: |
+          mkdir -p artifacts/hr-w-b-browser
+          python manage.py shell <<'PY'
+          import json
+          import os
+          from datetime import date, timedelta
+          from pathlib import Path
+
+          from django.contrib.auth import get_user_model
+          from django.core.files.uploadedfile import SimpleUploadedFile
+          from django.utils import timezone
+
+          from base.models import Company
+          from employee.models import Employee, EmployeeWorkInformation
+          from hr_contracts.services.agreement_service import AgreementService
+          from hr_external.constants import EthicsReviewStatus, ExternalHiringStatus
+          from hr_external.models import HrExternalEthicsReview, HrExternalHiringCase
+          from hr_external.services.category_service import CategoryService
+          from hr_external.services.hiring_service import HiringService
+          from hr_external.services.profile_service import ProfileService
+          from hr_staff.models import HrPerson, HrStaffMaster
+
+          username = os.environ["HR_BROWSER_USERNAME"]
+          password = os.environ["HR_BROWSER_PASSWORD"]
+          today = date.today()
+
+          company = Company.objects.create(
+              company="跃科 W-B 外聘协议验收学校",
+              hq=True,
+              address="长沙市 W-B 验收路 1 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              icon=SimpleUploadedFile("wb.png", b"wb", content_type="image/png"),
+          )
+          User = get_user_model()
+          user = User.objects.create_superuser(
+              username=username,
+              email="wb-browser@example.invalid",
+              password=password,
+          )
+          user.is_new_employee = False
+          user.save(update_fields=["is_new_employee"])
+          employee = Employee.objects.create(
+              employee_user_id=user,
+              employee_first_name="W-B",
+              employee_last_name="浏览器验收员",
+              email="wb-browser-employee@example.invalid",
+              phone="13800000008",
+              is_active=True,
+          )
+          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(employee_id=employee)
+          work_info.company_id = company
+          work_info.save(update_fields=["company_id"])
+
+          technical_person = HrPerson.objects.create(
+              tenant_id=company.pk,
+              legal_name="W-B 浏览器验收员",
+              status="ACTIVE",
+          )
+          HrStaffMaster.objects.create(
+              tenant_id=company.pk,
+              person_id=technical_person,
+              staff_no="WB-BROWSER-AUDITOR",
+              current_employment_status="ACTIVE",
+              legacy_employee_id=employee.pk,
+          )
+
+          CategoryService().ensure_default_categories(company.pk)
+          candidate = HrPerson.objects.create(
+              tenant_id=company.pk,
+              legal_name="W-B 外聘教师",
+              status="ACTIVE",
+          )
+          profile = ProfileService().create_profile(
+              tenant_id=company.pk,
+              person_id=candidate.id,
+              primary_category_code="INDUSTRY_PROFESSOR",
+              source_organization_name="W-B 产业合作单位",
+          )
+          profile.identity_verification_status = "VERIFIED"
+          profile.ethics_status = "PASS"
+          profile.save(update_fields=["identity_verification_status", "ethics_status", "updated_at"])
+          category = profile.primary_category
+          category.agreement_type_code = "EXTERNAL_WORKFORCE"
+          category.save(update_fields=["agreement_type_code", "updated_at"])
+
+          case = HrExternalHiringCase.objects.create(
+              tenant_id=company.pk,
+              case_no="WB-BROWSER-001",
+              request_org_id=880801,
+              requester_id=user.pk,
+              category_id=category,
+              purpose="W-B 外聘教学与产业指导浏览器闭环",
+              proposed_person_id=candidate,
+              requested_start=today,
+              requested_end=today + timedelta(days=365),
+              planned_assignments_json=[{
+                  "assignmentType": "TEACHING",
+                  "roleTitle": "产业兼职教师",
+                  "organizationId": 880801,
+              }],
+              status=ExternalHiringStatus.DRAFT,
+          )
+          HrExternalEthicsReview.objects.create(
+              tenant_id=company.pk,
+              person_id=candidate,
+              case_id=case,
+              review_type="HIRING",
+              status=EthicsReviewStatus.PASS,
+              reviewer=user.pk,
+              reviewed_at=timezone.now(),
+          )
+          hiring = HiringService()
+          hiring.submit(case)
+          hiring.college_approve(case)
+          hiring.hr_approve(case)
+          hiring.school_approve(case)
+          hiring.wait_agreement(case)
+
+          contracts = AgreementService(company.pk, actor_user_id=user.pk)
+          agreement = contracts.create_external_agreement(
+              agreement_no="WB-BROWSER-CONTRACT-001",
+              person_id=candidate.id,
+              subject_reference_type="HR08_HIRING_CASE",
+              subject_reference_id=str(case.id),
+              agreement_title="W-B 外聘合作协议",
+              agreement_type=category.agreement_type_code,
+          )
+          signed = contracts.sign_initial_version(
+              agreement_id=agreement.id,
+              effective_from=today,
+              effective_to=today + timedelta(days=365),
+              signed_at=timezone.now(),
+              signed_document_ref="private://contracts/wb-browser.pdf",
+              content_snapshot={
+                  "personId": str(candidate.id),
+                  "hiringCaseId": str(case.id),
+                  "workerKind": "EXTERNAL",
+              },
+              source_business_type="HR08_HIRING_CASE",
+              source_business_id=str(case.id),
+          )
+          contracts.activate_initial_version(
+              agreement_id=agreement.id,
+              version_id=signed.id,
+              as_of=today,
+          )
+
+          Path("artifacts/hr-w-b-browser/seed.json").write_text(
+              json.dumps({
+                  "tenant_id": company.pk,
+                  "case_id": str(case.id),
+                  "candidate_person_id": str(candidate.id),
+                  "agreement_id": str(agreement.id),
+              }),
+              encoding="utf-8",
+          )
+          print(f"W-B browser seed case={case.id} agreement={agreement.id}")
+          PY
+
+      - name: Boot Django and click agreement then activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python manage.py runserver 127.0.0.1:8000 --noreload \
+            > artifacts/hr-w-b-browser/django-runserver.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/login/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat artifacts/hr-w-b-browser/django-runserver.log
+            exit 1
+          fi
+
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
+            | tee artifacts/hr-w-b-browser/readiness.json
+          python scripts/hr_w_b_external_browser.py
+
+      - name: Direct MySQL W-B browser seal
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          from pathlib import Path
+
+          from hr_contracts.models import HrContractAgreement
+          from hr_external.constants import ExternalEngagementStatus, ExternalHiringStatus
+          from hr_external.models import HrExternalAuditEvent, HrExternalEngagement, HrExternalHiringCase
+          from hr_staff.models import HrEmploymentRelationship, HrStaffMaster
+
+          seed = json.loads(Path("artifacts/hr-w-b-browser/seed.json").read_text())
+          tenant_id = seed["tenant_id"]
+          case_id = seed["case_id"]
+          person_id = seed["candidate_person_id"]
+          agreement_id = seed["agreement_id"]
+
+          case = HrExternalHiringCase.objects.get(id=case_id, tenant_id=tenant_id)
+          assert case.status == ExternalHiringStatus.ACTIVATED, case.status
+          assert case.agreement_id == agreement_id, case.agreement_id
+
+          agreement = HrContractAgreement.objects.get(id=agreement_id, tenant_id=tenant_id)
+          assert agreement.status == HrContractAgreement.Status.ACTIVE, agreement.status
+          assert str(agreement.subject_person_id) == person_id, agreement.subject_person_id
+          assert agreement.subject_reference_type == "HR08_HIRING_CASE"
+          assert agreement.subject_reference_id == case_id
+
+          engagement = HrExternalEngagement.objects.get(tenant_id=tenant_id, person_id_id=person_id)
+          assert engagement.status == ExternalEngagementStatus.ACTIVE, engagement.status
+          assert engagement.agreement_id == agreement_id, engagement.agreement_id
+
+          assert not HrStaffMaster.objects.filter(tenant_id=tenant_id, person_id_id=person_id).exists()
+          assert not HrEmploymentRelationship.objects.filter(
+              tenant_id=tenant_id,
+              staff_id__person_id_id=person_id,
+          ).exists()
+          assert HrExternalAuditEvent.objects.filter(
+              tenant_id=tenant_id,
+              action="ExternalHiringAgreementConfirmed",
+              business_id=case_id,
+          ).exists()
+          assert HrExternalAuditEvent.objects.filter(
+              tenant_id=tenant_id,
+              action="ExternalEngagementActivated",
+              business_id=str(engagement.id),
+          ).exists()
+          print("W-B browser MySQL seal PASS")
+          PY
+
+      - name: Upload W-B browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-w-b-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: artifacts/hr-w-b-browser/
+          if-no-files-found: error
+          retention-days: 14

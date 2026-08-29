@@ -25,11 +25,16 @@ from hr_contracts.services.agreement_service import AgreementService, ContractSe
 
 def _authority_labels(tenant_id, agreements):
     """Resolve HR03 display facts without turning scalar provider IDs into FKs."""
-    from hr_staff.models import HrEmploymentRelationship, HrStaffMaster
+    from hr_staff.models import HrEmploymentRelationship, HrPerson, HrStaffMaster
 
     rows = list(agreements)
-    staff_ids = {row.staff_id for row in rows}
-    relationship_ids = {row.employment_relationship_id for row in rows}
+    staff_ids = {row.staff_id for row in rows if row.staff_id}
+    relationship_ids = {
+        row.employment_relationship_id
+        for row in rows
+        if row.employment_relationship_id
+    }
+    person_ids = {row.subject_person_id for row in rows if row.subject_person_id}
     staff = {
         item.id: item
         for item in HrStaffMaster.objects.filter(
@@ -42,26 +47,48 @@ def _authority_labels(tenant_id, agreements):
             tenant_id=tenant_id, id__in=relationship_ids
         )
     }
-    return rows, staff, relationships
+    people = {
+        item.id: item
+        for item in HrPerson.objects.filter(tenant_id=tenant_id, id__in=person_ids)
+    }
+    return rows, staff, relationships, people
 
 
 def _agreement_data(
-    agreement, *, include_versions=False, staff=None, relationships=None
+    agreement,
+    *,
+    include_versions=False,
+    staff=None,
+    relationships=None,
+    people=None,
 ):
     staff_item = (staff or {}).get(agreement.staff_id)
     relationship = (relationships or {}).get(agreement.employment_relationship_id)
+    person = (people or {}).get(agreement.subject_person_id)
     data = {
         "id": str(agreement.id),
         "agreementNo": agreement.agreement_no,
-        "staffId": str(agreement.staff_id),
-        "employmentRelationshipId": str(agreement.employment_relationship_id),
+        "subjectType": agreement.subject_type,
+        "staffId": str(agreement.staff_id) if agreement.staff_id else None,
+        "employmentRelationshipId": (
+            str(agreement.employment_relationship_id)
+            if agreement.employment_relationship_id
+            else None
+        ),
+        "subjectPersonId": (
+            str(agreement.subject_person_id) if agreement.subject_person_id else None
+        ),
+        "subjectReferenceType": agreement.subject_reference_type,
+        "subjectReferenceId": agreement.subject_reference_id,
         "title": agreement.agreement_title,
         "agreementType": agreement.agreement_type,
         "status": agreement.status,
         "currentVersionNo": agreement.current_version_no,
         "staffNo": staff_item.staff_no if staff_item else None,
         "staffName": (
-            staff_item.person_id.legal_name if staff_item and staff_item.person_id else None
+            staff_item.person_id.legal_name
+            if staff_item and staff_item.person_id
+            else (person.legal_name if person else None)
         ),
         "relationshipType": (
             relationship.relationship_type if relationship else None
@@ -148,11 +175,13 @@ def agreement_collection(request):
             return api_error(
                 request, "INVALID_REQUEST", "limit must be an integer", status=400
             )
-        rows, staff, relationships = _authority_labels(tenant_id, qs[:limit])
+        rows, staff, relationships, people = _authority_labels(tenant_id, qs[:limit])
         return api_success(
             request,
             [
-                _agreement_data(row, staff=staff, relationships=relationships)
+                _agreement_data(
+                    row, staff=staff, relationships=relationships, people=people
+                )
                 for row in rows
             ],
         )
@@ -187,7 +216,7 @@ def agreement_detail(request, agreement_id):
         return api_error(
             request, "CONTRACT_NOT_FOUND", "agreement not found inside tenant", status=404
         )
-    rows, staff, relationships = _authority_labels(tenant_id, [agreement])
+    rows, staff, relationships, people = _authority_labels(tenant_id, [agreement])
     return api_success(
         request,
         _agreement_data(
@@ -195,6 +224,7 @@ def agreement_detail(request, agreement_id):
             include_versions=True,
             staff=staff,
             relationships=relationships,
+            people=people,
         ),
     )
 

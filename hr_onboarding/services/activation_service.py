@@ -35,6 +35,7 @@ from hr_onboarding.api.exceptions import (
     ActivationAlreadyCompletedError,
     Hr05ApiError,
     PositionReservationInvalidError,
+    TenantContextRequiredError,
 )
 from hr_onboarding.constants import ActivationStatus, CaseStatus
 from hr_onboarding.integrations.hr02 import Hr02PositionProvider
@@ -69,10 +70,15 @@ class ActivationService:
         self.hr03 = hr03_provider or Hr03ActivationProvider()
         self._hr02_factory = hr02_provider_factory or (lambda: Hr02PositionProvider(tenant_id))
 
+    def _assert_case_tenant(self, case: HrOnboardingCase) -> None:
+        if getattr(case, "tenant_id", None) != self.tenant_id:
+            raise TenantContextRequiredError("入职案件不属于当前学校")
+
     # ------------------------------------------------------------------
     # 查询 Gate（只读，供 UI）
     # ------------------------------------------------------------------
     def gate(self, case: HrOnboardingCase, *, effective_at: date, extra_policy_checks=None):
+        self._assert_case_tenant(case)
         return evaluate_activation_gate(
             tenant_id=self.tenant_id,
             case=case,
@@ -92,25 +98,47 @@ class ActivationService:
         idempotency_key: str,
         extra_policy_checks: Optional[list[dict]] = None,
     ) -> dict:
-        key = normalize_key(idempotency_key, namespace="hr05:activate")
+        # 任何幂等查询之前先验证案件 tenant，防止跨学校 idempotency replay 泄露结果。
+        self._assert_case_tenant(case)
+        key = normalize_key(
+            idempotency_key,
+            namespace=f"hr05:activate:tenant:{self.tenant_id}",
+        )
         replay = apply_idempotency(key)
         if replay is not None:
             return replay
 
-        # 幂等：同 idempotency_key 已成功执行 → 返回原结果
+        # 幂等：同 tenant + idempotency_key 已成功执行 → 返回原结果。
         existing_attempt = HrActivationAttempt.objects.filter(
-            idempotency_key=idempotency_key
+            tenant_id=self.tenant_id,
+            idempotency_key=idempotency_key,
         ).first()
         if existing_attempt is not None and existing_attempt.status == ActivationStatus.SUCCEEDED:
             result = self._build_result(case, existing_attempt)
             store_result(key, result)
             return result
 
-        case = HrOnboardingCase.objects.select_for_update().get(id=case.id)
+        case = (
+            HrOnboardingCase.objects.select_for_update()
+            .filter(id=case.id, tenant_id=self.tenant_id)
+            .first()
+        )
+        if case is None:
+            raise TenantContextRequiredError("入职案件不属于当前学校")
 
         # 已 ACTIVE → 返回原结果（不重复激活）
-        if case.status in (CaseStatus.ACTIVE, CaseStatus.ONBOARDING_IN_PROGRESS, CaseStatus.ONBOARDING_COMPLETED, CaseStatus.PROBATION, CaseStatus.CONFIRMED):
-            attempt = HrActivationAttempt.objects.filter(case=case, status=ActivationStatus.SUCCEEDED).first()
+        if case.status in (
+            CaseStatus.ACTIVE,
+            CaseStatus.ONBOARDING_IN_PROGRESS,
+            CaseStatus.ONBOARDING_COMPLETED,
+            CaseStatus.PROBATION,
+            CaseStatus.CONFIRMED,
+        ):
+            attempt = HrActivationAttempt.objects.filter(
+                tenant_id=self.tenant_id,
+                case=case,
+                status=ActivationStatus.SUCCEEDED,
+            ).first()
             result = self._build_result(case, attempt)
             store_result(key, result)
             return result
@@ -120,7 +148,11 @@ class ActivationService:
         from_stage = case.status
 
         # Gate 全项
-        gate_result = self.gate(case, effective_at=effective_at, extra_policy_checks=extra_policy_checks)
+        gate_result = self.gate(
+            case,
+            effective_at=effective_at,
+            extra_policy_checks=extra_policy_checks,
+        )
         if not gate_result.passed:
             failed = [item.code for item in gate_result.items if not item.ok]
             raise Hr05ApiError(
@@ -182,7 +214,9 @@ class ActivationService:
                     from hr_structure.selectors import effective as hr02_effective
 
                     catalog_version = hr02_effective.post_catalog_version_as_of(
-                        self.tenant_id, case.planned_post_catalog_id_id, effective_at
+                        self.tenant_id,
+                        case.planned_post_catalog_id_id,
+                        effective_at,
                     )
                     post_catalog_version_id = catalog_version.id if catalog_version else None
                 assignment = self.hr03.create_assignment(
@@ -336,7 +370,11 @@ class ActivationService:
         return result
 
     def _build_result(self, case: HrOnboardingCase, attempt: Optional[HrActivationAttempt]) -> dict:
-        snapshot = HrOnboardingActivationSnapshot.objects.filter(case=case).first()
+        self._assert_case_tenant(case)
+        snapshot = HrOnboardingActivationSnapshot.objects.filter(
+            tenant_id=self.tenant_id,
+            case=case,
+        ).first()
         return {
             "case_id": str(case.id),
             "case_status": case.status,

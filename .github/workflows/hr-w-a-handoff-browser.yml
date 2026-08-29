@@ -1,0 +1,319 @@
+name: W-A HR04 to HR05 Browser Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/hr-w-a-handoff-browser.yml"
+      - "scripts/hr_w_a_handoff_browser.py"
+      - "static/hr/js/core/api-client.js"
+      - "static/hr/js/pages/recruitment-proposed.js"
+      - "hr_recruitment/**"
+      - "hr_onboarding/**"
+      - "hr_structure/**"
+      - "hr_staff/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hr-w-a-handoff-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  HR_BROWSER_USERNAME: hr-wa-browser-auditor
+  HR_BROWSER_PASSWORD: hr-wa-browser-only-password
+  HR_BROWSER_BASE_URL: http://127.0.0.1:8000
+  HR_WA_BROWSER_ARTIFACT_DIR: artifacts/hr-w-a-handoff-browser
+
+jobs:
+  hr04-to-hr05-browser-first:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: horilla_db
+          MYSQL_USER: horilla_user
+          MYSQL_PASSWORD: horilla_pass
+          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Syntax gate for focused browser harness
+        run: python -m py_compile scripts/hr_w_a_handoff_browser.py
+
+      - name: Install application and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Ensure local settings stub
+        run: |
+          if [ ! -f horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for W-A browser gate' > horilla/settings/local_settings.py
+          fi
+
+      - name: Migrate fresh MySQL
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+
+      - name: Assert HR05 migration chain materialized
+        run: |
+          python manage.py showmigrations hr_onboarding
+          python manage.py shell <<'PY'
+          from django.db import connection
+          from django.db.migrations.executor import MigrationExecutor
+          from django.db.migrations.recorder import MigrationRecorder
+
+          expected_leaf = (
+              "hr_onboarding",
+              "0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx",
+          )
+          executor = MigrationExecutor(connection)
+          leaves = [
+              node
+              for node in executor.loader.graph.leaf_nodes()
+              if node[0] == "hr_onboarding"
+          ]
+          assert leaves == [expected_leaf], (
+              "HR05 migration graph is missing, split, or not at the expected exact head",
+              leaves,
+          )
+
+          applied = MigrationRecorder(connection).applied_migrations()
+          assert expected_leaf in applied, (
+              "HR05 exact-head migration was not recorded as applied",
+              expected_leaf,
+          )
+
+          tables = set(connection.introspection.table_names())
+          required_tables = {
+              "hr_onboarding_hronboardingcase",
+              "hr_onboarding_hractivationattempt",
+              "hr_onboarding_hronboardingoutboxevent",
+          }
+          missing = required_tables - tables
+          assert not missing, (
+              "HR05 migrate returned success without materializing authority tables",
+              sorted(missing),
+          )
+          print(
+              "HR05 migration materialization PASS",
+              f"leaf={expected_leaf[1]}",
+              f"tables={sorted(required_tables)}",
+          )
+          PY
+
+      - name: Seed browser identity and handoff-ready W-A hire
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import os
+          from django.contrib.auth import get_user_model
+          from django.core.files.uploadedfile import SimpleUploadedFile
+          from base.models import Company
+          from employee.models import Employee, EmployeeWorkInformation
+          from hr_staff.models import HrPerson, HrStaffMaster
+          from hr_recruitment.tests.test_w_a_hire_to_staff_db_chain import (
+              TENANT,
+              WAHireToStaffDatabaseChainTests,
+          )
+
+          username = os.environ["HR_BROWSER_USERNAME"]
+          password = os.environ["HR_BROWSER_PASSWORD"]
+
+          # Match the browser user's company context to the canonical W-A tenant.
+          company = Company.objects.create(
+              id=TENANT,
+              company="跃科 W-A 浏览器验收学校",
+              hq=True,
+              address="长沙市 W-A 浏览器验收路 1 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              icon=SimpleUploadedFile(
+                  "wa-browser-audit.png",
+                  b"wa-browser-audit",
+                  content_type="image/png",
+              ),
+          )
+          User = get_user_model()
+          user = User.objects.create_superuser(
+              username=username,
+              email="wa-browser-audit@example.invalid",
+              password=password,
+          )
+          user.is_new_employee = False
+          user.save(update_fields=["is_new_employee"])
+          employee = Employee.objects.create(
+              employee_user_id=user,
+              employee_first_name="W-A",
+              employee_last_name="浏览器验收员",
+              email="wa-browser-employee@example.invalid",
+              phone="13800000004",
+              is_active=True,
+          )
+          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
+              employee_id=employee,
+          )
+          work_info.company_id = company
+          work_info.save(update_fields=["company_id"])
+          person = HrPerson.objects.create(
+              tenant_id=TENANT,
+              legal_name="W-A 浏览器验收员",
+              status="ACTIVE",
+          )
+          HrStaffMaster.objects.create(
+              tenant_id=TENANT,
+              person_id=person,
+              staff_no="WA-BROWSER-001",
+              current_employment_status="ACTIVE",
+              legacy_employee_id=employee.pk,
+          )
+
+          # Reuse the canonical real-service fixture constructor from the W-A DB
+          # contract. Only setUp is called: no TestCase runner or test transaction
+          # wraps it, so the handoff-ready facts persist in this ephemeral MySQL.
+          fixture = WAHireToStaffDatabaseChainTests(
+              methodName="test_real_handoff_activation_commits_capacity_after_hr03_facts"
+          )
+          fixture.setUp()
+          print(
+              "seeded",
+              f"tenant={TENANT}",
+              f"company={company.pk}",
+              f"user={user.pk}",
+              f"proposed={fixture.proposed.id}",
+              f"reservation={fixture.reservation.id}",
+          )
+          PY
+
+      - name: Boot Django and click real HR04 handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/hr-w-a-handoff-browser
+          python manage.py runserver 127.0.0.1:8000 --noreload \
+            > artifacts/hr-w-a-handoff-browser/django-runserver.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/login/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat artifacts/hr-w-a-handoff-browser/django-runserver.log
+            exit 1
+          fi
+
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
+            | tee artifacts/hr-w-a-handoff-browser/readiness.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(
+              Path("artifacts/hr-w-a-handoff-browser/readiness.json").read_text()
+          )
+          assert payload.get("status") == "ok", payload
+          assert payload.get("database_vendor") == "mysql", payload
+          PY
+
+          python scripts/hr_w_a_handoff_browser.py
+
+      - name: Direct MySQL-backed W-A seal
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          from pathlib import Path
+          from hr_onboarding.models import HrOnboardingCase
+          from hr_recruitment.constants import ApplicationCanonicalStatus, HandoffStatus
+          from hr_recruitment.models import HrRecruitmentHandoff
+          from hr_recruitment.tests.test_w_a_hire_to_staff_db_chain import TENANT
+          from hr_structure.models import HrPositionReservation
+
+          evidence = json.loads(
+              Path("artifacts/hr-w-a-handoff-browser/evidence.json").read_text()
+          )
+          proposed_id = evidence["proposed_hire_id"]
+          case_id = evidence["hr05_case_id"]
+
+          handoff = HrRecruitmentHandoff.objects.select_related(
+              "proposed_hire_id__application_id"
+          ).get(tenant_id=TENANT, proposed_hire_id_id=proposed_id)
+          assert handoff.status == HandoffStatus.CREATED, handoff.status
+          assert str(handoff.hr05_case_id) == str(case_id), (
+              handoff.hr05_case_id,
+              case_id,
+          )
+          assert (
+              handoff.proposed_hire_id.application_id.canonical_status
+              == ApplicationCanonicalStatus.HANDOFF_TO_HR05
+          )
+          case = HrOnboardingCase.objects.get(tenant_id=TENANT, id=case_id)
+          assert str(case.hr04_proposed_hire_id) == str(proposed_id)
+
+          reservation = HrPositionReservation.objects.get(
+              tenant_id=TENANT,
+              id=int(handoff.reservation_id),
+          )
+          assert reservation.status == HrPositionReservation.Status.HELD, (
+              "HR04 must not commit capacity before HR05 activation",
+              reservation.status,
+          )
+          print(
+              "W-A browser seal PASS",
+              f"proposed={proposed_id}",
+              f"case={case_id}",
+              f"reservation={reservation.status}",
+          )
+          PY
+
+      - name: Upload focused browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-w-a-handoff-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: artifacts/hr-w-a-handoff-browser/
+          if-no-files-found: error
+          retention-days: 14

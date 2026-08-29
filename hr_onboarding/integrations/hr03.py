@@ -171,14 +171,30 @@ class Hr03ActivationProvider:
         """
         创建主岗任职（AssignmentService.create_assignment，含 HR02 capacity 校验）。
 
-        注意：HR03 AssignmentPolicy 直接访问实例属性（organization_id.tenant_id / position_id.validity_from），
-        因此必须把 pk 解析为同 tenant 模型实例后再传。
+        注意：HR03 AssignmentPolicy / AssignmentService 会把权威引用作为模型实例使用，
+        因此必须把上游携带的 pk 解析为同 tenant 模型实例后再传；不能把 UUID
+        直接赋给命名为 employment_relationship_id 的 ForeignKey descriptor。
         """
         from decimal import Decimal
 
+        from hr_staff.models import HrEmploymentRelationship
         from hr_staff.policies.assignment_policy import AssignmentPolicyViolation
         from hr_staff.services.assignment_service import AssignmentService
         from hr_structure.models import HrOrganization, HrPosition, HrPostCatalogVersion
+
+        relationship = (
+            employment_relationship_id
+            if isinstance(employment_relationship_id, HrEmploymentRelationship)
+            else HrEmploymentRelationship.objects.filter(
+                tenant_id=tenant_id,
+                id=employment_relationship_id,
+            ).first()
+        )
+        if relationship is None or relationship.tenant_id != tenant_id:
+            raise Hr03ActivationProviderError(
+                "EMPLOYMENT_RELATIONSHIP_NOT_FOUND",
+                "聘用关系不存在或不属于当前学校",
+            )
 
         org = None
         if organization_id is not None:
@@ -198,7 +214,7 @@ class Hr03ActivationProvider:
 
         try:
             return AssignmentService(tenant_id=tenant_id).create_assignment(
-                employment_relationship_id=employment_relationship_id,
+                employment_relationship_id=relationship,
                 assignment_type=assignment_type,
                 effective_from=effective_from,
                 organization_id=org,
