@@ -334,15 +334,32 @@ class ApplyService:
                 ) from exc
 
         elif action == ChangeActionCode.END_SECONDARY_ASSIGNMENT:
+            from hr_staff.constants import AssignmentType
+            from hr_staff.services.effective_dated_query_service import (
+                EffectiveDatedQueryService,
+            )
+
+            source_assignment = (
+                EffectiveDatedQueryService(self.tenant_id)
+                .assignments_as_of(case.staff_master_id_id, eff)
+                .filter(
+                    id=case.source_assignment_id_id,
+                    assignment_type=AssignmentType.CONCURRENT,
+                )
+                .first()
+            )
+            if source_assignment is None:
+                raise ApplyServiceError(
+                    "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
+                    "未找到所选的生效中兼岗",
+                )
             assignment_service.close_assignment(
-                assignment_id=(
-                    _int_or_uuid(_ref("assignment_id"))
-                    or case.source_assignment_id_id
-                ),
+                assignment_id=source_assignment.id,
                 effective_to=eff,
                 source_business_type=biz_type,
                 source_business_id=biz_id,
             )
+            target_fact_ids.append(str(source_assignment.id))
 
         elif action == ChangeActionCode.EMPLOYEE_CATEGORY_CHANGE:
             StaffMasterService().update_staff_category(

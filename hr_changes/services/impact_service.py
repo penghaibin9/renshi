@@ -141,7 +141,31 @@ class Hr03FactsProvider(ImpactProvider):
                 }
             )
         primary = qs.primary_assignment_as_of(case.staff_master_id_id, as_of)
-        if case.source_assignment_id_id and primary and str(case.source_assignment_id_id) != str(primary.id):
+        if case.action_id.code == ChangeActionCode.END_SECONDARY_ASSIGNMENT:
+            source_is_current_concurrent = (
+                case.source_assignment_id_id is not None
+                and qs.assignments_as_of(case.staff_master_id_id, as_of)
+                .filter(
+                    id=case.source_assignment_id_id,
+                    assignment_type="CONCURRENT",
+                )
+                .exists()
+            )
+            if not source_is_current_concurrent:
+                items.append(
+                    {
+                        "level": ImpactLevel.BLOCKER,
+                        "code": "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
+                        "message": "取消兼岗必须选择该人员当前生效中的兼岗",
+                        "domain": "HR03",
+                        "actionable": "从 HR03 当前兼岗列表重新选择",
+                    }
+                )
+        elif (
+            case.source_assignment_id_id
+            and primary
+            and str(case.source_assignment_id_id) != str(primary.id)
+        ):
             items.append(
                 {
                     "level": ImpactLevel.BLOCKER,

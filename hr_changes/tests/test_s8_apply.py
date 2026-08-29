@@ -21,7 +21,7 @@ from hr_changes.models import (
     HrPersonnelChangeCase,
 )
 from hr_changes.services.apply_service import ApplyService, ApplyServiceError
-from hr_changes.services.change_service import ChangeService
+from hr_changes.services.change_service import ChangeService, ChangeServiceError
 from hr_changes.services.identity_change_service import IdentityChangeService
 from hr_changes.services.rebase_service import RebaseService
 from hr_changes.tests.factories import (
@@ -413,6 +413,111 @@ class ApplyAddSecondaryAssignmentTests(TestCase):
         self.assertEqual(concurrent.fte, Decimal("0.30"))
         reservation.refresh_from_db()
         self.assertEqual(reservation.status, "COMMITTED")
+
+
+class ApplyEndSecondaryAssignmentTests(TestCase):
+    def test_end_secondary_closes_only_selected_concurrent_assignment(self):
+        from hr_staff.models import HrStaffAssignment
+
+        staff = make_staff(TENANT, make_person(TENANT, "取消兼岗教师"), "T8212")
+        org = make_org(TENANT, "END-SECONDARY", "兼岗学院", date(2020, 1, 1))
+        primary_position = make_position(TENANT, org, "END-PRIMARY", max_incumbents=1)
+        first_position = make_position(TENANT, org, "END-CONCURRENT-1", max_incumbents=1)
+        second_position = make_position(TENANT, org, "END-CONCURRENT-2", max_incumbents=1)
+        relationship = EmploymentService(TENANT).start_relationship(
+            staff_id=staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        primary = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="PRIMARY",
+            effective_from=date(2024, 9, 1),
+            organization_id=org,
+            position_id=primary_position,
+            source_business_type=FIXTURE_SOURCE,
+        )
+        selected = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="CONCURRENT",
+            effective_from=date(2025, 9, 1),
+            organization_id=org,
+            position_id=first_position,
+            fte=Decimal("0.20"),
+            source_business_type=FIXTURE_SOURCE,
+        )
+        untouched = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="CONCURRENT",
+            effective_from=date(2025, 9, 1),
+            organization_id=org,
+            position_id=second_position,
+            fte=Decimal("0.10"),
+            source_business_type=FIXTURE_SOURCE,
+        )
+        action = make_action(TENANT, ChangeActionCode.END_SECONDARY_ASSIGNMENT)
+        reason = make_reason(TENANT, ChangeActionCode.END_SECONDARY_ASSIGNMENT)
+        case = IdentityChangeService(TENANT, actor_user_id=1).create_identity_change(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[],
+            source_assignment_id=selected.id,
+        )
+
+        service = ChangeService(TENANT, actor_user_id=1)
+        case = service.submit(case.id)
+        case = service.start_approval(case.id)
+        case = service.approve_all(case.id)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        self.assertEqual(case.status, CaseStatus.EFFECTIVE)
+        primary.refresh_from_db()
+        selected.refresh_from_db()
+        untouched.refresh_from_db()
+        self.assertIsNone(primary.effective_to)
+        self.assertEqual(selected.effective_to, date.today())
+        self.assertEqual(selected.status, "ENDED")
+        self.assertIsNone(untouched.effective_to)
+        self.assertEqual(untouched.status, "ACTIVE")
+        self.assertEqual(
+            HrStaffAssignment.objects.filter(
+                tenant_id=TENANT,
+                employment_relationship_id=relationship,
+                assignment_type="PRIMARY",
+                effective_to__isnull=True,
+            ).count(),
+            1,
+        )
+
+    def test_end_secondary_rejects_primary_source_assignment(self):
+        staff = make_staff(TENANT, make_person(TENANT, "误选主岗教师"), "T8213")
+        org = make_org(TENANT, "END-REJECT", "主岗学院", date(2020, 1, 1))
+        relationship = EmploymentService(TENANT).start_relationship(
+            staff_id=staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        primary = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="PRIMARY",
+            effective_from=date(2024, 9, 1),
+            organization_id=org,
+            source_business_type=FIXTURE_SOURCE,
+        )
+        action = make_action(TENANT, ChangeActionCode.END_SECONDARY_ASSIGNMENT)
+        reason = make_reason(TENANT, ChangeActionCode.END_SECONDARY_ASSIGNMENT)
+        with self.assertRaises(ChangeServiceError) as caught:
+            IdentityChangeService(TENANT, actor_user_id=1).create_identity_change(
+                staff_master_id=staff,
+                action_id=action,
+                reason_id=reason,
+                requested_effective_at=date.today(),
+                proposals=[],
+                source_assignment_id=primary.id,
+            )
+        self.assertEqual(caught.exception.code, "CHANGE_SOURCE_ASSIGNMENT_MISMATCH")
 
 
 class RebaseServiceTests(TestCase):

@@ -16,7 +16,11 @@ from typing import Optional
 from hr_changes.constants import ChangeActionCode
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.policies.identity_policy import IdentityPolicy
-from hr_changes.services.change_service import ChangeService, ChangeServiceError
+from hr_changes.services.change_service import (
+    ChangeService,
+    ChangeServiceError,
+    _parse_effective_date,
+)
 from hr_changes.services.transfer_service import _load_action_safe
 
 
@@ -62,6 +66,31 @@ class IdentityChangeService:
                 raise ChangeServiceError(
                     "CHANGE_INVALID_PAYLOAD", "增加兼岗必须指定目标组织与岗位"
                 )
+
+        if action.code == ChangeActionCode.END_SECONDARY_ASSIGNMENT:
+            from hr_staff.constants import AssignmentType
+            from hr_staff.services.effective_dated_query_service import (
+                EffectiveDatedQueryService,
+            )
+
+            staff_id = getattr(staff_master_id, "pk", staff_master_id)
+            assignment_id = getattr(source_assignment_id, "pk", source_assignment_id)
+            effective_at = _parse_effective_date(requested_effective_at)
+            source_assignment = (
+                EffectiveDatedQueryService(self.tenant_id)
+                .assignments_as_of(staff_id, effective_at)
+                .filter(
+                    id=assignment_id,
+                    assignment_type=AssignmentType.CONCURRENT,
+                )
+                .first()
+            )
+            if source_assignment is None:
+                raise ChangeServiceError(
+                    "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
+                    "取消兼岗必须选择该人员生效中的真实兼岗",
+                )
+            source_assignment_id = source_assignment
 
         proposal_refs = {
             proposal.get("field_code"): proposal.get("proposed_value_ref")
