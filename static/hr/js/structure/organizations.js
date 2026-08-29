@@ -15,10 +15,14 @@
       const res = await window.HrApi.request("/api/hr/v1/structure/organizations/bootstrap");
       if (!res.ok) throw new Error("bootstrap failed");
       const d = res.data;
-      // 根节点
+      // bootstrap 始终返回 root 对象；未建根组织时 root.id 为 null。
+      // 这种合法空态不能继续请求 tree(parent_id=null) 或 detail/null。
       const root = d.root;
-      if (!root) {
+      if (!root || root.id == null) {
         treeEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">尚未建立学校根组织</div></div>`;
+        if (detailEl) {
+          detailEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">建立学校根组织后可查看机构详情</div></div>`;
+        }
         return;
       }
       treeEl.innerHTML = `<div class="hr-org-node is-root" data-org-id="${root.id}">
