@@ -1,33 +1,94 @@
+{% extends "index.html" %}
 {% load static i18n %}
 {% trans "数据质量异常中心" as t_title %}
-{% trans "加载中…" as t_loading %}
 {% trans "加载失败" as t_load_failed %}
 {% trans "暂无异常" as t_clean %}
 {% trans "高" as t_high %}
 {% trans "中" as t_medium %}
 {% trans "低" as t_low %}
-<form id="scanForm">
-  <input type="date" id="asOf" name="as_of"> <button type="submit">{{ t_title }}扫描</button>
-</form>
-<div id="result">{{ t_loading }}</div>
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-records.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="data-quality">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-quality-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-quality-title">{{ t_title }}</h1>
+      <p class="hr-v2-subtitle">按指定日期扫描当前学校 HR03 正式事实中的数据质量异常。严重级别、规则、工号和异常说明均由后端扫描结果返回；页面不根据缺字段自行猜测风险。</p>
+    </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> 可指定 as-of</span>
+      <span class="hr-v2-context__item"><strong>结果</strong> 规则扫描</span>
+    </div>
+  </header>
+
+  <nav class="hr03-nav" aria-label="教职工主档工作区导航">
+    <a href="/hr/staff/">教职工名册</a>
+    <a class="is-active" href="/hr/staff/data-quality/">数据质量</a>
+  </nav>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-scan-title">
+    <div class="hr-v2-panel">
+      <div class="hr-v2-panel__head"><div><h3 id="hr03-scan-title">执行质量扫描</h3><p>日期留空时按后端当前口径扫描；指定日期用于核对历史 effective-dated 事实。</p></div></div>
+      <form id="scanForm" class="hr03-quality-form">
+        <label for="asOf"><span>扫描日期</span><input type="date" id="asOf" name="as_of"></label>
+        <button class="btn primary" type="submit">开始扫描</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr03-result-title">
+    <div class="hr-v2-section__head"><div><h2 id="hr03-result-title">扫描结果</h2><p>只有后端明确返回的问题才进入异常列表。</p></div></div>
+    <div id="result" class="hr03-record-list">
+      <div class="hr-v2-state"><strong>尚未执行扫描</strong><span>选择日期或直接按当前口径开始扫描。</span></div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>事实边界</strong><span>“暂无异常”只在扫描成功且 issues 为空时显示；网络失败、权限失败和接口错误都保持错误态，不降级成零异常。</span></div>
+</div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
 <script>
-document.getElementById("scanForm").onsubmit = async e => {
-  e.preventDefault();
-  const d = document.getElementById("asOf").value;
-  document.getElementById("result").textContent = "{{ t_loading|escapejs }}";
-  try {
-    const resp = await fetch(`/api/hr/v1/staff/data-quality-scan${d?'?as_of='+d:''}`);
-    if (!resp.ok) { document.getElementById("result").textContent = "{{ t_load_failed|escapejs }}（"+resp.status+"）"; return; }
-    const body = await resp.json();
-    const issues = body.data.issues || [];
-    if (!issues.length) { document.getElementById("result").textContent = "{{ t_clean|escapejs }}"; return; }
-    const sev = {"HIGH":"{{ t_high|escapejs }}","MEDIUM":"{{ t_medium|escapejs }}","LOW":"{{ t_low|escapejs }}"};
-    document.getElementById("result").innerHTML = `<div>共 ${issues.length} 条异常：</div>` + issues.map(i =>
-      `<div style="padding:6px 12px;margin:4px 0;border-left:3px solid ${i.severity==='HIGH'?'#dc2626':'#d97706'};font-size:13px">
-        ${sev[i.severity]||i.severity} · ${escapeHtml(i.rule)} · staff=${escapeHtml(i.staffNo)} · ${escapeHtml(i.message)}
-      </div>`
-    ).join("");
-  } catch(e) { document.getElementById("result").textContent = "{{ t_load_failed|escapejs }}"; }
-};
-function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+(function () {
+  "use strict";
+  const form = document.getElementById("scanForm");
+  const result = document.getElementById("result");
+  const severityLabels = {HIGH:"{{ t_high|escapejs }}",MEDIUM:"{{ t_medium|escapejs }}",LOW:"{{ t_low|escapejs }}"};
+  function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const date = document.getElementById("asOf").value;
+    result.innerHTML = '<div class="hr-v2-state"><strong>正在扫描数据质量</strong><span>正在执行 HR03 正式规则。</span></div>';
+    try {
+      const suffix = date ? `?as_of=${encodeURIComponent(date)}` : "";
+      const resp = await fetch(`/api/hr/v1/staff/data-quality-scan${suffix}`, {credentials:"same-origin"});
+      if (!resp.ok) { result.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>{{ t_load_failed|escapejs }}</strong><span>HTTP ${resp.status}</span></div>`; return; }
+      const body = await resp.json();
+      const issues = Array.isArray(body.data?.issues) ? body.data.issues : [];
+      if (!issues.length) { result.innerHTML = '<div class="hr-v2-state"><strong>{{ t_clean|escapejs }}</strong><span>本次扫描没有返回数据质量异常。</span></div>'; return; }
+      result.innerHTML = `<div class="hr-v2-summary-row"><div class="hr-v2-summary-cell"><strong>${issues.length}</strong><span>本次扫描异常</span></div></div>` + issues.map(issue => `
+        <article class="hr03-quality-issue" data-severity="${escapeHtml(issue.severity || "")}">
+          <strong>${escapeHtml(severityLabels[issue.severity] || issue.severity || "—")} · ${escapeHtml(issue.rule || "—")}</strong>
+          <span>工号 ${escapeHtml(issue.staffNo || "—")} · ${escapeHtml(issue.message || "—")}</span>
+        </article>`).join("");
+    } catch (_error) {
+      result.innerHTML = '<div class="hr-v2-state" data-state="error"><strong>{{ t_load_failed|escapejs }}</strong><span>质量扫描接口请求失败。</span></div>';
+    }
+  });
+})();
 </script>
+{% endblock scripts %}
