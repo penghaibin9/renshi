@@ -31,14 +31,14 @@
     </header>
 
     <nav class="hr18-nav" aria-label="人事数据治理导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_data:overview' %}">总览</a>
-      <a class="{% if section == 'metrics' %}active{% endif %}" href="{% url 'hr_data:metrics' %}">指标口径</a>
-      <a class="{% if section == 'population' %}active{% endif %}" href="{% url 'hr_data:population' %}">统计范围与维度</a>
-      <a class="{% if section == 'asof' %}active{% endif %}" href="{% url 'hr_data:asof' %}">历史时点</a>
-      <a class="{% if section == 'quality' %}active{% endif %}" href="{% url 'hr_data:quality' %}">数据质量</a>
-      <a class="{% if section == 'exchange' %}active{% endif %}" href="{% url 'hr_data:exchange' %}">数据交换</a>
-      <a class="{% if section == 'submissions' %}active{% endif %}" href="{% url 'hr_data:submissions' %}">正式报送</a>
-      <a class="{% if section == 'corrections' %}active{% endif %}" href="{% url 'hr_data:corrections' %}">回执与更正</a>
+      <a class="{% if section == 'overview' %}active{% endif %}"{% if section == 'overview' %} aria-current="page"{% endif %} href="{% url 'hr_data:overview' %}">总览</a>
+      <a class="{% if section == 'metrics' %}active{% endif %}"{% if section == 'metrics' %} aria-current="page"{% endif %} href="{% url 'hr_data:metrics' %}">指标口径</a>
+      <a class="{% if section == 'population' %}active{% endif %}"{% if section == 'population' %} aria-current="page"{% endif %} href="{% url 'hr_data:population' %}">统计范围与维度</a>
+      <a class="{% if section == 'asof' %}active{% endif %}"{% if section == 'asof' %} aria-current="page"{% endif %} href="{% url 'hr_data:asof' %}">历史时点</a>
+      <a class="{% if section == 'quality' %}active{% endif %}"{% if section == 'quality' %} aria-current="page"{% endif %} href="{% url 'hr_data:quality' %}">数据质量</a>
+      <a class="{% if section == 'exchange' %}active{% endif %}"{% if section == 'exchange' %} aria-current="page"{% endif %} href="{% url 'hr_data:exchange' %}">数据交换</a>
+      <a class="{% if section == 'submissions' %}active{% endif %}"{% if section == 'submissions' %} aria-current="page"{% endif %} href="{% url 'hr_data:submissions' %}">正式报送</a>
+      <a class="{% if section == 'corrections' %}active{% endif %}"{% if section == 'corrections' %} aria-current="page"{% endif %} href="{% url 'hr_data:corrections' %}">回执与更正</a>
     </nav>
     <div class="hr18-mobile-hint">可左右滑动查看全部数据治理工作区</div>
 

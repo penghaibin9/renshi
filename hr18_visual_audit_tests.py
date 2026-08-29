@@ -228,6 +228,7 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                     self.assertEqual(response.status, 200, f"HR18 {route} returned HTTP {response.status}")
                     self.assertEqual(page.locator("[data-module='HR18'].hr-v2-page").count(), 1)
                     self.assertEqual(page.locator(".hr18-nav a").count(), 8)
+                    self.assertEqual(page.locator(".hr18-nav a[aria-current='page']").count(), 1)
                     page.wait_for_function(
                         """() => Array.from(document.querySelectorAll('#hr18-kpis .hr18-kpi b')).every((n) => n.textContent.trim() !== '—')""",
                         timeout=8000,
@@ -249,6 +250,12 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                 page.goto(self.live_server_url + "/hr/data/metrics/", wait_until="networkidle")
                 page.locator("[data-open='hr18-metric-form']").click()
                 form = page.locator("#hr18-metric-form")
+                self.assertEqual(page.evaluate("document.activeElement?.name"), "metricCode")
+                self.assertTrue(
+                    form.locator(".hr18-action-field > label[for]").evaluate_all(
+                        "labels => labels.every(label => document.getElementById(label.htmlFor))"
+                    )
+                )
                 form.locator("[name='metricCode']").fill("VISUAL_HEADCOUNT")
                 form.locator("[name='name']").fill("视觉验收在岗人数")
                 form.locator("[name='valueType']").select_option("INTEGER")
@@ -277,6 +284,12 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200)
                     self.assertEqual(page.locator(".hr-v2-mobile-section-switcher").count(), 1)
+                    self.assertEqual(page.locator(".hr18-nav a[aria-current='page']").count(), 1)
+                    self.assertTrue(
+                        page.locator(".hr18-nav a").evaluate_all(
+                            "links => links.every(link => link.getBoundingClientRect().height >= 44)"
+                        )
+                    )
                     page.wait_for_function(
                         """() => Array.from(document.querySelectorAll('#hr18-kpis .hr18-kpi b')).every((n) => n.textContent.trim() !== '—')""",
                         timeout=8000,

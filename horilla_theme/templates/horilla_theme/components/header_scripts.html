@@ -109,8 +109,8 @@
 
 <script>
     window.CURRENT_LANGUAGE = "{{ LANGUAGE_CODE }}";
-    var at_work_seconds = {{ request.user.employee_get.get_forecasted_at_work.forecasted_at_work_seconds }}
-    var run = 0
+    var at_work_seconds = {{ request.user.employee_get.get_forecasted_at_work.forecasted_at_work_seconds|default:"0" }};
+    var run = 0;
 </script>
 <script src="{% static 'horilla_theme/assets/js/tailwind.js' %}"></script>
 <script>

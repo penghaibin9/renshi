@@ -19,6 +19,7 @@
     receipt: root.dataset.canReceipt === 'true',
   };
   let dashboard = null;
+  let fieldSequence = 0;
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -103,6 +104,8 @@
     if (!target) {
       target = document.createElement('div');
       target.className = 'hr18-action-result';
+      target.setAttribute('role', 'status');
+      target.setAttribute('aria-live', 'polite');
       host.appendChild(target);
     }
     return target;
@@ -111,6 +114,8 @@
   function showResult(host, kind, message) {
     const target = resultBox(host);
     target.className = `hr18-action-result show ${kind}`;
+    target.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    target.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
     target.textContent = message;
   }
 
@@ -127,10 +132,22 @@
   }
 
   function toggleForm(host, id) {
+    let openedForm = null;
     host.querySelectorAll('.hr18-action-form').forEach((form) => {
-      form.classList.toggle('open', form.id === id && !form.classList.contains('open'));
+      const shouldOpen = form.id === id && !form.classList.contains('open');
+      form.classList.toggle('open', shouldOpen);
+      if (shouldOpen) openedForm = form;
     });
     resultBox(host).classList.remove('show');
+    if (openedForm) {
+      window.requestAnimationFrame(() => openedForm.querySelector('input, select, textarea, button')?.focus());
+    }
+  }
+
+  function closeForm(host, form) {
+    if (!form) return;
+    form.classList.remove('open');
+    host.querySelector(`[data-open="${form.id}"]`)?.focus();
   }
 
   function reloadAfterSuccess(host, message) {
@@ -139,7 +156,11 @@
   }
 
   function field(label, input, help = '', full = false) {
-    return `<div class="hr18-action-field${full ? ' full' : ''}"><label>${escapeHtml(label)}</label>${input}${help ? `<div class="hr18-action-help">${escapeHtml(help)}</div>` : ''}</div>`;
+    fieldSequence += 1;
+    const fieldId = `hr18-action-field-${fieldSequence}`;
+    const helpId = `${fieldId}-help`;
+    const linkedInput = input.replace(/^<([a-z]+)/i, `<$1 id="${fieldId}"${help ? ` aria-describedby="${helpId}"` : ''}`);
+    return `<div class="hr18-action-field${full ? ' full' : ''}"><label for="${fieldId}">${escapeHtml(label)}</label>${linkedInput}${help ? `<div class="hr18-action-help" id="${helpId}">${escapeHtml(help)}</div>` : ''}</div>`;
   }
 
   function checkbox(name, label, checked = true) {
@@ -167,7 +188,7 @@
       </form>`);
 
     host.querySelector('[data-open]').addEventListener('click', () => toggleForm(host, 'hr18-metric-form'));
-    host.querySelector('[data-close]').addEventListener('click', () => host.querySelector('#hr18-metric-form').classList.remove('open'));
+    host.querySelector('[data-close]').addEventListener('click', () => closeForm(host, host.querySelector('#hr18-metric-form')));
     host.querySelector('form').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -235,7 +256,7 @@
       </form>`);
 
     host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
-    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => button.closest('form').classList.remove('open')));
+    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeForm(host, button.closest('form'))));
 
     host.querySelector('#hr18-pop-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -315,7 +336,7 @@
       </form>`);
 
     host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
-    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => button.closest('form').classList.remove('open')));
+    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeForm(host, button.closest('form'))));
     host.querySelector('#hr18-asof-rebuild').addEventListener('submit', async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -389,7 +410,7 @@
       <div class="hr18-action-table" id="hr18-finding-actions"><div class="hr18-action-empty">正在读取待处理质量问题…</div></div>`);
 
     host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
-    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => button.closest('form').classList.remove('open')));
+    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeForm(host, button.closest('form'))));
 
     host.querySelector('#hr18-rule-form').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -499,7 +520,7 @@
           <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">创建草稿</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
         </form>`);
       host.querySelector('[data-open]').addEventListener('click', () => toggleForm(host, 'hr18-submission-form'));
-      host.querySelector('[data-close]').addEventListener('click', () => host.querySelector('#hr18-submission-form').classList.remove('open'));
+      host.querySelector('[data-close]').addEventListener('click', () => closeForm(host, host.querySelector('#hr18-submission-form')));
     }
 
     host.insertAdjacentHTML('beforeend', '<div class="hr18-action-table" id="hr18-submission-actions"><div class="hr18-action-empty">正在读取正式报送快照…</div></div>');

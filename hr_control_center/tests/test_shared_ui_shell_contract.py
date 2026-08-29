@@ -15,6 +15,21 @@ class SharedHrWorkspaceShellContractTests(SimpleTestCase):
         self.assertIn("{% endblock scripts %}", source)
         self.assertLess(source.index("{% block scripts %}"), source.index("</body>"))
 
+    def test_shell_timer_scripts_default_missing_work_seconds_to_zero(self):
+        timer_expression = (
+            "{{ request.user.employee_get.get_forecasted_at_work."
+            'forecasted_at_work_seconds|default:"0" }};'
+        )
+
+        for template_path in (
+            "templates/index.html",
+            "horilla_theme/templates/horilla_theme/components/header_scripts.html",
+        ):
+            with self.subTest(template_path=template_path):
+                source = self._source(template_path)
+                self.assertIn(f"var at_work_seconds = {timer_expression}", source)
+                self.assertIn("var run = 0;", source)
+
     def test_mobile_shell_uses_native_closed_state_not_dom_removal(self):
         source = self._source("static/src/js/customHeaderScripts.js")
 
