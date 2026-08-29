@@ -10,6 +10,7 @@
 {% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr06-page" data-module="HR06" data-section="new" data-hr-page="change-new">
+  <div hidden aria-hidden="true">{% csrf_token %}</div>
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>创建草稿</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-new-title">
     <div class="hr-v2-pagehead__copy">
