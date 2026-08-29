@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import IntegrityError
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -26,9 +27,19 @@ from hr_assessment.selectors import (
 from hr_assessment.service import PolicyPackService
 from hr_assessment.service.evidence import ProviderCollectionOrchestrator
 
+POLICY_DOMAINS = {"ANNUAL", "TERM", "ETHICS", "SPECIAL"}
+
+
+def _json_body(request: HttpRequest) -> dict | None:
+    try:
+        value = json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
 
 def _get_tenant(request: HttpRequest) -> int:
-    t = resolve_tenant_from_assignment(request)
+    t = getattr(request, "tenant_id", None) or resolve_tenant_from_assignment(request)
     if t is None:
         raise PermissionDenied("租户上下文缺失")
     return t
@@ -71,11 +82,23 @@ def policy_list(request: HttpRequest) -> JsonResponse:
             for p in packs
         ]))
 
-    body = json.loads(request.body)
-    pack = PolicyPackService().create_pack(
-        tenant_id=tenant, code=body["code"], name=body["name"],
-        assessment_domain=body.get("assessment_domain", "ANNUAL"),
-    )
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse(api_error("INVALID_REQUEST", "请求正文不是有效 JSON", http_status=400), status=400)
+    code = str(body.get("code") or "").strip().upper()
+    name = str(body.get("name") or "").strip()
+    domain = str(body.get("assessment_domain") or "ANNUAL").strip().upper()
+    if not code or not name or len(code) > 50 or len(name) > 200 or domain not in POLICY_DOMAINS:
+        return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "请填写有效的制度代码、名称和考核域", http_status=400), status=400)
+    try:
+        pack = PolicyPackService().create_pack(
+            tenant_id=tenant,
+            code=code,
+            name=name,
+            assessment_domain=domain,
+        )
+    except (ValidationError, IntegrityError) as exc:
+        return JsonResponse(api_error("ASSESSMENT_POLICY_CONFLICT", str(exc), http_status=409), status=409)
     return JsonResponse(api_success(data={"id": str(pack.id), "code": pack.code}), status=201)
 
 
@@ -99,9 +122,14 @@ def policy_detail(request: HttpRequest, policy_id: int) -> JsonResponse:
             "versions": list(versions),
         }))
 
-    body = json.loads(request.body)
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse(api_error("INVALID_REQUEST", "请求正文不是有效 JSON", http_status=400), status=400)
     if "name" in body:
-        pack.name = body["name"]
+        name = str(body.get("name") or "").strip()
+        if not name or len(name) > 200:
+            return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "请填写有效的制度名称", http_status=400), status=400)
+        pack.name = name
         pack.save(update_fields=["name"])
     return JsonResponse(api_success(data={"id": str(pack.id)}))
 
@@ -124,8 +152,8 @@ def publish_policy_version(
     try:
         PolicyPackService().publish_policy_version(version)
         return JsonResponse(api_success(data={"id": str(version.id), "status": "PUBLISHED"}))
-    except Exception as e:
-        return JsonResponse(api_error("ASSESSMENT_FINALIZATION_BLOCKED", str(e), http_status=409), status=409)
+    except ValidationError as exc:
+        return JsonResponse(api_error("ASSESSMENT_FINALIZATION_BLOCKED", str(exc), http_status=409), status=409)
 
 
 @require_assessment_permission("hr.assessment.analytics_view")

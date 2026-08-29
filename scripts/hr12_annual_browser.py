@@ -13,6 +13,16 @@ USERNAME = os.environ["HR_BROWSER_USERNAME"]
 PASSWORD = os.environ["HR_BROWSER_PASSWORD"]
 ARTIFACT_DIR = Path(os.getenv("HR_BROWSER_ARTIFACT_DIR", "artifacts/hr12-annual-browser"))
 SEED_PATH = ARTIFACT_DIR / "seed.json"
+WORKSPACES = (
+    ("overview", "/hr/assessments/"),
+    ("policies", "/hr/assessments/policies/"),
+    ("goals", "/hr/assessments/goals/"),
+    ("annual", "/hr/assessments/annual/"),
+    ("term", "/hr/assessments/term/"),
+    ("ethics", "/hr/assessments/ethics/"),
+    ("review", "/hr/assessments/review/"),
+    ("archive", "/hr/assessments/archive/"),
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -47,6 +57,56 @@ def main() -> None:
             with page.expect_navigation(wait_until="domcontentloaded") as login_nav:
                 page.locator("button[type='submit']").click()
             require(login_nav.value is not None and login_nav.value.status < 400, "login click failed")
+
+            for viewport_name, viewport in (
+                ("desktop", {"width": 1440, "height": 1000}),
+                ("mobile", {"width": 390, "height": 844}),
+            ):
+                page.set_viewport_size(viewport)
+                for workspace_name, workspace_path in WORKSPACES:
+                    response = page.goto(BASE_URL + workspace_path, wait_until="domcontentloaded")
+                    require(
+                        response is not None and response.status == 200,
+                        f"HR12 {workspace_name} {viewport_name} page failed",
+                    )
+                    page.locator("#workRows .hr12-row, #workRows .hr12-empty").first.wait_for(
+                        state="visible",
+                        timeout=15000,
+                    )
+                    page.screenshot(
+                        path=str(ARTIFACT_DIR / f"workspace-{viewport_name}-{workspace_name}.png"),
+                        full_page=True,
+                    )
+                evidence.append({
+                    "step": f"audit-{viewport_name}-workspaces",
+                    "pages": len(WORKSPACES),
+                    "http_status": 200,
+                })
+
+            page.set_viewport_size({"width": 1440, "height": 1000})
+            policy_response = page.goto(BASE_URL + "/hr/assessments/policies/", wait_until="domcontentloaded")
+            require(policy_response is not None and policy_response.status == 200, "HR12 policies page failed")
+            page.locator("[data-open]").click()
+            page.locator("#hr12-policy-code").fill("HR12-BROWSER-GOVERNANCE")
+            page.locator("#hr12-policy-name").fill("HR12 浏览器制度治理")
+            with page.expect_response(
+                lambda response: response.url.endswith("/api/v1/hr/assessments/policies")
+                and response.request.method == "POST"
+            ) as create_info:
+                page.locator("[data-form] [type='submit']").click()
+            require(create_info.value.status == 201, f"policy create HTTP {create_info.value.status}")
+            page.wait_for_timeout(900)
+            created_row = page.locator(".hr12-action-row").filter(has_text="HR12-BROWSER-GOVERNANCE")
+            created_row.wait_for(state="visible", timeout=15000)
+            created_row.locator("[data-rename]").click()
+            created_row.locator("[data-rename-form] input[name='name']").fill("HR12 浏览器制度治理（修订）")
+            with page.expect_response(
+                lambda response: "/api/v1/hr/assessments/policies/" in response.url
+                and response.request.method == "PUT"
+            ) as rename_info:
+                created_row.locator("[data-rename-form] [type='submit']").click()
+            require(rename_info.value.status == 200, f"policy rename HTTP {rename_info.value.status}")
+            evidence.append({"step": "create-and-rename-policy-pack", "http_status": 200})
 
             annual_response = page.goto(BASE_URL + "/hr/assessments/annual/", wait_until="domcontentloaded")
             require(annual_response is not None and annual_response.status == 200, "HR12 annual page failed")

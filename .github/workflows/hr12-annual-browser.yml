@@ -9,12 +9,17 @@ on:
       - "scripts/hr12_annual_browser.py"
       - "hr_assessment/api/urls.py"
       - "hr_assessment/api/views_assessment.py"
+      - "hr_assessment/api/views_policy.py"
       - "hr_assessment/models/**"
       - "hr_assessment/service/**"
       - "hr_assessment/services/**"
       - "hr_assessment/providers/**"
       - "hr_assessment/templates/hr_assessment/workspace.html"
+      - "hr_assessment/tests/test_hr12_v2_workspace.py"
+      - "static/hr/css/hr12-assessment.css"
+      - "static/hr/css/hr12-actions.css"
       - "static/hr/js/pages/hr12-assessment.js"
+      - "static/hr/js/pages/hr12-actions.js"
 
 permissions:
   contents: read
@@ -70,7 +75,9 @@ jobs:
         run: |
           python -m py_compile \
             hr_assessment/api/views_assessment.py \
+            hr_assessment/api/views_policy.py \
             hr_assessment/tests/test_annual_api.py \
+            hr_assessment/tests/test_hr12_v2_workspace.py \
             scripts/hr12_annual_browser.py
 
       - name: Install application and Chromium
@@ -143,7 +150,10 @@ jobs:
 
       - name: Run precise HR12 Annual API tests
         run: |
-          python manage.py test hr_assessment.tests.test_annual_api --keepdb --noinput --verbosity 2
+          python manage.py test \
+            hr_assessment.tests.test_annual_api \
+            hr_assessment.tests.test_hr12_v2_workspace \
+            --keepdb --noinput --verbosity 2
 
       - name: Seed one real HR12 Annual authority chain
         shell: bash

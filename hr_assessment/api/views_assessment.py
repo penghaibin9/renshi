@@ -5,14 +5,27 @@ from __future__ import annotations
 import json
 from decimal import Decimal, InvalidOperation
 
+from django.db.models import Count
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from hr_assessment.api.response import api_error, api_success
 from hr_assessment.context import resolve_tenant_from_assignment
-from hr_assessment.models.case import HrAnnualAssessmentCase, HrAssessmentCase
+from hr_assessment.models.case import (
+    HrAnnualAssessmentCase,
+    HrAssessmentCase,
+    HrEthicsAssessmentCase,
+    HrSubjectSnapshot,
+    HrTermAssessmentCase,
+)
+from hr_assessment.models.goal import HrAssessmentGoal, HrGoalVersion
 from hr_assessment.models.provider_snapshot import HrProviderSnapshotSet
-from hr_assessment.models.result import HrAssessmentDecisionSession, HrFinalAssessmentResult
+from hr_assessment.models.result import (
+    HrAssessmentArchivePackage,
+    HrAssessmentDecisionSession,
+    HrCalibrationSession,
+    HrFinalAssessmentResult,
+)
 from hr_assessment.permissions import require_assessment_permission
 from hr_assessment.service.evidence import (
     EvidenceSnapshotError,
@@ -31,6 +44,154 @@ ANNUAL_GRADE_LABELS = {
     "BASIC_QUALIFIED": "基本合格",
     "UNQUALIFIED": "不合格",
 }
+
+WORKBENCH_SECTIONS = {"goals", "term", "ethics", "review", "archive"}
+GOAL_SOURCE_LABELS = {
+    "POSITION_DUTY": "岗位职责",
+    "ORG_GOAL": "组织目标",
+    "INDIVIDUAL": "个人目标",
+    "SELF_REPORT": "本人申报",
+}
+ASSESSMENT_TYPE_LABELS = {
+    "ANNUAL": "年度考核",
+    "TERM": "聘期考核",
+    "ETHICS": "师德考核",
+    "SPECIAL": "专项考核",
+}
+
+
+def _display_date(value) -> str:
+    return value.strftime("%Y-%m-%d") if value else ""
+
+
+def _display_datetime(value) -> str:
+    return value.strftime("%Y-%m-%d %H:%M") if value else ""
+
+
+def _subject_label(subject: HrSubjectSnapshot | None) -> str:
+    if subject and subject.display_name:
+        return subject.display_name
+    return "人员档案暂不可用"
+
+
+@require_assessment_permission("hr.assessment.analytics_view")
+@require_http_methods(["GET"])
+def workbench_rows(request: HttpRequest, section: str) -> JsonResponse:
+    """Return bounded, tenant-scoped Authority facts for the five read workspaces."""
+    if section not in WORKBENCH_SECTIONS:
+        return JsonResponse(
+            api_error("ASSESSMENT_WORKBENCH_UNKNOWN", "考核工作区不存在", http_status=404),
+            status=404,
+        )
+    tenant = request.tenant_id
+    rows: list[dict] = []
+
+    if section == "goals":
+        goals = list(
+            HrAssessmentGoal.objects.filter(tenant_id=tenant)
+            .select_related("goal_plan")
+            .annotate(assignment_count=Count("assignments"))
+            .order_by("-updated_at")[:100]
+        )
+        version_ids = [item.current_version_id for item in goals if item.current_version_id]
+        versions = {
+            item.id: item
+            for item in HrGoalVersion.objects.filter(id__in=version_ids, goal__tenant_id=tenant)
+        }
+        for goal in goals:
+            version = versions.get(goal.current_version_id)
+            rows.append({
+                "name": version.title if version else goal.goal_code,
+                "sub": goal.goal_plan.name if goal.goal_plan else "未归入目标计划",
+                "meta": f"{goal.assignment_count} 人承担 · {GOAL_SOURCE_LABELS.get(goal.source_type, '其它正式来源')}",
+                "status": goal.status,
+            })
+
+    elif section == "term":
+        cases = (
+            HrTermAssessmentCase.objects.filter(tenant_id=tenant, assessment_type="TERM")
+            .select_related("cycle", "subject_snapshot")
+            .order_by("-term_end", "-created_at")[:100]
+        )
+        for case in cases:
+            rows.append({
+                "name": _subject_label(case.subject_snapshot),
+                "sub": case.cycle.name if case.cycle else "聘期考核",
+                "meta": f"{_display_date(case.term_start)} 至 {_display_date(case.term_end)}",
+                "status": case.status,
+            })
+
+    elif section == "ethics":
+        cases = (
+            HrEthicsAssessmentCase.objects.filter(tenant_id=tenant, assessment_type="ETHICS")
+            .select_related("cycle", "subject_snapshot")
+            .order_by("-updated_at")[:100]
+        )
+        for case in cases:
+            reason = "已记录独立判定原因" if case.gate_reason_code else "独立师德事实待核对"
+            rows.append({
+                "name": _subject_label(case.subject_snapshot),
+                "sub": case.cycle.name if case.cycle else "师德专项考核",
+                "meta": reason,
+                "status": case.gate_status or case.status,
+            })
+
+    elif section == "review":
+        decisions = (
+            HrAssessmentDecisionSession.objects.filter(tenant_id=tenant)
+            .order_by("-meeting_at", "-created_at")[:50]
+        )
+        calibrations = (
+            HrCalibrationSession.objects.filter(tenant_id=tenant)
+            .annotate(revision_count=Count("revisions"))
+            .order_by("-opened_at", "-created_at")[:50]
+        )
+        for item in decisions:
+            rows.append({
+                "name": "正式审定会议",
+                "sub": f"议程包含 {len(item.case_refs_json or [])} 个考核对象",
+                "meta": _display_datetime(item.meeting_at) or "会议时间待定",
+                "status": item.status,
+            })
+        for item in calibrations:
+            rows.append({
+                "name": "结果校准会",
+                "sub": f"已记录 {item.revision_count} 项校准修订",
+                "meta": _display_datetime(item.opened_at) or "尚未开始",
+                "status": item.session_status,
+            })
+
+    else:
+        results = list(
+            HrFinalAssessmentResult.objects.filter(tenant_id=tenant)
+            .annotate(
+                archive_count=Count("archives", distinct=True),
+                objection_count=Count("objections", distinct=True),
+            )
+            .order_by("-finalized_at", "-created_at")[:100]
+        )
+        case_ids = [item.case_id for item in results]
+        subjects = {
+            item.case_id: item
+            for item in HrSubjectSnapshot.objects.filter(tenant_id=tenant, case_id__in=case_ids)
+        }
+        archive_status = {}
+        for item in HrAssessmentArchivePackage.objects.filter(
+            tenant_id=tenant,
+            result_id__in=[item.id for item in results],
+        ).order_by("result_id", "-created_at"):
+            archive_status.setdefault(item.result_id, item.archive_status)
+        for result in results:
+            display_grade = result.display_grade_snapshot_json or {}
+            grade = display_grade.get("zh-CN") or ANNUAL_GRADE_LABELS.get(result.grade_code) or result.grade_code
+            rows.append({
+                "name": _subject_label(subjects.get(result.case_id)),
+                "sub": f"{ASSESSMENT_TYPE_LABELS.get(result.assessment_type, '考核结果')} · {grade or '正式结果'} · 版本 {result.result_version_no}",
+                "meta": f"归档 {result.archive_count} · 异议 {result.objection_count}",
+                "status": archive_status.get(result.id) or result.status,
+            })
+
+    return JsonResponse(api_success(data={"section": section, "rows": rows, "count": len(rows)}))
 
 
 def ping(request: HttpRequest) -> JsonResponse:

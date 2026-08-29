@@ -12,6 +12,11 @@ urlpatterns = [
     path("api/v1/hr/assessments/eligibility", probe.eligibility_probe, name="hr12-api-eligibility"),
     path("api/v1/hr/assessments/annual", probe.annual_case_list, name="hr12-api-annual-list"),
     path(
+        "api/v1/hr/assessments/workbench/<str:section>",
+        probe.workbench_rows,
+        name="hr12-api-workbench",
+    ),
+    path(
         "api/v1/hr/assessments/cases/<uuid:case_id>/provider-snapshot",
         probe.provider_snapshot,
         name="hr12-api-provider-snapshot",

@@ -163,7 +163,7 @@
 
 .hr12-action-row-main {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 0.8fr) auto;
+  grid-template-columns: minmax(180px, 1fr) auto;
   gap: var(--hr-space-3);
   align-items: center;
 }
@@ -264,4 +264,8 @@
   .hr12-action-btn {
     width: 100%;
   }
+}
+
+.hr12-action-rename {
+  margin-top: var(--hr-space-3);
 }

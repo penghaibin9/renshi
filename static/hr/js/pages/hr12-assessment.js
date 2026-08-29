@@ -10,6 +10,9 @@
     PUBLISHED: '已发布', DRAFT: '草稿', ACTIVE: '有效', INACTIVE: '停用',
     PROPOSED: '待审定', PUBLICITY: '公示中', FINALIZED: '已定稿', READY: '证据已锁定',
     OK: '已接通', UNAVAILABLE: '暂不可用', PARTIAL: '部分可用',
+    OPEN: '进行中', COMPLETED: '已完成', CLOSED: '已关闭', PENDING: '待处理',
+    PASS: '通过', FAIL: '不通过', BLOCKED: '已阻断', NOT_EVALUATED: '待评价',
+    ARCHIVED: '已归档', FAILED: '失败',
   };
   const sourceNames = {
     hr03: '教职工主档', hr07: '合同聘用', hr09: '资格资质', hr10: '教师发展',
@@ -68,8 +71,8 @@
   }
 
   function statusClass(status) {
-    if (['ACTIVE', 'PUBLISHED', 'OK', 'READY', 'FINALIZED'].includes(status)) return 'hr12-pill--success';
-    if (['DRAFT', 'INACTIVE', 'PARTIAL', 'UNAVAILABLE', 'PROPOSED', 'PUBLICITY'].includes(status)) return 'hr12-pill--warning';
+    if (['ACTIVE', 'PUBLISHED', 'OK', 'READY', 'FINALIZED', 'COMPLETED', 'PASS', 'ARCHIVED'].includes(status)) return 'hr12-pill--success';
+    if (['DRAFT', 'INACTIVE', 'PARTIAL', 'UNAVAILABLE', 'PROPOSED', 'PUBLICITY', 'PENDING', 'NOT_EVALUATED'].includes(status)) return 'hr12-pill--warning';
     return 'hr12-pill--info';
   }
 
@@ -81,7 +84,7 @@
   function annualRow(item) {
     const result = item.formalResult;
     const grade = result?.displayGrade?.['zh-CN'] || result?.gradeCode || '';
-    const label = item.staffName || `人员 ${item.staffId}`;
+    const label = item.staffName || '人员档案暂不可用';
     const year = item.businessYear || item.academicYear || item.cycleName || '年度考核';
     if (result) {
       return `<div class="hr12-row" data-annual-case="${esc(item.id)}" data-case-status="FINALIZED">
@@ -118,6 +121,21 @@
     }
   }
 
+  function showAnnualActionError(message) {
+    const box = document.getElementById('workRows');
+    if (!box) return;
+    let notice = document.getElementById('annualActionStatus');
+    if (!notice) {
+      notice = document.createElement('div');
+      notice.id = 'annualActionStatus';
+      notice.className = 'hr12-status-note hr12-status-note--error';
+      notice.setAttribute('role', 'status');
+      notice.setAttribute('aria-live', 'polite');
+      box.before(notice);
+    }
+    notice.textContent = message || '办理失败，请稍后重试。';
+  }
+
   async function handleAnnualAction(event) {
     const button = event.target.closest('[data-annual-snapshot], [data-annual-finalize]');
     if (!button) return;
@@ -137,9 +155,23 @@
       }
       await loadAnnualCases();
     } catch (error) {
-      window.alert(error.message || '办理失败');
+      showAnnualActionError(error.message || '办理失败');
     } finally {
       button.disabled = false;
+    }
+  }
+
+  async function loadAuthorityWorkbench() {
+    const box = document.getElementById('workRows');
+    if (!box) return;
+    try {
+      const payload = await getJson(`/api/v1/hr/assessments/workbench/${section}`);
+      const items = Array.isArray(payload?.rows) ? payload.rows : [];
+      box.innerHTML = items.length
+        ? items.map((item) => row(item.name, item.sub, item.meta, item.status)).join('')
+        : empty('当前没有可展示的业务事实', '当前学校在此工作区尚未形成记录；页面不会用演示数据替代。');
+    } catch (error) {
+      box.innerHTML = empty('工作区数据读取失败', error.message || '请检查权限或稍后重试。');
     }
   }
 
@@ -167,18 +199,19 @@
       return;
     }
 
-    const partialSections = {
-      goals: ['目标任务与平时考核', '目标、进展、检查点和日常考核事实已有数据模型，完整办理接口仍在收口。', '目标任务办理正在接入', '当前不会用静态任务或假进度替代正式目标事实。'],
-      term: ['聘期考核', '聘期考核与年度考核分开保存，不能相互覆盖正式结果。', '聘期考核办理正在接入', '聘期案件模型已具备，完整工作流接口仍在收口。'],
-      ethics: ['师德与专项考核', '师德和专项结论必须有独立事实来源和评审过程。', '师德专项办理正在接入', '未接通师德事实来源前，不从其它评价推断师德结论。'],
-      review: ['评议与审定', '评议、校准和审定分权处理，最终结果必须保留审批轨迹。', '评议审定工作台正在接入', '不会把普通评价记录直接当作最终审定结果。'],
-      archive: ['结果与考核档案', '正式结果、更正、异议、通知与归档必须可追溯。', '结果档案工作台正在接入', '归档模型已具备，正式查询与下载权限链仍在收口。'],
+    const authoritySections = {
+      goals: ['目标任务与平时考核', '读取当前学校的目标版本、目标计划、承担人数和正式状态。'],
+      term: ['聘期考核', '聘期案件与年度案件分开呈现，保留独立周期和状态。'],
+      ethics: ['师德与专项考核', '仅呈现独立师德案件的事实来源、Gate 状态和原因，不从其它评价推断。'],
+      review: ['评议与审定', '校准会与正式审定会分权呈现，保留会议状态和修订数量。'],
+      archive: ['结果与考核档案', '读取正式结果版本、归档状态和异议数量，确保结果链可追溯。'],
     };
-    if (partialSections[section]) {
-      const [sectionTitle, sectionDescription, emptyTitle, emptyMessage] = partialSections[section];
+    if (authoritySections[section]) {
+      const [sectionTitle, sectionDescription] = authoritySections[section];
       title.textContent = sectionTitle;
       description.textContent = sectionDescription;
-      box.innerHTML = empty(emptyTitle, emptyMessage);
+      box.innerHTML = empty('正在读取正式业务事实', '正在按当前学校和校级统计权限核对数据。');
+      loadAuthorityWorkbench();
       return;
     }
 

@@ -34,14 +34,14 @@
     </header>
 
     <nav class="hr12-nav" aria-label="考核管理导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/assessments/">工作台</a>
-      <a class="{% if section == 'policies' %}active{% endif %}" href="/hr/assessments/policies/">制度与指标</a>
-      <a class="{% if section == 'goals' %}active{% endif %}" href="/hr/assessments/goals/">目标任务</a>
-      <a class="{% if section == 'annual' %}active{% endif %}" href="/hr/assessments/annual/">年度考核</a>
-      <a class="{% if section == 'term' %}active{% endif %}" href="/hr/assessments/term/">聘期考核</a>
-      <a class="{% if section == 'ethics' %}active{% endif %}" href="/hr/assessments/ethics/">师德专项</a>
-      <a class="{% if section == 'review' %}active{% endif %}" href="/hr/assessments/review/">评议审定</a>
-      <a class="{% if section == 'archive' %}active{% endif %}" href="/hr/assessments/archive/">结果档案</a>
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_assessment:hr12-index' %}">工作台</a>
+      <a class="{% if section == 'policies' %}active{% endif %}" href="{% url 'hr_assessment:hr12-policies' %}">制度与指标</a>
+      <a class="{% if section == 'goals' %}active{% endif %}" href="{% url 'hr_assessment:hr12-goals' %}">目标任务</a>
+      <a class="{% if section == 'annual' %}active{% endif %}" href="{% url 'hr_assessment:hr12-annual' %}">年度考核</a>
+      <a class="{% if section == 'term' %}active{% endif %}" href="{% url 'hr_assessment:hr12-term' %}">聘期考核</a>
+      <a class="{% if section == 'ethics' %}active{% endif %}" href="{% url 'hr_assessment:hr12-ethics' %}">师德专项</a>
+      <a class="{% if section == 'review' %}active{% endif %}" href="{% url 'hr_assessment:hr12-review' %}">评议审定</a>
+      <a class="{% if section == 'archive' %}active{% endif %}" href="{% url 'hr_assessment:hr12-archive' %}">结果档案</a>
     </nav>
     <div class="hr12-mobile-hint">可左右滑动查看更多考核工作区</div>
 
@@ -82,7 +82,7 @@
             <h3 id="readinessTitle">正在核对考核依据</h3>
             <p id="readinessSummary">正在读取制度、指标、评分量表和业务来源状态。</p>
           </div>
-          <a class="hr12-readiness__action" href="/hr/assessments/policies/">查看制度与指标 →</a>
+          <a class="hr12-readiness__action" href="{% url 'hr_assessment:hr12-policies' %}">查看制度与指标 →</a>
         </article>
       </section>
 
@@ -94,22 +94,22 @@
           </div>
         </div>
         <div class="hr12-process" aria-label="考核六段业务链">
-          <a class="hr12-process__step" href="/hr/assessments/policies/">
+          <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-policies' %}">
             <span class="hr12-process__no">01</span><strong>制度与指标</strong><small>确认制度版本、指标口径和评分量表</small>
           </a>
-          <a class="hr12-process__step" href="/hr/assessments/goals/">
+          <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-goals' %}">
             <span class="hr12-process__no">02</span><strong>目标与平时</strong><small>目标任务、进展、检查点和日常事实</small>
           </a>
-          <a class="hr12-process__step" href="/hr/assessments/annual/">
+          <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-annual' %}">
             <span class="hr12-process__no">03</span><strong>年度考核</strong><small>年度对象、评议、结果和异议处理</small>
           </a>
-          <a class="hr12-process__step" href="/hr/assessments/term/">
+          <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-term' %}">
             <span class="hr12-process__no">04</span><strong>聘期考核</strong><small>聘期过程与正式结果独立留痕</small>
           </a>
-          <a class="hr12-process__step" href="/hr/assessments/ethics/">
+          <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-ethics' %}">
             <span class="hr12-process__no">05</span><strong>师德专项</strong><small>独立事实来源、专项评价和证据边界</small>
           </a>
-          <a class="hr12-process__step" href="/hr/assessments/review/">
+          <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-review' %}">
             <span class="hr12-process__no">06</span><strong>评议与结果归档</strong><small>评议、审定后进入正式结果档案</small>
           </a>
         </div>
@@ -122,7 +122,7 @@
           <h2 id="hr12-work-title">当前工作区</h2>
           <p>只显示当前学校真实可读取数据；尚未接通的办理能力继续明确标注。</p>
         </div>
-        {% if section == 'review' %}<a class="hr-v2-section__action" href="/hr/assessments/archive/">进入结果档案 →</a>{% endif %}
+        {% if section == 'review' %}<a class="hr-v2-section__action" href="{% url 'hr_assessment:hr12-archive' %}">进入结果档案 →</a>{% endif %}
       </div>
       <div class="hr12-workspace-grid">
         <article class="hr12-panel">
