@@ -253,7 +253,11 @@ class ApplyService:
         )
         target_catalog = _resolve_catalog(self.tenant_id, _ref("post_catalog"))
         if (
-            action == ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH
+            action
+            in (
+                ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
+                ChangeActionCode.ADD_SECONDARY_ASSIGNMENT,
+            )
             and target_catalog is None
             and target_pos is not None
         ):
@@ -310,11 +314,24 @@ class ApplyService:
                 effective_from=eff,
                 organization_id=target_org,
                 position_id=target_pos,
+                post_catalog_id=target_catalog,
                 fte=_decimal_or_none(_ref("fte")) or 1,
                 source_business_type=biz_type,
                 source_business_id=biz_id,
             )
             target_fact_ids.append(str(new_secondary.id))
+            try:
+                reservation = self.position_gate.require_commit_for_case(case)
+                target_fact_ids.append(f"position-reservation:{reservation.id}")
+            except Exception as exc:
+                raise ApplyServiceError(
+                    getattr(
+                        exc,
+                        "code",
+                        "CHANGE_POSITION_RESERVATION_COMMIT_FAILED",
+                    ),
+                    str(exc) or "目标岗位预占提交失败",
+                ) from exc
 
         elif action == ChangeActionCode.END_SECONDARY_ASSIGNMENT:
             assignment_service.close_assignment(

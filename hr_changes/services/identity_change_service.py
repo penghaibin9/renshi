@@ -69,7 +69,10 @@ class IdentityChangeService:
         }
         target_org_id = None
         target_position_id = None
-        if action.code == ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH:
+        if action.code in (
+            ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
+            ChangeActionCode.ADD_SECONDARY_ASSIGNMENT,
+        ):
             target_org_id = proposal_refs.get("organization")
             target_position_id = proposal_refs.get("position")
 

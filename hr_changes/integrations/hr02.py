@@ -13,6 +13,7 @@ PositionGate：
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from hr_changes.constants import ChangeActionCode
@@ -52,6 +53,7 @@ class PositionGate:
             ChangeActionCode.POSITION_TRANSFER,
             ChangeActionCode.ORG_POSITION_TRANSFER,
             ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
+            ChangeActionCode.ADD_SECONDARY_ASSIGNMENT,
         )
 
     def target_position(self, case):
@@ -76,7 +78,7 @@ class PositionGate:
                 source_business_id=str(case.id),
                 position_id=position.id,
                 count=1,
-                fte=1.00,
+                fte=self._reservation_fte(case),
                 idempotency_key=self._idempotency_key(case.id),
             )
         except PositionServiceError as exc:
@@ -138,6 +140,20 @@ class PositionGate:
             .order_by("-reserved_at")
             .first()
         )
+
+    @staticmethod
+    def _reservation_fte(case) -> Decimal:
+        proposal = case.proposals.filter(field_code="fte").first()
+        if proposal is None:
+            return Decimal("1.00")
+        raw = proposal.proposed_value_ref or proposal.proposed_value_display
+        try:
+            return Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise Hr02GateError(
+                "CHANGE_INVALID_PAYLOAD",
+                "FTE 必须是有效数字",
+            ) from exc
 
     def check_capacity(self, case, as_of: Optional[date] = None) -> list[dict]:
         position = self.target_position(case)

@@ -319,6 +319,102 @@ class ApplyPrimaryAssignmentSwitchTests(TestCase):
         self.assertEqual(reservation.status, "COMMITTED")
 
 
+class ApplyAddSecondaryAssignmentTests(TestCase):
+    def test_add_secondary_keeps_primary_and_commits_fte_reservation(self):
+        from hr_staff.models import HrStaffAssignment
+        from hr_staff.services.effective_dated_query_service import (
+            EffectiveDatedQueryService,
+        )
+
+        staff = make_staff(TENANT, make_person(TENANT, "增加兼岗教师"), "T8211")
+        primary_org = make_org(TENANT, "PRIMARY-ORG", "主岗学院", date(2020, 1, 1))
+        secondary_org = make_org(
+            TENANT,
+            "SECONDARY-ORG",
+            "兼岗学院",
+            date(2020, 1, 1),
+        )
+        primary_position = make_position(
+            TENANT,
+            primary_org,
+            "PRIMARY-P01",
+            max_incumbents=1,
+        )
+        secondary_position = make_position(
+            TENANT,
+            secondary_org,
+            "SECONDARY-P01",
+            max_incumbents=1,
+        )
+        relationship = EmploymentService(TENANT).start_relationship(
+            staff_id=staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        primary = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="PRIMARY",
+            effective_from=date(2024, 9, 1),
+            organization_id=primary_org,
+            position_id=primary_position,
+            post_catalog_id=primary_position.post_catalog_version_id,
+            source_business_type=FIXTURE_SOURCE,
+        )
+        action = make_action(TENANT, ChangeActionCode.ADD_SECONDARY_ASSIGNMENT)
+        reason = make_reason(TENANT, ChangeActionCode.ADD_SECONDARY_ASSIGNMENT)
+        case = IdentityChangeService(TENANT, actor_user_id=1).create_identity_change(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[
+                {
+                    "domain": "assignment",
+                    "field_code": "organization",
+                    "proposed_value_ref": str(secondary_org.id),
+                },
+                {
+                    "domain": "assignment",
+                    "field_code": "position",
+                    "proposed_value_ref": str(secondary_position.id),
+                },
+                {
+                    "domain": "assignment",
+                    "field_code": "fte",
+                    "proposed_value_ref": "0.30",
+                },
+            ],
+        )
+        reservation = PositionGate(TENANT).reserve_for_case(case)
+        self.assertEqual(reservation.reserved_fte, Decimal("0.30"))
+
+        service = ChangeService(TENANT, actor_user_id=1)
+        case = service.submit(case.id)
+        case = service.start_approval(case.id)
+        case = service.approve_all(case.id)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        self.assertEqual(case.status, CaseStatus.EFFECTIVE)
+        current_primary = EffectiveDatedQueryService(
+            TENANT
+        ).primary_assignment_as_of(staff.id, date.today())
+        self.assertEqual(current_primary.id, primary.id)
+        concurrent = HrStaffAssignment.objects.get(
+            tenant_id=TENANT,
+            employment_relationship_id=relationship,
+            assignment_type="CONCURRENT",
+        )
+        self.assertEqual(concurrent.organization_id_id, secondary_org.id)
+        self.assertEqual(concurrent.position_id_id, secondary_position.id)
+        self.assertEqual(
+            concurrent.post_catalog_id_id,
+            secondary_position.post_catalog_version_id_id,
+        )
+        self.assertEqual(concurrent.fte, Decimal("0.30"))
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, "COMMITTED")
+
+
 class RebaseServiceTests(TestCase):
     def test_hard_conflict_same_day(self):
         staff = make_staff(TENANT, make_person(TENANT, "李某某"), "T8202")
