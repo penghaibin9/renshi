@@ -15,6 +15,14 @@
     return '<div class="hr04-state"' + (isError ? ' data-state="error"' : "") + '><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail || "") + '</span></div>';
   }
 
+  function markActiveCycle(cycleId) {
+    document.querySelectorAll("#hr04-plan-cycles [data-id]").forEach(function (node) {
+      const active = node.dataset.id === String(cycleId);
+      node.classList.toggle("is-active", active);
+      node.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
   async function loadCycles() {
     const container = $("#hr04-plan-cycles");
     if (!container) return;
@@ -26,10 +34,10 @@
         $("#hr04-plan-requests").innerHTML = stateHtml("暂无需求可读", "需要先存在正式计划周期。", false);
         return;
       }
-      container.innerHTML = cycles.map(function (cycle) {
-        return '<div class="hr-rec-plan-cycle" data-id="' + escapeHtml(cycle.id) + '"><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(cycle.status) + '">' +
+      container.innerHTML = cycles.map(function (cycle, index) {
+        return '<button type="button" class="hr-rec-plan-cycle' + (index === 0 ? ' is-active' : '') + '" data-id="' + escapeHtml(cycle.id) + '" aria-pressed="' + (index === 0 ? 'true' : 'false') + '"><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(cycle.status) + '">' +
           escapeHtml(cycle.statusLabel || cycle.status || "—") + '</span> <strong>' + escapeHtml(cycle.year ?? "—") + ' ' + escapeHtml(cycle.title || "—") +
-          '</strong> <span class="hr-meta">' + escapeHtml(cycle.start_date || "—") + '</span></div>';
+          '</strong> <span class="hr-meta">' + escapeHtml(cycle.start_date || "—") + '</span></button>';
       }).join("");
       loadRequests(cycles[0].id);
     } catch (err) {
@@ -40,6 +48,7 @@
   async function loadRequests(cycleId) {
     const container = $("#hr04-plan-requests");
     if (!container) return;
+    markActiveCycle(cycleId);
     container.innerHTML = stateHtml("正在读取需求", "等待当前计划周期的正式需求列表。", false);
     try {
       const res = await window.HrApi.request("/api/hr/v1/recruitment/plans/" + encodeURIComponent(cycleId));
@@ -60,6 +69,14 @@
     }
   }
 
-  function init() { loadCycles(); }
+  function init() {
+    const cycles = $("#hr04-plan-cycles");
+    if (cycles) cycles.addEventListener("click", function (event) {
+      const button = event.target.closest("button[data-id]");
+      if (!button || !cycles.contains(button)) return;
+      loadRequests(button.dataset.id);
+    });
+    loadCycles();
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

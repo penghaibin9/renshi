@@ -69,6 +69,13 @@ class Hr04V2WorkspaceContractTests(SimpleTestCase):
                 self.assertIn("function safeStatusClass", source)
                 self.assertIn("replace(/[^a-z0-9_-]/g", source)
 
+    def test_plan_cycle_switching_reads_the_selected_real_cycle(self):
+        plans_script = self._source(self.DYNAMIC_SCRIPTS[0])
+        self.assertIn('cycles.addEventListener("click"', plans_script)
+        self.assertIn('closest("button[data-id]")', plans_script)
+        self.assertIn("loadRequests(button.dataset.id)", plans_script)
+        self.assertIn('aria-pressed="', plans_script)
+
     def test_broken_create_routes_are_not_presented_as_working_frontend_flows(self):
         plans_template = self._source(self.TEMPLATES[0])
         campaigns_template = self._source(self.TEMPLATES[1])
