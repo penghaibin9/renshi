@@ -43,9 +43,20 @@
     }
 </script>
 <script src="{% static 'horilla_theme/assets/js/footerScripts.js' %}"></script>
+<style>
+    /* This stylesheet is mounted unconditionally with the shared shell. The
+       explicit body marker below therefore hides duplicate breadcrumbs even
+       when the current page has no breadcrumb items and breadcrumbs_view.html
+       is not rendered at all. */
+    @media (max-width: 760px) {
+        body.hr-v2-shell #breadcrumbs-container {
+            display: none !important;
+        }
+    }
+</style>
 <script>
-    // The shared footer runs after the page content, so it can mark HR V2 pages
-    // without relying on relational CSS selectors or route-name heuristics.
+    // The shared footer runs after page content, so it can mark HR V2 pages
+    // without route-name heuristics or relying on conditional breadcrumb data.
     if (document.querySelector('.hr-v2-page')) {
       document.body.classList.add('hr-v2-shell');
     }
