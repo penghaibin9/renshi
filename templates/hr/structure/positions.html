@@ -7,22 +7,95 @@ HR02-05 岗位编制台账 —— 单位岗位供给/空岗/已占/冻结/超限
           GET /api/hr/v1/structure/position-control/summary
 {% endcomment %}
 
-{% block content %}
+{% block styles %}
+{{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr02-workspace.css' %}">
+{% endblock styles %}
 
-<div class="hr-page" data-hr-page="structure-positions">
-  {% include "hr/components/page_header.html" with title="岗位编制台账" subtitle="各单位实际岗位供给、空岗、已占与超限情况" %}
+{% block content %}
+<div class="hr-v2-page hr02-page" data-module="HR02" data-hr02-section="positions">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR02 组织与岗位</span>
+    <strong>岗位编制台账</strong>
+  </div>
 
-  <!-- 概览指标 -->
-  {% include "hr/components/section_card.html" with id="hr-position-summary" title="岗位概览" status="loading" %}
+  <header class="hr-v2-pagehead" aria-labelledby="hr02-position-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR02 · 组织机构与编制岗位</div>
+      <h1 class="hr-v2-title" id="hr02-position-title">岗位编制台账</h1>
+      <p class="hr-v2-subtitle">先看核定岗位、占用、空缺、冻结与超额，再下钻到各单位岗位事实；占用状态继续由服务端 Authority 派生。</p>
+    </div>
+    <div class="hr-v2-context" aria-label="当前工作区说明">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>事实</strong> 岗位供给与占用</span>
+      <span class="hr-v2-context__item"><strong>风险</strong> 冻结 / 超额</span>
+    </div>
+  </header>
 
-  <!-- 岗位表格 -->
-  {% include "hr/components/section_card.html" with id="hr-position-table" title="岗位列表" status="loading" %}
+  <nav class="hr02-nav" aria-label="组织机构与编制岗位工作区">
+    <a href="/hr/structure/organizations">组织机构</a>
+    <a href="/hr/structure/relations">党政组织与业务关系</a>
+    <a href="/hr/structure/staffing-plans">编制方案</a>
+    <a href="/hr/structure/post-catalogs">岗位目录</a>
+    <a class="is-active" href="/hr/structure/positions">岗位编制台账</a>
+    <a href="/hr/structure/history">组织岗位历史</a>
+  </nav>
+  <div class="hr02-mobile-hint">可左右滑动切换组织与岗位工作区</div>
+
+  <section class="hr-v2-conclusions" aria-label="岗位编制首屏结论">
+    <article class="hr-v2-conclusion">
+      <div class="hr-v2-conclusion__label">当前工作区</div>
+      <div class="hr-v2-conclusion__value">岗位供给</div>
+      <div class="hr-v2-conclusion__detail">核定、占用、空缺与岗位状态来自正式岗位事实。</div>
+    </article>
+    <article class="hr-v2-conclusion">
+      <div class="hr-v2-conclusion__label">优先关注</div>
+      <div class="hr-v2-conclusion__value">冻结 / 超额</div>
+      <div class="hr-v2-conclusion__detail">红色只用于真实超额风险，不把正常占用制造成告警。</div>
+    </article>
+    <article class="hr-v2-conclusion">
+      <div class="hr-v2-conclusion__label">判断口径</div>
+      <div class="hr-v2-conclusion__value">服务端派生</div>
+      <div class="hr-v2-conclusion__detail">VACANT、FILLED、OVERFILLED 等状态不由浏览器自行拼接。</div>
+    </article>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr02-position-summary-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr02-position-summary-title">岗位控制概览</h2>
+        <p>只展示接口返回的真实数量；接口不可用时显示明确错误，不回填假零。</p>
+      </div>
+    </div>
+    <div id="hr-position-summary" class="hr-v2-panel hr02-position-summary" aria-live="polite">
+      {% include "hr/components/state_view.html" with state="loading" %}
+    </div>
+  </section>
+
+  <section class="hr-v2-section" aria-labelledby="hr02-position-ledger-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr02-position-ledger-title">岗位列表</h2>
+        <p>查看岗位编码、所属机构、岗位标准、等级、FTE、编制数、占用与生命周期状态。</p>
+      </div>
+    </div>
+    <div id="hr-position-table" class="hr-v2-panel hr02-table-wrap" aria-live="polite">
+      {% include "hr/components/state_view.html" with state="loading" %}
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note">
+    <strong>事实边界</strong>
+    <span>岗位编制台账只呈现当前学校正式岗位供给与占用事实；人员任职、聘任结果等跨域状态仍由各自 Authority 负责。</span>
+  </div>
 </div>
-{% endblock %}
+{% endblock content %}
 
 {% block scripts %}
+{{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/structure/positions.js' %}"></script>
-{% endblock %}
+{% endblock scripts %}
