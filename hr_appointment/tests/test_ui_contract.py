@@ -31,23 +31,26 @@ class Hr14UiContractTests(TestCase):
         self.assertEqual(resolve(path).view_name, "hr_appointment_api:dashboard")
 
     def test_workspace_templates_compile(self):
-        for name in (
-            "workspace.html",
-            "workspace_live.html",
-            "workspace_term.html",
-            "workspace_term_effect.html",
-        ):
-            self.assertIsNotNone(get_template(f"hr_appointment/{name}"))
+        self.assertIsNotNone(get_template("hr_appointment/workspace.html"))
 
     def test_term_effect_workspace_uses_real_apply_effect_boundary(self):
-        template = get_template("hr_appointment/workspace_term_effect.html")
-        source = Path(template.origin.name).read_text(encoding="utf-8")
+        source = Path("static/hr/js/pages/hr14-workflows.js").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/apply-effect/", source)
-        self.assertIn("pendingFactId", source)
-        self.assertIn("HR02 HELD reservation", source)
-        self.assertIn("HR03 switch_primary", source)
-        self.assertIn("APPROVED / 待生效", source)
         self.assertIn("执行正式生效", source)
-        self.assertIn("EFFECT_PENDING", source)
-        self.assertIn("Correction Authority", source)
-        self.assertNotIn("createCorrectionAuthority", source)
+        self.assertIn("正式生效成功后", source)
+        self.assertIn("转岗（等待可信岗位选择器）", source)
+        self.assertIn("正式纠错（需专门纠错入口）", source)
+        self.assertNotIn('name="reservationId"', source)
+        self.assertNotIn("prompt(", source)
+        self.assertNotIn("alert(", source)
+
+    def test_active_workspace_has_no_inline_style_or_script(self):
+        template = get_template("hr_appointment/workspace.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertNotIn("<style", source)
+        self.assertNotIn("style=", source)
+        self.assertNotIn("<script>", source)
+        self.assertIn("hr14-appointment.css", source)
+        self.assertIn("hr14-workflows.js", source)

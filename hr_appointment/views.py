@@ -2,6 +2,15 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .api import HrAppointmentAccessError, resolve_request_tenant
+from .decision_api import DECISION_PERMISSION
+from .permissions import (
+    APPLICATION_PERMISSION,
+    EFFECT_PERMISSION,
+    MANAGE_PERMISSION,
+    PUBLICITY_PERMISSION,
+    REVIEW_PERMISSION,
+)
+from .term_api import TERM_PERMISSION
 
 SECTIONS = {
     "overview": "岗位聘任总览",
@@ -19,12 +28,7 @@ SECTIONS = {
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "岗位聘任")
-    # Progressive runtime chain:
-    # workspace_live owns ranking/publicity real workflows;
-    # workspace_term adds term/renewal/change approval governance;
-    # workspace_term_effect adds the explicit apply-effect boundary that creates
-    # successor HR14 facts and invokes HR03 only for real assignment changes.
-    template_name = "hr_appointment/workspace_term_effect.html"
+    template_name = "hr_appointment/workspace.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrAppointmentAccessError as exc:
@@ -34,8 +38,24 @@ def workspace(request, section="overview"):
             {"access_error": str(exc), "section": section, "section_title": title},
             status=403,
         )
+    user = request.user
+
+    def allowed(permission):
+        return bool(user.is_superuser or user.has_perm(permission))
+
     return render(
         request,
         template_name,
-        {"tenant_id": tenant_id, "section": section, "section_title": title},
+        {
+            "tenant_id": tenant_id,
+            "section": section,
+            "section_title": title,
+            "can_apply": allowed(APPLICATION_PERMISSION),
+            "can_manage": allowed(MANAGE_PERMISSION),
+            "can_review": allowed(REVIEW_PERMISSION),
+            "can_publicity": allowed(PUBLICITY_PERMISSION),
+            "can_decide": allowed(DECISION_PERMISSION),
+            "can_effect": allowed(EFFECT_PERMISSION),
+            "can_term": allowed(TERM_PERMISSION),
+        },
     )

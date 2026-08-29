@@ -10,7 +10,14 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr14" data-module="HR14" data-section="{{ section }}">
+<div class="hr-v2-page hr14" data-module="HR14" data-section="{{ section }}"
+     data-can-apply="{{ can_apply|yesno:'true,false' }}"
+     data-can-manage="{{ can_manage|yesno:'true,false' }}"
+     data-can-review="{{ can_review|yesno:'true,false' }}"
+     data-can-publicity="{{ can_publicity|yesno:'true,false' }}"
+     data-can-decide="{{ can_decide|yesno:'true,false' }}"
+     data-can-effect="{{ can_effect|yesno:'true,false' }}"
+     data-can-term="{{ can_term|yesno:'true,false' }}">
   {% if access_error %}
     <div class="hr14-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -33,15 +40,15 @@
     </header>
 
     <nav class="hr14-nav" aria-label="岗位聘任业务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/appointments/">总览</a>
-      <a class="{% if section == 'policies' %}active{% endif %}" href="/hr/appointments/policies/">聘任制度</a>
-      <a class="{% if section == 'quota' %}active{% endif %}" href="/hr/appointments/quota/">岗位额度</a>
-      <a class="{% if section == 'competitions' %}active{% endif %}" href="/hr/appointments/competitions/">竞聘批次</a>
-      <a class="{% if section == 'applications' %}active{% endif %}" href="/hr/appointments/applications/">竞聘申报</a>
-      <a class="{% if section == 'ranking' %}active{% endif %}" href="/hr/appointments/ranking/">评议排序</a>
-      <a class="{% if section == 'publicity' %}active{% endif %}" href="/hr/appointments/publicity/">拟聘公示</a>
-      <a class="{% if section == 'appointments' %}active{% endif %}" href="/hr/appointments/appointments/">正式聘任</a>
-      <a class="{% if section == 'term_changes' %}active{% endif %}" href="/hr/appointments/term-changes/">聘期变更</a>
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_appointment:overview' %}">总览</a>
+      <a class="{% if section == 'policies' %}active{% endif %}" href="{% url 'hr_appointment:policies' %}">聘任制度</a>
+      <a class="{% if section == 'quota' %}active{% endif %}" href="{% url 'hr_appointment:quota' %}">岗位额度</a>
+      <a class="{% if section == 'competitions' %}active{% endif %}" href="{% url 'hr_appointment:competitions' %}">竞聘批次</a>
+      <a class="{% if section == 'applications' %}active{% endif %}" href="{% url 'hr_appointment:applications' %}">竞聘申报</a>
+      <a class="{% if section == 'ranking' %}active{% endif %}" href="{% url 'hr_appointment:ranking' %}">评议排序</a>
+      <a class="{% if section == 'publicity' %}active{% endif %}" href="{% url 'hr_appointment:publicity' %}">拟聘公示</a>
+      <a class="{% if section == 'appointments' %}active{% endif %}" href="{% url 'hr_appointment:appointments' %}">正式聘任</a>
+      <a class="{% if section == 'term_changes' %}active{% endif %}" href="{% url 'hr_appointment:term_changes' %}">聘期变更</a>
     </nav>
     <div class="hr14-mobile-hint">可左右滑动查看更多岗位聘任工作区</div>
 
@@ -79,7 +86,7 @@
             <span class="hr14-process__no">05</span><b>拟聘公示</b><small>公示、异议与关闭条件必须真实闭环</small>
           </a>
           <a class="hr14-process__step" href="/hr/appointments/appointments/">
-            <span class="hr14-process__no">06</span><b>正式聘任</b><small>只有 apply-effect 成功后形成正式聘任事实</small>
+            <span class="hr14-process__no">06</span><b>正式聘任</b><small>只有正式生效成功后形成聘任事实</small>
           </a>
         </div>
       </section>
@@ -133,8 +140,8 @@
           </article>
 
           <article class="hr14-card">
-            <h2>能力接通状态</h2>
-            <p>状态来自 HR14 dashboard capability contract，而不是页面入口数量。</p>
+            <h2>业务能力状态</h2>
+            <p>状态来自当前学校真实服务能力，不按页面入口数量推断。</p>
             <div id="hr14-caps">
               <div class="hr14-empty">正在检查真实能力…</div>
             </div>
@@ -143,7 +150,7 @@
       </div>
     </section>
 
-    <div class="hr14-principle"><strong>岗位聘任原则：</strong>职称、资格通过、排序入选、拟聘公示和批准都不是正式任职事实；只有完成额度校验、公示异议闭环和正式生效后，新的 PositionAppointmentFact 才能作为后续聘期与任职联动依据。</div>
+    <div class="hr14-principle"><strong>岗位聘任原则：</strong>职称、资格通过、排序入选、拟聘公示和批准都不是正式任职事实；只有完成额度校验、公示异议闭环和正式生效，后续聘期与任职联动才会采用这次聘任结果。</div>
   {% endif %}
 </div>
 {% endblock content %}
@@ -151,4 +158,5 @@
 {% block scripts %}
 {{ block.super }}
 {% if not access_error %}<script src="{% static 'hr/js/pages/hr14-appointment.js' %}"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr14-workflows.js' %}"></script>{% endif %}
 {% endblock scripts %}

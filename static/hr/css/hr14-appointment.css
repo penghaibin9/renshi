@@ -609,3 +609,278 @@
     justify-self: start;
   }
 }
+
+/* Real workflow surfaces. All writes are bound in hr14-workflows.js. */
+.hr14-workflow__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--hr-space-3);
+  align-items: flex-start;
+  margin-bottom: var(--hr-space-4);
+}
+
+.hr14-workflow__head h2,
+.hr14-workflow__head h3,
+.hr14-workflow-subtitle,
+.hr14-term-ledgers h3,
+.hr14-workflow-form h3 {
+  margin: 0;
+  color: var(--hr-text-900);
+  font-size: 15px;
+  line-height: 23px;
+}
+
+.hr14-workflow__head p {
+  margin: 3px 0 0;
+  color: var(--hr-text-500);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.hr14-workflow__notice,
+.hr14-form-message {
+  padding: 10px 12px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-canvas);
+  color: var(--hr-text-700);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.hr14-workflow__notice[data-tone="warning"],
+.hr14-form-message[data-tone="danger"] {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: rgba(217, 119, 6, 0.06);
+  color: #92400e;
+}
+
+.hr14-form-message[data-tone="success"] {
+  border-color: rgba(22, 163, 74, 0.22);
+  background: rgba(22, 163, 74, 0.06);
+  color: var(--hr-success);
+}
+
+.hr14-workflow-list,
+.hr14-term-ledgers {
+  display: grid;
+  gap: var(--hr-space-3);
+}
+
+.hr14-workflow-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) auto minmax(150px, auto);
+  gap: var(--hr-space-3);
+  align-items: center;
+  padding: var(--hr-space-3);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+}
+
+.hr14-workflow-row b,
+.hr14-workflow-row small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.hr14-workflow-row b {
+  color: var(--hr-text-900);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.hr14-workflow-row small,
+.hr14-workflow-row__hint {
+  color: var(--hr-text-500);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.hr14-workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.hr14-workflow-actions button,
+.hr14-workflow-form button,
+.hr14-effect-form button {
+  min-height: 36px;
+  border: 1px solid var(--hr-primary-600);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-primary-600);
+  color: #fff;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hr14-workflow-actions button {
+  min-height: 32px;
+  border-color: var(--hr-border);
+  background: var(--hr-surface);
+  color: var(--hr-primary-700);
+}
+
+.hr14-workflow-actions button:disabled,
+.hr14-workflow-form button:disabled,
+.hr14-effect-form button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.hr14-workflow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hr-space-4);
+}
+
+.hr14-workflow-form,
+.hr14-effect-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--hr-space-3);
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-canvas);
+}
+
+.hr14-workflow-form.compact h3,
+.hr14-workflow-form .wide,
+.hr14-workflow-form > button,
+.hr14-workflow-form > .hr14-form-message,
+.hr14-effect-form > .hr14-form-message {
+  grid-column: 1 / -1;
+}
+
+.hr14-workflow-form label,
+.hr14-effect-form label,
+.hr14-decision-note {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.hr14-workflow-form label > span,
+.hr14-effect-form label > span,
+.hr14-decision-note > span {
+  color: var(--hr-text-700);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.hr14-workflow-form input,
+.hr14-workflow-form select,
+.hr14-workflow-form textarea,
+.hr14-effect-form input,
+.hr14-decision-note input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.hr14-workflow-form textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.hr14-workflow-subtitle,
+.hr14-effect-boundary {
+  margin-top: var(--hr-space-5);
+}
+
+.hr14-workflow-subtitle {
+  margin-bottom: var(--hr-space-3);
+}
+
+.hr14-term-ledgers {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: var(--hr-space-5);
+}
+
+.hr14-term-ledgers > section {
+  min-width: 0;
+}
+
+.hr14-term-ledgers h3 {
+  margin-bottom: var(--hr-space-3);
+}
+
+.hr14-term-ledgers .hr14-workflow-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hr14-term-ledgers .hr14-workflow-actions,
+.hr14-term-ledgers .hr14-decision-note,
+.hr14-effect-form {
+  grid-column: 1 / -1;
+}
+
+.hr14-effect-boundary {
+  padding-top: var(--hr-space-5);
+  border-top: 1px solid var(--hr-border);
+}
+
+.hr14-effect-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.hr14-effect-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  padding: var(--hr-space-3) 0 0;
+  border: 0;
+  border-top: 1px solid var(--hr-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+@media (max-width: 900px) {
+  .hr14-workflow-grid,
+  .hr14-term-ledgers {
+    grid-template-columns: 1fr;
+  }
+
+  .hr14-effect-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .hr14-workflow-row,
+  .hr14-effect-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .hr14-workflow-actions,
+  .hr14-workflow-row__hint,
+  .hr14-decision-note,
+  .hr14-effect-form {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .hr14-workflow-form,
+  .hr14-effect-form {
+    grid-template-columns: 1fr;
+  }
+
+  .hr14-workflow-form .wide,
+  .hr14-workflow-form.compact h3,
+  .hr14-workflow-form > button,
+  .hr14-effect-form > .hr14-form-message {
+    grid-column: 1;
+  }
+}

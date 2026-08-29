@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import tempfile
+import uuid
+from datetime import date, timedelta
 from pathlib import Path
 from unittest import skipUnless
 
@@ -17,7 +19,7 @@ from django.test import Client, override_settings
 @skipUnless(os.getenv("HR_VISUAL_AUDIT") == "1", "visual audit is CI-explicit")
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp(prefix="renshi-hr14-visual-media-"))
 class Hr14VisualAuditTests(StaticLiveServerTestCase):
-    """Verify HR14 V2 keeps all real ranking/publicity/term Authority surfaces."""
+    """Verify every HR14 V2 route and its real workflow surface."""
 
     reset_sequences = True
 
@@ -71,6 +73,24 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
         session.save()
         self.session_cookie = client.cookies[settings.SESSION_COOKIE_NAME].value
 
+        from hr_appointment.term_models import AppointmentTerm
+
+        self.term = AppointmentTerm.objects.create(
+            tenant_id=self.company.pk,
+            term_no="HR14-VISUAL-TERM-001",
+            appointment_fact_id=uuid.uuid4(),
+            person_id=uuid.uuid4(),
+            position_instance_id=1401,
+            level_code="专技七级",
+            policy_version_id=uuid.uuid4(),
+            effective_from=date.today(),
+            effective_to=date.today() + timedelta(days=365),
+            renewal_due_at=date.today() + timedelta(days=300),
+            status=AppointmentTerm.Status.ACTIVE,
+            created_by=self.user.pk,
+            updated_by=self.user.pk,
+        )
+
         self.out_dir = Path(
             os.getenv("HR_VISUAL_ARTIFACT_DIR", "artifacts/hr-visual")
         ) / "HR14-V2"
@@ -97,6 +117,7 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
         page_errors: list[str] = []
         console_errors: list[str] = []
         static_failures: list[str] = []
+        api_failures: list[str] = []
         page_script_responses: list[str] = []
         dashboard_responses: list[str] = []
 
@@ -128,6 +149,8 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                 def record_response(response):
                     if "/static/hr/" in response.url and response.status >= 400:
                         static_failures.append(f"{response.status} {response.url}")
+                    if "/api/v1/hr/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
                     if "/static/hr/js/pages/" in response.url:
                         page_script_responses.append(f"{response.status} {response.url}")
                     if "/api/v1/hr/appointments/dashboard/" in response.url:
@@ -196,15 +219,21 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                     any("/hr/js/pages/hr14-appointment.js" in src for src in script_sources),
                     diagnostic,
                 )
+                self.assertTrue(
+                    any("/hr/js/pages/hr14-workflows.js" in src for src in script_sources),
+                    diagnostic,
+                )
                 self.assertEqual(booted, "true", diagnostic)
                 self.assertEqual(page_errors, [], diagnostic)
                 self.assertEqual(static_failures, [], diagnostic)
-                page.screenshot(
-                    path=str(self.out_dir / "desktop-overview.png"),
-                    full_page=True,
-                )
-
-                for route in routes[1:]:
+                expected_workflows = {
+                    "/hr/appointments/competitions/": "批次状态推进",
+                    "/hr/appointments/applications/": "申报案件办理",
+                    "/hr/appointments/ranking/": "形成评议排序",
+                    "/hr/appointments/publicity/": "拟聘公示与异议闭环",
+                    "/hr/appointments/term-changes/": "聘期治理与正式生效",
+                }
+                for route in routes:
                     response = page.goto(
                         self.live_server_url + route,
                         wait_until="networkidle",
@@ -221,45 +250,59 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                         f"HR14 V2 shell missing at {route}",
                     )
 
-                    if route.endswith("/ranking/"):
+                    self.assertEqual(page.locator(".hr14-nav a").count(), 9)
+                    if route in expected_workflows:
                         self.assertEqual(
-                            page.locator("#hr14live-ranking-history").count(),
+                            page.locator("#hr14-workflow").count(),
                             1,
-                            "HR14 ranking Authority history was lost during V2 migration",
+                            f"HR14 real workflow surface missing at {route}",
                         )
-                    elif route.endswith("/publicity/"):
-                        self.assertEqual(
-                            page.locator("#hr14live-publicity").count(),
-                            1,
-                            "HR14 publicity/objection Authority UI was lost during V2 migration",
+                        self.assertIn(
+                            expected_workflows[route],
+                            page.locator("#hr14-workflow").inner_text(),
                         )
-                    elif route.endswith("/term-changes/"):
-                        self.assertEqual(
-                            page.locator("#hr14term-root").count(),
-                            1,
-                            "HR14 term governance UI was lost during V2 migration",
+                    if route.endswith("/term-changes/"):
+                        with page.expect_response(
+                            lambda item: "/expiring/" in item.url
+                        ) as response_info:
+                            page.locator(
+                                f'[data-term-expiring="{self.term.id}"]'
+                            ).click()
+                        self.assertEqual(response_info.value.status, 200)
+                        page.wait_for_function(
+                            """() => document.querySelector('#hr14-workflow')
+                              ?.textContent.includes('临期')"""
                         )
-                        self.assertEqual(
-                            page.locator("#hr14effect-root").count(),
-                            1,
-                            "HR14 apply-effect UI was lost during V2 migration",
-                        )
+                    slug = "overview" if route == routes[0] else route.strip("/").split("/")[-1]
+                    page.screenshot(
+                        path=str(self.out_dir / f"desktop-{slug}.png"),
+                        full_page=True,
+                    )
 
                 page.set_viewport_size({"width": 390, "height": 844})
-                response = page.goto(
-                    self.live_server_url + routes[0],
-                    wait_until="networkidle",
-                )
-                self.assertIsNotNone(response)
-                self.assertEqual(response.status, 200)
-                self.assertEqual(page.locator("[data-module='HR14']").count(), 1)
-                self.assertEqual(
-                    page.locator(".hr-v2-mobile-section-switcher").count(), 1
-                )
-                page.screenshot(
-                    path=str(self.out_dir / "mobile-overview.png"),
-                    full_page=True,
-                )
+                for route in routes:
+                    response = page.goto(
+                        self.live_server_url + route,
+                        wait_until="networkidle",
+                    )
+                    self.assertIsNotNone(response)
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(page.locator("[data-module='HR14']").count(), 1)
+                    self.assertEqual(
+                        page.locator(".hr-v2-mobile-section-switcher").count(), 1
+                    )
+                    self.assertGreater(
+                        page.locator("[data-module='HR14']").evaluate(
+                            "node => node.getBoundingClientRect().height"
+                        ),
+                        100,
+                        f"HR14 core content collapsed on 390px at {route}",
+                    )
+                    slug = "overview" if route == routes[0] else route.strip("/").split("/")[-1]
+                    page.screenshot(
+                        path=str(self.out_dir / f"mobile-{slug}.png"),
+                        full_page=True,
+                    )
                 context.close()
             finally:
                 browser.close()
@@ -279,3 +322,10 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
             [],
             "HR14 HR static failures: " + " | ".join(static_failures),
         )
+        self.assertEqual(
+            api_failures,
+            [],
+            "HR14 unexpected API failures: " + " | ".join(api_failures),
+        )
+        self.term.refresh_from_db()
+        self.assertEqual(self.term.status, "EXPIRING")

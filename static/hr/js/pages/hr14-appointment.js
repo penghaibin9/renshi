@@ -24,6 +24,7 @@
     PUBLICITY: '公示中',
     EFFECTIVE: '已生效',
     ACTIVE: '有效',
+    FULL: '额度已用完',
     EXPIRING: '临期',
     RENEWAL_IN_PROGRESS: '续聘中',
     READY: '待处理',
@@ -247,7 +248,7 @@
     }
     if (section === 'competitions') {
       title.textContent = '竞聘批次';
-      description.textContent = '批次固化制度、岗位范围与办理时间窗，状态由批次 Authority 推进。';
+      description.textContent = '批次固化制度、岗位范围与办理时间窗，状态按真实批次流程推进。';
       setRows(batchRows(data.recentBatches));
       return;
     }
@@ -259,25 +260,25 @@
     }
     if (section === 'ranking') {
       title.textContent = '评议排序';
-      description.textContent = '上方显示真实排序结果；后续 Authority 工作区继续提供固化与拟聘办理。';
+      description.textContent = '上方显示真实排序结果；下方办理区可固化评议结论并进入拟聘。';
       setRows(rankingRows(data.recentRankings));
       return;
     }
     if (section === 'publicity') {
       title.textContent = '拟聘公示';
-      description.textContent = '公示和异议由独立 Authority 办理；开放、关闭和阻断状态不会从申报状态推断。';
+      description.textContent = '公示和异议分别办理；开放、关闭和阻断状态不会从申报状态推断。';
       setRows([]);
       return;
     }
     if (section === 'appointments') {
       title.textContent = '正式岗位聘任';
-      description.textContent = '只展示正式 PositionAppointmentFact；拟聘、公示或批准状态不冒充已生效聘任。';
+      description.textContent = '只展示正式聘任事实；拟聘、公示或批准状态不冒充已生效聘任。';
       setRows(appointmentRows(data.recentAppointments));
       return;
     }
     if (section === 'term_changes') {
       title.textContent = '聘期与变更';
-      description.textContent = '聘期、续聘和变更分别留痕；批准后仍需 apply-effect 才形成新的正式事实。';
+      description.textContent = '聘期、续聘和变更分别留痕；批准后仍需执行正式生效才形成新的事实。';
       setRows(termRows(data));
       return;
     }
