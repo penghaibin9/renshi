@@ -152,7 +152,7 @@ class Hr05VisualAuditTests(StaticLiveServerTestCase):
                               const host = document.getElementById(id);
                               return host && !host.textContent.includes(text);
                             }""",
-                            [settle_id, loading_text],
+                            arg=[settle_id, loading_text],
                             timeout=8000,
                         )
                     page.screenshot(
@@ -179,7 +179,7 @@ class Hr05VisualAuditTests(StaticLiveServerTestCase):
                               const host = document.getElementById(id);
                               return host && !host.textContent.includes(text);
                             }""",
-                            [settle_id, loading_text],
+                            arg=[settle_id, loading_text],
                             timeout=8000,
                         )
                     page.screenshot(
