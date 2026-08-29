@@ -18,7 +18,7 @@ SECTIONS = {
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "教职工服务")
     try:
-        context = resolve_self_context(request)
+        resolve_self_context(request)
     except HrSelfAccessError as exc:
         return render(
             request,
@@ -29,5 +29,5 @@ def workspace(request, section="overview"):
     return render(
         request,
         "hr_self/workspace.html",
-        {"section": section, "section_title": title, "self_staff_id": str(context.staff_id)},
+        {"section": section, "section_title": title},
     )

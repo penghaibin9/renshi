@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr17" data-module="HR17" data-section="{{ section }}">
+<div class="hr-v2-page hr17" data-module="HR17" data-section="{{ section }}" data-bootstrap-url="{% url 'hr_self_api:bootstrap' %}" data-pin-url-template="{% url 'hr_self_api:service_pin' service_code='__service__' %}">
   {% if access_error %}
     <div class="hr17-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -20,43 +20,43 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR17 · 教职工本人服务</div>
         <h1 class="hr-v2-title" id="hr17-page-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">只服务当前登录教职工本人。SELF 身份由服务端登录态、当前学校和 HR03 身份映射解析，浏览器传入的人员编号不参与授权；HR17 只做体验聚合，不复制 HR03–HR16 的正式状态机。</p>
+        <p class="hr-v2-subtitle">这里汇总当前登录教职工本人的人事服务、办理结果和常用入口。身份与学校范围由系统登录态确认，页面不会接受人员编号来切换查看对象。</p>
       </div>
       <div class="hr-v2-context" aria-label="本人服务安全边界">
-        <span class="hr-v2-context__item"><strong>身份</strong> SELF</span>
+        <span class="hr-v2-context__item"><strong>身份</strong> 当前登录本人</span>
         <span class="hr-v2-context__item"><strong>范围</strong> 当前本人</span>
-        <span class="hr-v2-context__item"><strong>安全</strong> IDOR 防护</span>
+        <span class="hr-v2-context__item"><strong>安全</strong> 不可切换他人</span>
       </div>
     </header>
 
     <nav class="hr17-nav" aria-label="教职工本人服务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/self/">首页</a>
-      <a class="{% if section == 'services' %}active{% endif %}" href="/hr/self/services/">服务大厅</a>
-      <a class="{% if section == 'todos' %}active{% endif %}" href="/hr/self/todos/">我的待办</a>
-      <a class="{% if section == 'progress' %}active{% endif %}" href="/hr/self/progress/">办理进度</a>
-      <a class="{% if section == 'files' %}active{% endif %}" href="/hr/self/files/">我的文件</a>
-      <a class="{% if section == 'payslips' %}active{% endif %}" href="/hr/self/payslips/">我的工资条</a>
-      <a class="{% if section == 'contracts' %}active{% endif %}" href="/hr/self/contracts/">我的合同</a>
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_self:overview' %}">首页</a>
+      <a class="{% if section == 'services' %}active{% endif %}" href="{% url 'hr_self:services' %}">服务大厅</a>
+      <a class="{% if section == 'todos' %}active{% endif %}" href="{% url 'hr_self:todos' %}">我的待办</a>
+      <a class="{% if section == 'progress' %}active{% endif %}" href="{% url 'hr_self:progress' %}">办理进度</a>
+      <a class="{% if section == 'files' %}active{% endif %}" href="{% url 'hr_self:files' %}">我的文件</a>
+      <a class="{% if section == 'payslips' %}active{% endif %}" href="{% url 'hr_self:payslips' %}">我的工资条</a>
+      <a class="{% if section == 'contracts' %}active{% endif %}" href="{% url 'hr_self:contracts' %}">我的合同</a>
     </nav>
     <div class="hr17-mobile-hint">可左右滑动查看更多本人服务工作区</div>
 
     <section class="hr17-kpis" id="hr17-kpis" aria-label="本人服务关键结论">
       <article class="hr17-kpi"><span>可用服务</span><b>—</b><em>正在读取当前学校目录</em></article>
       <article class="hr17-kpi"><span>我的常用</span><b>—</b><em>仅当前登录本人</em></article>
-      <article class="hr17-kpi"><span>已注册 Provider</span><b>—</b><em>HR03–HR16 源域</em></article>
-      <article class="hr17-kpi"><span>降级源域</span><b>—</b><em>不会伪装成空数据</em></article>
+      <article class="hr17-kpi"><span>已连接来源</span><b>—</b><em>覆盖各人事业务模块</em></article>
+      <article class="hr17-kpi"><span>需关注来源</span><b>—</b><em>异常会明确提示</em></article>
     </section>
 
     <section class="hr17-context" aria-label="本人当前状态与数据来源">
       <article class="hr17-card">
         <h2>我的当前状态</h2>
-        <p>当前任职事实只从 HR03 SELF Provider 读取，不从旧表或 URL 参数兜底。</p>
-        <div class="hr17-identity" id="hr17-identity"><div class="hr17-empty">正在读取 HR03 本人主档…</div></div>
+        <p>姓名、工号、单位与岗位均来自当前学校正式教职工主档。</p>
+        <div class="hr17-identity" id="hr17-identity"><div class="hr17-empty">正在读取本人主档…</div></div>
       </article>
       <article class="hr17-card">
         <h2>业务来源健康度</h2>
-        <p>PARTIAL / STALE / UNAVAILABLE / ERROR 都会保留原始语义。</p>
-        <div class="hr17-health" id="hr17-health"><div class="hr17-empty">正在检查 Provider Health…</div></div>
+        <p>每个来源独立展示当前状态；暂不可用不会被误报为“没有数据”。</p>
+        <div class="hr17-health" id="hr17-health"><div class="hr17-empty">正在检查数据来源…</div></div>
       </article>
     </section>
 
@@ -74,12 +74,12 @@
 
       <aside class="hr17-card">
         <h2>本人服务能力</h2>
-        <p>入口存在不代表聚合能力已接通；未接通能力不会用其它人员数据或旧系统表兜底。</p>
+        <p>已开放功能与暂未开放功能会分别标明，不会用其他人员或旧数据补齐结果。</p>
         <div id="hr17-caps"><div class="hr17-empty">正在检查本人服务能力…</div></div>
       </aside>
     </section>
 
-    <div class="hr17-principle"><strong>SELF 安全原则：</strong>HR17 不接受 staff_id/person_id 作为授权依据，不允许通过修改 URL 查看他人数据；工资结果、合同、职称、岗位聘任与离退状态全部通过源 Authority 的 SELF-safe Provider 读取。统一待办、进度或文件聚合未接通时保持明确不可用。</div>
+    <div class="hr17-principle"><strong>本人数据保护：</strong>页面只展示系统根据登录态确认的本人信息，修改网址或请求参数不能切换到其他教职工。工资、合同、职称、岗位聘任和离退结果均以对应业务模块的正式记录为准；尚未开放的跨模块汇总会明确提示。</div>
   {% endif %}
 </div>
 {% endblock content %}

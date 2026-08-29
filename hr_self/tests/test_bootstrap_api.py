@@ -33,7 +33,7 @@ class Hr17BootstrapApiTests(SimpleTestCase):
     ):
         resolve_context.return_value = self.context
         service_cls.return_value.build.return_value = {
-            "identity": {"staffId": str(self.context.staff_id)},
+            "identity": {"staffNo": "T001"},
             "services": [],
             "providerHealth": {
                 "HR03": {"status": "OK"},
@@ -57,6 +57,7 @@ class Hr17BootstrapApiTests(SimpleTestCase):
         self.assertEqual(response["Cache-Control"], "no-store")
         self.assertIn(b'"degraded": true', response.content)
         self.assertIn(b'"status": "UNAVAILABLE"', response.content)
+        self.assertNotIn(str(self.context.staff_id).encode(), response.content)
         service_cls.assert_called_once_with(self.context)
         service_cls.return_value.build.assert_called_once_with()
 

@@ -99,8 +99,6 @@ class SelfBootstrapService:
 
         return {
             "identity": {
-                "staffId": str(self.context.staff_id),
-                "personId": str(self.context.person_id),
                 "staffNo": identity_header.get("staffNo"),
                 "legalName": identity_header.get("legalName"),
                 "preferredName": identity_header.get("preferredName"),

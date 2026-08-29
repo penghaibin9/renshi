@@ -55,6 +55,8 @@ class Hr17BootstrapServiceTests(SimpleTestCase):
 
         payload = SelfBootstrapService(self.context, registry=registry).build()
 
+        self.assertNotIn("staffId", payload["identity"])
+        self.assertNotIn("personId", payload["identity"])
         self.assertEqual(payload["identity"]["staffNo"], "T001")
         self.assertEqual(payload["primaryStatus"]["assignment"]["orgName"], "信息工程学院")
         self.assertEqual(payload["providerHealth"]["HR03"]["status"], ProviderStatus.OK)

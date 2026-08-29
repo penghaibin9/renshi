@@ -35,14 +35,30 @@ class Hr17UiContractTests(TestCase):
     def test_workspace_template_compiles(self):
         self.assertIsNotNone(get_template("hr_self/workspace.html"))
 
-    def test_workspace_uses_single_bootstrap_and_provider_health(self):
+    def test_workspace_uses_named_routes_and_business_copy(self):
         template = get_template("hr_self/workspace.html")
         source = Path(template.origin.name).read_text(encoding="utf-8")
-        self.assertIn("/api/v1/hr/self/bootstrap/", source)
-        self.assertNotIn("fetch('/api/v1/hr/self/dashboard/", source)
-        self.assertIn("Provider Health", source)
-        self.assertIn("我的当前任职", source)
-        self.assertIn("UNAVAILABLE 不等于", source)
-        self.assertIn("HR03 Provider", source)
-        self.assertIn("不回退 legacy 假数据", source)
-        self.assertIn("hr03To16Providers", source)
+        self.assertIn("{% url 'hr_self_api:bootstrap' %}", source)
+        self.assertIn("{% url 'hr_self_api:service_pin' service_code='__service__' %}", source)
+        for route_name in (
+            "overview", "services", "todos", "progress", "files", "payslips", "contracts"
+        ):
+            self.assertIn(f"{{% url 'hr_self:{route_name}' %}}", source)
+        self.assertIn("本人数据保护", source)
+        self.assertIn("业务来源健康度", source)
+        self.assertNotIn("SELF", source)
+        self.assertNotIn("Provider", source)
+        self.assertNotIn("Authority", source)
+        self.assertNotIn("IDOR", source)
+        self.assertNotIn("staff_id", source)
+        self.assertNotIn("person_id", source)
+        self.assertNotIn("<style", source)
+        self.assertEqual(source.count("hr17-self.js"), 1)
+
+    def test_single_page_script_owns_real_pin_action(self):
+        script = Path("static/hr/js/pages/hr17-self.js").read_text(encoding="utf-8")
+        self.assertIn("data-service-code", script)
+        self.assertIn("method: willPin ? 'POST' : 'DELETE'", script)
+        self.assertIn("'X-CSRFToken': cookie('csrftoken')", script)
+        self.assertNotIn("/api/v1/hr/self/bootstrap/", script)
+        self.assertFalse(Path("static/hr/js/pages/hr17-actions.js").exists())

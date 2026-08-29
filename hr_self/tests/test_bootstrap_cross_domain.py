@@ -65,7 +65,9 @@ class Hr17BootstrapCrossDomainGateTests(SimpleTestCase):
 
         payload = SelfBootstrapService(self.context, registry=registry).build()
 
-        self.assertEqual(payload["identity"]["staffId"], self.context.staff_id)
+        self.assertNotIn("staffId", payload["identity"])
+        self.assertNotIn("personId", payload["identity"])
+        self.assertEqual(payload["identity"]["staffNo"], "T0001")
         self.assertEqual(payload["providerHealth"]["HR07"]["status"], ProviderStatus.ERROR)
         self.assertEqual(payload["providerHealth"]["HR07"]["errorCode"], "SOURCE_PROVIDER_ERROR")
         self.assertIsNone(payload["providerData"]["HR07"])
