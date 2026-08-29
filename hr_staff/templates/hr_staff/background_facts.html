@@ -1,3 +1,4 @@
+{% extends "index.html" %}
 {% load static i18n %}
 {% trans "教育资格履历" as t_title %}
 {% trans "教育经历" as t_edu %}
@@ -5,122 +6,136 @@
 {% trans "工作经历" as t_work %}
 {% trans "资格证书" as t_credential %}
 {% trans "人才荣誉" as t_honor %}
-{% trans "返回主档" as t_back %}
 {% trans "暂无记录" as t_empty %}
-{% trans "加载中…" as t_loading %}
 {% trans "加载失败" as t_load_failed %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t_title }} · HR03</title>
-  <style>
-    body { font-family: "Segoe UI","Microsoft YaHei",sans-serif; margin:0; background:#f5f7fa; color:#1f2937; }
-    .wrap { max-width:1200px; margin:0 auto; padding:24px; }
-    .back { color:#2563eb; text-decoration:none; font-size:13px; }
-    .tabs { display:flex; gap:4px; border-bottom:1px solid #e5e7eb; margin-bottom:16px; }
-    .tab { padding:10px 16px; color:#6b7280; text-decoration:none; font-size:14px; border:.0 .0 2px .0; cursor:pointer; background:none; border:none; }
-    .tab.on { color:#2563eb; border-bottom:2px solid #2563eb; }
-    .card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:20px; margin-bottom:16px; }
-    .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-    .card-header h3 { margin:0; font-size:16px; }
-    .item { padding:12px; border-bottom:1px solid #f3f4f6; }
-    .item:last-child { border-bottom:none; }
-    .item-title { font-weight:600; font-size:14px; }
-    .item-meta { font-size:12px; color:#6b7280; margin-top:4px; }
-    .item-extra { font-size:12px; color:#374151; margin-top:2px; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; }
-    .badge.VERIFIED { background:#dcfce7; color:#166534; }
-    .badge.UNVERIFIED { background:#f3f4f6; color:#6b7280; }
-    .badge.EXPIRED { background:#fee2e2; color:#991b1b; }
-    .badge.VALID { background:#dcfce7; color:#166534; }
-    .badge.EXPIRING { background:#fef9c3; color:#854d0e; }
-    .empty { text-align:center; padding:48px; color:#6b7280; }
-    .tag { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; background:#eff6ff; color:#2563eb; margin-left:8px; }
-  </style>
-</head>
-<body>
-<div class="wrap">
-  <a class="back" href="/hr/staff/{{ staff_id }}/">← {{ t_back }}</a>
-  <div style="margin-top:16px">
-    <h2 style="margin:0 0 4px">{{ t_title }}</h2>
-  </div>
-  <div class="tabs">
-    <button class="tab on" id="tab-edu" onclick="showTab('edu')">{{ t_edu }}</button>
-    <button class="tab" id="tab-degree" onclick="showTab('degree')">{{ t_degree }}</button>
-    <button class="tab" id="tab-work" onclick="showTab('work')">{{ t_work }}</button>
-    <button class="tab" id="tab-cred" onclick="showTab('cred')">{{ t_credential }}</button>
-    <button class="tab" id="tab-honor" onclick="showTab('honor')">{{ t_honor }}</button>
-  </div>
-  <div id="tab-content">{{ t_loading }}</div>
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-records.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="backgrounds" data-staff-id="{{ staff_id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-background-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-background-title">{{ t_title }}</h1>
+      <p class="hr-v2-subtitle">把教育经历、学位、校外工作经历、资格证书和人才荣誉分开核验。页面只展示 backgrounds Authority 返回的事实与核验状态，不把“已录入”误写成“已核验”。</p>
+    </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前教职工</span>
+      <span class="hr-v2-context__item"><strong>事实</strong> 背景与资格</span>
+      <span class="hr-v2-context__item"><strong>核验</strong> 以后端状态为准</span>
+    </div>
+  </header>
+
+  <a class="hr03-profile-back" href="/hr/staff/{{ staff_id }}/">← 返回个人主档</a>
+
+  <nav class="hr03-person-nav" aria-label="教职工个人主档工作区">
+    <a href="/hr/staff/{{ staff_id }}/">概览</a>
+    <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+    <a class="is-active" href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+    <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+    <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+  </nav>
+
+  <section class="hr-v2-section">
+    <div class="hr03-record-tabs" role="tablist" aria-label="教育资格分类">
+      <button class="is-active" type="button" id="tab-edu" data-kind="edu">{{ t_edu }}</button>
+      <button type="button" id="tab-degree" data-kind="degree">{{ t_degree }}</button>
+      <button type="button" id="tab-work" data-kind="work">{{ t_work }}</button>
+      <button type="button" id="tab-cred" data-kind="cred">{{ t_credential }}</button>
+      <button type="button" id="tab-honor" data-kind="honor">{{ t_honor }}</button>
+    </div>
+    <div id="tab-content" class="hr03-record-list">
+      <div class="hr-v2-state"><strong>正在读取教育资格事实</strong><span>正在加载当前教职工的正式背景记录。</span></div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>事实边界</strong><span>证书编号继续使用后端脱敏值；核验状态、有效期和最高学历标记均来自正式 backgrounds API，前端不自行认定。</span></div>
 </div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
 <script>
-  const staffId = "{{ staff_id }}";
+(function () {
+  "use strict";
+  const root = document.querySelector('[data-module="HR03"][data-section="backgrounds"]');
+  if (!root) return;
+  const staffId = root.dataset.staffId;
   const L = {empty: "{{ t_empty|escapejs }}", loadFailed: "{{ t_load_failed|escapejs }}"};
   let data = null;
+
+  function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  function badge(status, label) { return `<span class="hr03-record-badge ${escapeHtml(status || "")}">${escapeHtml(label || status || "—")}</span>`; }
+  function card(title, meta, extra) {
+    return `<article class="hr03-record-card"><div class="hr03-record-card__title">${title}</div><div class="hr03-record-card__meta">${meta}</div><div class="hr03-record-card__extra">${extra}</div></article>`;
+  }
+
   async function load() {
+    const content = document.getElementById("tab-content");
     try {
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/backgrounds`);
-      if (!resp.ok) { document.getElementById("tab-content").innerHTML = `<div class="empty">${L.loadFailed}（${resp.status}）</div>`; return; }
+      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/backgrounds`, {credentials:"same-origin"});
+      if (!resp.ok) { content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>HTTP ${resp.status}</span></div>`; return; }
       const body = await resp.json();
-      data = body.data;
+      data = body.data || {};
       showTab("edu");
-    } catch (e) {
-      document.getElementById("tab-content").innerHTML = `<div class="empty">${L.loadFailed}</div>`;
+    } catch (_error) {
+      content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>教育资格接口请求失败。</span></div>`;
     }
   }
+
   function showTab(kind) {
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("on"));
-    document.getElementById(`tab-${kind}`).classList.add("on");
-    const items = data ? (data[kind === 'edu' ? 'education' : kind === 'degree' ? 'degrees' : kind === 'work' ? 'workExperience' : kind === 'cred' ? 'credentials' : 'talentHonors'] || []) : null;
-    const el = document.getElementById("tab-content");
-    if (!data) { el.innerHTML = `<div class="empty">${L.loadFailed}</div>`; return; }
-    if (!items || !items.length) { el.innerHTML = `<div class="empty">${L.empty}</div>`; return; }
-    if (kind === 'edu') {
-      el.innerHTML = items.map(e =>
-        `<div class="card"><div class="item">
-          <div class="item-title">${escapeHtml(e.educationLevelLabel || e.educationLevel)} · ${escapeHtml(e.majorName || "")} ${e.isHighestEducation ? '<span class="tag">最高学历</span>' : ''}</div>
-          <div class="item-meta">${escapeHtml(e.schoolName)} · ${escapeHtml(e.countryRegion)} · ${escapeHtml(e.studyType)}</div>
-          <div class="item-extra">${escapeHtml(e.startDate||"-")} → ${escapeHtml(e.endDate||"-")} · <span class="badge ${e.verificationStatus||''}">${escapeHtml(e.verificationStatusLabel||e.verificationStatus||"-")}</span></div>
-        </div></div>`
-      ).join("");
-    } else if (kind === 'degree') {
-      el.innerHTML = items.map(d =>
-        `<div class="card"><div class="item">
-          <div class="item-title">${escapeHtml(d.degreeLevel)} ${escapeHtml(d.degreeName)}</div>
-          <div class="item-meta">${escapeHtml(d.grantingInstitution)} · ${escapeHtml(d.major)}</div>
-          <div class="item-extra">${escapeHtml(d.awardedDate||"-")} · <span class="badge ${d.verificationStatus||''}">${escapeHtml(d.verificationStatusLabel||d.verificationStatus||"-")}</span></div>
-        </div></div>`
-      ).join("");
-    } else if (kind === 'work') {
-      el.innerHTML = items.map(w =>
-        `<div class="card"><div class="item">
-          <div class="item-title">${escapeHtml(w.organizationName)} · ${escapeHtml(w.positionTitle)}</div>
-          <div class="item-meta">${escapeHtml(w.experienceTypeLabel||w.experienceType)} · ${escapeHtml(w.departmentName)}</div>
-          <div class="item-extra">${escapeHtml(w.startDate||"-")} → ${escapeHtml(w.endDate||"-")} · <span class="badge ${w.verificationStatus||''}">${escapeHtml(w.verificationStatusLabel||w.verificationStatus||"-")}</span></div>
-        </div></div>`
-      ).join("");
-    } else if (kind === 'cred') {
-      el.innerHTML = items.map(c =>
-        `<div class="card"><div class="item">
-          <div class="item-title">${escapeHtml(c.credentialName)} · ${escapeHtml(c.credentialTypeLabel||c.credentialType)} <span class="badge ${c.status||''}">${escapeHtml(c.credentialStatusLabel||c.status||"-")}</span></div>
-          <div class="item-meta">${escapeHtml(c.issuingAuthority)} · 编号 ${escapeHtml(c.credentialNoMasked||"-")} · 等级 ${escapeHtml(c.level||"-")}</div>
-          <div class="item-extra">签发 ${escapeHtml(c.issueDate||"-")} · 到期 ${escapeHtml(c.expiryDate||"-")} · <span class="badge ${c.verificationStatus||''}">${escapeHtml(c.verificationStatusLabel||c.verificationStatus||"-")}</span></div>
-        </div></div>`
-      ).join("");
-    } else if (kind === 'honor') {
-      el.innerHTML = items.map(h =>
-        `<div class="card"><div class="item">
-          <div class="item-title">${escapeHtml(h.honorName)} · ${escapeHtml(h.honorType)}</div>
-          <div class="item-meta">${escapeHtml(h.grantingAuthority)}</div>
-          <div class="item-extra">获得 ${escapeHtml(h.awardedDate||"-")} · <span class="badge ${h.verificationStatus||''}">${escapeHtml(h.verificationStatusLabel||h.verificationStatus||"-")}</span></div>
-        </div></div>`
-      ).join("");
+    document.querySelectorAll(".hr03-record-tabs button").forEach(button => button.classList.toggle("is-active", button.dataset.kind === kind));
+    const key = kind === "edu" ? "education" : kind === "degree" ? "degrees" : kind === "work" ? "workExperience" : kind === "cred" ? "credentials" : "talentHonors";
+    const items = data && Array.isArray(data[key]) ? data[key] : [];
+    const content = document.getElementById("tab-content");
+    if (!data) { content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong></div>`; return; }
+    if (!items.length) { content.innerHTML = `<div class="hr-v2-state"><strong>${L.empty}</strong><span>当前 Authority 没有返回该类记录。</span></div>`; return; }
+
+    if (kind === "edu") {
+      content.innerHTML = items.map(item => card(
+        `${escapeHtml(item.educationLevelLabel || item.educationLevel || "—")} · ${escapeHtml(item.majorName || "—")}${item.isHighestEducation ? ' <span class="hr03-record-badge VERIFIED">最高学历</span>' : ""}`,
+        `${escapeHtml(item.schoolName || "—")} · ${escapeHtml(item.countryRegion || "—")} · ${escapeHtml(item.studyType || "—")}`,
+        `${escapeHtml(item.startDate || "—")} → ${escapeHtml(item.endDate || "—")} · ${badge(item.verificationStatus, item.verificationStatusLabel)}`
+      )).join("");
+    } else if (kind === "degree") {
+      content.innerHTML = items.map(item => card(
+        `${escapeHtml(item.degreeLevel || "—")} ${escapeHtml(item.degreeName || "")}`,
+        `${escapeHtml(item.grantingInstitution || "—")} · ${escapeHtml(item.major || "—")}`,
+        `${escapeHtml(item.awardedDate || "—")} · ${badge(item.verificationStatus, item.verificationStatusLabel)}`
+      )).join("");
+    } else if (kind === "work") {
+      content.innerHTML = items.map(item => card(
+        `${escapeHtml(item.organizationName || "—")} · ${escapeHtml(item.positionTitle || "—")}`,
+        `${escapeHtml(item.experienceTypeLabel || item.experienceType || "—")} · ${escapeHtml(item.departmentName || "—")}`,
+        `${escapeHtml(item.startDate || "—")} → ${escapeHtml(item.endDate || "—")} · ${badge(item.verificationStatus, item.verificationStatusLabel)}`
+      )).join("");
+    } else if (kind === "cred") {
+      content.innerHTML = items.map(item => card(
+        `${escapeHtml(item.credentialName || "—")} · ${escapeHtml(item.credentialTypeLabel || item.credentialType || "—")} ${badge(item.status, item.credentialStatusLabel)}`,
+        `${escapeHtml(item.issuingAuthority || "—")} · 编号 ${escapeHtml(item.credentialNoMasked || "—")} · 等级 ${escapeHtml(item.level || "—")}`,
+        `签发 ${escapeHtml(item.issueDate || "—")} · 到期 ${escapeHtml(item.expiryDate || "—")} · ${badge(item.verificationStatus, item.verificationStatusLabel)}`
+      )).join("");
+    } else {
+      content.innerHTML = items.map(item => card(
+        `${escapeHtml(item.honorName || "—")} · ${escapeHtml(item.honorType || "—")}`,
+        escapeHtml(item.grantingAuthority || "—"),
+        `获得 ${escapeHtml(item.awardedDate || "—")} · ${badge(item.verificationStatus, item.verificationStatusLabel)}`
+      )).join("");
     }
   }
-  function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  document.querySelectorAll(".hr03-record-tabs button").forEach(button => button.addEventListener("click", () => showTab(button.dataset.kind)));
   load();
+})();
 </script>
-</body>
-</html>
+{% endblock scripts %}
