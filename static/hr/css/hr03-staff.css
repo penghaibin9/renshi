@@ -209,6 +209,7 @@
   color: #991b1b;
 }
 
+.hr03-table .empty,
 .hr03-empty {
   padding: var(--hr-space-8) var(--hr-space-4) !important;
   color: var(--hr-v2-muted) !important;
