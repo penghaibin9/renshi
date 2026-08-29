@@ -1,154 +1,183 @@
+{% extends "index.html" %}
 {% load static i18n %}
 {% trans "人事材料档案" as t_title %}
-{% trans "返回主档" as t_back %}
 {% trans "全部" as t_all %}
 {% trans "待核验" as t_unverified %}
 {% trans "即将到期" as t_expiring %}
 {% trans "已失效" as t_expired %}
-{% trans "加载中…" as t_loading %}
 {% trans "加载失败" as t_load_failed %}
 {% trans "暂无材料" as t_empty %}
 {% trans "预览" as t_preview %}
 {% trans "版本" as t_versions %}
 {% trans "下载失败" as t_download_failed %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ t_title }} · HR03</title>
-  <style>
-    body { font-family:"Segoe UI","Microsoft YaHei",sans-serif; margin:0; background:#f5f7fa; color:#1f2937; }
-    .wrap { max-width:1200px; margin:0 auto; padding:24px; }
-    .back { color:#2563eb; text-decoration:none; font-size:13px; }
-    .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
-    .toolbar button { padding:8px 14px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; font-size:13px; cursor:pointer; }
-    .toolbar button.on { background:#2563eb; color:#fff; border-color:#2563eb; }
-    .card { background:#fff; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,.08); padding:18px; margin-bottom:12px; }
-    .card-header { display:flex; justify-content:space-between; align-items:center; }
-    .card-header h4 { margin:0; font-size:15px; }
-    .card-meta { font-size:12px; color:#6b7280; margin-top:6px; }
-    .card-actions { margin-top:10px; display:flex; gap:8px; }
-    .card-actions button { padding:5px 12px; border-radius:6px; border:1px solid #e5e7eb; background:#fff; font-size:12px; cursor:pointer; }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; }
-    .badge.VERIFIED { background:#dcfce7; color:#166534; }
-    .badge.UNVERIFIED { background:#f3f4f6; color:#6b7280; }
-    .badge.EXPIRED,.badge.REJECTED { background:#fee2e2; color:#991b1b; }
-    .badge.PENDING { background:#fef9c3; color:#854d0e; }
-    .sens-tag { padding:1px 6px; border-radius:999px; font-size:10px; }
-    .sens-tag.SENSITIVE { background:#fef3c7; color:#92400e; }
-    .sens-tag.HIGH_SENSITIVE { background:#fee2e2; color:#991b1b; }
-    .sens-tag.RESTRICTED_HR { background:#eff6ff; color:#1e40af; }
-    .version-row { padding:8px 12px; border-bottom:1px solid #f3f4f6; font-size:13px; display:flex; justify-content:space-between; }
-    .section { margin-bottom:20px; }
-    .section h3 { font-size:15px; margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid #e5e7eb; }
-    .subtitle { font-size:13px; color:#6b7280; margin:8px 0 16px; }
-  </style>
-</head>
-<body>
-<div class="wrap">
-  <a class="back" href="/hr/staff/{{ staff_id }}/">← {{ t_back }}</a>
-  <div style="margin-top:16px">
-    <h2 style="margin:0 0 4px">{{ t_title }}</h2>
-    <div class="subtitle">每份材料包含版本历史、核验状态与文件 SHA-256 校验</div>
-  </div>
-  <div class="toolbar">
-    <button class="on" id="btn-all" onclick="filter('')">{{ t_all }}</button>
-    <button id="btn-unverified" onclick="filter('UNVERIFIED')">{{ t_unverified }}</button>
-    <button id="btn-expiring" onclick="filter('EXPIRING')">{{ t_expiring }}</button>
-    <button id="btn-expired" onclick="filter('EXPIRED')">{{ t_expired }}</button>
-  </div>
-  <div id="content">{{ t_loading }}</div>
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-records.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="materials" data-staff-id="{{ staff_id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-material-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-material-title">{{ t_title }}</h1>
+      <p class="hr-v2-subtitle">每份材料保留版本历史、核验状态、灵敏度和文件校验事实。敏感材料预览必须填写用途并取得受控下载票据，页面不暴露裸媒体地址。</p>
+    </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前教职工</span>
+      <span class="hr-v2-context__item"><strong>下载</strong> 审计 ticket</span>
+      <span class="hr-v2-context__item"><strong>版本</strong> 可追溯</span>
+    </div>
+  </header>
+
+  <a class="hr03-profile-back" href="/hr/staff/{{ staff_id }}/">← 返回个人主档</a>
+
+  <nav class="hr03-person-nav" aria-label="教职工个人主档工作区">
+    <a href="/hr/staff/{{ staff_id }}/">概览</a>
+    <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+    <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+    <a class="is-active" href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+    <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+  </nav>
+
+  <section class="hr-v2-section">
+    <div class="hr03-record-filter" aria-label="材料筛选">
+      <button class="is-active" type="button" id="btn-all" data-filter="">{{ t_all }}</button>
+      <button type="button" id="btn-unverified" data-filter="UNVERIFIED">{{ t_unverified }}</button>
+      <button type="button" id="btn-expiring" data-filter="EXPIRING">{{ t_expiring }}</button>
+      <button type="button" id="btn-expired" data-filter="EXPIRED">{{ t_expired }}</button>
+    </div>
+    <div id="versionPanel" class="hr03-version-panel"></div>
+    <div id="content" class="hr03-record-list">
+      <div class="hr-v2-state"><strong>正在读取人事材料</strong><span>正在加载材料、核验状态、版本和灵敏度。</span></div>
+    </div>
+  </section>
+
+  <div class="hr-v2-truth-note"><strong>安全边界</strong><span>预览/下载必须先向 `/download-ticket` 申请受审计票据，再通过受控下载路由消费票据；页面不会拼接 `/media/` 裸链接。</span></div>
 </div>
+{% endblock content %}
+
+{% block scripts %}
+{{ block.super }}
 <script>
-  const staffId = "{{ staff_id }}";
+(function () {
+  "use strict";
+  const root = document.querySelector('[data-module="HR03"][data-section="materials"]');
+  if (!root) return;
+  const staffId = root.dataset.staffId;
   const L = {empty:"{{ t_empty|escapejs }}", loadFailed:"{{ t_load_failed|escapejs }}", preview:"{{ t_preview|escapejs }}", versions:"{{ t_versions|escapejs }}", downloadFailed:"{{ t_download_failed|escapejs }}"};
   let items = [];
   let activeFilter = "";
+
+  function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  function csrfToken() {
+    const row = document.cookie.split(";").map(value => value.trim()).find(value => value.startsWith("csrftoken="));
+    return row ? decodeURIComponent(row.slice("csrftoken=".length)) : "";
+  }
+  function groupByCategory(rows) {
+    const grouped = {};
+    for (const material of rows) {
+      const category = material.categoryLabel || material.categoryCode || "未分类";
+      (grouped[category] = grouped[category] || []).push(material);
+    }
+    return grouped;
+  }
+
   async function load() {
+    const content = document.getElementById("content");
     try {
-      const resp = await fetch(`/api/hr/v1/staff/${staffId}/materials`);
-      if (!resp.ok) { document.getElementById("content").innerHTML = `<div class="card"><div style="text-align:center;padding:32px;color:#6b7280">${L.loadFailed}（${resp.status}）</div></div>`; return; }
+      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials`, {credentials:"same-origin"});
+      if (!resp.ok) { content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>HTTP ${resp.status}</span></div>`; return; }
       const body = await resp.json();
-      items = body.data.items || [];
-      filter("");
-    } catch (e) {
-      document.getElementById("content").innerHTML = `<div class="card"><div style="text-align:center;padding:32px;color:#6b7280">${L.loadFailed}</div></div>`;
+      items = Array.isArray(body.data?.items) ? body.data.items : [];
+      setFilter("");
+    } catch (_error) {
+      content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>材料接口请求失败。</span></div>`;
     }
   }
-  function groupByCategory(items) {
-    const map = {};
-    for (const m of items) {
-      const cat = m.categoryLabel || m.categoryCode;
-      (map[cat] = map[cat] || []).push(m);
-    }
-    return map;
-  }
-  function filter(vf) {
-    activeFilter = vf;
-    document.querySelectorAll(".toolbar button").forEach(b => b.classList.remove("on"));
-    document.getElementById(vf ? `btn-${vf.toLowerCase()}` : "btn-all").classList.add("on");
+
+  function setFilter(value) {
+    activeFilter = value;
+    document.querySelectorAll(".hr03-record-filter button").forEach(button => button.classList.toggle("is-active", button.dataset.filter === value));
     render();
   }
+
   function render() {
     let filtered = items;
-    if (activeFilter === "UNVERIFIED") filtered = items.filter(i => i.verificationStatus === "UNVERIFIED" || !i.verificationStatus);
-    else if (activeFilter === "EXPIRING") filtered = items.filter(i => i.sha256 && i.expiryDate && new Date(i.expiryDate) < new Date(Date.now() + 90*86400000));
-    else if (activeFilter === "EXPIRED") filtered = items.filter(i => i.sha256 && i.expiryDate && new Date(i.expiryDate) < new Date());
+    if (activeFilter === "UNVERIFIED") filtered = items.filter(item => item.verificationStatus === "UNVERIFIED" || !item.verificationStatus);
+    else if (activeFilter === "EXPIRING") filtered = items.filter(item => item.sha256 && item.expiryDate && new Date(item.expiryDate) < new Date(Date.now() + 90 * 86400000) && new Date(item.expiryDate) >= new Date());
+    else if (activeFilter === "EXPIRED") filtered = items.filter(item => item.sha256 && item.expiryDate && new Date(item.expiryDate) < new Date());
+
+    const content = document.getElementById("content");
     if (!filtered.length) {
-      document.getElementById("content").innerHTML = `<div style="text-align:center;padding:48px;color:#6b7280">${L.empty}</div>`;
+      content.innerHTML = `<div class="hr-v2-state"><strong>${L.empty}</strong><span>当前筛选条件没有返回材料记录。</span></div>`;
       return;
     }
+
     const groups = groupByCategory(filtered);
-    let html = "";
-    for (const [cat, arr] of Object.entries(groups)) {
-      html += `<div class="section"><h3>${escapeHtml(cat)}</h3>`;
-      for (const m of arr) {
-        html += `<div class="card">
-          <div class="card-header">
-            <h4>${escapeHtml(m.title)}</h4>
-            <span class="badge ${m.verificationStatus||''}">${escapeHtml(m.verificationStatusLabel||m.verificationStatus||"-")}</span>
-          </div>
-          <div class="card-meta">
-            V${m.currentVersionNo||1} · ${m.originalFilename||"-"} · ${m.sizeBytes||0} 字节
-            ${m.sensitivityLevel && m.sensitivityLevel !== 'PUBLIC_HR' ? `<span class="sens-tag ${m.sensitivityLevel}">${escapeHtml(m.sensitivityLabel||m.sensitivityLevel)}</span>` : ''}
-            ${m.expiryDate ? ` · 到期 ${m.expiryDate}` : ''}
-          </div>
-          <div class="card-actions">
-            <button onclick="downloadTicket('${m.id}')">${L.preview}</button>
-            <button onclick="viewVersions('${m.id}')">${L.versions}</button>
-          </div>
-        </div>`;
-      }
-      html += `</div>`;
-    }
-    document.getElementById("content").innerHTML = html;
+    content.innerHTML = Object.entries(groups).map(([category, rows]) => `
+      <section class="hr03-record-group">
+        <h3 class="hr03-record-group__title">${escapeHtml(category)}</h3>
+        ${rows.map(material => `
+          <article class="hr03-record-card">
+            <div class="hr03-record-card__head">
+              <div class="hr03-record-card__title">${escapeHtml(material.title || "—")}</div>
+              <span class="hr03-record-badge ${escapeHtml(material.verificationStatus || "")}">${escapeHtml(material.verificationStatusLabel || material.verificationStatus || "—")}</span>
+            </div>
+            <div class="hr03-record-card__meta">
+              V${escapeHtml(material.currentVersionNo || 1)} · ${escapeHtml(material.originalFilename || "—")} · ${escapeHtml(material.sizeBytes || 0)} 字节
+              ${material.sensitivityLevel && material.sensitivityLevel !== "PUBLIC_HR" ? `<span class="hr03-sensitivity ${escapeHtml(material.sensitivityLevel)}">${escapeHtml(material.sensitivityLabel || material.sensitivityLevel)}</span>` : ""}
+              ${material.expiryDate ? ` · 到期 ${escapeHtml(material.expiryDate)}` : ""}
+            </div>
+            <div class="hr03-record-actions">
+              <button type="button" data-action="download" data-material-id="${escapeHtml(material.id)}">${L.preview}</button>
+              <button type="button" data-action="versions" data-material-id="${escapeHtml(material.id)}">${L.versions}</button>
+            </div>
+          </article>`).join("")}
+      </section>`).join("");
   }
+
   async function downloadTicket(materialId) {
     const purpose = prompt("请填写查看用途（将记录审计）", "材料核对");
     if (!purpose) return;
-    const resp = await fetch(`/api/hr/v1/staff/${staffId}/materials/${materialId}/download-ticket`, {
-      method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest"}, body:JSON.stringify({purpose})
+    const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/download-ticket`, {
+      method:"POST",
+      credentials:"same-origin",
+      headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest","X-CSRFToken":csrfToken()},
+      body:JSON.stringify({purpose})
     });
-    if (!resp.ok) { alert(`${L.downloadFailed}（`+(await resp.json()).error?.code+`)`); return; }
+    if (!resp.ok) { alert(`${L.downloadFailed}（` + ((await resp.json()).error?.code || resp.status) + `）`); return; }
     const body = await resp.json();
-    window.open(`/api/hr/v1/staff/${staffId}/materials/${materialId}/download/${body.data.ticket}`, "_blank");
+    const ticket = body.data?.ticket;
+    if (!ticket) { alert(L.downloadFailed); return; }
+    window.open(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/download/${encodeURIComponent(ticket)}`, "_blank", "noopener");
   }
+
   async function viewVersions(materialId) {
-    const resp = await fetch(`/api/hr/v1/staff/${staffId}/materials/${materialId}/versions`);
-    if (!resp.ok) return;
+    const panel = document.getElementById("versionPanel");
+    const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/versions`, {credentials:"same-origin"});
+    if (!resp.ok) { panel.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>版本历史读取失败</strong><span>HTTP ${resp.status}</span></div>`; return; }
     const body = await resp.json();
-    const versions = body.data.versions || [];
-    let html = `<div class="card" style="max-height:400px;overflow-y:auto">`;
-    html += `<div style="font-weight:600;margin-bottom:8px">版本历史</div>`;
-    for (const v of versions) {
-      html += `<div class="version-row"><span>V${v.versionNo} · ${escapeHtml(v.statusLabel||v.status)} · ${v.sizeBytes||0} 字节 · ${v.uploadedAt?.slice(0,10)||"-"}</span></div>`;
-    }
-    html += `</div>`;
-    document.getElementById("content").insertAdjacentHTML("beforebegin", html);
+    const versions = Array.isArray(body.data?.versions) ? body.data.versions : [];
+    panel.innerHTML = `<div class="hr-v2-panel"><div class="hr-v2-panel__head"><div><h3>版本历史</h3><p>按材料正式版本记录展示。</p></div></div>${versions.length ? versions.map(version => `<div class="hr03-version-row">V${escapeHtml(version.versionNo)} · ${escapeHtml(version.statusLabel || version.status || "—")} · ${escapeHtml(version.sizeBytes || 0)} 字节 · ${escapeHtml(version.uploadedAt?.slice(0, 10) || "—")}</div>`).join("") : '<div class="hr-v2-state"><strong>暂无版本历史</strong></div>'}</div>`;
   }
-  function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  document.querySelectorAll(".hr03-record-filter button").forEach(button => button.addEventListener("click", () => setFilter(button.dataset.filter)));
+  document.getElementById("content").addEventListener("click", event => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    if (button.dataset.action === "download") downloadTicket(button.dataset.materialId);
+    if (button.dataset.action === "versions") viewVersions(button.dataset.materialId);
+  });
   load();
+})();
 </script>
-</body>
-</html>
+{% endblock scripts %}
