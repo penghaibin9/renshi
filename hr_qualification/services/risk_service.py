@@ -9,7 +9,9 @@ hr_qualification/services/risk_service.py —— 风险检测服务（总册 §3
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
+
+from django.utils import timezone
 
 from hr_qualification.constants import CredentialStatus, RiskSeverity, RiskStatus, RiskType
 from hr_qualification.models import (
@@ -117,7 +119,7 @@ class RiskService:
         case = HrQualificationRiskCase.objects.get(id=risk_id)
         case.status = RiskStatus.RESOLVED
         case.resolution = resolution
-        case.resolved_at = datetime.now()
+        case.resolved_at = timezone.now()
         case.save()
         return case
 

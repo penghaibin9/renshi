@@ -156,6 +156,11 @@ urlpatterns = [
         name="api-qualification-batch-detail",
     ),
     path(
+        "api/v1/hr/qualifications/double-teacher/batches/<str:batch_id>/advance",
+        views_application.batch_advance,
+        name="api-qualification-batch-advance",
+    ),
+    path(
         "api/v1/hr/qualifications/double-teacher/applications",
         views_application.application_create,
         name="api-qualification-application-create",
@@ -184,6 +189,11 @@ urlpatterns = [
         "api/v1/hr/qualifications/double-teacher/applications/<str:app_id>/withdraw",
         views_application.application_withdraw,
         name="api-qualification-application-withdraw",
+    ),
+    path(
+        "api/v1/hr/qualifications/double-teacher/applications/<str:app_id>/resubmit",
+        views_application.application_resubmit,
+        name="api-qualification-application-resubmit",
     ),
 
     # ---- Review（总册 §110）----

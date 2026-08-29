@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr09-qualification.css' %}">
+<link id="hr09-action-styles" rel="stylesheet" href="{% static 'hr/css/hr09-actions.css' %}">
 
 <div class="hr-v2-page hr09" data-module="HR09" data-section="{{ section }}">
   {% if access_error %}
@@ -287,8 +288,11 @@
 
     <div class="hr-v2-truth-note">
       <strong>数据边界</strong>
-      <span>本工作区直接读取当前学校 HR09 Authority 模型，并按当前登录账号权限进入；旧的 query-param tenant API 仍在单独做安全收口，因此本页暂不调用那些接口。</span>
+      <span>本工作区只读取当前学校 HR09 Authority 模型；办理动作由服务端重新判定学校、权限和状态，不接受页面传入的学校范围。</span>
     </div>
+    {{ staff_options|json_script:"hr09-staff-options" }}
+    {{ rule_version_options|json_script:"hr09-rule-version-options" }}
   {% endif %}
 </div>
+<script id="hr09-action-script" src="{% static 'hr/js/pages/hr09-actions.js' %}"></script>
 {% endblock %}

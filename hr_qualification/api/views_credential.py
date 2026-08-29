@@ -71,6 +71,10 @@ def _credential_to_dict(c: HrPersonCredential) -> dict:
         "id": str(c.id),
         "person_id": str(c.person_id_id),
         "staff_master_id": str(c.staff_master_id_id) if c.staff_master_id_id else None,
+        "person": {
+            "name": c.person_id.legal_name,
+            "staff_no": c.staff_master_id.staff_no if c.staff_master_id_id else "",
+        },
         "external_engagement_id": c.external_engagement_id,
         "catalog_item_id": str(c.catalog_item_id_id),
         "catalog_item": {

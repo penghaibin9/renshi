@@ -18,7 +18,9 @@ from hr_qualification.models import (
     HrDoubleTeacherRecognitionBatch,
     HrPersonCredential,
     HrQualificationRiskCase,
+    HrDoubleTeacherRulePackVersion,
 )
+from hr_staff.models import HrStaffMaster
 
 
 SECTION_PERMISSIONS = {
@@ -198,6 +200,33 @@ def qualification_workspace(request, section="overview"):
     recognitions = HrDoubleTeacherRecognition.objects.filter(tenant_id=tenant_id)
     risks = HrQualificationRiskCase.objects.filter(tenant_id=tenant_id)
 
+    staff_options = [
+        {
+            "person_id": str(staff.person_id_id),
+            "staff_id": str(staff.id),
+            "label": _person_label(staff, staff.person_id),
+        }
+        for staff in HrStaffMaster.objects.filter(tenant_id=tenant_id)
+        .select_related("person_id")
+        .order_by("person_id__legal_name", "staff_no")[:500]
+    ]
+    rule_version_options = [
+        {
+            "id": str(version.id),
+            "label": (
+                f"{version.rule_pack_id.name} · v{version.version_no}"
+                f" · {version.effective_from:%Y-%m-%d} 生效"
+            ),
+        }
+        for version in HrDoubleTeacherRulePackVersion.objects.filter(status="ACTIVE")
+        .filter(
+            Q(rule_pack_id__tenant_id=tenant_id)
+            | Q(rule_pack_id__tenant_id__isnull=True)
+        )
+        .select_related("rule_pack_id")
+        .order_by("rule_pack_id__name", "-version_no")[:200]
+    ]
+
     open_risk_statuses = ["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"]
     pending_application_statuses = [
         "SUBMITTED",
@@ -363,5 +392,7 @@ def qualification_workspace(request, section="overview"):
             "application_rows": application_rows,
             "recognition_rows": recognition_rows,
             "risk_rows": risk_rows,
+            "staff_options": staff_options,
+            "rule_version_options": rule_version_options,
         },
     )

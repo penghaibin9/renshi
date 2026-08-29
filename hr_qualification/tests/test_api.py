@@ -181,3 +181,98 @@ class ResourceEndpointTest(TestCase):
         self._login_school()
         resp = self.client.get("/api/v1/hr/qualifications/double-teacher/batches")
         self.assertEqual(resp.status_code, 200, resp.content[:300])
+
+    def test_batch_advance_follows_canonical_sequence(self):
+        import json
+        from datetime import date
+
+        from hr_qualification.constants import BatchStatus, RulePackVersionStatus
+        from hr_qualification.models import (
+            HrDoubleTeacherRecognitionBatch,
+            HrDoubleTeacherRulePack,
+            HrDoubleTeacherRulePackVersion,
+        )
+
+        self._login_school()
+        pack = HrDoubleTeacherRulePack.objects.create(
+            tenant_id=self.company.pk,
+            code="API-BATCH-FLOW",
+            name="API 批次流程规则",
+        )
+        version = HrDoubleTeacherRulePackVersion.objects.create(
+            rule_pack_id=pack,
+            version_no=1,
+            effective_from=date.today(),
+            status=RulePackVersionStatus.ACTIVE,
+            checksum="sealed-test-version",
+        )
+        batch = HrDoubleTeacherRecognitionBatch.objects.create(
+            tenant_id=self.company.pk,
+            batch_no="API-BATCH-001",
+            name="API 批次流程",
+            rule_pack_version_id=version,
+            target_levels=["DOUBLE_TEACHER_JUNIOR"],
+        )
+
+        expected = [
+            BatchStatus.PUBLISHED,
+            BatchStatus.APPLICATION_OPEN,
+            BatchStatus.APPLICATION_CLOSED,
+            BatchStatus.REVIEWING,
+            BatchStatus.RESULT_PENDING,
+            BatchStatus.RESULT_PUBLISHED,
+            BatchStatus.CLOSED,
+        ]
+        for status in expected:
+            response = self.client.post(
+                f"/api/v1/hr/qualifications/double-teacher/batches/{batch.id}/advance",
+                data=json.dumps({}),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200, response.content[:500])
+            self.assertEqual(response.json()["data"]["status"], status)
+
+        terminal = self.client.post(
+            f"/api/v1/hr/qualifications/double-teacher/batches/{batch.id}/advance",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.assertEqual(terminal.status_code, 409)
+        self.assertEqual(terminal.json()["error"]["code"], "BATCH_TERMINAL_STATE")
+
+    def test_batch_create_rejects_other_school_rule_version(self):
+        import json
+        from datetime import date
+
+        from hr_qualification.constants import RulePackVersionStatus
+        from hr_qualification.models import (
+            HrDoubleTeacherRulePack,
+            HrDoubleTeacherRulePackVersion,
+        )
+
+        self._login_school()
+        other_pack = HrDoubleTeacherRulePack.objects.create(
+            tenant_id=self.company.pk + 999,
+            code="OTHER-SCHOOL-RULE",
+            name="其它学校规则",
+        )
+        other_version = HrDoubleTeacherRulePackVersion.objects.create(
+            rule_pack_id=other_pack,
+            version_no=1,
+            effective_from=date.today(),
+            status=RulePackVersionStatus.ACTIVE,
+        )
+        response = self.client.post(
+            "/api/v1/hr/qualifications/double-teacher/batches/create",
+            data=json.dumps(
+                {
+                    "batch_no": "CROSS-TENANT",
+                    "name": "不应创建",
+                    "rule_pack_version_id": str(other_version.id),
+                    "target_levels": ["DOUBLE_TEACHER_JUNIOR"],
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"]["code"], "RULE_VERSION_NOT_AVAILABLE")

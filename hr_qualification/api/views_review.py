@@ -220,9 +220,9 @@ def final_decision_create(request: HttpRequest) -> JsonResponse:
 def recognition_list(request: HttpRequest) -> JsonResponse:
     status = request.GET.get("status")
     person_id = request.GET.get("person_id")
-    qs = HrDoubleTeacherRecognition.objects.filter(
-        tenant_id=request.hr09_tenant_id
-    )
+    qs = HrDoubleTeacherRecognition.objects.select_related(
+        "person_id", "staff_master_id"
+    ).filter(tenant_id=request.hr09_tenant_id)
     if status:
         qs = qs.filter(status=status)
     if person_id:
@@ -232,6 +232,10 @@ def recognition_list(request: HttpRequest) -> JsonResponse:
         "id": str(r.id),
         "recognition_no": r.recognition_no,
         "person_id": str(r.person_id_id),
+        "person": {
+            "name": r.person_id.legal_name,
+            "staff_no": r.staff_master_id.staff_no if r.staff_master_id_id else "",
+        },
         "level": r.level,
         "effective_from": r.effective_from.isoformat(),
         "effective_to": r.effective_to.isoformat() if r.effective_to else None,
@@ -333,7 +337,9 @@ def recheck_decide(request: HttpRequest, recheck_id: str) -> JsonResponse:
 def risk_list(request: HttpRequest) -> JsonResponse:
     status = request.GET.get("status")
     severity = request.GET.get("severity")
-    qs = HrQualificationRiskCase.objects.filter(tenant_id=request.hr09_tenant_id)
+    qs = HrQualificationRiskCase.objects.select_related("person_id").filter(
+        tenant_id=request.hr09_tenant_id
+    )
     if status:
         qs = qs.filter(status=status)
     if severity:
@@ -342,6 +348,7 @@ def risk_list(request: HttpRequest) -> JsonResponse:
     items = [{
         "id": str(r.id),
         "person_id": str(r.person_id_id),
+        "person": {"name": r.person_id.legal_name},
         "credential_id": str(r.credential_id) if r.credential_id else None,
         "recognition_id": str(r.recognition_id) if r.recognition_id else None,
         "risk_type": r.risk_type,

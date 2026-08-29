@@ -8,6 +8,7 @@ query/body input. Precheck/submission always use the guarded lifecycle service.
 import uuid
 
 from django.db import transaction
+from django.db.models import Q
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -25,6 +26,7 @@ from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherEvidencePackage,
     HrDoubleTeacherRecognitionBatch,
+    HrDoubleTeacherRulePackVersion,
 )
 from hr_qualification.services.application_service import ApplicationError, ApplicationService
 from hr_qualification.services.evidence_service import EvidenceAggregationService
@@ -94,7 +96,9 @@ def _batch_accepts_application(batch, target_level):
 def batch_list(request: HttpRequest) -> JsonResponse:
     tenant_id = request.hr09_tenant_id
     status = request.GET.get("status")
-    qs = HrDoubleTeacherRecognitionBatch.objects.filter(tenant_id=tenant_id)
+    qs = HrDoubleTeacherRecognitionBatch.objects.select_related(
+        "rule_pack_version_id__rule_pack_id"
+    ).filter(tenant_id=tenant_id)
     if status:
         qs = qs.filter(status=status)
     batches = list(qs.order_by("-created_at")[:100])
@@ -111,6 +115,10 @@ def batch_list(request: HttpRequest) -> JsonResponse:
                 b.application_end.isoformat() if b.application_end else None
             ),
             "rule_pack_version_id": str(b.rule_pack_version_id_id),
+            "rule_version_label": (
+                f"{b.rule_pack_version_id.rule_pack_id.name}"
+                f" · v{b.rule_pack_version_id.version_no}"
+            ),
             "status": b.status,
             "target_levels": b.target_levels,
             "application_count": b.applications.filter(tenant_id=tenant_id).count(),
@@ -129,6 +137,26 @@ def batch_create(request: HttpRequest) -> JsonResponse:
 
         body = json.loads(request.body)
         tenant_id = request.hr09_tenant_id
+        rule_version = (
+            HrDoubleTeacherRulePackVersion.objects.select_related("rule_pack_id")
+            .filter(
+                id=body["rule_pack_version_id"],
+                status=RulePackVersionStatus.ACTIVE,
+            )
+            .filter(
+                Q(rule_pack_id__tenant_id=tenant_id)
+                | Q(rule_pack_id__tenant_id__isnull=True)
+            )
+            .first()
+        )
+        if rule_version is None:
+            return JsonResponse(
+                error_envelope(
+                    "RULE_VERSION_NOT_AVAILABLE",
+                    "请选择当前学校可用的已生效规则版本。",
+                ),
+                status=400,
+            )
         batch = HrDoubleTeacherRecognitionBatch.objects.create(
             tenant_id=tenant_id,
             batch_no=body["batch_no"],
@@ -136,7 +164,7 @@ def batch_create(request: HttpRequest) -> JsonResponse:
             school_year=body.get("school_year", ""),
             application_start=body.get("application_start"),
             application_end=body.get("application_end"),
-            rule_pack_version_id_id=body["rule_pack_version_id"],
+            rule_pack_version_id=rule_version,
             eligible_scope=body.get("eligible_scope"),
             target_levels=body.get("target_levels"),
             status=BatchStatus.DRAFT,
@@ -151,6 +179,67 @@ def batch_create(request: HttpRequest) -> JsonResponse:
         return JsonResponse(error_envelope("INTERNAL_ERROR", str(exc)), status=500)
 
 
+_BATCH_TRANSITIONS = {
+    BatchStatus.DRAFT: BatchStatus.PUBLISHED,
+    BatchStatus.PUBLISHED: BatchStatus.APPLICATION_OPEN,
+    BatchStatus.APPLICATION_OPEN: BatchStatus.APPLICATION_CLOSED,
+    BatchStatus.APPLICATION_CLOSED: BatchStatus.REVIEWING,
+    BatchStatus.REVIEWING: BatchStatus.RESULT_PENDING,
+    BatchStatus.RESULT_PENDING: BatchStatus.RESULT_PUBLISHED,
+    BatchStatus.RESULT_PUBLISHED: BatchStatus.CLOSED,
+}
+
+
+@require_http_methods(["POST"])
+@api_guard(FORMAL_REVIEW, RULE_MANAGE)
+def batch_advance(request: HttpRequest, batch_id: str) -> JsonResponse:
+    """Advance one canonical batch step; callers cannot skip review states."""
+    with transaction.atomic():
+        batch = (
+            HrDoubleTeacherRecognitionBatch.objects.select_for_update()
+            .select_related("rule_pack_version_id")
+            .filter(id=batch_id, tenant_id=request.hr09_tenant_id)
+            .first()
+        )
+        if batch is None:
+            return JsonResponse(error_envelope("NOT_FOUND", "Batch not found"), status=404)
+        target = _BATCH_TRANSITIONS.get(batch.status)
+        if target is None:
+            return JsonResponse(
+                error_envelope("BATCH_TERMINAL_STATE", "当前批次没有可继续推进的状态。"),
+                status=409,
+            )
+        if batch.status == BatchStatus.DRAFT:
+            if batch.rule_pack_version_id.status != RulePackVersionStatus.ACTIVE:
+                return JsonResponse(
+                    error_envelope("RULE_VERSION_NOT_ACTIVE", "批次规则版本尚未正式生效。"),
+                    status=409,
+                )
+            if not batch.target_levels:
+                return JsonResponse(
+                    error_envelope("TARGET_LEVEL_REQUIRED", "发布批次前必须选择可申报层级。"),
+                    status=409,
+                )
+        if batch.status == BatchStatus.RESULT_PENDING:
+            unfinished = batch.applications.exclude(
+                status__in=(
+                    ApplicationStatus.RECOGNIZED,
+                    ApplicationStatus.NOT_RECOGNIZED,
+                    ApplicationStatus.WITHDRAWN,
+                    ApplicationStatus.CANCELLED,
+                )
+            ).exists()
+            if unfinished:
+                return JsonResponse(
+                    error_envelope("APPLICATIONS_UNFINISHED", "仍有申报未形成最终审定结果。"),
+                    status=409,
+                )
+        batch.status = target
+        batch.version += 1
+        batch.save(update_fields=["status", "version", "updated_at"])
+    return JsonResponse(envelope({"id": str(batch.id), "status": batch.status}))
+
+
 @csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(APP_VIEW, RULE_MANAGE)
@@ -159,7 +248,9 @@ def batch_detail(request: HttpRequest, batch_id: str) -> JsonResponse:
     if b is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Batch not found"), status=404)
     apps = list(
-        HrDoubleTeacherApplication.objects.filter(
+        HrDoubleTeacherApplication.objects.select_related(
+            "person_id", "staff_master_id"
+        ).filter(
             tenant_id=request.hr09_tenant_id,
             batch_id=b,
         ).order_by("-created_at")[:200]
@@ -178,6 +269,8 @@ def batch_detail(request: HttpRequest, batch_id: str) -> JsonResponse:
                         "target_level": a.target_level,
                         "status": a.status,
                         "route": a.route,
+                        "person": a.person_id.legal_name,
+                        "staff_no": a.staff_master_id.staff_no if a.staff_master_id_id else "",
                     }
                     for a in apps
                 ],
@@ -462,6 +555,22 @@ def application_withdraw(request: HttpRequest, app_id: str) -> JsonResponse:
         return denied
     try:
         app = ApplicationService.transition(app, ApplicationStatus.WITHDRAWN)
+        return JsonResponse(envelope({"id": str(app.id), "status": app.status}))
+    except ApplicationError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
+
+
+@require_http_methods(["POST"])
+@api_guard(APP_SELF)
+def application_resubmit(request: HttpRequest, app_id: str) -> JsonResponse:
+    app = _application_or_none(app_id, request.hr09_tenant_id)
+    if app is None:
+        return JsonResponse(error_envelope("NOT_FOUND", "Application not found"), status=404)
+    denied = _require_self_ownership(request, app)
+    if denied:
+        return denied
+    try:
+        app = ApplicationService.transition(app, ApplicationStatus.RESUBMITTED)
         return JsonResponse(envelope({"id": str(app.id), "status": app.status}))
     except ApplicationError as exc:
         return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
