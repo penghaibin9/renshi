@@ -50,6 +50,8 @@ class HrExternalHiringCase(models.Model):
         db_index=True,
     )
     approval_instance_id = models.CharField(max_length=64, blank=True, default="")
+    # HR07 Authority scalar reference. It is deliberately not a cross-domain FK.
+    agreement_id = models.CharField(max_length=64, blank=True, default="")
     version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

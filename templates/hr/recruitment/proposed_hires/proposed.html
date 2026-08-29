@@ -19,9 +19,9 @@ HR04-06 拟录用工作台（总册 13.2）
     </div>
   </div>
 </div>
-{% endblock %}
 
-{% block scripts %}
+{# The active horilla_theme index.html does not expose a page-level scripts block. #}
+{# Keep HR04 wiring local to this page rather than changing the global theme shell. #}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/pages/recruitment-proposed.js' %}"></script>
 {% endblock %}

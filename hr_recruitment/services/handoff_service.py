@@ -7,13 +7,14 @@ HANDOFF_TO_HR05 服务（《04_HR04_总册》§13.7/§25.6 + HR05 RecruitToHireM
 - HrProposedHire APPROVED；
 - 公示 HrPublicNotice CLOSED_NO_BLOCKER；
 - HrRecruitmentOffer ACCEPTED；
-- PositionReservation VALID（HELD 可 commit）。
+- PositionReservation VALID（必须保持 HELD，真正 COMMIT 由 HR05 ActivationService 在 HR03 生效后执行）。
 
 幂等：同一 proposed_hire 重复调用返回同一 HR05 case；
 DB 约束 unique(tenant, proposed_hire) + idempotency_key unique 兜底。
 
-关键安全纪律：HR05 case 已创建但岗位预占 commit 失败时，handoff 必须保持 FAILED，
-申请不得进入 HANDOFF_TO_HR05 终态；重试时依赖 HR05 幂等返回原 case，再补 commit。
+关键安全纪律：HR04 handoff 只完成招聘事实到 HR05 case 的交接，绝不能提前占用正式岗位额度。
+HR05 ActivationService 在 HR03 Person/Staff/Employment/Assignment 全部成功后才把 HR02 reservation
+从 HELD 提交为 COMMITTED；失败或放弃仍可由 HR05 释放 reservation。
 """
 
 from __future__ import annotations
@@ -107,7 +108,7 @@ class HandoffService:
         hr05_consumer,
         idempotency_key,
     ) -> HrRecruitmentHandoff:
-        """HR05 消费 + 岗位预占 commit 全部成功后，才允许标 CREATED 与推进终态。"""
+        """HR05 case 创建成功且 HR02 reservation 仍 HELD 后，才允许标 CREATED。"""
         from hr_recruitment.services.audit_service import audit_event
 
         if getattr(handoff, "tenant_id", None) != self.tenant_id:
@@ -142,31 +143,42 @@ class HandoffService:
 
         proposed = handoff.proposed_hire_id
 
-        # 预占 HELD → COMMITTED 必须先成功；失败时保持 FAILED，申请不推进终态。
+        # HR04 不再提前 COMMIT 岗位。交接后重新锁行确认 reservation 仍为 HELD，
+        # 真正 HELD -> COMMITTED 只允许在 HR05 ActivationService 完成人员事实后执行。
         if proposed.reservation_id:
             try:
-                from hr_recruitment.integrations.hr02 import Hr02ReservationProvider
+                from hr_structure.models import HrPositionReservation
 
-                Hr02ReservationProvider(
+                reservation = HrPositionReservation.objects.select_for_update().filter(
                     tenant_id=self.tenant_id,
-                    actor=self.actor,
-                ).commit(proposed.reservation_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "HR02 reservation commit failed tenant=%s reservation=%s handoff=%s",
+                    id=int(proposed.reservation_id),
+                ).first()
+                if (
+                    reservation is None
+                    or reservation.status != HrPositionReservation.Status.HELD
+                    or (reservation.expires_at and reservation.expires_at <= timezone.now())
+                ):
+                    raise HandoffServiceError(
+                        "POSITION_RESERVATION_NOT_HELD",
+                        "HR05 case 已创建，但岗位预占不再是有效 HELD 状态",
+                        http_status=409,
+                    )
+            except (ValueError, TypeError, HandoffServiceError) as exc:
+                logger.warning(
+                    "HR02 reservation invalid after HR05 consumer tenant=%s reservation=%s handoff=%s",
                     self.tenant_id,
                     proposed.reservation_id,
                     getattr(handoff, "id", None),
                 )
                 audit_event(
                     tenant_id=self.tenant_id,
-                    event_type="RESERVATION_COMMIT_FAILED",
+                    event_type="RESERVATION_INVALID_AFTER_HR05",
                     business_object="HrRecruitmentHandoff",
                     business_object_id=str(handoff.id),
                     actor_id=self.actor,
-                    action="COMMIT_FAILED",
+                    action="VALIDATION_FAILED",
                     summary=(
-                        f"预占 commit 失败（reservation={proposed.reservation_id}）："
+                        f"HR05 case 已创建但岗位预占无效（reservation={proposed.reservation_id}）："
                         f"{str(exc)[:300]}"
                     ),
                     after={
@@ -176,7 +188,6 @@ class HandoffService:
                 )
                 return handoff
 
-        # HR05 + HR02 两侧都完成后，才正式创建 handoff 终态。
         handoff.status = HandoffStatus.CREATED
         handoff.save(update_fields=["status"])
 
@@ -214,6 +225,7 @@ class HandoffService:
             after={
                 "status": handoff.status,
                 "hr05_case_id": handoff.hr05_case_id,
+                "reservation_status": "HELD_PENDING_HR05_ACTIVATION",
             },
         )
         return handoff
@@ -257,6 +269,8 @@ class HandoffService:
                     or reservation.status != HrPositionReservation.Status.HELD
                 ):
                     missing.append("岗位预占无效（须为 HELD）")
+                elif reservation.expires_at and reservation.expires_at <= timezone.now():
+                    missing.append("岗位预占已过期")
             except (ValueError, TypeError):
                 missing.append("岗位预占无效")
         if missing:
@@ -264,6 +278,16 @@ class HandoffService:
 
     def _payload(self, proposed: HrProposedHire) -> dict:
         app = proposed.application_id
+        position = proposed.recruitment_position_id
+        offer = (
+            HrRecruitmentOffer.objects.filter(
+                tenant_id=self.tenant_id,
+                proposed_hire_id=proposed,
+                status=OfferStatus.ACCEPTED,
+            )
+            .order_by("-accepted_at", "-created_at")
+            .first()
+        )
         return {
             "tenant_id": self.tenant_id,
             "proposed_hire_id": str(proposed.id),
@@ -272,7 +296,16 @@ class HandoffService:
             "candidate_uid": app.candidate_id.candidate_uid if app.candidate_id else "",
             "legal_name": app.candidate_id.legal_name if app.candidate_id else "",
             "primary_email": app.candidate_id.primary_email if app.candidate_id else "",
-            "position_id": str(proposed.recruitment_position_id_id),
+            "organization_id": position.organization_id if position else None,
+            "post_catalog_id": position.post_catalog_id if position else None,
+            "position_id": position.position_id if position else None,
+            "recruitment_position_id": str(position.id) if position else "",
+            "employment_type": offer.employment_type if offer else "",
+            "expected_report_date": (
+                offer.expected_report_date.isoformat()
+                if offer and offer.expected_report_date
+                else None
+            ),
             "rank": proposed.rank,
             "final_score": str(proposed.final_score),
             "handoff_at": timezone.now().isoformat(),
@@ -283,7 +316,10 @@ class HandoffService:
         proposed_hire_id: str,
         for_update: bool = False,
     ) -> HrProposedHire:
-        qs = HrProposedHire.objects.select_related("application_id__candidate_id")
+        qs = HrProposedHire.objects.select_related(
+            "application_id__candidate_id",
+            "recruitment_position_id",
+        )
         if for_update:
             qs = qs.select_for_update()
         try:

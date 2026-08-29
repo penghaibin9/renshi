@@ -2,7 +2,7 @@
 {% load static %}
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr08-actions.css' %}">
-<div data-hr08-page="hiring-detail" data-case-id="{{ case.id }}">
+<div data-hr08-page="hiring-detail" data-case-id="{{ case.id }}" data-case-status="{{ case.status }}">
 <header class="hr-page-header">
   <h1>{{ page_title }}</h1>
   <p class="hr-page-subtitle">状态：{{ case.status }} ｜ 拟聘 {{ case.requested_start|date:"Y-m-d" }} ~ {{ case.requested_end|date:"Y-m-d"|default:"长期" }}</p>
@@ -40,9 +40,10 @@
 
   <section class="hr-panel hr-panel--wide">
     <h2>审批时间线</h2>
-    <p class="hr-muted">状态：{{ case.status }} ｜ 审批实例：{{ case.approval_instance_id|default:"-" }} ｜ 版本：{{ case.version }}</p>
+    <p class="hr-muted">状态：{{ case.status }} ｜ 审批实例：{{ case.approval_instance_id|default:"-" }} ｜ HR07 协议：{{ case.agreement_id|default:"-" }} ｜ 版本：{{ case.version }}</p>
   </section>
 </div>
 </div>
 <script src="{% static 'hr/js/pages/hr08-actions.js' %}" defer></script>
+<script src="{% static 'hr/js/pages/hr08-wb-agreement.js' %}" defer></script>
 {% endblock %}
