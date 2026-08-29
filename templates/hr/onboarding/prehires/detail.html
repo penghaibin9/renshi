@@ -5,7 +5,7 @@
 {% block content %}
 <div class="hr-v2-page hr05-page" data-module="HR05" data-section="prehires" data-hr-page="onboarding-case-detail" data-case-id="{{ case.id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>入职单详情</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-case-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-case-title">入职单详情</h1><p class="hr-v2-subtitle">详情事实由 canonical case detail API 在当前 tenant/scope 下实时读取；页面 bootstrap 只携带 case ID。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>Case</strong> {{ case.id }}</span><span class="hr-v2-context__item"><strong>敏感信息</strong> 不展开高敏明文</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-case-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-case-title">入职单详情</h1><p class="hr-v2-subtitle">详情事实由 canonical case detail API 在当前 tenant/scope 下实时读取；页面 bootstrap 只携带 case ID。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>入职单编号</strong> {{ case.id }}</span><span class="hr-v2-context__item"><strong>敏感信息</strong> 不展开高敏明文</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="prehires" %}
   <section class="hr05-panel"><div id="hr05-case-detail" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取入职单</strong><span>等待 canonical case detail API。</span></div></div><div id="hr05-case-actions" class="hr05-actions"></div></section>
   <div class="hr05-truth-note"><strong>最小披露</strong><span>详情 API 只返回完成入职工作所需摘要；身份证明、材料文件和其他高敏正文不在本页 bootstrap 中展开。</span></div>
