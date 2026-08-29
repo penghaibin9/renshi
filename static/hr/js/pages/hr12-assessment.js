@@ -5,6 +5,7 @@
   root.dataset.hr12Booted = 'true';
 
   const section = root.dataset.section || 'overview';
+  const REQUEST_TIMEOUT_MS = 6000;
   const zhStatus = {
     PUBLISHED: '已发布', DRAFT: '草稿', ACTIVE: '有效', INACTIVE: '停用',
     PROPOSED: '待审定', PUBLICITY: '公示中', FINALIZED: '已定稿', READY: '证据已锁定',
@@ -29,26 +30,34 @@
   }
 
   async function requestJson(url, options = {}) {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        ...(options.method && options.method !== 'GET'
-          ? {'X-CSRFToken': cookie('csrftoken'), 'Content-Type': 'application/json'}
-          : {}),
-        ...(options.headers || {}),
-      },
-    });
-    let body = {};
-    try { body = await response.json(); } catch (_error) { body = {}; }
-    if (!response.ok) {
-      const blockers = body?.error?.details?.blockers;
-      const blockerText = Array.isArray(blockers)
-        ? blockers.map((item) => item.code || '').filter(Boolean).join('、')
-        : '';
-      throw new Error(body?.message || body?.error?.message || blockerText || `请求失败 ${response.status}`);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          ...(options.method && options.method !== 'GET'
+            ? {'X-CSRFToken': cookie('csrftoken'), 'Content-Type': 'application/json'}
+            : {}),
+          ...(options.headers || {}),
+        },
+        signal: controller.signal,
+      });
+      let body = {};
+      try { body = await response.json(); } catch (_error) { body = {}; }
+      if (!response.ok) {
+        const blockers = body?.error?.details?.blockers;
+        const blockerText = Array.isArray(blockers)
+          ? blockers.map((item) => item.code || '').filter(Boolean).join('、')
+          : '';
+        throw new Error(body?.message || body?.error?.message || blockerText || `请求失败 ${response.status}`);
+      }
+      return body.data ?? body;
+    } finally {
+      window.clearTimeout(timer);
     }
-    return body.data ?? body;
   }
 
   const getJson = (url) => requestJson(url);
@@ -207,25 +216,35 @@
   }
 
   async function boot() {
-    let policies = [], indicators = [], scales = [], sources = {};
-    let policyLoaded = false, indicatorLoaded = false, scaleLoaded = false, sourceLoaded = false;
-    try { policies = (await getJson('/api/v1/hr/assessments/policies')) || []; policyLoaded = true; } catch (_error) {}
-    try { indicators = (await getJson('/api/v1/hr/assessments/indicators')) || []; indicatorLoaded = true; } catch (_error) {}
-    try { scales = (await getJson('/api/v1/hr/assessments/rating-scales')) || []; scaleLoaded = true; } catch (_error) {}
-    try {
-      const value = await getJson('/api/v1/hr/assessments/eligibility');
-      sources = value && typeof value === 'object' ? (value.providerStatus || {}) : {};
-      sourceLoaded = true;
-    } catch (_error) {}
+    const [policyResult, indicatorResult, scaleResult, sourceResult] = await Promise.allSettled([
+      getJson('/api/v1/hr/assessments/policies'),
+      getJson('/api/v1/hr/assessments/indicators'),
+      getJson('/api/v1/hr/assessments/rating-scales'),
+      getJson('/api/v1/hr/assessments/eligibility'),
+    ]);
+
+    const policyLoaded = policyResult.status === 'fulfilled';
+    const indicatorLoaded = indicatorResult.status === 'fulfilled';
+    const scaleLoaded = scaleResult.status === 'fulfilled';
+    const sourceLoaded = sourceResult.status === 'fulfilled';
+    const policies = policyLoaded && Array.isArray(policyResult.value) ? policyResult.value : [];
+    const indicators = indicatorLoaded && Array.isArray(indicatorResult.value) ? indicatorResult.value : [];
+    const scales = scaleLoaded && Array.isArray(scaleResult.value) ? scaleResult.value : [];
+    const sourcePayload = sourceLoaded && sourceResult.value && typeof sourceResult.value === 'object'
+      ? sourceResult.value
+      : {};
+    const sources = sourcePayload.providerStatus && typeof sourcePayload.providerStatus === 'object'
+      ? sourcePayload.providerStatus
+      : {};
 
     const policyCount = document.getElementById('policyCount');
     const indicatorCount = document.getElementById('indicatorCount');
     const scaleCount = document.getElementById('scaleCount');
     const sourceHealth = document.getElementById('sourceHealth');
     const sourceHealthCard = document.getElementById('sourceHealthCard');
-    if (policyCount) policyCount.textContent = policyLoaded ? String(Array.isArray(policies) ? policies.length : 0) : '—';
-    if (indicatorCount) indicatorCount.textContent = indicatorLoaded ? String(Array.isArray(indicators) ? indicators.length : 0) : '—';
-    if (scaleCount) scaleCount.textContent = scaleLoaded ? String(Array.isArray(scales) ? scales.length : 0) : '—';
+    if (policyCount) policyCount.textContent = policyLoaded ? String(policies.length) : '—';
+    if (indicatorCount) indicatorCount.textContent = indicatorLoaded ? String(indicators.length) : '—';
+    if (scaleCount) scaleCount.textContent = scaleLoaded ? String(scales.length) : '—';
 
     const values = Object.values(sources);
     if (sourceHealth) {
@@ -248,14 +267,13 @@
       }).join('');
     }
 
-    const normalizedPolicies = Array.isArray(policies) ? policies : [];
-    const normalizedIndicators = Array.isArray(indicators) ? indicators : [];
-    const normalizedScales = Array.isArray(scales) ? scales : [];
-    renderSection(normalizedPolicies, normalizedIndicators);
-    renderReadiness({policyLoaded, indicatorLoaded, scaleLoaded, sourceLoaded, policies: normalizedPolicies, indicators: normalizedIndicators, scales: normalizedScales, sources});
+    renderSection(policies, indicators);
+    renderReadiness({policyLoaded, indicatorLoaded, scaleLoaded, sourceLoaded, policies, indicators, scales, sources});
   }
 
   root.addEventListener('click', handleAnnualAction);
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
-  else boot();
+  // Start immediately after the HR12 root is mounted. Each provider read is
+  // independently bounded above, so one slow/unavailable source cannot leave
+  // the whole workspace permanently stuck in the initial loading state.
+  boot();
 })();
