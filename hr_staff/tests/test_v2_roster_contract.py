@@ -144,6 +144,23 @@ class Hr03V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("{{ error_code", source)
         self.assertIn("{{ error_message", source)
 
+    def test_views_keep_required_staff_and_asof_context(self):
+        views = self._source("hr_staff/views.py")
+        self.assertIn('"staff_id": str(staff_id)', views)
+        self.assertIn('"as_of": context.as_of.isoformat() if context.as_of else ""', views)
+        self.assertIn('{"staff_id": str(staff_id), "as_of": context.as_of.isoformat()}', views)
+        self.assertIn('"hr_staff/error.html"', views)
+        self.assertIn("status=403", views)
+
+    def test_real_browser_gate_traverses_profile_and_four_child_workspaces(self):
+        browser = self._source("scripts/hr_real_browser_click.py")
+        self.assertIn("HR03 roster did not mount the V2 workspace shell", browser)
+        self.assertIn("HR03 roster rendered no real staff profile link", browser)
+        for child in ("assignments", "backgrounds", "materials", "corrections"):
+            with self.subTest(child=child):
+                self.assertIn(f'("{child}", "{child}")', browser)
+        self.assertIn("staff-child-workspace-click", browser)
+
     def test_hr03_css_stays_on_flat_v2_foundation(self):
         css = "\n".join(self._source(path).lower() for path in self.CSS_PATHS)
         self.assertNotIn("linear-gradient", css)
