@@ -1,87 +1,77 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ case.caseNo }} · HR06</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-    .topbar h1 { margin: 0; font-size: 18px; }
-    .wrap { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .panel { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    .panel h3 { margin: 0 0 12px; font-size: 15px; color: #374151; }
-    .kv { display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; border-bottom: 1px solid #f1f3f5; }
-    .kv .k { color: #6b7280; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
-    .b-wait { background: #fef3c7; color: #92400e; }
-    .b-eff { background: #d1fae5; color: #065f46; }
-    .b-appr { background: #dbeafe; color: #1e40af; }
-    .b-term { background: #fee2e2; color: #991b1b; }
-    a { color: #2563eb; text-decoration: none; }
-    .btn { display: inline-block; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 13px; border: none; cursor: pointer; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .fromto { display: flex; align-items: center; gap: 12px; font-size: 14px; }
-    .fromto .arrow { color: #9ca3af; font-weight: 600; }
-    ul.timeline { list-style: none; padding: 0; margin: 0; }
-    ul.timeline li { padding: 6px 0; font-size: 13px; border-bottom: 1px dashed #f1f3f5; color: #374151; }
-    ul.timeline li .t { color: #9ca3af; font-size: 12px; margin-left: 8px; }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>案件 {{ case.caseNo }} · {{ case.staffName }}</h1>
-    <div>
-      <a class="btn btn-outline" href="/hr/changes/{{ case.id }}/preview">影响预览</a>
-      <a class="btn btn-outline" href="/hr/changes/">返回中心</a>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{{ case.caseNo }} · {% trans "人事异动" %}{% endblock %}
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
+{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="detail" data-hr-page="change-detail" data-case-id="{{ case.id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>案件详情</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-detail-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR06 · 人事异动</div>
+      <h1 class="hr-v2-title" id="hr06-detail-title">{{ case.caseNo }} · {{ case.staffName }}</h1>
+      <p class="hr-v2-subtitle">{{ case.actionLabel }} · {{ case.reasonName }} · 计划生效 {{ case.requestedEffectiveAt }}。详情来自当前 tenant 下的 HR06 案件读模型。</p>
     </div>
+    <div class="hr-v2-context">
+      <span class="hr-v2-context__item"><strong>状态</strong> {{ case.statusLabel }}</span>
+      <span class="hr-v2-context__item"><strong>版本</strong> {{ case.version }}</span>
+    </div>
+  </header>
+
+  {% include "hr_changes/components/v2_nav.html" with active="center" %}
+
+  <div class="hr06-toolbar hr06-detail-actions">
+    <div><h2>案件事实</h2><p>状态按钮不在浏览器本地推演；影响预览会实时重新计算 blocker / warning。</p></div>
+    <a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-preview' case.id %}">查看影响预览</a>
   </div>
-  <div class="wrap">
-    {% if case.status == "APPROVED_WAITING_EFFECTIVE" %}<span class="badge b-wait">{{ case.statusLabel }}</span>
-    {% elif case.status == "EFFECTIVE" or case.status == "CLOSED" %}<span class="badge b-eff">{{ case.statusLabel }}</span>
-    {% elif case.status == "UNDER_APPROVAL" or case.status == "SUBMITTED" %}<span class="badge b-appr">{{ case.statusLabel }}</span>
-    {% else %}<span class="badge b-term">{{ case.statusLabel }}</span>{% endif %}
-    <p style="color:#6b7280;font-size:13px;">{{ case.actionLabel }} · {{ case.reasonName }} · 生效 {{ case.requestedEffectiveAt }}</p>
 
-    <div class="grid">
-      <div class="panel">
-        <h3>变更摘要</h3>
-        <div class="fromto">
-          <div>{{ case.sourceOrg.code|default:case.sourcePosition.code|default:"—" }}</div>
-          <div class="arrow">→</div>
-          <div>{{ case.targetOrg.code|default:case.targetPosition.code|default:"—" }}</div>
-        </div>
-        {% for p in case.proposals %}
-        <div class="kv"><span class="k">{{ p.domain }}.{{ p.fieldCode }}</span><span>{{ p.oldValueDisplay }} → {{ p.proposedValueDisplay }}</span></div>
-        {% empty %}
-        <p style="color:#9ca3af;">无变更字段</p>
-        {% endfor %}
+  <div class="hr06-detail-grid">
+    <section class="hr06-panel">
+      <div class="hr06-section-head"><div><h2>变更摘要</h2><p>原事实与目标事实保持分离，未提供的目标字段显示为“—”。</p></div></div>
+      <div class="hr06-kv"><span>原范围</span><strong>{{ case.sourceOrg.code|default:case.sourcePosition.code|default:"—" }}</strong></div>
+      <div class="hr06-kv"><span>目标范围</span><strong>{{ case.targetOrg.code|default:case.targetPosition.code|default:"—" }}</strong></div>
+      <div class="hr06-kv"><span>计划生效日</span><strong>{{ case.requestedEffectiveAt }}</strong></div>
+      {% if case.proposals %}
+      <div class="hr06-table-wrap hr06-table-wrap--nested">
+        <table class="hr06-table hr06-table--compact"><thead><tr><th>受管字段</th><th>原值</th><th>拟变更值</th></tr></thead><tbody>
+        {% for p in case.proposals %}<tr><td>{{ p.domain }}.{{ p.fieldCode }}</td><td>{{ p.oldValueDisplay|default:"—" }}</td><td>{{ p.proposedValueDisplay|default:"—" }}</td></tr>{% endfor %}
+        </tbody></table>
       </div>
-      <div class="panel">
-        <h3>流转记录</h3>
-        <ul class="timeline">
-          {% for t in case.timeline %}
-          <li>{{ t.fromStatusLabel|default:"开始" }} → {{ t.toStatusLabel }}<span class="t">{{ t.createdAt|slice:":19" }} · {{ t.action }}</span></li>
-          {% empty %}
-          <li style="color:#9ca3af;">暂无流转</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-top:16px;">
-      <h3>下游同步</h3>
-      {% if case.downstream %}
-      {% for d in case.downstream %}
-      <div class="kv"><span class="k">{{ d.targetDomain }} · {{ d.effectTypeLabel }}</span><span>{{ d.statusLabel }}</span></div>
-      {% endfor %}
       {% else %}
-      <p style="color:#9ca3af;">尚未生效，暂无下游同步记录</p>
+      <div class="hr06-state"><strong>尚未补充受管字段</strong><span>草稿可以先创建，后续校验会按异动类型检查必填目标与字段。</span></div>
       {% endif %}
-    </div>
+    </section>
+
+    <section class="hr06-panel">
+      <div class="hr06-section-head"><div><h2>流转记录</h2><p>每次状态变化来自后端 transition 审计链。</p></div></div>
+      {% if case.timeline %}
+      <ol class="hr06-timeline">
+        {% for t in case.timeline %}
+        <li><strong>{{ t.fromStatusLabel|default:"开始" }} → {{ t.toStatusLabel }}</strong><span>{{ t.createdAt|slice:":19" }}</span></li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <div class="hr06-state"><strong>暂无流转记录</strong><span>未生成状态变化审计事实。</span></div>
+      {% endif %}
+    </section>
   </div>
-</body>
-</html>
+
+  <section class="hr06-panel">
+    <div class="hr06-section-head"><div><h2>下游同步</h2><p>只有正式生效后才可能形成 HR03、合同、薪酬或考勤等下游 effect 记录。</p></div></div>
+    {% if case.downstream %}
+    <div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>目标域</th><th>同步类型</th><th>状态</th></tr></thead><tbody>
+      {% for d in case.downstream %}<tr><td>{{ d.targetDomain }}</td><td>{{ d.effectTypeLabel }}</td><td><span class="hr06-status">{{ d.statusLabel }}</span></td></tr>{% endfor %}
+    </tbody></table></div>
+    {% else %}
+    <div class="hr06-state"><strong>暂无下游同步记录</strong><span>这不表示同步成功，只表示当前案件尚无可展示的 downstream effect。</span></div>
+    {% endif %}
+  </section>
+
+  <div class="hr06-truth-note"><strong>写操作边界</strong><span>当前详情页不伪造未验证的审批按钮。submit / start-approval / approve / reject / apply 等真实命令继续由 HR06 API 的权限、version 与状态机合同控制。</span></div>
+</div>
+{% endblock content %}

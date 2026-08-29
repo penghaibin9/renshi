@@ -1,75 +1,15 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>借调挂职管理 · HR06</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-    .topbar h1 { margin: 0; font-size: 18px; }
-    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 24px; }
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    .card .num { font-size: 26px; font-weight: 600; }
-    .card .lbl { font-size: 13px; color: #6b7280; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
-    th { background: #f9fafb; color: #6b7280; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
-    .b-active { background: #dbeafe; color: #1e40af; }
-    .b-due { background: #fef3c7; color: #92400e; }
-    .b-overdue { background: #fee2e2; color: #991b1b; }
-    .b-returned { background: #d1fae5; color: #065f46; }
-    a { color: #2563eb; text-decoration: none; }
-    .btn { display: inline-block; padding: 9px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .empty { text-align: center; color: #9ca3af; padding: 48px 0; background: #fff; border-radius: 12px; }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>借调挂职管理</h1>
-    <div>
-      <a class="btn btn-outline" href="/hr/changes/">返回中心</a>
-      <a class="btn btn-primary" href="/hr/changes/new">发起借调/挂职</a>
-    </div>
-  </div>
-  <div class="wrap">
-    <div class="stats">
-      <div class="card"><div class="num">{{ stats.active }}</div><div class="lbl">借调挂职中</div></div>
-      <div class="card"><div class="num">{{ stats.dueSoon }}</div><div class="lbl">30 天内返岗</div></div>
-      <div class="card"><div class="num">{{ stats.overdue }}</div><div class="lbl">已超期</div></div>
-      <div class="card"><div class="num">{{ stats.returnPending }}</div><div class="lbl">待返岗确认</div></div>
-    </div>
-    {% if items %}
-    <table>
-      <thead>
-        <tr><th>人员</th><th>类型</th><th>原单位 → 临时单位</th><th>开始日</th><th>预计返岗</th><th>原岗处理</th><th>状态</th></tr>
-      </thead>
-      <tbody>
-        {% for it in items %}
-        <tr>
-          <td><a href="/hr/changes/{{ it.caseId }}">{{ it.staffName }}（{{ it.staffNo }}）</a></td>
-          <td>{{ it.actionLabel }}</td>
-          <td>{{ it.sourceOrg }} → {{ it.tempOrg }}</td>
-          <td>{{ it.startAt }}</td>
-          <td>{{ it.expectedReturnAt }}</td>
-          <td>{{ it.sourcePolicyLabel }}</td>
-          <td>
-            {% if it.status == "OVERDUE" %}<span class="badge b-overdue">已超期</span>
-            {% elif it.status == "RETURNED" %}<span class="badge b-returned">已返岗</span>
-            {% else %}<span class="badge b-active">{{ it.status }}</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty">暂无借调/挂职记录</div>
-    {% endif %}
-  </div>
-</body>
-</html>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{% trans "借调挂职管理" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="secondments" data-hr-page="change-secondments">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>借调挂职</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-secondments-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-secondments-title">借调挂职管理</h1><p class="hr-v2-subtitle">跟踪临时任职的原岗处理、临时单位、预计返岗与超期风险；返岗不是删除历史任职，而是受控形成后续事实。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>进行中</strong> {{ stats.active }}</span><span class="hr-v2-context__item"><strong>已超期</strong> {{ stats.overdue }}</span></div></header>
+  {% include "hr_changes/components/v2_nav.html" with active="secondments" %}
+  <section class="hr06-summary" aria-label="借调挂职实时摘要"><div class="hr06-summary__item"><strong>{{ stats.active }}</strong><span>借调挂职中</span></div><div class="hr06-summary__item"><strong>{{ stats.dueSoon }}</strong><span>30 天内返岗</span></div><div class="hr06-summary__item"><strong>{{ stats.overdue }}</strong><span>已超期</span></div><div class="hr06-summary__item"><strong>{{ stats.returnPending }}</strong><span>待返岗确认</span></div></section>
+  <section class="hr06-panel"><div class="hr06-toolbar"><div><h2>临时异动记录</h2><p>统计与列表来自 TemporarySelector，不把未知数据回退为 0。</p></div><a class="hr06-button" href="{% url 'hr06-change-new' %}">创建借调/挂职草稿</a></div>
+  {% if items %}<div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>人员</th><th>类型</th><th>原单位 → 临时单位</th><th>开始日</th><th>预计返岗</th><th>原岗处理</th><th>状态</th></tr></thead><tbody>{% for it in items %}<tr><td><a class="hr06-link" href="{% url 'hr06-change-detail' it.caseId %}">{{ it.staffName }}</a><span class="hr06-muted">{{ it.staffNo }}</span></td><td>{{ it.actionLabel }}</td><td>{{ it.sourceOrg|default:"—" }} → {{ it.tempOrg|default:"—" }}</td><td>{{ it.startAt }}</td><td>{{ it.expectedReturnAt }}</td><td>{{ it.sourcePolicyLabel }}</td><td><span class="hr06-status">{% if it.status == "ACTIVE" %}进行中{% elif it.status == "EXTENDED" %}延期中{% elif it.status == "RETURNING" %}返岗处理中{% elif it.status == "OVERDUE" %}已超期{% elif it.status == "RETURNED" %}已返岗{% elif it.status == "CANCELLED" %}已取消{% elif it.status == "RETURN_TARGET_INVALID" %}返岗目标异常{% else %}{{ it.status }}{% endif %}</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="hr06-empty"><strong>暂无借调或挂职记录</strong><span>当前学校没有匹配的临时异动事实。</span></div>{% endif %}
+  </section>
+</div>
+{% endblock content %}

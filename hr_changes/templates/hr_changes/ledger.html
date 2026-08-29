@@ -1,67 +1,14 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>异动台账 · HR06</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-    .topbar h1 { margin: 0; font-size: 18px; }
-    .wrap { max-width: 1180px; margin: 24px auto; padding: 0 24px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
-    th { background: #f9fafb; color: #6b7280; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
-    .b-wait { background: #fef3c7; color: #92400e; }
-    .b-eff { background: #d1fae5; color: #065f46; }
-    .b-appr { background: #dbeafe; color: #1e40af; }
-    .b-term { background: #fee2e2; color: #991b1b; }
-    a { color: #2563eb; text-decoration: none; }
-    .btn { display: inline-block; padding: 9px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; }
-    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .empty { text-align: center; color: #9ca3af; padding: 48px 0; background: #fff; border-radius: 12px; }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>异动台账</h1>
-    <a class="btn btn-outline" href="/hr/changes/">返回中心</a>
-  </div>
-  <div class="wrap">
-    <div style="margin-bottom:14px;color:#6b7280;font-size:13px;">
-      人事审计 / 历史查询 / 事故排查的事实中心；与 HR03 任职事实按生效日期互相可验证。
-    </div>
-    {% if items %}
-    <table>
-      <thead>
-        <tr><th>案件号</th><th>姓名</th><th>动作</th><th>原因</th><th>原→目标</th><th>申请日</th><th>生效日</th><th>状态</th></tr>
-      </thead>
-      <tbody>
-        {% for it in items %}
-        <tr>
-          <td><a href="/hr/changes/{{ it.id }}">{{ it.caseNo }}</a></td>
-          <td>{{ it.staffName }}</td>
-          <td>{{ it.actionLabel }}</td>
-          <td>{{ it.reasonName }}</td>
-          <td>{{ it.sourceOrg|default:"—" }} → {{ it.targetOrg|default:"—" }}</td>
-          <td>{{ it.requestedEffectiveAt }}</td>
-          <td>{{ it.appliedAt|default:"—"|slice:":10" }}</td>
-          <td>
-            {% if it.status == "APPROVED_WAITING_EFFECTIVE" %}<span class="badge b-wait">{{ it.statusLabel }}</span>
-            {% elif it.status == "EFFECTIVE" or it.status == "CLOSED" %}<span class="badge b-eff">{{ it.statusLabel }}</span>
-            {% elif it.status == "UNDER_APPROVAL" or it.status == "SUBMITTED" %}<span class="badge b-appr">{{ it.statusLabel }}</span>
-            {% else %}<span class="badge b-term">{{ it.statusLabel }}</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p style="color:#6b7280;font-size:13px;">共 {{ total }} 条</p>
-    {% else %}
-    <div class="empty">台账暂无数据</div>
-    {% endif %}
-  </div>
-</body>
-</html>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{% trans "异动台账" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="ledger" data-hr-page="change-ledger">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>异动台账</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-ledger-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-ledger-title">异动台账</h1><p class="hr-v2-subtitle">用于人事审计、历史查询与事故排查；HR06 案件与 HR03 任职事实按生效日期可互相验证，但台账本身不改写任职事实。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>记录数</strong> {{ total }}</span><span class="hr-v2-context__item"><strong>用途</strong> 审计 / 追溯</span></div></header>
+  {% include "hr_changes/components/v2_nav.html" with active="ledger" %}
+  <section class="hr06-panel"><div class="hr06-section-head"><div><h2>正式异动记录</h2><p>列表来自 LedgerSelector 的 tenant-scoped 查询，状态与动作使用服务端 label。</p></div></div>
+  {% if items %}<div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>案件号</th><th>人员</th><th>异动类型 / 原因</th><th>原范围 → 目标范围</th><th>计划生效日</th><th>实际生效</th><th>状态</th></tr></thead><tbody>{% for it in items %}<tr><td><a class="hr06-link" href="{% url 'hr06-change-detail' it.id %}">{{ it.caseNo }}</a></td><td><strong>{{ it.staffName }}</strong><span class="hr06-muted">{{ it.staffNo }}</span></td><td><strong>{{ it.actionLabel }}</strong><span class="hr06-muted">{{ it.reasonName }}</span></td><td>{{ it.sourceOrg|default:"—" }} → {{ it.targetOrg|default:"—" }}</td><td>{{ it.requestedEffectiveAt }}</td><td>{{ it.appliedAt|default:"—"|slice:":10" }}</td><td><span class="hr06-status">{{ it.statusLabel }}</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="hr06-empty"><strong>台账暂无数据</strong><span>当前筛选条件下没有异动案件。</span></div>{% endif %}
+  </section>
+</div>
+{% endblock content %}

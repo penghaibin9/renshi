@@ -1,59 +1,14 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>岗位与身份变更 · HR06</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-    .topbar h1 { margin: 0; font-size: 18px; }
-    .wrap { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
-    th { background: #f9fafb; color: #6b7280; }
-    a { color: #2563eb; text-decoration: none; }
-    .btn { display: inline-block; padding: 9px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .empty { text-align: center; color: #9ca3af; padding: 48px 0; background: #fff; border-radius: 12px; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; background: #f3f4f6; color: #374151; }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>岗位与身份变更</h1>
-    <div>
-      <a class="btn btn-outline" href="/hr/changes/">返回中心</a>
-      <a class="btn btn-primary" href="/hr/changes/new">发起变更</a>
-    </div>
-  </div>
-  <div class="wrap">
-    <div style="margin-bottom:14px;color:#6b7280;font-size:13px;">
-      覆盖：岗位类别 / 人员类别 / 用工性质 / 直属上级 / 工作地点 / 兼岗 / 主岗切换。聘任与薪酬分别归 HR14 / HR15。
-    </div>
-    {% if cases %}
-    <table>
-      <thead>
-        <tr><th>案件号</th><th>人员</th><th>动作</th><th>目标</th><th>生效日</th><th>状态</th></tr>
-      </thead>
-      <tbody>
-        {% for c in cases %}
-        <tr>
-          <td><a href="/hr/changes/{{ c.id }}">{{ c.case_no }}</a></td>
-          <td>{{ c.staff_master_id.person_id.legal_name }}（{{ c.staff_master_id.staff_no }}）</td>
-          <td>{{ c.action_id.name }}</td>
-          <td>{% if c.target_org_id %}{{ c.target_org_id.stable_code }}{% else %}—{% endif %}</td>
-          <td>{{ c.requested_effective_at|date:"Y-m-d" }}</td>
-          <td><span class="badge">{{ c.get_status_display }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty">暂无岗位/身份变更记录</div>
-    {% endif %}
-  </div>
-</body>
-</html>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{% trans "岗位与身份变更" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="identity" data-hr-page="change-identity">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>岗位与身份变更</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-identity-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-identity-title">岗位与身份变更</h1><p class="hr-v2-subtitle">覆盖岗位类别、人员类别、用工性质、直属上级、工作地点、兼岗与主岗切换；聘任与薪酬正式事实仍分别归 HR14 / HR15。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>事实来源</strong> HR06 案件</span><span class="hr-v2-context__item"><strong>跨域边界</strong> 不代写 HR14/HR15</span></div></header>
+  {% include "hr_changes/components/v2_nav.html" with active="identity" %}
+  <section class="hr06-panel"><div class="hr06-toolbar"><div><h2>身份类异动案件</h2><p>列表按当前 tenant 过滤并限定 identity action 集合。</p></div><a class="hr06-button" href="{% url 'hr06-change-new' %}">创建身份变更草稿</a></div>
+  {% if cases %}<div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>案件号</th><th>人员</th><th>异动类型</th><th>目标</th><th>计划生效日</th><th>状态</th></tr></thead><tbody>{% for c in cases %}<tr><td><a class="hr06-link" href="{% url 'hr06-change-detail' c.id %}">{{ c.case_no }}</a></td><td><strong>{{ c.staff_master_id.person_id.legal_name }}</strong><span class="hr06-muted">{{ c.staff_master_id.staff_no }}</span></td><td>{{ c.action_id.name }}</td><td>{% if c.target_org_id %}{{ c.target_org_id.stable_code }}{% else %}—{% endif %}</td><td>{{ c.requested_effective_at|date:"Y-m-d" }}</td><td><span class="hr06-status">{{ c.get_status_display }}</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="hr06-empty"><strong>暂无岗位或身份变更记录</strong><span>当前学校没有匹配的身份类案件。</span></div>{% endif %}
+  </section>
+</div>
+{% endblock content %}

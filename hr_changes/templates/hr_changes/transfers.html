@@ -1,66 +1,14 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>校内调动 · HR06</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-    .topbar h1 { margin: 0; font-size: 18px; }
-    .wrap { max-width: 1000px; margin: 24px auto; padding: 0 24px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f1f3f5; }
-    th { background: #f9fafb; color: #6b7280; }
-    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; }
-    .b-wait { background: #fef3c7; color: #92400e; }
-    .b-eff { background: #d1fae5; color: #065f46; }
-    .b-appr { background: #dbeafe; color: #1e40af; }
-    .b-term { background: #fee2e2; color: #991b1b; }
-    a { color: #2563eb; text-decoration: none; }
-    .btn { display: inline-block; padding: 9px 20px; border-radius: 8px; text-decoration: none; font-size: 14px; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; }
-    .empty { text-align: center; color: #9ca3af; padding: 48px 0; background: #fff; border-radius: 12px; }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>校内调动</h1>
-    <div>
-      <a class="btn btn-outline" href="/hr/changes/">返回中心</a>
-      <a class="btn btn-primary" href="/hr/changes/new">发起调动</a>
-    </div>
-  </div>
-  <div class="wrap">
-    {% if items %}
-    <table>
-      <thead>
-        <tr><th>案件号</th><th>人员</th><th>动作</th><th>原单位 → 目标单位</th><th>生效日</th><th>状态</th></tr>
-      </thead>
-      <tbody>
-        {% for it in items %}
-        <tr>
-          <td><a href="/hr/changes/{{ it.id }}">{{ it.caseNo }}</a></td>
-          <td>{{ it.staffName }}（{{ it.staffNo }}）</td>
-          <td>{{ it.actionLabel }}</td>
-          <td>{{ it.source|default:"—" }} → {{ it.target|default:"—" }}</td>
-          <td>{{ it.requestedEffectiveAt }}</td>
-          <td>
-            {% if it.status == "APPROVED_WAITING_EFFECTIVE" %}<span class="badge b-wait">{{ it.statusLabel }}</span>
-            {% elif it.status == "EFFECTIVE" or it.status == "CLOSED" %}<span class="badge b-eff">{{ it.statusLabel }}</span>
-            {% elif it.status == "UNDER_APPROVAL" or it.status == "SUBMITTED" %}<span class="badge b-appr">{{ it.statusLabel }}</span>
-            {% else %}<span class="badge b-term">{{ it.statusLabel }}</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p style="color:#6b7280;font-size:13px;">共 {{ total }} 条</p>
-    {% else %}
-    <div class="empty">暂无调动记录</div>
-    {% endif %}
-  </div>
-</body>
-</html>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{% trans "校内调动" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="transfers" data-hr-page="change-transfers">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>校内调动</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-transfers-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-transfers-title">校内调动</h1><p class="hr-v2-subtitle">集中查看组织调动、岗位调动与组织+岗位调动案件；岗位容量与 reservation 仍由 HR02 gate 校验。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>记录数</strong> {{ total }}</span><span class="hr-v2-context__item"><strong>容量边界</strong> HR02 Authority</span></div></header>
+  {% include "hr_changes/components/v2_nav.html" with active="transfers" %}
+  <section class="hr06-panel"><div class="hr06-toolbar"><div><h2>调动案件</h2><p>此处只呈现现有调动事实；新建入口先创建草稿，不绕过后续 validation / reserve / approval。</p></div><a class="hr06-button" href="{% url 'hr06-change-new' %}">创建调动草稿</a></div>
+  {% if items %}<div class="hr06-table-wrap"><table class="hr06-table"><thead><tr><th>案件号</th><th>人员</th><th>异动类型</th><th>原范围 → 目标范围</th><th>计划生效日</th><th>状态</th></tr></thead><tbody>{% for it in items %}<tr><td><a class="hr06-link" href="{% url 'hr06-change-detail' it.id %}">{{ it.caseNo }}</a></td><td><strong>{{ it.staffName }}</strong><span class="hr06-muted">{{ it.staffNo }}</span></td><td>{{ it.actionLabel }}</td><td>{{ it.source|default:"—" }} → {{ it.target|default:"—" }}</td><td>{{ it.requestedEffectiveAt }}</td><td><span class="hr06-status">{{ it.statusLabel }}</span></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="hr06-empty"><strong>当前没有调动记录</strong><span>可创建草稿开始新的调动流程。</span></div>{% endif %}
+  </section>
+</div>
+{% endblock content %}

@@ -1,49 +1,27 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>影响预览 · {{ case.case_no }} · HR06</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
-    .topbar h1 { margin: 0; font-size: 18px; }
-    .wrap { max-width: 860px; margin: 24px auto; padding: 0 24px; }
-    .panel { background: #fff; border-radius: 12px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 16px; }
-    .panel h3 { margin: 0 0 12px; font-size: 15px; color: #374151; }
-    .item { padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
-    .blocker { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-    .warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
-    .info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
-    .msg { margin-top: 2px; font-size: 13px; color: #6b7280; }
-    a { color: #2563eb; text-decoration: none; }
-    .btn { display: inline-block; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-size: 13px; border: 1px solid #d1d5db; background: #fff; color: #374151; }
-    .empty { text-align: center; color: #9ca3af; padding: 24px 0; }
-  </style>
-</head>
-<body>
-  <div class="topbar">
-    <h1>影响预览 · {{ case.case_no }}</h1>
-    <a class="btn" href="/hr/changes/{{ case.id }}">返回详情</a>
-  </div>
-  <div class="wrap">
-    <div class="panel">
-      <h3>阻断项（Blockers）</h3>
-      {% for b in blockers %}
-      <div class="item blocker">{{ b.message }}{% if b.actionable %}<div class="msg">建议：{{ b.actionable }}</div>{% endif %}</div>
-      {% empty %}
-      <div class="empty">无阻断项</div>
-      {% endfor %}
-    </div>
-    <div class="panel">
-      <h3>业务影响（Warnings）</h3>
-      {% for w in warnings %}
-      <div class="item warning">{{ w.message }}</div>
-      {% empty %}
-      <div class="empty">无业务影响提示</div>
-      {% endfor %}
-    </div>
-  </div>
-</body>
-</html>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{% trans "异动影响预览" %} · {{ case.case_no }}{% endblock %}
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
+{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="preview" data-hr-page="change-preview" data-case-id="{{ case.id }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>影响预览</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-preview-title">
+    <div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-preview-title">影响预览 · {{ case.case_no }}</h1><p class="hr-v2-subtitle">以下阻断项与业务影响由当前案件实时计算；预览结果不是审批结论，也不会直接触发正式生效。</p></div>
+    <div class="hr-v2-context"><span class="hr-v2-context__item"><strong>阻断项</strong> {{ blockers|length }}</span><span class="hr-v2-context__item"><strong>业务影响</strong> {{ warnings|length }}</span></div>
+  </header>
+  {% include "hr_changes/components/v2_nav.html" with active="center" %}
+  <div class="hr06-toolbar"><div><h2>实时影响结果</h2><p>阻断项必须先解决；warning 需要业务确认，但不由前端自行升级为 blocker。</p></div><a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-detail' case.id %}">返回案件详情</a></div>
+  <section class="hr06-panel"><div class="hr06-section-head"><div><h2>阻断项</h2><p>存在 blocker 时，后端 submit / apply 等关键动作必须 fail-closed。</p></div></div><div class="hr06-impact-list">
+    {% for b in blockers %}<article class="hr06-impact-item hr06-impact-item--blocker"><strong>{{ b.message }}</strong>{% if b.actionable %}<span>建议：{{ b.actionable }}</span>{% endif %}</article>{% empty %}<div class="hr06-state"><strong>当前未发现阻断项</strong><span>仅代表本次实时计算结果为空，不等于案件已获批准。</span></div>{% endfor %}
+  </div></section>
+  <section class="hr06-panel"><div class="hr06-section-head"><div><h2>业务影响</h2><p>用于提醒合同、岗位、薪酬、考勤等可能需要联动复核的事项。</p></div></div><div class="hr06-impact-list">
+    {% for w in warnings %}<article class="hr06-impact-item hr06-impact-item--warning"><strong>{{ w.message }}</strong></article>{% empty %}<div class="hr06-state"><strong>当前没有业务影响提示</strong><span>后续案件字段或事实变化后，预览结果可能改变。</span></div>{% endfor %}
+  </div></section>
+</div>
+{% endblock content %}

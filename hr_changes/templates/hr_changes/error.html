@@ -1,22 +1,11 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HR06 · {{ error_code }}</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .wrap { max-width: 560px; margin: 96px auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
-    a { color: #2563eb; text-decoration: none; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>HR06 · <code>{{ error_code }}</code></h1>
-    <p>{{ error_message }}</p>
-    <p><a href="/hr/changes/">&larr; 返回异动中心</a></p>
-  </div>
-</body>
-</html>
+{% extends "index.html" %}
+{% load static i18n %}
+{% block title %}{% trans "人事异动访问受限" %}{% endblock %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
+{% block content %}
+<div class="hr-v2-page hr06-page" data-module="HR06" data-section="error" data-hr-page="change-error">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>访问受限</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-error-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · Fail-closed</div><h1 class="hr-v2-title" id="hr06-error-title">当前无法进入该人事异动工作区</h1><p class="hr-v2-subtitle">系统没有用空数据掩盖权限或学校上下文问题。修复当前学校或数据范围后再重试。</p></div></header>
+  <section class="hr06-error-panel"><span class="hr06-status">{{ error_code }}</span><h2>{{ error_message }}</h2><p>不会展示其他学校或超出当前 scope 的案件信息，也不会回退到全校数据。</p><a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-center' %}">返回异动中心</a></section>
+</div>
+{% endblock content %}
