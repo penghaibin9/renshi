@@ -16,11 +16,8 @@ from typing import Optional
 from hr_changes.constants import ChangeActionCode
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.policies.identity_policy import IdentityPolicy
-from hr_changes.services.change_service import (
-    ChangeService,
-    ChangeServiceError,
-)
-from hr_changes.services.transfer_service import _load_action_safe, _pk
+from hr_changes.services.change_service import ChangeService, ChangeServiceError
+from hr_changes.services.transfer_service import _load_action_safe
 
 
 class IdentityChangeService:
@@ -29,7 +26,6 @@ class IdentityChangeService:
         self.actor_user_id = actor_user_id
         self.policy = IdentityPolicy(tenant_id)
 
-    # ------------------------------------------------------------------
     def create_identity_change(
         self,
         *,
@@ -47,22 +43,29 @@ class IdentityChangeService:
                 "CHANGE_INVALID_ACTION", f"{action.code} 不是岗位/身份变更动作"
             )
         allowed = self.policy.allowed_fields(action.code)
-        for p in proposals:
-            if p.get("field_code") not in allowed:
+        for proposal in proposals:
+            if proposal.get("field_code") not in allowed:
                 raise ChangeServiceError(
                     "CHANGE_INVALID_PAYLOAD",
-                    f"字段 {p.get('domain')}.{p.get('field_code')} 不允许在动作 {action.code} 中使用",
+                    f"字段 {proposal.get('domain')}.{proposal.get('field_code')} 不允许在动作 {action.code} 中使用",
                 )
-        # 兼岗动作：禁止覆盖主岗（增加兼岗必须 is_secondary 语义；V1 通过 action 本身保证）
+        self._validate_controlled_values(action.code, proposals)
+
         if action.code == ChangeActionCode.ADD_SECONDARY_ASSIGNMENT:
-            has_org = any(p.get("field_code") == "organization" for p in proposals)
-            has_pos = any(p.get("field_code") == "position" for p in proposals)
+            has_org = any(
+                proposal.get("field_code") == "organization" for proposal in proposals
+            )
+            has_pos = any(
+                proposal.get("field_code") == "position" for proposal in proposals
+            )
             if not (has_org and has_pos):
                 raise ChangeServiceError(
                     "CHANGE_INVALID_PAYLOAD", "增加兼岗必须指定目标组织与岗位"
                 )
 
-        return ChangeService(self.tenant_id, actor_user_id=self.actor_user_id).create_case(
+        return ChangeService(
+            self.tenant_id, actor_user_id=self.actor_user_id
+        ).create_case(
             staff_master_id=staff_master_id,
             action_id=action,
             reason_id=reason_id,
@@ -72,56 +75,95 @@ class IdentityChangeService:
             priority=priority,
         )
 
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _validate_controlled_values(action_code: str, proposals: list[dict]) -> None:
+        """对已有 Authority writer 的枚举字段强制机器值白名单，拒绝 display-only/任意字符串。"""
+        from hr_staff.constants import EmploymentType, RelationshipType, StaffCategoryCode
+
+        by_field = {proposal.get("field_code"): proposal for proposal in proposals}
+        if action_code == ChangeActionCode.EMPLOYEE_CATEGORY_CHANGE:
+            proposal = by_field.get("staff_category_code")
+            if proposal is not None:
+                value = proposal.get("proposed_value_ref")
+                allowed = {code for code, _ in StaffCategoryCode.choices}
+                if value not in allowed:
+                    raise ChangeServiceError(
+                        "CHANGE_INVALID_PAYLOAD", "人员类别必须使用 HR03 受控代码"
+                    )
+
+        if action_code == ChangeActionCode.EMPLOYMENT_TYPE_CHANGE:
+            relationship = by_field.get("relationship_type")
+            if relationship is not None:
+                value = relationship.get("proposed_value_ref")
+                allowed = {code for code, _ in RelationshipType.choices}
+                if value not in allowed:
+                    raise ChangeServiceError(
+                        "CHANGE_INVALID_PAYLOAD", "聘用关系类型必须使用 HR03 受控代码"
+                    )
+            employment = by_field.get("employment_type")
+            if employment is not None:
+                value = employment.get("proposed_value_ref")
+                allowed = {code for code, _ in EmploymentType.choices}
+                if value not in allowed:
+                    raise ChangeServiceError(
+                        "CHANGE_INVALID_PAYLOAD", "用工类型必须使用 HR03 受控代码"
+                    )
+
     def change_matrix(self, case: HrPersonnelChangeCase) -> list[dict]:
         """变更矩阵（维度/当前/变更后/是否影响下游）（总册 §24.2）。"""
         from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
-        qs = EffectiveDatedQueryService(self.tenant_id)
+        query = EffectiveDatedQueryService(self.tenant_id)
         staff_id = case.staff_master_id_id
         staff = case.staff_master_id
-        current = qs.primary_assignment_as_of(staff_id, date.today())
-        proposals = {p.field_code: p for p in case.proposals.all()}
+        current = query.primary_assignment_as_of(staff_id, date.today())
+        proposals = {proposal.field_code: proposal for proposal in case.proposals.all()}
 
-        def _val(field_code, fallback=""):
-            p = proposals.get(field_code)
-            return p.proposed_value_display if p else fallback
+        def value(field_code, fallback=""):
+            proposal = proposals.get(field_code)
+            return proposal.proposed_value_display if proposal else fallback
 
         matrix = []
         staff_category = staff.staff_category_code
-        rel = qs.relationships_as_of(staff_id, date.today()).first()
-        rel_type = rel.relationship_type if rel else ""
+        relationship = query.relationships_as_of(staff_id, date.today()).first()
+        relationship_type = relationship.relationship_type if relationship else ""
 
         matrix.append(
             {
                 "dimension": "岗位类别",
-                "current": current.post_catalog_id.name if current and current.post_catalog_id else "",
-                "after": _val("post_catalog", "未变更"),
-                "affectsDownstream": case.action_id.code == ChangeActionCode.POST_CATEGORY_CHANGE,
+                "current": current.post_catalog_id.name
+                if current and current.post_catalog_id
+                else "",
+                "after": value("post_catalog", "未变更"),
+                "affectsDownstream": case.action_id.code
+                == ChangeActionCode.POST_CATEGORY_CHANGE,
             }
         )
         matrix.append(
             {
                 "dimension": "人员类别",
                 "current": staff_category or "",
-                "after": _val("staff_category_code", staff_category or "未变更"),
-                "affectsDownstream": case.action_id.code == ChangeActionCode.EMPLOYEE_CATEGORY_CHANGE,
+                "after": value("staff_category_code", staff_category or "未变更"),
+                "affectsDownstream": case.action_id.code
+                == ChangeActionCode.EMPLOYEE_CATEGORY_CHANGE,
             }
         )
         matrix.append(
             {
                 "dimension": "用工性质",
-                "current": rel_type or "",
-                "after": _val("relationship_type", rel_type or "未变更"),
-                "affectsDownstream": case.action_id.code == ChangeActionCode.EMPLOYMENT_TYPE_CHANGE,
+                "current": relationship_type or "",
+                "after": value("relationship_type", relationship_type or "未变更"),
+                "affectsDownstream": case.action_id.code
+                == ChangeActionCode.EMPLOYMENT_TYPE_CHANGE,
             }
         )
         matrix.append(
             {
                 "dimension": "直属上级",
                 "current": current.reporting_staff_id.person_id.legal_name
-                if current and current.reporting_staff_id else "",
-                "after": _val("reporting_staff", "未变更"),
+                if current and current.reporting_staff_id
+                else "",
+                "after": value("reporting_staff", "未变更"),
                 "affectsDownstream": case.action_id.code == ChangeActionCode.MANAGER_CHANGE,
             }
         )
@@ -129,11 +171,10 @@ class IdentityChangeService:
             {
                 "dimension": "工作地点",
                 "current": "",
-                "after": _val("location", "未变更"),
+                "after": value("location", "未变更"),
                 "affectsDownstream": case.action_id.code == ChangeActionCode.LOCATION_CHANGE,
             }
         )
-        # 兼岗/主岗维度
         if case.action_id.code in (
             ChangeActionCode.ADD_SECONDARY_ASSIGNMENT,
             ChangeActionCode.END_SECONDARY_ASSIGNMENT,
@@ -142,14 +183,17 @@ class IdentityChangeService:
             matrix.append(
                 {
                     "dimension": "主岗/兼岗",
-                    "current": f"{current.organization_id.stable_code if current and current.organization_id else ''}",
+                    "current": (
+                        current.organization_id.stable_code
+                        if current and current.organization_id
+                        else ""
+                    ),
                     "after": case.action_id.name,
                     "affectsDownstream": True,
                 }
             )
         return matrix
 
-    # ------------------------------------------------------------------
     def validate_identity_change(self, case: HrPersonnelChangeCase) -> dict:
         blockers: list[dict] = []
         warnings: list[dict] = []
@@ -162,7 +206,7 @@ class IdentityChangeService:
             ChangeActionCode.MANAGER_CHANGE: ["reporting_staff"],
             ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH: ["organization", "position"],
         }.get(action_code, [])
-        present = {p.field_code for p in case.proposals.all()}
+        present = {proposal.field_code for proposal in case.proposals.all()}
         for field in required:
             if field not in present:
                 blockers.append(
@@ -196,4 +240,8 @@ class IdentityChangeService:
                 }
             )
 
-        return {"items": blockers + warnings, "blockers": blockers, "warnings": warnings}
+        return {
+            "items": blockers + warnings,
+            "blockers": blockers,
+            "warnings": warnings,
+        }

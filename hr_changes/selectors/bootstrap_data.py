@@ -10,23 +10,25 @@ from hr_changes.api.labels import (
     action_label,
     case_status_label,
     employment_type_change_policy_label,
+    employment_type_label,
     impact_level_label,
     priority_label,
+    relationship_type_label,
     reporting_manager_policy_label,
     source_assignment_policy_label,
+    staff_category_label,
 )
 from hr_changes.constants import (
     CASE_ACTIVE_STATUSES,
     CASE_TERMINAL_STATUSES,
-    CaseStatus,
     ChangePriority,
     ChangeScopeType,
     EmploymentTypeChangePolicy,
     ImpactLevel,
-    ReportingManagerPolicy,
     SourceAssignmentPolicy,
 )
 from hr_changes.models import HrChangeAction, HrChangeFieldDefinition, HrChangeReason
+from hr_staff.constants import EmploymentType, RelationshipType, StaffCategoryCode
 
 
 class BootstrapDataSelector:
@@ -37,27 +39,35 @@ class BootstrapDataSelector:
         actions = (
             HrChangeAction.objects.filter(tenant_id=self.tenant_id)
             .order_by("code")
-            .values("id", "code", "name", "enabled", "is_temporary",
-                    "reporting_manager_policy", "effective_date_rule_json",
-                    "followup_policy_json", "allowed_initiators_json")
+            .values(
+                "id",
+                "code",
+                "name",
+                "enabled",
+                "is_temporary",
+                "reporting_manager_policy",
+                "effective_date_rule_json",
+                "followup_policy_json",
+                "allowed_initiators_json",
+            )
         )
         rows = []
-        for a in actions:
+        for action in actions:
             rows.append(
                 {
-                    "id": str(a["id"]),
-                    "code": a["code"],
-                    "name": a["name"],
-                    "label": action_label(a["code"]),
-                    "enabled": a["enabled"],
-                    "isTemporary": a["is_temporary"],
-                    "reportingManagerPolicy": a["reporting_manager_policy"],
+                    "id": str(action["id"]),
+                    "code": action["code"],
+                    "name": action["name"],
+                    "label": action_label(action["code"]),
+                    "enabled": action["enabled"],
+                    "isTemporary": action["is_temporary"],
+                    "reportingManagerPolicy": action["reporting_manager_policy"],
                     "reportingManagerPolicyLabel": reporting_manager_policy_label(
-                        a["reporting_manager_policy"]
+                        action["reporting_manager_policy"]
                     ),
-                    "effectiveDateRule": a["effective_date_rule_json"],
-                    "followupPolicy": a["followup_policy_json"],
-                    "allowedInitiators": a["allowed_initiators_json"] or [],
+                    "effectiveDateRule": action["effective_date_rule_json"],
+                    "followupPolicy": action["followup_policy_json"],
+                    "allowedInitiators": action["allowed_initiators_json"] or [],
                 }
             )
         return rows
@@ -67,71 +77,98 @@ class BootstrapDataSelector:
         if action_code:
             qs = qs.filter(action_code=action_code)
         reasons = qs.order_by("action_code", "code").values(
-            "id", "code", "name", "action_code", "requires_document",
-            "requires_approval", "default_workflow_key",
-            "effective_date_rule_json", "allowed_source_scope_json",
+            "id",
+            "code",
+            "name",
+            "action_code",
+            "requires_document",
+            "requires_approval",
+            "default_workflow_key",
+            "effective_date_rule_json",
+            "allowed_source_scope_json",
             "allowed_target_scope_json",
         )
         return [
             {
-                "id": str(r["id"]),
-                "code": r["code"],
-                "name": r["name"],
-                "actionCode": r["action_code"],
-                "actionLabel": action_label(r["action_code"]),
-                "requiresDocument": r["requires_document"],
-                "requiresApproval": r["requires_approval"],
-                "defaultWorkflowKey": r["default_workflow_key"],
-                "effectiveDateRule": r["effective_date_rule_json"],
-                "allowedSourceScope": r["allowed_source_scope_json"] or [],
-                "allowedTargetScope": r["allowed_target_scope_json"] or [],
+                "id": str(reason["id"]),
+                "code": reason["code"],
+                "name": reason["name"],
+                "actionCode": reason["action_code"],
+                "actionLabel": action_label(reason["action_code"]),
+                "requiresDocument": reason["requires_document"],
+                "requiresApproval": reason["requires_approval"],
+                "defaultWorkflowKey": reason["default_workflow_key"],
+                "effectiveDateRule": reason["effective_date_rule_json"],
+                "allowedSourceScope": reason["allowed_source_scope_json"] or [],
+                "allowedTargetScope": reason["allowed_target_scope_json"] or [],
             }
-            for r in reasons
+            for reason in reasons
         ]
 
     def field_definitions(self) -> list[dict]:
-        defs = HrChangeFieldDefinition.objects.filter(tenant_id=self.tenant_id).order_by(
-            "domain", "field_code"
-        )
+        definitions = HrChangeFieldDefinition.objects.filter(
+            tenant_id=self.tenant_id
+        ).order_by("domain", "field_code")
         return [
             {
-                "id": str(d.id),
-                "domain": d.domain,
-                "fieldCode": d.field_code,
-                "label": d.label,
-                "legacyField": d.legacy_field,
-                "authoritySource": d.authority_source,
-                "editMode": d.edit_mode,
+                "id": str(definition.id),
+                "domain": definition.domain,
+                "fieldCode": definition.field_code,
+                "label": definition.label,
+                "legacyField": definition.legacy_field,
+                "authoritySource": definition.authority_source,
+                "editMode": definition.edit_mode,
             }
-            for d in defs
+            for definition in definitions
         ]
+
+    def identity_options(self) -> dict:
+        """只暴露 HR03 受控枚举；浏览器不自行维护机器值。"""
+        return {
+            "staffCategories": [
+                {"code": code, "label": staff_category_label(code)}
+                for code, _ in StaffCategoryCode.choices
+            ],
+            "relationshipTypes": [
+                {"code": code, "label": relationship_type_label(code)}
+                for code, _ in RelationshipType.choices
+            ],
+            "employmentTypes": [
+                {"code": code, "label": employment_type_label(code)}
+                for code, _ in EmploymentType.choices
+            ],
+        }
 
     def status_meta(self) -> dict:
         active = sorted(CASE_ACTIVE_STATUSES, key=str)
         terminal = sorted(CASE_TERMINAL_STATUSES, key=str)
         return {
             "activeStatuses": [
-                {"code": s, "label": case_status_label(s)} for s in active
+                {"code": status, "label": case_status_label(status)} for status in active
             ],
             "terminalStatuses": [
-                {"code": s, "label": case_status_label(s)} for s in terminal
+                {"code": status, "label": case_status_label(status)}
+                for status in terminal
             ],
             "priorities": [
-                {"code": c, "label": priority_label(c)} for c, _ in ChangePriority.choices
+                {"code": code, "label": priority_label(code)}
+                for code, _ in ChangePriority.choices
             ],
             "impactLevels": [
-                {"code": c, "label": impact_level_label(c)} for c, _ in ImpactLevel.choices
+                {"code": code, "label": impact_level_label(code)}
+                for code, _ in ImpactLevel.choices
             ],
             "scopes": [
-                {"code": c, "label": sc} for c, sc in ChangeScopeType.choices
+                {"code": code, "label": label}
+                for code, label in ChangeScopeType.choices
             ],
             "sourceAssignmentPolicies": [
-                {"code": c, "label": source_assignment_policy_label(c)}
-                for c, _ in SourceAssignmentPolicy.choices
+                {"code": code, "label": source_assignment_policy_label(code)}
+                for code, _ in SourceAssignmentPolicy.choices
             ],
             "employmentTypeChangePolicies": [
-                {"code": c, "label": employment_type_change_policy_label(c)}
-                for c, _ in EmploymentTypeChangePolicy.choices
+                {"code": code, "label": employment_type_change_policy_label(code)}
+                for code, _ in EmploymentTypeChangePolicy.choices
             ],
         }
 
@@ -140,5 +177,6 @@ class BootstrapDataSelector:
             "actions": self.actions(),
             "reasons": self.reasons(),
             "fieldDefinitions": self.field_definitions(),
+            "identityOptions": self.identity_options(),
             "statusMeta": self.status_meta(),
         }

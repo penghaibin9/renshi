@@ -23,6 +23,7 @@ from hr_changes.context import HrChangeContextError
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.permissions import require_hr_change_permission
 from hr_changes.selectors.case_detail import CaseDetailSelector
+from hr_changes.selectors.identity_selector import IDENTITY_ACTIONS, IdentitySelector
 from hr_changes.services.change_service import ChangeServiceError
 from hr_changes.services.identity_change_service import IdentityChangeService
 
@@ -44,18 +45,6 @@ def _body(request):
         raise ChangeServiceError("CHANGE_INVALID_PAYLOAD", "请求体不是合法 JSON")
 
 
-IDENTITY_ACTIONS = (
-    "POST_CATEGORY_CHANGE",
-    "EMPLOYEE_CATEGORY_CHANGE",
-    "EMPLOYMENT_TYPE_CHANGE",
-    "MANAGER_CHANGE",
-    "LOCATION_CHANGE",
-    "ADD_SECONDARY_ASSIGNMENT",
-    "END_SECONDARY_ASSIGNMENT",
-    "PRIMARY_ASSIGNMENT_SWITCH",
-)
-
-
 @require_http_methods(["GET", "POST"])
 def identity_change_collection(request):
     """同一路径按 method 分派，避免 create writer 成为不可达死代码。"""
@@ -70,34 +59,9 @@ def identity_change_list(request):
     ctx, err = _context(request)
     if err:
         return err
-    from hr_changes.api.labels import action_label, case_status_label
-
-    cases = (
-        HrPersonnelChangeCase.objects.filter(
-            tenant_id=ctx.tenant_id,
-            action_id__code__in=IDENTITY_ACTIONS,
-        )
-        .select_related("action_id", "staff_master_id", "target_org_id")
-        .order_by("-created_at")
-    )
-    items = [
-        {
-            "id": str(c.id),
-            "caseNo": c.case_no,
-            "staffName": c.staff_master_id.person_id.legal_name,
-            "staffNo": c.staff_master_id.staff_no,
-            "actionCode": c.action_id.code,
-            "actionLabel": action_label(c.action_id.code),
-            "target": c.target_org_id.stable_code if c.target_org_id else "",
-            "requestedEffectiveAt": c.requested_effective_at.isoformat(),
-            "status": c.status,
-            "statusLabel": case_status_label(c.status),
-        }
-        for c in cases
-    ]
     payload = api_root(request)
     payload["schemaVersion"] = "hr06.identity-changes.list.1"
-    payload["data"] = {"items": items, "total": len(items)}
+    payload["data"] = IdentitySelector(ctx.tenant_id).list()
     return json_response(request, payload)
 
 
@@ -112,7 +76,9 @@ def identity_change_create(request):
     except ChangeServiceError as exc:
         return _service_error(request, exc)
     try:
-        case = IdentityChangeService(ctx.tenant_id, actor_user_id=request.user.id).create_identity_change(
+        case = IdentityChangeService(
+            ctx.tenant_id, actor_user_id=request.user.id
+        ).create_identity_change(
             staff_master_id=body["staffMasterId"],
             action_id=body["actionId"],
             reason_id=body["reasonId"],
@@ -123,7 +89,12 @@ def identity_change_create(request):
         )
     except (ChangeServiceError, KeyError) as exc:
         if isinstance(exc, KeyError):
-            return error_response(request, "CHANGE_INVALID_PAYLOAD", f"缺少必填参数: {exc.args[0]}", status=400)
+            return error_response(
+                request,
+                "CHANGE_INVALID_PAYLOAD",
+                f"缺少必填参数: {exc.args[0]}",
+                status=400,
+            )
         return _service_error(request, exc)
     data = _detail(ctx.tenant_id, case.id)
     payload = api_root(request)
@@ -148,7 +119,9 @@ def identity_change_detail(request, case_id):
 
 
 def _detail(tenant_id, case_id):
-    case = HrPersonnelChangeCase.objects.filter(tenant_id=tenant_id, id=case_id).first()
+    case = HrPersonnelChangeCase.objects.filter(
+        tenant_id=tenant_id, id=case_id
+    ).first()
     if case is None:
         return None
     data = CaseDetailSelector(tenant_id).get(case.id)

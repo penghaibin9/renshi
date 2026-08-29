@@ -18,6 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from hr_changes.context import HrChangeContextError, resolve_tenant_from_request
+from hr_changes.permissions import require_hr_change_permission
 from hr_changes.selectors.case_detail import CaseDetailSelector
 from hr_changes.selectors.case_list import CaseListSelector
 
@@ -29,7 +30,10 @@ def _page_context(request):
         return None, render(
             request,
             "hr_changes/error.html",
-            {"error_code": "TENANT_CONTEXT_REQUIRED", "error_message": "请选择当前学校（多学校账号需明确学校上下文）"},
+            {
+                "error_code": "TENANT_CONTEXT_REQUIRED",
+                "error_message": "请选择当前学校（多学校账号需明确学校上下文）",
+            },
             status=403,
         )
     return tenant_id, None
@@ -135,25 +139,27 @@ def transfers(request):
             status=403,
         )
     data = TransferSelector(tenant_id).list()
-    return render(request, "hr_changes/transfers.html", {"items": data["items"], "total": data["total"]})
+    return render(
+        request,
+        "hr_changes/transfers.html",
+        {"items": data["items"], "total": data["total"]},
+    )
 
 
 @login_required
+@require_hr_change_permission("hr.change.identity_change.create")
 def job_identity(request):
     tenant_id, err = _page_context(request)
     if err:
         return err
-    from hr_changes.api.identity_changes import IDENTITY_ACTIONS
-    from hr_changes.models import HrPersonnelChangeCase
+    from hr_changes.selectors.identity_selector import IdentitySelector
 
-    cases = (
-        HrPersonnelChangeCase.objects.filter(
-            tenant_id=tenant_id, action_id__code__in=IDENTITY_ACTIONS
-        )
-        .select_related("action_id", "staff_master_id", "target_org_id")
-        .order_by("-created_at")
+    data = IdentitySelector(tenant_id).list()
+    return render(
+        request,
+        "hr_changes/job_identity.html",
+        {"items": data["items"], "total": data["total"]},
     )
-    return render(request, "hr_changes/job_identity.html", {"cases": cases})
 
 
 @login_required
@@ -209,5 +215,9 @@ def change_preview(request, case_id):
     return render(
         request,
         "hr_changes/change_preview.html",
-        {"case": case, "blockers": result["blockers"], "warnings": result["warnings"]},
+        {
+            "case": case,
+            "blockers": result["blockers"],
+            "warnings": result["warnings"],
+        },
     )

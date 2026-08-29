@@ -107,6 +107,36 @@ EMPLOYMENT_TYPE_CHANGE_POLICY_LABELS = {
     "REQUIRE_HR07_CONTRACT": "需 HR07 合同变更",
 }
 
+# HR03 Authority 枚举在 HR06 表单中的中文展示。机器值仍以 HR03 constants 为唯一合同。
+STAFF_CATEGORY_LABELS = {
+    "TEACHER": "教师",
+    "ADMIN": "行政管理",
+    "ENGINEERING_TECHNICAL": "工程技术",
+    "EXPERIMENTAL": "实验技术",
+    "LIBRARY_ARCHIVES": "图书档案",
+    "LOGISTICS": "后勤",
+    "OTHER": "其他",
+}
+
+RELATIONSHIP_TYPE_LABELS = {
+    "REGULAR_EMPLOYMENT": "正式聘用",
+    "CONTRACT": "合同制",
+    "LABOR_DISPATCH": "劳务派遣",
+    "EXTERNAL_PART_TIME": "外聘兼职",
+    "SECONDMENT": "借调",
+    "RETIRED_REHIRE": "退休返聘",
+    "REHIRE": "再聘",
+    "OTHER": "其他",
+}
+
+EMPLOYMENT_TYPE_LABELS = {
+    "FULL_TIME": "全职",
+    "PART_TIME": "兼职",
+    "EXTERNAL": "外聘",
+    "RETIRED_REHIRED": "退休返聘",
+    "OTHER": "其他",
+}
+
 # 事件类型 → 中文（Outbox 日志/台账展示）
 EVENT_TYPE_LABELS = {
     "PersonnelChangeApproved": "异动批准",
@@ -177,6 +207,18 @@ def reporting_manager_policy_label(value) -> str:
 
 def employment_type_change_policy_label(value) -> str:
     return _lookup(EMPLOYMENT_TYPE_CHANGE_POLICY_LABELS, value)
+
+
+def staff_category_label(value) -> str:
+    return _lookup(STAFF_CATEGORY_LABELS, value)
+
+
+def relationship_type_label(value) -> str:
+    return _lookup(RELATIONSHIP_TYPE_LABELS, value)
+
+
+def employment_type_label(value) -> str:
+    return _lookup(EMPLOYMENT_TYPE_LABELS, value)
 
 
 def event_type_label(value) -> str:
