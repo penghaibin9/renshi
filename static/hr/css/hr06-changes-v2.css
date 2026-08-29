@@ -1,0 +1,51 @@
+.hr06-page { padding-bottom: 32px; }
+.hr06-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 22px; }
+.hr06-nav a, .hr06-view-tabs a { text-decoration: none; border: 1px solid var(--hr-border, #dfe3ea); border-radius: 8px; padding: 8px 12px; background: var(--hr-surface, #fff); color: var(--hr-text-secondary, #4b5563); font-size: 13px; font-weight: 600; }
+.hr06-nav a[aria-current="page"], .hr06-view-tabs a[aria-current="page"] { border-color: var(--hr-primary, #2563eb); color: var(--hr-primary, #2563eb); background: var(--hr-primary-soft, #eff6ff); }
+.hr06-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.hr06-summary__item { min-width: 0; border-top: 1px solid var(--hr-border, #dfe3ea); border-bottom: 1px solid var(--hr-border, #dfe3ea); padding: 14px 2px; }
+.hr06-summary__item strong { display: block; font-size: 24px; line-height: 1.15; }
+.hr06-summary__item span { display: block; margin-top: 5px; font-size: 12px; color: var(--hr-text-secondary, #6b7280); }
+.hr06-panel { border-top: 1px solid var(--hr-border, #dfe3ea); padding: 20px 0; }
+.hr06-panel h2 { margin: 0; font-size: 17px; }
+.hr06-panel p { margin: 6px 0 0; color: var(--hr-text-secondary, #6b7280); font-size: 13px; line-height: 1.65; }
+.hr06-toolbar, .hr06-section-head, .hr06-submit-panel { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.hr06-button { border: 1px solid var(--hr-primary, #2563eb); border-radius: 8px; background: var(--hr-primary, #2563eb); color: #fff; min-height: 38px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 700; text-decoration: none; cursor: pointer; }
+.hr06-button:disabled { cursor: not-allowed; opacity: .48; }
+.hr06-button--secondary { background: var(--hr-surface, #fff); color: var(--hr-primary, #2563eb); }
+.hr06-view-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+.hr06-table-wrap { width: 100%; overflow-x: auto; }
+.hr06-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+.hr06-table th, .hr06-table td { padding: 12px 10px; border-bottom: 1px solid var(--hr-border, #e5e7eb); text-align: left; vertical-align: top; font-size: 13px; }
+.hr06-table th { color: var(--hr-text-secondary, #6b7280); font-weight: 700; }
+.hr06-table td strong, .hr06-muted { display: block; }
+.hr06-muted { margin-top: 3px; color: var(--hr-text-secondary, #6b7280); font-size: 12px; }
+.hr06-link { color: var(--hr-primary, #2563eb); font-weight: 700; text-decoration: none; }
+.hr06-status { display: inline-flex; align-items: center; border: 1px solid var(--hr-border, #dfe3ea); border-radius: 999px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+.hr06-empty, .hr06-state { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; padding: 22px 0; color: var(--hr-text-secondary, #6b7280); }
+.hr06-empty strong, .hr06-state strong { color: var(--hr-text, #111827); }
+.hr06-empty a { color: var(--hr-primary, #2563eb); font-weight: 700; text-decoration: none; }
+.hr06-truth-note { display: flex; gap: 10px; border-top: 1px solid var(--hr-border, #dfe3ea); padding-top: 14px; color: var(--hr-text-secondary, #6b7280); font-size: 12px; line-height: 1.65; }
+.hr06-truth-note strong { color: var(--hr-text, #111827); white-space: nowrap; }
+.hr06-steps { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 0; margin: 18px 0 2px; }
+.hr06-steps li { display: flex; align-items: center; gap: 8px; border-top: 2px solid var(--hr-border, #dfe3ea); padding-top: 10px; color: var(--hr-text-secondary, #6b7280); font-size: 12px; }
+.hr06-steps li[aria-current="step"] { border-color: var(--hr-primary, #2563eb); color: var(--hr-text, #111827); }
+.hr06-steps li strong { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; border: 1px solid currentColor; }
+.hr06-search-row { display: flex; align-items: end; gap: 10px; margin-top: 16px; }
+.hr06-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+.hr06-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--hr-text-secondary, #4b5563); }
+.hr06-field--grow { flex: 1; }
+.hr06-field input, .hr06-field select { width: 100%; min-height: 40px; border: 1px solid var(--hr-border, #d1d5db); border-radius: 8px; background: var(--hr-surface, #fff); color: var(--hr-text, #111827); padding: 8px 10px; font: inherit; font-weight: 500; }
+.hr06-staff-results { margin-top: 12px; border-top: 1px solid var(--hr-border, #e5e7eb); }
+.hr06-staff-option { width: 100%; display: grid; grid-template-columns: minmax(140px, .8fr) minmax(220px, 1.6fr) auto; gap: 12px; align-items: center; border: 0; border-bottom: 1px solid var(--hr-border, #e5e7eb); background: transparent; padding: 12px 0; text-align: left; color: inherit; cursor: pointer; }
+.hr06-staff-option:hover, .hr06-staff-option:focus-visible { background: var(--hr-primary-soft, #eff6ff); outline: none; }
+.hr06-staff-option strong, .hr06-staff-option span { min-width: 0; }
+.hr06-staff-option small { color: var(--hr-text-secondary, #6b7280); }
+.hr06-selected { margin-top: 12px; border-left: 3px solid var(--hr-primary, #2563eb); padding: 10px 12px; background: var(--hr-primary-soft, #eff6ff); }
+.hr06-selected strong, .hr06-selected span { display: block; }
+.hr06-selected span { margin-top: 4px; color: var(--hr-text-secondary, #6b7280); font-size: 12px; }
+.hr06-meta { margin-top: 12px; min-height: 20px; color: var(--hr-text-secondary, #6b7280); font-size: 12px; }
+.hr06-meta[data-state="error"] { color: var(--hr-danger, #b42318); }
+.hr06-meta[data-state="success"] { color: var(--hr-success, #067647); }
+@media (max-width: 960px) { .hr06-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hr06-staff-option { grid-template-columns: 1fr; gap: 4px; } }
+@media (max-width: 720px) { .hr06-summary, .hr06-form-grid, .hr06-steps { grid-template-columns: 1fr; } .hr06-toolbar, .hr06-section-head, .hr06-submit-panel, .hr06-search-row { flex-direction: column; align-items: stretch; } .hr06-truth-note { flex-direction: column; } }

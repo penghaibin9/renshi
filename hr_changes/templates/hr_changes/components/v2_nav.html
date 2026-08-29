@@ -1,0 +1,9 @@
+<nav class="hr06-nav" aria-label="人事异动工作区">
+  <a href="{% url 'hr06-change-center' %}"{% if active == 'center' %} aria-current="page"{% endif %}>异动中心</a>
+  <a href="{% url 'hr06-change-new' %}"{% if active == 'new' %} aria-current="page"{% endif %}>创建草稿</a>
+  <a href="{% url 'hr06-changes-future-page' %}"{% if active == 'future' %} aria-current="page"{% endif %}>未来生效</a>
+  <a href="{% url 'hr06-transfers' %}"{% if active == 'transfers' %} aria-current="page"{% endif %}>校内调动</a>
+  <a href="{% url 'hr06-job-identity' %}"{% if active == 'identity' %} aria-current="page"{% endif %}>岗位与身份变更</a>
+  <a href="{% url 'hr06-secondments' %}"{% if active == 'secondments' %} aria-current="page"{% endif %}>借调挂职</a>
+  <a href="{% url 'hr06-ledger' %}"{% if active == 'ledger' %} aria-current="page"{% endif %}>异动台账</a>
+</nav>
