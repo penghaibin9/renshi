@@ -63,6 +63,16 @@ class IdentityChangeService:
                     "CHANGE_INVALID_PAYLOAD", "增加兼岗必须指定目标组织与岗位"
                 )
 
+        proposal_refs = {
+            proposal.get("field_code"): proposal.get("proposed_value_ref")
+            for proposal in proposals
+        }
+        target_org_id = None
+        target_position_id = None
+        if action.code == ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH:
+            target_org_id = proposal_refs.get("organization")
+            target_position_id = proposal_refs.get("position")
+
         return ChangeService(
             self.tenant_id, actor_user_id=self.actor_user_id
         ).create_case(
@@ -71,6 +81,8 @@ class IdentityChangeService:
             reason_id=reason_id,
             requested_effective_at=requested_effective_at,
             proposals=proposals,
+            target_org_id=target_org_id,
+            target_position_id=target_position_id,
             source_assignment_id=source_assignment_id,
             priority=priority,
         )

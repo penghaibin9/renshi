@@ -22,6 +22,7 @@ from hr_changes.models import (
 )
 from hr_changes.services.apply_service import ApplyService, ApplyServiceError
 from hr_changes.services.change_service import ChangeService
+from hr_changes.services.identity_change_service import IdentityChangeService
 from hr_changes.services.rebase_service import RebaseService
 from hr_changes.tests.factories import (
     make_action,
@@ -234,6 +235,88 @@ class ApplyManagerChangeTests(TestCase):
                 payload_json__assignmentId=str(current.id),
             ).exists()
         )
+
+
+class ApplyPrimaryAssignmentSwitchTests(TestCase):
+    def test_primary_switch_uses_canonical_refs_and_commits_reservation(self):
+        from hr_staff.services.effective_dated_query_service import (
+            EffectiveDatedQueryService,
+        )
+
+        staff = make_staff(TENANT, make_person(TENANT, "主岗切换教师"), "T8210")
+        source_org = make_org(TENANT, "SOURCE-PRIMARY", "原学院", date(2020, 1, 1))
+        target_org = make_org(TENANT, "TARGET-PRIMARY", "目标学院", date(2020, 1, 1))
+        source_position = make_position(
+            TENANT,
+            source_org,
+            "SOURCE-PRIMARY-P01",
+            max_incumbents=1,
+        )
+        target_position = make_position(
+            TENANT,
+            target_org,
+            "TARGET-PRIMARY-P01",
+            max_incumbents=1,
+        )
+        relationship = EmploymentService(TENANT).start_relationship(
+            staff_id=staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        original = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type="PRIMARY",
+            effective_from=date(2024, 9, 1),
+            organization_id=source_org,
+            position_id=source_position,
+            post_catalog_id=source_position.post_catalog_version_id,
+            source_business_type=FIXTURE_SOURCE,
+        )
+        action = make_action(TENANT, ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH)
+        reason = make_reason(TENANT, ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH)
+        case = IdentityChangeService(TENANT, actor_user_id=1).create_identity_change(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[
+                {
+                    "domain": "assignment",
+                    "field_code": "organization",
+                    "proposed_value_ref": str(target_org.id),
+                },
+                {
+                    "domain": "assignment",
+                    "field_code": "position",
+                    "proposed_value_ref": str(target_position.id),
+                },
+            ],
+            source_assignment_id=original.id,
+        )
+        reservation = PositionGate(TENANT).reserve_for_case(case)
+        self.assertIsNotNone(reservation)
+
+        service = ChangeService(TENANT, actor_user_id=1)
+        case = service.submit(case.id)
+        case = service.start_approval(case.id)
+        case = service.approve_all(case.id)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        self.assertEqual(case.status, CaseStatus.EFFECTIVE)
+        current = EffectiveDatedQueryService(TENANT).primary_assignment_as_of(
+            staff.id,
+            date.today(),
+        )
+        self.assertEqual(current.organization_id_id, target_org.id)
+        self.assertEqual(current.position_id_id, target_position.id)
+        self.assertEqual(
+            current.post_catalog_id_id,
+            target_position.post_catalog_version_id_id,
+        )
+        original.refresh_from_db()
+        self.assertEqual(original.effective_to, date.today())
+        reservation.refresh_from_db()
+        self.assertEqual(reservation.status, "COMMITTED")
 
 
 class RebaseServiceTests(TestCase):

@@ -252,6 +252,12 @@ class ApplyService:
             case.target_position_id_id or _ref("position"),
         )
         target_catalog = _resolve_catalog(self.tenant_id, _ref("post_catalog"))
+        if (
+            action == ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH
+            and target_catalog is None
+            and target_pos is not None
+        ):
+            target_catalog = target_pos.post_catalog_version_id
         reporting_staff = _resolve_staff(self.tenant_id, _ref("reporting_staff"))
 
         if action in (

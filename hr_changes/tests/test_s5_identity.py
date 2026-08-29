@@ -12,7 +12,14 @@ from hr_changes.constants import ChangeActionCode
 from hr_changes.context import HrChangeRequestContext, HrChangeScope
 from hr_changes.services.change_service import ChangeServiceError
 from hr_changes.services.identity_change_service import IdentityChangeService
-from hr_changes.tests.factories import make_action, make_org, make_person, make_reason, make_staff
+from hr_changes.tests.factories import (
+    make_action,
+    make_org,
+    make_person,
+    make_position,
+    make_reason,
+    make_staff,
+)
 from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
@@ -119,6 +126,56 @@ class IdentityChangeServiceTests(TestCase):
                 ],
             )
         self.assertEqual(caught.exception.code, "CHANGE_INVALID_PAYLOAD")
+
+    def test_primary_switch_sets_canonical_refs_and_requires_position_gate(self):
+        from hr_changes.integrations.hr02 import PositionGate
+
+        org = make_org(TENANT, "RGXY-PRIMARY", "人工智能学院", date(2020, 1, 1))
+        position = make_position(TENANT, org, "AI-PRIMARY-P01", max_incumbents=1)
+        case = self._create(
+            ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
+            [
+                {
+                    "domain": "assignment",
+                    "field_code": "organization",
+                    "proposed_value_ref": str(org.id),
+                },
+                {
+                    "domain": "assignment",
+                    "field_code": "position",
+                    "proposed_value_ref": str(position.id),
+                },
+            ],
+        )
+
+        self.assertEqual(case.target_org_id_id, org.id)
+        self.assertEqual(case.target_position_id_id, position.id)
+        gate = PositionGate(TENANT)
+        self.assertTrue(gate.needs_position(ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH))
+        reservation = gate.reserve_for_case(case)
+        self.assertIsNotNone(reservation)
+        self.assertEqual(reservation.position_id_id, position.id)
+
+    def test_primary_switch_rejects_cross_tenant_canonical_refs(self):
+        other_org = make_org(2, "OTHER", "其他学校", date(2020, 1, 1))
+        other_position = make_position(2, other_org, "OTHER-P01", max_incumbents=1)
+        with self.assertRaises(ChangeServiceError) as caught:
+            self._create(
+                ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
+                [
+                    {
+                        "domain": "assignment",
+                        "field_code": "organization",
+                        "proposed_value_ref": str(other_org.id),
+                    },
+                    {
+                        "domain": "assignment",
+                        "field_code": "position",
+                        "proposed_value_ref": str(other_position.id),
+                    },
+                ],
+            )
+        self.assertEqual(caught.exception.code, "CHANGE_TARGET_ORG_INVALID")
 
     def test_employment_type_hr07_policy_warning(self):
         action = make_action(TENANT, ChangeActionCode.EMPLOYMENT_TYPE_CHANGE)

@@ -51,6 +51,7 @@ class PositionGate:
         return action_code in (
             ChangeActionCode.POSITION_TRANSFER,
             ChangeActionCode.ORG_POSITION_TRANSFER,
+            ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
         )
 
     def target_position(self, case):
