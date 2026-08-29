@@ -1,16 +1,4 @@
-"""
-hr_changes/views.py —— HR06 页面视图（S3 起逐模块实现）。
-
-- /hr/changes/            异动申请中心（统计卡 + 视图列表）
-- /hr/changes/new         发起向导
-- /hr/changes/future      未来生效队列
-- /hr/changes/:id         案件详情
-- /hr/changes/:id/preview 影响预览
-- /hr/changes/transfers   校内调动（S4）
-- /hr/changes/job-identity 岗位与身份变更（S5）
-- /hr/changes/secondments 借调挂职（S6）
-- /hr/changes/ledger      异动台账（S7）
-"""
+"""HR06 server-rendered workspaces with the same permission boundaries as canonical APIs."""
 
 from __future__ import annotations
 
@@ -24,7 +12,6 @@ from hr_changes.selectors.case_list import CaseListSelector
 
 
 def _page_context(request):
-    """服务端解析 tenant；无学校上下文时给出错误页（fail-closed）。"""
     tenant_id = resolve_tenant_from_request(request)
     if tenant_id is None:
         return None, render(
@@ -40,6 +27,7 @@ def _page_context(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.view")
 def change_center(request):
     tenant_id, err = _page_context(request)
     if err:
@@ -81,6 +69,7 @@ def change_center(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.transfer.create")
 def change_new(request):
     tenant_id, err = _page_context(request)
     if err:
@@ -89,6 +78,7 @@ def change_new(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.view")
 def future_changes(request):
     tenant_id, err = _page_context(request)
     if err:
@@ -106,6 +96,7 @@ def future_changes(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.view")
 def change_detail(request, case_id):
     tenant_id, err = _page_context(request)
     if err:
@@ -122,6 +113,7 @@ def change_detail(request, case_id):
 
 
 @login_required
+@require_hr_change_permission("hr.change.transfer.create")
 def transfers(request):
     tenant_id, err = _page_context(request)
     if err:
@@ -163,6 +155,7 @@ def job_identity(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.temporary.create")
 def secondments(request):
     tenant_id, err = _page_context(request)
     if err:
@@ -178,6 +171,7 @@ def secondments(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.ledger.view")
 def ledger(request):
     tenant_id, err = _page_context(request)
     if err:
@@ -196,6 +190,7 @@ def ledger(request):
 
 
 @login_required
+@require_hr_change_permission("hr.change.submit")
 def change_preview(request, case_id):
     tenant_id, err = _page_context(request)
     if err:
