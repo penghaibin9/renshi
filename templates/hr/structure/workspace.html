@@ -5,18 +5,28 @@
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr02-workspace.css' %}">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr02-page" data-hr02-section="{{ section }}">
-  <header class="hr02-head">
-    <div>
-      <div class="hr02-eyebrow">HR02 · 组织机构与编制岗位</div>
-      <h1>{{ section_title }}</h1>
-      <p>{{ section_subtitle }}</p>
+<div class="hr-v2-page hr02-page" data-module="HR02" data-hr02-section="{{ section }}">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR02 组织与岗位</span>
+    <strong>{{ section_title }}</strong>
+  </div>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr02-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR02 · 组织机构与编制岗位</div>
+      <h1 class="hr-v2-title" id="hr02-title">{{ section_title }}</h1>
+      <p class="hr-v2-subtitle">{{ section_subtitle }}</p>
     </div>
-    <a class="hr02-back" href="/hr/structure/organizations">返回组织机构</a>
+    <div class="hr-v2-context" aria-label="当前工作区说明">
+      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
+      <span class="hr-v2-context__item"><strong>事实</strong> Authority</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> effective-dated</span>
+    </div>
   </header>
 
   <nav class="hr02-nav" aria-label="组织机构与编制岗位工作区">
@@ -27,36 +37,77 @@
     <a href="/hr/structure/positions">岗位编制台账</a>
     <a href="/hr/structure/history" class="{% if section == 'history' %}is-active{% endif %}">组织岗位历史</a>
   </nav>
+  <div class="hr02-mobile-hint">可左右滑动切换组织与岗位工作区</div>
 
-  <section class="hr02-summary">
-    <article><span>当前工作区</span><strong>{{ section_title }}</strong></article>
-    <article><span>数据范围</span><strong>当前学校</strong></article>
-    <article><span>事实口径</span><strong>Authority / effective-dated</strong></article>
+  <section class="hr-v2-conclusions" aria-label="HR02 当前工作区结论">
+    <article class="hr-v2-conclusion">
+      <div class="hr-v2-conclusion__label">当前工作区</div>
+      <div class="hr-v2-conclusion__value">{{ section_title }}</div>
+      <div class="hr-v2-conclusion__detail">只处理当前学校该工作区的正式数据与动作。</div>
+    </article>
+    <article class="hr-v2-conclusion">
+      <div class="hr-v2-conclusion__label">事实来源</div>
+      <div class="hr-v2-conclusion__value">Authority</div>
+      <div class="hr-v2-conclusion__detail">状态、生效日期与冲突判断继续由现有后端规则负责。</div>
+    </article>
+    <article class="hr-v2-conclusion">
+      <div class="hr-v2-conclusion__label">操作原则</div>
+      <div class="hr-v2-conclusion__value">不绕过路由</div>
+      <div class="hr-v2-conclusion__detail">没有正式读接口的能力明确保持边界说明，不伪造台账。</div>
+    </article>
   </section>
 
   {% if section == 'relations' %}
-  <section class="hr02-card">
-    <div class="hr02-card__head"><div><h2>建立组织关系</h2><p>关系创建走现有 HR02 Authority；关闭与冲突判断仍由后端服务负责。</p></div></div>
-    <form class="hr02-form" id="hr02-relation-form">
-      <label><span>来源机构 ID</span><input name="sourceOrgId" type="number" min="1" required></label>
-      <label><span>目标机构 ID</span><input name="targetOrgId" type="number" min="1" required></label>
-      <label><span>关系类型</span><input name="relationType" required placeholder="例如 PARTY_LEADERSHIP"></label>
-      <label><span>生效日期</span><input name="validityFrom" type="date" required></label>
-      <label><span>失效日期</span><input name="validityTo" type="date"></label>
-      <div class="hr02-form__actions"><button class="hr02-btn hr02-btn--primary" type="submit">创建关系</button><span id="hr02-form-message"></span></div>
-    </form>
-    <div class="hr02-boundary"><strong>当前读接口边界</strong><span>当前 HEAD 内关系列表 selector 已存在，但 URL registry 尚未公开对应 GET 路由。前端不绕过路由直接读 ORM，因此这里不伪造关系台账；创建成功后给出明确结果。</span></div>
+  <section class="hr-v2-section" aria-labelledby="hr02-relation-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr02-relation-title">建立组织关系</h2>
+        <p>关系创建走现有 HR02 Authority；关闭与冲突判断仍由后端服务负责。</p>
+      </div>
+    </div>
+    <div class="hr-v2-panel hr02-card">
+      <form class="hr02-form" id="hr02-relation-form">
+        <label><span>来源机构 ID</span><input name="sourceOrgId" type="number" min="1" required></label>
+        <label><span>目标机构 ID</span><input name="targetOrgId" type="number" min="1" required></label>
+        <label><span>关系类型</span><input name="relationType" required placeholder="例如 PARTY_LEADERSHIP"></label>
+        <label><span>生效日期</span><input name="validityFrom" type="date" required></label>
+        <label><span>失效日期</span><input name="validityTo" type="date"></label>
+        <div class="hr02-form__actions">
+          <button class="hr02-btn hr02-btn--primary" type="submit">创建正式关系</button>
+          <span id="hr02-form-message" role="status" aria-live="polite"></span>
+        </div>
+      </form>
+      <div class="hr02-boundary">
+        <strong>当前读接口边界</strong>
+        <span>当前 HEAD 内关系列表 selector 已存在，但 URL registry 尚未公开对应 GET 路由。前端不绕过路由直接读 ORM，因此这里不伪造关系台账；创建成功后给出明确结果。</span>
+      </div>
+    </div>
   </section>
   {% else %}
-  <section class="hr02-card">
-    <div class="hr02-card__head">
-      <div><h2>{{ section_title }}台账</h2><p>以下列表直接读取当前学校的正式 HR02 数据。</p></div>
+  <section class="hr-v2-section" aria-labelledby="hr02-ledger-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <h2 id="hr02-ledger-title">{{ section_title }}台账</h2>
+        <p>以下列表直接读取当前学校的正式 HR02 数据；没有记录时保持真实空态。</p>
+      </div>
       <button type="button" class="hr02-btn" id="hr02-refresh">刷新</button>
     </div>
-    <div class="hr02-toolbar"><input type="search" id="hr02-search" placeholder="搜索编号、名称、状态或类型"></div>
-    <div id="hr02-list" class="hr02-list"><div class="hr02-state">正在读取 Authority…</div></div>
+    <div class="hr-v2-panel hr02-card">
+      <div class="hr02-toolbar">
+        <label class="hr02-search-label" for="hr02-search">筛选当前台账</label>
+        <input type="search" id="hr02-search" placeholder="搜索编号、名称、状态或类型">
+      </div>
+      <div id="hr02-list" class="hr02-list" aria-live="polite">
+        <div class="hr02-state">正在读取 Authority…</div>
+      </div>
+    </div>
   </section>
   {% endif %}
+
+  <div class="hr-v2-truth-note">
+    <strong>业务边界</strong>
+    <span>HR02 只维护组织、编制与岗位事实；页面不代替后端审批、状态机或跨模块任职结果。</span>
+  </div>
 </div>
 {% endblock content %}
 
