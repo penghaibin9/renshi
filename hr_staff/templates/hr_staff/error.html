@@ -1,21 +1,44 @@
-{% load i18n %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HR03 · {{ error_code }}</title>
-  <style>
-    body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
-    .wrap { max-width: 560px; margin: 96px auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    code { background: #f3f4f6; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>HR03 · <code>{{ error_code }}</code></h1>
-    <p>{{ error_message }}</p>
-    <p><a href="/">返回首页</a></p>
+{% extends "index.html" %}
+{% load static i18n %}
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+{% endblock styles %}
+
+{% block content %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="error">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
+    <span>HR03 教职工主档</span>
+    <strong>访问受限</strong>
   </div>
-</body>
-</html>
+
+  <header class="hr-v2-pagehead" aria-labelledby="hr03-error-title">
+    <div class="hr-v2-pagehead__copy">
+      <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
+      <h1 class="hr-v2-title" id="hr03-error-title">当前工作区不可访问</h1>
+      <p class="hr-v2-subtitle">系统未建立可用的人事上下文，或当前账号不具备进入该数据范围的条件。页面保持 fail-closed，不展示任何教职工事实。</p>
+    </div>
+  </header>
+
+  <section class="hr-v2-section" aria-label="错误信息">
+    <div class="hr-v2-state" data-state="error" role="alert">
+      <strong>{{ error_code|default:"HR03_ACCESS_DENIED" }}</strong>
+      <span>{{ error_message|default:"当前账号无法进入该人事工作区。" }}</span>
+    </div>
+  </section>
+
+  <div class="hr03-actions">
+    <a class="btn" href="/hr/overview">返回人事工作台</a>
+    <a class="btn" href="/">返回首页</a>
+  </div>
+
+  <div class="hr-v2-truth-note">
+    <strong>权限边界</strong>
+    <span>此页面只展示错误代码与说明，不尝试绕过 tenant/scope 上下文，也不因为浏览器路由可达而展示任何主档数据。</span>
+  </div>
+</div>
+{% endblock content %}
