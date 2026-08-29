@@ -9,12 +9,29 @@
   const workColumn = document.querySelector('.hr18-layout > div');
   if (!workColumn) return;
 
-  const API = '/api/v1/hr/data';
+  const API = String(root.dataset.apiBase || '').replace(/dashboard\/$/, '').replace(/\/$/, '');
+  const permissions = {
+    define: root.dataset.canDefine === 'true',
+    asof: root.dataset.canAsof === 'true',
+    quality: root.dataset.canQuality === 'true',
+    submit: root.dataset.canSubmit === 'true',
+    approve: root.dataset.canApprove === 'true',
+    receipt: root.dataset.canReceipt === 'true',
+  };
   let dashboard = null;
 
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[char]));
+  const statusLabels = {
+    OPEN: '待处理', ACKNOWLEDGED: '已接单', RESOLVED: '已修复', CLOSED: '已关闭',
+    DRAFT: '草稿', VALIDATED: '已校验', APPROVED: '已批准', DISPATCH_QUEUED: '等待派发',
+    DISPATCH_FAILED: '派发失败', SUBMITTED: '已提交', ACCEPTED: '已受理', REJECTED: '已拒收',
+    CORRECTED: '已更正', ACTIVE: '有效', COMPLETE: '完整', PARTIAL: '不完整', ERROR: '异常',
+  };
+  const severityLabels = { INFO: '提示', WARNING: '警告', ERROR: '严重', CRITICAL: '紧急' };
+  const definitionLabels = { METRIC: '指标', POPULATION: '统计范围' };
+  const statusLabel = (value) => statusLabels[value] || '待确认';
 
   function cookie(name) {
     const prefix = `${name}=`;
@@ -57,7 +74,7 @@
     }
     if (!response.ok) {
       const error = payload.error || {};
-      throw new Error([error.code, error.message].filter(Boolean).join(' · ') || `HTTP ${response.status}`);
+      throw new Error(error.message || (response.status === 403 ? '当前账号没有执行此操作的权限' : '操作未完成，请稍后重试'));
     }
     return payload.data ?? payload;
   }
@@ -68,7 +85,7 @@
       credentials: 'same-origin',
       headers: {'X-Requested-With': 'XMLHttpRequest'},
     });
-    if (!response.ok) throw new Error(`Dashboard HTTP ${response.status}`);
+    if (!response.ok) throw new Error('治理数据暂时无法读取');
     dashboard = await response.json();
     return dashboard;
   }
@@ -126,25 +143,25 @@
   }
 
   function checkbox(name, label, checked = true) {
-    return `<label style="display:flex;align-items:center;gap:7px;font-size:12px;color:#475467"><input type="checkbox" name="${name}" ${checked ? 'checked' : ''}> ${escapeHtml(label)}</label>`;
+    return `<label class="hr18-action-check"><input type="checkbox" name="${name}" ${checked ? 'checked' : ''}> ${escapeHtml(label)}</label>`;
   }
 
   function metricsPanel() {
-    const host = card('指标口径操作', '创建新的 MetricDefinitionVersion；相同内容幂等返回既有版本，修改口径形成新版本，不覆盖历史。');
+    const host = card('指标口径操作', '保存新口径时自动形成新版本；内容没有变化时复用既有版本，不覆盖历史。');
     host.insertAdjacentHTML('beforeend', `
       <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="button" data-open="hr18-metric-form">新建指标版本</button></div>
       <form class="hr18-action-form" id="hr18-metric-form">
         <div class="hr18-action-grid">
           ${field('指标代码', '<input name="metricCode" required placeholder="ACTIVE_STAFF_COUNT">', '大写字母、数字、下划线')}
           ${field('指标名称', '<input name="name" required placeholder="在岗教职工人数">')}
-          ${field('值类型', '<select name="valueType"><option value="INTEGER">INTEGER</option><option value="DECIMAL">DECIMAL</option></select>')}
+          ${field('数值类型', '<select name="valueType"><option value="INTEGER">整数</option><option value="DECIMAL">小数</option></select>')}
           ${field('单位', '<input name="unit" placeholder="人 / 元 / %">')}
-          ${field('Population 代码', '<input name="populationCode" required placeholder="ACTIVE_STAFF">')}
-          ${field('Population 版本', '<input name="populationVersion" required type="number" min="1" step="1" placeholder="1">')}
-          ${field('聚合操作', '<select name="operator"><option>COUNT</option><option>COUNT_DISTINCT</option><option>SUM</option><option>AVG</option><option>MIN</option><option>MAX</option></select>')}
-          ${field('字段路径', '<input name="metricField" placeholder="assignment.position_id">', 'COUNT 可留空；其他操作必须填写声明式字段路径')}
-          ${field('来源域', '<input name="sourceDomains" required placeholder="HR03,HR14">', '必须覆盖 Population 冻结的全部来源域', true)}
-          <div class="hr18-action-field full">${checkbox('asOfRequired', '要求历史 As-of 证据', true)}</div>
+          ${field('统计范围代码', '<input name="populationCode" required placeholder="ACTIVE_STAFF">')}
+          ${field('统计范围版本', '<input name="populationVersion" required type="number" min="1" step="1" placeholder="1">')}
+          ${field('汇总方式', '<select name="operator"><option value="COUNT">计数</option><option value="COUNT_DISTINCT">去重计数</option><option value="SUM">求和</option><option value="AVG">平均值</option><option value="MIN">最小值</option><option value="MAX">最大值</option></select>')}
+          ${field('取值字段', '<input name="metricField" placeholder="assignment.position_id">', '计数可留空；其他汇总方式必须填写已登记的字段路径')}
+          ${field('数据来源', '<input name="sourceDomains" required placeholder="HR03,HR14">', '必须覆盖统计范围冻结的全部来源', true)}
+          <div class="hr18-action-field full">${checkbox('asOfRequired', '需要历史时点证据', true)}</div>
         </div>
         <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存指标版本</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>`);
@@ -159,7 +176,7 @@
       const op = String(data.get('operator') || '').toUpperCase();
       const metricField = String(data.get('metricField') || '').trim();
       if (op !== 'COUNT' && !metricField) {
-        showResult(host, 'error', `${op} 必须填写字段路径`);
+        showResult(host, 'error', '当前汇总方式必须填写取值字段');
         return;
       }
       setBusy(button, true);
@@ -184,37 +201,37 @@
   }
 
   function populationPanel() {
-    const host = card('Population / Dimension 操作', 'Population 冻结统计人口与粒度，Dimension 冻结分组字段；只接受声明式 JSON 和字段路径，不允许 SQL/Python。');
+    const host = card('统计范围与维度操作', '统计范围冻结统计对象和粒度，分析维度冻结分组字段；筛选条件采用受控的结构化表达式，不执行任意脚本。');
     host.insertAdjacentHTML('beforeend', `
       <div class="hr18-action-toolbar">
-        <button class="hr18-action-btn primary" type="button" data-open="hr18-pop-form">新建 Population 版本</button>
-        <button class="hr18-action-btn" type="button" data-open="hr18-dim-form">新建 Dimension 版本</button>
+        <button class="hr18-action-btn primary" type="button" data-open="hr18-pop-form">新建统计范围版本</button>
+        <button class="hr18-action-btn" type="button" data-open="hr18-dim-form">新建分析维度版本</button>
       </div>
       <form class="hr18-action-form" id="hr18-pop-form">
         <div class="hr18-action-grid">
-          ${field('Population 代码', '<input name="populationCode" required placeholder="ACTIVE_STAFF">')}
+          ${field('统计范围代码', '<input name="populationCode" required placeholder="ACTIVE_STAFF">')}
           ${field('名称', '<input name="name" required placeholder="当前在岗教职工">')}
           ${field('Root Domain', '<input name="rootDomain" required value="HR03" placeholder="HR03">')}
           ${field('粒度', '<select name="grain"><option>PERSON</option><option selected>STAFF</option><option>EMPLOYMENT_RELATIONSHIP</option><option>ASSIGNMENT</option></select>')}
           ${field('来源域', '<input name="sourceDomains" required value="HR03" placeholder="HR03,HR14">')}
           ${field('描述', '<input name="description" placeholder="口径用途说明">')}
-          ${field('Predicate JSON', '<textarea name="predicate" required placeholder=\'{"field":"current_employment_status","op":"eq","value":"ACTIVE"}\'></textarea>', '仅支持 field/op/value 及 and/or/not 声明式结构', true)}
-          <div class="hr18-action-field full">${checkbox('asOfRequired', '要求历史 As-of 能力', true)}</div>
+          ${field('筛选条件', '<textarea name="predicate" required placeholder=\'{"field":"current_employment_status","op":"eq","value":"ACTIVE"}\'></textarea>', '仅支持已登记字段、比较关系和组合条件', true)}
+          <div class="hr18-action-field full">${checkbox('asOfRequired', '需要历史时点能力', true)}</div>
         </div>
-        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存 Population</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存统计范围</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>
       <form class="hr18-action-form" id="hr18-dim-form">
         <div class="hr18-action-grid">
-          ${field('Dimension 代码', '<input name="dimensionCode" required placeholder="ORG_UNIT">')}
+          ${field('分析维度代码', '<input name="dimensionCode" required placeholder="ORG_UNIT">')}
           ${field('名称', '<input name="name" required placeholder="所属组织">')}
           ${field('来源域', '<input name="sourceDomain" required value="HR03" placeholder="HR03">')}
           ${field('字段路径', '<input name="attributePath" required placeholder="assignment.org_id">')}
           ${field('值类型', '<select name="valueType"><option>STRING</option><option>INTEGER</option><option>DECIMAL</option><option>BOOLEAN</option><option>DATE</option><option>DATETIME</option><option selected>CODE</option></select>')}
           ${field('描述', '<input name="description" placeholder="维度用途说明">')}
-          ${field('Label Map JSON', '<textarea name="labelMap" placeholder=\'{"A":"教学单位"}\'></textarea>', '可选；键值映射必须是 JSON 对象', true)}
-          <div class="hr18-action-field full">${checkbox('asOfRequired', '要求历史 As-of 能力', true)}</div>
+          ${field('显示名称映射', '<textarea name="labelMap" placeholder=\'{"A":"教学单位"}\'></textarea>', '可选；为来源值配置业务显示名称', true)}
+          <div class="hr18-action-field full">${checkbox('asOfRequired', '需要历史时点能力', true)}</div>
         </div>
-        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存 Dimension</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存分析维度</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>`);
 
     host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
@@ -270,7 +287,7 @@
   }
 
   function asOfPanel() {
-    const host = card('历史 As-of 操作', '先重建可追溯证据，再执行受支持的 Population / Metric 历史求值；PARTIAL / UNAVAILABLE 不能伪装成 COMPLETE。');
+    const host = card('历史时点操作', '先重建可追溯证据，再计算受支持的统计范围或指标；证据不完整、来源暂不可用时不能进入正式报送。');
     host.insertAdjacentHTML('beforeend', `
       <div class="hr18-action-toolbar">
         <button class="hr18-action-btn primary" type="button" data-open="hr18-asof-rebuild">重建历史证据</button>
@@ -282,17 +299,17 @@
           ${field('定义类型', '<select name="definitionKind"><option>POPULATION</option><option>DIMENSION</option><option>METRIC</option></select>')}
           ${field('定义代码', '<input name="definitionCode" required placeholder="ACTIVE_STAFF">')}
           ${field('定义版本', '<input name="definitionVersion" type="number" min="1" step="1" required value="1">')}
-          ${field('As-of 日期', '<input name="asOfDate" type="date" required>', '', true)}
+          ${field('历史日期', '<input name="asOfDate" type="date" required>', '', true)}
         </div>
         <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">开始重建</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>
       <form class="hr18-action-form" id="hr18-asof-evaluate">
         <div class="hr18-action-grid">
           ${field('Evidence No', '<input name="evidenceNo" required placeholder="ASOF-2026-0001">')}
-          ${field('求值类型', '<select name="definitionKind"><option>POPULATION</option><option>METRIC</option></select>', '当前正式求值器只支持 Population 或 COUNT Metric')}
+          ${field('计算对象', '<select name="definitionKind"><option value="POPULATION">统计范围</option><option value="METRIC">指标</option></select>', '当前支持统计范围或计数类指标')}
           ${field('定义代码', '<input name="definitionCode" required placeholder="ACTIVE_STAFF">')}
           ${field('定义版本', '<input name="definitionVersion" type="number" min="1" step="1" required value="1">')}
-          ${field('As-of 日期', '<input name="asOfDate" type="date" required>', '', true)}
+          ${field('历史日期', '<input name="asOfDate" type="date" required>', '', true)}
         </div>
         <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">执行求值</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>`);
@@ -343,7 +360,7 @@
   }
 
   async function qualityPanel() {
-    const host = card('数据质量治理操作', '规则版本、运行记录和 Finding 都保留证据链；“已确认”不等于“已修复”，修复必须回源后再用新运行验证。');
+    const host = card('数据质量治理操作', '规则版本、检查记录和质量问题都保留证据链；“已接单”不等于“已修复”，修复后必须通过一次新的检查验证。');
     host.insertAdjacentHTML('beforeend', `
       <div class="hr18-action-toolbar">
         <button class="hr18-action-btn primary" type="button" data-open="hr18-rule-form">新建质量规则</button>
@@ -354,22 +371,22 @@
           ${field('规则代码', '<input name="ruleCode" required placeholder="HR03_STAFF_ASSIGNMENT_REQUIRED">')}
           ${field('规则名称', '<input name="name" required placeholder="在岗人员必须有当前任职">')}
           ${field('来源域', '<input name="sourceDomain" required value="HR03">')}
-          ${field('严重度', '<select name="severity"><option>INFO</option><option selected>WARNING</option><option>ERROR</option><option>CRITICAL</option></select>')}
-          ${field('Parameters JSON', '<textarea name="parameters" placeholder="{}"></textarea>', '由对应质量 Provider 解释参数；前端不执行规则', true)}
-          <div class="hr18-action-field full">${checkbox('asOfRequired', '规则需要历史 As-of', false)}</div>
+          ${field('严重度', '<select name="severity"><option value="INFO">提示</option><option value="WARNING" selected>警告</option><option value="ERROR">严重</option><option value="CRITICAL">紧急</option></select>')}
+          ${field('规则参数', '<textarea name="parameters" placeholder="{}"></textarea>', '由对应质量检查器解释参数，页面本身不执行规则', true)}
+          <div class="hr18-action-field full">${checkbox('asOfRequired', '规则需要历史时点', false)}</div>
         </div>
         <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存规则版本</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>
       <form class="hr18-action-form" id="hr18-run-form">
         <div class="hr18-action-grid">
-          ${field('Run No', '<input name="runNo" required placeholder="DQ-2026-0001">')}
+          ${field('检查批次号', '<input name="runNo" required placeholder="DQ-2026-0001">')}
           ${field('规则代码', '<input name="ruleCode" required placeholder="HR03_STAFF_ASSIGNMENT_REQUIRED">')}
           ${field('规则版本', '<input name="ruleVersion" type="number" min="1" step="1" required value="1">')}
-          ${field('As-of 日期', '<input name="asOfDate" type="date">', '仅当规则要求历史时填写')}
+          ${field('历史日期', '<input name="asOfDate" type="date">', '仅当规则要求历史时填写')}
         </div>
         <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">执行检查</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
       </form>
-      <div class="hr18-action-table" id="hr18-finding-actions"><div class="hr18-action-empty">正在读取待处理 Finding…</div></div>`);
+      <div class="hr18-action-table" id="hr18-finding-actions"><div class="hr18-action-empty">正在读取待处理质量问题…</div></div>`);
 
     host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
     host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => button.closest('form').classList.remove('open')));
@@ -420,23 +437,24 @@
       const data = await loadDashboard();
       const findings = (data.recentFindings || []).filter((item) => ['OPEN', 'ACKNOWLEDGED'].includes(item.status));
       const target = host.querySelector('#hr18-finding-actions');
-      target.innerHTML = findings.length ? findings.map((item) => `
-        <div class="hr18-action-row" data-finding="${escapeHtml(item.id)}">
+      const findingIds = new Map(findings.map((item, index) => [`finding-${index}`, item.id]));
+      target.innerHTML = findings.length ? findings.map((item, index) => `
+        <div class="hr18-action-row" data-finding="finding-${index}">
           <div><b>${escapeHtml(item.finding_no)}</b><small>${escapeHtml(item.rule_code)} · ${escapeHtml(item.source_domain)} · ${escapeHtml(item.source_object_ref)}</small></div>
-          <div><span class="hr18-action-state">${escapeHtml(item.severity)} / ${escapeHtml(item.status)}</span></div>
+          <div><span class="hr18-action-state">${escapeHtml(severityLabels[item.severity] || '待确认')} · ${escapeHtml(statusLabel(item.status))}</span></div>
           <div class="hr18-action-row-actions">
             ${item.status === 'OPEN' ? '<button class="hr18-action-btn" type="button" data-action="ack">确认已接单</button>' : ''}
-            <input data-run-no style="width:145px;border:1px solid #d7dfeb;border-radius:9px;padding:8px" placeholder="复核 Run No">
+            <input class="hr18-action-inline-input" data-run-no placeholder="复核批次号">
             <button class="hr18-action-btn primary" type="button" data-action="verify">验证已修复</button>
           </div>
-        </div>`).join('') : '<div class="hr18-action-empty">当前没有 OPEN / ACKNOWLEDGED Finding。</div>';
+        </div>`).join('') : '<div class="hr18-action-empty">当前没有待处理或已接单未修复的质量问题。</div>';
 
       target.querySelectorAll('[data-action="ack"]').forEach((button) => button.addEventListener('click', async () => {
         const row = button.closest('[data-finding]');
         setBusy(button, true);
         try {
-          await request(`/quality/findings/${row.dataset.finding}/acknowledge/`);
-          reloadAfterSuccess(host, 'Finding 已确认接单；正式事实仍需回源修复。');
+          await request(`/quality/findings/${findingIds.get(row.dataset.finding)}/acknowledge/`);
+          reloadAfterSuccess(host, '质量问题已确认接单；正式事实仍需回到来源模块修复。');
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -446,12 +464,12 @@
         const row = button.closest('[data-finding]');
         const runNo = row.querySelector('[data-run-no]').value.trim();
         if (!runNo) {
-          showResult(host, 'error', '验证已修复必须填写一个新的 verification Run No');
+          showResult(host, 'error', '验证已修复必须填写一个新的复核批次号');
           return;
         }
         setBusy(button, true);
         try {
-          await request(`/quality/findings/${row.dataset.finding}/verify-fixed/`, {verificationRunNo: runNo});
+          await request(`/quality/findings/${findingIds.get(row.dataset.finding)}/verify-fixed/`, {verificationRunNo: runNo});
           reloadAfterSuccess(host, '复核完成；只有新运行证明问题消失后才会进入已修复状态。');
         } catch (error) {
           showResult(host, 'error', error.message);
@@ -459,26 +477,26 @@
         }
       }));
     } catch (error) {
-      host.querySelector('#hr18-finding-actions').innerHTML = `<div class="hr18-action-empty">Finding 读取失败：${escapeHtml(error.message)}</div>`;
+      host.querySelector('#hr18-finding-actions').innerHTML = `<div class="hr18-action-empty">质量问题读取失败：${escapeHtml(error.message)}</div>`;
     }
   }
 
   async function submissionsPanel({correctionsOnly = false} = {}) {
     const host = card(correctionsOnly ? '回执与更正操作' : '正式报送操作', correctionsOnly
-      ? '回执是外部业务受理事实；REJECTED 不能覆盖原快照，更正能力未接通时保持原记录可追溯。'
-      : '正式报送严格按 Draft → Validate → Approve → Async Submit → Receipt 推进；发送请求成功不等于主管平台已受理。');
+      ? '回执是外部业务受理事实；被拒收的报送不能覆盖原快照，更正能力未开放时保持原记录可追溯。'
+      : '正式报送严格按草稿、校验、批准、异步派发、外部回执依次推进；发送请求成功不等于主管平台已受理。');
 
-    if (!correctionsOnly) {
+    if (!correctionsOnly && permissions.submit) {
       host.insertAdjacentHTML('beforeend', `
-        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="button" data-open="hr18-submission-form">创建报送 Draft</button></div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="button" data-open="hr18-submission-form">创建报送草稿</button></div>
         <form class="hr18-action-form" id="hr18-submission-form">
           <div class="hr18-action-grid">
-            ${field('Submission No', '<input name="submissionNo" required placeholder="SUB-2026-0001">')}
-            ${field('COMPLETE As-of Evidence', '<select name="asOfEvidenceId" required><option value="">正在读取…</option></select>', '只能选择同学校、同 definition/version、COMPLETE 的证据')}
-            ${field('Payload Hash', '<input name="payloadHash" required placeholder="SHA-256 / 冻结报送内容哈希">', 'HR18 不在浏览器拼装正式报送事实', true)}
-            ${field('Scope JSON', '<textarea name="scope" placeholder="{}">{}</textarea>', '冻结本次报送范围', true)}
+            ${field('报送编号', '<input name="submissionNo" required placeholder="SUB-2026-0001">')}
+            ${field('完整历史证据', '<select name="asOfEvidenceId" required><option value="">正在读取…</option></select>', '只能选择同学校、同口径版本且证据完整的记录')}
+            ${field('内容校验摘要', '<input name="payloadHash" required placeholder="填写已冻结报送内容的 SHA-256 摘要">', '本页面不临时拼装正式报送内容', true)}
+            ${field('报送范围', '<textarea name="scope" placeholder="{}">{}</textarea>', '冻结本次报送范围', true)}
           </div>
-          <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">创建 Draft</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+          <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">创建草稿</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
         </form>`);
       host.querySelector('[data-open]').addEventListener('click', () => toggleForm(host, 'hr18-submission-form'));
       host.querySelector('[data-close]').addEventListener('click', () => host.querySelector('#hr18-submission-form').classList.remove('open'));
@@ -488,11 +506,12 @@
 
     try {
       const data = await loadDashboard();
-      if (!correctionsOnly) {
+      if (!correctionsOnly && permissions.submit) {
         const evidenceSelect = host.querySelector('[name="asOfEvidenceId"]');
         const evidences = (data.recentAsOfEvidence || []).filter((item) => item.status === 'COMPLETE');
-        evidenceSelect.innerHTML = '<option value="">选择 COMPLETE 证据</option>' + evidences.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.evidence_no)} · ${escapeHtml(item.definition_code)} v${escapeHtml(item.definition_version)} · ${escapeHtml(item.as_of_date)}</option>`).join('');
-        if (!evidences.length) evidenceSelect.innerHTML = '<option value="">暂无 COMPLETE 证据，请先到历史 As-of 重建</option>';
+        const evidenceIds = new Map(evidences.map((item, index) => [`evidence-${index}`, item.id]));
+        evidenceSelect.innerHTML = '<option value="">选择完整证据</option>' + evidences.map((item, index) => `<option value="evidence-${index}">${escapeHtml(item.evidence_no)} · ${escapeHtml(item.definition_code)} v${escapeHtml(item.definition_version)} · ${escapeHtml(item.as_of_date)}</option>`).join('');
+        if (!evidences.length) evidenceSelect.innerHTML = '<option value="">暂无完整证据，请先到历史时点重建</option>';
 
         host.querySelector('#hr18-submission-form').addEventListener('submit', async (event) => {
           event.preventDefault();
@@ -503,9 +522,9 @@
           try {
             const snapshot = await request('/submissions/', {
               submissionNo: values.get('submissionNo'),
-              asOfEvidenceId: values.get('asOfEvidenceId'),
+              asOfEvidenceId: evidenceIds.get(values.get('asOfEvidenceId')),
               payloadHash: values.get('payloadHash'),
-              scope: parseJson(values.get('scope'), 'Scope', {}),
+              scope: parseJson(values.get('scope'), '报送范围', {}),
             });
             reloadAfterSuccess(host, `${snapshot.submissionNo} 已创建：${snapshot.status}`);
           } catch (error) {
@@ -518,15 +537,18 @@
       let rows = data.recentSubmissions || [];
       if (correctionsOnly) rows = rows.filter((item) => ['REJECTED', 'CORRECTED'].includes(item.status) || item.parent_submission_id);
       const target = host.querySelector('#hr18-submission-actions');
-      target.innerHTML = rows.length ? rows.map((item) => {
-        const transition = item.status === 'DRAFT' ? ['validate', '校验'] : item.status === 'VALIDATED' ? ['approve', '批准'] : item.status === 'APPROVED' ? ['submit', '进入异步提交'] : null;
-        const receipt = item.status === 'SUBMITTED';
-        return `<div class="hr18-action-row" data-submission="${escapeHtml(item.id)}">
-          <div><b>${escapeHtml(item.submission_no)}</b><small>${escapeHtml(item.definition_kind)} · ${escapeHtml(item.definition_code)} v${escapeHtml(item.definition_version)} · As-of ${escapeHtml(item.as_of_date)}</small></div>
-          <div><span class="hr18-action-state">${escapeHtml(item.status)}</span><small>${item.receipt_ref ? `回执 ${escapeHtml(item.receipt_ref)}` : (item.dispatch_error ? escapeHtml(item.dispatch_error) : '尚无最终回执')}</small></div>
+      const submissionIds = new Map(rows.map((item, index) => [`submission-${index}`, item.id]));
+      target.innerHTML = rows.length ? rows.map((item, index) => {
+        const transition = item.status === 'DRAFT' && permissions.submit ? ['validate', '校验']
+          : item.status === 'VALIDATED' && permissions.approve ? ['approve', '批准']
+            : item.status === 'APPROVED' && permissions.submit ? ['submit', '进入异步派发'] : null;
+        const receipt = item.status === 'SUBMITTED' && permissions.receipt;
+        return `<div class="hr18-action-row" data-submission="submission-${index}">
+          <div><b>${escapeHtml(item.submission_no)}</b><small>${escapeHtml(definitionLabels[item.definition_kind] || '治理口径')} · ${escapeHtml(item.definition_code)} v${escapeHtml(item.definition_version)} · 历史日期 ${escapeHtml(item.as_of_date)}</small></div>
+          <div><span class="hr18-action-state">${escapeHtml(statusLabel(item.status))}</span><small>${item.receipt_ref ? `回执 ${escapeHtml(item.receipt_ref)}` : (item.dispatch_error ? '派发失败，请检查服务记录' : '尚无最终回执')}</small></div>
           <div class="hr18-action-row-actions">
             ${transition ? `<button class="hr18-action-btn primary" type="button" data-transition="${transition[0]}">${transition[1]}</button>` : ''}
-            ${receipt ? '<input data-receipt-ref style="width:145px;border:1px solid #d7dfeb;border-radius:9px;padding:8px" placeholder="Receipt Ref"><button class="hr18-action-btn primary" type="button" data-receipt="accept">受理</button><button class="hr18-action-btn danger" type="button" data-receipt="reject">拒收</button>' : ''}
+            ${receipt ? '<input class="hr18-action-inline-input" data-receipt-ref placeholder="外部回执号"><button class="hr18-action-btn primary" type="button" data-receipt="accept">受理</button><button class="hr18-action-btn danger" type="button" data-receipt="reject">拒收</button>' : ''}
           </div>
         </div>`;
       }).join('') : '<div class="hr18-action-empty">当前没有符合此工作区的正式报送快照。</div>';
@@ -536,8 +558,8 @@
         setBusy(button, true);
         try {
           const action = button.dataset.transition;
-          const snapshot = await request(`/submissions/${row.dataset.submission}/${action}/`);
-          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 已推进到 ${snapshot.status || action}`);
+          const snapshot = await request(`/submissions/${submissionIds.get(row.dataset.submission)}/${action}/`);
+          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 已推进到${statusLabel(snapshot.status)}`);
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -547,16 +569,16 @@
         const row = button.closest('[data-submission]');
         const ref = row.querySelector('[data-receipt-ref]').value.trim();
         if (!ref) {
-          showResult(host, 'error', '记录回执必须填写 Receipt Ref');
+          showResult(host, 'error', '记录回执必须填写外部回执号');
           return;
         }
         setBusy(button, true);
         try {
-          const snapshot = await request(`/submissions/${row.dataset.submission}/receipt/`, {
+          const snapshot = await request(`/submissions/${submissionIds.get(row.dataset.submission)}/receipt/`, {
             accepted: button.dataset.receipt === 'accept',
             receiptRef: ref,
           });
-          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 回执已记录：${snapshot.status}`);
+          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 回执已记录：${statusLabel(snapshot.status)}`);
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -567,30 +589,30 @@
     }
 
     if (correctionsOnly) {
-      host.insertAdjacentHTML('beforeend', '<div class="hr18-action-note"><strong>当前边界：</strong>回执记录已接通；Correction Workflow capability 尚未接通，因此这里不会提供“复制并覆盖原快照”的假更正按钮。后续更正必须形成 parentSubmissionId 链。</div>');
+      host.insertAdjacentHTML('beforeend', '<div class="hr18-action-note"><strong>当前边界：</strong>回执记录已开放，更正流程暂未开放，因此这里不会提供“复制并覆盖原快照”的按钮。后续更正必须保留原快照并形成更正链。</div>');
     }
   }
 
   function exchangePanel() {
-    const host = card('数据交换与共享工作区', '设计要求 Dataset / Schema / Mapping / 异步传输 / Receipt / Reconciliation 全链路；当前 asyncExchange capability 未接通，因此 UI 完整展示流程与阻断点，但不伪造“已同步”。');
+    const host = card('数据交换与共享工作区', '共享数据集需要经过结构定义、目标映射、异步传输、外部回执和对账；当前交换执行器暂未开放，因此这里只展示流程和阻断点。');
     host.insertAdjacentHTML('beforeend', `
       <div class="hr18-action-stepper">
-        <div class="hr18-action-step"><b>1 · Dataset / Schema</b><span>冻结共享数据集、字段、敏感级别和版本。</span></div>
-        <div class="hr18-action-step"><b>2 · Mapping</b><span>映射学校数据中台 / API / File / SFTP 等目标合同。</span></div>
-        <div class="hr18-action-step"><b>3 · Async Dispatch</b><span>大数据交换必须进入异步任务，不占用 Web 请求线程。</span></div>
-        <div class="hr18-action-step"><b>4 · Receipt / Reconcile</b><span>外部成功回执与本地快照对账后才可称完成。</span></div>
+        <div class="hr18-action-step"><b>1 · 定义数据集</b><span>冻结共享字段、敏感级别和版本。</span></div>
+        <div class="hr18-action-step"><b>2 · 配置目标映射</b><span>映射学校数据中台、接口或文件交换合同。</span></div>
+        <div class="hr18-action-step"><b>3 · 异步传输</b><span>大数据交换进入后台任务，不占用页面请求。</span></div>
+        <div class="hr18-action-step"><b>4 · 回执与对账</b><span>外部成功回执与本地快照对账后才可称完成。</span></div>
       </div>
-      <div class="hr18-action-note"><strong>当前状态：</strong>异步交换执行器尚未注册。页面不会把同步导出或文件生成包装成“交换成功”；待 Authority API 接通后，此工作区直接承接真实任务创建、进度、回执与重试。</div>`);
+      <div class="hr18-action-note"><strong>当前状态：</strong>异步交换执行器尚未开放。页面不会把同步导出或文件生成包装成“交换成功”；能力开放后，此工作区将承接真实任务、进度、回执与重试。</div>`);
   }
 
   async function boot() {
     try {
-      if (section === 'metrics') metricsPanel();
-      else if (section === 'population') populationPanel();
-      else if (section === 'asof') asOfPanel();
-      else if (section === 'quality') await qualityPanel();
-      else if (section === 'submissions') await submissionsPanel();
-      else if (section === 'corrections') await submissionsPanel({correctionsOnly: true});
+      if (section === 'metrics' && permissions.define) metricsPanel();
+      else if (section === 'population' && permissions.define) populationPanel();
+      else if (section === 'asof' && permissions.asof) asOfPanel();
+      else if (section === 'quality' && permissions.quality) await qualityPanel();
+      else if (section === 'submissions' && (permissions.submit || permissions.approve || permissions.receipt)) await submissionsPanel();
+      else if (section === 'corrections' && permissions.receipt) await submissionsPanel({correctionsOnly: true});
       else if (section === 'exchange') exchangePanel();
     } catch (error) {
       const host = card('操作区加载失败', '页面只会显示真实错误，不回退旧接口。');

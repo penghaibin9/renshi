@@ -7,10 +7,11 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr18-data.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr18-actions.css' %}">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr18" data-module="HR18" data-section="{{ section }}">
+<div class="hr-v2-page hr18" data-module="HR18" data-section="{{ section }}" data-api-base="{% url 'hr_data_api:dashboard' %}" data-can-define="{{ can_define|yesno:'true,false' }}" data-can-asof="{{ can_asof|yesno:'true,false' }}" data-can-quality="{{ can_quality|yesno:'true,false' }}" data-can-submit="{{ can_submit|yesno:'true,false' }}" data-can-approve="{{ can_approve|yesno:'true,false' }}" data-can-receipt="{{ can_receipt|yesno:'true,false' }}" data-route-metrics="{% url 'hr_data:metrics' %}" data-route-population="{% url 'hr_data:population' %}" data-route-asof="{% url 'hr_data:asof' %}" data-route-quality="{% url 'hr_data:quality' %}" data-route-submissions="{% url 'hr_data:submissions' %}" data-route-corrections="{% url 'hr_data:corrections' %}">
   {% if access_error %}
     <div class="hr18-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -20,38 +21,38 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR18 · 人事数据中心</div>
         <h1 class="hr-v2-title" id="hr18-page-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">先看治理结论，再进入指标、Population、As-of、质量和正式报送。HR18 只消费正式事实与版本化定义：UNAVAILABLE 不写成 0，PARTIAL 不冒充 COMPLETE，正式快照不原地覆盖。</p>
+        <p class="hr-v2-subtitle">先看治理结论，再进入指标、统计范围、历史时点、质量治理和正式报送。来源暂不可用时保持未知，历史证据不完整时阻断报送，正式快照生成后不可原地覆盖。</p>
       </div>
       <div class="hr-v2-context" aria-label="数据治理上下文">
-        <span class="hr-v2-context__item"><strong>学校</strong> #{{ tenant_id }}</span>
-        <span class="hr-v2-context__item"><strong>事实</strong> Authority only</span>
-        <span class="hr-v2-context__item"><strong>治理</strong> fail-closed</span>
+        <span class="hr-v2-context__item"><strong>学校</strong> 当前学校</span>
+        <span class="hr-v2-context__item"><strong>事实</strong> 以正式记录为准</span>
+        <span class="hr-v2-context__item"><strong>治理</strong> 证据不足即阻断</span>
       </div>
     </header>
 
     <nav class="hr18-nav" aria-label="人事数据治理导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/data/">总览</a>
-      <a class="{% if section == 'metrics' %}active{% endif %}" href="/hr/data/metrics/">指标口径</a>
-      <a class="{% if section == 'population' %}active{% endif %}" href="/hr/data/population/">Population / Dimension</a>
-      <a class="{% if section == 'asof' %}active{% endif %}" href="/hr/data/as-of/">历史 As-of</a>
-      <a class="{% if section == 'quality' %}active{% endif %}" href="/hr/data/quality/">数据质量</a>
-      <a class="{% if section == 'exchange' %}active{% endif %}" href="/hr/data/exchange/">数据交换</a>
-      <a class="{% if section == 'submissions' %}active{% endif %}" href="/hr/data/submissions/">正式报送</a>
-      <a class="{% if section == 'corrections' %}active{% endif %}" href="/hr/data/corrections/">回执与更正</a>
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_data:overview' %}">总览</a>
+      <a class="{% if section == 'metrics' %}active{% endif %}" href="{% url 'hr_data:metrics' %}">指标口径</a>
+      <a class="{% if section == 'population' %}active{% endif %}" href="{% url 'hr_data:population' %}">统计范围与维度</a>
+      <a class="{% if section == 'asof' %}active{% endif %}" href="{% url 'hr_data:asof' %}">历史时点</a>
+      <a class="{% if section == 'quality' %}active{% endif %}" href="{% url 'hr_data:quality' %}">数据质量</a>
+      <a class="{% if section == 'exchange' %}active{% endif %}" href="{% url 'hr_data:exchange' %}">数据交换</a>
+      <a class="{% if section == 'submissions' %}active{% endif %}" href="{% url 'hr_data:submissions' %}">正式报送</a>
+      <a class="{% if section == 'corrections' %}active{% endif %}" href="{% url 'hr_data:corrections' %}">回执与更正</a>
     </nav>
     <div class="hr18-mobile-hint">可左右滑动查看全部数据治理工作区</div>
 
     <section class="hr-v2-conclusions hr18-conclusions" id="hr18-conclusions" aria-label="数据治理首屏结论">
       <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">严重质量问题</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">正在读取真实质量发现</div></article>
       <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">报送阻塞</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">等待回执与派发失败分开统计</div></article>
-      <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">As-of 证据阻塞</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">非 COMPLETE 不进入正式报送</div></article>
+      <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">历史证据阻塞</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">证据不完整时不进入正式报送</div></article>
     </section>
 
     <section class="hr18-kpis" id="hr18-kpis" aria-label="数据中心关键数字">
       <article class="hr18-kpi"><span>指标代码</span><b>—</b><em>版本化口径</em></article>
-      <article class="hr18-kpi"><span>Population</span><b>—</b><em>显式统计人口</em></article>
-      <article class="hr18-kpi"><span>开放质量问题</span><b>—</b><em>OPEN / ACKNOWLEDGED</em></article>
-      <article class="hr18-kpi"><span>As-of COMPLETE</span><b>—</b><em>可信历史证据</em></article>
+      <article class="hr18-kpi"><span>统计范围</span><b>—</b><em>明确统计对象</em></article>
+      <article class="hr18-kpi"><span>待处理质量问题</span><b>—</b><em>含已接单未修复</em></article>
+      <article class="hr18-kpi"><span>完整历史证据</span><b>—</b><em>可信历史时点</em></article>
       <article class="hr18-kpi"><span>正式报送</span><b>—</b><em>冻结快照</em></article>
       <article class="hr18-kpi"><span>待回执</span><b>—</b><em>未完成即未完成</em></article>
     </section>
@@ -78,22 +79,22 @@
       <aside class="hr18-side">
         <article class="hr18-card">
           <h2>治理最短路径</h2>
-          <p>定义口径 → 检查质量 → 固化 As-of 证据 → 冻结快照 → 报送 → 回执。</p>
+          <p>定义口径 → 检查质量 → 固化历史证据 → 冻结快照 → 报送 → 回执。</p>
           <div class="hr18-flow">
-            <a href="/hr/data/metrics/"><span>1</span><strong>指标口径</strong><small>版本化定义与来源域</small></a>
-            <a href="/hr/data/population/"><span>2</span><strong>Population</strong><small>统计人口与维度</small></a>
-            <a href="/hr/data/quality/"><span>3</span><strong>质量治理</strong><small>问题回源修复</small></a>
-            <a href="/hr/data/as-of/"><span>4</span><strong>As-of 证据</strong><small>历史状态可信重建</small></a>
-            <a href="/hr/data/submissions/"><span>5</span><strong>正式报送</strong><small>冻结 definition/version/as-of</small></a>
-            <a href="/hr/data/corrections/"><span>6</span><strong>回执与更正</strong><small>保留原快照与父子链</small></a>
+            <a href="{% url 'hr_data:metrics' %}"><span>1</span><strong>指标口径</strong><small>版本化定义与数据来源</small></a>
+            <a href="{% url 'hr_data:population' %}"><span>2</span><strong>统计范围</strong><small>统计对象与分析维度</small></a>
+            <a href="{% url 'hr_data:quality' %}"><span>3</span><strong>质量治理</strong><small>问题回到来源修复</small></a>
+            <a href="{% url 'hr_data:asof' %}"><span>4</span><strong>历史证据</strong><small>历史状态可信重建</small></a>
+            <a href="{% url 'hr_data:submissions' %}"><span>5</span><strong>正式报送</strong><small>冻结口径、版本和时点</small></a>
+            <a href="{% url 'hr_data:corrections' %}"><span>6</span><strong>回执与更正</strong><small>保留原快照与更正链</small></a>
           </div>
         </article>
 
         <article class="hr18-card">
-          <h2>Authority / Engine 状态</h2>
-          <p>页面按后端 capability 原样显示；未接通能力不会被前端包装成可用。</p>
+          <h2>治理能力状态</h2>
+          <p>每项能力按服务端实际状态展示，暂未开放不会被页面包装成可用。</p>
           <div id="hr18-caps" class="hr18-caps"><div class="hr18-empty">正在读取能力矩阵…</div></div>
-          <div class="hr18-rule">HR18 不直接修改 HR03–HR16 的正式事实。指标定义、质量发现、As-of 证据和报送快照都有自己的 Authority；源域错误必须回源修复。</div>
+          <div class="hr18-rule">本中心不直接修改其他人事模块的正式事实。指标定义、质量问题、历史证据和报送快照各自留存完整记录；来源错误必须回到对应业务模块修复。</div>
         </article>
       </aside>
     </section>
@@ -104,4 +105,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/pages/hr18-data-v2.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr18-actions.js' %}"></script>
 {% endblock scripts %}

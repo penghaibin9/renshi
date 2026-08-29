@@ -13,40 +13,56 @@
   const text = (value, fallback = '—') => value === null || value === undefined || value === '' ? fallback : String(value);
   const shortDate = (value) => value ? String(value).replace('T', ' ').slice(0, 16) : '—';
   const join = (values, fallback = '—') => (values || []).filter((value) => value !== null && value !== undefined && value !== '').join(' · ') || fallback;
+  const dashboardUrl = root.dataset.apiBase;
+  const routes = {
+    metrics: root.dataset.routeMetrics, population: root.dataset.routePopulation,
+    asof: root.dataset.routeAsof, quality: root.dataset.routeQuality,
+    submissions: root.dataset.routeSubmissions, corrections: root.dataset.routeCorrections,
+  };
+  const statusLabels = {
+    ACTIVE: '有效', OPEN: '待处理', ACKNOWLEDGED: '已接单', RESOLVED: '已修复', CLOSED: '已关闭',
+    COMPLETE: '完整', PARTIAL: '不完整', UNAVAILABLE: '暂不可用', ERROR: '异常',
+    DRAFT: '草稿', VALIDATED: '已校验', APPROVED: '已批准', DISPATCH_QUEUED: '等待派发',
+    DISPATCH_FAILED: '派发失败', SUBMITTED: '已提交', ACCEPTED: '已受理', REJECTED: '已拒收', CORRECTED: '已更正',
+  };
+  const severityLabels = { INFO: '提示', WARNING: '警告', ERROR: '严重', CRITICAL: '紧急' };
+  const kindLabels = { METRIC: '指标', POPULATION: '统计范围' };
+  const valueTypeLabels = { INTEGER: '整数', DECIMAL: '小数', STRING: '文本', DATE: '日期', BOOLEAN: '是/否' };
+  const stateLabel = (value) => statusLabels[value] || '待确认';
 
   const capabilityLabels = {
-    metricDefinition: '指标定义 Authority',
-    dataQualityFinding: '质量发现 Authority',
+    metricDefinition: '指标口径管理',
+    dataQualityFinding: '质量问题管理',
     qualityFindingLifecycle: '质量问题生命周期',
     submissionSnapshot: '正式报送快照',
     sourceGate: '来源门禁',
-    populationDimension: 'Population / Dimension',
-    populationGrain: 'Population Grain',
-    submissionAsOfGate: '报送 As-of 门禁',
-    asOfEvidenceEngine: 'As-of 证据引擎',
-    asOfEngine: '历史 As-of 引擎',
-    hr03CountEvaluation: 'HR03 人数评估',
-    hr03AssignmentCountEvaluation: 'HR03 任职评估',
-    formalFactProviderEvidence: '正式事实 Provider 证据',
+    populationDimension: '统计范围与分析维度',
+    populationGrain: '统计对象粒度',
+    submissionAsOfGate: '报送历史证据校验',
+    asOfEvidenceEngine: '历史证据重建',
+    asOfEngine: '历史时点计算',
+    hr03CountEvaluation: '教职工人数计算',
+    hr03AssignmentCountEvaluation: '任职人数计算',
+    formalFactProviderEvidence: '正式事实来源证据',
     formalFactPersonCountEvaluation: '正式事实人数评估',
     metricEvaluation: '通用指标表达式评估',
     qualityRuleExecution: '质量规则执行',
-    builtinHr03QualityProvider: 'HR03 内建质量 Provider',
+    builtinHr03QualityProvider: '教职工主档质量检查',
     asyncSubmissionDispatch: '异步报送派发',
     asyncExchange: '异步数据交换',
     submissionReceipt: '报送回执',
     correctionWorkflow: '更正工作流',
-    legacyReportTakeover: '旧报表接管'
+    legacyReportTakeover: '历史报表资产盘点'
   };
 
   const sectionCopy = {
     overview: ['最新治理对象', '先看严重质量问题、报送阻塞和历史证据，再决定下一步。'],
-    metrics: ['指标口径版本', '每个指标保留版本、Population、值类型、单位和来源域；旧版本不原地覆盖。'],
-    population: ['Population / Dimension 定义', '统计人口和维度使用版本化声明式定义；历史口径与当前口径分离。'],
-    asof: ['As-of 历史证据', '只展示可信重建产生的证据；PARTIAL / UNAVAILABLE / ERROR 不进入正式报送。'],
+    metrics: ['指标口径版本', '每个指标保留统计范围、数值类型、单位和数据来源；旧版本不原地覆盖。'],
+    population: ['统计范围与分析维度', '统计对象和分析维度使用版本化定义；历史口径与当前口径分离。'],
+    asof: ['历史时点证据', '只展示可信重建产生的证据；证据不完整或来源异常时不进入正式报送。'],
     quality: ['数据质量治理', '质量规则、执行结果和问题发现分层展示；事实错误必须回到源域修复。'],
     exchange: ['数据交换', '交换能力必须异步、可追踪、可失败重试；未接通时保持不可用。'],
-    submissions: ['正式报送快照', '正式报送冻结 definition/version/as-of；派发、提交、回执是不同状态。'],
+    submissions: ['正式报送快照', '正式报送冻结口径、版本和历史日期；派发、提交、回执是不同状态。'],
     corrections: ['回执与更正', '拒收、回执和更正保留原快照；更正能力未接通时不会伪造操作入口。']
   };
 
@@ -68,7 +84,7 @@
       kind: '指标口径',
       status: item.status,
       severity: '',
-      detail: join([item.value_type, item.unit, ...(item.source_domains || [])]),
+       detail: join([valueTypeLabels[item.value_type] || '待确认', item.unit, ...(item.source_domains || [])]),
       meta: shortDate(item.updated_at)
     }));
   }
@@ -77,19 +93,19 @@
     const populations = (data.recentPopulations || []).map((item) => ({
       primary: item.name || item.population_code,
       secondary: join([item.population_code, `v${item.version_no}`, item.grain]),
-      kind: 'Population',
+      kind: '统计范围',
       status: item.status,
       severity: '',
-      detail: join([item.root_domain, ...(item.source_domains || []), item.as_of_required ? 'As-of required' : 'Current only']),
+      detail: join([item.root_domain, ...(item.source_domains || []), item.as_of_required ? '支持历史时点' : '仅当前时点']),
       meta: shortDate(item.updated_at)
     }));
     const dimensions = (data.recentDimensions || []).map((item) => ({
       primary: item.name || item.dimension_code,
       secondary: join([item.dimension_code, `v${item.version_no}`, item.value_type]),
-      kind: 'Dimension',
+      kind: '分析维度',
       status: item.status,
       severity: '',
-      detail: join([item.source_domain, item.attribute_path, item.as_of_required ? 'As-of required' : 'Current only']),
+      detail: join([item.source_domain, item.as_of_required ? '支持历史时点' : '仅当前时点']),
       meta: shortDate(item.updated_at)
     }));
     return populations.concat(dimensions);
@@ -97,16 +113,16 @@
 
   function asOfRows(data) {
     return (data.recentAsOfEvidence || []).map((item) => {
-      const statuses = Object.entries(item.source_statuses_json || {}).map(([key, value]) => `${key}:${value}`);
+       const statuses = Object.entries(item.source_statuses_json || {}).map(([key, value]) => `${key}：${stateLabel(value)}`);
       const blocked = item.blocked_domains_json || [];
       return {
         primary: item.evidence_no,
-        secondary: join([item.definition_kind, item.definition_code, `v${item.definition_version}`]),
-        kind: 'As-of 证据',
+        secondary: join([kindLabels[item.definition_kind] || '治理口径', item.definition_code, `v${item.definition_version}`]),
+        kind: '历史证据',
         status: item.status,
         severity: '',
         detail: join([...statuses, blocked.length ? `阻断域 ${blocked.join(', ')}` : '无阻断域']),
-        meta: join([item.as_of_date ? `As-of ${item.as_of_date}` : '', shortDate(item.generated_at)])
+        meta: join([item.as_of_date ? `历史日期 ${item.as_of_date}` : '', shortDate(item.generated_at)])
       };
     });
   }
@@ -118,7 +134,7 @@
       kind: '质量问题',
       status: item.status,
       severity: item.severity,
-      detail: join([item.severity, item.finding_fingerprint]),
+      detail: join([severityLabels[item.severity] || '待确认', item.source_domain]),
       meta: shortDate(item.detected_at)
     }));
     const runs = (data.recentQualityRuns || []).map((item) => ({
@@ -127,7 +143,7 @@
       kind: '质量执行',
       status: item.status,
       severity: item.status === 'ERROR' ? 'CRITICAL' : '',
-      detail: item.error_message || join([`发现 ${displayNumber(item.finding_count)} 条`, item.provider_version]),
+      detail: item.error_message ? '检查执行异常，请查看服务记录' : join([`发现 ${displayNumber(item.finding_count)} 条`, item.source_domain]),
       meta: shortDate(item.executed_at)
     }));
     const rules = (data.recentQualityRules || []).map((item) => ({
@@ -136,7 +152,7 @@
       kind: '质量规则',
       status: item.status,
       severity: item.severity,
-      detail: join([item.severity, item.as_of_required ? 'As-of required' : 'Current only']),
+      detail: join([severityLabels[item.severity] || '待确认', item.as_of_required ? '需要历史时点' : '仅当前时点']),
       meta: shortDate(item.updated_at)
     }));
     return findings.concat(runs, rules);
@@ -145,11 +161,11 @@
   function submissionRows(data) {
     return (data.recentSubmissions || []).map((item) => ({
       primary: item.submission_no || item.definition_code,
-      secondary: join([item.definition_kind, item.definition_code, `v${item.definition_version}`, item.as_of_date ? `As-of ${item.as_of_date}` : '']),
+      secondary: join([kindLabels[item.definition_kind] || '治理口径', item.definition_code, `v${item.definition_version}`, item.as_of_date ? `历史日期 ${item.as_of_date}` : '']),
       kind: item.parent_submission_id ? '更正快照' : '正式报送',
       status: item.status,
       severity: '',
-      detail: item.dispatch_error || join([item.dispatch_ref, item.receipt_ref || '无回执']),
+      detail: item.dispatch_error ? '派发失败，请查看服务记录' : join([item.dispatch_ref ? '已生成派发记录' : '', item.receipt_ref ? `回执 ${item.receipt_ref}` : '尚无回执']),
       meta: shortDate(item.submitted_at || item.created_at)
     }));
   }
@@ -182,15 +198,15 @@
       rows = submissionRows(data).filter((item) => ['REJECTED', 'CORRECTED'].includes(item.status) || item.kind === '更正快照');
       if (data.capabilities?.correctionWorkflow !== true && boundary) {
         boundary.hidden = false;
-        boundary.textContent = '更正工作流 capability 当前未接通：这里只展示已有拒收/更正快照证据，不提供虚假的“发起更正”操作。';
+        boundary.textContent = '更正流程当前暂未开放：这里只展示已有拒收和更正快照，不提供“发起更正”操作。';
       }
     } else if (section === 'exchange') {
       rows = [];
       if (boundary) {
         boundary.hidden = false;
         boundary.textContent = data.capabilities?.asyncExchange === true
-          ? '异步交换 capability 已接通，但当前 dashboard 未提供交换任务读模型；页面不制造伪台账。'
-          : '异步数据交换 capability 当前未接通；同步导出不会伪装成交换任务中心。';
+          ? '异步交换能力已开放，但当前服务尚未提供交换任务台账；页面不会制造伪记录。'
+          : '异步数据交换当前暂未开放；同步导出不会伪装成交换任务中心。';
       }
     } else rows = overviewRows(data);
 
@@ -204,7 +220,7 @@
     if (!status || !kind) return;
     const statuses = [...new Set(rows.map((item) => item.status).filter(Boolean))].sort();
     const kinds = [...new Set(rows.map((item) => item.kind).filter(Boolean))].sort();
-    status.innerHTML = '<option value="">全部状态</option>' + statuses.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
+    status.innerHTML = '<option value="">全部状态</option>' + statuses.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(stateLabel(value))}</option>`).join('');
     kind.innerHTML = '<option value="">全部类型</option>' + kinds.map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join('');
   }
 
@@ -232,11 +248,11 @@
 
     target.innerHTML = filtered.map((item) => {
       const tone = toneFor(item.status, item.severity);
-      const statusLabel = item.severity ? `${item.severity} / ${text(item.status)}` : text(item.status);
+      const statusText = item.severity ? `${severityLabels[item.severity] || '待确认'} · ${stateLabel(item.status)}` : stateLabel(item.status);
       return `<article class="hr18-row">
         <div class="hr18-row__main"><b>${escapeHtml(text(item.primary))}</b><small>${escapeHtml(text(item.secondary))}</small></div>
         <div class="hr18-row__detail"><span class="hr18-row__kind">${escapeHtml(text(item.kind))}</span><small>${escapeHtml(text(item.detail))}</small></div>
-        <span class="hr18-pill" data-tone="${escapeHtml(tone)}">${escapeHtml(statusLabel)}</span>
+        <span class="hr18-pill" data-tone="${escapeHtml(tone)}">${escapeHtml(statusText)}</span>
         <small class="hr18-row__meta">${escapeHtml(text(item.meta))}</small>
       </article>`;
     }).join('');
@@ -251,18 +267,18 @@
     const cards = [
       {
         label: '严重质量问题', value: displayNumber(summary.criticalFindings),
-        detail: critical > 0 ? '最高优先级：先回源修复，再继续正式报送。' : '当前没有 CRITICAL 开放问题。',
-        tone: critical > 0 ? 'danger' : 'success', href: '/hr/data/quality/', action: '查看质量治理'
+        detail: critical > 0 ? '最高优先级：先回到来源模块修复，再继续正式报送。' : '当前没有开放的紧急质量问题。',
+        tone: critical > 0 ? 'danger' : 'success', href: routes.quality, action: '查看质量治理'
       },
       {
         label: '报送阻塞', value: blockedSubmission,
         detail: `${displayNumber(summary.awaitingReceipt)} 个待回执 · ${displayNumber(summary.dispatchFailed)} 个派发失败`,
-        tone: blockedSubmission > 0 ? 'warning' : 'success', href: '/hr/data/submissions/', action: '查看正式报送'
+        tone: blockedSubmission > 0 ? 'warning' : 'success', href: routes.submissions, action: '查看正式报送'
       },
       {
-        label: 'As-of 证据阻塞', value: displayNumber(summary.blockedAsOfEvidence),
-        detail: `${displayNumber(summary.completeAsOfEvidence)} 个 COMPLETE；非 COMPLETE 保持 fail-closed。`,
-        tone: blockedAsOf > 0 ? 'warning' : 'success', href: '/hr/data/as-of/', action: '查看历史证据'
+        label: '历史证据阻塞', value: displayNumber(summary.blockedAsOfEvidence),
+        detail: `${displayNumber(summary.completeAsOfEvidence)} 个证据完整；不完整时阻断报送。`,
+        tone: blockedAsOf > 0 ? 'warning' : 'success', href: routes.asof, action: '查看历史证据'
       }
     ];
     target.innerHTML = cards.map((item) => `<article class="hr-v2-conclusion" data-tone="${item.tone}">
@@ -278,9 +294,9 @@
     if (!target) return;
     const items = [
       ['指标代码', summary.metricCodes, `${displayNumber(summary.metricVersions)} 个历史版本`],
-      ['Population', summary.populationCodes, `${displayNumber(summary.dimensionCodes)} 个 Dimension`],
-      ['开放质量问题', summary.openFindings, `${displayNumber(summary.criticalFindings)} 个 CRITICAL`],
-      ['As-of COMPLETE', summary.completeAsOfEvidence, `${displayNumber(summary.blockedAsOfEvidence)} 个非 COMPLETE`],
+      ['统计范围', summary.populationCodes, `${displayNumber(summary.dimensionCodes)} 个分析维度`],
+      ['待处理质量问题', summary.openFindings, `${displayNumber(summary.criticalFindings)} 个紧急问题`],
+      ['完整历史证据', summary.completeAsOfEvidence, `${displayNumber(summary.blockedAsOfEvidence)} 个证据不完整`],
       ['正式报送', summary.submissions, `${displayNumber(summary.dispatchQueued)} 个派发队列中`],
       ['待回执', summary.awaitingReceipt, `${displayNumber(summary.acceptedReceipts)} 已接受 · ${displayNumber(summary.rejectedReceipts)} 已拒收`]
     ];
@@ -291,11 +307,11 @@
     const target = $('#hr18-priority');
     if (!target) return;
     const items = [];
-    if (Number(summary.criticalFindings || 0) > 0) items.push({tone:'danger', title:`${summary.criticalFindings} 个严重质量问题`, detail:'先回源修复，不能在报表层抹平。', href:'/hr/data/quality/', action:'处理质量问题'});
-    if (Number(summary.dispatchFailed || 0) > 0) items.push({tone:'danger', title:`${summary.dispatchFailed} 个报送派发失败`, detail:'派发失败不是已提交，必须单独处置。', href:'/hr/data/submissions/', action:'查看派发失败'});
-    if (Number(summary.awaitingReceipt || 0) > 0) items.push({tone:'warning', title:`${summary.awaitingReceipt} 个正式报送等待回执`, detail:'SUBMITTED 不等于 ACCEPTED；无 receipt 不显示完成。', href:'/hr/data/submissions/', action:'跟进回执'});
-    if (Number(summary.blockedAsOfEvidence || 0) > 0) items.push({tone:'warning', title:`${summary.blockedAsOfEvidence} 个 As-of 证据未 COMPLETE`, detail:'历史证据不完整时保持 fail-closed。', href:'/hr/data/as-of/', action:'查看证据'});
-    if (!items.length) items.push({tone:'success', title:'当前没有显著治理阻塞', detail:'可继续维护指标口径、Population 和正式报送快照。', href:'/hr/data/metrics/', action:'查看指标口径'});
+    if (Number(summary.criticalFindings || 0) > 0) items.push({tone:'danger', title:`${summary.criticalFindings} 个严重质量问题`, detail:'先回到来源模块修复，不能在报表层抹平。', href:routes.quality, action:'处理质量问题'});
+    if (Number(summary.dispatchFailed || 0) > 0) items.push({tone:'danger', title:`${summary.dispatchFailed} 个报送派发失败`, detail:'派发失败不是已提交，必须单独处置。', href:routes.submissions, action:'查看派发失败'});
+    if (Number(summary.awaitingReceipt || 0) > 0) items.push({tone:'warning', title:`${summary.awaitingReceipt} 个正式报送等待回执`, detail:'已提交不等于已受理；没有外部回执就不显示完成。', href:routes.submissions, action:'跟进回执'});
+    if (Number(summary.blockedAsOfEvidence || 0) > 0) items.push({tone:'warning', title:`${summary.blockedAsOfEvidence} 个历史证据不完整`, detail:'历史证据不完整时阻断正式报送。', href:routes.asof, action:'查看证据'});
+    if (!items.length) items.push({tone:'success', title:'当前没有显著治理阻塞', detail:'可继续维护指标口径、统计范围和正式报送快照。', href:routes.metrics, action:'查看指标口径'});
     target.innerHTML = items.map((item) => `<div class="hr18-task" data-tone="${item.tone}"><span class="hr18-task__dot"></span><div><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail)}</small></div><a href="${item.href}">${escapeHtml(item.action)} →</a></div>`).join('');
   }
 
@@ -303,16 +319,16 @@
     const target = $('#hr18-caps');
     if (!target) return;
     const entries = Object.entries(capabilities || {});
-    target.innerHTML = entries.length ? entries.map(([key, enabled]) => `<div class="hr18-cap"><span>${escapeHtml(capabilityLabels[key] || key)}</span><span class="hr18-cap__state" data-on="${enabled === true}">${enabled === true ? '已接通' : '未接通'}</span></div>`).join('') : '<div class="hr18-empty">后端未返回 capability 矩阵，保持未知，不假设已接通。</div>';
+    target.innerHTML = entries.length ? entries.map(([key, enabled]) => `<div class="hr18-cap"><span>${escapeHtml(capabilityLabels[key] || '其他治理能力')}</span><span class="hr18-cap__state" data-on="${enabled === true}">${enabled === true ? '已开放' : '暂未开放'}</span></div>`).join('') : '<div class="hr18-empty">当前无法确认治理能力状态，将保持未知。</div>';
   }
 
   async function boot() {
     try {
-      const response = await fetch('/api/v1/hr/data/dashboard/', {
+      const response = await fetch(dashboardUrl, {
         headers: {'X-Requested-With': 'XMLHttpRequest'},
         credentials: 'same-origin'
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new Error('服务暂时无法读取');
       const data = await response.json();
       const summary = data.summary || {};
       renderConclusions(summary);
@@ -326,9 +342,9 @@
       const target = $('#hr18-rows');
       const priority = $('#hr18-priority');
       const caps = $('#hr18-caps');
-      if (target) target.innerHTML = `<div class="hr18-empty">真实治理数据读取失败：${escapeHtml(error.message)}。不会以 0 或空数据冒充成功。</div>`;
-      if (priority) priority.innerHTML = '<div class="hr18-empty">治理优先级不可用：dashboard 读取失败。</div>';
-      if (caps) caps.innerHTML = '<div class="hr18-empty">capability 状态未知：dashboard 读取失败。</div>';
+      if (target) target.innerHTML = `<div class="hr18-empty">治理数据读取失败：${escapeHtml(error.message)}。不会以 0 或空数据冒充成功。</div>`;
+      if (priority) priority.innerHTML = '<div class="hr18-empty">当前无法计算治理优先级。</div>';
+      if (caps) caps.innerHTML = '<div class="hr18-empty">治理能力状态当前未知。</div>';
     }
   }
 

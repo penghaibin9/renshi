@@ -14,13 +14,22 @@ SECTIONS = {
     "corrections": "回执与更正",
 }
 
+ACTION_PERMISSIONS = {
+    "can_define": "hr.data.define",
+    "can_asof": "hr.data.asof",
+    "can_quality": "hr.data.quality",
+    "can_submit": "hr.data.submit",
+    "can_approve": "hr.data.approve",
+    "can_receipt": "hr.data.receipt",
+}
+
 
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "人事数据中心")
     template_name = "hr_data/workspace_v2.html"
     try:
-        tenant_id = resolve_request_tenant(request)
+        resolve_request_tenant(request)
     except HrDataAccessError as exc:
         return render(
             request,
@@ -31,5 +40,12 @@ def workspace(request, section="overview"):
     return render(
         request,
         template_name,
-        {"tenant_id": tenant_id, "section": section, "section_title": title},
+        {
+            "section": section,
+            "section_title": title,
+            **{
+                key: bool(request.user.is_superuser or request.user.has_perm(permission))
+                for key, permission in ACTION_PERMISSIONS.items()
+            },
+        },
     )
