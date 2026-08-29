@@ -29,6 +29,7 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.nav = (template_root / "components/v2_nav.html").read_text(encoding="utf-8")
         self.script = (root / "static/hr/js/pages/hr06-change-new.js").read_text(encoding="utf-8")
         self.identity_script = (root / "static/hr/js/pages/hr06-identity.js").read_text(encoding="utf-8")
+        self.temporary_script = (root / "static/hr/js/pages/hr06-temporary.js").read_text(encoding="utf-8")
         self.css = (root / "static/hr/css/hr06-changes-v2.css").read_text(encoding="utf-8")
 
     def test_all_hr06_surfaces_use_shared_v2_shell(self):
@@ -92,6 +93,34 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("/profile", self.identity_script)
         self.assertNotIn("/api/hr/v1/", self.identity_script)
 
+    def test_temporary_builder_uses_authorities_and_dedicated_writer(self):
+        secondments = self.templates["secondments.html"]
+        self.assertIn("hr06-temporary.js", secondments)
+        for element_id in (
+            "hr06-temporary-staff-keyword",
+            "hr06-temporary-action",
+            "hr06-temporary-reason",
+            "hr06-temporary-target-org",
+            "hr06-temporary-effective-at",
+            "hr06-temporary-return-at",
+            "hr06-temporary-create",
+        ):
+            self.assertIn(f'id="{element_id}"', secondments)
+        for path in (
+            "/api/v1/hr/changes/bootstrap",
+            "/api/v1/hr/staff",
+            "/api/v1/hr/structure/organizations/bootstrap",
+            "/api/v1/hr/structure/organizations/tree",
+            "/api/v1/hr/changes/temporary",
+        ):
+            self.assertIn(path, self.temporary_script)
+        self.assertIn("staffMasterId: state.selectedStaff.staff_id", self.temporary_script)
+        self.assertIn('sourcePolicy: "KEEP_ACTIVE"', self.temporary_script)
+        self.assertIn("expectedReturnAt: returnAt.value", self.temporary_script)
+        self.assertNotIn("/api/hr/v1/", self.temporary_script)
+        self.assertNotIn('name="staffMasterId"', secondments)
+        self.assertNotIn('name="targetOrgId"', secondments)
+
     def test_create_pages_never_use_fake_submit_links_or_raw_identity_ids(self):
         self.assertIn('id="hr06-create-draft"', self.new)
         self.assertIn('id="hr06-staff-keyword"', self.new)
@@ -132,6 +161,8 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("case.proposals", detail)
         self.assertIn("case.timeline", detail)
         self.assertIn("case.downstream", detail)
+        self.assertNotIn("default:case.sourcePosition.code", detail)
+        self.assertNotIn("default:case.targetPosition.code", detail)
         self.assertIn("blockers", preview)
         self.assertIn("warnings", preview)
         self.assertIn("requested_effective_at", self.templates["future_changes.html"])

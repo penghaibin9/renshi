@@ -2,6 +2,7 @@
 hr_changes/api/temporary.py —— 借调挂职 API（S6）。
 
 GET  /api/hr/v1/changes/temporary                列表+统计
+POST /api/hr/v1/changes/temporary                创建借调/挂职 DRAFT
 POST /api/hr/v1/changes/temporary/{link_id}/extend   延期（默认立即应用）
 POST /api/hr/v1/changes/temporary/{link_id}/plan-return  计划返岗（生成 RETURN Case）
 POST /api/hr/v1/changes/temporary/{link_id}/return     执行返岗（V1 直接执行；S7 后经审批）
@@ -49,6 +50,13 @@ def _body(request):
         raise ChangeServiceError("CHANGE_INVALID_PAYLOAD", "请求体不是合法 JSON")
 
 
+@require_http_methods(["GET", "POST"])
+def temporary_collection(request):
+    if request.method == "POST":
+        return temporary_create(request)
+    return temporary_list(request)
+
+
 @require_GET
 @require_hr_change_permission("hr.change.temporary.create")
 def temporary_list(request):
@@ -60,6 +68,43 @@ def temporary_list(request):
     payload["schemaVersion"] = "hr06.temporary.list.1"
     payload["data"] = data
     return json_response(request, payload)
+
+
+@require_http_methods(["POST"])
+@require_hr_change_permission("hr.change.temporary.create")
+def temporary_create(request):
+    ctx, err = _context(request)
+    if err:
+        return err
+    try:
+        body = _body(request)
+        case = TemporaryAssignmentService(
+            ctx.tenant_id,
+            actor_user_id=request.user.id,
+        ).create_temporary_case(
+            staff_master_id=body["staffMasterId"],
+            action_id=body["actionId"],
+            reason_id=body["reasonId"],
+            target_org_id=body["targetOrgId"],
+            target_position_id=body.get("targetPositionId"),
+            requested_effective_at=body["requestedEffectiveAt"],
+            expected_return_at=body["expectedReturnAt"],
+            source_policy=body.get("sourcePolicy", "KEEP_ACTIVE"),
+            priority=body.get("priority", "NORMAL"),
+        )
+    except (ChangeServiceError, TemporaryServiceError, KeyError) as exc:
+        if isinstance(exc, KeyError):
+            return error_response(
+                request,
+                "CHANGE_INVALID_PAYLOAD",
+                f"缺少必填参数: {exc.args[0]}",
+                status=400,
+            )
+        return _service_error(request, exc)
+    payload = api_root(request)
+    payload["schemaVersion"] = "hr06.temporary.create.1"
+    payload["data"] = CaseDetailSelector(ctx.tenant_id).get(case.id)
+    return json_response(request, payload, status=201)
 
 
 @require_http_methods(["POST"])

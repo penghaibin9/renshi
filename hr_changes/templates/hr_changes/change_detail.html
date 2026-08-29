@@ -33,8 +33,8 @@
   <div class="hr06-detail-grid">
     <section class="hr06-panel">
       <div class="hr06-section-head"><div><h2>变更摘要</h2><p>原事实与目标事实保持分离，未提供的目标字段显示为“—”。</p></div></div>
-      <div class="hr06-kv"><span>原范围</span><strong>{{ case.sourceOrg.code|default:case.sourcePosition.code|default:"—" }}</strong></div>
-      <div class="hr06-kv"><span>目标范围</span><strong>{{ case.targetOrg.code|default:case.targetPosition.code|default:"—" }}</strong></div>
+      <div class="hr06-kv"><span>原范围</span><strong>{% if case.sourceOrg %}{{ case.sourceOrg.code }}{% elif case.sourcePosition %}{{ case.sourcePosition.code }}{% else %}—{% endif %}</strong></div>
+      <div class="hr06-kv"><span>目标范围</span><strong>{% if case.targetOrg %}{{ case.targetOrg.code }}{% elif case.targetPosition %}{{ case.targetPosition.code }}{% else %}—{% endif %}</strong></div>
       <div class="hr06-kv"><span>计划生效日</span><strong>{{ case.requestedEffectiveAt }}</strong></div>
       {% if case.proposals %}
       <div class="hr06-table-wrap hr06-table-wrap--nested">

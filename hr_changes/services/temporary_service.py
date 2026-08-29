@@ -17,7 +17,7 @@ from typing import Optional
 from django.db import transaction
 from django.utils import timezone
 
-from hr_changes.constants import SourceAssignmentPolicy
+from hr_changes.constants import ChangeActionCode, SourceAssignmentPolicy
 from hr_changes.models import HrTemporaryAssignmentExtension, HrTemporaryAssignmentLink
 
 
@@ -43,6 +43,106 @@ class TemporaryAssignmentService:
         if link is None:
             raise TemporaryServiceError("CHANGE_NOT_FOUND", "临时异动关系不存在")
         return link
+
+    @transaction.atomic
+    def create_temporary_case(
+        self,
+        *,
+        staff_master_id,
+        action_id,
+        reason_id,
+        target_org_id,
+        requested_effective_at,
+        expected_return_at,
+        source_policy: str = SourceAssignmentPolicy.KEEP_ACTIVE,
+        target_position_id=None,
+        priority: str = "NORMAL",
+    ):
+        """建立可审批的借调/挂职 DRAFT；任职与 link 只在 Apply 时写入。"""
+        from hr_changes.services.change_service import (
+            ChangeService,
+            ChangeServiceError,
+            _parse_effective_date,
+        )
+        from hr_changes.services.transfer_service import _load_action_safe
+        from hr_staff.services.effective_dated_query_service import (
+            EffectiveDatedQueryService,
+        )
+
+        action = _load_action_safe(self.tenant_id, action_id)
+        if action.code not in (
+            ChangeActionCode.TEMPORARY_SECONDMENT,
+            ChangeActionCode.TEMPORARY_ATTACHMENT,
+        ):
+            raise TemporaryServiceError(
+                "CHANGE_INVALID_ACTION",
+                "仅支持借调或挂职专用创建动作",
+            )
+        if source_policy != SourceAssignmentPolicy.KEEP_ACTIVE:
+            raise TemporaryServiceError(
+                "CHANGE_INVALID_ACTION",
+                "当前仅开放原岗保持有效（KEEP_ACTIVE）策略",
+            )
+        if target_position_id not in (None, ""):
+            raise TemporaryServiceError(
+                "CHANGE_INVALID_ACTION",
+                "借调挂职目标岗位预占尚未开放，请仅选择目标组织",
+            )
+        if target_org_id in (None, ""):
+            raise TemporaryServiceError(
+                "CHANGE_INVALID_PAYLOAD",
+                "借调挂职必须选择 HR02 目标组织",
+            )
+        target_org_ref = getattr(target_org_id, "pk", target_org_id)
+
+        effective_at = _parse_effective_date(requested_effective_at)
+        return_at = _parse_effective_date(expected_return_at)
+        if return_at <= effective_at:
+            raise TemporaryServiceError(
+                "CHANGE_EFFECTIVE_DATE_INVALID",
+                "预计返岗日必须晚于计划生效日",
+            )
+        staff_id = getattr(staff_master_id, "pk", staff_master_id)
+        source_assignment = EffectiveDatedQueryService(
+            self.tenant_id
+        ).primary_assignment_as_of(staff_id, date.today())
+        if source_assignment is None:
+            raise ChangeServiceError(
+                "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
+                "当前未找到可核验的 HR03 主岗",
+            )
+
+        return ChangeService(
+            self.tenant_id,
+            actor_user_id=self.actor_user_id,
+        ).create_case(
+            staff_master_id=staff_master_id,
+            action_id=action,
+            reason_id=reason_id,
+            requested_effective_at=effective_at,
+            proposals=[
+                {
+                    "domain": "assignment",
+                    "field_code": "organization",
+                    "proposed_value_ref": str(target_org_ref),
+                },
+                {
+                    "domain": "temporary",
+                    "field_code": "expected_return_at",
+                    "proposed_value_ref": return_at.isoformat(),
+                },
+                {
+                    "domain": "temporary",
+                    "field_code": "source_policy",
+                    "proposed_value_ref": SourceAssignmentPolicy.KEEP_ACTIVE,
+                },
+            ],
+            source_org_id=source_assignment.organization_id,
+            source_position_id=source_assignment.position_id,
+            source_assignment_id=source_assignment,
+            target_org_id=target_org_id,
+            priority=priority,
+        )
 
     @transaction.atomic
     def create_link(

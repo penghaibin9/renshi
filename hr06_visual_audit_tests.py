@@ -31,15 +31,19 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         ("future", "/hr/changes/future", None, None),
         ("transfers", "/hr/changes/transfers", None, None),
         ("identity", "/hr/changes/job-identity", "hr06-identity-bootstrap-state", "正在读取 HR06"),
-        ("secondments", "/hr/changes/secondments", None, None),
+        ("secondments", "/hr/changes/secondments", "hr06-temporary-bootstrap-state", "正在读取 HR06"),
         ("ledger", "/hr/changes/ledger", None, None),
     )
 
     def setUp(self):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
-        from hr_changes.tests.factories import make_action, make_org, make_reason
+        from hr_changes.tests.factories import make_action, make_org, make_position, make_reason
+        from hr_staff.constants import AssignmentType
+        from hr_staff.services.assignment_service import AssignmentService
+        from hr_staff.services.employment_service import EmploymentService
         from hr_staff.tests.factories import make_person, make_staff
+        from hr_structure.models import HrOrganizationVersion
 
         User = get_user_model()
         self.company = Company.objects.create(
@@ -74,11 +78,46 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
 
         person = make_person(self.company.pk, "真实创建测试教师")
         self.staff = make_staff(self.company.pk, person, "HR06-CLICK-001")
+        self.root_org = make_org(
+            self.company.pk,
+            "VISUAL-SCHOOL",
+            "跃科视觉验收学校",
+            date(2020, 1, 1),
+            org_type="SCHOOL",
+        )
+        self.source_org = make_org(
+            self.company.pk,
+            "VISUAL-SOURCE",
+            "视觉原学院",
+            date(2020, 1, 1),
+        )
         self.target_org = make_org(
             self.company.pk,
             "VISUAL-TARGET",
             "视觉目标学院",
             date(2020, 1, 1),
+        )
+        HrOrganizationVersion.objects.filter(
+            organization_id__in=(self.source_org, self.target_org),
+        ).update(parent_organization_id=self.root_org)
+        self.source_position = make_position(
+            self.company.pk,
+            self.source_org,
+            "VISUAL-SOURCE-POSITION",
+        )
+        relationship = EmploymentService(self.company.pk).start_relationship(
+            staff_id=self.staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        self.source_assignment = AssignmentService(self.company.pk).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type=AssignmentType.PRIMARY,
+            effective_from=date(2024, 9, 1),
+            organization_id=self.source_org,
+            position_id=self.source_position,
+            post_catalog_id=self.source_position.post_catalog_version_id,
+            source_business_type="MIGRATION_VERIFIED",
         )
         self.action = make_action(
             self.company.pk,
@@ -115,6 +154,18 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
             action_code="EMPLOYMENT_TYPE_CHANGE",
             code="EMPLOYMENT_ADJUST",
             name="聘用关系调整",
+        )
+        self.temporary_action = make_action(
+            self.company.pk,
+            code="TEMPORARY_SECONDMENT",
+            name="借调",
+            enabled=True,
+        )
+        self.temporary_reason = make_reason(
+            self.company.pk,
+            action_code="TEMPORARY_SECONDMENT",
+            code="TEMPORARY_WORK_NEED",
+            name="临时工作需要",
         )
 
         client = Client()
@@ -391,3 +442,105 @@ class Hr06VisualAuditTests(StaticLiveServerTestCase):
         self.assertEqual(api_failures, [], "HR06 identity API failures: " + " | ".join(api_failures))
         self.assertEqual(page_errors, [], "HR06 identity page errors: " + " | ".join(page_errors))
         self.assertEqual(console_errors, [], "HR06 identity console errors: " + " | ".join(console_errors))
+
+    def test_real_browser_creates_temporary_draft_through_authorities(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("playwright must be installed for HR visual audit") from exc
+
+        api_failures: list[str] = []
+        page_errors: list[str] = []
+        console_errors: list[str] = []
+        effective_date = (date.today() + timedelta(days=30)).isoformat()
+        return_date = (date.today() + timedelta(days=180)).isoformat()
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            try:
+                context = self._browser_context(browser)
+                page = context.new_page()
+                self._record_console(page, page_errors, console_errors)
+
+                def record_response(response):
+                    if "/api/v1/hr/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
+
+                page.on("response", record_response)
+                response = page.goto(self.live_server_url + "/hr/changes/secondments", wait_until="networkidle")
+                self.assertIsNotNone(response)
+                self.assertEqual(response.status, 200)
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-temporary-bootstrap-state');
+                      return host && !host.textContent.includes('正在读取 HR06');
+                    }""",
+                    timeout=8000,
+                )
+                self.assertFalse(
+                    page.locator("#hr06-temporary-action").is_disabled(),
+                    "temporary bootstrap did not enable actions: "
+                    + page.locator("#hr06-temporary-bootstrap-state").inner_text()
+                    + " | API: "
+                    + " | ".join(api_failures)
+                    + " | page: "
+                    + " | ".join(page_errors)
+                    + " | console: "
+                    + " | ".join(console_errors),
+                )
+                page.fill("#hr06-temporary-staff-keyword", self.staff.staff_no)
+                page.click("#hr06-temporary-search-staff")
+                page.wait_for_selector(".hr06-staff-option", timeout=8000)
+                page.locator(".hr06-staff-option").first.click()
+                page.wait_for_function(
+                    """() => {
+                      const host = document.getElementById('hr06-temporary-selected-staff');
+                      return host && !host.textContent.includes('正在读取 HR03');
+                    }""",
+                    timeout=8000,
+                )
+                page.select_option("#hr06-temporary-action", str(self.temporary_action.id))
+                page.wait_for_function(
+                    """() => {
+                      const node = document.getElementById('hr06-temporary-reason');
+                      return node && !node.disabled && node.options.length > 1;
+                    }""",
+                    timeout=5000,
+                )
+                page.select_option("#hr06-temporary-reason", str(self.temporary_reason.id))
+                page.select_option("#hr06-temporary-target-org", str(self.target_org.id))
+                page.fill("#hr06-temporary-effective-at", effective_date)
+                page.fill("#hr06-temporary-return-at", return_date)
+                page.wait_for_function(
+                    """() => !document.getElementById('hr06-temporary-create').disabled""",
+                    timeout=5000,
+                )
+                page.click("#hr06-temporary-create")
+                page.wait_for_url(re.compile(r"/hr/changes/[0-9a-f-]{36}$"), timeout=10000)
+                self.assertIn("草稿", page.locator("body").inner_text())
+                page.screenshot(path=str(self.out_dir / "desktop-created-temporary-draft.png"), full_page=True)
+                context.close()
+            finally:
+                browser.close()
+
+        from hr_changes.models import HrPersonnelChangeCase
+
+        cases = list(HrPersonnelChangeCase.objects.filter(tenant_id=self.company.pk))
+        self.assertEqual(len(cases), 1)
+        created = cases[0]
+        self.assertEqual(created.status, "DRAFT")
+        self.assertEqual(created.staff_master_id_id, self.staff.id)
+        self.assertEqual(created.action_id_id, self.temporary_action.id)
+        self.assertEqual(created.reason_id_id, self.temporary_reason.id)
+        self.assertEqual(created.target_org_id_id, self.target_org.id)
+        self.assertEqual(created.requested_effective_at.isoformat(), effective_date)
+        proposals = {
+            proposal.field_code: proposal.proposed_value_ref
+            for proposal in created.proposals.all()
+        }
+        self.assertEqual(proposals["organization"], str(self.target_org.id))
+        self.assertEqual(proposals["expected_return_at"], return_date)
+        self.assertEqual(proposals["source_policy"], "KEEP_ACTIVE")
+        self.assertEqual(api_failures, [], "HR06 temporary API failures: " + " | ".join(api_failures))
+        self.assertEqual(page_errors, [], "HR06 temporary page errors: " + " | ".join(page_errors))
+        self.assertEqual(console_errors, [], "HR06 temporary console errors: " + " | ".join(console_errors))

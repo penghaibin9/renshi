@@ -6,6 +6,8 @@ from django.test import TestCase
 
 from hr_changes.constants import ChangeActionCode
 from hr_changes.models import HrTemporaryAssignmentExtension, HrTemporaryAssignmentLink
+from hr_changes.services.apply_service import ApplyService
+from hr_changes.services.change_service import ChangeService
 from hr_changes.services.return_service import ReturnService, ReturnServiceError
 from hr_changes.services.temporary_service import (
     TemporaryAssignmentService,
@@ -119,6 +121,124 @@ class TemporaryServiceTests(TestCase):
         due = TemporaryAssignmentService(TENANT).due_soon(days=30)
         self.assertEqual(len(due), 1)
         self.assertEqual(due[0].id, link.id)
+
+
+class TemporaryCreateWriterTests(TestCase):
+    def _authority_facts(self, staff_no):
+        staff = make_staff(TENANT, make_person(TENANT, staff_no), staff_no)
+        source_org = make_org(
+            TENANT,
+            f"SRC-{staff_no}",
+            "原单位",
+            date(2020, 1, 1),
+        )
+        target_org = make_org(
+            TENANT,
+            f"TMP-{staff_no}",
+            "临时单位",
+            date(2020, 1, 1),
+        )
+        source_position = make_position(
+            TENANT,
+            source_org,
+            f"SRC-P-{staff_no}",
+            max_incumbents=1,
+        )
+        relationship = EmploymentService(TENANT).start_relationship(
+            staff_id=staff,
+            relationship_type="REGULAR_EMPLOYMENT",
+            effective_from=date(2024, 9, 1),
+        )
+        source = AssignmentService(TENANT).create_assignment(
+            employment_relationship_id=relationship,
+            assignment_type=AssignmentType.PRIMARY,
+            effective_from=date(2024, 9, 1),
+            organization_id=source_org,
+            position_id=source_position,
+            post_catalog_id=source_position.post_catalog_version_id,
+            source_business_type="MIGRATION_VERIFIED",
+        )
+        return staff, target_org, source
+
+    def test_secondment_writer_creates_and_applies_complete_authority_contract(self):
+        staff, target_org, source = self._authority_facts("T5110")
+        action = make_action(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        reason = make_reason(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        effective_at = date.today()
+        return_at = effective_at + timedelta(days=180)
+
+        case = TemporaryAssignmentService(
+            TENANT,
+            actor_user_id=1,
+        ).create_temporary_case(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            target_org_id=target_org.id,
+            requested_effective_at=effective_at,
+            expected_return_at=return_at,
+        )
+
+        self.assertEqual(case.status, "DRAFT")
+        self.assertEqual(case.source_assignment_id_id, source.id)
+        self.assertEqual(case.source_org_id_id, source.organization_id_id)
+        self.assertEqual(case.source_position_id_id, source.position_id_id)
+        self.assertEqual(case.target_org_id_id, target_org.id)
+        proposals = {
+            proposal.field_code: proposal.proposed_value_ref
+            for proposal in case.proposals.all()
+        }
+        self.assertEqual(proposals["organization"], str(target_org.id))
+        self.assertEqual(proposals["expected_return_at"], return_at.isoformat())
+        self.assertEqual(proposals["source_policy"], "KEEP_ACTIVE")
+        workflow = ChangeService(TENANT, actor_user_id=1)
+        case = workflow.submit(case.id)
+        case = workflow.start_approval(case.id)
+        case = workflow.approve_all(case.id)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        self.assertEqual(case.status, "EFFECTIVE")
+        temporary = HrStaffAssignment.objects.get(
+            tenant_id=TENANT,
+            employment_relationship_id=source.employment_relationship_id,
+            assignment_type=AssignmentType.SECONDMENT,
+        )
+        self.assertEqual(temporary.organization_id_id, target_org.id)
+        self.assertEqual(temporary.effective_from, effective_at)
+        self.assertEqual(temporary.effective_to, return_at)
+        source.refresh_from_db()
+        self.assertIsNone(source.effective_to)
+        link = HrTemporaryAssignmentLink.objects.get(change_case_id=case)
+        self.assertEqual(link.source_assignment_id_id, source.id)
+        self.assertEqual(link.temporary_assignment_id_id, temporary.id)
+        self.assertEqual(link.expected_return_at, return_at)
+        self.assertEqual(link.source_assignment_status_policy, "KEEP_ACTIVE")
+
+    def test_attachment_writer_rejects_unsupported_source_policy(self):
+        staff, target_org, _source = self._authority_facts("T5111")
+        action = make_action(TENANT, ChangeActionCode.TEMPORARY_ATTACHMENT)
+        reason = make_reason(TENANT, ChangeActionCode.TEMPORARY_ATTACHMENT)
+        draft = TemporaryAssignmentService(TENANT).create_temporary_case(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            target_org_id=target_org.id,
+            requested_effective_at=date.today(),
+            expected_return_at=date.today() + timedelta(days=90),
+        )
+        self.assertEqual(draft.status, "DRAFT")
+        self.assertEqual(draft.action_id.code, ChangeActionCode.TEMPORARY_ATTACHMENT)
+        with self.assertRaises(TemporaryServiceError) as caught:
+            TemporaryAssignmentService(TENANT).create_temporary_case(
+                staff_master_id=staff,
+                action_id=action,
+                reason_id=reason,
+                target_org_id=target_org.id,
+                requested_effective_at=date.today(),
+                expected_return_at=date.today() + timedelta(days=90),
+                source_policy="SUSPEND",
+            )
+        self.assertEqual(caught.exception.code, "CHANGE_INVALID_ACTION")
 
 
 class ReturnServiceTests(TestCase):
