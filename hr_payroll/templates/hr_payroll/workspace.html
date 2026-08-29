@@ -10,7 +10,8 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr15" data-module="HR15" data-section="{{ section }}">
+<div class="hr-v2-page hr15" data-module="HR15" data-section="{{ section }}"
+     data-can-adjust="{{ can_adjust|yesno:'true,false' }}">
   {% if access_error %}
     <div class="hr15-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -24,23 +25,23 @@
       </div>
       <div class="hr-v2-context" aria-label="当前工作区说明">
         <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>正式结果</strong> FINALIZED / ADJUSTED</span>
-        <span class="hr-v2-context__item"><strong>调整</strong> 差额事实追溯</span>
+        <span class="hr-v2-context__item"><strong>正式结果</strong> 已封板 / 已调整</span>
+        <span class="hr-v2-context__item"><strong>调整</strong> 追加差额记录</span>
       </div>
     </header>
 
     <nav class="hr15-nav" aria-label="薪酬福利业务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="/hr/payroll/">总览</a>
-      <a class="{% if section == 'profiles' %}active{% endif %}" href="/hr/payroll/profiles/">薪酬档案</a>
-      <a class="{% if section == 'periods' %}active{% endif %}" href="/hr/payroll/periods/">工资期间</a>
-      <a class="{% if section == 'calculations' %}active{% endif %}" href="/hr/payroll/calculations/">工资核算</a>
-      <a class="{% if section == 'rules' %}active{% endif %}" href="/hr/payroll/rules/">薪资规则</a>
-      <a class="{% if section == 'allowances' %}active{% endif %}" href="/hr/payroll/allowances/">津补贴</a>
-      <a class="{% if section == 'social_security' %}active{% endif %}" href="/hr/payroll/social-security/">社保公积金</a>
-      <a class="{% if section == 'results' %}active{% endif %}" href="/hr/payroll/results/">正式结果</a>
-      <a class="{% if section == 'payments' %}active{% endif %}" href="/hr/payroll/payments/">支付与工资条</a>
-      <a class="{% if section == 'reconciliation' %}active{% endif %}" href="/hr/payroll/reconciliation/">财务对账</a>
-      <a class="{% if section == 'legacy_takeover' %}active{% endif %}" href="/hr/payroll/legacy-takeover/">历史系统对账</a>
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_payroll:overview' %}">总览</a>
+      <a class="{% if section == 'profiles' %}active{% endif %}" href="{% url 'hr_payroll:profiles' %}">薪酬档案</a>
+      <a class="{% if section == 'periods' %}active{% endif %}" href="{% url 'hr_payroll:periods' %}">工资期间</a>
+      <a class="{% if section == 'calculations' %}active{% endif %}" href="{% url 'hr_payroll:calculations' %}">工资核算</a>
+      <a class="{% if section == 'rules' %}active{% endif %}" href="{% url 'hr_payroll:rules' %}">薪资规则</a>
+      <a class="{% if section == 'allowances' %}active{% endif %}" href="{% url 'hr_payroll:allowances' %}">津补贴</a>
+      <a class="{% if section == 'social_security' %}active{% endif %}" href="{% url 'hr_payroll:social_security' %}">社保公积金</a>
+      <a class="{% if section == 'results' %}active{% endif %}" href="{% url 'hr_payroll:results' %}">正式结果</a>
+      <a class="{% if section == 'payments' %}active{% endif %}" href="{% url 'hr_payroll:payments' %}">支付与工资条</a>
+      <a class="{% if section == 'reconciliation' %}active{% endif %}" href="{% url 'hr_payroll:reconciliation' %}">财务对账</a>
+      <a class="{% if section == 'legacy_takeover' %}active{% endif %}" href="{% url 'hr_payroll:legacy_takeover' %}">历史工资对账</a>
     </nav>
     <div class="hr15-mobile-hint">可左右滑动查看更多薪酬工作区</div>
 
@@ -55,14 +56,14 @@
 
     {% if section == 'overview' %}
       <section class="hr-v2-section" aria-labelledby="hr15-chain-title">
-        <div class="hr-v2-section__head"><div><h2 id="hr15-chain-title">月度薪酬业务链</h2><p>当前已接通部分以真实 Authority 为准；未接通环节不会用示例金额补齐。</p></div></div>
+        <div class="hr-v2-section__head"><div><h2 id="hr15-chain-title">月度薪酬业务链</h2><p>当前已接通部分以正式业务记录为准；未接通环节不会用示例金额补齐。</p></div></div>
         <div class="hr15-process" aria-label="薪酬六段业务链">
-          <a class="hr15-process__step" href="/hr/payroll/profiles/"><span class="hr15-process__no">01</span><b>薪酬档案</b><small>确认工资组、币种和生效区间</small></a>
-          <a class="hr15-process__step" href="/hr/payroll/periods/"><span class="hr15-process__no">02</span><b>工资期间</b><small>建立期间并冻结结算边界</small></a>
-          <a class="hr15-process__step" href="/hr/payroll/calculations/"><span class="hr15-process__no">03</span><b>工资核算</b><small>核算 Authority 未完整接通时明确阻断</small></a>
-          <a class="hr15-process__step" href="/hr/payroll/results/"><span class="hr15-process__no">04</span><b>正式结果</b><small>封板后形成不可随意覆盖的工资事实</small></a>
-          <a class="hr15-process__step" href="/hr/payroll/payments/"><span class="hr15-process__no">05</span><b>支付工资条</b><small>支付事实与工资结果必须分离</small></a>
-          <a class="hr15-process__step" href="/hr/payroll/reconciliation/"><span class="hr15-process__no">06</span><b>财务对账</b><small>银行/财务回执接通后才确认一致</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:profiles' %}"><span class="hr15-process__no">01</span><b>薪酬档案</b><small>确认工资组、币种和生效区间</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:periods' %}"><span class="hr15-process__no">02</span><b>工资期间</b><small>建立期间并冻结结算边界</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:calculations' %}"><span class="hr15-process__no">03</span><b>工资核算</b><small>完整核算能力尚未接通时明确阻断</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:results' %}"><span class="hr15-process__no">04</span><b>正式结果</b><small>封板后形成不可随意覆盖的工资记录</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:payments' %}"><span class="hr15-process__no">05</span><b>支付工资条</b><small>支付事实与工资结果必须分离</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:reconciliation' %}"><span class="hr15-process__no">06</span><b>财务对账</b><small>银行/财务回执接通后才确认一致</small></a>
         </div>
       </section>
     {% endif %}
@@ -76,19 +77,19 @@
         </div>
         <aside>
           <article class="hr15-card"><h2>月度最短路径</h2><p>正式结果、支付和财务对账严格分层。</p><div class="hr15-flow">
-            <a href="/hr/payroll/profiles/"><span class="hr15-step">1</span><span><b>确认薪酬档案</b><small>工资组与生效区间</small></span><span>›</span></a>
-            <a href="/hr/payroll/periods/"><span class="hr15-step">2</span><span><b>建立工资期间</b><small>确定结算边界</small></span><span>›</span></a>
-            <a href="/hr/payroll/calculations/"><span class="hr15-step">3</span><span><b>工资核算</b><small>处理输入与异常</small></span><span>›</span></a>
-            <a href="/hr/payroll/results/"><span class="hr15-step">4</span><span><b>封板正式结果</b><small>形成正式工资事实</small></span><span>›</span></a>
-            <a href="/hr/payroll/payments/"><span class="hr15-step">5</span><span><b>支付与工资条</b><small>支付状态独立</small></span><span>›</span></a>
-            <a href="/hr/payroll/reconciliation/"><span class="hr15-step">6</span><span><b>财务对账</b><small>回执确认一致</small></span><span>›</span></a>
+            <a href="{% url 'hr_payroll:profiles' %}"><span class="hr15-step">1</span><span><b>确认薪酬档案</b><small>工资组与生效区间</small></span><span>›</span></a>
+            <a href="{% url 'hr_payroll:periods' %}"><span class="hr15-step">2</span><span><b>建立工资期间</b><small>确定结算边界</small></span><span>›</span></a>
+            <a href="{% url 'hr_payroll:calculations' %}"><span class="hr15-step">3</span><span><b>工资核算</b><small>处理输入与异常</small></span><span>›</span></a>
+            <a href="{% url 'hr_payroll:results' %}"><span class="hr15-step">4</span><span><b>封板正式结果</b><small>形成正式工资事实</small></span><span>›</span></a>
+            <a href="{% url 'hr_payroll:payments' %}"><span class="hr15-step">5</span><span><b>支付与工资条</b><small>支付状态独立</small></span><span>›</span></a>
+            <a href="{% url 'hr_payroll:reconciliation' %}"><span class="hr15-step">6</span><span><b>财务对账</b><small>回执确认一致</small></span><span>›</span></a>
           </div></article>
-          <article class="hr15-card"><h2>能力接通状态</h2><p>当前页面明确区分已接通 Authority 与仅保留入口的业务能力。</p><div id="hr15-caps"><div class="hr15-empty">正在检查真实能力…</div></div></article>
+          <article class="hr15-card"><h2>能力接通状态</h2><p>当前页面明确区分已接通业务能力与仅保留入口的能力。</p><div id="hr15-caps"><div class="hr15-empty">正在检查真实能力…</div></div></article>
         </aside>
       </div>
     </section>
 
-    <div class="hr15-principle"><strong>薪酬事实原则：</strong>测算、复核、封板、支付、工资条和财务回执是不同状态；只有 FINALIZED / ADJUSTED PayrollResultFact 才能作为正式工资金额依据，后续调整必须形成可追溯差额事实。</div>
+    <div class="hr15-principle"><strong>薪酬事实原则：</strong>测算、复核、封板、支付、工资条和财务回执是不同状态；只有“已封板”或“已调整”的工资结果才能作为正式金额依据，后续调整必须追加可追溯的差额记录。</div>
   {% endif %}
 </div>
 {% endblock content %}
@@ -96,4 +97,6 @@
 {% block scripts %}
 {{ block.super }}
 {% if not access_error %}<script src="{% static 'hr/js/pages/hr15-payroll.js' %}"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-actions.js' %}"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-legacy.js' %}"></script>{% endif %}
 {% endblock scripts %}

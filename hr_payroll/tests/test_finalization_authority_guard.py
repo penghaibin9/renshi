@@ -25,7 +25,7 @@ class PayrollFinalizationAuthorityGuardTests(TestCase):
         staff_id = uuid.uuid4()
         period = PayrollPeriod.objects.create(
             tenant_id=tenant_id,
-            period_code=f"DUP-{uuid.uuid4().hex}",
+            period_code=f"DUP-{uuid.uuid4().hex[:28]}",
             start_date=date(2026, 8, 1),
             end_date=date(2026, 8, 31),
             status=PayrollPeriod.Status.REVIEWED,

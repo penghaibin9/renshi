@@ -14,14 +14,14 @@ SECTIONS = {
     "results": "正式薪酬结果",
     "payments": "支付与工资条",
     "reconciliation": "财务对账",
-    "legacy_takeover": "旧 payroll 接管",
+    "legacy_takeover": "历史工资对账",
 }
 
 
 @ensure_csrf_cookie
 def workspace(request, section="overview"):
     title = SECTIONS.get(section, "薪酬福利")
-    template_name = "hr_payroll/workspace_live.html"
+    template_name = "hr_payroll/workspace.html"
     try:
         tenant_id = resolve_request_tenant(request)
     except HrPayrollAccessError as exc:
@@ -31,8 +31,15 @@ def workspace(request, section="overview"):
             {"access_error": str(exc), "section": section, "section_title": title},
             status=403,
         )
+    user = request.user
+    can_adjust = bool(user.is_superuser or user.has_perm("hr.payroll.adjust"))
     return render(
         request,
         template_name,
-        {"tenant_id": tenant_id, "section": section, "section_title": title},
+        {
+            "tenant_id": tenant_id,
+            "section": section,
+            "section_title": title,
+            "can_adjust": can_adjust,
+        },
     )

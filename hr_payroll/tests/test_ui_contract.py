@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from django.template.loader import get_template
-from django.test import SimpleTestCase
+from django.test import TestCase
 from django.urls import resolve, reverse
 
 
-class Hr15UiContractTests(SimpleTestCase):
+class Hr15UiContractTests(TestCase):
     def test_workspace_routes_are_registered(self):
         expected = {
             "hr_payroll:overview": "/hr/payroll/",
@@ -34,22 +34,37 @@ class Hr15UiContractTests(SimpleTestCase):
         self.assertIsNotNone(get_template("hr_payroll/workspace.html"))
 
     def test_workspace_keeps_system_shell_and_scoped_visual_contract(self):
-        template_path = (
-            Path(__file__).resolve().parents[1]
-            / "templates"
-            / "hr_payroll"
-            / "workspace.html"
-        )
-        source = template_path.read_text(encoding="utf-8")
-        self.assertIn('{% extends "base.html" %}', source)
-        self.assertIn("hr15-workspace", source)
+        template = get_template("hr_payroll/workspace.html")
+        source = Path(template.origin.name).read_text(encoding="utf-8")
+        self.assertIn('{% extends "index.html" %}', source)
+        self.assertIn('data-module="HR15"', source)
+        self.assertIn("data-can-adjust", source)
         self.assertIn("{% if not access_error %}", source)
         self.assertNotIn("<!doctype html>", source.lower())
+        self.assertNotIn("<style", source)
+        self.assertNotIn("style=", source)
+        self.assertNotIn("<script>", source)
+        self.assertIn("hr15-payroll.css", source)
+        self.assertIn("hr15-actions.js", source)
+        self.assertIn("hr15-legacy.js", source)
         for forbidden in (
             "PAYROLL & BENEFITS",
             "待施工",
             "旧 payroll 接管",
             "薪酬 Authority",
             "支付 / 工资条 Provider",
+            "PayrollResultFact",
+            "FINALIZED / ADJUSTED",
         ):
             self.assertNotIn(forbidden, source)
+
+    def test_adjustment_ui_uses_real_append_boundary_without_raw_identifiers(self):
+        source = Path("static/hr/js/pages/hr15-actions.js").read_text(encoding="utf-8")
+        self.assertIn("/adjustments/", source)
+        self.assertIn("data-can-adjust", get_template("hr_payroll/workspace.html").template.source)
+        self.assertIn("追加差额记录", source)
+        self.assertNotIn("location.reload", source)
+        self.assertNotIn("人员 ${", source)
+        self.assertNotIn("期间 ${", source)
+        self.assertNotIn("prompt(", source)
+        self.assertNotIn("alert(", source)
