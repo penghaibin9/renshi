@@ -15,10 +15,11 @@ Activation（§43）事务：
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_external.constants import (
     AgreementProviderStatus,
@@ -380,7 +381,10 @@ class HiringService:
             aggregate_id=eng.id,
             aggregate_version=eng.version,
             engagement_id=eng,
-            effective_at=eng.start_at,
+            effective_at=timezone.make_aware(
+                datetime.combine(eng.start_at, time.min),
+                timezone.get_current_timezone(),
+            ),
             idempotency_key=f"activate:{case.id}",
             payload_json={"engagementId": str(eng.id), "caseId": str(case.id)},
             status="PUBLISHED",

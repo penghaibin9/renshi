@@ -148,10 +148,12 @@ class HiringFlowTests(TestCase):
         self.assertEqual(self.case.status, ExternalHiringStatus.ACTIVATED)
         self.assertEqual(eng.status, ExternalEngagementStatus.ACTIVE)
         self.assertTrue(HrExternalEngagementAssignment.objects.filter(engagement_id=eng).exists())
-        self.assertTrue(
-            HrExternalLifecycleEvent.objects.filter(
-                event_type="ExternalEngagementActivated", engagement_id=eng
-            ).exists()
+        activation_event = HrExternalLifecycleEvent.objects.get(
+            event_type="ExternalEngagementActivated", engagement_id=eng
+        )
+        self.assertTrue(timezone.is_aware(activation_event.effective_at))
+        self.assertEqual(
+            timezone.localdate(activation_event.effective_at), eng.start_at
         )
 
     def test_agreement_gate_placeholder_unavailable(self):
