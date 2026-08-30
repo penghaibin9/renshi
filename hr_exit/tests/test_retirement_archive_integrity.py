@@ -2,6 +2,7 @@ import uuid
 from datetime import date
 from pathlib import Path
 
+from django.db import transaction
 from django.test import SimpleTestCase, TestCase
 
 from hr_exit.archive_models import ArchiveTransferReceipt
@@ -70,15 +71,21 @@ class ArchiveReceiptIntegrityTests(TestCase):
         self.assertTrue(receipt.evidence_ref)
         self.assertIsNotNone(receipt.sealed_at)
         with self.assertRaisesRegex(ValueError, "IMMUTABLE"):
-            ArchiveTransferReceipt.objects.filter(pk=receipt.pk).update(
-                destination_name="tampered"
-            )
+            with transaction.atomic():
+                ArchiveTransferReceipt.objects.filter(pk=receipt.pk).update(
+                    destination_name="tampered"
+                )
         with self.assertRaisesRegex(ValueError, "IMMUTABLE"):
-            ArchiveTransferReceipt.objects.bulk_update([receipt], ["destination_name"])
+            with transaction.atomic():
+                ArchiveTransferReceipt.objects.bulk_update(
+                    [receipt], ["destination_name"]
+                )
         with self.assertRaisesRegex(ValueError, "IMMUTABLE"):
-            ArchiveTransferReceipt.objects.filter(pk=receipt.pk).delete()
+            with transaction.atomic():
+                ArchiveTransferReceipt.objects.filter(pk=receipt.pk).delete()
         with self.assertRaisesRegex(ValueError, "IMMUTABLE"):
-            receipt.delete()
+            with transaction.atomic():
+                receipt.delete()
 
 
 class RetirementModelSealTests(SimpleTestCase):

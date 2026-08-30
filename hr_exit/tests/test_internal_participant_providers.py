@@ -1,11 +1,12 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
 
-from hr_appointment.models import PositionAppointmentFact
+from hr_appointment.decision_models import AppointmentCollectiveDecision
+from hr_appointment.models import AppointmentPublicityRecord, PositionAppointmentFact
 from hr_exit.models import ExitCase, ExitEffect, ExitFact
 from hr_exit.services.participant_service import ExitParticipantService
 from hr_payroll.models import PayrollPeriod, PayrollProfile, PayrollResultFact
@@ -68,16 +69,64 @@ class InternalExitParticipantProviderTests(TestCase):
             **values,
         )
 
-    def test_hr14_builtin_closes_effective_appointment_and_preserves_receipt(self):
-        appointment = PositionAppointmentFact.objects.create(
+    def _formal_appointment(self, *, appointment_no, position_instance_id, effective_from,
+                            effect_receipt_json=None):
+        application_case_id = uuid.uuid4()
+        decided_at = timezone.now()
+        publicity = AppointmentPublicityRecord.objects.create(
             tenant_id=77,
-            appointment_no="APT-EXIT-001",
+            publicity_no=f"PUB-{uuid.uuid4().hex}",
+            application_case_id=application_case_id,
+            ranking_result_id=uuid.uuid4(),
+            batch_no="HR16-PROVIDER-TEST",
             person_id=self.person.id,
-            position_instance_id=1001,
-            application_case_id=uuid.uuid4(),
+            position_instance_id=position_instance_id,
+            attempt_no=1,
+            start_at=decided_at - timedelta(days=2),
+            end_at=decided_at - timedelta(days=1),
+            status=AppointmentPublicityRecord.Status.CLOSED,
+            closed_at=decided_at - timedelta(days=1),
+        )
+        AppointmentCollectiveDecision.objects.create(
+            tenant_id=77,
+            decision_no=f"DEC-{uuid.uuid4().hex}",
+            application_case_id=application_case_id,
+            publicity=publicity,
+            batch_no="HR16-PROVIDER-TEST",
+            person_id=self.person.id,
+            position_instance_id=position_instance_id,
+            outcome=AppointmentCollectiveDecision.Outcome.APPROVED,
+            authority_ref="test:hr16-internal-provider",
+            decision_reason="fixture establishes formal HR14 authority",
+            decided_at=decided_at,
+        )
+        fact = PositionAppointmentFact.objects.create(
+            tenant_id=77,
+            appointment_no=appointment_no,
+            person_id=self.person.id,
+            position_instance_id=position_instance_id,
+            application_case_id=application_case_id,
             level_code="L3",
-            effective_from=date(2026, 1, 1),
+            effective_from=effective_from,
+            effect_receipt_json=effect_receipt_json or {},
+            created_by=9,
+            updated_by=9,
+        )
+        fact.seal(
             status=PositionAppointmentFact.Status.EFFECTIVE,
+            actor_user_id=9,
+            authority_receipt={
+                "permissionCode": "hr.appointment.fact.publish",
+                "authorityRef": "test:hr16-internal-provider",
+            },
+        )
+        return fact
+
+    def test_hr14_builtin_closes_effective_appointment_and_preserves_receipt(self):
+        appointment = self._formal_appointment(
+            appointment_no="APT-EXIT-001",
+            position_instance_id=1001,
+            effective_from=date(2026, 1, 1),
             effect_receipt_json={"hr03AssignmentId": "assignment-before-exit"},
         )
         effect = self._effect("HR14")
@@ -89,14 +138,21 @@ class InternalExitParticipantProviderTests(TestCase):
 
         self.assertEqual(result.status, ExitEffect.ParticipantStatus.SUCCESS)
         appointment.refresh_from_db()
-        self.assertEqual(appointment.status, PositionAppointmentFact.Status.ENDED)
-        self.assertEqual(appointment.effective_to, date(2026, 9, 1))
+        self.assertEqual(appointment.status, PositionAppointmentFact.Status.EFFECTIVE)
+        self.assertIsNone(appointment.effective_to)
+        closed = PositionAppointmentFact.objects.get(
+            tenant_id=77,
+            supersedes_fact_id=appointment.id,
+            fact_kind=PositionAppointmentFact.FactKind.EXIT_CLOSURE,
+        )
+        self.assertEqual(closed.status, PositionAppointmentFact.Status.ENDED)
+        self.assertEqual(closed.effective_to, date(2026, 9, 1))
         self.assertEqual(
-            appointment.effect_receipt_json["hr03AssignmentId"],
+            closed.effect_receipt_json["hr03AssignmentId"],
             "assignment-before-exit",
         )
         self.assertEqual(
-            appointment.effect_receipt_json["hr16Exit"]["exitFactId"],
+            closed.effect_receipt_json["hr16Exit"]["exitFactId"],
             str(self.exit_fact.id),
         )
         self.assertEqual(result.receipt["endedAppointmentCount"], 1)
@@ -109,14 +165,10 @@ class InternalExitParticipantProviderTests(TestCase):
         self.assertEqual(replay.receipt, result.receipt)
 
     def test_hr14_future_appointment_conflict_is_failed_not_silent_success(self):
-        future = PositionAppointmentFact.objects.create(
-            tenant_id=77,
+        future = self._formal_appointment(
             appointment_no="APT-EXIT-FUTURE",
-            person_id=self.person.id,
             position_instance_id=1002,
-            application_case_id=uuid.uuid4(),
             effective_from=date(2026, 9, 1),
-            status=PositionAppointmentFact.Status.EFFECTIVE,
         )
         effect = self._effect("HR14")
 

@@ -335,7 +335,9 @@ def apply_effect(request, case_id):
                 "archiveStatus": effect.archive_status,
                 "effectReceipt": fact.effect_receipt_json,
                 "supersedesFactId": (
-                    str(fact.supersedes_fact_id) if fact.supersedes_fact_id else None
+                    str(getattr(fact, "supersedes_fact_id"))
+                    if getattr(fact, "supersedes_fact_id", None)
+                    else None
                 ),
                 "changeReason": fact.change_reason,
                 "evidenceRef": fact.evidence_ref,

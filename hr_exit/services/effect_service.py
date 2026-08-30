@@ -153,7 +153,6 @@ class ExitEffectService:
             updated_by=self.actor_user_id,
         )
 
-    @transaction.atomic
     def apply(
         self,
         *,
@@ -164,7 +163,7 @@ class ExitEffectService:
         correlation_id: str = "",
         required_participants: Iterable[str] = (),
     ) -> ExitEffectResult:
-        """Apply HR03 employment termination and record it in the durable saga."""
+        """Validate the command before opening the durable effect transaction."""
         fact_no = str(fact_no or "").strip()
         if not fact_no:
             raise ExitEffectError("EXIT_FACT_NO_REQUIRED", "fact_no is required")
@@ -172,6 +171,28 @@ class ExitEffectService:
             raise ExitEffectError(
                 "EXIT_FACT_NO_INVALID", "fact_no cannot exceed 64 characters"
             )
+
+        return self._apply_atomic(
+            case_id=case_id,
+            fact_no=fact_no,
+            idempotency_key=idempotency_key,
+            reason_code=reason_code,
+            correlation_id=correlation_id,
+            required_participants=required_participants,
+        )
+
+    @transaction.atomic
+    def _apply_atomic(
+        self,
+        *,
+        case_id,
+        fact_no: str,
+        idempotency_key: str,
+        reason_code: str = "",
+        correlation_id: str = "",
+        required_participants: Iterable[str] = (),
+    ) -> ExitEffectResult:
+        """Apply HR03 employment termination and record it in the durable saga."""
 
         saga = ExitEffectSagaService(self.tenant_id, self.actor_user_id)
         effect = saga.begin(

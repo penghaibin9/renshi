@@ -144,6 +144,11 @@ class Hr16WorkflowApiTests(SimpleTestCase):
             fact_no="EXIT-F-001",
             status="EFFECT_PENDING",
             effect_receipt_json={},
+            supersedes_fact_id=None,
+            change_reason="",
+            evidence_ref="",
+            content_hash="",
+            sealed_at=None,
         )
         effect = SimpleNamespace(
             id=uuid.uuid4(),
