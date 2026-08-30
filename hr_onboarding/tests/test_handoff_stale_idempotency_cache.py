@@ -1,6 +1,7 @@
 from django.core.cache import cache
 from django.test import TestCase
 
+from hr_onboarding.api.exceptions import IdempotencyConflictError
 from hr_onboarding.models import HrOnboardingCase
 from hr_onboarding.services.case_service import CaseService
 
@@ -12,7 +13,7 @@ class HandoffStaleIdempotencyCacheTests(TestCase):
     def tearDown(self):
         cache.clear()
 
-    def test_missing_authority_case_invalidates_cached_success(self):
+    def test_missing_authority_case_never_returns_or_recreates_false_success(self):
         service = CaseService(tenant_id=1)
         request = {
             "tenant_id": 1,
@@ -38,18 +39,9 @@ class HandoffStaleIdempotencyCacheTests(TestCase):
             HrOnboardingCase.objects.filter(tenant_id=1, id=first_case_id).exists()
         )
 
-        recovered = service.create_case_from_handoff(
-            request,
-            idempotency_key="stale-cache-key",
-        )
-
-        self.assertTrue(recovered["created"])
-        self.assertNotEqual(recovered["case_id"], first_case_id)
-        self.assertTrue(
-            HrOnboardingCase.objects.filter(
-                tenant_id=1,
-                id=recovered["case_id"],
-                source_type="HR04_HIRE",
-                source_id="stale-cache-source",
-            ).exists()
-        )
+        with self.assertRaises(IdempotencyConflictError):
+            service.create_case_from_handoff(
+                request,
+                idempotency_key="stale-cache-key",
+            )
+        self.assertEqual(HrOnboardingCase.objects.count(), 0)

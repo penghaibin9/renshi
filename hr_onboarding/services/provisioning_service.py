@@ -19,7 +19,12 @@ from django.utils import timezone
 
 from hr_onboarding.constants import ProvisioningStatus
 from hr_onboarding.models import HrProvisioningRequest
+from hr_onboarding.api.exceptions import (
+    IdempotencyConflictError,
+    TenantContextRequiredError,
+)
 from hr_onboarding.policies.state_machine import assert_provisioning_transition
+from hr_onboarding.services.idempotency_service import DurableIdempotencyService
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +52,33 @@ class ProvisioningService:
         payload: Optional[dict] = None,
         idempotency_key: str,
     ) -> HrProvisioningRequest:
-        """创建 provisioning 请求（幂等：同 idempotency_key 返回既有）。"""
-        existing = HrProvisioningRequest.objects.filter(
-            idempotency_key=idempotency_key
-        ).first()
-        if existing is not None:
+        """创建 provisioning 请求；重放由数据库指纹而非缓存判定。"""
+        if not self.tenant_id or getattr(case, "tenant_id", None) != self.tenant_id:
+            raise TenantContextRequiredError("开通请求案件不属于当前学校")
+        idem = DurableIdempotencyService(
+            tenant_id=self.tenant_id,
+            operation="PROVISIONING_REQUEST",
+        )
+        claim = idem.claim(
+            idempotency_key=idempotency_key,
+            request_payload={
+                "case_id": str(case.id),
+                "target_system": target_system,
+                "operation": operation,
+                "payload_version": payload_version,
+                "payload": payload or {},
+            },
+        )
+        if claim.is_replay:
+            existing = HrProvisioningRequest.objects.filter(
+                tenant_id=self.tenant_id,
+                id=claim.record.authority_id,
+            ).first()
+            if existing is None:
+                raise IdempotencyConflictError("幂等记录指向的开通请求不存在，请人工核验")
             return existing
-        return HrProvisioningRequest.objects.create(
+
+        request = HrProvisioningRequest.objects.create(
             tenant_id=self.tenant_id,
             case=case,
             target_system=target_system,
@@ -63,6 +88,16 @@ class ProvisioningService:
             payload_json=payload or {},
             status=ProvisioningStatus.PENDING,
         )
+        idem.succeed(
+            claim.record,
+            authority_type="HrProvisioningRequest",
+            authority_id=request.id,
+            response_summary={
+                "request_id": str(request.id),
+                "status": request.status,
+            },
+        )
+        return request
 
     @transaction.atomic
     def mark_running(self, req: HrProvisioningRequest) -> HrProvisioningRequest:

@@ -21,6 +21,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from hr_onboarding.api.exceptions import (
+    IdempotencyConflictError,
     OnboardingCaseDuplicateError,
     OnboardingCaseInvalidSourceError,
     PositionReservationInvalidError,
@@ -37,8 +38,8 @@ from hr_onboarding.models import (
     HrPrehireProfile,
     HrReportDelay,
 )
-from hr_onboarding.policies.idempotency import apply_idempotency, normalize_key, store_result
 from hr_onboarding.policies.state_machine import assert_case_transition
+from hr_onboarding.services.idempotency_service import DurableIdempotencyService
 from hr_onboarding.services.token_service import issue_portal_access
 
 logger = logging.getLogger(__name__)
@@ -74,29 +75,6 @@ class CaseService:
         *,
         portal_ttl_days: int = 30,
     ) -> dict:
-        key = normalize_key(
-            idempotency_key,
-            namespace=f"hr05:handoff:tenant:{self.tenant_id}",
-        )
-        replay = apply_idempotency(key)
-        if replay is not None:
-            # Cache is only an acceleration layer.  Never return a cached
-            # success unless the tenant-scoped Authority row still exists.
-            # This prevents a database reset/restore or cache/DB skew from
-            # producing a false-success response that points at a missing case.
-            replay_case_id = replay.get("case_id") if isinstance(replay, dict) else None
-            if replay_case_id and HrOnboardingCase.objects.filter(
-                tenant_id=self.tenant_id,
-                id=replay_case_id,
-            ).exists():
-                return replay
-            logger.warning(
-                "Ignoring stale HR05 handoff idempotency replay tenant=%s key=%s case=%s",
-                self.tenant_id,
-                key,
-                replay_case_id,
-            )
-
         source_type = request.get("source_type")
         source_id = request.get("source_id")
         if not source_type or not source_id:
@@ -108,6 +86,34 @@ class CaseService:
         request_tenant_id = request.get("tenant_id")
         if request_tenant_id is not None and int(request_tenant_id) != self.tenant_id:
             raise OnboardingCaseInvalidSourceError("handoff tenant mismatch")
+
+        idem = DurableIdempotencyService(
+            tenant_id=self.tenant_id,
+            operation="HANDOFF_CREATE_CASE",
+        )
+        claim = idem.claim(
+            idempotency_key=idempotency_key,
+            request_payload={
+                "request": request,
+                "portal_ttl_days": portal_ttl_days,
+            },
+        )
+        if claim.is_replay:
+            case = HrOnboardingCase.objects.filter(
+                tenant_id=self.tenant_id,
+                id=claim.record.authority_id,
+            ).first()
+            if case is None:
+                # A durable success without its authority row is corruption or
+                # an incomplete restore. Never issue a second portal token or
+                # pretend the old success still exists.
+                raise IdempotencyConflictError("幂等记录指向的入职案件不存在，请人工核验")
+            return {
+                "case_id": str(case.id),
+                "case_no": case.case_no,
+                "status": case.status,
+                "created": False,
+            }
 
         # DB unique(tenant,source_type,source_id) 兜底并发
         if HrOnboardingCase.objects.filter(
@@ -162,7 +168,12 @@ class CaseService:
         }
         replay_result = {k: v for k, v in result.items() if k != "portal_token"}
         replay_result["created"] = False
-        store_result(key, replay_result)
+        idem.succeed(
+            claim.record,
+            authority_type="HrOnboardingCase",
+            authority_id=case.id,
+            response_summary=replay_result,
+        )
         return result
 
     # ------------------------------------------------------------------

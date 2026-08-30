@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from django.test import TestCase
 from unittest import mock
 
-from hr_onboarding.api.exceptions import Hr05ApiError
+from hr_onboarding.api.exceptions import Hr05ApiError, IdempotencyConflictError
 from hr_onboarding.constants import CaseStatus
 from hr_onboarding.integrations.hr03 import Hr03MockProvider
 from hr_onboarding.models import (
@@ -22,6 +22,7 @@ from hr_onboarding.models import (
     HrOnboardingActivationSnapshot,
     HrOnboardingCase,
     HrOnboardingOutboxEvent,
+    HrOnboardingIdempotencyRecord,
     HrReportCheckin,
 )
 from hr_onboarding.services.activation_service import ActivationService
@@ -243,3 +244,63 @@ class ActivationServiceTests(TestCase):
         case = HrOnboardingCase.objects.get(id=self.case.id)
         self.assertEqual(case.status, CaseStatus.ACTIVATION_FAILED)
         self.assertEqual(case.activation_status, "FAILED")
+
+    def test_failed_activation_same_request_can_retry_without_duplicate_effect(self):
+        from datetime import date
+
+        class _FailOnceHr03(Hr03MockProvider):
+            failed = False
+
+            def create_staff_master(self, **kwargs):
+                if not self.failed:
+                    self.failed = True
+                    from hr_onboarding.integrations.hr03 import Hr03ActivationProviderError
+
+                    raise Hr03ActivationProviderError("HR03_TEMPORARY", "临时故障")
+                return super().create_staff_master(**kwargs)
+
+        service = ActivationService(
+            tenant_id=1,
+            actor_user_id=1,
+            hr03_provider=_FailOnceHr03(),
+            hr02_provider_factory=lambda: _FakeHr02(),
+        )
+        kwargs = {
+            "effective_at": date(2026, 9, 1),
+            "idempotency_key": "k-activate-retry",
+        }
+        failed = service.activate(self.case, **kwargs)
+        succeeded = service.activate(self.case, **kwargs)
+
+        self.assertFalse(failed["activated"])
+        self.assertTrue(succeeded["activated"])
+        self.assertEqual(
+            HrActivationAttempt.objects.filter(
+                tenant_id=1, idempotency_key="k-activate-retry"
+            ).count(),
+            1,
+        )
+        receipt = HrOnboardingIdempotencyRecord.objects.get(
+            tenant_id=1,
+            operation="ACTIVATE_CASE",
+            idempotency_key="k-activate-retry",
+        )
+        self.assertEqual(receipt.status, "SUCCEEDED")
+        self.assertEqual(receipt.attempt_count, 2)
+
+    def test_activation_same_key_changed_request_is_409(self):
+        from datetime import date
+
+        service = self._service()
+        service.activate(
+            self.case,
+            effective_at=date(2026, 9, 1),
+            idempotency_key="k-activate-conflict",
+        )
+        with self.assertRaises(IdempotencyConflictError) as caught:
+            service.activate(
+                self.case,
+                effective_at=date(2026, 9, 2),
+                idempotency_key="k-activate-conflict",
+            )
+        self.assertEqual(caught.exception.status_code, 409)

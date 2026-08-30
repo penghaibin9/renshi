@@ -34,6 +34,7 @@ from django.utils import timezone
 from hr_onboarding.api.exceptions import (
     ActivationAlreadyCompletedError,
     Hr05ApiError,
+    IdempotencyConflictError,
     PositionReservationInvalidError,
     TenantContextRequiredError,
 )
@@ -47,8 +48,8 @@ from hr_onboarding.models import (
     HrOnboardingStageTransition,
 )
 from hr_onboarding.policies.activation_policy import evaluate_activation_gate
-from hr_onboarding.policies.idempotency import apply_idempotency, normalize_key, store_result
 from hr_onboarding.policies.state_machine import assert_case_transition
+from hr_onboarding.services.idempotency_service import DurableIdempotencyService
 from hr_onboarding.services.outbox_service import enqueue_outbox
 
 logger = logging.getLogger(__name__)
@@ -100,13 +101,33 @@ class ActivationService:
     ) -> dict:
         # 任何幂等查询之前先验证案件 tenant，防止跨学校 idempotency replay 泄露结果。
         self._assert_case_tenant(case)
-        key = normalize_key(
-            idempotency_key,
-            namespace=f"hr05:activate:tenant:{self.tenant_id}",
+        idem = DurableIdempotencyService(
+            tenant_id=self.tenant_id,
+            operation="ACTIVATE_CASE",
         )
-        replay = apply_idempotency(key)
-        if replay is not None:
-            return replay
+        claim = idem.claim(
+            idempotency_key=idempotency_key,
+            request_payload={
+                "case_id": str(case.id),
+                "effective_at": effective_at,
+                "extra_policy_checks": extra_policy_checks or [],
+            },
+        )
+        if claim.is_replay:
+            if claim.record.status == "FAILED_TERMINAL":
+                return dict(claim.record.response_summary or {})
+            authority_case = HrOnboardingCase.objects.filter(
+                tenant_id=self.tenant_id,
+                id=claim.record.authority_id,
+            ).first()
+            if authority_case is None:
+                raise IdempotencyConflictError("幂等记录指向的激活案件不存在，请人工核验")
+            attempt = HrActivationAttempt.objects.filter(
+                tenant_id=self.tenant_id,
+                case=authority_case,
+                idempotency_key=idempotency_key,
+            ).first()
+            return self._build_result(authority_case, attempt)
 
         # 幂等：同 tenant + idempotency_key 已成功执行 → 返回原结果。
         existing_attempt = HrActivationAttempt.objects.filter(
@@ -114,8 +135,15 @@ class ActivationService:
             idempotency_key=idempotency_key,
         ).first()
         if existing_attempt is not None and existing_attempt.status == ActivationStatus.SUCCEEDED:
+            if existing_attempt.case_id != case.id or existing_attempt.effective_at != effective_at:
+                raise IdempotencyConflictError("相同 Idempotency-Key 已用于另一激活请求")
             result = self._build_result(case, existing_attempt)
-            store_result(key, result)
+            idem.succeed(
+                claim.record,
+                authority_type="HrOnboardingCase",
+                authority_id=case.id,
+                response_summary={"activated": True, "case_status": case.status},
+            )
             return result
 
         case = (
@@ -140,7 +168,12 @@ class ActivationService:
                 status=ActivationStatus.SUCCEEDED,
             ).first()
             result = self._build_result(case, attempt)
-            store_result(key, result)
+            idem.succeed(
+                claim.record,
+                authority_type="HrOnboardingCase",
+                authority_id=case.id,
+                response_summary={"activated": result["activated"], "case_status": case.status},
+            )
             return result
 
         # 状态可达性先校验（非法状态迁移优先报错）
@@ -165,13 +198,21 @@ class ActivationService:
         case.activation_status = ActivationStatus.IN_PROGRESS
         case.save(update_fields=["status", "activation_status", "updated_at"])
 
-        attempt = HrActivationAttempt.objects.create(
-            tenant_id=self.tenant_id,
-            case=case,
-            effective_at=effective_at,
-            idempotency_key=idempotency_key,
-            status=ActivationStatus.IN_PROGRESS,
-        )
+        if existing_attempt is not None:
+            if existing_attempt.case_id != case.id or existing_attempt.effective_at != effective_at:
+                raise IdempotencyConflictError("相同 Idempotency-Key 已用于另一激活请求")
+            existing_attempt.status = ActivationStatus.IN_PROGRESS
+            existing_attempt.result_json = {}
+            existing_attempt.save(update_fields=["status", "result_json", "updated_at"])
+            attempt = existing_attempt
+        else:
+            attempt = HrActivationAttempt.objects.create(
+                tenant_id=self.tenant_id,
+                case=case,
+                effective_at=effective_at,
+                idempotency_key=idempotency_key,
+                status=ActivationStatus.IN_PROGRESS,
+            )
 
         # HR03 四步 + HR02 commit 包在 savepoint 内：
         # 任一失败 → savepoint 回滚（HR03 部分写入不残留），
@@ -261,7 +302,14 @@ class ActivationService:
                 "activated": False,
                 "error": code,
             }
-            store_result(key, failure)
+            idem.fail(
+                claim.record,
+                error_code=code,
+                retryable=True,
+                response_summary=failure,
+                authority_type="HrOnboardingCase",
+                authority_id=case.id,
+            )
             return failure
         except Exception as exc:  # 未知异常：不假报成功，记录后按失败处理
             logger.exception("activate unexpected error case=%s", case.id)
@@ -278,7 +326,14 @@ class ActivationService:
                 "activated": False,
                 "error": "ACTIVATION_FAILED",
             }
-            store_result(key, failure)
+            idem.fail(
+                claim.record,
+                error_code="ACTIVATION_FAILED",
+                retryable=True,
+                response_summary=failure,
+                authority_type="HrOnboardingCase",
+                authority_id=case.id,
+            )
             return failure
 
         # 9) Activation Snapshot
@@ -370,7 +425,12 @@ class ActivationService:
             "staff_no": getattr(staff, "staff_no", "") or "",
             "activated": True,
         }
-        store_result(key, result)
+        idem.succeed(
+            claim.record,
+            authority_type="HrOnboardingCase",
+            authority_id=case.id,
+            response_summary={"activated": True, "case_status": case.status},
+        )
         return result
 
     def _build_result(self, case: HrOnboardingCase, attempt: Optional[HrActivationAttempt]) -> dict:

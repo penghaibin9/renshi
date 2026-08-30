@@ -29,7 +29,7 @@ class HrProvisioningRequest(models.Model):
     )
     target_system = models.CharField(max_length=64)
     operation = models.CharField(max_length=64)
-    idempotency_key = models.CharField(max_length=128, unique=True)
+    idempotency_key = models.CharField(max_length=128)
     payload_version = models.CharField(max_length=16, blank=True, default="")
     payload_json = models.JSONField(default=dict, blank=True)
     status = models.CharField(
@@ -52,6 +52,12 @@ class HrProvisioningRequest(models.Model):
         indexes = [
             models.Index(fields=["case", "status"]),
             models.Index(fields=["target_system", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "idempotency_key"],
+                name="uniq_hr05_provision_tenant_idem",
+            ),
         ]
 
     def __str__(self):

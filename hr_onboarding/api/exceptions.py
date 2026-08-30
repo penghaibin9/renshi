@@ -144,3 +144,18 @@ class ProbationAlreadyFinalizedError(Hr05ApiError):
 class IdempotencyReplayError(Hr05ApiError):
     status_code = 200  # 幂等重放返回原结果，不视为错误
     code = "IDEMPOTENT_REPLAY"
+
+
+class IdempotencyConflictError(Hr05ApiError):
+    """The same scoped key was reused for a different command payload."""
+
+    status_code = 409
+    code = "IDEMPOTENCY_KEY_CONFLICT"
+
+
+class IdempotencyInProgressError(Hr05ApiError):
+    """Another worker still owns the live command lease."""
+
+    status_code = 409
+    code = "IDEMPOTENCY_IN_PROGRESS"
+    retryable = True

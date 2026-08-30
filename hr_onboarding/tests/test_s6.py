@@ -112,6 +112,7 @@ class ProvisioningServiceTests(TestCase):
             target_system="IAM",
             operation="CREATE_SSO",
             idempotency_key="prov-1",
+            payload={"username": "zhangsan"},
         )
         self.assertEqual(r1.id, r2.id)
         self.assertEqual(r1.status, ProvisioningStatus.PENDING)

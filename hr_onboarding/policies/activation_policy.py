@@ -77,6 +77,10 @@ def evaluate_activation_gate(
         CaseStatus.VERIFYING,
         CaseStatus.READY_FOR_ACTIVATION,
         CaseStatus.ACTIVATING,
+        # A failed activation does not undo the already completed report.
+        # The state machine explicitly permits ACTIVATION_FAILED -> ACTIVATING
+        # so retryable idempotency claims must be able to pass this gate.
+        CaseStatus.ACTIVATION_FAILED,
     )
     result.add(
         "CASE_REPORTED",
