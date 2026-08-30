@@ -40,6 +40,7 @@ class FormalTitleResultApiTests(SimpleTestCase):
             supersedes_result_id=supersedes,
             content_hash="a" * 64,
             sealed_at=timezone.now(),
+            authority_snapshot_json={"decision": "PASSED"},
         )
 
     @patch("hr_title.result_api.ProfessionalTitleResultService")
@@ -53,10 +54,6 @@ class FormalTitleResultApiTests(SimpleTestCase):
             data=json.dumps(
                 {
                     "resultNo": "RESULT-2026-001",
-                    "titleCode": "PRO-ASSOCIATE",
-                    "titleName": "副教授",
-                    "titleSeriesCode": "PROFESSIONAL",
-                    "titleLevelCode": "L7",
                     "effectiveFrom": "2026-09-01",
                 }
             ),
@@ -75,7 +72,9 @@ class FormalTitleResultApiTests(SimpleTestCase):
         self.assertEqual(kwargs["application_case_id"], self.case_id)
         self.assertEqual(kwargs["payload"].result_no, "RESULT-2026-001")
         self.assertEqual(kwargs["payload"].effective_from, date(2026, 9, 1))
+        self.assertFalse(hasattr(kwargs["payload"], "title_code"))
         self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertIn(b'"authoritySnapshot": {"decision": "PASSED"}', response.content)
 
     @patch("hr_title.result_api.ProfessionalTitleResultService")
     @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
@@ -114,6 +113,32 @@ class FormalTitleResultApiTests(SimpleTestCase):
         self.assertEqual(kwargs["payload"].title_name, "教授")
         self.assertEqual(kwargs["payload"].effective_from, date(2027, 1, 1))
         self.assertIn(b"REVISED", response.content)
+
+    @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
+    def test_revision_rejects_client_score_rank_outcome_and_snapshot(self, _tenant):
+        for field, value in (
+            ("totalScore", "99.99"),
+            ("rank", 1),
+            ("outcome", "PASSED"),
+            ("authoritySnapshot", {"decision": "PASSED"}),
+        ):
+            request = self.factory.post(
+                "/result/revision/",
+                data=json.dumps(
+                    {
+                        "resultNo": "RESULT-REV-FORGED",
+                        "titleCode": "PRO-FULL",
+                        "titleName": "教授",
+                        "effectiveFrom": "2027-01-01",
+                        field: value,
+                    }
+                ),
+                content_type="application/json",
+            )
+            request.user = UserStub()
+            response = result_api.revise_result(request, self.result_id)
+            self.assertEqual(response.status_code, 400, field)
+            self.assertIn(b"server-owned", response.content, field)
 
     @patch("hr_title.result_api.ProfessionalTitleResultService")
     @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
@@ -159,8 +184,6 @@ class FormalTitleResultApiTests(SimpleTestCase):
             data=json.dumps(
                 {
                     "resultNo": "RESULT-2026-001",
-                    "titleCode": "PRO-FULL",
-                    "titleName": "教授",
                     "effectiveFrom": "2026-09-01",
                 }
             ),
@@ -174,14 +197,37 @@ class FormalTitleResultApiTests(SimpleTestCase):
         self.assertIn(b"TITLE_RESULT_IDEMPOTENCY_CONFLICT", response.content)
 
     @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
+    def test_initial_publication_rejects_client_authority_fields(self, _tenant):
+        for field, value in (
+            ("titleCode", "PRO-FULL"),
+            ("totalScore", "99.99"),
+            ("rank", 1),
+            ("outcome", "PASSED"),
+            ("certificateSnapshot", {"title": "教授"}),
+        ):
+            request = self.factory.post(
+                "/result/effective/",
+                data=json.dumps(
+                    {
+                        "resultNo": "RESULT-FORGED",
+                        "effectiveFrom": "2026-09-01",
+                        field: value,
+                    }
+                ),
+                content_type="application/json",
+            )
+            request.user = UserStub()
+            response = result_api.make_effective(request, self.case_id)
+            self.assertEqual(response.status_code, 400, field)
+            self.assertIn(b"server-derived", response.content, field)
+
+    @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
     def test_invalid_date_is_rejected_before_service(self, _tenant):
         request = self.factory.post(
             "/result/effective/",
             data=json.dumps(
                 {
                     "resultNo": "R-1",
-                    "titleCode": "X",
-                    "titleName": "职称",
                     "effectiveFrom": "2026-99-99",
                 }
             ),

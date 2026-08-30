@@ -11,15 +11,42 @@ from django.db.models import Q
 from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
 
 
+class TitlePolicyVersionQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if self.filter(status="PUBLISHED").exists():
+            raise ValueError(
+                "TITLE_POLICY_IMMUTABLE: published title rules cannot be updated"
+            )
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs and any(obj.status == "PUBLISHED" for obj in objs):
+            raise ValueError(
+                "TITLE_POLICY_IMMUTABLE: published title rules cannot be bulk-updated"
+            )
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def delete(self):
+        if self.filter(status="PUBLISHED").exists():
+            raise ValueError(
+                "TITLE_POLICY_IMMUTABLE: published title rules cannot be deleted"
+            )
+        return super().delete()
+
+
 class TitlePolicyVersion(HrVersionedModel):
     policy_code = models.CharField(max_length=64)
     name = models.CharField(max_length=200)
     title_series_code = models.CharField(max_length=64, blank=True, default="")
     title_level_code = models.CharField(max_length=64, blank=True, default="")
     track_code = models.CharField(max_length=64, blank=True, default="")
+    required_ballots = models.PositiveIntegerField(default=1)
+    required_pass_votes = models.PositiveIntegerField(default=1)
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TitlePolicyVersionQuerySet.as_manager()
 
     class Meta:
         db_table = "hr13_title_policy_version"
@@ -40,6 +67,15 @@ class TitlePolicyVersion(HrVersionedModel):
                 | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr13_policy_effective_range",
             ),
+            models.CheckConstraint(
+                condition=Q(required_ballots__gte=1),
+                name="ck_hr13_policy_ballots_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(required_pass_votes__gte=1)
+                & Q(required_pass_votes__lte=models.F("required_ballots")),
+                name="ck_hr13_policy_pass_threshold",
+            ),
         ]
         indexes = [
             models.Index(
@@ -47,6 +83,83 @@ class TitlePolicyVersion(HrVersionedModel):
                 name="idx_hr13_policy_tenant_status",
             ),
         ]
+
+    def integrity_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "policyCode": self.policy_code,
+            "versionNo": self.version_no,
+            "name": self.name,
+            "titleSeriesCode": self.title_series_code,
+            "titleLevelCode": self.title_level_code,
+            "trackCode": self.track_code,
+            "requiredBallots": self.required_ballots,
+            "requiredPassVotes": self.required_pass_votes,
+            "effectiveFrom": self.effective_from.isoformat(),
+            "effectiveTo": self.effective_to.isoformat() if self.effective_to else None,
+            "publishedAt": self.published_at.isoformat() if self.published_at else None,
+            "status": self.status,
+        }
+
+    def calculate_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.integrity_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values("status").first()
+            if persisted and persisted["status"] == "PUBLISHED":
+                raise ValueError(
+                    "TITLE_POLICY_IMMUTABLE: published title rules cannot be updated"
+                )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status == "PUBLISHED":
+            raise ValueError(
+                "TITLE_POLICY_IMMUTABLE: published title rules cannot be deleted"
+            )
+        return super().delete(*args, **kwargs)
+
+
+class TitleApplicationCaseQuerySet(models.QuerySet):
+    _IDENTITY_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "case_no",
+            "person_id",
+            "policy_version_id",
+            "batch_no",
+            "requested_title_code",
+            "requested_title_name",
+        }
+    )
+
+    def update(self, **kwargs):
+        if self._IDENTITY_FIELDS.intersection(kwargs) and self.exclude(status="DRAFT").exists():
+            raise ValueError(
+                "TITLE_APPLICATION_IDENTITY_IMMUTABLE: submitted application identity is frozen"
+            )
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs and self._IDENTITY_FIELDS.intersection(fields):
+            raise ValueError(
+                "TITLE_APPLICATION_IDENTITY_IMMUTABLE: application identity cannot be bulk-updated"
+            )
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def delete(self):
+        if self.exclude(status="DRAFT").exists():
+            raise ValueError(
+                "TITLE_APPLICATION_APPEND_ONLY: submitted applications cannot be deleted"
+            )
+        return super().delete()
 
 
 class TitleApplicationCase(HrTenantScopedModel):
@@ -78,6 +191,18 @@ class TitleApplicationCase(HrTenantScopedModel):
     )
     submitted_at = models.DateTimeField(null=True, blank=True)
 
+    objects = TitleApplicationCaseQuerySet.as_manager()
+
+    _IDENTITY_FIELDS = (
+        "tenant_id",
+        "case_no",
+        "person_id",
+        "policy_version_id",
+        "batch_no",
+        "requested_title_code",
+        "requested_title_name",
+    )
+
     class Meta:
         db_table = "hr13_title_application_case"
         constraints = [
@@ -96,6 +221,30 @@ class TitleApplicationCase(HrTenantScopedModel):
                 name="idx_hr13_case_tenant_batch",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                "status", *self._IDENTITY_FIELDS
+            ).first()
+            if persisted and persisted["status"] != self.Status.DRAFT:
+                changed = [
+                    field
+                    for field in self._IDENTITY_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "TITLE_APPLICATION_IDENTITY_IMMUTABLE: submitted application identity is frozen"
+                    )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != self.Status.DRAFT:
+            raise ValueError(
+                "TITLE_APPLICATION_APPEND_ONLY: submitted applications cannot be deleted"
+            )
+        return super().delete(*args, **kwargs)
 
 
 class TitleQualificationDecision(HrTenantScopedModel):
@@ -244,6 +393,44 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+class TitleReviewRoundQuerySet(models.QuerySet):
+    _FROZEN_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "round_no",
+            "application_case_id",
+            "attempt_no",
+            "required_ballots",
+            "required_pass_votes",
+            "opened_by",
+        }
+    )
+
+    def update(self, **kwargs):
+        if self.exists():
+            raise ValueError(
+                "TITLE_REVIEW_ROUND_IMMUTABLE: review facts cannot be bulk-updated"
+            )
+        return 0
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(
+                "TITLE_REVIEW_ROUND_IMMUTABLE: review facts cannot be bulk-updated"
+            )
+        return 0
+
+    def bulk_create(self, objs, **kwargs):
+        if objs:
+            raise ValueError("TITLE_REVIEW_ROUND_SERVICE_REQUIRED: use TitlePanelService")
+        return []
+
+    def delete(self):
+        if self.exists():
+            raise ValueError("TITLE_REVIEW_ROUND_APPEND_ONLY: review facts cannot be deleted")
+        return (0, {})
+
+
 class TitleReviewRound(HrTenantScopedModel):
     class Status(models.TextChoices):
         OPEN = "OPEN", "Open"
@@ -268,6 +455,8 @@ class TitleReviewRound(HrTenantScopedModel):
     closed_at = models.DateTimeField(null=True, blank=True)
     closure_snapshot_json = models.JSONField(default=dict, blank=True)
 
+    objects = TitleReviewRoundQuerySet.as_manager()
+
     _FROZEN_FIELDS = (
         "tenant_id",
         "round_no",
@@ -276,6 +465,12 @@ class TitleReviewRound(HrTenantScopedModel):
         "required_ballots",
         "required_pass_votes",
         "opened_by",
+    )
+    _CLOSURE_FIELDS = (
+        "status",
+        "closed_by",
+        "closed_at",
+        "closure_snapshot_json",
     )
 
     class Meta:
@@ -307,9 +502,9 @@ class TitleReviewRound(HrTenantScopedModel):
         ]
 
     def save(self, *args, **kwargs):
-        if self.pk:
+        if not self._state.adding:
             persisted = type(self)._base_manager.filter(pk=self.pk).values(
-                *self._FROZEN_FIELDS
+                *(self._FROZEN_FIELDS + self._CLOSURE_FIELDS)
             ).first()
             if persisted:
                 changed = [
@@ -321,7 +516,19 @@ class TitleReviewRound(HrTenantScopedModel):
                     raise ValueError(
                         "TITLE_REVIEW_ROUND_IMMUTABLE: quorum and review identity are frozen"
                     )
+                closure_changed = [
+                    field
+                    for field in self._CLOSURE_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if persisted["status"] != self.Status.OPEN and closure_changed:
+                    raise ValueError(
+                        "TITLE_REVIEW_ROUND_IMMUTABLE: closed review facts cannot be changed"
+                    )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("TITLE_REVIEW_ROUND_APPEND_ONLY: review facts cannot be deleted")
 
 
 class TitleReviewAssignmentQuerySet(models.QuerySet):
@@ -549,6 +756,30 @@ class TitleReviewAssignment(HrTenantScopedModel):
         )
 
 
+class TitleReviewBallotQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if self.exists():
+            raise ValueError("TITLE_REVIEW_BALLOT_IMMUTABLE: submitted ballots cannot be updated")
+        return 0
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(
+                "TITLE_REVIEW_BALLOT_IMMUTABLE: submitted ballots cannot be bulk-updated"
+            )
+        return 0
+
+    def bulk_create(self, objs, **kwargs):
+        if objs:
+            raise ValueError("TITLE_REVIEW_BALLOT_SERVICE_REQUIRED: use TitlePanelService")
+        return []
+
+    def delete(self):
+        if self.exists():
+            raise ValueError("TITLE_REVIEW_BALLOT_APPEND_ONLY: submitted ballots cannot be deleted")
+        return (0, {})
+
+
 class TitleReviewBallot(HrTenantScopedModel):
     class Recommendation(models.TextChoices):
         PASS = "PASS", "Pass"
@@ -568,6 +799,8 @@ class TitleReviewBallot(HrTenantScopedModel):
     submitted_by = models.PositiveBigIntegerField(null=True, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
+    objects = TitleReviewBallotQuerySet.as_manager()
+
     _FACT_FIELDS = (
         "tenant_id",
         "ballot_no",
@@ -577,6 +810,9 @@ class TitleReviewBallot(HrTenantScopedModel):
         "score",
         "rationale",
         "submitted_by",
+        "submitted_at",
+        "created_by",
+        "updated_by",
     )
 
     class Meta:
@@ -599,7 +835,7 @@ class TitleReviewBallot(HrTenantScopedModel):
         ]
 
     def save(self, *args, **kwargs):
-        if self.pk:
+        if not self._state.adding:
             persisted = type(self)._base_manager.filter(pk=self.pk).values(
                 *self._FACT_FIELDS
             ).first()
@@ -614,6 +850,9 @@ class TitleReviewBallot(HrTenantScopedModel):
                         "TITLE_REVIEW_BALLOT_IMMUTABLE: submitted ballots must be appended, not edited"
                     )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("TITLE_REVIEW_BALLOT_APPEND_ONLY: submitted ballots cannot be deleted")
 
 
 class TitlePublicityRecord(HrTenantScopedModel):
@@ -759,6 +998,7 @@ class ProfessionalTitleResult(HrTenantScopedModel):
         db_index=True,
     )
     supersedes_result_id = models.UUIDField(null=True, blank=True)
+    authority_snapshot_json = models.JSONField(default=dict, blank=True)
     content_hash = models.CharField(max_length=64, blank=True, default="")
     sealed_at = models.DateTimeField(null=True, blank=True)
 
@@ -777,6 +1017,7 @@ class ProfessionalTitleResult(HrTenantScopedModel):
         "effective_to",
         "status",
         "supersedes_result_id",
+        "authority_snapshot_json",
         "content_hash",
         "sealed_at",
         "created_by",
@@ -827,6 +1068,7 @@ class ProfessionalTitleResult(HrTenantScopedModel):
             "supersedesResultId": (
                 str(self.supersedes_result_id) if self.supersedes_result_id else None
             ),
+            "authoritySnapshot": self.authority_snapshot_json,
             "sealedAt": self.sealed_at.isoformat() if self.sealed_at else None,
             "createdBy": self.created_by,
             "updatedBy": self.updated_by,

@@ -2,6 +2,7 @@ import uuid
 from datetime import date, timedelta
 from unittest.mock import patch
 
+from django.db import DatabaseError, connection, transaction
 from django.test import TestCase
 from django.utils import timezone
 
@@ -13,26 +14,69 @@ from hr_title.authority_registry import (
 from hr_title.models import (
     ProfessionalTitleResult,
     TitleApplicationCase,
+    TitlePolicyVersion,
     TitlePublicityRecord,
+    TitleReviewBallot,
+    TitleReviewRound,
 )
 from hr_title.services.result_service import (
     ProfessionalTitleResultService,
     TitleResultInput,
+    TitleResultPublicationInput,
 )
+from hr_title.services.panel_service import TitlePanelService
 
 
 class ProfessionalTitleResultIntegrityTests(TestCase):
     def setUp(self):
+        policy = TitlePolicyVersion.objects.create(
+            tenant_id=77,
+            policy_code="POLICY-INTEGRITY",
+            name="教师职称评审规则",
+            title_series_code="PROFESSIONAL",
+            title_level_code="L7",
+            required_ballots=1,
+            required_pass_votes=1,
+            effective_from=date(2026, 1, 1),
+        )
+        policy.status = "PUBLISHED"
+        policy.published_at = timezone.now()
+        policy.content_hash = policy.calculate_content_hash()
+        policy.save(update_fields=["status", "published_at", "content_hash", "updated_at"])
         self.case = TitleApplicationCase.objects.create(
             tenant_id=77,
             case_no="CASE-INTEGRITY",
             person_id=uuid.uuid4(),
-            policy_version_id=uuid.uuid4(),
+            policy_version_id=policy.id,
             batch_no="B-2026",
             requested_title_code="PRO-ASSOCIATE",
             requested_title_name="副教授",
             status=TitleApplicationCase.Status.PUBLICITY,
         )
+        self.case.status = TitleApplicationCase.Status.ELIGIBLE
+        self.case.save(update_fields=["status", "updated_at"])
+        panel = TitlePanelService(77, actor_user_id=99)
+        review_round = panel.open_round(
+            case_id=self.case.id,
+            round_no="ROUND-INTEGRITY",
+            required_ballots=1,
+            required_pass_votes=1,
+        )
+        assignment = panel.assign_reviewer(
+            round_id=review_round.id,
+            assignment_no="ASN-INTEGRITY",
+            reviewer_staff_id=uuid.uuid4(),
+        )
+        assignment = panel.respond_assignment(assignment.id, accept=True)
+        panel.submit_ballot(
+            assignment_id=assignment.id,
+            ballot_no="BAL-INTEGRITY",
+            recommendation=TitleReviewBallot.Recommendation.PASS,
+        )
+        panel.close_round(review_round.id)
+        self.case.refresh_from_db()
+        self.case.status = TitleApplicationCase.Status.PUBLICITY
+        self.case.save(update_fields=["status", "updated_at"])
         now = timezone.now()
         TitlePublicityRecord.objects.create(
             tenant_id=77,
@@ -51,12 +95,8 @@ class ProfessionalTitleResultIntegrityTests(TestCase):
 
     @staticmethod
     def _payload(result_no, title_name="副教授", effective_from=date(2026, 9, 1)):
-        return TitleResultInput(
+        return TitleResultPublicationInput(
             result_no=result_no,
-            title_code="PRO-ASSOCIATE",
-            title_name=title_name,
-            title_series_code="PROFESSIONAL",
-            title_level_code="L7",
             effective_from=effective_from,
         )
 
@@ -91,9 +131,12 @@ class ProfessionalTitleResultIntegrityTests(TestCase):
         )
         revised = self.service.revise(
             result_id=root.id,
-            payload=self._payload(
-                "RESULT-REVISED",
+            payload=TitleResultInput(
+                result_no="RESULT-REVISED",
+                title_code="PRO-FULL",
                 title_name="教授",
+                title_series_code="PROFESSIONAL",
+                title_level_code="L4",
                 effective_from=date(2027, 1, 1),
             ),
         )
@@ -161,3 +204,72 @@ class ProfessionalTitleResultIntegrityTests(TestCase):
         )
         with self.assertRaisesMessage(ValueError, "TITLE_RESULT_HASH_INVALID"):
             forged.save()
+
+    def test_frozen_rule_round_and_ballot_block_orm_and_mysql_rewrites(self):
+        policy = TitlePolicyVersion.objects.get(id=self.case.policy_version_id)
+        review_round = TitleReviewRound.objects.get(application_case_id=self.case.id)
+        ballot = TitleReviewBallot.objects.get(review_round_id=review_round.id)
+
+        with self.assertRaisesMessage(ValueError, "TITLE_POLICY_IMMUTABLE"):
+            TitlePolicyVersion.objects.filter(id=policy.id).update(required_ballots=9)
+        with self.assertRaisesMessage(ValueError, "TITLE_REVIEW_ROUND_IMMUTABLE"):
+            TitleReviewRound.objects.filter(id=review_round.id).update(required_ballots=9)
+        review_round.status = TitleReviewRound.Status.NOT_PASSED
+        with self.assertRaisesMessage(ValueError, "TITLE_REVIEW_ROUND_IMMUTABLE"):
+            review_round.save(update_fields=["status", "updated_at"])
+        with self.assertRaisesMessage(ValueError, "TITLE_REVIEW_BALLOT_IMMUTABLE"):
+            TitleReviewBallot.objects.filter(id=ballot.id).update(recommendation="FAIL")
+        with self.assertRaisesMessage(ValueError, "TITLE_REVIEW_BALLOT_APPEND_ONLY"):
+            ballot.delete()
+        with self.assertRaisesMessage(ValueError, "TITLE_APPLICATION_IDENTITY_IMMUTABLE"):
+            TitleApplicationCase.objects.filter(id=self.case.id).update(
+                requested_title_name="客户端伪造职称"
+            )
+
+        if connection.vendor == "mysql":
+            probes = (
+                (
+                    "UPDATE hr13_title_policy_version SET required_ballots=9 WHERE id=%s",
+                    [policy.id.hex],
+                ),
+                (
+                    "UPDATE hr13_title_review_round SET required_ballots=9 WHERE id=%s",
+                    [review_round.id.hex],
+                ),
+                (
+                    "UPDATE hr13_title_review_ballot SET recommendation='FAIL' WHERE id=%s",
+                    [ballot.id.hex],
+                ),
+                (
+                    "UPDATE hr13_title_application_case SET requested_title_name='forged' WHERE id=%s",
+                    [self.case.id.hex],
+                ),
+            )
+            for sql, params in probes:
+                with self.assertRaises(DatabaseError):
+                    with transaction.atomic():
+                        with connection.cursor() as cursor:
+                            cursor.execute(sql, params)
+            with self.assertRaises(DatabaseError):
+                with transaction.atomic():
+                    TitleReviewBallot.objects.create(
+                        tenant_id=77,
+                        ballot_no="BAL-AFTER-CLOSE",
+                        review_round_id=review_round.id,
+                        assignment_id=ballot.assignment_id,
+                        recommendation=TitleReviewBallot.Recommendation.PASS,
+                    )
+
+    @patch("hr_title.services.result_service.emit_registered_event")
+    def test_event_failure_rolls_back_result_and_case_state(self, emit):
+        emit.side_effect = RuntimeError("outbox unavailable")
+        with self.assertRaisesRegex(RuntimeError, "outbox unavailable"):
+            self.service.make_effective(
+                application_case_id=self.case.id,
+                payload=self._payload("RESULT-ROLLBACK"),
+            )
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.status, TitleApplicationCase.Status.PUBLICITY)
+        self.assertFalse(
+            ProfessionalTitleResult.objects.filter(result_no="RESULT-ROLLBACK").exists()
+        )

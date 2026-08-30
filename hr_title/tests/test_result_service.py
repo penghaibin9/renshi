@@ -8,22 +8,47 @@ from hr_title.models import (
     ProfessionalTitleResult,
     TitleAppealRecord,
     TitleApplicationCase,
+    TitlePolicyVersion,
     TitlePublicityRecord,
+    TitleReviewBallot,
 )
 from hr_title.services.result_service import (
     ProfessionalTitleResultService,
     TitleResultError,
     TitleResultInput,
+    TitleResultPublicationInput,
 )
+from hr_title.services.panel_service import TitlePanelService
 
 
 class ProfessionalTitleResultServiceTests(TestCase):
-    def _case(self, *, tenant_id=77, status=TitleApplicationCase.Status.PUBLICITY):
+    def _case(
+        self,
+        *,
+        tenant_id=77,
+        status=TitleApplicationCase.Status.PUBLICITY,
+        required_ballots=1,
+        required_pass_votes=1,
+    ):
+        policy = TitlePolicyVersion.objects.create(
+            tenant_id=tenant_id,
+            policy_code=f"POLICY-{uuid.uuid4().hex[:8]}",
+            name="教师职称评审规则",
+            title_series_code="PROFESSIONAL",
+            title_level_code="L7",
+            required_ballots=required_ballots,
+            required_pass_votes=required_pass_votes,
+            effective_from=date(2026, 1, 1),
+        )
+        policy.status = "PUBLISHED"
+        policy.published_at = timezone.now()
+        policy.content_hash = policy.calculate_content_hash()
+        policy.save(update_fields=["status", "published_at", "content_hash", "updated_at"])
         return TitleApplicationCase.objects.create(
             tenant_id=tenant_id,
             case_no=f"CASE-{tenant_id}-{uuid.uuid4().hex[:8]}",
             person_id=uuid.uuid4(),
-            policy_version_id=uuid.uuid4(),
+            policy_version_id=policy.id,
             batch_no="B-2026",
             requested_title_code="PRO-ASSOCIATE",
             requested_title_name="副教授",
@@ -31,6 +56,30 @@ class ProfessionalTitleResultServiceTests(TestCase):
         )
 
     def _closed_publicity(self, case):
+        case.status = TitleApplicationCase.Status.ELIGIBLE
+        case.save(update_fields=["status", "updated_at"])
+        panel = TitlePanelService(case.tenant_id, actor_user_id=99)
+        review_round = panel.open_round(
+            case_id=case.id,
+            round_no=f"ROUND-{uuid.uuid4().hex[:8]}",
+            required_ballots=1,
+            required_pass_votes=1,
+        )
+        assignment = panel.assign_reviewer(
+            round_id=review_round.id,
+            assignment_no=f"ASN-{uuid.uuid4().hex[:8]}",
+            reviewer_staff_id=uuid.uuid4(),
+        )
+        assignment = panel.respond_assignment(assignment.id, accept=True)
+        panel.submit_ballot(
+            assignment_id=assignment.id,
+            ballot_no=f"BAL-{uuid.uuid4().hex[:8]}",
+            recommendation=TitleReviewBallot.Recommendation.PASS,
+        )
+        panel.close_round(review_round.id)
+        case.refresh_from_db()
+        case.status = TitleApplicationCase.Status.PUBLICITY
+        case.save(update_fields=["status", "updated_at"])
         now = timezone.now()
         return TitlePublicityRecord.objects.create(
             tenant_id=case.tenant_id,
@@ -44,12 +93,8 @@ class ProfessionalTitleResultServiceTests(TestCase):
 
     @staticmethod
     def _payload(result_no="RESULT-001", *, effective_from=date(2026, 9, 1)):
-        return TitleResultInput(
+        return TitleResultPublicationInput(
             result_no=result_no,
-            title_code="PRO-ASSOCIATE",
-            title_name="副教授",
-            title_series_code="PROFESSIONAL",
-            title_level_code="L7",
             effective_from=effective_from,
         )
 
@@ -122,37 +167,79 @@ class ProfessionalTitleResultServiceTests(TestCase):
         with self.assertRaises(TitleResultError) as ctx:
             service.make_effective(
                 application_case_id=case.id,
-                payload=TitleResultInput(
+                payload=TitleResultPublicationInput(
                     result_no="RESULT-001",
-                    title_code="PRO-FULL",
-                    title_name="教授",
-                    effective_from=date(2026, 9, 1),
+                    effective_from=date(2026, 9, 2),
                 ),
             )
         self.assertEqual(ctx.exception.code, "TITLE_RESULT_IDEMPOTENCY_CONFLICT")
 
-    def test_result_identity_fields_and_effective_range_fail_closed(self):
+    def test_initial_result_is_derived_from_frozen_application_policy_and_ballots(self):
+        case = self._case()
+        publicity = self._closed_publicity(case)
+        result = ProfessionalTitleResultService(77).make_effective(
+            application_case_id=case.id,
+            payload=self._payload("RESULT-DERIVED"),
+        )
+
+        self.assertEqual(result.title_code, case.requested_title_code)
+        self.assertEqual(result.title_name, case.requested_title_name)
+        self.assertEqual(result.title_series_code, "PROFESSIONAL")
+        self.assertEqual(result.title_level_code, "L7")
+        self.assertEqual(result.authority_snapshot_json["decision"], "PASSED")
+        self.assertEqual(
+            result.authority_snapshot_json["reviewClosure"]["passVotes"], 1
+        )
+        self.assertEqual(
+            result.authority_snapshot_json["reviewBallots"][0]["recommendation"],
+            "PASS",
+        )
+        self.assertEqual(result.authority_snapshot_json["publicityId"], str(publicity.id))
+
+    def test_published_rule_mismatch_blocks_result(self):
+        case = self._case(required_ballots=2, required_pass_votes=2)
+        self._closed_publicity(case)
+        with self.assertRaises(TitleResultError) as ctx:
+            ProfessionalTitleResultService(77).make_effective(
+                application_case_id=case.id,
+                payload=self._payload("RESULT-RULE-MISMATCH"),
+            )
+        self.assertEqual(ctx.exception.code, "TITLE_RESULT_REVIEW_RULE_MISMATCH")
+        self.assertFalse(
+            ProfessionalTitleResult.objects.filter(result_no="RESULT-RULE-MISMATCH").exists()
+        )
+
+    def test_case_state_alone_cannot_bypass_passed_review_evidence(self):
+        case = self._case()
+        now = timezone.now()
+        TitlePublicityRecord.objects.create(
+            tenant_id=77,
+            publicity_no="PUB-NO-REVIEW",
+            application_case_id=case.id,
+            start_at=now - timedelta(days=7),
+            end_at=now - timedelta(days=1),
+            status=TitlePublicityRecord.Status.CLOSED,
+            closed_at=now,
+        )
+        with self.assertRaises(TitleResultError) as ctx:
+            ProfessionalTitleResultService(77).make_effective(
+                application_case_id=case.id,
+                payload=self._payload("RESULT-NO-REVIEW"),
+            )
+        self.assertEqual(ctx.exception.code, "TITLE_RESULT_PASSED_REVIEW_REQUIRED")
+
+    def test_publication_identity_and_effective_range_fail_closed(self):
         case = self._case()
         self._closed_publicity(case)
         service = ProfessionalTitleResultService(77)
         for payload, code in (
             (
-                TitleResultInput("", "X", "名称", date(2026, 9, 1)),
+                TitleResultPublicationInput("", date(2026, 9, 1)),
                 "TITLE_RESULT_RESULT_NO_REQUIRED",
             ),
             (
-                TitleResultInput("R-1", "", "名称", date(2026, 9, 1)),
-                "TITLE_RESULT_TITLE_CODE_REQUIRED",
-            ),
-            (
-                TitleResultInput("R-2", "X", "", date(2026, 9, 1)),
-                "TITLE_RESULT_TITLE_NAME_REQUIRED",
-            ),
-            (
-                TitleResultInput(
+                TitleResultPublicationInput(
                     "R-3",
-                    "X",
-                    "名称",
                     date(2026, 9, 1),
                     effective_to=date(2026, 9, 1),
                 ),

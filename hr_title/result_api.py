@@ -10,6 +10,7 @@ from .services.result_service import (
     ProfessionalTitleResultService,
     TitleResultError,
     TitleResultInput,
+    TitleResultPublicationInput,
 )
 
 RESULT_PERMISSION = "hr.title.result"
@@ -43,6 +44,17 @@ def _status(code: str) -> int:
         "TITLE_RESULT_REVISION_DATE_INVALID",
         "TITLE_RESULT_REVOCATION_DATE_INVALID",
         "TITLE_RESULT_CASE_MISMATCH",
+        "TITLE_RESULT_POLICY_NOT_FOUND",
+        "TITLE_RESULT_POLICY_NOT_PUBLISHED",
+        "TITLE_RESULT_POLICY_HASH_INVALID",
+        "TITLE_RESULT_POLICY_NOT_EFFECTIVE",
+        "TITLE_RESULT_POLICY_TITLE_IDENTITY_MISSING",
+        "TITLE_RESULT_TITLE_IDENTITY_MISSING",
+        "TITLE_RESULT_PASSED_REVIEW_REQUIRED",
+        "TITLE_RESULT_REVIEW_RULE_MISMATCH",
+        "TITLE_RESULT_REVIEW_EVIDENCE_INCONSISTENT",
+        "TITLE_RESULT_REVIEW_DECISION_INVALID",
+        "TITLE_RESULT_REVIEW_SNAPSHOT_INVALID",
     }:
         return 409
     return 400
@@ -66,6 +78,7 @@ def _serialize(result):
         ),
         "contentHash": result.content_hash,
         "sealedAt": result.sealed_at.isoformat(),
+        "authoritySnapshot": result.authority_snapshot_json,
     }
 
 
@@ -78,12 +91,56 @@ def _service(request, *, permission=RESULT_PERMISSION):
 
 
 def _payload_input(payload) -> TitleResultInput:
+    forbidden = sorted(_FORBIDDEN_RESULT_METRICS.intersection(payload))
+    if forbidden:
+        raise ValueError(
+            "calculated result fields are server-owned and must not be submitted: "
+            + ", ".join(forbidden)
+        )
     return TitleResultInput(
         result_no=payload.get("resultNo", ""),
         title_code=payload.get("titleCode", ""),
         title_name=payload.get("titleName", ""),
         title_series_code=payload.get("titleSeriesCode", ""),
         title_level_code=payload.get("titleLevelCode", ""),
+        effective_from=_date(payload.get("effectiveFrom"), "effectiveFrom"),
+        effective_to=_date(
+            payload.get("effectiveTo"),
+            "effectiveTo",
+            required=False,
+        ),
+    )
+
+
+_FORBIDDEN_RESULT_METRICS = frozenset(
+    {
+        "totalScore",
+        "score",
+        "rank",
+        "outcome",
+        "decision",
+        "passed",
+        "certificateSnapshot",
+        "appointmentSnapshot",
+        "authoritySnapshot",
+        "snapshot",
+    }
+)
+
+_FORBIDDEN_PUBLICATION_FIELDS = _FORBIDDEN_RESULT_METRICS | frozenset(
+    {"titleCode", "titleName", "titleSeriesCode", "titleLevelCode"}
+)
+
+
+def _publication_input(payload) -> TitleResultPublicationInput:
+    forbidden = sorted(_FORBIDDEN_PUBLICATION_FIELDS.intersection(payload))
+    if forbidden:
+        raise ValueError(
+            "authoritative result fields are server-derived and must not be submitted: "
+            + ", ".join(forbidden)
+        )
+    return TitleResultPublicationInput(
+        result_no=payload.get("resultNo", ""),
         effective_from=_date(payload.get("effectiveFrom"), "effectiveFrom"),
         effective_to=_date(
             payload.get("effectiveTo"),
@@ -102,7 +159,7 @@ def make_effective(request, case_id):
         return _error(exc.code, exc.message, status=403)
     try:
         payload = _json_payload(request)
-        result_input = _payload_input(payload)
+        result_input = _publication_input(payload)
     except ValueError as exc:
         return _error("INVALID_REQUEST", str(exc), status=400)
     try:
