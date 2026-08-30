@@ -23,6 +23,7 @@ import json
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
 from hr_time.enums import AttendanceStatus, LeaveRequestStatus, OvertimeSettlementMode
 from hr_time.models.attendance import HrAttendanceDayFact
 from hr_time.models.close import (
@@ -57,6 +58,16 @@ def _stable_hash(payload) -> str:
 
 
 class CloseService:
+    @staticmethod
+    def _actor_id(actor_user) -> int:
+        actor_id = getattr(actor_user, "id", None)
+        if not actor_id:
+            raise CloseServiceError(
+                "ACTOR_REQUIRED",
+                "重开月结必须绑定已认证操作人",
+            )
+        return actor_id
+
     @staticmethod
     def _assert_period_tenant(*, tenant_id: int, period: HrTimeClosePeriod) -> None:
         if not tenant_id:
@@ -446,35 +457,172 @@ class CloseService:
     @staticmethod
     @transaction.atomic
     def request_reopen(
-        *, tenant_id: int, period: HrTimeClosePeriod, reason: str, actor_user=None
+        *,
+        tenant_id: int,
+        period: HrTimeClosePeriod,
+        reason: str,
+        actor_user,
+        idempotency_key: str,
     ) -> HrTimeCorrectionBatch:
-        """重开申请：生成 Correction Batch（§116-117）；旧 snapshot 保留。"""
+        """只登记重开申请；审批前期间与正式事实继续保持冻结。"""
         CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
+        actor_id = CloseService._actor_id(actor_user)
         if not reason or not reason.strip():
             raise CloseServiceError("REOPEN_REASON_REQUIRED", "重开月结必须说明更正原因")
+        request_key = str(idempotency_key or "").strip()
+        if not request_key or len(request_key) > 64:
+            raise CloseServiceError(
+                "IDEMPOTENCY_KEY_REQUIRED",
+                "重开申请必须提供不超过 64 字符的幂等键",
+            )
         period = HrTimeClosePeriod.objects.select_for_update().filter(
             id=period.id,
             tenant_id=tenant_id,
         ).first()
         if period is None:
             raise CloseServiceError("CROSS_TENANT_REFERENCE", "月结期间不属于当前 tenant")
+        existing = HrTimeCorrectionBatch.objects.filter(
+            tenant_id=tenant_id,
+            request_key=request_key,
+        ).first()
+        if existing is not None:
+            if (
+                existing.period_id != period.id
+                or existing.requested_by_id != actor_id
+                or existing.reason != reason.strip()
+            ):
+                raise CloseServiceError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "幂等键已用于不同的重开申请",
+                )
+            return existing
+
         if period.status != "CLOSED":
             raise CloseServiceError("VERSION_CONFLICT", "仅已关闭期间可申请重开")
+
+        if HrTimeCorrectionBatch.objects.filter(
+            tenant_id=tenant_id,
+            period=period,
+            status=HrTimeCorrectionBatch.Status.REQUESTED,
+        ).exists():
+            raise CloseServiceError(
+                "REOPEN_REQUEST_PENDING",
+                "该期间已有待审批的重开申请",
+            )
+
         before = period.snapshot_id
         batch = HrTimeCorrectionBatch.objects.create(
             tenant_id=tenant_id,
             period=period,
             reason=reason.strip(),
+            status=HrTimeCorrectionBatch.Status.REQUESTED,
+            request_key=request_key,
             before_snapshot_id=before,
-            approved_by=actor_user,
+            requested_by=actor_user,
+            audit={
+                "requestedAt": timezone.now().isoformat(),
+                "requestedByUserId": actor_id,
+            },
         )
-        # 解冻：期间内事实允许更正（更正后 reclose 再冻结）
+        emit_registered_event(
+            tenant_id=tenant_id,
+            event_name="hr.time.time_close.reopen_requested",
+            correlation_id=request_key,
+            payload={
+                "periodId": period.id,
+                "correctionBatchId": batch.id,
+                "requestedByUserId": actor_id,
+                "beforeSnapshotId": before,
+            },
+        )
+        return batch
+
+    @staticmethod
+    @transaction.atomic
+    def approve_reopen(
+        *,
+        tenant_id: int,
+        period: HrTimeClosePeriod,
+        batch: HrTimeCorrectionBatch,
+        actor_user,
+    ) -> HrTimeCorrectionBatch:
+        """独立审批通过后才解除期间事实冻结。"""
+        CloseService._assert_batch_scope(
+            tenant_id=tenant_id,
+            period=period,
+            batch=batch,
+        )
+        actor_id = CloseService._actor_id(actor_user)
+        period = HrTimeClosePeriod.objects.select_for_update().filter(
+            id=period.id,
+            tenant_id=tenant_id,
+        ).first()
+        batch = HrTimeCorrectionBatch.objects.select_for_update().filter(
+            id=batch.id,
+            tenant_id=tenant_id,
+            period=period,
+        ).first()
+        if period is None or batch is None:
+            raise CloseServiceError(
+                "CROSS_TENANT_REFERENCE",
+                "更正批次不属于当前 tenant/period",
+            )
+        if batch.status in {
+            HrTimeCorrectionBatch.Status.APPROVED,
+            HrTimeCorrectionBatch.Status.APPLIED,
+        }:
+            return batch
+        if batch.status != HrTimeCorrectionBatch.Status.REQUESTED:
+            raise CloseServiceError("VERSION_CONFLICT", "该重开申请当前不可审批")
+        if batch.requested_by_id == actor_id:
+            raise CloseServiceError(
+                "SEPARATION_OF_DUTY_VIOLATION",
+                "重开申请人与审批人必须为不同账号",
+            )
+        if period.status != "CLOSED":
+            raise CloseServiceError("VERSION_CONFLICT", "仅已关闭期间可批准重开")
+
+        approved_at = timezone.now()
+        batch.status = HrTimeCorrectionBatch.Status.APPROVED
+        batch.approved_by = actor_user
+        batch.approved_at = approved_at
+        batch.audit = {
+            **(batch.audit or {}),
+            "approvedAt": approved_at.isoformat(),
+            "approvedByUserId": actor_id,
+        }
+        batch.save(
+            update_fields=["status", "approved_by", "approved_at", "audit", "updated_at"]
+        )
+
+        # 审批成功后才解冻；更正后 reclose 会重新冻结并生成新快照。
         HrAttendanceDayFact.objects.filter(
             tenant_id=tenant_id,
             business_date__range=(period.start_date, period.end_date),
         ).update(finalized=False)
         period.status = "REOPENED"
-        period.save()
+        period.save(update_fields=["status", "updated_at"])
+        emit_registered_event(
+            tenant_id=tenant_id,
+            event_name="hr.time.time_close.reopen_approved",
+            correlation_id=batch.request_key,
+            payload={
+                "periodId": period.id,
+                "correctionBatchId": batch.id,
+                "approvedByUserId": actor_id,
+                "beforeSnapshotId": batch.before_snapshot_id,
+            },
+        )
+        emit_registered_event(
+            tenant_id=tenant_id,
+            event_name="hr.time.time_close.reopened",
+            correlation_id=batch.request_key,
+            payload={
+                "periodId": period.id,
+                "correctionBatchId": batch.id,
+                "beforeSnapshotId": batch.before_snapshot_id,
+            },
+        )
         return batch
 
     @staticmethod
@@ -492,12 +640,21 @@ class CloseService:
             period=period,
             batch=batch,
         )
+        if batch.status != HrTimeCorrectionBatch.Status.APPROVED:
+            raise CloseServiceError(
+                "REOPEN_APPROVAL_REQUIRED",
+                "更正批次尚未通过独立审批",
+            )
         if period.status != "REOPENED":
             raise CloseServiceError("VERSION_CONFLICT", "仅 REOPENED 期间可 reclose")
         new_snapshot = CloseService.close(
             tenant_id=tenant_id, period=period, actor_user=actor_user
         )
         batch.after_snapshot_id = new_snapshot.id
-        batch.audit = {"reclosed_at": str(new_snapshot.created_at)}
-        batch.save()
+        batch.status = HrTimeCorrectionBatch.Status.APPLIED
+        batch.audit = {
+            **(batch.audit or {}),
+            "reclosedAt": new_snapshot.created_at.isoformat(),
+        }
+        batch.save(update_fields=["after_snapshot_id", "status", "audit", "updated_at"])
         return new_snapshot

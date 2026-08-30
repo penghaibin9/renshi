@@ -19,6 +19,7 @@ from hr_time.models import (
     HrOvertimeRequest,
     HrScheduleAssignment,
     HrTimeClosePeriod,
+    HrTimeCorrectionBatch,
     HrTimeRiskCase,
     HrWorkCalendarVersion,
     HrShiftVersion,
@@ -271,6 +272,7 @@ def close_action(request, period_id, action):
             if period.status == "REOPENED":
                 batch = period.correction_batches.filter(
                     tenant_id=ctx.tenant_id,
+                    status=HrTimeCorrectionBatch.Status.APPROVED,
                     after_snapshot_id__isnull=True,
                 ).order_by("-created_at", "-id").first()
                 if batch is None:
@@ -297,11 +299,61 @@ def close_action(request, period_id, action):
                 period=period,
                 reason=reason,
                 actor_user=request.user,
+                idempotency_key=(
+                    request.headers.get("Idempotency-Key")
+                    or payload.get("idempotencyKey")
+                    or ""
+                ),
             )
-            return _success(request, {"id": period.id, "status": "REOPENED", "correctionBatchId": batch.id})
+            return _success(
+                request,
+                {
+                    "id": period.id,
+                    "status": period.status,
+                    "statusLabel": period.get_status_display(),
+                    "requestStatus": batch.status,
+                    "correctionBatchId": batch.id,
+                    "factsRemainFrozen": True,
+                },
+                status=201,
+            )
+        if action == "approve-reopen":
+            batch_id = payload.get("correctionBatchId")
+            batch = period.correction_batches.filter(
+                tenant_id=ctx.tenant_id,
+                id=batch_id,
+            ).first()
+            if batch is None:
+                raise HrTimeContextError(
+                    "TENANT_SCOPE_VIOLATION",
+                    "当前学校没有该重开申请",
+                    status=404,
+                )
+            batch = CloseService.approve_reopen(
+                tenant_id=ctx.tenant_id,
+                period=period,
+                batch=batch,
+                actor_user=request.user,
+            )
+            period.refresh_from_db()
+            return _success(
+                request,
+                {
+                    "id": period.id,
+                    "status": period.status,
+                    "statusLabel": period.get_status_display(),
+                    "requestStatus": batch.status,
+                    "correctionBatchId": batch.id,
+                    "factsRemainFrozen": False,
+                },
+            )
         raise HrTimeContextError("INVALID_REQUEST", "未知月结操作", status=400)
 
-    return _run(request, TimePermissionCode.HR11_PERIOD_CLOSER, handle)
+    permission = {
+        "reopen": TimePermissionCode.HR11_PERIOD_REOPEN_REQUESTER,
+        "approve-reopen": TimePermissionCode.HR11_PERIOD_REOPEN_APPROVER,
+    }.get(action, TimePermissionCode.HR11_PERIOD_CLOSER)
+    return _run(request, permission, handle)
 
 
 @require_POST

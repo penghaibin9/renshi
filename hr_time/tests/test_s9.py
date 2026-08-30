@@ -11,6 +11,7 @@ HR11-S9 验收测试（月结冻结硬闸门）：
 
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
@@ -97,13 +98,30 @@ class CloseFlowTests(TestCase):
 
 
 class ReopenRecloseTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.requester = User.objects.create_user(username="hr11-reopen-requester")
+        self.approver = User.objects.create_user(username="hr11-reopen-approver")
+
     def test_reopen_reclose_keeps_old_snapshot(self):
         period = make_period()
         old_snapshot = CloseService.close(tenant_id=1, period=period)
         period.refresh_from_db()
 
         batch = CloseService.request_reopen(
-            tenant_id=1, period=period, reason="补录请假"
+            tenant_id=1,
+            period=period,
+            reason="补录请假",
+            actor_user=self.requester,
+            idempotency_key="s9-reopen-1",
+        )
+        period.refresh_from_db()
+        self.assertEqual(period.status, "CLOSED")
+        CloseService.approve_reopen(
+            tenant_id=1,
+            period=period,
+            batch=batch,
+            actor_user=self.approver,
         )
         period.refresh_from_db()
         self.assertEqual(period.status, "REOPENED")
@@ -122,7 +140,13 @@ class ReopenRecloseTests(TestCase):
     def test_reopen_only_when_closed(self):
         period = make_period()
         with self.assertRaises(CloseServiceError):
-            CloseService.request_reopen(tenant_id=1, period=period, reason="x")
+            CloseService.request_reopen(
+                tenant_id=1,
+                period=period,
+                reason="x",
+                actor_user=self.requester,
+                idempotency_key="s9-reopen-open-period",
+            )
 
 
 class TenantIsolationTests(TestCase):

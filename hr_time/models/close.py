@@ -149,15 +149,36 @@ class HrTimeCloseSnapshot(TimeTenantModel):
 class HrTimeCorrectionBatch(TimeTenantModel):
     """重开更正批次（§117）。"""
 
+    class Status(models.TextChoices):
+        REQUESTED = "REQUESTED", _("待独立审批")
+        APPROVED = "APPROVED", _("已批准重开")
+        APPLIED = "APPLIED", _("更正已重新月结")
+        REJECTED = "REJECTED", _("已拒绝")
+
     period = models.ForeignKey(
         HrTimeClosePeriod, on_delete=models.PROTECT, related_name="correction_batches"
     )
     reason = models.CharField(max_length=255, verbose_name=_("原因"))
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.REQUESTED,
+        db_index=True,
+    )
+    request_key = models.CharField(max_length=64)
     scope = models.JSONField(default=dict, blank=True)
     impacted_staff_ids = models.JSONField(default=list, blank=True)
     before_snapshot_id = models.BigIntegerField(null=True, blank=True)
     change_cases = models.JSONField(default=list, blank=True)
     after_snapshot_id = models.BigIntegerField(null=True, blank=True)
+    requested_by = models.ForeignKey(
+        "horilla_auth.HorillaUser",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
     approved_by = models.ForeignKey(
         "horilla_auth.HorillaUser",
         on_delete=models.SET_NULL,
@@ -165,11 +186,18 @@ class HrTimeCorrectionBatch(TimeTenantModel):
         blank=True,
         related_name="+",
     )
+    approved_at = models.DateTimeField(null=True, blank=True)
     audit = models.JSONField(default=dict, blank=True)
 
     class Meta:
         verbose_name = _("Time Correction Batch")
         verbose_name_plural = _("Time Correction Batches")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "request_key"],
+                name="uniq_hr11_reopen_request_key",
+            ),
+        ]
 
     def __str__(self):
         return f"[{self.tenant_id}] period={self.period_id} batch={self.pk}"

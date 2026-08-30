@@ -86,6 +86,11 @@ class Hr11WorkbenchTenantAndLifecycleTests(TestCase):
             email="hr11-workbench@example.invalid",
             password="test-only-password",
         )
+        self.reopen_approver = get_user_model().objects.create_superuser(
+            username="hr11-reopen-approver",
+            email="hr11-reopen-approver@example.invalid",
+            password="test-only-password",
+        )
 
     def request(self, path, body=None):
         if body is None:
@@ -219,9 +224,31 @@ class Hr11WorkbenchTenantAndLifecycleTests(TestCase):
         response = self.call_for_tenant(
             801,
             close_action,
-            self.request(f"/api/v1/hr/time/close-periods/{local.id}/reopen", {"reason": "更正已核验考勤事实"}),
+            self.request(
+                f"/api/v1/hr/time/close-periods/{local.id}/reopen",
+                {
+                    "reason": "更正已核验考勤事实",
+                    "idempotencyKey": "workspace-reopen-1",
+                },
+            ),
             local.id,
             "reopen",
+        )
+        self.assertEqual(response.status_code, 201)
+        local.refresh_from_db()
+        self.assertEqual(local.status, "CLOSED")
+        batch = local.correction_batches.get(request_key="workspace-reopen-1")
+        approve_request = self.request(
+            f"/api/v1/hr/time/close-periods/{local.id}/approve-reopen",
+            {"correctionBatchId": batch.id},
+        )
+        approve_request.user = self.reopen_approver
+        response = self.call_for_tenant(
+            801,
+            close_action,
+            approve_request,
+            local.id,
+            "approve-reopen",
         )
         self.assertEqual(response.status_code, 200)
         local.refresh_from_db()

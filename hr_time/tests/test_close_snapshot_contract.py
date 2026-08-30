@@ -1,5 +1,6 @@
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
@@ -11,6 +12,8 @@ from hr_time.services.close_service import CloseService
 
 class CloseSnapshotContractTests(TestCase):
     def setUp(self):
+        User = get_user_model()
+        self.requester = User.objects.create_user(username="snapshot-reopen-requester")
         self.period = HrTimeClosePeriod.objects.create(
             tenant_id=71,
             period_type="MONTHLY",
@@ -75,6 +78,8 @@ class CloseSnapshotContractTests(TestCase):
             tenant_id=71,
             period=self.period,
             reason="补录更正",
+            actor_user=self.requester,
+            idempotency_key="snapshot-tamper-reopen",
         )
         basis.regular_work_minutes = 2
         with self.assertRaises(ValidationError):

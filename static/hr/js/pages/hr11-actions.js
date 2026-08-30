@@ -66,7 +66,8 @@
   }
 
   function endpoint(action, recordId) {
-    const [domain, verb] = action.split('-');
+    const [domain, ...verbParts] = action.split('-');
+    const verb = verbParts.join('-');
     const domains = {
       exception: 'exceptions', leave: 'leaves', overtime: 'overtime',
       close: 'close-periods', risk: 'risks'
@@ -137,13 +138,15 @@
       openDialog({...dialogSpecs[action], kind: 'action', action, recordId, button});
       return;
     }
-    await runAction(action, recordId, {}, button);
+    const payload = button.dataset.correctionBatchId ? {correctionBatchId: button.dataset.correctionBatchId} : {};
+    await runAction(action, recordId, payload, button);
   });
 
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!pending) return;
     const payload = Object.fromEntries(new FormData(form).entries());
+    if (pending.action === 'close-reopen') payload.idempotencyKey = crypto.randomUUID();
     const submit = root.querySelector('[data-dialog-submit]');
     submit.disabled = true;
     if (pending.kind === 'schedule') {

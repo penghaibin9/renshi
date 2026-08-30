@@ -89,6 +89,8 @@ class TimePermissionCode:
     HR11_LEAVE_APPROVER = "hr.time.leave.approve"  # 请假审批
     HR11_OVERTIME_APPROVER = "hr.time.overtime.approve"  # 加班审批
     HR11_PERIOD_CLOSER = "hr.time.close"  # 月结关闭
+    HR11_PERIOD_REOPEN_REQUESTER = "hr.time.close.reopen_request"  # 申请重开
+    HR11_PERIOD_REOPEN_APPROVER = "hr.time.close.reopen_approve"  # 独立审批重开
     HR11_AUDITOR = "hr.time.audit"  # 审计只读
     HR11_EMPLOYEE_SELF = "hr.time.self"  # 员工自助
     HR11_MANAGER_TEAM = "hr.time.team.view"  # 主管团队视图
@@ -108,6 +110,8 @@ ALL_TIME_PERMISSIONS = tuple(
         (TimePermissionCode.HR11_LEAVE_APPROVER, _("HR Time: Leave Approver")),
         (TimePermissionCode.HR11_OVERTIME_APPROVER, _("HR Time: Overtime Approver")),
         (TimePermissionCode.HR11_PERIOD_CLOSER, _("HR Time: Period Closer")),
+        (TimePermissionCode.HR11_PERIOD_REOPEN_REQUESTER, _("HR Time: Reopen Requester")),
+        (TimePermissionCode.HR11_PERIOD_REOPEN_APPROVER, _("HR Time: Reopen Approver")),
         (TimePermissionCode.HR11_AUDITOR, _("HR Time: Auditor")),
         (TimePermissionCode.HR11_EMPLOYEE_SELF, _("HR Time: Employee Self Service")),
         (TimePermissionCode.HR11_MANAGER_TEAM, _("HR Time: Manager Team")),

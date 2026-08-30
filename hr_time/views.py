@@ -189,16 +189,19 @@ def workspace(request, section="overview"):
             for x in schedules.order_by("-effective_from", "-id")[:12]
         ]
     elif section == "close":
-        recent = [
-            {
+        recent = []
+        for x in close_periods.order_by("-end_date", "-id")[:12]:
+            pending_batch = x.correction_batches.filter(status="REQUESTED").order_by(
+                "-requested_at", "-id"
+            ).first()
+            recent.append({
                 "id": x.id,
                 "date": f"{x.start_date} 至 {x.end_date}",
                 "status": x.get_status_display(),
                 "closed_at": x.closed_at,
                 "status_code": x.status,
-            }
-            for x in close_periods.order_by("-end_date", "-id")[:12]
-        ]
+                "pending_reopen_batch_id": pending_batch.id if pending_batch else None,
+            })
     elif section == "risks":
         recent = [
             {

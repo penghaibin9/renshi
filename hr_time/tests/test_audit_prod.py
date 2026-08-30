@@ -14,6 +14,7 @@ hr_time/tests/test_audit_prod.py
 
 from datetime import date, datetime, time, timezone as dt_tz
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
@@ -59,6 +60,9 @@ class MonthCloseHardGateTests(TestCase):
     """月结硬闸门端到端：冻结后一切修改被拒，reopen 后可更正。"""
 
     def setUp(self):
+        User = get_user_model()
+        self.requester = User.objects.create_user(username="audit-reopen-requester")
+        self.approver = User.objects.create_user(username="audit-reopen-approver")
         self.fact = HrAttendanceDayFact.objects.create(
             tenant_id=1, staff_master_id=100, business_date=D,
             status=AttendanceStatus.PRESENT, expected_minutes=480,
@@ -97,7 +101,21 @@ class MonthCloseHardGateTests(TestCase):
 
     def test_reopen_unfreezes_and_correction_allowed(self):
         CloseService.close(tenant_id=1, period=self.period)
-        batch = CloseService.request_reopen(tenant_id=1, period=self.period, reason="补录")
+        batch = CloseService.request_reopen(
+            tenant_id=1,
+            period=self.period,
+            reason="补录",
+            actor_user=self.requester,
+            idempotency_key="audit-reopen-1",
+        )
+        self.fact.refresh_from_db()
+        self.assertTrue(self.fact.finalized)
+        CloseService.approve_reopen(
+            tenant_id=1,
+            period=self.period,
+            batch=batch,
+            actor_user=self.approver,
+        )
         self.fact.refresh_from_db()
         self.assertFalse(self.fact.finalized)
         # 解冻后可更正（evaluator force 重算）
@@ -115,7 +133,13 @@ class MonthCloseHardGateTests(TestCase):
             tenant_id=1, start_date=date(2026, 9, 1), end_date=date(2026, 9, 30),
         )
         with self.assertRaises(CloseServiceError):
-            CloseService.request_reopen(tenant_id=1, period=period, reason="x")
+            CloseService.request_reopen(
+                tenant_id=1,
+                period=period,
+                reason="x",
+                actor_user=self.requester,
+                idempotency_key="audit-open-period",
+            )
 
 
 class AppendOnlyQuerysetTests(TestCase):

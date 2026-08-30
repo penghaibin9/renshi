@@ -18,6 +18,8 @@ EVENT_DEFINITIONS = (
     BusinessEventDefinition("hr.time.leave_request.approved", "HR11", "leave_request", description="Leave request approved"),
     BusinessEventDefinition("hr.time.overtime_fact.verified", "HR11", "overtime_fact", description="Overtime fact verified"),
     BusinessEventDefinition("hr.time.time_close.closed", "HR11", "time_close", description="Immutable time-close snapshot created"),
+    BusinessEventDefinition("hr.time.time_close.reopen_requested", "HR11", "time_close", description="Closed period reopen requested; facts remain frozen"),
+    BusinessEventDefinition("hr.time.time_close.reopen_approved", "HR11", "time_close", description="Independent actor approved period reopen"),
     BusinessEventDefinition("hr.time.time_close.reopened", "HR11", "time_close", description="Closed period reopened through correction batch"),
 )
 
