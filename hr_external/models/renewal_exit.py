@@ -122,7 +122,8 @@ class HrExternalExitCase(models.Model):
         verbose_name = _("HR External Exit Case")
         verbose_name_plural = _("HR External Exit Cases")
         constraints = [
-            # 一个 engagement 最多一个 active exit case（§118）
+            # 一个 engagement 最多一个 active exit case（§118）。MySQL 不支持
+            # conditional unique constraint，0018 迁移会安装 generated-column 物理兜底。
             models.UniqueConstraint(
                 fields=["tenant_id", "engagement_id"],
                 condition=models.Q(status__in=["PLANNED", "UNDER_REVIEW", "READY_TO_EXIT", "EXITING", "CLEARANCE_PENDING"]),
