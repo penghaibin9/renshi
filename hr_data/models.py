@@ -478,3 +478,347 @@ class SubmissionSnapshot(HrTenantScopedModel):
                         "HR18_SUBMISSION_IDENTITY_IMMUTABLE: submission payload identity must be appended"
                     )
         return super().save(*args, **kwargs)
+
+
+class ExchangeDatasetVersion(HrVersionedModel):
+    """Immutable, versioned manifest for one exchange data cut.
+
+    The manifest contains source receipts and a payload reference, not transport
+    credentials.  Providers use ``payload_ref`` to obtain the already frozen
+    payload from the configured secure store.
+    """
+
+    dataset_code = models.CharField(max_length=64)
+    name = models.CharField(max_length=200)
+    schema_json = models.JSONField(default=dict)
+    source_snapshot_json = models.JSONField(default=dict)
+    payload_ref = models.CharField(max_length=255)
+    payload_hash = models.CharField(max_length=64)
+    record_count = models.PositiveBigIntegerField(default=0)
+    frozen_at = models.DateTimeField()
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "dataset_code",
+        "version_no",
+        "name",
+        "schema_json",
+        "source_snapshot_json",
+        "payload_ref",
+        "payload_hash",
+        "record_count",
+        "frozen_at",
+        "content_hash",
+    )
+
+    class Meta:
+        db_table = "hr18_exchange_dataset_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "dataset_code", "version_no"),
+                name="uq_hr18_exchange_dataset_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "dataset_code", "status"),
+                name="idx_hr18_ex_dataset_status",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted and any(
+                getattr(self, field) != persisted[field] for field in self._FACT_FIELDS
+            ):
+                raise ValueError(
+                    "HR18_EXCHANGE_DATASET_IMMUTABLE: frozen datasets must be appended"
+                )
+        return super().save(*args, **kwargs)
+
+
+class ExchangeTargetMappingVersion(HrVersionedModel):
+    """Versioned target field mapping; secrets live in provider configuration."""
+
+    target_code = models.CharField(max_length=64)
+    dataset_code = models.CharField(max_length=64)
+    dataset_version = models.PositiveIntegerField()
+    transport_kind = models.CharField(max_length=32)
+    provider_key = models.CharField(max_length=64)
+    mapping_json = models.JSONField(default=dict)
+    expected_receipt = models.BooleanField(default=True)
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "target_code",
+        "version_no",
+        "dataset_code",
+        "dataset_version",
+        "transport_kind",
+        "provider_key",
+        "mapping_json",
+        "expected_receipt",
+        "content_hash",
+    )
+
+    class Meta:
+        db_table = "hr18_exchange_target_mapping_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "target_code", "version_no"),
+                name="uq_hr18_exchange_target_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "dataset_code", "dataset_version"),
+                name="idx_hr18_ex_target_dataset",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted and any(
+                getattr(self, field) != persisted[field] for field in self._FACT_FIELDS
+            ):
+                raise ValueError(
+                    "HR18_EXCHANGE_TARGET_IMMUTABLE: target mappings must be appended"
+                )
+        return super().save(*args, **kwargs)
+
+
+class ExchangeJob(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        QUEUED = "QUEUED", "Queued"
+        LEASED = "LEASED", "Leased by worker"
+        RETRY_WAIT = "RETRY_WAIT", "Waiting to retry"
+        TRANSMITTED = "TRANSMITTED", "Transmitted"
+        ACKNOWLEDGED = "ACKNOWLEDGED", "Receipt received"
+        RECONCILED = "RECONCILED", "Reconciled"
+        DEAD_LETTER = "DEAD_LETTER", "Dead letter"
+
+    job_no = models.CharField(max_length=64)
+    dataset_version = models.ForeignKey(
+        ExchangeDatasetVersion,
+        on_delete=models.PROTECT,
+        related_name="exchange_jobs",
+    )
+    target_mapping_version = models.ForeignKey(
+        ExchangeTargetMappingVersion,
+        on_delete=models.PROTECT,
+        related_name="exchange_jobs",
+    )
+    snapshot_hash = models.CharField(max_length=64)
+    idempotency_key = models.CharField(max_length=128)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.QUEUED, db_index=True
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=5)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    lease_token = models.UUIDField(null=True, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    dispatch_ref = models.CharField(max_length=255, blank=True, default="")
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    transmitted_at = models.DateTimeField(null=True, blank=True)
+
+    _IDENTITY_FIELDS = (
+        "tenant_id",
+        "job_no",
+        "dataset_version_id",
+        "target_mapping_version_id",
+        "snapshot_hash",
+        "idempotency_key",
+        "max_attempts",
+    )
+
+    class Meta:
+        db_table = "hr18_exchange_job"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "job_no"), name="uq_hr18_exchange_job_no"
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr18_exchange_job_idempotency",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "status", "next_attempt_at"),
+                name="idx_hr18_exchange_job_queue",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._IDENTITY_FIELDS
+            ).first()
+            if persisted and any(
+                getattr(self, field) != persisted[field]
+                for field in self._IDENTITY_FIELDS
+            ):
+                raise ValueError(
+                    "HR18_EXCHANGE_JOB_IDENTITY_IMMUTABLE: job identity cannot change"
+                )
+        return super().save(*args, **kwargs)
+
+
+class ExchangeAttempt(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        TRANSMITTED = "TRANSMITTED", "Transmitted"
+        RETRYABLE_FAILURE = "RETRYABLE_FAILURE", "Retryable failure"
+        TERMINAL_FAILURE = "TERMINAL_FAILURE", "Terminal failure"
+
+    job = models.ForeignKey(
+        ExchangeJob, on_delete=models.PROTECT, related_name="attempts"
+    )
+    attempt_no = models.PositiveIntegerField()
+    idempotency_key = models.CharField(max_length=160)
+    provider_version = models.CharField(max_length=64, blank=True, default="")
+    status = models.CharField(max_length=24, choices=Status.choices)
+    dispatch_ref = models.CharField(max_length=255, blank=True, default="")
+    response_hash = models.CharField(max_length=64, blank=True, default="")
+    error_code = models.CharField(max_length=64, blank=True, default="")
+    started_at = models.DateTimeField()
+    finished_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "hr18_exchange_attempt"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "job_id", "attempt_no"),
+                name="uq_hr18_exchange_attempt_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr18_exchange_attempt_key",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("HR18_EXCHANGE_ATTEMPT_IMMUTABLE: attempts must be appended")
+        return super().save(*args, **kwargs)
+
+
+class ExchangeReceipt(HrTenantScopedModel):
+    job = models.OneToOneField(
+        ExchangeJob, on_delete=models.PROTECT, related_name="exchange_receipt"
+    )
+    receipt_ref = models.CharField(max_length=255)
+    accepted = models.BooleanField()
+    received_payload_hash = models.CharField(max_length=64, blank=True, default="")
+    received_record_count = models.PositiveBigIntegerField(null=True, blank=True)
+    receipt_hash = models.CharField(max_length=64)
+    received_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "hr18_exchange_receipt"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "receipt_ref"),
+                name="uq_hr18_exchange_receipt_ref",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "job_id"),
+                name="uq_hr18_exchange_receipt_job",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("HR18_EXCHANGE_RECEIPT_IMMUTABLE: receipts must be appended")
+        return super().save(*args, **kwargs)
+
+
+class ExchangeReconciliation(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        MATCHED = "MATCHED", "Matched"
+        MISMATCH = "MISMATCH", "Mismatch"
+        REJECTED = "REJECTED", "Rejected by target"
+
+    job = models.OneToOneField(
+        ExchangeJob, on_delete=models.PROTECT, related_name="reconciliation"
+    )
+    receipt = models.OneToOneField(
+        ExchangeReceipt, on_delete=models.PROTECT, related_name="reconciliation"
+    )
+    expected_payload_hash = models.CharField(max_length=64)
+    received_payload_hash = models.CharField(max_length=64, blank=True, default="")
+    expected_record_count = models.PositiveBigIntegerField()
+    received_record_count = models.PositiveBigIntegerField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices)
+    differences_json = models.JSONField(default=dict, blank=True)
+    reconciled_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "hr18_exchange_reconciliation"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "job_id"),
+                name="uq_hr18_exchange_reconcile_job",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_EXCHANGE_RECONCILIATION_IMMUTABLE: reconciliations must be appended"
+            )
+        return super().save(*args, **kwargs)
+
+
+class ExchangeDeadLetter(HrTenantScopedModel):
+    job = models.OneToOneField(
+        ExchangeJob, on_delete=models.PROTECT, related_name="dead_letter"
+    )
+    reason_code = models.CharField(max_length=64)
+    final_attempt_no = models.PositiveIntegerField()
+    snapshot_hash = models.CharField(max_length=64)
+    failed_at = models.DateTimeField()
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "hr18_exchange_dead_letter"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "job_id"),
+                name="uq_hr18_exchange_dead_letter_job",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "resolved_at", "failed_at"),
+                name="idx_hr18_exchange_dead_queue",
+            ),
+        ]
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "job_id",
+        "reason_code",
+        "final_attempt_no",
+        "snapshot_hash",
+        "failed_at",
+    )
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted and any(
+                getattr(self, field) != persisted[field] for field in self._FACT_FIELDS
+            ):
+                raise ValueError(
+                    "HR18_EXCHANGE_DEAD_LETTER_IDENTITY_IMMUTABLE: failure evidence cannot change"
+                )
+        return super().save(*args, **kwargs)

@@ -11,6 +11,7 @@ PERMISSIONS = (
     PermissionDefinition("hr.data.submit", "HR18", "创建并提交正式报送"),
     PermissionDefinition("hr.data.approve", "HR18", "独立审批正式报送"),
     PermissionDefinition("hr.data.receipt", "HR18", "登记外部正式回执"),
+    PermissionDefinition("hr.data.exchange", "HR18", "管理异步数据交换与对账"),
 )
 register_permissions(PERMISSIONS)
 
@@ -33,5 +34,9 @@ EVENTS = (
     BusinessEventDefinition(
         "hr.data.submission.corrected", "HR18", "submission", 1
     ),
+    BusinessEventDefinition("hr.data.exchange.queued", "HR18", "exchange", 1),
+    BusinessEventDefinition("hr.data.exchange.transmitted", "HR18", "exchange", 1),
+    BusinessEventDefinition("hr.data.exchange.reconciled", "HR18", "exchange", 1),
+    BusinessEventDefinition("hr.data.exchange.dead_lettered", "HR18", "exchange", 1),
 )
 register_business_events(EVENTS)

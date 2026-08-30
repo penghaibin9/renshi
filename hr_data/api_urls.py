@@ -3,6 +3,7 @@ from django.urls import path
 from . import (
     api,
     asof_api,
+    exchange_api,
     evaluation_api,
     legacy_api,
     metric_api,
@@ -64,6 +65,28 @@ urlpatterns = [
         "quality/findings/<uuid:finding_id>/verify-fixed/",
         quality_finding_api.verify_fixed,
         name="quality-finding-verify-fixed",
+    ),
+    path("exchange/datasets/", exchange_api.create_dataset, name="exchange-dataset-create"),
+    path(
+        "exchange/targets/",
+        exchange_api.create_target_mapping,
+        name="exchange-target-create",
+    ),
+    path("exchange/jobs/", exchange_api.queue_job, name="exchange-job-queue"),
+    path(
+        "exchange/jobs/<uuid:job_id>/receipt/",
+        exchange_api.record_receipt,
+        name="exchange-job-receipt",
+    ),
+    path(
+        "exchange/jobs/<uuid:job_id>/reconcile/",
+        exchange_api.reconcile_job,
+        name="exchange-job-reconcile",
+    ),
+    path(
+        "exchange/dead-letters/",
+        exchange_api.dead_letters,
+        name="exchange-dead-letters",
     ),
     path("submissions/", submission_api.create_submission, name="submission-create"),
     path(

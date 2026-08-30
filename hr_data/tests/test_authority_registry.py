@@ -22,7 +22,8 @@ class Hr18AuthorityRegistryTests(SimpleTestCase):
                 "hr.data.submit",
                 "hr.data.approve",
                 "hr.data.receipt",
+                "hr.data.exchange",
             },
         )
-        self.assertGreaterEqual(len(events), 6)
+        self.assertGreaterEqual(len(events), 10)
         self.assertTrue(all(row.name.startswith("hr.data.") for row in events))
