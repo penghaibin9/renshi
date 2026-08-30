@@ -35,6 +35,7 @@ class Hr10QualificationProviderTests(TestCase):
         supersedes_fact_id=None,
         legacy_staff_id=501,
     ):
+        is_successor = supersedes_fact_id is not None
         return HrDevelopmentFact.objects.create(
             tenant_id=77,
             staff_master_id=legacy_staff_id,
@@ -57,7 +58,13 @@ class Hr10QualificationProviderTests(TestCase):
             valid_from=valid_from,
             valid_to=valid_to,
             supersedes_fact_id=supersedes_fact_id,
-            immutable_hash="b" * 64,
+            record_kind=(
+                HrDevelopmentFact.RecordKind.CORRECTION
+                if is_successor
+                else HrDevelopmentFact.RecordKind.ORIGINAL
+            ),
+            correction_reason="provider fixture correction" if is_successor else "",
+            correction_evidence_ref="TEST-EVIDENCE-1" if is_successor else "",
         )
 
     def test_training_provider_reads_only_trusted_asof_hr10_facts(self):

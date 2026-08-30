@@ -43,7 +43,6 @@ class Hr12QualificationProviderTests(TestCase):
             decision_reason="集体审定通过",
             finalized_at=finalized_at,
             result_version_no=1,
-            content_hash="a" * 64,
             status=status,
         )
 

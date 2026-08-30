@@ -16,6 +16,8 @@ from hr_qualification.constants import (
     RecognitionLevel,
     RecognitionStatus,
     ScoreSheetStatus,
+    PanelMemberRole,
+    VoteChoice,
 )
 from hr_qualification.models import (
     HrDoubleTeacherApplication,
@@ -97,6 +99,44 @@ class ReviewService:
         application.save(update_fields=["status", "version", "updated_at"])
 
     @staticmethod
+    def _eligible_panel_member(
+        application: HrDoubleTeacherApplication,
+        panel_member_id: uuid.UUID,
+    ) -> HrDoubleTeacherPanelMember:
+        """Resolve a reviewer inside the application's exact batch.
+
+        IDs are not authority.  A valid foreign key can still point at another
+        school's/batch's panel, and conflict/observer rows must never acquire a
+        scoring or voting capability merely because their UUID is known.
+        """
+        member = (
+            HrDoubleTeacherPanelMember.objects.select_related("panel_id__batch_id")
+            .filter(id=panel_member_id)
+            .first()
+        )
+        if member is None or str(member.panel_id.batch_id_id) != str(
+            application.batch_id_id
+        ):
+            raise ReviewError(
+                "PANEL_MEMBER_SCOPE_MISMATCH",
+                "panel member does not belong to the application batch",
+            )
+        if member.role not in {PanelMemberRole.CHAIR, PanelMemberRole.MEMBER}:
+            raise ReviewError(
+                "PANEL_MEMBER_ROLE_NOT_ELIGIBLE",
+                f"panel role {member.role} cannot score or vote",
+            )
+        if member.conflict_status not in {
+            ConflictStatus.CLEAR,
+            ConflictStatus.OVERRIDDEN,
+        }:
+            raise ReviewError(
+                "PANEL_MEMBER_CONFLICT_NOT_CLEARED",
+                f"panel member conflict is {member.conflict_status}",
+            )
+        return member
+
+    @staticmethod
     @transaction.atomic
     def formal_review(
         application: HrDoubleTeacherApplication,
@@ -149,10 +189,11 @@ class ReviewService:
             .get(id=application_id)
         )
         ReviewService._assert_frozen_evidence(application, for_update=True)
+        member = ReviewService._eligible_panel_member(application, panel_member_id)
         ReviewService._enter_panel_review(application)
         return HrDoubleTeacherScoreSheet.objects.create(
             application_id=application,
-            panel_member_id_id=panel_member_id,
+            panel_member_id=member,
             rubric_version_id=rubric_version_id,
             status=ScoreSheetStatus.DRAFT,
         )
@@ -177,6 +218,10 @@ class ReviewService:
         ReviewService._assert_frozen_evidence(
             sheet.application_id,
             for_update=True,
+        )
+        ReviewService._eligible_panel_member(
+            sheet.application_id,
+            sheet.panel_member_id_id,
         )
         if sheet.status != ScoreSheetStatus.DRAFT:
             raise ReviewError(
@@ -217,6 +262,10 @@ class ReviewService:
             sheet.application_id,
             for_update=True,
         )
+        ReviewService._eligible_panel_member(
+            sheet.application_id,
+            sheet.panel_member_id_id,
+        )
         if sheet.status == ScoreSheetStatus.LOCKED:
             return sheet
         if sheet.status != ScoreSheetStatus.SUBMITTED:
@@ -244,11 +293,7 @@ class ReviewService:
             .get(id=application_id)
         )
         panel = HrDoubleTeacherReviewPanel.objects.filter(id=panel_id).first()
-        member = HrDoubleTeacherPanelMember.objects.filter(
-            id=panel_member_id,
-            panel_id_id=panel_id,
-        ).first()
-        if panel is None or member is None:
+        if panel is None:
             raise ReviewError(
                 "PANEL_MEMBER_NOT_FOUND",
                 "panel/member relationship is invalid",
@@ -257,6 +302,17 @@ class ReviewService:
             raise ReviewError(
                 "PANEL_SCOPE_MISMATCH",
                 "panel does not belong to the application batch",
+            )
+        member = ReviewService._eligible_panel_member(application, panel_member_id)
+        if str(member.panel_id_id) != str(panel_id):
+            raise ReviewError(
+                "PANEL_MEMBER_SCOPE_MISMATCH",
+                "panel member does not belong to the selected panel",
+            )
+        if choice not in VoteChoice.values:
+            raise ReviewError(
+                "VOTE_CHOICE_INVALID",
+                f"invalid vote choice: {choice}",
             )
         ReviewService._assert_frozen_evidence(application, for_update=True)
         ReviewService._enter_panel_review(application)

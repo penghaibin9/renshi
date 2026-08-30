@@ -129,18 +129,26 @@ def get_verified_development_facts(
             "requested canonical HR03 staff ids have no tenant-scoped HR10 identity mapping",
         )
 
-    facts = HrDevelopmentFact.objects.effective().filter(
+    # Resolve lineage *after* applying the requested as-of window.  The
+    # manager's ``current()`` view intentionally answers today's head, so using
+    # it here would let a future correction erase its predecessor from a
+    # historical HR09 evidence query.
+    effective_rows = HrDevelopmentFact.objects.filter(
         tenant_id=tenant_id,
         staff_master_id__in=by_legacy,
         verification_status__in=TRUSTED_VERIFICATION_STATUSES,
         valid_from__isnull=False,
         valid_from__lte=as_of,
     ).filter(Q(valid_to__isnull=True) | Q(valid_to__gt=as_of))
-    superseded_ids = facts.exclude(supersedes_fact_id__isnull=True).values_list(
+    superseded_ids = effective_rows.exclude(
+        supersedes_fact_id__isnull=True
+    ).values_list(
         "supersedes_fact_id", flat=True
     )
-    facts = facts.exclude(id__in=superseded_ids).order_by(
-        "staff_master_id", "valid_from", "id"
+    facts = (
+        effective_rows.exclude(id__in=superseded_ids)
+        .exclude(record_kind=HrDevelopmentFact.RecordKind.REVOCATION)
+        .order_by("staff_master_id", "valid_from", "id")
     )
 
     rows = tuple(

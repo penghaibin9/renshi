@@ -10,6 +10,7 @@ from django.utils import timezone
 from hr_qualification.constants import (
     ApplicationStatus,
     BatchStatus,
+    ConflictStatus,
     FinalDecisionType,
     JurisdictionLevel,
     PanelDecisionType,
@@ -122,6 +123,82 @@ class ReviewStateMachineAuthorityTests(TestCase):
 
         self.application.refresh_from_db()
         self.assertEqual(self.application.status, ApplicationStatus.PANEL_REVIEW)
+
+    @patch.object(ReviewService, "_assert_frozen_evidence", return_value=object())
+    def test_other_batch_member_cannot_score_application(self, frozen):
+        self._set_status(ApplicationStatus.ELIGIBLE)
+        other_batch = HrDoubleTeacherRecognitionBatch.objects.create(
+            tenant_id=self.tenant_id + 1,
+            batch_no=f"REVIEW-OTHER-{uuid.uuid4().hex}",
+            name="Other school review batch",
+            rule_pack_version_id=self.batch.rule_pack_version_id,
+            target_levels=[RecognitionLevel.DOUBLE_TEACHER_JUNIOR],
+            status=BatchStatus.REVIEWING,
+        )
+        other_panel = HrDoubleTeacherReviewPanel.objects.create(
+            batch_id=other_batch,
+            panel_no=f"OTHER-{uuid.uuid4().hex[:8]}",
+        )
+        other_member = HrDoubleTeacherPanelMember.objects.create(
+            panel_id=other_panel,
+            reviewer_ref="cross-school-reviewer",
+            role=PanelMemberRole.MEMBER,
+        )
+
+        with self.assertRaises(ReviewError) as ctx:
+            ReviewService.create_score_sheet(
+                application_id=self.application.id,
+                panel_member_id=other_member.id,
+            )
+
+        self.assertEqual(ctx.exception.code, "PANEL_MEMBER_SCOPE_MISMATCH")
+        self.application.refresh_from_db()
+        self.assertEqual(self.application.status, ApplicationStatus.ELIGIBLE)
+
+    @patch.object(ReviewService, "_assert_frozen_evidence", return_value=object())
+    def test_recused_or_observer_member_cannot_score(self, frozen):
+        self._set_status(ApplicationStatus.ELIGIBLE)
+        self.member.conflict_status = ConflictStatus.RECUSED
+        self.member.save(update_fields=["conflict_status"])
+        with self.assertRaises(ReviewError) as ctx:
+            ReviewService.create_score_sheet(
+                application_id=self.application.id,
+                panel_member_id=self.member.id,
+            )
+        self.assertEqual(ctx.exception.code, "PANEL_MEMBER_CONFLICT_NOT_CLEARED")
+
+        self.member.conflict_status = ConflictStatus.CLEAR
+        self.member.role = PanelMemberRole.OBSERVER
+        self.member.save(update_fields=["conflict_status", "role"])
+        with self.assertRaises(ReviewError) as ctx:
+            ReviewService.create_score_sheet(
+                application_id=self.application.id,
+                panel_member_id=self.member.id,
+            )
+        self.assertEqual(ctx.exception.code, "PANEL_MEMBER_ROLE_NOT_ELIGIBLE")
+
+    @patch.object(ReviewService, "_assert_frozen_evidence", return_value=object())
+    def test_vote_rejects_invalid_choice_and_conflicted_member(self, frozen):
+        self._set_status(ApplicationStatus.ELIGIBLE)
+        with self.assertRaises(ReviewError) as ctx:
+            ReviewService.cast_vote(
+                self.application.id,
+                self.panel.id,
+                self.member.id,
+                "TRUST_ME",
+            )
+        self.assertEqual(ctx.exception.code, "VOTE_CHOICE_INVALID")
+
+        self.member.conflict_status = ConflictStatus.DETECTED
+        self.member.save(update_fields=["conflict_status"])
+        with self.assertRaises(ReviewError) as ctx:
+            ReviewService.cast_vote(
+                self.application.id,
+                self.panel.id,
+                self.member.id,
+                "APPROVE",
+            )
+        self.assertEqual(ctx.exception.code, "PANEL_MEMBER_CONFLICT_NOT_CLEARED")
 
     @patch.object(ReviewService, "_assert_frozen_evidence", return_value=object())
     def test_panel_decision_moves_application_to_result_pending(self, frozen):

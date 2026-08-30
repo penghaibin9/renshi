@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import date
@@ -173,6 +175,11 @@ class FinalDecisionAuthorityService:
         key: str,
         kind: str,
         decision_id,
+        command_hash: str,
+        reason: str,
+        authority_ref: str,
+        replacement: dict,
+        evidence: dict,
     ) -> HrDoubleTeacherFinalDecisionAmendment | None:
         row = (
             HrDoubleTeacherFinalDecisionAmendment.objects.select_for_update()
@@ -186,12 +193,71 @@ class FinalDecisionAuthorityService:
                 "FINAL_DECISION_IDEMPOTENCY_CONFLICT",
                 "Idempotency-Key belongs to a different command",
             )
+        stored_command_hash = str(
+            (row.authority_receipt_json or {}).get("commandHash", "")
+        )
+        if stored_command_hash:
+            command_matches = stored_command_hash == command_hash
+        else:
+            # Rows written by migration 0006 predate commandHash. Preserve exact
+            # replay compatibility while still rejecting changed known fields.
+            stored_replacement = dict(row.replacement_payload_json or {})
+            replacement_matches = all(
+                stored_replacement.get(field)
+                == (
+                    value.isoformat()
+                    if hasattr(value, "isoformat")
+                    else value
+                )
+                for field, value in replacement.items()
+            )
+            command_matches = (
+                row.reason == reason
+                and row.authority_ref == authority_ref
+                and dict((row.authority_receipt_json or {}).get("evidence", {}))
+                == evidence
+                and replacement_matches
+            )
+        if not command_matches:
+            raise FinalDecisionAuthorityError(
+                "FINAL_DECISION_IDEMPOTENCY_CONFLICT",
+                "Idempotency-Key was replayed with different command content",
+            )
         if not row.verify_content_hash():
             raise FinalDecisionAuthorityError(
                 "FINAL_DECISION_AMENDMENT_HASH_MISMATCH",
                 "stored amendment seal is invalid",
             )
         return row
+
+    @staticmethod
+    def _command_hash(
+        *,
+        decision_id,
+        kind: str,
+        reason: str,
+        authority_ref: str,
+        replacement: dict,
+        evidence: dict,
+    ) -> str:
+        """Bind an idempotency key to the complete caller command."""
+        payload = {
+            "decisionId": str(decision_id),
+            "kind": kind,
+            "reason": reason,
+            "authorityRef": authority_ref,
+            "replacement": replacement,
+            "evidence": evidence,
+        }
+        return hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
 
     @staticmethod
     def _head(source: HrDoubleTeacherFinalDecision):
@@ -357,10 +423,56 @@ class FinalDecisionAuthorityService:
         key = self._required(
             idempotency_key, "FINAL_DECISION_IDEMPOTENCY_KEY_REQUIRED", 128
         )
-        replay = self._replay(key=key, kind=kind, decision_id=decision_id)
+        reason = self._required(reason, "FINAL_DECISION_REASON_REQUIRED", 2000)
+        authority_ref = self._required(
+            authority_ref, "FINAL_DECISION_AUTHORITY_REF_REQUIRED", 200
+        )
+        if not isinstance(replacement, dict):
+            raise FinalDecisionAuthorityError(
+                "FINAL_DECISION_REPLACEMENT_INVALID",
+                "replacement must be a JSON object",
+            )
+        if not isinstance(evidence, dict):
+            raise FinalDecisionAuthorityError(
+                "FINAL_DECISION_EVIDENCE_INVALID", "evidence must be a JSON object"
+            )
+        command_hash = self._command_hash(
+            decision_id=decision_id,
+            kind=kind,
+            reason=reason,
+            authority_ref=authority_ref,
+            replacement=replacement,
+            evidence=evidence,
+        )
+        replay = self._replay(
+            key=key,
+            kind=kind,
+            decision_id=decision_id,
+            command_hash=command_hash,
+            reason=reason,
+            authority_ref=authority_ref,
+            replacement=replacement,
+            evidence=evidence,
+        )
         if replay is not None:
             return FinalDecisionAuthorityResult(replay, True)
         source = self._source(decision_id)
+        # Two workers may both miss the key before either locks the source
+        # decision.  Re-read after the source row lock so the waiter observes
+        # the winner and returns a replay instead of hitting the unique key
+        # after applying effects.
+        replay = self._replay(
+            key=key,
+            kind=kind,
+            decision_id=decision_id,
+            command_hash=command_hash,
+            reason=reason,
+            authority_ref=authority_ref,
+            replacement=replacement,
+            evidence=evidence,
+        )
+        if replay is not None:
+            return FinalDecisionAuthorityResult(replay, True)
         head = self._head(source)
         if head is not None:
             if not head.verify_content_hash():
@@ -373,14 +485,6 @@ class FinalDecisionAuthorityService:
                     "FINAL_DECISION_ALREADY_REVOKED",
                     "a revoked decision cannot be amended",
                 )
-        reason = self._required(reason, "FINAL_DECISION_REASON_REQUIRED", 2000)
-        authority_ref = self._required(
-            authority_ref, "FINAL_DECISION_AUTHORITY_REF_REQUIRED", 200
-        )
-        if not isinstance(evidence, dict):
-            raise FinalDecisionAuthorityError(
-                "FINAL_DECISION_EVIDENCE_INVALID", "evidence must be a JSON object"
-            )
         normalized = (
             self._normalized_replacement(source, replacement)
             if kind == HrDoubleTeacherFinalDecisionAmendment.Kind.CORRECTION
@@ -415,6 +519,7 @@ class FinalDecisionAuthorityService:
                 "authorityRef": authority_ref,
                 "actorUserId": self.actor_user_id,
                 "evidence": dict(evidence),
+                "commandHash": command_hash,
                 "sourceDecisionHash": source.content_hash,
                 "priorAmendmentHash": head.content_hash if head else None,
             },
