@@ -1113,35 +1113,12 @@ def position_control_summary(request):
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
 
-    from hr_structure.models import HrPosition, HrPositionReservation
-    from django.db.models import Sum
-    from django.utils import timezone as _tz
+    from hr_structure.selectors.position import PositionSelector
 
-    qs = HrPosition.objects.filter(
-        tenant_id=scope.tenant_id,
-        validity_from__lte=as_of,
-        lifecycle_status__in=("ACTIVE", "FROZEN"),
-    )
-    authorized = qs.count()
-    frozen = qs.filter(lifecycle_status="FROZEN").count()
-    active = authorized - frozen
-    held = (
-        HrPositionReservation.objects.filter(
-            tenant_id=scope.tenant_id, status="HELD", expires_at__gt=_tz.now()
-        ).aggregate(t=Sum("reserved_count"))["t"]
-        or 0
-    )
-    # occupied: HR03 正式 assignment（占位，当前用 reservation）
-    occupied = held
-    vacant = max(0, active - occupied)
-    over = max(0, occupied - active)
+    summary = PositionSelector(scope, as_of=as_of).control_summary()
     return _json(
         request,
-        _root(
-            request, scope.tenant_id, as_of,
-            authorized=authorized, occupied=occupied, vacant=vacant,
-            frozen=frozen, over=over,
-        ),
+        _root(request, scope.tenant_id, as_of, **summary),
     )
 
 

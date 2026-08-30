@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from hr_staff.constants import AssignmentType, StaffStatus
 from hr_staff.models import HrEmploymentRelationship, HrStaffAssignment, HrStatusHistory
@@ -111,6 +111,30 @@ class EffectiveDatedQueryService:
     def position_occupancy_as_of(self, position_id, as_of: Optional[date] = None) -> int:
         """岗位在 as_of 的有效任职人数（HR02 occupancy 用）。"""
         return self.assignments_for_position_as_of(position_id, as_of).count()
+
+    def position_occupancy_by_position_as_of(
+        self, position_ids, as_of: Optional[date] = None
+    ) -> dict:
+        """批量返回岗位有效任职数，供 HR02 列表/汇总避免逐岗查询。"""
+        as_of = as_of or date.today()
+        position_ids = tuple(position_ids)
+        if not position_ids:
+            return {}
+        rows = (
+            _active_segments(
+                HrStaffAssignment.objects.filter(
+                    tenant_id=self.tenant_id,
+                    position_id__in=position_ids,
+                ),
+                as_of,
+            )
+            .values("position_id")
+            .annotate(occupied_count=Count("id"))
+        )
+        return {
+            row["position_id"]: row["occupied_count"]
+            for row in rows
+        }
 
     def org_occupancy_as_of(self, organization_id, as_of: Optional[date] = None) -> int:
         """组织在 as_of 的有效任职人数。"""
