@@ -54,7 +54,20 @@ def post_catalog_version_as_of(tenant_id, catalog_id, as_of: date) -> Optional["
 
 def position_as_of(tenant_id, position_id, as_of: date) -> Optional["HrPosition"]:
     """岗位在 as_of 日期的有效状态。tenant_id 必填（INV-01）。"""
-    from hr_structure.models import HrPosition
+    from hr_structure.models import HrPosition, HrPositionVersion
+
+    version = (
+        HrPositionVersion.objects.filter(
+            tenant_id=tenant_id,
+            position_id=position_id,
+            validity_from__lte=as_of,
+        )
+        .filter(Q(validity_to__isnull=True) | Q(validity_to__gt=as_of))
+        .order_by("-version_no")
+        .first()
+    )
+    if version is not None:
+        return version
 
     return (
         HrPosition.objects.filter(

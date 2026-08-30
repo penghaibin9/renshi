@@ -19,6 +19,7 @@ from hr_structure.models.post_catalog import (
 )
 from hr_structure.models.position import (
     HrPosition,
+    HrPositionVersion,
     HrPositionPool,
     HrPositionReservation,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "HrPostCatalog",
     "HrPostCatalogVersion",
     "HrPosition",
+    "HrPositionVersion",
     "HrPositionPool",
     "HrPositionReservation",
     "HrStructureChangeCase",

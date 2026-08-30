@@ -67,6 +67,63 @@ class HrPosition(models.Model):
         return f"{self.position_code}"
 
 
+class HrPositionVersion(models.Model):
+    """Effective-dated snapshot of a position's formal placement/lifecycle.
+
+    ``HrPosition`` remains the stable/current projection used by existing
+    callers. Reorganization actions append these rows so historical
+    organization placement is never inferred from the mutable projection.
+    """
+
+    position_id = models.ForeignKey(
+        HrPosition, on_delete=models.PROTECT, related_name="history_versions"
+    )
+    tenant_id = models.BigIntegerField(db_index=True)
+    organization_id = models.ForeignKey(
+        "HrOrganization", on_delete=models.PROTECT, related_name="position_versions"
+    )
+    post_catalog_version_id = models.ForeignKey(
+        "HrPostCatalogVersion", on_delete=models.PROTECT
+    )
+    post_grade_id = models.ForeignKey(
+        "HrPostGrade", on_delete=models.PROTECT, null=True, blank=True
+    )
+    position_type = models.CharField(
+        max_length=16,
+        choices=HrPosition.PositionType.choices,
+        default=HrPosition.PositionType.REGULAR,
+    )
+    planned_fte = models.DecimalField(max_digits=5, decimal_places=2, default=1.00)
+    max_incumbents = models.PositiveIntegerField(default=1)
+    allow_multiple_incumbents = models.BooleanField(default=False)
+    lifecycle_status = models.CharField(
+        max_length=20,
+        choices=HrPosition.LifecycleStatus.choices,
+        default=HrPosition.LifecycleStatus.ACTIVE,
+    )
+    validity_from = models.DateField()
+    validity_to = models.DateField(null=True, blank=True)
+    version_no = models.PositiveIntegerField(default=1)
+    change_case_id = models.CharField(max_length=64, blank=True, default="")
+    reason = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.CharField(max_length=128, blank=True, default="")
+
+    class Meta:
+        verbose_name = _("HR Position Version")
+        verbose_name_plural = _("HR Position Versions")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["position_id", "version_no"],
+                name="uniq_hr_position_version_no",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant_id", "position_id", "validity_from"]),
+            models.Index(fields=["tenant_id", "organization_id", "lifecycle_status"]),
+        ]
+
+
 class HrPositionPool(models.Model):
     tenant_id = models.BigIntegerField(db_index=True)
     organization_id = models.ForeignKey("HrOrganization", on_delete=models.PROTECT, related_name="pools")
