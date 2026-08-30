@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from horilla.hr_event_service import emit_registered_event
@@ -41,9 +42,10 @@ class ReorganizationService:
         """影响分析（总册 14.8 / 50.7 依赖矩阵）。
 
         返回 BLOCKER / REQUIRES_MAPPING / WARNING / SAFE 分类。
-        HR03 任职、招聘、合同等下游尚未接入 → 用契约占位。
+        HR03 任职使用正式任职事实按计划生效日计算；其他下游保持显式契约边界。
         """
-        from hr_structure.models import HrOrganization, HrOrganizationVersion, HrPosition, HrPositionReservation
+        from hr_staff.models import HrStaffAssignment
+        from hr_structure.models import HrOrganizationVersion, HrPosition, HrPositionReservation
 
         items = list(case.items.all())
         org_ids = set()
@@ -80,9 +82,23 @@ class ReorganizationService:
             ).count()
             if resv_count:
                 add("WARNING", "ORG_HAS_RESERVATIONS", f"组织 {org_id} 有 {resv_count} 条岗位预占需处理")
-            # HR03 任职（占位：待 HR03 交付后接入真实 assignment）
-            # [总控占位] 待 HR03 任职事实层交付后替换为真实 assignment 查询
-            add("SAFE", "HR03_ASSIGNMENT_PENDING", f"组织 {org_id} 人员任职影响待 HR03 交付后接入")
+            # HR03 正式任职事实：按本次计划生效日计算仍在有效区间内的任职。
+            assignment_count = HrStaffAssignment.objects.filter(
+                tenant_id=self.scope.tenant_id,
+                organization_id=org_id,
+                status="ACTIVE",
+                effective_from__lte=case.requested_effective_date,
+            ).filter(
+                Q(effective_to__isnull=True) | Q(effective_to__gt=case.requested_effective_date)
+            ).count()
+            if assignment_count:
+                add(
+                    "REQUIRES_MAPPING",
+                    "ORG_HAS_STAFF_ASSIGNMENTS",
+                    f"组织 {org_id} 在生效日有 {assignment_count} 条有效任职，需确认人员迁移方案",
+                )
+            else:
+                add("SAFE", "ORG_HAS_NO_ACTIVE_ASSIGNMENTS", f"组织 {org_id} 在生效日无有效任职")
 
         return result
 
