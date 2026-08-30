@@ -289,7 +289,9 @@ def credential_submit_verification(request: HttpRequest, credential_id: str) -> 
         )
     try:
         c = CredentialService.submit_for_verification(
-            c.id, actor_id=getattr(request.user, "id", None)
+            c.id,
+            tenant_id=request.hr09_tenant_id,
+            actor_id=getattr(request.user, "id", None),
         )
         return JsonResponse(envelope(_credential_to_dict(c)))
     except CredentialError as exc:
@@ -319,6 +321,7 @@ def credential_verify(request: HttpRequest, credential_id: str) -> JsonResponse:
             credential_id=c.id,
             verification_type=data["verification_type"],
             result=result,
+            tenant_id=request.hr09_tenant_id,
             verified_by=getattr(request.user, "id", None),
             provider=data.get("provider", ""),
             provider_reference=data.get("provider_reference", ""),
@@ -372,6 +375,7 @@ def credential_renew(request: HttpRequest, credential_id: str) -> JsonResponse:
         new_credential, _renewal = CredentialService.renew(
             credential_id=original.id,
             new_credential_data=new_data,
+            tenant_id=request.hr09_tenant_id,
             renewal_type=data.get("renewal_type", "SAME_LEVEL"),
             reason=data.get("reason", ""),
         )
@@ -398,6 +402,7 @@ def credential_suspend(request: HttpRequest, credential_id: str) -> JsonResponse
     try:
         c = CredentialService.suspend(
             c.id,
+            tenant_id=request.hr09_tenant_id,
             actor_id=getattr(request.user, "id", None),
             reason=body.get("reason", ""),
         )
@@ -420,6 +425,7 @@ def credential_revoke(request: HttpRequest, credential_id: str) -> JsonResponse:
     try:
         c = CredentialService.revoke(
             c.id,
+            tenant_id=request.hr09_tenant_id,
             actor_id=getattr(request.user, "id", None),
             reason=body.get("reason", ""),
         )

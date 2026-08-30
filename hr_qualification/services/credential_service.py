@@ -30,19 +30,50 @@ class CredentialError(Exception):
     """证书操作异常。"""
 
 
+_RENEWAL_MUTABLE_FIELDS = frozenset(
+    {
+        "certificate_no_cipher",
+        "certificate_no_hash",
+        "issuer_name",
+        "issue_date",
+        "valid_from",
+        "valid_to",
+        "level_code",
+    }
+)
+
+
+def _credential_for_update(*, credential_id: uuid.UUID, tenant_id: int) -> HrPersonCredential:
+    """Lock a credential only after applying the source tenant boundary."""
+    if tenant_id is None:
+        raise CredentialError("TENANT_CONTEXT_REQUIRED: tenant_id is required.")
+    try:
+        return HrPersonCredential.objects.select_for_update().get(
+            id=credential_id,
+            tenant_id=tenant_id,
+        )
+    except ObjectDoesNotExist as exc:
+        # Wrong-tenant and unknown identifiers intentionally look the same.
+        raise CredentialError(
+            f"Credential {credential_id} not found inside tenant."
+        ) from exc
+
+
 class CredentialService:
     """人员证书权威操作服务。"""
 
     @staticmethod
     def submit_for_verification(
         credential_id: uuid.UUID,
+        *,
+        tenant_id: int,
         actor_id: int | None = None,
     ) -> HrPersonCredential:
         with transaction.atomic():
-            try:
-                credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-            except ObjectDoesNotExist:
-                raise CredentialError(f"Credential {credential_id} not found.")
+            credential = _credential_for_update(
+                credential_id=credential_id,
+                tenant_id=tenant_id,
+            )
 
             _assert_can_transition(credential, CredentialStatus.UNDER_VERIFICATION)
             old_status = credential.status
@@ -64,16 +95,18 @@ class CredentialService:
         credential_id: uuid.UUID,
         verification_type: str,
         result: VerificationResult,
+        *,
+        tenant_id: int,
         verified_by: int | None = None,
         provider: str = "",
         provider_reference: str = "",
         notes: str = "",
     ) -> HrCredentialVerification:
         with transaction.atomic():
-            try:
-                credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-            except ObjectDoesNotExist:
-                raise CredentialError(f"Credential {credential_id} not found.")
+            credential = _credential_for_update(
+                credential_id=credential_id,
+                tenant_id=tenant_id,
+            )
 
             now = datetime.now(timezone.utc)
             verification = HrCredentialVerification.objects.create(
@@ -111,15 +144,23 @@ class CredentialService:
     def renew(
         credential_id: uuid.UUID,
         new_credential_data: dict,
+        *,
+        tenant_id: int,
         renewal_type: str = RenewalType.SAME_LEVEL,
         reason: str = "",
     ) -> tuple[HrPersonCredential, HrCredentialRenewal]:
         """续证：新建证书（不覆盖原记录），建立代际链。"""
         with transaction.atomic():
-            try:
-                original = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-            except ObjectDoesNotExist:
-                raise CredentialError(f"Credential {credential_id} not found.")
+            original = _credential_for_update(
+                credential_id=credential_id,
+                tenant_id=tenant_id,
+            )
+            forbidden_fields = set(new_credential_data) - _RENEWAL_MUTABLE_FIELDS
+            if forbidden_fields:
+                raise CredentialError(
+                    "Renewal payload cannot replace credential authority fields: "
+                    + ", ".join(sorted(forbidden_fields))
+                )
 
             old_status = original.status
             original.status = CredentialStatus.SUPERSEDED
@@ -158,18 +199,34 @@ class CredentialService:
     @staticmethod
     def suspend(
         credential_id: uuid.UUID,
+        *,
+        tenant_id: int,
         actor_id: int | None = None,
         reason: str = "",
     ) -> HrPersonCredential:
-        return _change_status(credential_id, CredentialStatus.SUSPENDED, actor_id, reason)
+        return _change_status(
+            credential_id,
+            tenant_id,
+            CredentialStatus.SUSPENDED,
+            actor_id,
+            reason,
+        )
 
     @staticmethod
     def revoke(
         credential_id: uuid.UUID,
+        *,
+        tenant_id: int,
         actor_id: int | None = None,
         reason: str = "",
     ) -> HrPersonCredential:
-        return _change_status(credential_id, CredentialStatus.REVOKED, actor_id, reason)
+        return _change_status(
+            credential_id,
+            tenant_id,
+            CredentialStatus.REVOKED,
+            actor_id,
+            reason,
+        )
 
 
 def _assert_can_transition(credential: HrPersonCredential, target: str) -> None:
@@ -188,15 +245,16 @@ def _assert_can_transition(credential: HrPersonCredential, target: str) -> None:
 
 def _change_status(
     credential_id: uuid.UUID,
+    tenant_id: int,
     target_status: str,
     actor_id: int | None = None,
     reason: str = "",
 ) -> HrPersonCredential:
     with transaction.atomic():
-        try:
-            credential = HrPersonCredential.objects.select_for_update().get(id=credential_id)
-        except ObjectDoesNotExist:
-            raise CredentialError(f"Credential {credential_id} not found.")
+        credential = _credential_for_update(
+            credential_id=credential_id,
+            tenant_id=tenant_id,
+        )
 
         old_status = credential.status
         credential.status = target_status

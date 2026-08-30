@@ -51,15 +51,16 @@ class CredentialServiceTest(TestCase):
         )
 
     def test_submit_verification(self):
-        c = CredentialService.submit_for_verification(self.cred.id)
+        c = CredentialService.submit_for_verification(self.cred.id, tenant_id=1)
         self.assertEqual(c.status, CredentialStatus.UNDER_VERIFICATION)
 
     def test_verify_success(self):
-        CredentialService.submit_for_verification(self.cred.id)
+        CredentialService.submit_for_verification(self.cred.id, tenant_id=1)
         v = CredentialService.verify(
             self.cred.id,
             "MANUAL_ORIGINAL_REVIEW",
             VerificationResult.VERIFIED,
+            tenant_id=1,
         )
         self.cred.refresh_from_db()
         self.assertEqual(self.cred.status, CredentialStatus.ACTIVE)
@@ -67,11 +68,12 @@ class CredentialServiceTest(TestCase):
 
     def test_verify_fail_blocks_active(self):
         """非 VERIFIED 结果不触发状态变更"""
-        CredentialService.submit_for_verification(self.cred.id)
+        CredentialService.submit_for_verification(self.cred.id, tenant_id=1)
         CredentialService.verify(
             self.cred.id,
             "MANUAL_ORIGINAL_REVIEW",
             VerificationResult.MISMATCH,
+            tenant_id=1,
         )
         self.cred.refresh_from_db()
         self.assertEqual(self.cred.status, CredentialStatus.UNDER_VERIFICATION)
@@ -79,20 +81,44 @@ class CredentialServiceTest(TestCase):
     def test_suspend(self):
         self.cred.status = CredentialStatus.ACTIVE
         self.cred.save()
-        c = CredentialService.suspend(self.cred.id, reason="Policy")
+        c = CredentialService.suspend(self.cred.id, tenant_id=1, reason="Policy")
         self.assertEqual(c.status, CredentialStatus.SUSPENDED)
 
     def test_revoke(self):
         self.cred.status = CredentialStatus.ACTIVE
         self.cred.save()
-        c = CredentialService.revoke(self.cred.id, reason="Fraud")
+        c = CredentialService.revoke(self.cred.id, tenant_id=1, reason="Fraud")
         self.assertEqual(c.status, CredentialStatus.REVOKED)
 
     def test_cannot_edit_active(self):
         self.cred.status = CredentialStatus.ACTIVE
         self.cred.save()
         with self.assertRaises(CredentialError):
-            CredentialService.submit_for_verification(self.cred.id)
+            CredentialService.submit_for_verification(self.cred.id, tenant_id=1)
+
+    def test_wrong_tenant_service_lookup_is_fail_closed(self):
+        with self.assertRaises(CredentialError) as caught:
+            CredentialService.submit_for_verification(self.cred.id, tenant_id=2)
+
+        self.assertIn("not found inside tenant", str(caught.exception))
+        self.cred.refresh_from_db()
+        self.assertEqual(self.cred.status, CredentialStatus.DRAFT)
+
+    def test_renewal_cannot_replace_authority_lineage(self):
+        self.cred.status = CredentialStatus.ACTIVE
+        self.cred.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaises(CredentialError) as caught:
+            CredentialService.renew(
+                self.cred.id,
+                {"tenant_id": 2, "issuer_name": "Replacement issuer"},
+                tenant_id=1,
+            )
+
+        self.assertIn("tenant_id", str(caught.exception))
+        self.cred.refresh_from_db()
+        self.assertEqual(self.cred.tenant_id, 1)
+        self.assertEqual(self.cred.status, CredentialStatus.ACTIVE)
 
 
 class ApplicationServiceTest(TestCase):
