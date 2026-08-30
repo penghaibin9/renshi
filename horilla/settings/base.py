@@ -173,17 +173,24 @@ ROOT_URLCONF = "horilla.urls"
 if env("DATABASE_URL", default=None):
     DATABASES = {"default": env.db()}
 else:
+    _database_engine = env("DB_ENGINE", default="django.db.backends.sqlite3")
+    # Backend options are not interchangeable.  In particular, sqlite's
+    # ``timeout`` is forwarded as a keyword argument by the MySQL backend and
+    # makes every management command fail before it can run a system check.
+    _database_options = (
+        {"timeout": 30}
+        if _database_engine == "django.db.backends.sqlite3"
+        else {}
+    )
     DATABASES = {
         "default": {
-            "ENGINE": env("DB_ENGINE", default="django.db.backends.sqlite3"),
+            "ENGINE": _database_engine,
             "NAME": env("DB_NAME", default=os.path.join(BASE_DIR, "TestDB.sqlite3")),
             "USER": env("DB_USER", default=""),
             "PASSWORD": env("DB_PASSWORD", default=""),
             "HOST": env("DB_HOST", default=""),
             "PORT": env("DB_PORT", default=""),
-            "OPTIONS": {
-                "timeout": 30,  # seconds to wait on a locked DB before raising OperationalError
-            },
+            "OPTIONS": _database_options,
         }
     }
 
