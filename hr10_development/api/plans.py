@@ -17,6 +17,7 @@ from hr10_development.models.plan import HrDevelopmentPlan
 from hr10_development.models.plan_version import HrDevelopmentPlanVersion
 from hr10_development.services.plan_service import PlanService
 from hr_staff.models import HrStaffMaster
+from hr10_development.permissions import require_hr10_permission
 
 
 def _plan_to_dict(plan: HrDevelopmentPlan) -> dict:
@@ -63,6 +64,7 @@ def _version_to_dict(v: HrDevelopmentPlanVersion) -> dict:
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.plan.view")
 def list_plans(request):
     """GET /api/v1/hr/development/plans"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -88,6 +90,7 @@ def list_plans(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.plan.view")
 def get_plan(request, plan_id):
     """GET /api/v1/hr/development/plans/{planId}"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -110,6 +113,7 @@ def get_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.create")
 def create_plan(request):
     """POST /api/v1/hr/development/plans"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -157,6 +161,7 @@ def create_plan(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.create")
 def submit_plan(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/submit"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -195,6 +200,7 @@ def submit_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.approve")
 def approve_plan(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/approve"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -235,6 +241,7 @@ def approve_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.publish")
 def publish_plan(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/publish"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -271,6 +278,7 @@ def publish_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.approve")
 def return_plan(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/return"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -306,6 +314,7 @@ def return_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.approve")
 def reject_plan(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/reject"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -341,6 +350,7 @@ def reject_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.publish")
 def close_plan(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/close"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -376,6 +386,7 @@ def close_plan(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.plan.create")
 def create_plan_version(request, plan_id):
     """POST /api/v1/hr/development/plans/{planId}/versions"""
     tenant_id = getattr(request, "tenant_id", None)

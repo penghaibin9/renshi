@@ -11,6 +11,10 @@ HR10 权限执行层（00 §28.2 Prefix: hr.development）。
 - 越权不能靠 200 + empty list 模糊掉；无权限 → 403。
 """
 
+import hmac
+from functools import wraps
+
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import models
 
@@ -68,8 +72,6 @@ def require_hr10_permission(perm_code):
     返回 view decorator。无权限 → PermissionDenied（403）。
     不允许用 200 + empty 伪装。
     """
-    from functools import wraps
-
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped(request, *args, **kwargs):
@@ -79,6 +81,39 @@ def require_hr10_permission(perm_code):
                 raise PermissionDenied("PERMISSION_DENIED")
             return view_func(request, *args, **kwargs)
 
+        _wrapped.hr10_permission_code = perm_code
+        return _wrapped
+
+    return decorator
+
+
+def require_hr10_internal_service(caller_code):
+    """Require an explicitly configured credential for internal Provider APIs.
+
+    ``HR10_INTERNAL_SERVICE_CREDENTIALS`` is a mapping from the fixed caller
+    code (for example ``HR09``) to its secret.  Missing configuration fails
+    closed; a tenant header or an ordinary browser session is not a service
+    credential.
+    """
+
+    normalized_caller = str(caller_code).strip().upper()
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapped(request, *args, **kwargs):
+            credentials = getattr(settings, "HR10_INTERNAL_SERVICE_CREDENTIALS", {})
+            expected = credentials.get(normalized_caller) if isinstance(credentials, dict) else None
+            supplied_caller = request.headers.get("X-HR10-Caller", "").strip().upper()
+            supplied_token = request.headers.get("X-HR10-Service-Token", "")
+            if (
+                not expected
+                or supplied_caller != normalized_caller
+                or not hmac.compare_digest(str(expected), supplied_token)
+            ):
+                raise PermissionDenied("INTERNAL_SERVICE_AUTH_REQUIRED")
+            return view_func(request, *args, **kwargs)
+
+        _wrapped.hr10_internal_service_caller = normalized_caller
         return _wrapped
 
     return decorator

@@ -20,6 +20,7 @@ from hr10_development.models.offering import HrLearningOffering
 from hr10_development.models.enrollment import HrLearningEnrollment
 from hr10_development.models.learning_program import HrLearningProgram
 from hr_staff.models import HrStaffMaster
+from hr10_development.permissions import require_hr10_permission
 
 
 def _request_to_dict(r: HrTrainingRequest) -> dict:
@@ -48,6 +49,7 @@ def _request_to_dict(r: HrTrainingRequest) -> dict:
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.request.view")
 def list_requests(request):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -64,6 +66,7 @@ def list_requests(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.request.view")
 def get_request(request, request_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -77,6 +80,7 @@ def get_request(request, request_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.create")
 def create_request(request):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -121,6 +125,7 @@ def create_request(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.create")
 def submit_request(request, request_id):
     """提交申请 → SUBMITTED → UNDER_MANAGER_REVIEW。"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -142,6 +147,7 @@ def submit_request(request, request_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.approve")
 def approve_request(request, request_id):
     """审批推进一步。"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -168,6 +174,7 @@ def approve_request(request, request_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.approve")
 def return_request(request, request_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -183,6 +190,7 @@ def return_request(request, request_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.approve")
 def reject_request(request, request_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -198,6 +206,7 @@ def reject_request(request, request_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.create")
 def withdraw_request(request, request_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -213,6 +222,7 @@ def withdraw_request(request, request_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.create")
 def enroll_in_offering(request, offering_id):
     """POST /api/v1/hr/development/offerings/{id}/enroll"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -240,6 +250,7 @@ def enroll_in_offering(request, offering_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.request.create")
 def waitlist_offering(request, offering_id):
     """POST /api/v1/hr/development/offerings/{id}/waitlist"""
     tenant_id = getattr(request, "tenant_id", None)

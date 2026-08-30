@@ -17,10 +17,12 @@ from hr10_development.models.enrollment import HrLearningEnrollment
 from hr10_development.models.learning_completion import HrLearningCompletion
 from hr10_development.models.offering import HrLearningOffering
 from hr10_development.services.completion_service import CompletionService
+from hr10_development.permissions import require_hr10_permission
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.process.record")
 def complete_enrollment(request, enrollment_id):
     """
     POST /api/v1/hr/development/enrollments/{id}/complete
@@ -71,6 +73,7 @@ def complete_enrollment(request, enrollment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.completion.verify")
 def verify_completion(request, enrollment_id):
     """
     POST /api/v1/hr/development/enrollments/{id}/verify-completion

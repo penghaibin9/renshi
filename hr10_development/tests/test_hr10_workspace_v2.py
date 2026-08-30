@@ -3,8 +3,8 @@
 from pathlib import Path
 
 import json
+from types import SimpleNamespace
 
-from django.contrib.auth.models import AnonymousUser
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from hr10_development.api.programs import create_offering, create_program
@@ -101,7 +101,7 @@ class Hr10WorkbenchTenantContractTests(TestCase):
         else:
             request = self.factory.post(path, data=json.dumps(body or {}), content_type="application/json")
         request.tenant_id = tenant_id
-        request.user = AnonymousUser()
+        request.user = SimpleNamespace(is_authenticated=True, is_superuser=True)
         return request
 
     def test_workbench_choices_never_include_another_school_provider(self):

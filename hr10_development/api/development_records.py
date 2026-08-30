@@ -99,6 +99,7 @@ def revoke_fact(request, fact_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.record.view")
 def get_record_summary(request, staff_id):
     """
     GET /api/v1/hr/development/development-records/{staffId}
@@ -125,6 +126,7 @@ def get_record_summary(request, staff_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.record.view")
 def get_facts(request, staff_id):
     """GET /api/v1/hr/development/development-records/{staffId}/facts"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -160,6 +162,7 @@ def get_facts(request, staff_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.record.view")
 def get_ledger(request, staff_id):
     """GET /api/v1/hr/development/development-records/{staffId}/ledger"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -186,6 +189,7 @@ def get_ledger(request, staff_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.record.view")
 def get_compliance(request, staff_id):
     """GET /api/v1/hr/development/development-records/{staffId}/compliance"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -206,6 +210,7 @@ def get_compliance(request, staff_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.record.view")
 def get_risks(request, staff_id):
     """GET /api/v1/hr/development/development-records/{staffId}/risks"""
     tenant_id = getattr(request, "tenant_id", None)

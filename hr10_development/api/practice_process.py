@@ -23,10 +23,12 @@ from hr10_development.models.practice_process import (
 )
 from hr10_development.services.practice_process_service import PracticeProcessService
 from hr10_development.services.risk_service import RiskService
+from hr10_development.permissions import require_hr10_permission
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.process.record")
 def add_activity(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/activities"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -71,6 +73,7 @@ def add_activity(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.process.record")
 def add_evidence(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/evidence"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -111,6 +114,7 @@ def add_evidence(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.process.record")
 def submit_mentor_feedback(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/mentor-feedback"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -139,6 +143,7 @@ def submit_mentor_feedback(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.evaluation.manage")
 def submit_school_evaluation(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/school-evaluation"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -166,6 +171,7 @@ def submit_school_evaluation(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.process.record")
 def submit_completion(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/submit-completion"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -183,6 +189,7 @@ def submit_completion(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.evaluation.manage")
 def finalize_evaluation(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/finalize"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -229,6 +236,7 @@ def finalize_evaluation(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.process.record")
 def create_output(request):
     """POST /api/v1/hr/development/development-outputs"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -258,6 +266,7 @@ def create_output(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.output.verify")
 def verify_output(request, output_id):
     """POST /api/v1/hr/development/development-outputs/{id}/verify"""
     tenant_id = getattr(request, "tenant_id", None)

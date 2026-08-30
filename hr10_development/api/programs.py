@@ -16,6 +16,7 @@ from hr10_development.models.learning_program import HrLearningProgram
 from hr10_development.models.offering import HrLearningOffering
 from hr10_development.models.program_version import HrLearningProgramVersion
 from hr10_development.models.provider_org import HrDevelopmentProviderOrganization
+from hr10_development.permissions import require_hr10_permission
 
 
 def _program_to_dict(p: HrLearningProgram) -> dict:
@@ -59,6 +60,7 @@ def _offering_to_dict(o: HrLearningOffering) -> dict:
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.program.view")
 def list_programs(request):
     """GET /api/v1/hr/development/programs"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -70,6 +72,7 @@ def list_programs(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.program.view")
 def get_program(request, program_id):
     """GET /api/v1/hr/development/programs/{programId}"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -84,6 +87,7 @@ def get_program(request, program_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.program.manage")
 def create_program(request):
     """POST /api/v1/hr/development/programs"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -120,6 +124,7 @@ def create_program(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.program.manage")
 def create_offering(request):
     """POST /api/v1/hr/development/offerings"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -161,6 +166,7 @@ def create_offering(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.program.view")
 def get_offering(request, offering_id):
     """GET /api/v1/hr/development/offerings/{offeringId}"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -175,6 +181,7 @@ def get_offering(request, offering_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.program.manage")
 def cancel_offering(request, offering_id):
     """POST /api/v1/hr/development/offerings/{offeringId}/cancel"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -192,6 +199,7 @@ def cancel_offering(request, offering_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.program.view")
 def get_offering_capacity(request, offering_id):
     """GET /api/v1/hr/development/offerings/{offeringId}/capacity"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -220,6 +228,7 @@ def get_offering_capacity(request, offering_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.program.manage")
 def open_enrollment(request, offering_id):
     """POST /api/v1/hr/development/offerings/{offeringId}/open-enrollment"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -239,6 +248,7 @@ def open_enrollment(request, offering_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.program.manage")
 def create_program_version(request, program_id):
     """POST /api/v1/hr/development/programs/{programId}/versions"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -280,6 +290,7 @@ def create_program_version(request, program_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.program.publish")
 def publish_program(request, program_id):
     """POST /api/v1/hr/development/programs/{programId}/publish"""
     tenant_id = getattr(request, "tenant_id", None)

@@ -18,10 +18,12 @@ from django.views.decorators.http import require_http_methods
 from hr10_development.api.envelope import success, error
 from hr10_development.constants import DevelopmentErrorCode, DataFreshnessStatus
 from hr10_development.providers.qualification_provider import Hr09QualificationEvidenceProvider
+from hr10_development.permissions import require_hr10_internal_service
 
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_internal_service("HR09")
 def get_hr09_evidence(request, staff_id):
     """
     GET /internal/hr/development/evidence/staff/{staffId}
@@ -67,6 +69,7 @@ def get_hr09_evidence(request, staff_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_internal_service("HR11")
 def get_development_time_windows(request, staff_id):
     """
     GET /internal/hr/development/time-windows/staff/{staffId}?periodStart=&periodEnd=

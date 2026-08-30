@@ -13,10 +13,12 @@ from django.utils import timezone
 from hr10_development.api.envelope import success, error
 from hr10_development.constants import DevelopmentErrorCode, MetricCode, FactType
 from hr10_development.observability.metrics import metrics
+from hr10_development.permissions import require_hr10_permission
 
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.analytics.read")
 def plan_metrics(request, plan_id):
     """GET /api/v1/hr/development/plans/{planId}/metrics"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -43,6 +45,7 @@ def plan_metrics(request, plan_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.analytics.read")
 def dashboard(request):
     """GET /api/v1/hr/development/dashboard"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -117,6 +120,7 @@ def dashboard(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.analytics.read")
 def metric_detail(request, metric_code):
     """GET /api/v1/hr/development/metrics/{metricCode}"""
     tenant_id = getattr(request, "tenant_id", None)

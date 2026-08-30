@@ -18,10 +18,12 @@ from hr10_development.models.practice_models import (
 )
 from hr10_development.models.practice_project import HrEnterprisePracticeProject
 from hr10_development.models.program_version import HrLearningProgramVersion
+from hr10_development.permissions import require_hr10_permission
 
 
 @csrf_exempt
 @require_GET
+@require_hr10_permission("hr.development.program.view")
 def choices(request):
     """Return labels and opaque values resolved inside the current school only."""
     tenant_id = getattr(request, "tenant_id", None)

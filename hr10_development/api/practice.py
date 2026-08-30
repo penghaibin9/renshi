@@ -26,6 +26,7 @@ from hr10_development.models.practice_models import (
 from hr10_development.services.practice_process_service import PracticeProcessService
 from hr10_development.models.provider_org import HrDevelopmentProviderOrganization
 from hr_staff.models import HrStaffMaster
+from hr10_development.permissions import require_hr10_permission
 
 
 def _project_to_dict(p: HrEnterprisePracticeProject) -> dict:
@@ -67,6 +68,7 @@ def _assignment_to_dict(a: HrEnterprisePracticeAssignment) -> dict:
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.practice.view")
 def list_projects(request):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -80,6 +82,7 @@ def list_projects(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def create_project(request):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -117,6 +120,7 @@ def create_project(request):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.practice.view")
 def get_project(request, project_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -129,6 +133,7 @@ def get_project(request, project_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.publish")
 def publish_project(request, project_id):
     """发布项目 → PUBLISHED。"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -147,6 +152,7 @@ def publish_project(request, project_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def create_project_version(request, project_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -184,6 +190,7 @@ def create_project_version(request, project_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def create_placement(request):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -229,6 +236,7 @@ def create_placement(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def create_assignment(request):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -281,6 +289,7 @@ def create_assignment(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def start_assignment(request, assignment_id):
     """POST /api/v1/hr/development/practice-assignments/{id}/start"""
     tenant_id = getattr(request, "tenant_id", None)
@@ -301,6 +310,7 @@ def start_assignment(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def suspend_assignment(request, assignment_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -320,6 +330,7 @@ def suspend_assignment(request, assignment_id):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.practice.manage")
 def resume_assignment(request, assignment_id):
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
