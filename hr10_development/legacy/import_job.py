@@ -10,8 +10,15 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+import uuid
 
 from hr10_development.models.base import DevelopmentTenantModel
+
+
+def import_source_upload_to(instance, filename):
+    """Keep untrusted uploads outside public static paths with opaque names."""
+    suffix = ".xlsx" if str(filename).lower().endswith(".xlsx") else ".bin"
+    return f"hr10/imports/{instance.tenant_id}/source/{uuid.uuid4().hex}{suffix}"
 
 
 class HrDevelopmentImportJob(DevelopmentTenantModel):
@@ -28,6 +35,22 @@ class HrDevelopmentImportJob(DevelopmentTenantModel):
         blank=True,
         default="",
         verbose_name=_("文件名"),
+    )
+
+    source_file = models.FileField(
+        upload_to=import_source_upload_to,
+        max_length=512,
+        blank=True,
+        verbose_name=_("受控源文件"),
+    )
+
+    idempotency_key = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+        verbose_name=_("幂等键"),
     )
 
     file_hash = models.CharField(
@@ -87,6 +110,11 @@ class HrDevelopmentImportJob(DevelopmentTenantModel):
     retry_count = models.IntegerField(
         default=0,
         verbose_name=_("重试次数"),
+    )
+
+    checkpoint_row = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("解析断点行"),
     )
 
     started_at = models.DateTimeField(

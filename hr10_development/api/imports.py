@@ -8,7 +8,6 @@ upload → async parse → row validation → error workbook → confirm → exe
 
 import json
 import hashlib
-import uuid
 from datetime import datetime, timezone
 
 from django.http import JsonResponse
@@ -18,10 +17,16 @@ from django.views.decorators.http import require_http_methods
 from hr10_development.api.envelope import success, error
 from hr10_development.constants import DevelopmentErrorCode
 from hr10_development.legacy.import_job import HrDevelopmentImportJob
+from hr10_development.permissions import require_hr10_permission
+from hr10_development.services.import_worker import TEMPLATE_SCHEMAS
+
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.import.manage")
 def upload_import(request):
     """
     POST /api/v1/hr/development/imports/upload
@@ -34,20 +39,46 @@ def upload_import(request):
         return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
 
     job_type = request.POST.get("jobType", "EXCEL_PLAN")
+    if job_type not in TEMPLATE_SCHEMAS:
+        return JsonResponse(error("UNSUPPORTED_JOB_TYPE", "不支持的导入类型"), status=400)
     uploaded_file = request.FILES.get("file")
     if not uploaded_file:
         return JsonResponse(error("MISSING_FILE", "缺少上传文件"), status=400)
+    if not uploaded_file.name.lower().endswith(".xlsx"):
+        return JsonResponse(error("UNSUPPORTED_FILE_TYPE", "仅支持 .xlsx 模板"), status=400)
+    if uploaded_file.size > MAX_UPLOAD_BYTES:
+        return JsonResponse(error("FILE_TOO_LARGE", "文件不能超过 10MB"), status=413)
 
-    # 文件 hash
-    file_hash = hashlib.sha256(uploaded_file.read()).hexdigest()
+    template_version = request.POST.get("templateVersion", "V1").upper()
+    if template_version != "V1":
+        return JsonResponse(error("UNSUPPORTED_TEMPLATE_VERSION", "仅支持 V1 模板"), status=400)
+
+    digest = hashlib.sha256()
+    for chunk in uploaded_file.chunks():
+        digest.update(chunk)
+    file_hash = digest.hexdigest()
     uploaded_file.seek(0)
+
+    idempotency_key = hashlib.sha256(
+        f"{tenant_id}:{job_type}:{template_version}:{file_hash}".encode("utf-8")
+    ).hexdigest()
+    existing = HrDevelopmentImportJob.objects.filter(idempotency_key=idempotency_key).first()
+    if existing:
+        return JsonResponse(success({
+            "jobId": str(existing.id),
+            "status": existing.status,
+            "fileHash": file_hash[:16],
+            "idempotentReplay": True,
+        }))
 
     job = HrDevelopmentImportJob.objects.create(
         tenant_id=tenant_id,
         job_type=job_type,
         file_name=uploaded_file.name,
+        source_file=uploaded_file,
         file_hash=file_hash,
-        template_version=request.POST.get("templateVersion", "V1"),
+        template_version=template_version,
+        idempotency_key=idempotency_key,
         status="PENDING",
         total_rows=0,
         created_by=request.user if request.user.is_authenticated else None,
@@ -64,6 +95,7 @@ def upload_import(request):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.import.manage")
 def validate_import(request, job_id):
     """
     POST /api/v1/hr/development/imports/{jobId}/validate
@@ -76,18 +108,28 @@ def validate_import(request, job_id):
     if not job:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "导入任务不存在"), status=404)
 
-    job.status = "VALIDATION"
-    job.save(update_fields=["status", "updated_at"])
+    from hr10_development.services.import_worker import run_import_job
 
+    run_import_job(job.id)
+    job.refresh_from_db()
+
+    if job.status == "FAILED":
+        return JsonResponse(
+            error("IMPORT_PARSE_FAILED", job.result_summary_json.get("error", "导入解析失败")),
+            status=422,
+        )
     return JsonResponse(success({
         "jobId": str(job.id),
         "status": job.status,
-        "message": "校验完成（异步 worker 将填充 error_rows/result_summary_json）",
+        "errorRows": job.error_rows,
+        "errorWorkbookPath": job.error_workbook_path,
+        "result": job.result_summary_json,
     }))
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
+@require_hr10_permission("hr.development.import.manage")
 def confirm_import(request, job_id):
     """
     POST /api/v1/hr/development/imports/{jobId}/confirm
@@ -108,13 +150,20 @@ def confirm_import(request, job_id):
     if not job:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "导入任务不存在"), status=404)
 
-    job.status = "EXECUTING"
-    job.started_at = datetime.now(timezone.utc)
-    job.save(update_fields=["status", "started_at", "updated_at"])
+    if job.status != "PREVIEW":
+        return JsonResponse(error("IMPORT_NOT_READY", "必须先完成校验并进入 PREVIEW"), status=409)
+    if job.error_rows:
+        return JsonResponse(error("IMPORT_HAS_ERRORS", "请修复错误行后重新上传"), status=409)
 
-    # 异步执行（S10：生产环境用 celery/cron worker）
-    from hr10_development.services.import_worker import run_import_job
-    run_import_job(job.id)
+    job.status = "SUCCESS"
+    job.started_at = datetime.now(timezone.utc)
+    job.completed_at = datetime.now(timezone.utc)
+    job.result_summary_json = {
+        **job.result_summary_json,
+        "confirmed": True,
+        "confirmedAt": job.completed_at.isoformat(),
+    }
+    job.save(update_fields=["status", "started_at", "completed_at", "result_summary_json", "updated_at"])
 
     job.refresh_from_db()
     return JsonResponse(success({
@@ -126,6 +175,7 @@ def confirm_import(request, job_id):
 
 @csrf_exempt
 @require_http_methods(["GET"])
+@require_hr10_permission("hr.development.import.manage")
 def get_import_status(request, job_id):
     """GET /api/v1/hr/development/imports/{jobId}"""
     tenant_id = getattr(request, "tenant_id", None)

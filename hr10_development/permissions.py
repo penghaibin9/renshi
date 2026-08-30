@@ -43,6 +43,7 @@ HR10_PERMISSIONS = (
     "hr.development.record.view",
     "hr.development.analytics.read",
     "hr.development.audit",
+    "hr.development.import.manage",
 )
 # fmt: on
 
