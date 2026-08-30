@@ -133,5 +133,19 @@ class Migration(migrations.Migration):
             seal_existing_results_and_permissions,
             reverse_permissions,
         ),
+        migrations.AddConstraint(
+            model_name="professionaltitleresult",
+            constraint=models.CheckConstraint(
+                condition=models.Q(content_hash__regex=r"^[0-9a-f]{64}$"),
+                name="ck_hr13_result_hash_format",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="professionaltitleresult",
+            constraint=models.CheckConstraint(
+                condition=models.Q(sealed_at__isnull=False),
+                name="ck_hr13_result_sealed_at",
+            ),
+        ),
         migrations.RunPython(install_mysql_write_seal, remove_mysql_write_seal),
     ]

@@ -18,6 +18,8 @@ class Hr13ModelContractTests(SimpleTestCase):
     def test_result_uses_named_tenant_identity_constraint(self):
         names = {constraint.name for constraint in ProfessionalTitleResult._meta.constraints}
         assert "uq_hr13_result_tenant_no" in names
+        assert "ck_hr13_result_hash_format" in names
+        assert "ck_hr13_result_sealed_at" in names
 
     def test_tenant_is_fail_closed_before_database_write(self):
         policy = TitlePolicyVersion(

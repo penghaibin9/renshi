@@ -620,6 +620,14 @@ class ProfessionalTitleResult(HrTenantScopedModel):
                 | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr13_result_effective_range",
             ),
+            models.CheckConstraint(
+                condition=Q(content_hash__regex=r"^[0-9a-f]{64}$"),
+                name="ck_hr13_result_hash_format",
+            ),
+            models.CheckConstraint(
+                condition=Q(sealed_at__isnull=False),
+                name="ck_hr13_result_sealed_at",
+            ),
         ]
         indexes = [
             models.Index(
