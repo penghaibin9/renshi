@@ -139,4 +139,7 @@ class RescindService:
         rescind.applied_at = timezone.now()
         rescind.version += 1
         rescind.save(update_fields=["status", "applied_at", "version", "updated_at"])
+        from hr_changes.services.authority_receipt_service import AuthorityReceiptService
+
+        AuthorityReceiptService(self.tenant_id).append_orchestration_rescind(rescind)
         return rescind

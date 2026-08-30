@@ -15,6 +15,7 @@ from hr_changes.api.labels import (
     priority_label,
 )
 from hr_changes.models import HrPersonnelChangeCase
+from hr_changes.services.authority_receipt_service import effective_execution_chain
 
 
 class CaseDetailSelector:
@@ -157,5 +158,6 @@ class CaseDetailSelector:
             "impact": impact,
             "timeline": timeline,
             "effectiveSnapshot": effective,
+            "authorityChain": effective_execution_chain(case),
             "downstream": downstream,
         }

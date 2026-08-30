@@ -269,6 +269,12 @@ class CorrectionService:
                     ]
                 )
 
+                from hr_changes.services.authority_receipt_service import (
+                    AuthorityReceiptService,
+                )
+
+                AuthorityReceiptService(self.tenant_id).append_correction(correction)
+
                 case = self._get_case_or_deny(correction.change_case_id_id, lock=True)
                 from_status = case.status
                 target = transition("correct", case.status, CaseStatus.CORRECTED)
