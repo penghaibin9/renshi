@@ -58,3 +58,21 @@ Provider 是 callable，接收 `tenant_id`、`job`、`dataset`、`target_mapping
 外部调用发生在数据库事务外。worker 只凭当前 lease token 回写；旧 worker 即使
 晚返回，也不能覆盖新 lease。达到最大重试次数或回执对账不一致会进入不可篡改的
 dead-letter 证据队列。
+
+## 正式报送可信派发合同
+
+正式报送的 `submit` API 只创建数据库任务，不在 HTTP 事务里调用外部平台。
+部署方必须配置：
+
+- `HR18_SUBMISSION_DISPATCH_PROVIDER`：可信适配器导入路径；
+- `HR18_SUBMISSION_DISPATCH_PROVIDER_KEY`：稳定的平台标识；
+- worker：`python manage.py run_hr18_submission_dispatch_worker --limit 50`。
+
+适配器的 `dispatch` 必须回传并绑定 tenant、submission、schemaVersion、
+definitionVersion、payloadHash、dispatchRef 和 providerVersion。所有重试收到同一个
+`idempotency_key`，外部平台必须按该键去重，才能形成端到端 exactly-once。
+
+`/receipt/` 不接受客户端自报的 `accepted`。它只接受不透明的
+`providerReceipt`，并交给适配器 `verify_receipt` 验签；只有适配器明确返回
+`verified=true` 且所有冻结身份完全一致，数据库才会追加可信回执并推进
+ACCEPTED/REJECTED。适配器、验签密钥或 worker 缺失时一律 fail-closed。

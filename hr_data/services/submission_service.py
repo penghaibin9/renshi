@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 from django.db import transaction
-from django.utils import timezone
 
 from hr_data.models import AsOfEvidenceSnapshot, SubmissionSnapshot
 
@@ -358,32 +357,11 @@ class SubmissionLifecycleService:
 
     @transaction.atomic
     def confirm_dispatched(self, submission_id, *, dispatch_ref: str) -> SubmissionSnapshot:
-        snapshot = self._lock(submission_id)
-        dispatch_ref = str(dispatch_ref or "").strip()
-        if snapshot.status != SubmissionSnapshot.Status.DISPATCH_QUEUED:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_INVALID_STATE",
-                f"submission status {snapshot.status} cannot be confirmed as submitted",
-            )
-        if not dispatch_ref or dispatch_ref != snapshot.dispatch_ref:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_DISPATCH_REF_MISMATCH",
-                "dispatch confirmation must match the queued dispatch_ref",
-            )
-        snapshot.status = SubmissionSnapshot.Status.SUBMITTED
-        snapshot.submitted_at = timezone.now()
-        snapshot.dispatch_error = ""
-        snapshot.updated_by = self.actor_user_id
-        snapshot.save(
-            update_fields=[
-                "status",
-                "submitted_at",
-                "dispatch_error",
-                "updated_by",
-                "updated_at",
-            ]
+        self._lock(submission_id)
+        raise SubmissionLifecycleError(
+            "SUBMISSION_TRUSTED_DISPATCH_REQUIRED",
+            "dispatch confirmation is owned by the leased trusted adapter worker",
         )
-        return snapshot
 
     @transaction.atomic
     def record_dispatch_failure(
@@ -393,86 +371,16 @@ class SubmissionLifecycleService:
         dispatch_ref: str,
         error: str,
     ) -> SubmissionSnapshot:
-        snapshot = self._lock(submission_id)
-        dispatch_ref = str(dispatch_ref or "").strip()
-        if snapshot.status != SubmissionSnapshot.Status.DISPATCH_QUEUED:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_INVALID_STATE",
-                f"submission status {snapshot.status} cannot record dispatch failure",
-            )
-        if not dispatch_ref or dispatch_ref != snapshot.dispatch_ref:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_DISPATCH_REF_MISMATCH",
-                "dispatch failure must match the queued dispatch_ref",
-            )
-        # The worker/provider owns detailed diagnostics. Never persist its raw
-        # exception/response body into a business snapshot because this field is
-        # returned by the HR18 API and may otherwise expose endpoint/auth data.
-        reported = str(error or "").strip()
-        marker = "worker-reported" if reported else "worker-unspecified"
-        snapshot.status = SubmissionSnapshot.Status.DISPATCH_FAILED
-        snapshot.dispatch_error = f"submission dispatch failed ({marker})"
-        snapshot.updated_by = self.actor_user_id
-        snapshot.save(
-            update_fields=["status", "dispatch_error", "updated_by", "updated_at"]
+        self._lock(submission_id)
+        raise SubmissionLifecycleError(
+            "SUBMISSION_TRUSTED_DISPATCH_REQUIRED",
+            "dispatch failures are owned by the leased trusted adapter worker",
         )
-        return snapshot
 
     @transaction.atomic
     def record_receipt(self, submission_id, *, accepted: bool, receipt_ref: str) -> SubmissionSnapshot:
-        snapshot = self._lock(submission_id)
-        if self.actor_user_id is None:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_RECEIPT_ACTOR_REQUIRED",
-                "external receipt recording requires an identifiable actor",
-            )
-        if snapshot.status != SubmissionSnapshot.Status.SUBMITTED:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_INVALID_STATE",
-                f"submission status {snapshot.status} cannot receive a receipt",
-            )
-        receipt_ref = str(receipt_ref or "").strip()
-        if not receipt_ref:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_RECEIPT_REQUIRED",
-                "receipt_ref is required for an external submission result",
-            )
-        if len(receipt_ref) > 255:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_RECEIPT_INVALID",
-                "receipt_ref exceeds 255 characters",
-            )
-        snapshot.status = (
-            SubmissionSnapshot.Status.ACCEPTED if accepted else SubmissionSnapshot.Status.REJECTED
+        self._lock(submission_id)
+        raise SubmissionLifecycleError(
+            "SUBMISSION_TRUSTED_RECEIPT_REQUIRED",
+            "accepted/rejected may only come from a verified provider receipt",
         )
-        snapshot.receipt_ref = receipt_ref
-        snapshot.updated_by = self.actor_user_id
-        snapshot.save(
-            update_fields=["status", "receipt_ref", "updated_by", "updated_at"]
-        )
-        if accepted and snapshot.parent_submission_id:
-            parent = (
-                SubmissionSnapshot.objects.select_for_update()
-                .filter(
-                    id=snapshot.parent_submission_id,
-                    tenant_id=self.tenant_id,
-                )
-                .first()
-            )
-            if parent is None:
-                raise SubmissionLifecycleError(
-                    "SUBMISSION_CORRECTION_PARENT_NOT_FOUND",
-                    "correction parent is missing inside the current tenant",
-                )
-            if parent.status not in {
-                SubmissionSnapshot.Status.ACCEPTED,
-                SubmissionSnapshot.Status.REJECTED,
-            }:
-                raise SubmissionLifecycleError(
-                    "SUBMISSION_CORRECTION_PARENT_INVALID_STATE",
-                    f"correction parent status {parent.status} cannot be superseded",
-                )
-            parent.status = SubmissionSnapshot.Status.CORRECTED
-            parent.updated_by = self.actor_user_id
-            parent.save(update_fields=["status", "updated_by", "updated_at"])
-        return snapshot

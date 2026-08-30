@@ -109,6 +109,27 @@ class SubmissionSnapshotQuerySet(models.QuerySet):
         )
 
 
+class SubmissionDispatchJobQuerySet(models.QuerySet):
+    """Dispatch jobs must move through the leased service state machine."""
+
+    def update(self, **kwargs):
+        raise ValueError(
+            "HR18_SUBMISSION_DISPATCH_SERVICE_REQUIRED: queryset updates are forbidden"
+        )
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(
+                "HR18_SUBMISSION_DISPATCH_SERVICE_REQUIRED: bulk updates are forbidden"
+            )
+        return 0
+
+    def delete(self):
+        raise ValueError(
+            "HR18_SUBMISSION_DISPATCH_IMMUTABLE: dispatch history cannot be deleted"
+        )
+
+
 class PopulationDefinitionVersion(HrVersionedModel):
     """Versioned declarative population definition; never stores executable code."""
 
@@ -758,6 +779,317 @@ class SubmissionSnapshot(HrTenantScopedModel):
 
     def delete(self, *args, **kwargs):
         raise ValueError("HR18_SUBMISSION_IMMUTABLE: submission history cannot be deleted")
+
+
+class SubmissionDispatchJob(HrTenantScopedModel):
+    """Durable claim/lease boundary for one frozen formal submission."""
+
+    class Status(models.TextChoices):
+        QUEUED = "QUEUED", "Queued"
+        LEASED = "LEASED", "Leased"
+        RETRY_WAIT = "RETRY_WAIT", "Waiting to retry"
+        SUBMITTED = "SUBMITTED", "Provider confirmed dispatch"
+        ACCEPTED = "ACCEPTED", "Trusted receipt accepted"
+        REJECTED = "REJECTED", "Trusted receipt rejected"
+        DEAD = "DEAD", "Terminal dispatch failure"
+
+    submission = models.OneToOneField(
+        SubmissionSnapshot,
+        on_delete=models.PROTECT,
+        related_name="dispatch_job",
+    )
+    provider_key = models.CharField(max_length=64)
+    schema_version = models.CharField(max_length=32)
+    definition_version = models.PositiveIntegerField()
+    payload_hash = models.CharField(max_length=64)
+    request_hash = models.CharField(max_length=64)
+    idempotency_key = models.CharField(max_length=128)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.QUEUED,
+        db_index=True,
+    )
+    attempt_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=5)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    lease_token = models.UUIDField(null=True, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    dispatch_ref = models.CharField(max_length=255, blank=True, default="")
+    provider_version = models.CharField(max_length=64, blank=True, default="")
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = SubmissionDispatchJobQuerySet.as_manager()
+
+    _IDENTITY_FIELDS = (
+        "tenant_id",
+        "submission_id",
+        "provider_key",
+        "schema_version",
+        "definition_version",
+        "payload_hash",
+        "request_hash",
+        "idempotency_key",
+        "max_attempts",
+        "created_at",
+        "created_by",
+    )
+
+    _ALLOWED_TRANSITIONS = {
+        (Status.QUEUED, Status.LEASED),
+        (Status.RETRY_WAIT, Status.LEASED),
+        (Status.LEASED, Status.LEASED),  # expired worker lease recovery
+        (Status.LEASED, Status.RETRY_WAIT),
+        (Status.LEASED, Status.SUBMITTED),
+        (Status.LEASED, Status.DEAD),
+        (Status.SUBMITTED, Status.ACCEPTED),
+        (Status.SUBMITTED, Status.REJECTED),
+    }
+
+    class Meta:
+        db_table = "hr18_submission_dispatch_job"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "submission_id"),
+                name="uq_hr18_submission_dispatch_submission",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr18_submission_dispatch_idem",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "status", "next_attempt_at"),
+                name="idx_hr18_sub_dispatch_due",
+            ),
+        ]
+
+    def _validate_integrity(self):
+        self.payload_hash = _require_sha256(
+            self.payload_hash, code="HR18_SUBMISSION_DISPATCH_PAYLOAD_HASH_INVALID"
+        )
+        self.request_hash = _require_sha256(
+            self.request_hash, code="HR18_SUBMISSION_DISPATCH_REQUEST_HASH_INVALID"
+        )
+        if self.submission_id:
+            submission = self.submission
+            if (
+                submission.tenant_id != self.tenant_id
+                or submission.definition_version != self.definition_version
+                or submission.payload_hash.lower() != self.payload_hash
+            ):
+                raise ValueError(
+                    "HR18_SUBMISSION_DISPATCH_PARENT_MISMATCH: tenant/version/payload chain is invalid"
+                )
+
+    def save(self, *args, **kwargs):
+        self._validate_integrity()
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._IDENTITY_FIELDS, "status"
+            ).first()
+            if persisted:
+                if any(
+                    getattr(self, field) != persisted[field]
+                    for field in self._IDENTITY_FIELDS
+                ):
+                    raise ValueError(
+                        "HR18_SUBMISSION_DISPATCH_IDENTITY_IMMUTABLE: job identity cannot change"
+                    )
+                if (persisted["status"], self.status) not in self._ALLOWED_TRANSITIONS:
+                    raise ValueError(
+                        "HR18_SUBMISSION_DISPATCH_STATE_INVALID: invalid leased transition"
+                    )
+        elif self.status != self.Status.QUEUED:
+            raise ValueError(
+                "HR18_SUBMISSION_DISPATCH_INITIAL_STATE_INVALID: jobs start QUEUED"
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "HR18_SUBMISSION_DISPATCH_IMMUTABLE: dispatch history cannot be deleted"
+        )
+
+
+class SubmissionDispatchAttempt(HrTenantScopedModel):
+    class Status(models.TextChoices):
+        DISPATCHED = "DISPATCHED", "Trusted adapter dispatched"
+        RETRYABLE_FAILURE = "RETRYABLE_FAILURE", "Retryable failure"
+        TERMINAL_FAILURE = "TERMINAL_FAILURE", "Terminal failure"
+
+    job = models.ForeignKey(
+        SubmissionDispatchJob,
+        on_delete=models.PROTECT,
+        related_name="attempts",
+    )
+    attempt_no = models.PositiveIntegerField()
+    idempotency_key = models.CharField(max_length=128)
+    status = models.CharField(max_length=24, choices=Status.choices)
+    provider_version = models.CharField(max_length=64, blank=True, default="")
+    dispatch_ref = models.CharField(max_length=255, blank=True, default="")
+    response_hash = models.CharField(max_length=64, blank=True, default="")
+    error_code = models.CharField(max_length=64, blank=True, default="")
+    started_at = models.DateTimeField()
+    finished_at = models.DateTimeField()
+
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr18_submission_dispatch_attempt"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "job_id", "attempt_no"),
+                name="uq_hr18_submission_dispatch_attempt",
+            ),
+        ]
+
+    def _validate_integrity(self):
+        self.response_hash = _require_sha256(
+            self.response_hash,
+            code="HR18_SUBMISSION_DISPATCH_RESPONSE_HASH_INVALID",
+            optional=self.status != self.Status.DISPATCHED,
+        )
+        if self.job_id and self.job.tenant_id != self.tenant_id:
+            raise ValueError(
+                "HR18_SUBMISSION_DISPATCH_ATTEMPT_PARENT_MISMATCH: tenant chain is invalid"
+            )
+
+    def save(self, *args, **kwargs):
+        self._validate_integrity()
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_SUBMISSION_DISPATCH_ATTEMPT_IMMUTABLE: attempts must be appended"
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "HR18_SUBMISSION_DISPATCH_ATTEMPT_IMMUTABLE: attempts cannot be deleted"
+        )
+
+
+class SubmissionTrustedReceipt(HrTenantScopedModel):
+    class Outcome(models.TextChoices):
+        ACCEPTED = "ACCEPTED", "Accepted"
+        REJECTED = "REJECTED", "Rejected"
+
+    submission = models.OneToOneField(
+        SubmissionSnapshot,
+        on_delete=models.PROTECT,
+        related_name="trusted_receipt",
+    )
+    job = models.OneToOneField(
+        SubmissionDispatchJob,
+        on_delete=models.PROTECT,
+        related_name="trusted_receipt",
+    )
+    provider_key = models.CharField(max_length=64)
+    provider_version = models.CharField(max_length=64)
+    schema_version = models.CharField(max_length=32)
+    definition_version = models.PositiveIntegerField()
+    payload_hash = models.CharField(max_length=64)
+    dispatch_ref = models.CharField(max_length=255)
+    receipt_ref = models.CharField(max_length=255)
+    outcome = models.CharField(max_length=16, choices=Outcome.choices)
+    receipt_hash = models.CharField(max_length=64)
+    signature_key_id = models.CharField(max_length=128, blank=True, default="")
+    received_at = models.DateTimeField()
+
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr18_submission_trusted_receipt"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "receipt_ref"),
+                name="uq_hr18_submission_receipt_ref",
+            ),
+        ]
+
+    def _validate_integrity(self):
+        self.payload_hash = _require_sha256(
+            self.payload_hash, code="HR18_SUBMISSION_RECEIPT_PAYLOAD_HASH_INVALID"
+        )
+        self.receipt_hash = _require_sha256(
+            self.receipt_hash, code="HR18_SUBMISSION_RECEIPT_HASH_INVALID"
+        )
+        if self.job_id and self.submission_id:
+            job = self.job
+            submission = self.submission
+            if (
+                job.tenant_id != self.tenant_id
+                or submission.tenant_id != self.tenant_id
+                or job.submission_id != submission.id
+                or job.payload_hash != self.payload_hash
+                or job.definition_version != self.definition_version
+            ):
+                raise ValueError(
+                    "HR18_SUBMISSION_RECEIPT_PARENT_MISMATCH: tenant/submission chain is invalid"
+                )
+
+    def save(self, *args, **kwargs):
+        self._validate_integrity()
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("HR18_SUBMISSION_RECEIPT_IMMUTABLE: receipts must be appended")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR18_SUBMISSION_RECEIPT_IMMUTABLE: receipts cannot be deleted")
+
+
+class SubmissionDispatchEvent(HrTenantScopedModel):
+    submission = models.ForeignKey(
+        SubmissionSnapshot,
+        on_delete=models.PROTECT,
+        related_name="dispatch_events",
+    )
+    job = models.ForeignKey(
+        SubmissionDispatchJob,
+        on_delete=models.PROTECT,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=64)
+    event_key = models.CharField(max_length=160)
+    event_hash = models.CharField(max_length=64)
+    occurred_at = models.DateTimeField()
+
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr18_submission_dispatch_event"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "event_key"),
+                name="uq_hr18_submission_event_key",
+            ),
+        ]
+
+    def _validate_integrity(self):
+        self.event_hash = _require_sha256(
+            self.event_hash, code="HR18_SUBMISSION_EVENT_HASH_INVALID"
+        )
+        if self.job_id and self.submission_id:
+            if (
+                self.job.tenant_id != self.tenant_id
+                or self.submission.tenant_id != self.tenant_id
+                or self.job.submission_id != self.submission_id
+            ):
+                raise ValueError(
+                    "HR18_SUBMISSION_EVENT_PARENT_MISMATCH: tenant/submission chain is invalid"
+                )
+
+    def save(self, *args, **kwargs):
+        self._validate_integrity()
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("HR18_SUBMISSION_EVENT_IMMUTABLE: events must be appended")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR18_SUBMISSION_EVENT_IMMUTABLE: events cannot be deleted")
 
 
 class ExchangeDatasetVersion(HrVersionedModel):

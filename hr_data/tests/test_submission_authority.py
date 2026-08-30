@@ -5,11 +5,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth.models import Permission
-from django.test import RequestFactory, SimpleTestCase, TestCase
-from django.utils import timezone
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
 from hr_data import submission_api
 from hr_data.models import AsOfEvidenceSnapshot, SubmissionSnapshot
+from hr_data.services.submission_dispatch_service import SubmissionDispatchService
 from hr_data.services.submission_service import (
     SubmissionLifecycleError,
     SubmissionLifecycleService,
@@ -142,6 +142,12 @@ class SubmissionAuthorityServiceTests(TestCase):
         snapshot.refresh_from_db()
         self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DRAFT)
 
+    @override_settings(
+        HR18_SUBMISSION_DISPATCH_PROVIDER=(
+            "hr_data.tests.test_submission_dispatch.TrustedSubmissionAdapter"
+        ),
+        HR18_SUBMISSION_DISPATCH_PROVIDER_KEY="EDU_PLATFORM",
+    )
     def test_accepted_correction_preserves_chain_and_supersedes_parent(self):
         original_evidence = self._evidence()
         service = SubmissionLifecycleService(77, actor_user_id=9)
@@ -167,27 +173,20 @@ class SubmissionAuthorityServiceTests(TestCase):
 
         service.validate(correction.id)
         SubmissionLifecycleService(77, actor_user_id=10).approve(correction.id)
-        correction.refresh_from_db()
-        correction.status = SubmissionSnapshot.Status.DISPATCH_QUEUED
-        correction.dispatch_ref = "dispatch-correction-1"
-        correction.dispatch_requested_at = timezone.now()
-        correction.updated_by = 10
-        correction.save(
-            update_fields=[
-                "status",
-                "dispatch_ref",
-                "dispatch_requested_at",
-                "updated_by",
-                "updated_at",
-            ]
-        )
-        service.confirm_dispatched(
-            correction.id, dispatch_ref="dispatch-correction-1"
-        )
-        service.record_receipt(
+        dispatcher = SubmissionDispatchService(77, actor_user_id=10)
+        dispatcher.queue(correction.id)
+        job = correction.dispatch_job
+        dispatcher.dispatch(job.id)
+        job.refresh_from_db()
+        dispatcher.record_verified_receipt(
             correction.id,
-            accepted=True,
-            receipt_ref="receipt-correction-accepted",
+            receipt_payload={
+                "signature": "valid-platform-signature",
+                "signedOutcome": "ACCEPTED",
+                "dispatchRef": job.dispatch_ref,
+                "receiptRef": "receipt-correction-accepted",
+                "receiptHash": "d" * 64,
+            },
         )
 
         original.refresh_from_db()
@@ -465,10 +464,10 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         self.assertIn(b"DISPATCH_QUEUED", response.content)
         self.assertIn(b"dispatch-1", response.content)
 
-    @patch("hr_data.submission_api.SubmissionLifecycleService")
+    @patch("hr_data.submission_api.SubmissionDispatchService")
     @patch("hr_data.submission_api.resolve_request_tenant", return_value=77)
-    def test_receipt_requires_separate_permission_and_real_boolean(
-        self, tenant_resolver, service_cls
+    def test_receipt_requires_separate_permission_and_provider_verified_payload(
+        self, tenant_resolver, dispatch_cls
     ):
         request = self.factory.post(
             "/receipt",
@@ -481,7 +480,7 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         tenant_resolver.assert_called_once_with(
             request, required_permission=submission_api.RECEIPT_PERMISSION
         )
-        service_cls.return_value.record_receipt.assert_not_called()
+        dispatch_cls.return_value.record_verified_receipt.assert_not_called()
 
         tenant_resolver.reset_mock()
         snapshot = self._snapshot(
@@ -490,11 +489,12 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
             receipt_ref="UPSTREAM-RECEIPT-9",
             dispatch_ref="dispatch-1",
         )
-        service_cls.return_value.record_receipt.return_value = snapshot
+        dispatch_cls.return_value.record_verified_receipt.return_value = snapshot
+        provider_receipt = {"signed": "opaque-provider-envelope"}
         request = self.factory.post(
             "/receipt",
             data=json.dumps(
-                {"accepted": True, "receiptRef": "UPSTREAM-RECEIPT-9"}
+                {"providerReceipt": provider_receipt}
             ),
             content_type="application/json",
         )
@@ -504,9 +504,9 @@ class SubmissionAuthorityApiTests(SimpleTestCase):
         tenant_resolver.assert_called_once_with(
             request, required_permission=submission_api.RECEIPT_PERMISSION
         )
-        service_cls.return_value.record_receipt.assert_called_once_with(
+        dispatch_cls.assert_called_once_with(77, actor_user_id=88)
+        dispatch_cls.return_value.record_verified_receipt.assert_called_once_with(
             self.submission_id,
-            accepted=True,
-            receipt_ref="UPSTREAM-RECEIPT-9",
+            receipt_payload=provider_receipt,
         )
         self.assertIn(b"UPSTREAM-RECEIPT-9", response.content)

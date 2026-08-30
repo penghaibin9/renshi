@@ -36,6 +36,12 @@ EVENTS = (
     BusinessEventDefinition(
         "hr.data.submission.corrected", "HR18", "submission", 1
     ),
+    BusinessEventDefinition(
+        "hr.data.submission.dispatch_retry_scheduled", "HR18", "submission", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.submission.dispatch_dead", "HR18", "submission", 1
+    ),
     BusinessEventDefinition("hr.data.exchange.queued", "HR18", "exchange", 1),
     BusinessEventDefinition("hr.data.exchange.transmitted", "HR18", "exchange", 1),
     BusinessEventDefinition("hr.data.exchange.reconciled", "HR18", "exchange", 1),

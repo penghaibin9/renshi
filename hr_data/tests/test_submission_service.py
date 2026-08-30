@@ -146,30 +146,19 @@ class SubmissionLifecycleServiceTests(TestCase):
         snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
-    def test_matching_async_dispatch_confirmation_marks_submitted(self, objects):
+    def test_direct_dispatch_confirmation_is_disabled(self, objects):
         snapshot = self._snapshot(SubmissionSnapshot.Status.DISPATCH_QUEUED)
         snapshot.dispatch_ref = "dispatch-001"
         payload_hash = snapshot.payload_hash
         objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
 
-        SubmissionLifecycleService(77, actor_user_id=9).confirm_dispatched(
-            "submission-1",
-            dispatch_ref="dispatch-001",
-        )
-
-        self.assertEqual(snapshot.status, SubmissionSnapshot.Status.SUBMITTED)
+        with self.assertRaises(SubmissionLifecycleError) as caught:
+            SubmissionLifecycleService(77, actor_user_id=9).confirm_dispatched(
+                "submission-1", dispatch_ref="dispatch-001"
+            )
+        self.assertEqual(caught.exception.code, "SUBMISSION_TRUSTED_DISPATCH_REQUIRED")
         self.assertEqual(snapshot.payload_hash, payload_hash)
-        self.assertIsNotNone(snapshot.submitted_at)
-        self.assertEqual(snapshot.dispatch_error, "")
-        snapshot.save.assert_called_once_with(
-            update_fields=[
-                "status",
-                "submitted_at",
-                "dispatch_error",
-                "updated_by",
-                "updated_at",
-            ]
-        )
+        snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
     def test_dispatch_confirmation_requires_exact_persisted_ref(self, objects):
@@ -182,34 +171,33 @@ class SubmissionLifecycleServiceTests(TestCase):
                 "submission-1",
                 dispatch_ref="dispatch-other",
             )
-        self.assertEqual(ctx.exception.code, "SUBMISSION_DISPATCH_REF_MISMATCH")
+        self.assertEqual(ctx.exception.code, "SUBMISSION_TRUSTED_DISPATCH_REQUIRED")
         snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
-    def test_worker_dispatch_failure_is_retryable_but_redacted(self, objects):
+    def test_direct_worker_dispatch_failure_is_disabled(self, objects):
         snapshot = self._snapshot(SubmissionSnapshot.Status.DISPATCH_QUEUED)
         snapshot.dispatch_ref = "dispatch-001"
         objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
 
-        SubmissionLifecycleService(77).record_dispatch_failure(
-            "submission-1",
-            dispatch_ref="dispatch-001",
-            error="https://secret.internal/?token=top-secret network timeout",
-        )
-
-        self.assertEqual(snapshot.status, SubmissionSnapshot.Status.DISPATCH_FAILED)
-        self.assertEqual(snapshot.dispatch_error, "submission dispatch failed (worker-reported)")
-        self.assertNotIn("secret.internal", snapshot.dispatch_error)
-        self.assertNotIn("top-secret", snapshot.dispatch_error)
+        with self.assertRaises(SubmissionLifecycleError) as caught:
+            SubmissionLifecycleService(77).record_dispatch_failure(
+                "submission-1",
+                dispatch_ref="dispatch-001",
+                error="https://secret.internal/?token=top-secret network timeout",
+            )
+        self.assertEqual(caught.exception.code, "SUBMISSION_TRUSTED_DISPATCH_REQUIRED")
+        snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
-    def test_receipt_requires_submitted_state_and_reference(self, objects):
+    def test_direct_receipt_api_is_disabled(self, objects):
         snapshot = self._snapshot(SubmissionSnapshot.Status.SUBMITTED)
         objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
-        with self.assertRaisesRegex(SubmissionLifecycleError, "receipt_ref is required"):
+        with self.assertRaises(SubmissionLifecycleError) as caught:
             SubmissionLifecycleService(77, actor_user_id=12).record_receipt(
                 "submission-1", accepted=False, receipt_ref=""
             )
+        self.assertEqual(caught.exception.code, "SUBMISSION_TRUSTED_RECEIPT_REQUIRED")
         snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
@@ -220,17 +208,17 @@ class SubmissionLifecycleServiceTests(TestCase):
             SubmissionLifecycleService(77).record_receipt(
                 "submission-1", accepted=True, receipt_ref="receipt-9"
             )
-        self.assertEqual(ctx.exception.code, "SUBMISSION_RECEIPT_ACTOR_REQUIRED")
+        self.assertEqual(ctx.exception.code, "SUBMISSION_TRUSTED_RECEIPT_REQUIRED")
         snapshot.save.assert_not_called()
 
     @patch("hr_data.services.submission_service.SubmissionSnapshot.objects")
-    def test_rejected_receipt_does_not_rewrite_payload(self, objects):
+    def test_direct_rejected_receipt_cannot_rewrite_payload(self, objects):
         snapshot = self._snapshot(SubmissionSnapshot.Status.SUBMITTED)
         payload_hash = snapshot.payload_hash
         objects.select_for_update.return_value.filter.return_value.first.return_value = snapshot
-        SubmissionLifecycleService(77, actor_user_id=12).record_receipt(
-            "submission-1", accepted=False, receipt_ref="receipt-9"
-        )
-        self.assertEqual(snapshot.status, SubmissionSnapshot.Status.REJECTED)
-        self.assertEqual(snapshot.receipt_ref, "receipt-9")
+        with self.assertRaises(SubmissionLifecycleError):
+            SubmissionLifecycleService(77, actor_user_id=12).record_receipt(
+                "submission-1", accepted=False, receipt_ref="receipt-9"
+            )
+        self.assertEqual(snapshot.status, SubmissionSnapshot.Status.SUBMITTED)
         self.assertEqual(snapshot.payload_hash, payload_hash)

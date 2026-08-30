@@ -38,6 +38,10 @@ def _status(code: str) -> int:
         "SUBMISSION_CORRECTION_DEFINITION_MISMATCH",
         "SUBMISSION_CORRECTION_ALREADY_EXISTS",
         "SUBMISSION_CORRECTION_PARENT_INVALID_STATE",
+        "SUBMISSION_DISPATCH_IDEMPOTENCY_CONFLICT",
+        "SUBMISSION_DISPATCH_IDENTITY_MISMATCH",
+        "SUBMISSION_RECEIPT_IDEMPOTENCY_CONFLICT",
+        "SUBMISSION_RECEIPT_BINDING_MISMATCH",
     }:
         return 409
     if code in {
@@ -46,7 +50,10 @@ def _status(code: str) -> int:
         "SUBMISSION_ACTOR_REQUIRED",
     }:
         return 403
-    if code in {"SUBMISSION_DISPATCH_UNAVAILABLE"}:
+    if code in {
+        "SUBMISSION_DISPATCH_UNAVAILABLE",
+        "SUBMISSION_RECEIPT_VERIFIER_UNAVAILABLE",
+    }:
         return 503
     if code in {"SUBMISSION_DISPATCH_FAILED"}:
         return 502
@@ -264,27 +271,26 @@ def record_receipt(request, submission_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request, required_permission=RECEIPT_PERMISSION)
+        tenant_id = _tenant(request, required_permission=RECEIPT_PERMISSION)
     except HrDataAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
         payload = _payload(request)
     except ValueError:
         return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
-    accepted = payload.get("accepted")
-    if not isinstance(accepted, bool):
+    provider_receipt = payload.get("providerReceipt")
+    if not isinstance(provider_receipt, dict) or not provider_receipt:
         return _error(
-            "SUBMISSION_RECEIPT_ACCEPTED_INVALID",
-            "accepted 必须是布尔值",
+            "SUBMISSION_RECEIPT_PAYLOAD_INVALID",
+            "providerReceipt 必须是外部平台签名回执对象",
             status=400,
         )
     try:
-        snapshot = service.record_receipt(
-            submission_id,
-            accepted=accepted,
-            receipt_ref=payload.get("receiptRef", ""),
-        )
-    except SubmissionLifecycleError as exc:
+        snapshot = SubmissionDispatchService(
+            tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).record_verified_receipt(submission_id, receipt_payload=provider_receipt)
+    except SubmissionDispatchError as exc:
         return _error(exc.code, str(exc), status=_status(exc.code))
     response = JsonResponse(
         {
