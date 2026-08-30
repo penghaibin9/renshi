@@ -72,6 +72,11 @@ urlpatterns = [
         name="submission-validate",
     ),
     path(
+        "submissions/<uuid:submission_id>/corrections/",
+        submission_api.create_correction,
+        name="submission-correction-create",
+    ),
+    path(
         "submissions/<uuid:submission_id>/approve/",
         submission_api.approve_submission,
         name="submission-approve",

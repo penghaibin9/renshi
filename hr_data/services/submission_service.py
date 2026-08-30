@@ -69,35 +69,18 @@ class SubmissionLifecycleService:
             )
         return evidence
 
-    @transaction.atomic
-    def create_draft(
-        self,
-        *,
-        submission_no: str,
-        as_of_evidence_id,
-        payload_hash: str,
-        scope: Optional[dict] = None,
-    ) -> SubmissionCreateResult:
+    @staticmethod
+    def _normalize_draft_identity(*, submission_no, payload_hash, scope):
         submission_no = str(submission_no or "").strip()
         if not submission_no:
             raise SubmissionLifecycleError(
                 "SUBMISSION_NO_REQUIRED", "submission_no is required"
-            )
-        if self.actor_user_id is None:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_ACTOR_REQUIRED",
-                "formal submission drafts require an authenticated actor",
             )
         payload_hash = str(payload_hash or "").strip().lower()
         if not _HASH_RE.fullmatch(payload_hash):
             raise SubmissionLifecycleError(
                 "SUBMISSION_PAYLOAD_HASH_INVALID",
                 "payload_hash must be a 64-character hexadecimal SHA-256 value",
-            )
-        if not as_of_evidence_id:
-            raise SubmissionLifecycleError(
-                "SUBMISSION_ASOF_EVIDENCE_REQUIRED",
-                "as_of_evidence_id is required",
             )
         scope = {} if scope is None else scope
         if not isinstance(scope, dict):
@@ -109,7 +92,32 @@ class SubmissionLifecycleService:
                 "SUBMISSION_SCOPE_RESERVED_KEY",
                 "scope must not override asOfEvidenceId",
             )
+        return submission_no, payload_hash, scope
 
+    @transaction.atomic
+    def create_draft(
+        self,
+        *,
+        submission_no: str,
+        as_of_evidence_id,
+        payload_hash: str,
+        scope: Optional[dict] = None,
+    ) -> SubmissionCreateResult:
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_ACTOR_REQUIRED",
+                "formal submission drafts require an authenticated actor",
+            )
+        submission_no, payload_hash, scope = self._normalize_draft_identity(
+            submission_no=submission_no,
+            payload_hash=payload_hash,
+            scope=scope,
+        )
+        if not as_of_evidence_id:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_ASOF_EVIDENCE_REQUIRED",
+                "as_of_evidence_id is required",
+            )
         evidence = self._lock_evidence(as_of_evidence_id)
         frozen_scope = dict(scope)
         frozen_scope["asOfEvidenceId"] = str(evidence.id)
@@ -144,6 +152,111 @@ class SubmissionLifecycleService:
             scope_json=frozen_scope,
             payload_hash=payload_hash,
             status=SubmissionSnapshot.Status.DRAFT,
+            created_by=self.actor_user_id,
+            updated_by=self.actor_user_id,
+        )
+        return SubmissionCreateResult(snapshot, True)
+
+    @transaction.atomic
+    def create_correction(
+        self,
+        original_submission_id,
+        *,
+        submission_no: str,
+        as_of_evidence_id,
+        payload_hash: str,
+        scope: Optional[dict] = None,
+    ) -> SubmissionCreateResult:
+        """Append one correction draft without mutating the original payload.
+
+        A correction starts only from an externally accepted/rejected receipt.
+        The original remains the signed result until a corrected submission is
+        itself accepted; at that point record_receipt marks the direct parent as
+        CORRECTED. Rejected corrections can be corrected again as a new child.
+        """
+
+        if self.actor_user_id is None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_ACTOR_REQUIRED",
+                "formal correction drafts require an authenticated actor",
+            )
+        original = self._lock(original_submission_id)
+        if original.status not in {
+            SubmissionSnapshot.Status.ACCEPTED,
+            SubmissionSnapshot.Status.REJECTED,
+        }:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_CORRECTION_INVALID_STATE",
+                f"submission status {original.status} cannot start a correction",
+            )
+        submission_no, payload_hash, scope = self._normalize_draft_identity(
+            submission_no=submission_no,
+            payload_hash=payload_hash,
+            scope=scope,
+        )
+        if not as_of_evidence_id:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_ASOF_EVIDENCE_REQUIRED",
+                "as_of_evidence_id is required",
+            )
+        evidence = self._lock_evidence(as_of_evidence_id)
+        if (
+            evidence.definition_kind != original.definition_kind
+            or evidence.definition_code != original.definition_code
+        ):
+            raise SubmissionLifecycleError(
+                "SUBMISSION_CORRECTION_DEFINITION_MISMATCH",
+                "correction evidence must belong to the original definition",
+            )
+
+        frozen_scope = dict(scope)
+        frozen_scope["asOfEvidenceId"] = str(evidence.id)
+        existing = (
+            SubmissionSnapshot.objects.select_for_update()
+            .filter(
+                tenant_id=self.tenant_id,
+                parent_submission_id=original.id,
+            )
+            .first()
+        )
+        if existing is not None:
+            if (
+                existing.submission_no != submission_no
+                or existing.definition_kind != evidence.definition_kind
+                or existing.definition_code != evidence.definition_code
+                or existing.definition_version != evidence.definition_version
+                or existing.as_of_date != evidence.as_of_date
+                or existing.payload_hash.lower() != payload_hash
+                or existing.scope_json != frozen_scope
+            ):
+                raise SubmissionLifecycleError(
+                    "SUBMISSION_CORRECTION_ALREADY_EXISTS",
+                    "the original submission already has a different correction child",
+                )
+            return SubmissionCreateResult(existing, False)
+
+        duplicate_no = (
+            SubmissionSnapshot.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, submission_no=submission_no)
+            .first()
+        )
+        if duplicate_no is not None:
+            raise SubmissionLifecycleError(
+                "SUBMISSION_IDEMPOTENCY_CONFLICT",
+                "submission_no already belongs to another immutable payload",
+            )
+
+        snapshot = SubmissionSnapshot.objects.create(
+            tenant_id=self.tenant_id,
+            submission_no=submission_no,
+            definition_kind=evidence.definition_kind,
+            definition_code=evidence.definition_code,
+            definition_version=evidence.definition_version,
+            as_of_date=evidence.as_of_date,
+            scope_json=frozen_scope,
+            payload_hash=payload_hash,
+            status=SubmissionSnapshot.Status.DRAFT,
+            parent_submission_id=original.id,
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
@@ -337,4 +450,29 @@ class SubmissionLifecycleService:
         snapshot.save(
             update_fields=["status", "receipt_ref", "updated_by", "updated_at"]
         )
+        if accepted and snapshot.parent_submission_id:
+            parent = (
+                SubmissionSnapshot.objects.select_for_update()
+                .filter(
+                    id=snapshot.parent_submission_id,
+                    tenant_id=self.tenant_id,
+                )
+                .first()
+            )
+            if parent is None:
+                raise SubmissionLifecycleError(
+                    "SUBMISSION_CORRECTION_PARENT_NOT_FOUND",
+                    "correction parent is missing inside the current tenant",
+                )
+            if parent.status not in {
+                SubmissionSnapshot.Status.ACCEPTED,
+                SubmissionSnapshot.Status.REJECTED,
+            }:
+                raise SubmissionLifecycleError(
+                    "SUBMISSION_CORRECTION_PARENT_INVALID_STATE",
+                    f"correction parent status {parent.status} cannot be superseded",
+                )
+            parent.status = SubmissionSnapshot.Status.CORRECTED
+            parent.updated_by = self.actor_user_id
+            parent.save(update_fields=["status", "updated_by", "updated_at"])
         return snapshot

@@ -19,7 +19,11 @@ RECEIPT_PERMISSION = "hr.data.receipt"
 
 
 def _status(code: str) -> int:
-    if code in {"SUBMISSION_NOT_FOUND", "SUBMISSION_ASOF_EVIDENCE_NOT_FOUND"}:
+    if code in {
+        "SUBMISSION_NOT_FOUND",
+        "SUBMISSION_ASOF_EVIDENCE_NOT_FOUND",
+        "SUBMISSION_CORRECTION_PARENT_NOT_FOUND",
+    }:
         return 404
     if code in {
         "SUBMISSION_IDEMPOTENCY_CONFLICT",
@@ -30,6 +34,10 @@ def _status(code: str) -> int:
         "SUBMISSION_DISPATCH_REF_MISMATCH",
         "SUBMISSION_SELF_APPROVAL_DENIED",
         "SUBMISSION_CREATOR_UNKNOWN",
+        "SUBMISSION_CORRECTION_INVALID_STATE",
+        "SUBMISSION_CORRECTION_DEFINITION_MISMATCH",
+        "SUBMISSION_CORRECTION_ALREADY_EXISTS",
+        "SUBMISSION_CORRECTION_PARENT_INVALID_STATE",
     }:
         return 409
     if code in {
@@ -120,6 +128,47 @@ def create_submission(request):
             "data": {**_serialize(outcome.snapshot), "created": outcome.created},
             "apiVersion": "1.0",
             "schemaVersion": "hr18.submission.1",
+        },
+        status=201 if outcome.created else 200,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def create_correction(request, submission_id):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        service = _service(request, required_permission=SUBMIT_PERMISSION)
+    except HrDataAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    try:
+        payload = _payload(request)
+    except ValueError:
+        return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
+    try:
+        evidence_id = uuid.UUID(str(payload.get("asOfEvidenceId", "")))
+    except (TypeError, ValueError):
+        return _error(
+            "SUBMISSION_ASOF_EVIDENCE_ID_INVALID",
+            "asOfEvidenceId 必须是 UUID",
+            status=400,
+        )
+    try:
+        outcome = service.create_correction(
+            submission_id,
+            submission_no=payload.get("submissionNo", ""),
+            as_of_evidence_id=evidence_id,
+            payload_hash=payload.get("payloadHash", ""),
+            scope=payload.get("scope"),
+        )
+    except SubmissionLifecycleError as exc:
+        return _error(exc.code, str(exc), status=_status(exc.code))
+    response = JsonResponse(
+        {
+            "data": {**_serialize(outcome.snapshot), "created": outcome.created},
+            "apiVersion": "1.0",
+            "schemaVersion": "hr18.submission-correction.1",
         },
         status=201 if outcome.created else 200,
     )
