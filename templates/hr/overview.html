@@ -45,7 +45,7 @@
     <div class="hr-v2-section__head">
       <div>
         <h2 id="hr-business-nav-title">人事业务导航</h2>
-        <p>18 个一级模块按学校人事处日常职责分组；模块编号和现有 Django 路由保持不变。</p>
+        <p>18 个一级模块按学校人事处日常职责分组；模块编号和现有系统入口保持不变。</p>
       </div>
     </div>
 
@@ -100,7 +100,7 @@
 
       <section class="hr-home__module-group" aria-labelledby="hr-group-growth">
         <div class="hr-home__module-group-head">
-          <div><h3 id="hr-group-growth">职称、聘任与薪酬</h3><p>正式结果必须由各自 Authority 形成，前端不越权推断生效。</p></div>
+          <div><h3 id="hr-group-growth">职称、聘任与薪酬</h3><p>正式结果必须由对应业务模块形成，页面不越权推断生效。</p></div>
           <span class="hr-home__module-group-no">05</span>
         </div>
         <div class="hr-home__modules">
@@ -135,7 +135,7 @@
 
   <section class="hr-v2-section" aria-labelledby="hr-work-title">
     <div class="hr-v2-section__head">
-      <div><h2 id="hr-work-title">需要处理的工作</h2><p>首页只给结论和入口，具体审批与业务写操作仍回到对应 Authority 工作区完成。</p></div>
+      <div><h2 id="hr-work-title">需要处理的工作</h2><p>首页只给结论和入口，具体审批与业务办理仍回到对应业务工作区完成。</p></div>
     </div>
     <div class="hr-v2-two-col">
       <article class="hr-v2-panel">
@@ -161,7 +161,7 @@
     </div>
   </section>
 
-  <div class="hr-v2-truth-note"><strong>数据说明</strong><span>页面只负责展示真实业务事实与后端允许的动作。若来源为 PARTIAL、STALE、UNAVAILABLE 或 ERROR，会保留原状态，不用 0、空列表或“成功”文案掩盖问题。</span></div>
+  <div class="hr-v2-truth-note"><strong>数据说明</strong><span>页面只负责展示真实业务数据与系统允许的动作。若来源为部分可用、数据过期、暂不可用或读取失败，会保留原状态，不用 0、空列表或“成功”文案掩盖问题。</span></div>
 </div>
 
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>

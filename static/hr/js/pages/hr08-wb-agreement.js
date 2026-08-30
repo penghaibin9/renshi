@@ -23,7 +23,7 @@
     try { value = await response.json(); } catch (_error) { /* status remains authoritative */ }
     if (!response.ok) {
       const error = value.error || {};
-      throw new Error([error.code, error.message].filter(Boolean).join(' · ') || `请求失败（${response.status}）`);
+      throw new Error(error.message && /[\u3400-\u9fff]/.test(error.message) ? error.message : `请求失败（状态码 ${response.status}）`);
     }
     return value.data ?? value;
   }
@@ -42,10 +42,10 @@
       const data = await payload(response);
       const items = data.items || [];
       if (!items.length) {
-        show('HR07 当前没有与本申请精确绑定且满足确认条件的正式协议。请先在合同管理完成协议签署。');
+        show('当前没有与本申请一致并满足确认条件的正式协议。请先到合同管理完成协议签署。');
         return;
       }
-      zone.innerHTML = '<form class="hr08-inline-form is-open" data-agreement-form><select name="agreementId" required aria-label="选择正式协议"><option value="">请选择 HR07 正式协议</option></select><button class="hr08-btn hr08-btn--primary" type="submit">确认协议并进入待激活</button></form>';
+      zone.innerHTML = '<form class="hr08-inline-form is-open" data-agreement-form><select name="agreementId" required aria-label="选择正式协议"><option value="">请选择正式协议</option></select><button class="hr08-btn hr08-btn--primary" type="submit">确认协议并进入待激活</button></form>';
       const form = zone.querySelector('[data-agreement-form]');
       const select = form.elements.agreementId;
       items.forEach((item) => {
@@ -67,7 +67,7 @@
             body: JSON.stringify({agreementId: select.value}),
           });
           await payload(confirmed);
-          window.sessionStorage.setItem('hr08-flash', 'HR07 正式协议已确认，申请进入待激活。');
+          window.sessionStorage.setItem('hr08-flash', '正式协议已确认，申请进入待激活。');
           window.location.reload();
         } catch (error) {
           show(error.message, 'error');

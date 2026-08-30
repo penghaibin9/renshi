@@ -127,7 +127,7 @@
     } else {
       setMeta(
         bootstrapState,
-        "已读取当前学校 HR06 配置；本页只开放字段与专用服务均已接通的校内调动类型。",
+        "已准备当前学校可办理的校内调动类型。",
         "success"
       );
     }
@@ -208,7 +208,7 @@
     resetSelect(targetPositionSelect, "请选择目标岗位");
     targetPositionSelect.disabled = true;
     if (!organizationId) return [];
-    setMeta(transferState, "正在读取 HR02 当前组织岗位…");
+    setMeta(transferState, "正在读取当前组织岗位…");
     try {
       const items = [];
       let page = 1;
@@ -237,7 +237,7 @@
       if (!items.length) {
         setMeta(transferState, "该组织当前没有可选择的在用岗位。", "error");
       } else {
-        setMeta(transferState, `已读取 ${items.length} 个 HR02 在用岗位。`, "success");
+        setMeta(transferState, `已读取 ${items.length} 个在用岗位。`, "success");
       }
       updateCreateAvailability();
       return items;
@@ -280,9 +280,9 @@
         await fillPositions(primary.orgId);
       }
     } else if (code === "ORG_TRANSFER") {
-      setMeta(transferState, "请选择 HR02 目标组织。", "success");
+      setMeta(transferState, "请选择目标组织。", "success");
     } else if (code === "ORG_POSITION_TRANSFER") {
-      setMeta(transferState, "先选择 HR02 目标组织，再选择该组织岗位。", "success");
+      setMeta(transferState, "请先选择目标组织，再选择该组织岗位。", "success");
     }
     updateCreateAvailability();
   }
@@ -323,7 +323,7 @@
     const title = document.createElement("strong");
     title.textContent = `已选择：${item.legal_name || "未命名"}（${item.staff_no || "无工号"}）`;
     const detail = document.createElement("span");
-    detail.textContent = "正在读取 HR03 当前主岗事实…";
+    detail.textContent = "正在读取当前主岗信息…";
     selectedStaff.append(title, detail);
     selectedStaff.hidden = false;
     createButton.disabled = true;
@@ -338,11 +338,11 @@
       const primary = currentPrimary();
       detail.textContent = primary
         ? `${primary.orgName || item.org_name || "组织未返回"} · ${primary.positionName || item.position_name || "岗位未返回"}`
-        : "HR03 当前未返回主岗；仅允许不依赖主岗组织的调动类型继续校验。";
+        : "当前没有可用的主岗信息；只能继续办理不依赖主岗组织的调动类型。";
       await configureTransferFields();
     } catch (error) {
       detail.textContent = `当前主岗读取失败：${window.HrApi.apiErrorToMessage(error)}`;
-      setMeta(transferState, "无法核验 HR03 当前主岗，调动草稿创建已禁用。", "error");
+      setMeta(transferState, "无法核对当前主岗，暂不能创建调动草稿。", "error");
     }
     updateCreateAvailability();
   }
@@ -354,7 +354,7 @@
       return;
     }
     searchButton.disabled = true;
-    staffResults.textContent = "正在从 HR03 权威名册搜索…";
+    staffResults.textContent = "正在从教职工名册搜索…";
     try {
       const response = await window.HrApi.request("/api/v1/hr/staff", {
         params: { keyword, page: 1, pageSize: 20 },
@@ -388,7 +388,7 @@
       return;
     }
     createButton.disabled = true;
-    setMeta(createResult, "正在通过 HR06 TransferService 创建调动草稿…");
+    setMeta(createResult, "正在创建调动草稿…");
     try {
       const primary = currentPrimary();
       const body = {

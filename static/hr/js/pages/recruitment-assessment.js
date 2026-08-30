@@ -13,6 +13,12 @@
     return Number.isNaN(date.getTime()) ? text(value) : date.toLocaleString();
   }
   function setText(node, value) { if (node) node.textContent = text(value); }
+  const STATUS_LABELS = {
+    DRAFT: "草稿", OPEN: "进行中", IN_PROGRESS: "评分中", SUBMITTED: "已提交",
+    LOCKED: "已锁定", FINALIZED: "已定稿", REOPENED: "已重开", CANCELLED: "已取消",
+    UNKNOWN: "状态待确认",
+  };
+  function statusLabel(value) { return STATUS_LABELS[String(value).toUpperCase()] || "状态待确认"; }
 
   function makeMeta(label, value) {
     const item = document.createElement("div");
@@ -40,7 +46,7 @@
 
   function renderLoading(result) {
     result.setAttribute("aria-busy", "true");
-    result.innerHTML = '<div class="hr04-assessment__empty">正在读取 canonical 评分事实…</div>';
+    result.innerHTML = '<div class="hr04-assessment__empty">正在读取正式评分数据…</div>';
   }
 
   function renderError(result, message) {
@@ -73,7 +79,7 @@
     statusRow.className = "hr04-assessment__status-row";
     const status = document.createElement("span");
     status.className = "hr04-assessment__status" + (locked ? " hr04-assessment__status--locked" : "");
-    status.textContent = locked ? "已锁定" : text(statusValue);
+    status.textContent = locked ? "已锁定" : statusLabel(statusValue);
     statusRow.appendChild(status);
 
     const total = data.total_score !== undefined ? data.total_score : data.totalScore;

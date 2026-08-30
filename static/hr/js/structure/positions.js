@@ -50,7 +50,7 @@
       el.innerHTML = `<table class="hr-table">
         <thead><tr>
           <th>岗位编码</th><th>机构</th><th>岗位标准</th><th>等级</th>
-          <th>FTE</th><th>编制数</th><th>占用</th><th>状态</th>
+          <th>折合全职数</th><th>编制数</th><th>占用</th><th>状态</th>
         </tr></thead>
         <tbody>` + items.map(positionRow).join("") + `</tbody></table>`;
     } catch (e) {
@@ -60,11 +60,11 @@
 
   function positionRow(p) {
     const occ = p.occupancyStatus || "VACANT";
-    const occLabel = p.occupancyStatusLabel || occ;
+    const occLabel = p.occupancyStatusLabel || STATUS_LABELS[occ] || "状态待确认";
     const occClass = occ === "OVERFILLED" ? "hr-risk-danger"
       : occ === "FILLED" ? ""
       : "";
-    const statusLabel = p.lifecycleStatusLabel || p.lifecycleStatus;
+    const statusLabel = p.lifecycleStatusLabel || STATUS_LABELS[p.lifecycleStatus] || "状态待确认";
     return `<tr>
       <td>${p.positionCode || ""}</td>
       <td>${p.organizationName || "—"}</td>

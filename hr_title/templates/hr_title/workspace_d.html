@@ -21,8 +21,7 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
   const kpis = {
-    policyVersions: '制度版本', applications: '申报总数', materials: '材料快照',
-    acceptedMaterials: '已验收材料', awaitingQualification: '待资格审查',
+    policyVersions: '制度版本', applications: '申报总数', awaitingQualification: '待资格审查',
     underReview: '评审中', inPublicity: '公示中', effectiveResults: '生效结果'
   };
   const caps = {
@@ -160,7 +159,7 @@
       const d = await r.json();
       const kpiTarget = document.getElementById('hr13c-kpis');
       if (kpiTarget) kpiTarget.innerHTML = Object.entries(kpis).map(([k,v]) =>
-        `<div class="hr13c-kpi"><span>${v}</span><b>${esc(d.summary?.[k] ?? 0)}</b><em>真实口径</em></div>`
+        `<div class="hr13c-kpi"><span>${v}</span><b>${esc(d.summary?.[k] ?? 0)}</b><em>当前学校业务台账</em></div>`
       ).join('');
       tasks(d); sectionRows(d);
       const capTarget = document.getElementById('hr13c-caps');

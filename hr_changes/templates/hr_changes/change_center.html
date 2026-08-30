@@ -6,71 +6,156 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}?v=20260830-hr06-workbench">
 {% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr06-page" data-module="HR06" data-section="center" data-hr-page="change-center">
-  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>异动中心</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr06-center-title">
-    <div class="hr-v2-pagehead__copy">
-      <div class="hr-v2-eyebrow">HR06 · 人事异动</div>
-      <h1 class="hr-v2-title" id="hr06-center-title">人事异动中心</h1>
-      <p class="hr-v2-subtitle">统一查看草稿、审批中、待生效、已生效与异常案件。列表与统计均来自当前学校 tenant/scope 下的服务端读模型，不在浏览器拼接权限结论。</p>
+<div class="hr-v2-page hr06-page hr06-center" data-module="HR06" data-section="center" data-hr-page="change-center">
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事管理</span><strong>人事异动</strong></div>
+
+  <nav class="hr06-breadcrumb" aria-label="面包屑">
+    <a href="/hr/">人事管理</a><span aria-hidden="true">/</span><span>人事异动</span>
+  </nav>
+
+  <header class="hr06-center__head" aria-labelledby="hr06-center-title">
+    <div>
+      <h1 class="hr-v2-title" id="hr06-center-title">人事异动工作台</h1>
+      <p class="hr-v2-subtitle">统一查看谁需要处理、发生了什么变化、当前卡在哪里，以及下一步该做什么。</p>
+      <p class="hr06-operation-hint"><span>先看待办</span><i>→</i><span>核对材料</span><i>→</i><span>完成审批</span><i>→</i><span>关注生效</span></p>
     </div>
-    <div class="hr-v2-context">
-      <span class="hr-v2-context__item"><strong>案件总数</strong> {{ total }}</span>
-      <span class="hr-v2-context__item"><strong>Authority</strong> HR06 状态机</span>
-    </div>
+    <a class="hr06-button hr06-button--primary" href="{% url 'hr06-change-new' %}"><ion-icon name="add-circle-outline" aria-hidden="true"></ion-icon>发起异动</a>
   </header>
 
   {% include "hr_changes/components/v2_nav.html" with active="center" %}
 
-  <section class="hr06-summary" aria-label="异动实时摘要">
-    <div class="hr06-summary__item"><strong>{{ stats.myTodos }}</strong><span>待我处理</span></div>
-    <div class="hr06-summary__item"><strong>{{ stats.underApproval }}</strong><span>审批中</span></div>
-    <div class="hr06-summary__item"><strong>{{ stats.waitingEffective }}</strong><span>待生效</span></div>
-    <div class="hr06-summary__item"><strong>{{ stats.effectiveThisMonth }}</strong><span>本月生效</span></div>
-    <div class="hr06-summary__item"><strong>{{ stats.risks }}</strong><span>异常/风险</span></div>
+  <section class="hr06-summary" aria-label="我的异动工作摘要">
+    <a class="hr06-summary__item" href="{% url 'hr06-change-center' %}?view=todos">
+      <span class="hr06-summary__icon"><ion-icon name="file-tray-full-outline" aria-hidden="true"></ion-icon></span>
+      <span><small>待我处理</small><strong>{{ stats.myTodos }}</strong></span>
+    </a>
+    <a class="hr06-summary__item" data-tone="warning" href="{% url 'hr06-change-center' %}?view=anomalies">
+      <span class="hr06-summary__icon"><ion-icon name="return-down-back-outline" aria-hidden="true"></ion-icon></span>
+      <span><small>退回补充</small><strong>{{ stats.returnedToAmend }}</strong></span>
+    </a>
+    <a class="hr06-summary__item" data-tone="success" href="{% url 'hr06-change-center' %}?view=effective">
+      <span class="hr06-summary__icon"><ion-icon name="calendar-clear-outline" aria-hidden="true"></ion-icon></span>
+      <span><small>今日生效</small><strong>{{ stats.effectiveToday }}</strong></span>
+    </a>
+    <a class="hr06-summary__item" href="{% url 'hr06-change-center' %}?view=effective">
+      <span class="hr06-summary__icon"><ion-icon name="checkmark-circle-outline" aria-hidden="true"></ion-icon></span>
+      <span><small>本月完成</small><strong>{{ stats.effectiveThisMonth }}</strong></span>
+    </a>
   </section>
 
-  <section class="hr06-panel">
-    <div class="hr06-toolbar">
-      <div>
-        <h2>案件工作台</h2>
-        <p>按业务阶段切换视图；进入案件后再执行校验、提交审批、批准或生效等受控动作。</p>
+  <nav class="hr06-stagebar" aria-label="异动处理阶段">
+    {% for tab in view_tabs %}
+    <a href="{% url 'hr06-change-center' %}?view={{ tab.key }}"{% if view == tab.key %} aria-current="page"{% endif %}>
+      <span class="hr06-stagebar__step">{{ forloop.counter }}</span>
+      <span><strong>{{ tab.label }}</strong><small>{{ tab.count }} 项</small></span>
+      {% if not forloop.last %}<ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon>{% endif %}
+    </a>
+    {% endfor %}
+  </nav>
+
+  <section class="hr06-workbench" aria-label="异动案件工作区">
+    <aside class="hr06-filter-panel" aria-labelledby="hr06-filter-title">
+      <div class="hr06-side-view">
+        {% for tab in view_tabs|slice:":3" %}
+        <a href="{% url 'hr06-change-center' %}?view={{ tab.key }}"{% if view == tab.key %} aria-current="page"{% endif %}><span>{{ tab.label }}</span><strong>{{ tab.count }}</strong></a>
+        {% endfor %}
       </div>
-      <a class="hr06-button" href="{% url 'hr06-change-new' %}">创建异动草稿</a>
+
+      <form method="get" action="{% url 'hr06-change-center' %}" class="hr06-filter-form">
+        <input type="hidden" name="view" value="{{ view }}">
+        <div class="hr06-filter-title">
+          <h2 id="hr06-filter-title">筛选</h2>
+          {% if has_filters %}<a href="{% url 'hr06-change-center' %}?view={{ view }}">重置</a>{% endif %}
+        </div>
+        <label class="hr06-field">
+          <span>异动类型</span>
+          <select name="action">
+            <option value="">全部类型</option>
+            {% for option in filter_options.actions %}<option value="{{ option.value }}"{% if filters.action_code == option.value %} selected{% endif %}>{{ option.label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="hr06-field">
+          <span>所属单位</span>
+          <select name="org">
+            <option value="">全部单位</option>
+            {% for option in filter_options.organizations %}<option value="{{ option.value }}"{% if filters.organization_code == option.value %} selected{% endif %}>{{ option.label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="hr06-field">
+          <span>计划生效时间</span>
+          <select name="period">
+            <option value="">全部时间</option>
+            <option value="7d"{% if filters.period == "7d" %} selected{% endif %}>未来 7 天</option>
+            <option value="30d"{% if filters.period == "30d" %} selected{% endif %}>未来 30 天</option>
+            <option value="overdue"{% if filters.period == "overdue" %} selected{% endif %}>已超过计划日期</option>
+          </select>
+        </label>
+        <label class="hr06-field">
+          <span>人员或事项</span>
+          <span class="hr06-search-input"><ion-icon name="search-outline" aria-hidden="true"></ion-icon><input name="q" value="{{ filters.keyword }}" placeholder="姓名 / 工号 / 案件号"></span>
+        </label>
+        <div class="hr06-filter-actions"><a href="{% url 'hr06-change-center' %}?view={{ view }}">重置</a><button type="submit">查询</button></div>
+      </form>
+    </aside>
+
+    <div class="hr06-case-panel">
+      <div class="hr06-case-panel__head">
+        <div><h2>{% for tab in view_tabs %}{% if view == tab.key %}{{ tab.label }}{% endif %}{% endfor %}</h2><p>共 {{ total }} 项，列表内容来自当前学校和本人权限范围。</p></div>
+        <a href="{{ request.get_full_path }}" aria-label="刷新当前列表"><ion-icon name="refresh-outline" aria-hidden="true"></ion-icon>刷新</a>
+      </div>
+
+      {% if items %}
+      <div class="hr06-table-wrap">
+        <table class="hr06-table hr06-table--workbench">
+          <thead><tr><th>人员</th><th>异动事项</th><th>当前单位</th><th>拟调整</th><th>当前环节</th><th>停留时间</th><th>经办人</th><th>操作</th></tr></thead>
+          <tbody>
+            {% for it in items %}
+            <tr{% if forloop.first %} class="is-focused"{% endif %}>
+              <td><span class="hr06-person"><span class="hr06-person__avatar">{{ it.staffName|slice:":1" }}</span><span><strong>{{ it.staffName }}</strong><small>{{ it.staffNo }}</small></span></span></td>
+              <td><strong>{{ it.actionLabel }}</strong><span class="hr06-muted">{{ it.reasonName }}</span></td>
+              <td>{{ it.source|default:"—" }}</td>
+              <td>{{ it.target|default:"—" }}</td>
+              <td><span class="hr06-status" data-status="{{ it.status }}">{{ it.statusLabel }}</span></td>
+              <td><span{% if it.isOverdue %} class="hr06-overdue"{% endif %}>{{ it.elapsedLabel }}</span></td>
+              <td>{{ it.handlerName }}</td>
+              <td><a class="hr06-link" href="{% url 'hr06-change-detail' it.id %}">{% if view == 'todos' or view == 'approval' %}去处理{% else %}查看{% endif %}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="hr06-pagination">
+        <span>共 {{ total }} 项</span>
+        <nav aria-label="列表分页">
+          {% if page > 1 %}<a href="?view={{ view }}&page={{ page|add:'-1' }}{% if filters.keyword %}&q={{ filters.keyword|urlencode }}{% endif %}{% if filters.action_code %}&action={{ filters.action_code|urlencode }}{% endif %}{% if filters.organization_code %}&org={{ filters.organization_code|urlencode }}{% endif %}{% if filters.period %}&period={{ filters.period|urlencode }}{% endif %}" aria-label="上一页"><ion-icon name="chevron-back-outline" aria-hidden="true"></ion-icon></a>{% endif %}
+          <strong>{{ page }}</strong>
+          {% if has_next %}<a href="?view={{ view }}&page={{ page|add:'1' }}{% if filters.keyword %}&q={{ filters.keyword|urlencode }}{% endif %}{% if filters.action_code %}&action={{ filters.action_code|urlencode }}{% endif %}{% if filters.organization_code %}&org={{ filters.organization_code|urlencode }}{% endif %}{% if filters.period %}&period={{ filters.period|urlencode }}{% endif %}" aria-label="下一页"><ion-icon name="chevron-forward-outline" aria-hidden="true"></ion-icon></a>{% endif %}
+        </nav>
+      </div>
+      {% else %}
+      <div class="hr06-empty"><ion-icon name="file-tray-outline" aria-hidden="true"></ion-icon><strong>当前条件下没有异动事项</strong><span>可以调整筛选条件，或发起一项新的异动。</span><a href="{% url 'hr06-change-new' %}">发起异动</a></div>
+      {% endif %}
     </div>
 
-    <nav class="hr06-view-tabs" aria-label="异动案件视图">
-      {% for key, label in view_tabs %}
-      <a href="{% url 'hr06-change-center' %}?view={{ key }}"{% if view == key %} aria-current="page"{% endif %}>{{ label }}</a>
-      {% endfor %}
-    </nav>
-
-    {% if items %}
-    <div class="hr06-table-wrap">
-      <table class="hr06-table">
-        <thead><tr><th>案件号</th><th>人员</th><th>异动类型 / 原因</th><th>原范围 → 目标范围</th><th>计划生效日</th><th>状态</th></tr></thead>
-        <tbody>
-          {% for it in items %}
-          <tr>
-            <td><a class="hr06-link" href="{% url 'hr06-change-detail' it.id %}">{{ it.caseNo }}</a></td>
-            <td><strong>{{ it.staffName }}</strong><span class="hr06-muted">{{ it.staffNo }}</span></td>
-            <td><strong>{{ it.actionLabel }}</strong><span class="hr06-muted">{{ it.reasonName }}</span></td>
-            <td>{{ it.source|default:"—" }} → {{ it.target|default:"—" }}</td>
-            <td>{{ it.requestedEffectiveAt }}</td>
-            <td><span class="hr06-status">{{ it.statusLabel }}</span></td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% else %}
-    <div class="hr06-empty"><strong>当前视图没有案件</strong><span>这表示服务端查询成功且没有匹配记录，不代表其他视图也为空。</span><a href="{% url 'hr06-change-new' %}">创建第一份异动草稿</a></div>
-    {% endif %}
+    <aside class="hr06-attention" aria-label="提醒与生效日程">
+      <section class="hr06-attention__panel">
+        <div class="hr06-attention__head"><h2>需要关注</h2><a href="{% url 'hr06-change-center' %}?view=anomalies">更多</a></div>
+        <a href="{% url 'hr06-change-center' %}?view=anomalies"><span>异常事项</span><strong data-tone="danger">{{ stats.risks }}</strong></a>
+        <a href="{% url 'hr06-change-center' %}?view=waiting&period=overdue"><span>已过计划日期</span><strong data-tone="warning">{% if stats.waitingEffective %}{{ stats.waitingEffective }}{% else %}0{% endif %}</strong></a>
+        <a href="{% url 'hr06-change-center' %}?view=approval"><span>审批中</span><strong>{{ stats.underApproval }}</strong></a>
+      </section>
+      <section class="hr06-attention__panel">
+        <div class="hr06-attention__head"><h2>即将生效</h2><a href="{% url 'hr06-changes-future-page' %}">更多</a></div>
+        {% if upcoming %}
+          {% for it in upcoming %}<a class="hr06-upcoming" href="{% url 'hr06-change-detail' it.id %}"><time>{{ it.requestedEffectiveAt }}</time><span><strong>{{ it.staffName }}</strong><small>{{ it.actionLabel }}</small></span></a>{% endfor %}
+        {% else %}<p class="hr06-attention__empty">当前没有待生效事项</p>{% endif %}
+      </section>
+    </aside>
   </section>
 
-  <div class="hr06-truth-note"><strong>流程边界</strong><span>创建草稿不等于提交审批；批准不等于正式生效。每个状态变化继续由 HR06 后端状态机、版本冲突检查、影响校验和审计链控制。</span></div>
+  <div class="hr06-truth-note"><strong>办理规则</strong><span>创建草稿不等于提交审批；批准后仍需等到计划日期完成正式生效。所有操作继续由现有权限、校验和审计流程控制。</span></div>
 </div>
 {% endblock content %}

@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr08-workspace.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr08-workspace.css' %}?v=20260830-workbench">
 {% endblock styles %}
 
 {% block content %}
@@ -18,6 +18,6 @@
 
 {% block scripts %}
 {{ block.super }}
-<script src="{% static 'hr/js/pages/hr08-workspace.js' %}"></script>
-{% if section == "hiring" and case %}<script src="{% static 'hr/js/pages/hr08-wb-agreement.js' %}"></script>{% endif %}
+<script src="{% static 'hr/js/pages/hr08-workspace.js' %}?v=20260830-business-copy"></script>
+{% if section == "hiring" and case %}<script src="{% static 'hr/js/pages/hr08-wb-agreement.js' %}?v=20260830-business-copy"></script>{% endif %}
 {% endblock scripts %}

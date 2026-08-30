@@ -25,12 +25,12 @@ HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未
     <div class="hr-v2-pagehead__copy">
       <div class="hr-v2-eyebrow">HR02 · 组织机构与编制岗位</div>
       <h1 class="hr-v2-title" id="hr02-org-title">组织机构</h1>
-      <p class="hr-v2-subtitle">从学校根组织向下查看正式机构层级、稳定编码和生效状态；历史与未来调整继续遵循现有 effective-dated Authority。</p>
+      <p class="hr-v2-subtitle">从学校根组织向下查看正式机构层级、稳定编码和生效状态；历史与未来调整继续按生效日期管理。</p>
     </div>
     <div class="hr-v2-context" aria-label="当前工作区说明">
       <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
       <span class="hr-v2-context__item"><strong>事实</strong> 正式组织层级</span>
-      <span class="hr-v2-context__item"><strong>口径</strong> effective-dated</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> 按生效日期</span>
     </div>
   </header>
 
@@ -68,7 +68,7 @@ HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未
     <div class="hr-v2-section__head">
       <div>
         <h2 id="hr02-org-workspace-title">组织树与机构详情</h2>
-        <p>左侧定位正式机构，右侧只展示当前选择机构的 Authority 事实；未建立根组织时保持真实空态。</p>
+        <p>左侧定位正式机构，右侧只展示当前选择机构的正式记录；未建立根组织时保持真实空态。</p>
       </div>
     </div>
 
@@ -94,7 +94,7 @@ HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未
 
   <div class="hr-v2-truth-note">
     <strong>事实边界</strong>
-    <span>组织树只读取现有 HR02 Authority API；页面不根据显示名称推断身份，也不把未来调整提前当成当前正式组织。</span>
+    <span>组织树只读取 HR02 正式组织数据；页面不根据显示名称推断身份，也不把未来调整提前当成当前正式组织。</span>
   </div>
 </div>
 {% endblock content %}

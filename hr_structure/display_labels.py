@@ -154,11 +154,11 @@ CHANGE_CASE_STATUS = {
 
 # ---- 权威模式 ----
 AUTHORITY_MODE = {
-    "LEGACY_ONLY": "Legacy 快照",
-    "LEGACY_STRUCTURE_ONLY": "Legacy 结构",
+    "LEGACY_ONLY": "历史系统快照",
+    "LEGACY_STRUCTURE_ONLY": "历史系统组织结构",
     "DUAL_READ_COMPARE": "双读对账",
-    "AUTHORITY_ONLY": "仅权威",
-    "HR02_AUTHORITY": "HR02 权威",
+    "AUTHORITY_ONLY": "仅正式数据",
+    "HR02_AUTHORITY": "HR02 正式数据",
 }
 
 # ---- HR01 预警 ----
@@ -205,7 +205,7 @@ SCOPE_TYPE = {
 
 # ---- HR01 数据基础 ----
 DATA_BASIS = {
-    "LEGACY_CURRENT_SNAPSHOT": "Legacy 当前快照",
+    "LEGACY_CURRENT_SNAPSHOT": "当前系统快照",
     "AUTHORITATIVE_EFFECTIVE_FACT": "权威有效事实",
 }
 

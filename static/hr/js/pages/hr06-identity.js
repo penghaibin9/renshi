@@ -117,7 +117,7 @@
       return;
     }
     searchButton.disabled = true;
-    staffResults.textContent = "正在从 HR03 权威名册搜索…";
+    staffResults.textContent = "正在从教职工名册搜索…";
     try {
       const response = await window.HrApi.request("/api/v1/hr/staff", {
         params: { keyword, page: 1, pageSize: 20 },
@@ -144,7 +144,7 @@
     state.selectedManager = null;
     state.profile = null;
     selectedStaff.hidden = false;
-    selectedStaff.textContent = "正在读取 HR03 当前身份事实…";
+    selectedStaff.textContent = "正在读取当前身份信息…";
     updateCreateAvailability();
     try {
       const response = await window.HrApi.request(
@@ -301,7 +301,7 @@
       "hr06-identity-target-org",
       actionCode === "ADD_SECONDARY_ASSIGNMENT" ? "兼岗组织" : "新主岗组织",
       [],
-      "请选择 HR02 组织",
+      "请选择组织",
       false
     );
     organizations.forEach((item) => {
@@ -316,7 +316,7 @@
     );
     positionSelect.disabled = true;
     orgSelect.addEventListener("change", async () => {
-      resetSelect(positionSelect, "正在读取 HR02 岗位…");
+      resetSelect(positionSelect, "正在读取岗位信息…");
       positionSelect.disabled = true;
       try {
         const positions = await fetchPositions(orgSelect.value);
@@ -332,7 +332,7 @@
       updateCreateAvailability();
     });
     if (actionCode === "ADD_SECONDARY_ASSIGNMENT") {
-      appendNumberField("hr06-identity-fte", "兼岗 FTE（总 FTE 上限 1.50）", "0.20");
+      appendNumberField("hr06-identity-fte", "兼岗折合全职数（合计上限 1.50）", "0.20");
     }
   }
 
@@ -341,7 +341,7 @@
     const wrapper = document.createElement("div");
     wrapper.className = "hr06-field hr06-field--grow";
     const label = document.createElement("span");
-    label.textContent = "新直属上级（从 HR03 搜索）";
+    label.textContent = "新直属上级（从教职工名册搜索）";
     const input = document.createElement("input");
     input.id = "hr06-identity-manager-keyword";
     input.type = "search";
@@ -359,7 +359,7 @@
       const keyword = input.value.trim();
       if (!keyword) return;
       button.disabled = true;
-      results.textContent = "正在从 HR03 搜索主管…";
+      results.textContent = "正在从教职工名册搜索主管…";
       try {
         const response = await window.HrApi.request("/api/v1/hr/staff", {
           params: { keyword, page: 1, pageSize: 20 },
@@ -402,7 +402,7 @@
       "hr06-identity-source-assignment",
       "要结束的当前兼岗",
       [],
-      "正在读取 HR03 当前兼岗…",
+      "正在读取当前兼岗…",
       false
     );
     select.disabled = true;
@@ -419,7 +419,7 @@
         addOption(
           select,
           item.id,
-          `${item.orgName || "组织未返回"} · ${item.positionName || "岗位未返回"} · FTE ${item.fte || "—"}`
+          `${item.orgName || "组织未返回"} · ${item.positionName || "岗位未返回"} · 折合全职数 ${item.fte || "—"}`
         );
       });
       select.disabled = concurrent.length === 0;
@@ -462,7 +462,7 @@
         const title = document.createElement("strong");
         title.textContent = "当前没有可更新的开放聘用关系";
         const detail = document.createElement("span");
-        detail.textContent = "该动作不会创建新聘用关系，请先核对 HR03 人员主档。";
+        detail.textContent = "该变更不会创建新的聘用关系，请先核对教职工主档。";
         unavailable.append(title, detail);
         targetFields.appendChild(unavailable);
         updateCreateAvailability();
@@ -487,7 +487,7 @@
     }
     if (actionCode === "MANAGER_CHANGE") {
       if (!currentPrimary()) {
-        appendState("当前没有可继承的主岗", "直属上级变更必须基于 HR03 当前主岗形成新事实段。", "error");
+        appendState("当前没有可继承的主岗", "直属上级变更必须基于当前主岗办理。", "error");
       } else {
         appendManagerFields();
       }
@@ -499,7 +499,7 @@
         try {
           await appendAssignmentTargetFields(actionCode);
         } catch (error) {
-          appendState("HR02 目标读取失败", window.HrApi.apiErrorToMessage(error), "error");
+          appendState("目标组织岗位读取失败", window.HrApi.apiErrorToMessage(error), "error");
         }
       }
     }
@@ -696,7 +696,7 @@
       prioritySelect.disabled = false;
       fillReasons();
       await renderTargetFields();
-      setMeta(bootstrapState, "身份动作、原因与 HR03 受控字典已从当前学校服务端读取。", "success");
+      setMeta(bootstrapState, "身份变更类型、原因与可选信息已准备。", "success");
     } catch (error) {
       setMeta(bootstrapState, window.HrApi.apiErrorToMessage(error), "error");
       actionSelect.disabled = true;

@@ -9,6 +9,24 @@
   const treeEl = document.getElementById("hr-org-tree");
   const detailEl = document.getElementById("hr-org-detail");
 
+  const ORG_TYPE_LABELS = {
+    SCHOOL: "学校", COLLEGE: "学院", DEPARTMENT: "系部",
+    INSTITUTE: "研究机构", CENTER: "中心", OFFICE: "职能部门",
+    PARTY: "党组织", OTHER: "其他组织",
+  };
+  const STATUS_LABELS = {
+    DRAFT: "草稿", ACTIVE: "有效", INACTIVE: "停用",
+    PENDING: "待生效", CLOSED: "已关闭",
+  };
+
+  function orgTypeLabel(value) {
+    return ORG_TYPE_LABELS[value] || "其他组织";
+  }
+
+  function statusLabel(value) {
+    return STATUS_LABELS[value] || "状态待确认";
+  }
+
   async function loadRoot() {
     if (!treeEl) return;
     try {
@@ -28,7 +46,7 @@
       treeEl.innerHTML = `<div class="hr-org-node is-root" data-org-id="${root.id}">
         <button class="hr-org-node__row" data-action="select" aria-expanded="true">
           <span class="hr-org-node__name">${root.name}</span>
-          <span class="hr-scope-chip">${root.org_type || "SCHOOL"}</span>
+          <span class="hr-scope-chip">${orgTypeLabel(root.org_type || "SCHOOL")}</span>
         </button>
         <div class="hr-org-node__children" data-children></div>
       </div>`;
@@ -85,13 +103,13 @@
         <div class="hr-section-card hr-card">
           <header class="hr-section-card__header">
             <h2 class="hr-section-card__title">${d.name}</h2>
-            <span class="hr-scope-chip">${d.org_type || "—"}</span>
+            <span class="hr-scope-chip">${orgTypeLabel(d.org_type)}</span>
           </header>
           <div class="hr-section-card__body hr-org-detail-grid">
             <div class="hr-meta">稳定编码</div><div>${d.stable_code || "—"}</div>
-            <div class="hr-meta">组织类型</div><div>${d.org_type || "—"}</div>
+            <div class="hr-meta">组织类型</div><div>${orgTypeLabel(d.org_type)}</div>
             <div class="hr-meta">生效日期</div><div>${d.validity_from || "—"}</div>
-            <div class="hr-meta">状态</div><div>${d.status || "—"}</div>
+            <div class="hr-meta">状态</div><div>${statusLabel(d.status)}</div>
             <div class="hr-meta">下级机构</div><div>${d.child_count ?? 0}</div>
           </div>
         </div>`;

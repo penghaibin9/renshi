@@ -390,10 +390,10 @@
         <div class="flex items-center gap-3 mb-6">
             <button
                 id="sidebarPinBtn"
-                title="{% trans 'Lock sidebar open' %}"
-                aria-label="{% trans 'Lock sidebar open' %}"
-                data-pin-label="{% trans 'Lock sidebar open' %}"
-                data-unpin-label="{% trans 'Unlock sidebar (auto-collapses on hover-out)' %}"
+                title="固定侧栏"
+                aria-label="固定侧栏"
+                data-pin-label="固定侧栏"
+                data-unpin-label="取消固定侧栏（鼠标移出后自动收起）"
                 class="flex-shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors duration-150"
             >
                 <!-- Unlocked padlock: shown when the sidebar is NOT pinned (hover-to-expand mode) -->
@@ -440,14 +440,14 @@
                             class="oh-sidebar__company-title truncate"
                             style="font-size: 13px"
                         >{{ request.session.selected_company_instance.company }}.</span>
-                        <a href="#" class="oh-sidebar__company-link truncate" style="font-size: 10px">
-                            {% trans request.session.selected_company_instance.text %}
+                        <a href="{% if request.path|slice:":4" == "/hr/" %}/hr/overview{% else %}#{% endif %}" class="oh-sidebar__company-link truncate" style="font-size: 10px">
+                            {% if request.path|slice:":4" == "/hr/" %}人事一体化平台{% else %}{% trans request.session.selected_company_instance.text %}{% endif %}
                         </a>
                     </div>
                 {% else %}
                     <img
                         src="{% if request.user.employee_get.employee_work_info.company_id.icon %}{{ request.user.employee_get.employee_work_info.company_id.icon.url }}{% else %}/static/horilla_theme/assets/img/horilla-logo.png{% endif %}"
-                        alt="{% trans 'Company logo' %}"
+                        alt="学校标志"
                         class="oh-sidebar-label w-7 h-7 rounded-full flex-shrink-0"
                     >
                     <div class="oh-sidebar__company-details oh-sidebar-label min-w-0">
@@ -455,8 +455,8 @@
                             class="oh-sidebar__company-title truncate"
                             style="font-size: 13px"
                         >{{ request.user.employee_get.employee_work_info.company_id }}.</span>
-                        <a href="#" class="oh-sidebar__company-link truncate" style="font-size: 10px">
-                            {% trans "My Company" %}
+                        <a href="{% if request.path|slice:":4" == "/hr/" %}/hr/overview{% else %}#{% endif %}" class="oh-sidebar__company-link truncate" style="font-size: 10px">
+                            {% if request.path|slice:":4" == "/hr/" %}人事一体化平台{% else %}我的单位{% endif %}
                         </a>
                     </div>
                 {% endif %}
@@ -466,8 +466,11 @@
         <nav
             class="space-y-1 overflow-hidden overflow-y-auto h-[calc(100vh_-_95px)] sidebar-scroll"
             role="navigation"
-            aria-label="{% trans 'Main navigation' %}"
+            aria-label="主导航"
         >
+            {% if request.path|slice:":4" == "/hr/" %}
+                {% include "hr/components/module_sidebar.html" %}
+            {% else %}
             {% include "horilla_theme/components/sidebar/top_menu.html" %}
             {% for menues in sidebar %}
                 <div class="sidebar-item">
@@ -515,6 +518,7 @@
                     </ul>
                 </div>
             {% endfor %}
+            {% endif %}
             {% comment %} {{ request.active_company }} {% endcomment %}
             {% comment %} {% include "horilla_theme/components/sidebar/bottom_menu.html" %} {% endcomment %}
         </nav>

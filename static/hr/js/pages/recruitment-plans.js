@@ -36,7 +36,7 @@
       }
       container.innerHTML = cycles.map(function (cycle, index) {
         return '<button type="button" class="hr-rec-plan-cycle' + (index === 0 ? ' is-active' : '') + '" data-id="' + escapeHtml(cycle.id) + '" aria-pressed="' + (index === 0 ? 'true' : 'false') + '"><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(cycle.status) + '">' +
-          escapeHtml(cycle.statusLabel || cycle.status || "—") + '</span> <strong>' + escapeHtml(cycle.year ?? "—") + ' ' + escapeHtml(cycle.title || "—") +
+          escapeHtml(window.HrApi.statusLabel(cycle.status, cycle.statusLabel)) + '</span> <strong>' + escapeHtml(cycle.year ?? "—") + ' ' + escapeHtml(cycle.title || "—") +
           '</strong> <span class="hr-meta">' + escapeHtml(cycle.start_date || "—") + '</span></button>';
       }).join("");
       loadRequests(cycles[0].id);
@@ -62,7 +62,7 @@
           const submitted = row.submitted_at ? new Date(row.submitted_at).toLocaleString() : "—";
           return '<tr><td>' + escapeHtml(row.organization_name || "—") + '</td><td>' + escapeHtml(row.total_requested ?? "—") + '</td><td>' +
             escapeHtml(row.total_approved ?? "—") + '</td><td><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(row.status) + '">' +
-            escapeHtml(row.statusLabel || row.status || "—") + '</span></td><td>' + escapeHtml(submitted) + '</td></tr>';
+            escapeHtml(window.HrApi.statusLabel(row.status, row.statusLabel)) + '</span></td><td>' + escapeHtml(submitted) + '</td></tr>';
         }).join("") + '</tbody></table>';
     } catch (err) {
       container.innerHTML = stateHtml("需求列表读取失败", window.HrApi.apiErrorToMessage(err) || "请求失败", true);

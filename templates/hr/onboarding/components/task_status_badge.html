@@ -9,5 +9,5 @@
 {% elif status == "COMPLETED" %}<span class="oh-badge oh-badge--success">{% trans "已完成" %}</span>
 {% elif status == "WAIVED" %}<span class="oh-badge oh-badge--neutral">{% trans "已豁免" %}</span>
 {% elif status == "CANCELLED" %}<span class="oh-badge oh-badge--neutral">{% trans "已取消" %}</span>
-{% else %}<span class="oh-badge oh-badge--secondary">{{ status|default:_("未知") }}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{% trans "未知状态" %}</span>
 {% endif %}

@@ -4,30 +4,30 @@
 {% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr06-page" data-module="HR06" data-section="secondments" data-hr-page="change-secondments">
-  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>借调挂职</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr06-secondments-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-secondments-title">借调挂职管理</h1><p class="hr-v2-subtitle">跟踪临时任职的原岗处理、临时单位、预计返岗与超期风险；返岗不是删除历史任职，而是受控形成后续事实。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>进行中</strong> {{ stats.active }}</span><span class="hr-v2-context__item"><strong>已超期</strong> {{ stats.overdue }}</span></div></header>
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>借调挂职</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-secondments-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">人事异动 · 临时任职</div><h1 class="hr-v2-title" id="hr06-secondments-title">借调挂职管理</h1><p class="hr-v2-subtitle">跟踪临时任职的原岗处理、临时单位、预计返岗与超期风险；返岗后仍保留完整的历史任职记录。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>进行中</strong> {{ stats.active }}</span><span class="hr-v2-context__item"><strong>已超期</strong> {{ stats.overdue }}</span></div></header>
   {% include "hr_changes/components/v2_nav.html" with active="secondments" %}
   <form id="hr06-temporary-create-form" novalidate>
     {% csrf_token %}
     <section class="hr06-panel">
-      <div class="hr06-section-head"><div><h2>发起借调或挂职</h2><p>从 HR03 选择人员与当前主岗，从 HR02 选择临时单位；当前只开放原岗保持有效（KEEP_ACTIVE），结果只创建 DRAFT。</p></div></div>
+      <div class="hr06-section-head"><div><h2>发起借调或挂职</h2><p>从教职工名册选择人员并核对当前主岗，再从组织信息中选择临时单位；当前办理规则为保留原岗位，创建后先保存为草稿。</p></div></div>
       <div class="hr06-search-row">
         <label class="hr06-field hr06-field--grow"><span>姓名 / 工号</span><input id="hr06-temporary-staff-keyword" type="search" autocomplete="off" placeholder="例如：张老师 / T20260018"></label>
         <button class="hr06-button hr06-button--secondary" type="button" id="hr06-temporary-search-staff">搜索人员</button>
       </div>
-      <div id="hr06-temporary-staff-results" class="hr06-staff-results" aria-live="polite"><div class="hr06-state"><strong>尚未搜索</strong><span>人员只能从当前 tenant/scope 可见的 HR03 名册选择。</span></div></div>
+      <div id="hr06-temporary-staff-results" class="hr06-staff-results" aria-live="polite"><div class="hr06-state"><strong>尚未搜索</strong><span>人员只能从当前学校和本人权限范围内的教职工名册选择。</span></div></div>
       <div id="hr06-temporary-selected-staff" class="hr06-selected" hidden aria-live="polite"></div>
       <div class="hr06-form-grid">
-        <label class="hr06-field"><span>临时异动类型</span><select id="hr06-temporary-action" disabled><option value="">正在读取服务端配置</option></select></label>
+        <label class="hr06-field"><span>临时异动类型</span><select id="hr06-temporary-action" disabled><option value="">正在读取可选类型</option></select></label>
         <label class="hr06-field"><span>异动原因</span><select id="hr06-temporary-reason" disabled><option value="">请先选择类型</option></select></label>
-        <label class="hr06-field"><span>临时单位</span><select id="hr06-temporary-target-org" disabled><option value="">正在读取 HR02 组织</option></select></label>
+        <label class="hr06-field"><span>临时单位</span><select id="hr06-temporary-target-org" disabled><option value="">正在读取组织信息</option></select></label>
         <label class="hr06-field"><span>计划生效日</span><input id="hr06-temporary-effective-at" type="date"></label>
         <label class="hr06-field"><span>预计返岗日</span><input id="hr06-temporary-return-at" type="date"></label>
         <label class="hr06-field"><span>优先级</span><select id="hr06-temporary-priority" disabled><option value="NORMAL">普通</option></select></label>
       </div>
-      <div class="hr06-truth-note"><strong>原岗策略</strong><span>KEEP_ACTIVE · 当前阶段不开放 SUSPEND / REDUCE_FTE，也不接受目标岗位，以免绕过 HR02 预占合同。</span></div>
-      <div id="hr06-temporary-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在读取 HR06 动作与 HR02 组织…</span></div>
-      <div class="hr06-submit-panel"><div><h2>创建临时异动草稿</h2><p>服务端生成 organization、expected_return_at、source_policy proposals；审批通过前不会写 HR03 任职。</p></div><button class="hr06-button" type="button" id="hr06-temporary-create" disabled>创建借调/挂职草稿</button><div id="hr06-temporary-create-result" class="hr06-meta" aria-live="polite"><span>尚未创建</span></div></div>
+      <div class="hr06-truth-note"><strong>原岗处理</strong><span>当前办理规则为保留原岗位；暂停原岗或调整工作量暂未开放，也不在借调挂职中另选目标岗位。</span></div>
+      <div id="hr06-temporary-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在准备异动类型与组织信息…</span></div>
+      <div class="hr06-submit-panel"><div><h2>创建临时异动草稿</h2><p>系统会记录临时单位、预计返岗日和原岗处理方式；审批通过前不会修改正式任职信息。</p></div><button class="hr06-button" type="button" id="hr06-temporary-create" disabled>创建借调/挂职草稿</button><div id="hr06-temporary-create-result" class="hr06-meta" aria-live="polite"><span>尚未创建</span></div></div>
     </section>
   </form>
   <section class="hr06-summary" aria-label="借调挂职实时摘要"><div class="hr06-summary__item"><strong>{{ stats.active }}</strong><span>借调挂职中</span></div><div class="hr06-summary__item"><strong>{{ stats.dueSoon }}</strong><span>30 天内返岗</span></div><div class="hr06-summary__item"><strong>{{ stats.overdue }}</strong><span>已超期</span></div><div class="hr06-summary__item"><strong>{{ stats.returnPending }}</strong><span>待返岗确认</span></div></section>
@@ -39,5 +39,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/hr06-temporary.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr06-temporary.js' %}?v=20260830-business-copy"></script>
 {% endblock scripts %}

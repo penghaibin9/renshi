@@ -5,10 +5,10 @@
 {% block content %}
 <div class="hr-v2-page hr05-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probation-detail" data-probation-id="{{ probation.id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>试用详情</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">当前 canonical API 提供试用记录列表与写入命令，但尚无单条详情 GET 契约；本页只从 tenant-scope 列表中定位当前记录，不编造评价、目标或决策明细。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>Probation</strong> {{ probation.id }}</span><span class="hr-v2-context__item"><strong>事实</strong> canonical list API</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">当前服务端提供试用记录列表与写入操作，但尚无单条详情查询入口；本页只从当前学校和账号可见列表中定位记录，不编造评价、目标或决策明细。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>试用记录编号</strong> {{ probation.id }}</span><span class="hr-v2-context__item"><strong>依据</strong> 正式试用列表</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}
   <section class="hr05-panel"><div id="hr05-probation-detail" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>从当前学校可见试用列表定位该记录。</span></div></div><div id="hr05-probation-links" class="hr05-actions"></div></section>
-  <div class="hr05-truth-note"><strong>能力边界</strong><span>评价提交、转正确认、延期与不通过 API 已存在，但在缺少可核验详情读模型前，本页不展示伪造的评价表单或统计数字。</span></div>
+  <div class="hr05-truth-note"><strong>能力边界</strong><span>评价提交、转正确认、延期与不通过功能已经具备，但在缺少可核验详情数据前，本页不展示伪造的评价表单或统计数字。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probation-detail.js' %}"></script>{% endblock scripts %}

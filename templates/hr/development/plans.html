@@ -1,9 +1,12 @@
 {% extends "hr/development/base.html" %}
 {% block workspace_content %}
 <section class="hr10-summary" aria-label="发展计划摘要">
-  <article class="hr10-kpi"><span>在执行计划</span><strong>{{ stats.in_execution }}</strong><small>已发布或执行中的正式计划</small></article>
-  <article class="hr10-kpi"><span>待审批</span><strong>{{ stats.pending_review }}</strong><small>需要完成审核结论的计划</small></article>
-  <article class="hr10-kpi"><span>已关闭</span><strong>{{ stats.closed }}</strong><small>保留历史且不再执行</small></article>
-  <article class="hr10-kpi"><span>计划总数</span><strong>{{ plans|length }}</strong><small>当前学校 Authority 计划</small></article>
+  <article class="hr10-kpi"><span>计划总数</span><strong>{{ plans|length }}</strong><small>当前学校</small></article>
+  <article class="hr10-kpi"><span>在执行</span><strong>{{ stats.in_execution }}</strong><small>已发布或执行中</small></article>
+  <article class="hr10-kpi"><span>待审批</span><strong>{{ stats.pending_review }}</strong><small>等待审核结论</small></article>
+  <article class="hr10-kpi"><span>已关闭</span><strong>{{ stats.closed }}</strong><small>保留历史记录</small></article>
+  <article class="hr10-kpi"><span>培养范围</span><strong>全校</strong><small>按当前学校统计</small></article>
+  <article class="hr10-kpi"><span>数据状态</span><strong>实时</strong><small>以业务台账为准</small></article>
 </section>
+<section class="hr10-panel"><div class="hr10-panel-head"><div><h3>教师发展计划</h3><p>按计划周期和审批状态统一管理，不把草稿计入执行计划。</p></div></div><div class="hr10-plan-table"><div class="hr10-plan-table__head"><span>计划编号</span><span>计划类型</span><span>周期</span><span>当前状态</span></div>{% for plan in plans %}<article><div><strong>{{ plan.plan_no }}</strong><small>{{ plan.start_date }} 至 {{ plan.end_date }}</small></div><span>{{ plan.get_plan_type_display }}</span><span>{{ plan.get_cycle_type_display }}</span><span class="hr10-badge">{{ plan.get_lifecycle_status_display }}</span></article>{% empty %}<div class="hr10-empty">当前学校尚未建立教师发展计划。</div>{% endfor %}</div></section>
 {% endblock %}

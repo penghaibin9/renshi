@@ -17,11 +17,11 @@
     <div class="hr-v2-pagehead__copy">
       <div class="hr-v2-eyebrow">HR04 · 招聘与人才引进</div>
       <h1 class="hr-v2-title" id="hr04-assessment-title">考试面试与考察</h1>
-      <p class="hr-v2-subtitle">统一查看评分方案、评审事件、专家评分与结果锁定。页面只消费 canonical API，不缓存或本地重算正式成绩。</p>
+      <p class="hr-v2-subtitle">统一查看评分方案、评审事件、专家评分与结果锁定。页面只读取服务端正式数据，不缓存或在本地重算正式成绩。</p>
     </div>
     <div class="hr-v2-context">
       <span class="hr-v2-context__item"><strong>评分</strong> 后端真值</span>
-      <span class="hr-v2-context__item"><strong>冲突</strong> Authority 阻断</span>
+      <span class="hr-v2-context__item"><strong>冲突</strong> 服务端阻断</span>
       <span class="hr-v2-context__item"><strong>锁定</strong> 可追溯</span>
     </div>
   </header>
@@ -35,21 +35,21 @@
     <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
   </nav>
 
-  <div class="hr04-assessment__notice" role="note"><strong>评审事实不可被 UI 覆盖。</strong> 评分方案、专家分组、利益冲突、评分锁定和结果冻结全部由后端 Authority 校验。</div>
+  <div class="hr04-assessment__notice" role="note"><strong>正式评审数据不可被页面覆盖。</strong> 评分方案、专家分组、利益冲突、评分锁定和结果冻结全部由服务端校验。</div>
 
   <section class="hr04-assessment__flow" aria-label="考试面试与考察业务流程">
     <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">01</span><h3>冻结评分方案</h3><p>定义评分组件与权重；锁定后不允许静默修改规则。</p></article>
-    <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">02</span><h3>组织评审事件</h3><p>安排专家与候选人，利益冲突必须先声明并按 Authority 处置。</p></article>
+    <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">02</span><h3>组织评审事件</h3><p>安排专家与候选人，利益冲突必须先声明并按正式规则处置。</p></article>
     <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">03</span><h3>评分与锁定</h3><p>评分表锁定后任何重开都必须走显式权限与审计。</p></article>
     <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">04</span><h3>冻结岗位结果</h3><p>正式汇总后再进入体检、考察、拟录用与公示。</p></article>
   </section>
 
   <div class="hr04-assessment__grid">
     <section class="hr04-panel" aria-labelledby="hr04-score-query-title">
-      <div class="hr04-panel__head"><div><h2 id="hr04-score-query-title">评分表查询</h2><p>输入评分表 ID 查看 canonical 评分事实。</p></div></div>
+      <div class="hr04-panel__head"><div><h2 id="hr04-score-query-title">评分表查询</h2><p>输入评分表编号查看正式评分数据。</p></div></div>
       <form id="hr04-assessment-query" novalidate>
         <div class="hr04-assessment__field">
-          <label for="hr04-score-sheet-id">评分表 ID</label>
+          <label for="hr04-score-sheet-id">评分表编号</label>
           <input id="hr04-score-sheet-id" name="score_sheet_id" type="text" autocomplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" required aria-describedby="hr04-score-help">
           <small id="hr04-score-help" class="hr-meta">可从评审任务、审计记录或相关业务通知中复制。</small>
         </div>
@@ -64,11 +64,11 @@
 
     <section class="hr04-panel" aria-labelledby="hr04-score-result-title">
       <div class="hr04-panel__head"><div><h2 id="hr04-score-result-title">评分事实</h2><p>字段缺失保持“—”，不推断业务结论。</p></div></div>
-      <div id="hr04-assessment-result" aria-live="polite"><div class="hr04-assessment__empty">输入评分表 ID 后查询。<br>本页不会自动读取其他候选人的评分。</div></div>
+      <div id="hr04-assessment-result" aria-live="polite"><div class="hr04-assessment__empty">输入评分表编号后查询。<br>本页不会自动读取其他候选人的评分。</div></div>
     </section>
   </div>
 
-  <div class="hr-v2-truth-note"><strong>冻结边界</strong><span>评分方案锁定、评分表锁定与岗位结果冻结均由服务端版本和权限契约保护；UI 不提供绕过锁定的本地编辑入口。</span></div>
+  <div class="hr-v2-truth-note"><strong>冻结边界</strong><span>评分方案锁定、评分表锁定与岗位结果冻结均由服务端版本和权限规则保护；页面不提供绕过锁定的本地编辑入口。</span></div>
 </div>
 {% endblock content %}
 

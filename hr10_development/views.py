@@ -107,6 +107,18 @@ def practice_center(request):
 
 
 @require_GET
+@require_hr10_permission("hr.development.completion.verify")
+def practice_results(request):
+    """企业实践过程、证据与成果核验工作台。"""
+    tenant_id = _selected_tenant_id()
+    return render(
+        request,
+        "hr/development/results.html",
+        _workspace_context(tenant_id, "results", "实践过程与成果"),
+    )
+
+
+@require_GET
 @require_hr10_permission("hr.development.record.view")
 def development_record(request, staff_id):
     """教师发展档案。"""

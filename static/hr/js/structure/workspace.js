@@ -13,6 +13,14 @@
     history: "/api/v1/hr/structure/change-cases",
   };
 
+  const DISPLAY_LABELS = {
+    DRAFT: "草稿", SUBMITTED: "已提交", UNDER_REVIEW: "审核中",
+    RETURNED: "已退回", REJECTED: "已驳回", APPROVED: "已批准",
+    SCHEDULED: "已排期", EFFECTIVE: "已生效", CANCELLED: "已取消",
+    FAILED_EFFECT: "生效失败", ACTIVE: "有效", INACTIVE: "停用",
+    HEADCOUNT: "按人数控制", FTE: "按折合全职数控制",
+  };
+
   function str(value, fallback) {
     return value === null || value === undefined || value === "" ? (fallback || "—") : String(value);
   }
@@ -24,6 +32,10 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function display(value) {
+    return DISPLAY_LABELS[value] || value;
   }
 
   function unwrap(payload) {
@@ -38,7 +50,7 @@
     try { payload = await response.json(); } catch (_) { payload = null; }
     if (!response.ok || (payload && payload.error)) {
       const detail = payload && payload.error;
-      throw new Error((detail && (detail.message || detail.code)) || "请求失败（HTTP " + response.status + "）");
+      throw new Error((detail && detail.message && /[\u3400-\u9fff]/.test(detail.message) ? detail.message : null) || "请求失败（状态码 " + response.status + "）");
     }
     return unwrap(payload);
   }
@@ -55,20 +67,20 @@
       return {
         title: str(row.name),
         subtitle: str(row.code),
-        cells: [["年度", row.planYear], ["状态", row.status], ["生效日期", row.validityFrom]],
+        cells: [["年度", row.planYear], ["状态", display(row.status)], ["生效日期", row.validityFrom]],
       };
     }
     if (section === "post-catalogs") {
       return {
         title: str(row.name),
         subtitle: str(row.stableCode),
-        cells: [["岗位类别", row.category], ["控制模式", row.controlMode], ["版本", "V" + str(row.versionNo, "0")]],
+        cells: [["岗位类别", display(row.category)], ["控制模式", display(row.controlMode)], ["版本", "第 " + str(row.versionNo, "0") + " 版"]],
       };
     }
     return {
       title: str(row.title),
       subtitle: str(row.caseNo),
-      cells: [["变更类型", row.changeType], ["状态", row.status], ["计划生效", row.requestedEffectiveDate]],
+      cells: [["变更类型", display(row.changeType)], ["状态", display(row.status)], ["计划生效", row.requestedEffectiveDate]],
     };
   }
 
@@ -92,7 +104,7 @@
   async function load() {
     const endpoint = endpoints[section];
     if (!endpoint || !list) return;
-    list.innerHTML = '<div class="hr02-state">正在读取 Authority…</div>';
+    list.innerHTML = '<div class="hr02-state">正在读取正式业务记录…</div>';
     try {
       rows = normalizedItems(await api(endpoint));
       render();
@@ -117,7 +129,7 @@
         body: JSON.stringify(body),
       });
       const relation = result && (result.relation || result.data?.relation);
-      if (message) message.textContent = "创建成功" + (relation && relation.id ? " · ID " + relation.id : "");
+      if (message) message.textContent = "创建成功" + (relation && relation.id ? " · 编号 " + relation.id : "");
       form.reset();
     } catch (error) {
       if (message) message.textContent = error.message;

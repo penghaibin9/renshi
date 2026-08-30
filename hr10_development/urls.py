@@ -15,6 +15,7 @@ urlpatterns = [
     path("hr/development/programs", views.program_center, name="development-programs"),
     path("hr/development/requests", views.request_center, name="development-requests"),
     path("hr/development/enterprise-practice", views.practice_center, name="development-practice"),
+    path("hr/development/enterprise-practice/results", views.practice_results, name="development-results"),
     path("hr/development/records/<int:staff_id>", views.development_record, name="development-record"),
     path("hr/development/dashboard", views.development_dashboard, name="development-dashboard"),
 ]

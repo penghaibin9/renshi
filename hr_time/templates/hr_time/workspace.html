@@ -5,8 +5,8 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr11-actions.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr11-workspace.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr11-actions.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr11-workspace.css' %}?v=20260830-2">
 
 <main class="hr-v2-page hr11" data-module="HR11" data-section="{{ section }}">
   {% if access_error %}
@@ -15,41 +15,35 @@
     <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR11 考勤时间</span><strong>{{ section_title }}</strong></div>
     <header class="hr-v2-pagehead" aria-labelledby="hr11-title">
       <div class="hr-v2-pagehead__copy">
-        <div class="hr-v2-eyebrow">HR11 · 考勤与时间事实</div>
+        <div class="hr-v2-eyebrow">HR11 · 考勤与工时</div>
         <h1 class="hr-v2-title" id="hr11-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">连接工作日历、排班、日考勤、异常更正、请假、加班调休和月结；批准、核验与正式事实始终分开记录。</p>
+        <p class="hr-v2-subtitle">统一管理工作制度、校历排班、打卡工时、异常补卡、请假加班与月度考勤结算。</p>
       </div>
-      <div class="hr-v2-context" aria-label="数据口径">
-        <span class="hr-v2-context__item"><strong>业务日</strong> {{ today }}</span>
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>写入</strong> Authority 状态机</span>
-      </div>
+      <a class="hr11-primary-action" href="{% url 'hr_time:hr11-attendance' %}">处理今日异常</a>
     </header>
 
     <nav class="hr11-nav" aria-label="考勤时间工作区导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_time:hr11-overview' %}">时间总览</a>
-      <a class="{% if section == 'attendance' %}active{% endif %}" href="{% url 'hr_time:hr11-attendance' %}">日考勤与异常</a>
-      <a class="{% if section == 'schedule' %}active{% endif %}" href="{% url 'hr_time:hr11-schedule' %}">日历与排班</a>
-      <a class="{% if section == 'leave' %}active{% endif %}" href="{% url 'hr_time:hr11-leave' %}">请假与销假</a>
-      <a class="{% if section == 'overtime' %}active{% endif %}" href="{% url 'hr_time:hr11-overtime' %}">加班与调休</a>
-      <a class="{% if section == 'close' %}active{% endif %}" href="{% url 'hr_time:hr11-close' %}">月结与结算</a>
-      <a class="{% if section == 'risks' %}active{% endif %}" href="{% url 'hr_time:hr11-risks' %}">风险中心</a>
+      {% comment %}兼容入口：{% url 'hr_time:hr11-overview' %} {% url 'hr_time:hr11-risks' %}{% endcomment %}
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_time:hr11-rules' %}"><small>01</small>制度与规则</a>
+      <a class="{% if section == 'schedule' %}active{% endif %}" href="{% url 'hr_time:hr11-schedule' %}"><small>02</small>校历与排班</a>
+      <a class="{% if section == 'attendance' %}active{% endif %}" href="{% url 'hr_time:hr11-attendance' %}"><small>03</small>打卡与工时</a>
+      <a class="{% if section == 'overtime' %}active{% endif %}" href="{% url 'hr_time:hr11-overtime' %}"><small>04</small>异常补卡与加班</a>
+      <a class="{% if section == 'leave' %}active{% endif %}" href="{% url 'hr_time:hr11-leave' %}"><small>05</small>请假休假</a>
+      <a class="{% if section == 'close' %}active{% endif %}" href="{% url 'hr_time:hr11-close' %}"><small>06</small>月结台账</a>
     </nav>
     <p class="hr11-mobile-hint">可左右滑动查看更多工作区</p>
 
     <section class="hr11-summary" aria-label="当前学校时间摘要">
-      <article class="hr11-kpi"><span>今日正式日考勤</span><b>{{ summary.today_facts }}</b><small>{{ today }} 已形成的日事实</small></article>
-      <article class="hr11-kpi"><span>待处理考勤异常</span><b>{{ summary.open_exceptions }}</b><small>待处理与复核中的异常</small></article>
-      <article class="hr11-kpi"><span>待审批请假</span><b>{{ summary.pending_leave }}</b><small>已提交或审批中的申请</small></article>
-      <article class="hr11-kpi"><span>待审批加班</span><b>{{ summary.pending_overtime }}</b><small>申请时长不等于实际加班</small></article>
-      <article class="hr11-kpi"><span>当前生效排班</span><b>{{ summary.active_schedules }}</b><small>按学校业务日判断</small></article>
-      <article class="hr11-kpi"><span>待完成月结</span><b>{{ summary.open_close_periods }}</b><small>开启、预关闭或重开期间</small></article>
-      <article class="hr11-kpi"><span>未关闭风险</span><b>{{ summary.open_risks }}</b><small>需回到源事实闭环</small></article>
-      <article class="hr11-kpi"><span>已核验加班事实</span><b>{{ summary.verified_overtime }}</b><small>可供结算规则继续消费</small></article>
+      <article class="hr11-kpi"><span>今日异常</span><b>{{ summary.today_exceptions }}</b><small>{{ today }} 待处理</small></article>
+      <article class="hr11-kpi"><span>请假待批</span><b>{{ summary.pending_leave }}</b><small>已提交或审批中</small></article>
+      <article class="hr11-kpi"><span>排班冲突</span><b>{{ summary.schedule_conflicts }}</b><small>同一人员多条生效排班</small></article>
+      <article class="hr11-kpi"><span>加班待确认</span><b>{{ summary.pending_overtime }}</b><small>申请与实际分开核验</small></article>
+      <article class="hr11-kpi"><span>月结进度</span><b>{{ summary.month_close_progress }}</b><small>{{ summary.month_close_status }}</small></article>
+      <article class="hr11-kpi"><span>高风险</span><b>{{ summary.high_risks }}</b><small>高与严重风险</small></article>
     </section>
 
     <section class="hr11-workbar" aria-label="本页办理入口">
-      <div><span>当前办理区</span><strong>{% if section == 'overview' %}跨域时间事实监控{% elif section == 'attendance' %}异常确认与解决{% elif section == 'schedule' %}生效排班创建{% elif section == 'leave' %}请假提交、审批与销假{% elif section == 'overtime' %}加班申请审批{% elif section == 'close' %}关账预检、关闭与重开{% else %}风险确认与解决{% endif %}</strong></div>
+      <div><span>当前办理区</span><strong>{% if section == 'overview' %}今日考勤办理概览{% elif section == 'attendance' %}异常确认与解决{% elif section == 'schedule' %}生效排班创建{% elif section == 'leave' %}请假提交、审批与销假{% elif section == 'overtime' %}加班申请审批{% elif section == 'close' %}关账预检、关闭与重开{% else %}风险确认与解决{% endif %}</strong></div>
       {% if section == 'schedule' %}<button class="hr11-button hr11-button--primary" type="button" data-open-schedule>新建生效排班</button>{% endif %}
       <div class="hr11-feedback" data-feedback role="status" aria-live="polite"></div>
     </section>
@@ -58,7 +52,7 @@
       <article class="hr11-card">
         <header class="hr11-card-head"><div>
           <h2>{% if section == 'attendance' %}最近考勤异常{% elif section == 'schedule' %}最近排班{% elif section == 'leave' %}最近请假申请{% elif section == 'overtime' %}最近加班申请{% elif section == 'close' %}最近月结期间{% elif section == 'risks' %}最近考勤风险{% else %}最近日考勤事实{% endif %}</h2>
-          <p>仅展示当前学校 Authority 记录；状态变更完成后从服务端重新读取。</p>
+          <p>仅展示当前学校考勤台账；办理完成后从业务数据重新读取。</p>
         </div></header>
         <div class="hr11-list">
           {% for item in recent %}
@@ -89,7 +83,7 @@
       </article>
 
       <aside class="hr11-card">
-        <header class="hr11-card-head"><div><h2>办理边界</h2><p>页面动作不会绕过这些事实规则。</p></div></header>
+        <header class="hr11-card-head"><div><h2>办理提醒</h2><p>这些规则直接影响考勤、请假和月结结果。</p></div></header>
         <div class="hr11-guide">
           <div class="hr11-guide-item"><strong>打卡记录 ≠ 正式考勤</strong><span>先匹配日历与排班，再评估异常并形成日事实。</span></div>
           <div class="hr11-guide-item"><strong>批准加班 ≠ 实际加班</strong><span>最终结算只使用核验后的实际时段与可结算分钟。</span></div>
@@ -100,12 +94,12 @@
     </section>
 
     <section class="hr11-capability-card">
-      <h2>HR11 时间事实闭环</h2><p>所有步骤均使用当前学校的正式数据，失败时保留原状态并返回明确错误。</p>
+      <h2>考勤月结流程</h2><p>所有步骤均使用当前学校的正式数据，办理失败时保留原状态。</p>
       <div class="hr11-flow">
         <div class="hr11-flow-step"><b>1 · 日历排班</b><span>确定应出勤时间</span></div><div class="hr11-flow-step"><b>2 · 原始事件</b><span>保留打卡与来源</span></div><div class="hr11-flow-step"><b>3 · 规则评估</b><span>形成异常与日事实</span></div><div class="hr11-flow-step"><b>4 · 审批核验</b><span>处理请假、加班与更正</span></div><div class="hr11-flow-step"><b>5 · 月结快照</b><span>冻结可追溯期间事实</span></div>
       </div>
     </section>
-    <div class="hr-v2-truth-note"><strong>数据边界</strong><span>本工作区不展示跨校对象，不接受内部 ID 手工输入；日期按学校时区计算，状态由服务端重新校验。</span></div>
+    <div class="hr-v2-truth-note"><strong>数据说明</strong><span>本工作区只展示当前学校考勤数据；日期按学校时区计算，所有状态在提交时重新校验。</span></div>
 
     <dialog class="hr11-dialog" data-dialog aria-labelledby="hr11-dialog-title">
       <form method="dialog" data-dialog-form>
@@ -116,5 +110,5 @@
     </dialog>
   {% endif %}
 </main>
-<script src="{% static 'hr/js/pages/hr11-actions.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr11-actions.js' %}?v=20260830-2"></script>
 {% endblock %}

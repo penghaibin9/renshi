@@ -149,7 +149,7 @@
         data = resp.data;
       } else {
         var r = await window.fetch(url);
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        if (!r.ok) throw new Error("请求失败（状态码 " + r.status + "）");
         data = await r.json();
       }
       var children = (data && (data.children || data.results)) || [];

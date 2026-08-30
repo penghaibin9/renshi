@@ -158,21 +158,46 @@
   }
 
   function apiErrorToMessage(err) {
-    if (err && err.data && err.data.error && err.data.error.message) {
-      return err.data.error.message;
-    }
     const map = {
       TENANT_CONTEXT_REQUIRED: "请先选择当前学校",
       PERMISSION_DENIED: "无权限查看",
       SCOPE_NOT_ALLOWED: "当前数据范围不允许",
       PROVIDER_UNAVAILABLE: "数据暂不可用",
       TIMEOUT_OR_ABORTED: "请求超时",
+      INVALID_REQUEST: "请求内容不完整或格式不正确",
+      UNAUTHENTICATED: "登录状态已失效，请重新登录",
+      RESOURCE_NOT_FOUND: "未找到对应业务记录",
+      VERSION_CONFLICT: "数据已被更新，请刷新后重试",
+      BUSINESS_RULE_VIOLATION: "当前操作不符合业务规则",
+      RATE_LIMITED: "操作过于频繁，请稍后重试",
+      INTERNAL_ERROR: "系统处理失败，请稍后重试",
+      UNKNOWN_ERROR: "数据加载失败",
     };
-    return (err && err.code && map[err.code]) || "数据加载失败";
+    if (err && err.code && map[err.code]) return map[err.code];
+    const detail = err && err.data && err.data.error && err.data.error.message;
+    if (detail && /[\u3400-\u9fff]/.test(detail)) return detail;
+    return "数据加载失败";
+  }
+
+  const STATUS_LABELS = {
+    DRAFT: "草稿", SUBMITTED: "已提交", UNDER_REVIEW: "审核中", RETURNED: "已退回",
+    REJECTED: "已驳回", APPROVED: "已批准", PENDING: "待处理", READY: "就绪",
+    ACTIVE: "有效", INACTIVE: "停用", SCHEDULED: "已预约", REPORTED: "已报到",
+    EFFECTIVE: "已生效", CANCELLED: "已取消", COMPLETED: "已完成", FAILED: "失败",
+    NOT_STARTED: "未开始", IN_PROGRESS: "进行中", WAITING_EXTERNAL: "等待外部处理",
+    BLOCKED: "已阻塞", WAIVED: "已豁免", VERIFIED: "已核验", UNVERIFIED: "未核验",
+    MISSING: "缺失", EXPIRED: "已过期", PASSED: "已通过", QUALIFIED: "资格通过",
+    DISQUALIFIED: "资格不符", MATCHED: "已匹配", UNMATCHED: "未匹配", CONFLICT: "存在冲突",
+    SUCCESS: "成功", RUNNING: "处理中", OPEN: "开放中", CLOSED: "已关闭",
+  };
+
+  function statusLabel(value, provided, fallback = "状态待确认") {
+    return provided || STATUS_LABELS[String(value || "").toUpperCase()] || fallback;
   }
 
   window.HrApi = {
     request,
     apiErrorToMessage,
+    statusLabel,
   };
 })(window);

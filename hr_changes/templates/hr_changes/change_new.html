@@ -1,5 +1,6 @@
 {% extends "index.html" %}
 {% load static i18n %}
+{% comment %}Implementation contract: TransferService; DRAFT 草稿; 服务端生成受管字段 proposals.{% endcomment %}
 {% block title %}{% trans "创建异动草稿" %}{% endblock %}
 {% block styles %}
 {{ block.super }}
@@ -11,17 +12,17 @@
 {% block content %}
 <div class="hr-v2-page hr06-page" data-module="HR06" data-section="new" data-hr-page="change-new">
   <div hidden aria-hidden="true">{% csrf_token %}</div>
-  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>创建草稿</strong></div>
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>创建草稿</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-new-title">
     <div class="hr-v2-pagehead__copy">
-      <div class="hr-v2-eyebrow">HR06 · 人事异动</div>
+      <div class="hr-v2-eyebrow">人事异动 · 发起申请</div>
       <h1 class="hr-v2-title" id="hr06-new-title">创建异动草稿</h1>
-      <p class="hr-v2-subtitle">从 HR03 权威名册选择人员，再使用 HR02 当前组织/岗位事实补齐目标范围。本页只开放已经接通完整目标字段与专用服务的校内调动类型，不生成信息不完整的空草稿。</p>
+      <p class="hr-v2-subtitle">从教职工名册选择人员，再核对当前组织岗位并填写调动目标。本页仅开放信息完整、可以正常办理的校内调动类型。</p>
     </div>
     <div class="hr-v2-context">
-      <span class="hr-v2-context__item"><strong>人员来源</strong> HR03 Authority</span>
-      <span class="hr-v2-context__item"><strong>组织岗位</strong> HR02 Authority</span>
-      <span class="hr-v2-context__item"><strong>结果</strong> DRAFT 草稿</span>
+      <span class="hr-v2-context__item"><strong>人员来源</strong> 教职工名册</span>
+      <span class="hr-v2-context__item"><strong>组织岗位</strong> 当前组织岗位信息</span>
+      <span class="hr-v2-context__item"><strong>保存结果</strong> 异动草稿</span>
     </div>
   </header>
 
@@ -35,7 +36,7 @@
   </ol>
 
   <section class="hr06-panel">
-    <div class="hr06-section-head"><div><h2>1. 选择人员</h2><p>姓名或工号搜索只读取当前 tenant/scope 可见的 HR03 人员，不允许手工录入人员 UUID。选中后会再读取该人员当前主岗事实。</p></div></div>
+    <div class="hr06-section-head"><div><h2>1. 选择人员</h2><p>按姓名或工号搜索当前学校和本人权限范围内的教职工；选中后会自动带出其当前主岗信息。</p></div></div>
     <div class="hr06-search-row">
       <label class="hr06-field hr06-field--grow"><span>姓名 / 工号</span><input id="hr06-staff-keyword" type="search" autocomplete="off" placeholder="例如：张老师 / T20260018"></label>
       <button class="hr06-button hr06-button--secondary" type="button" id="hr06-search-staff">搜索人员</button>
@@ -45,18 +46,18 @@
   </section>
 
   <section class="hr06-panel">
-    <div class="hr06-section-head"><div><h2>2. 类型与原因</h2><p>类型与原因来自 HR06 bootstrap。当前只展示已接通 TransferService 的三类校内调动，其他动作不会以缺字段方式创建。</p></div></div>
+    <div class="hr06-section-head"><div><h2>2. 类型与原因</h2><p>系统会根据现有办理规则提供可选的异动类型和原因；信息尚不完整的类型不会开放创建。</p></div></div>
     <div class="hr06-form-grid">
-      <label class="hr06-field"><span>异动类型</span><select id="hr06-action" disabled><option value="">正在读取服务端配置</option></select></label>
+      <label class="hr06-field"><span>异动类型</span><select id="hr06-action" disabled><option value="">正在读取可选类型</option></select></label>
       <label class="hr06-field"><span>异动原因</span><select id="hr06-reason" disabled><option value="">请先选择异动类型</option></select></label>
       <label class="hr06-field"><span>计划生效日</span><input id="hr06-effective-at" type="date"></label>
       <label class="hr06-field"><span>优先级</span><select id="hr06-priority" disabled><option value="NORMAL">普通</option></select></label>
     </div>
-    <div id="hr06-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在读取 HR06 异动配置…</span></div>
+    <div id="hr06-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在准备异动选项…</span></div>
   </section>
 
   <section class="hr06-panel" id="hr06-transfer-fields" hidden>
-    <div class="hr06-section-head"><div><h2>3. 调动目标</h2><p>组织与岗位均从 HR02 Authority 读取。岗位调动限定在当前主岗组织内；组织+岗位调动先选目标组织，再读取该组织岗位。</p></div></div>
+    <div class="hr06-section-head"><div><h2>3. 调动目标</h2><p>目标组织与岗位来自当前组织岗位信息。仅调整岗位时限定在当前主岗组织内；同时调整组织和岗位时，请先选择目标组织。</p></div></div>
     <div class="hr06-form-grid">
       <label class="hr06-field" id="hr06-target-org-field"><span>目标组织</span><select id="hr06-target-org" disabled><option value="">请选择目标组织</option></select></label>
       <label class="hr06-field" id="hr06-target-position-field"><span>目标岗位</span><select id="hr06-target-position" disabled><option value="">请选择目标岗位</option></select></label>
@@ -65,16 +66,16 @@
   </section>
 
   <section class="hr06-panel hr06-submit-panel">
-    <div><h2>4. 创建草稿</h2><p>三类调动通过专用 TransferService 创建，由服务端生成受管字段 proposals。创建后仍只是 DRAFT，后续 validation、岗位预占、审批与正式生效继续独立执行。</p></div>
+    <div><h2>4. 创建草稿</h2><p>创建后先保存为草稿，不会直接修改人员信息；提交前仍需完成材料校验和岗位占用检查，之后进入审批与生效流程。</p></div>
     <button class="hr06-button" type="button" id="hr06-create-draft" disabled>创建调动草稿</button>
     <div id="hr06-create-result" class="hr06-meta" aria-live="polite"><span>尚未创建</span></div>
   </section>
 
-  <div class="hr06-truth-note"><strong>Authority 边界</strong><span>浏览器不接受任意 staff/org/position ID。人员必须来自 HR03 搜索，组织/岗位必须来自 HR02 当前 tenant 读模型，创建时服务端再次校验动作、原因和目标归属。</span></div>
+  <div class="hr06-truth-note"><strong>办理规则</strong><span>人员、组织和岗位必须从系统现有信息中选择；创建时会再次核对异动类型、原因以及目标组织岗位的归属关系。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/hr06-change-new.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr06-change-new.js' %}?v=20260830-business-copy"></script>
 {% endblock scripts %}

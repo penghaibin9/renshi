@@ -27,7 +27,7 @@
     try { payload = await response.json(); } catch (_error) { /* handled below */ }
     if (!response.ok) {
       const detail = payload.error || {};
-      throw new Error([detail.code, detail.message].filter(Boolean).join(' · ') || `请求失败（${response.status}）`);
+      throw new Error(detail.message && /[\u3400-\u9fff]/.test(detail.message) ? detail.message : `请求失败（状态码 ${response.status}）`);
     }
     return payload.data ?? payload;
   }
@@ -41,6 +41,16 @@
   const toNumber = value => value === '' ? undefined : Number(value);
   const labelMap = items => new Map((items || []).map(item => [String(item.value), item.label]));
   let choices = {};
+  const STATUS_LABELS = {
+    DRAFT: '草稿', RETURNED: '已退回', READY_FOR_REVIEW: '待审核', UNDER_REVIEW: '审核中',
+    APPROVED: '已批准', PUBLISHED: '已发布', OPEN: '开放报名', CANCELLED: '已取消',
+    CLOSED: '已关闭', COMPLETED: '已完成', IN_PROGRESS: '进行中',
+  };
+  const ACTIVITY_LABELS = {
+    INTERNAL_TRAINING: '校内培训', EXTERNAL_TRAINING: '校外培训', ACADEMIC_EXCHANGE: '学术交流',
+  };
+  const displayStatus = value => STATUS_LABELS[value] || '状态待确认';
+  const displayActivity = value => ACTIVITY_LABELS[value] || '其他培训';
 
   function panel(title, description) {
     const host = document.createElement('section');
@@ -150,7 +160,7 @@
           const goal = row.querySelector('[data-goal]').value.trim();
           const target = row.querySelector('[data-target]').value.trim();
           if (!goal) return result(host, 'error', '请填写本周期重点发展目标。');
-          act(event.currentTarget, host, `/plans/${item.id}/versions`, {objectivesJson: {goal, target}}, data => `${item.planNo} 已保存目标版本 v${data.versionNo}。`, render);
+          act(event.currentTarget, host, `/plans/${item.id}/versions`, {objectivesJson: {goal, target}}, data => `${item.planNo} 已保存第 ${data.versionNo} 版目标。`, render);
         });
         row.querySelectorAll('[data-action]:not([data-action="version"])').forEach(button => {
           button.onclick = () => act(button, host, `/plans/${item.id}/${button.dataset.action}`, {}, data => `${data.planNo} 已推进到${data.lifecycleStatusLabel}。`, render);
@@ -207,12 +217,12 @@
       list.innerHTML = programs.length ? '' : '<div class="hr10-empty">当前没有培训项目。</div>';
       programs.forEach(item => {
         const row = document.createElement('article'); row.className = 'hr10-row';
-        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.title)}</b><small>${esc(item.programCode)} · ${esc(item.activityType)}</small></div><div><span class="hr10-badge">${esc(item.lifecycleStatusLabel)}</span><small>${esc(providers.get(String(item.providerOrgId)) || '校内自办')}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">形成版本</button>${item.lifecycleStatus === 'DRAFT' ? '<button class="hr10-btn primary" data-publish type="button">发布项目</button>' : ''}</div></div><div class="hr10-inline" data-version-form><input data-objective placeholder="培训目标"><input data-curriculum placeholder="核心课程内容"><button class="hr10-btn primary" data-save type="button">保存项目版本</button></div>`;
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.title)}</b><small>${esc(item.programCode)} · ${esc(displayActivity(item.activityType))}</small></div><div><span class="hr10-badge">${esc(item.lifecycleStatusLabel || displayStatus(item.lifecycleStatus))}</span><small>${esc(providers.get(String(item.providerOrgId)) || '校内自办')}</small></div><div class="hr10-row-actions"><button class="hr10-btn" data-version type="button">形成版本</button>${item.lifecycleStatus === 'DRAFT' ? '<button class="hr10-btn primary" data-publish type="button">发布项目</button>' : ''}</div></div><div class="hr10-inline" data-version-form><input data-objective placeholder="培训目标"><input data-curriculum placeholder="核心课程内容"><button class="hr10-btn primary" data-save type="button">保存项目版本</button></div>`;
         row.querySelector('[data-version]').onclick = () => row.querySelector('[data-version-form]').classList.toggle('open');
         row.querySelector('[data-save]').onclick = event => {
           const objective = row.querySelector('[data-objective]').value.trim(); const curriculum = row.querySelector('[data-curriculum]').value.trim();
           if (!objective) return result(host, 'error', '请填写培训目标。');
-          act(event.currentTarget, host, `/programs/${item.id}/versions`, {objectivesJson: {objective}, curriculumJson: {summary: curriculum}}, data => `${item.title} 已形成 v${data.versionNo}。`, refresh);
+          act(event.currentTarget, host, `/programs/${item.id}/versions`, {objectivesJson: {objective}, curriculumJson: {summary: curriculum}}, data => `${item.title} 已形成第 ${data.versionNo} 版。`, refresh);
         };
         row.querySelector('[data-publish]')?.addEventListener('click', event => act(event.currentTarget, host, `/programs/${item.id}/publish`, {}, data => `${data.title} 已发布。`, refresh));
         list.appendChild(row);
@@ -222,7 +232,7 @@
       offeringList.innerHTML = offerings.length ? '<h4>培训班次</h4>' : '';
       offerings.forEach(item => {
         const row = document.createElement('article'); row.className = 'hr10-row';
-        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.label)}</b><small>培训班次</small></div><div><span class="hr10-badge">${esc(item.status)}</span></div><div class="hr10-row-actions">${item.status !== 'OPEN' ? '<button class="hr10-btn primary" data-open-enrollment type="button">开放报名</button>' : ''}${item.status !== 'CANCELLED' ? '<button class="hr10-btn danger" data-cancel type="button">取消班次</button>' : ''}</div></div>`;
+        row.innerHTML = `<div class="hr10-row-main"><div><b>${esc(item.label)}</b><small>培训班次</small></div><div><span class="hr10-badge">${esc(displayStatus(item.status))}</span></div><div class="hr10-row-actions">${item.status !== 'OPEN' ? '<button class="hr10-btn primary" data-open-enrollment type="button">开放报名</button>' : ''}${item.status !== 'CANCELLED' ? '<button class="hr10-btn danger" data-cancel type="button">取消班次</button>' : ''}</div></div>`;
         row.querySelector('[data-open-enrollment]')?.addEventListener('click', event => act(event.currentTarget, host, `/offerings/${item.value}/open-enrollment`, {}, '班次已开放报名。', refresh));
         row.querySelector('[data-cancel]')?.addEventListener('click', event => act(event.currentTarget, host, `/offerings/${item.value}/cancel`, {}, '班次已取消。', refresh));
         offeringList.appendChild(row);

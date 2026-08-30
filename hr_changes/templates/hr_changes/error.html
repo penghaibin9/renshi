@@ -4,8 +4,8 @@
 {% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr06-page" data-module="HR06" data-section="error" data-hr-page="change-error">
-  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>访问受限</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr06-error-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · Fail-closed</div><h1 class="hr-v2-title" id="hr06-error-title">当前无法进入该人事异动工作区</h1><p class="hr-v2-subtitle">系统没有用空数据掩盖权限或学校上下文问题。修复当前学校或数据范围后再重试。</p></div></header>
-  <section class="hr06-error-panel"><span class="hr06-status">{{ error_code }}</span><h2>{{ error_message }}</h2><p>不会展示其他学校或超出当前 scope 的案件信息，也不会回退到全校数据。</p><a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-center' %}">返回异动中心</a></section>
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>访问受限</strong></div>
+  <header class="hr-v2-pagehead" aria-labelledby="hr06-error-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">人事异动 · 访问受限</div><h1 class="hr-v2-title" id="hr06-error-title">当前无法进入该人事异动工作区</h1><p class="hr-v2-subtitle">请确认已经选择学校，并已获得相应的数据查看权限后重试。</p></div></header>
+  <section class="hr06-error-panel"><span class="hr06-status">{{ error_code }}</span><h2>{{ error_message }}</h2><p>系统只展示当前学校以及本人权限范围内的人事异动信息。</p><a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-center' %}">返回异动中心</a></section>
 </div>
 {% endblock content %}

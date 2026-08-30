@@ -15,7 +15,7 @@ const HR10 = {
   async loadRecordOverview(staffId) {
     const data = await this.fetchJson(`/api/v1/hr/development/development-records/${staffId}`);
     if (data.error) {
-      document.getElementById("record-error").textContent = `加载失败: ${data.error.code}`;
+      document.getElementById("record-error").textContent = "教师发展档案加载失败，请稍后重试。";
       return;
     }
     const el = document.getElementById("record-overview");

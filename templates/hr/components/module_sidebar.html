@@ -1,0 +1,157 @@
+{% load i18n %}
+<a class="hr-module-nav__home{% if request.path == '/hr/' or request.path == '/hr/overview' %} is-active{% endif %}" href="/hr/overview">
+  <i class="fa-solid fa-table-columns" aria-hidden="true"></i><span>人事工作台</span><small>HR01</small>
+</a>
+
+<p class="hr-module-nav__group">基础人事</p>
+<a class="hr-module-nav__item{% if '/hr/structure/' in request.path %} is-active{% endif %}" href="/hr/structure/"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span>组织岗位</span><small>HR02</small></a>
+<a class="hr-module-nav__item{% if '/hr/staff/' in request.path %} is-active{% endif %}" href="/hr/staff/"><i class="fa-solid fa-id-card" aria-hidden="true"></i><span>教职工主档</span><small>HR03</small></a>
+<a class="hr-module-nav__item{% if '/hr/recruitment/' in request.path %} is-active{% endif %}" href="/hr/recruitment/"><i class="fa-solid fa-file-signature" aria-hidden="true"></i><span>招聘管理</span><small>HR04</small></a>
+<a class="hr-module-nav__item{% if '/hr/onboarding/' in request.path %} is-active{% endif %}" href="/hr/onboarding/"><i class="fa-solid fa-user-plus" aria-hidden="true"></i><span>入职管理</span><small>HR05</small></a>
+<a class="hr-module-nav__item{% if '/hr/changes/' in request.path %} is-active{% endif %}" href="/hr/changes/"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i><span>人事异动</span><small>HR06</small></a>
+{% if '/hr/changes/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="人事异动二级页面">
+  <a href="/hr/changes/"{% if request.path == '/hr/changes/' %} aria-current="page"{% endif %}><small>01</small><span>异动申请中心</span></a>
+  <a href="/hr/changes/transfers"{% if '/hr/changes/transfers' in request.path %} aria-current="page"{% endif %}><small>02</small><span>校内调动</span></a>
+  <a href="/hr/changes/job-identity"{% if '/hr/changes/job-identity' in request.path %} aria-current="page"{% endif %}><small>03</small><span>岗位与身份变更</span></a>
+  <a href="/hr/changes/secondments"{% if '/hr/changes/secondments' in request.path %} aria-current="page"{% endif %}><small>04</small><span>借调挂职管理</span></a>
+  <a href="/hr/changes/ledger"{% if '/hr/changes/ledger' in request.path %} aria-current="page"{% endif %}><small>05</small><span>异动台账</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/contracts/' in request.path %} is-active{% endif %}" href="/hr/contracts/"><i class="fa-solid fa-file-contract" aria-hidden="true"></i><span>合同管理</span><small>HR07</small></a>
+{% if '/hr/contracts/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="合同管理二级页面">
+  <a href="/hr/contracts/"{% if request.path == '/hr/contracts/' %} aria-current="page"{% endif %}><small>01</small><span>合同台账</span></a>
+  <a href="/hr/contracts/rules/"{% if '/hr/contracts/rules/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>合同模板与规则</span></a>
+  <a href="/hr/contracts/signing/"{% if '/hr/contracts/signing/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>签订与续签</span></a>
+  <a href="/hr/contracts/changes/"{% if '/hr/contracts/changes/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>变更与解除</span></a>
+  <a href="/hr/contracts/risks/"{% if '/hr/contracts/risks/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>聘期与到期预警</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/external-teachers/' in request.path %} is-active{% endif %}" href="/hr/external-teachers/"><i class="fa-solid fa-user-group" aria-hidden="true"></i><span>外聘人员</span><small>HR08</small></a>
+{% if '/hr/external-teachers/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="外聘人员二级页面">
+  <a href="/hr/external-teachers/"{% if request.path == '/hr/external-teachers/' %} aria-current="page"{% endif %}><small>01</small><span>外聘教师库</span></a>
+  <a href="/hr/external-teachers/industry/"{% if '/hr/external-teachers/industry/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>产业教授与技能大师</span></a>
+  <a href="/hr/external-teachers/hiring/"{% if '/hr/external-teachers/hiring/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>聘用审批</span></a>
+  <a href="/hr/external-teachers/tasks/"{% if '/hr/external-teachers/tasks/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>教学与服务任务</span></a>
+  <a href="/hr/external-teachers/renewals/"{% if '/hr/external-teachers/renewals/' in request.path or '/hr/external-teachers/exits/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>续聘与退出</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/qualifications/' in request.path or '/hr/double-teacher/' in request.path %} is-active{% endif %}" href="/hr/qualifications/"><i class="fa-solid fa-certificate" aria-hidden="true"></i><span>资格资质</span><small>HR09</small></a>
+{% if '/hr/qualifications/' in request.path or '/hr/double-teacher/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="资格资质二级页面">
+  <a href="/hr/qualifications/credentials/"{% if '/hr/qualifications/credentials/' in request.path %} aria-current="page"{% endif %}><small>01</small><span>教师资格台账</span></a>
+  <a href="/hr/double-teacher/"{% if request.path == '/hr/double-teacher/' %} aria-current="page"{% endif %}><small>02</small><span>双师认定标准</span></a>
+  <a href="/hr/double-teacher/applications/"{% if '/hr/double-teacher/applications/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>双师申报</span></a>
+  <a href="/hr/double-teacher/recognitions/"{% if '/hr/double-teacher/recognitions/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>认定与评审</span></a>
+  <a href="/hr/qualifications/risks/"{% if '/hr/qualifications/risks/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>复核与资格台账</span></a>
+</div>
+{% endif %}
+
+<p class="hr-module-nav__group">发展与评价</p>
+<a class="hr-module-nav__item{% if '/hr/development/' in request.path %} is-active{% endif %}" href="/hr/development/dashboard"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i><span>教师发展</span><small>HR10</small></a>
+{% if '/hr/development/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="教师发展二级页面">
+  <a href="/hr/development/plans"{% if request.path == '/hr/development/plans' %} aria-current="page"{% endif %}><small>01</small><span>教师发展计划</span></a>
+  <a href="/hr/development/programs"{% if request.path == '/hr/development/programs' %} aria-current="page"{% endif %}><small>02</small><span>培训项目</span></a>
+  <a href="/hr/development/requests"{% if request.path == '/hr/development/requests' %} aria-current="page"{% endif %}><small>03</small><span>报名与审批</span></a>
+  <a href="/hr/development/enterprise-practice"{% if request.path == '/hr/development/enterprise-practice' %} aria-current="page"{% endif %}><small>04</small><span>企业实践项目</span></a>
+  <a href="/hr/development/enterprise-practice/results"{% if '/hr/development/enterprise-practice/results' in request.path %} aria-current="page"{% endif %}><small>05</small><span>实践过程与成果</span></a>
+  {% if record_url %}<a href="{{ record_url }}"{% if '/hr/development/records/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>教师发展档案</span></a>{% endif %}
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/time/' in request.path %} is-active{% endif %}" href="/hr/time/rules/"><i class="fa-regular fa-clock" aria-hidden="true"></i><span>考勤时间</span><small>HR11</small></a>
+{% if '/hr/time/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="考勤时间二级页面">
+  <a href="/hr/time/rules/"{% if '/hr/time/rules/' in request.path or request.path == '/hr/time/' %} aria-current="page"{% endif %}><small>01</small><span>工作制度与考勤规则</span></a>
+  <a href="/hr/time/schedule/"{% if '/hr/time/schedule/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>工作日历与排班</span></a>
+  <a href="/hr/time/attendance/"{% if '/hr/time/attendance/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>打卡与工时</span></a>
+  <a href="/hr/time/overtime/"{% if '/hr/time/overtime/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>异常、补卡与加班</span></a>
+  <a href="/hr/time/leave/"{% if '/hr/time/leave/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>请假休假与销假</span></a>
+  <a href="/hr/time/close/"{% if '/hr/time/close/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>考勤台账与月结</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/assessments/' in request.path %} is-active{% endif %}" href="/hr/assessments/"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span>考核管理</span><small>HR12</small></a>
+{% if '/hr/assessments/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="考核管理二级页面">
+  <a href="/hr/assessments/policies/"{% if '/hr/assessments/policies/' in request.path or request.path == '/hr/assessments/' %} aria-current="page"{% endif %}><small>01</small><span>考核制度与指标体系</span></a>
+  <a href="/hr/assessments/goals/"{% if '/hr/assessments/goals/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>目标任务与平时考核</span></a>
+  <a href="/hr/assessments/annual/"{% if '/hr/assessments/annual/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>年度考核</span></a>
+  <a href="/hr/assessments/term/"{% if '/hr/assessments/term/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>聘期考核</span></a>
+  <a href="/hr/assessments/ethics/"{% if '/hr/assessments/ethics/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>师德与专项考核</span></a>
+  <a href="/hr/assessments/review/"{% if '/hr/assessments/review/' in request.path or '/hr/assessments/archive/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>评议审定与考核档案</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/titles/' in request.path %} is-active{% endif %}" href="/hr/titles/"><i class="fa-solid fa-medal" aria-hidden="true"></i><span>职称评审</span><small>HR13</small></a>
+{% if '/hr/titles/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="职称评审二级页面">
+  <a href="/hr/titles/"{% if request.path == '/hr/titles/' %} aria-current="page"{% endif %}><small>01</small><span>职称制度与评审标准</span></a>
+  <a href="/hr/titles/applications/"{% if '/hr/titles/applications/' in request.path or '/hr/titles/eligibility/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>申报批次与资格审查</span></a>
+  <a href="/hr/titles/materials/"{% if '/hr/titles/materials/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>业绩材料与代表性成果</span></a>
+  <a href="/hr/titles/experts/"{% if '/hr/titles/experts/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>专家库与评审组织</span></a>
+  <a href="/hr/titles/deliberation/"{% if '/hr/titles/deliberation/' in request.path or '/hr/titles/publicity/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>评议表决与结果公示</span></a>
+  <a href="/hr/titles/appeals/"{% if '/hr/titles/appeals/' in request.path or '/hr/titles/results/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>复核监管与职称档案</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/appointments/' in request.path %} is-active{% endif %}" href="/hr/appointments/"><i class="fa-solid fa-briefcase" aria-hidden="true"></i><span>岗位聘任</span><small>HR14</small></a>
+{% if '/hr/appointments/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="岗位聘任二级页面">
+  <a href="/hr/appointments/policies/"{% if '/hr/appointments/policies/' in request.path or request.path == '/hr/appointments/' %} aria-current="page"{% endif %}><small>01</small><span>聘任制度与岗位等级</span></a>
+  <a href="/hr/appointments/quota/"{% if '/hr/appointments/quota/' in request.path or '/hr/appointments/competitions/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>岗位额度与聘任批次</span></a>
+  <a href="/hr/appointments/applications/"{% if '/hr/appointments/applications/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>申报竞聘与资格审查</span></a>
+  <a href="/hr/appointments/ranking/"{% if '/hr/appointments/ranking/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>评议评审与择优排序</span></a>
+  <a href="/hr/appointments/publicity/"{% if '/hr/appointments/publicity/' in request.path or '/hr/appointments/appointments/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>拟聘公示与正式聘任</span></a>
+  <a href="/hr/appointments/term-changes/"{% if '/hr/appointments/term-changes/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>聘期变更与聘任档案</span></a>
+</div>
+{% endif %}
+
+<p class="hr-module-nav__group">薪酬与保障</p>
+<a class="hr-module-nav__item{% if '/hr/payroll/' in request.path %} is-active{% endif %}" href="/hr/payroll/"><i class="fa-solid fa-wallet" aria-hidden="true"></i><span>薪酬福利</span><small>HR15</small></a>
+{% if '/hr/payroll/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="薪酬福利二级页面">
+  <a href="/hr/payroll/profiles/"{% if '/hr/payroll/profiles/' in request.path or request.path == '/hr/payroll/' %} aria-current="page"{% endif %}><small>01</small><span>薪酬档案</span></a>
+  <a href="/hr/payroll/rules/"{% if '/hr/payroll/rules/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>薪资项目与规则</span></a>
+  <a href="/hr/payroll/calculations/"{% if '/hr/payroll/calculations/' in request.path or '/hr/payroll/periods/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>月度工资核算</span></a>
+  <a href="/hr/payroll/allowances/"{% if '/hr/payroll/allowances/' in request.path or '/hr/payroll/adjustments/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>调资与津补贴</span></a>
+  <a href="/hr/payroll/social-security/"{% if '/hr/payroll/social-security/' in request.path or '/hr/payroll/benefits/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>社保与公积金</span></a>
+  <a href="/hr/payroll/payments/"{% if '/hr/payroll/payments/' in request.path or '/hr/payroll/results/' in request.path or '/hr/payroll/reconciliation/' in request.path or '/hr/payroll/legacy/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>工资条与财务对接</span></a>
+</div>
+{% endif %}
+
+<p class="hr-module-nav__group">离校与服务</p>
+<a class="hr-module-nav__item{% if '/hr/exit/' in request.path %} is-active{% endif %}" href="/hr/exit/"><i class="fa-solid fa-person-walking-arrow-right" aria-hidden="true"></i><span>退休离校</span><small>HR16</small></a>
+{% if '/hr/exit/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="退休离校二级页面">
+  <a href="/hr/exit/"{% if request.path == '/hr/exit/' %} aria-current="page"{% endif %}><small>01</small><span>离退制度与离校规则</span></a>
+  <a href="/hr/exit/cases/"{% if '/hr/exit/cases/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>辞职调出与解除离校</span></a>
+  <a href="/hr/exit/retirement-precheck/"{% if '/hr/exit/retirement-precheck/' in request.path or '/hr/exit/retirement-facts/' in request.path or '/hr/exit/retirement/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>退休预审与退休办理</span></a>
+  <a href="/hr/exit/handover/"{% if '/hr/exit/handover/' in request.path or '/hr/exit/effects/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>离校交接与权限资产清退</span></a>
+  <a href="/hr/exit/settlement/"{% if '/hr/exit/settlement/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>结算证明与关系转移</span></a>
+  <a href="/hr/exit/archive/"{% if '/hr/exit/archive/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>离退休档案与返聘衔接</span></a>
+</div>
+{% endif %}
+<a class="hr-module-nav__item{% if '/hr/self/' in request.path %} is-active{% endif %}" href="/hr/self/"><i class="fa-solid fa-hand-holding-heart" aria-hidden="true"></i><span>教职工服务</span><small>HR17</small></a>
+{% if '/hr/self/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="教职工服务二级页面">
+  <a href="/hr/self/"{% if request.path == '/hr/self/' %} aria-current="page"{% endif %}><small>01</small><span>我的服务首页</span></a>
+  <a href="/hr/self/files/"{% if '/hr/self/files/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>我的档案与更正</span></a>
+  <a href="/hr/self/progress/"{% if '/hr/self/progress/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>我的任职与成长</span></a>
+  <a href="/hr/self/payslips/"{% if '/hr/self/payslips/' in request.path or '/hr/self/contracts/' in request.path or '/hr/self/payroll-contracts/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>我的薪酬权益与文件</span></a>
+  <a href="/hr/self/todos/"{% if '/hr/self/todos/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>我的申请与办理</span></a>
+  <a href="/hr/self/services/"{% if '/hr/self/services/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>关怀与退休服务</span></a>
+</div>
+{% endif %}
+
+<p class="hr-module-nav__group">数据与决策</p>
+<a class="hr-module-nav__item{% if '/hr/data/' in request.path %} is-active{% endif %}" href="/hr/data/"><i class="fa-solid fa-chart-pie" aria-hidden="true"></i><span>人事数据中心</span><small>HR18</small></a>
+{% if '/hr/data/' in request.path %}
+<div class="hr-module-nav__subnav" aria-label="人事数据中心二级页面">
+  <a href="/hr/data/"{% if request.path == '/hr/data/' %} aria-current="page"{% endif %}><small>01</small><span>人事数据总览</span></a>
+  <a href="/hr/data/metrics/"{% if '/hr/data/metrics/' in request.path or '/hr/data/as-of/' in request.path %} aria-current="page"{% endif %}><small>02</small><span>指标口径与专题分析</span></a>
+  <a href="/hr/data/population/"{% if '/hr/data/population/' in request.path %} aria-current="page"{% endif %}><small>03</small><span>标准报表与自助分析</span></a>
+  <a href="/hr/data/quality/"{% if '/hr/data/quality/' in request.path %} aria-current="page"{% endif %}><small>04</small><span>数据质量与治理</span></a>
+  <a href="/hr/data/exchange/"{% if '/hr/data/exchange/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>数据交换与共享</span></a>
+  <a href="/hr/data/submissions/"{% if '/hr/data/submissions/' in request.path or '/hr/data/corrections/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>正式上报与报送档案</span></a>
+</div>
+{% endif %}

@@ -5,10 +5,11 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr10-actions.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr10-workspace.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr10-actions.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr10-workspace.css' %}?v=20260830-2">
 
 <div class="hr-v2-page hr10" data-module="HR10" data-section="{{ hr10_page }}">
+  {% comment %}总览入口由左侧 HR10 主菜单承载：{% url 'hr10_development:development-dashboard' %}{% endcomment %}
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR10 教师发展</span>
     <strong>{{ page_title }}</strong>
@@ -16,24 +17,20 @@
 
   <header class="hr-v2-pagehead" aria-labelledby="hr10-title">
     <div class="hr-v2-pagehead__copy">
-      <div class="hr-v2-eyebrow">HR10 · 培训进修与企业实践</div>
+      <div class="hr-v2-eyebrow">HR10 · 教师发展</div>
       <h1 class="hr-v2-title" id="hr10-title">{{ page_title }}</h1>
-      <p class="hr-v2-subtitle">从发展计划出发，连接培训项目、报名审批、企业实践和已核验发展档案。计划数、学时与风险均来自当前学校的真实业务事实。</p>
+      <p class="hr-v2-subtitle">统一办理培养计划、培训项目、个人申请、企业实践、成果核验与教师成长档案。</p>
     </div>
-    <div class="hr-v2-context" aria-label="当前工作区说明">
-      <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-      <span class="hr-v2-context__item"><strong>口径</strong> 已核验事实</span>
-      <span class="hr-v2-context__item"><strong>权限</strong> 服务端实时判定</span>
-    </div>
+    <a class="hr10-primary-action" href="{% url 'hr10_development:development-plans' %}?action=new">＋ 新建发展计划</a>
   </header>
 
   <nav class="hr10-nav" aria-label="教师发展工作区导航">
-    <a href="{% url 'hr10_development:development-dashboard' %}" {% if hr10_page == 'dashboard' %}class="active"{% endif %}>发展总览</a>
-    <a href="{% url 'hr10_development:development-plans' %}" {% if hr10_page == 'plans' %}class="active"{% endif %}>发展计划</a>
-    <a href="{% url 'hr10_development:development-programs' %}" {% if hr10_page == 'programs' %}class="active"{% endif %}>培训项目</a>
-    <a href="{% url 'hr10_development:development-requests' %}" {% if hr10_page == 'requests' %}class="active"{% endif %}>报名与审批</a>
-    <a href="{% url 'hr10_development:development-practice' %}" {% if hr10_page == 'practice' %}class="active"{% endif %}>企业实践</a>
-    {% if record_url %}<a href="{{ record_url }}" {% if hr10_page == 'record' %}class="active"{% endif %}>发展档案</a>{% else %}<span class="disabled">发展档案</span>{% endif %}
+    <a href="{% url 'hr10_development:development-plans' %}" {% if hr10_page == 'plans' %}class="active"{% endif %}><small>01</small>培养计划</a>
+    <a href="{% url 'hr10_development:development-programs' %}" {% if hr10_page == 'programs' %}class="active"{% endif %}><small>02</small>发展项目</a>
+    <a href="{% url 'hr10_development:development-requests' %}" {% if hr10_page == 'requests' %}class="active"{% endif %}><small>03</small>个人申请</a>
+    <a href="{% url 'hr10_development:development-practice' %}" {% if hr10_page == 'practice' %}class="active"{% endif %}><small>04</small>培训 / 实践</a>
+    <a href="{% url 'hr10_development:development-results' %}" {% if hr10_page == 'results' %}class="active"{% endif %}><small>05</small>成果核验</a>
+    {% if record_url %}<a href="{{ record_url }}" {% if hr10_page == 'record' %}class="active"{% endif %}><small>06</small>成长档案</a>{% else %}<span class="disabled"><small>06</small>成长档案</span>{% endif %}
   </nav>
   <div class="hr10-mobile-hint">可左右滑动查看更多工作区</div>
 
@@ -41,12 +38,9 @@
     {% block workspace_content %}{% endblock %}
   </div>
 
-  <div class="hr-v2-truth-note">
-    <strong>数据边界</strong>
-    <span>本工作区只处理当前学校的 HR10 Authority 数据；页面选择器展示业务名称，服务端仍会重新校验学校、权限和状态。</span>
-  </div>
+  <div class="hr-v2-truth-note"><strong>数据说明</strong><span>统计来自当前学校的教师发展业务台账；没有适用数据时明确显示“暂不可判断”，不以 0 代替。</span></div>
   {{ staff_options|json_script:"hr10-staff-options" }}
 </div>
-<script src="{% static 'hr/js/pages/hr10-actions.js' %}"></script>
-{% if hr10_page == 'dashboard' or hr10_page == 'record' %}<script src="{% static 'hr/js/pages/hr10-insights.js' %}"></script>{% endif %}
+<script src="{% static 'hr/js/pages/hr10-actions.js' %}?v=20260830-2"></script>
+{% if hr10_page == 'dashboard' or hr10_page == 'record' %}<script src="{% static 'hr/js/pages/hr10-insights.js' %}?v=20260830-2"></script>{% endif %}
 {% endblock %}

@@ -7,7 +7,7 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title class="time-runner stop-runner">{{ white_label_company_name }}</title>
+        <title class="time-runner stop-runner">高校人事一体化平台</title>
         <link rel="stylesheet" href="{% static 'build/css/sweetalert2.min.css' %}">
         <link rel="stylesheet" href="{% static 'build/css/summernote-lite.min.css' %}">
         <link rel="stylesheet" href="{% static 'build/css/orgChart.css' %}">
@@ -61,6 +61,9 @@
             rel="stylesheet"
             href="{% static 'horilla_theme/assets/css/v1_styles.css' %}"
         >
+        {% if request.path|slice:":4" == "/hr/" %}
+        <link rel="stylesheet" href="{% static 'hr/css/hr-shell-v3.css' %}?v=20260830-hr-shell-2">
+        {% endif %}
         <link rel="stylesheet" href="{% static 'build/css/pivottable.min.css' %}">
         {% with theme=theme_obj %}
             <style>
@@ -227,11 +230,11 @@
         {% endblock %}
     </head>
 
-    <body class="bg-[{{theme_obj.primary_50}}] font-[Inter,_sans-serif] overflow-hidden {% if request.session.theme == 'dark' %}dark{% endif %}">
+    <body class="bg-[{{theme_obj.primary_50}}] font-[Inter,_sans-serif] overflow-hidden {% if request.path|slice:":4" == "/hr/" %}hr-shell-v3{% endif %} {% if request.session.theme == 'dark' %}dark{% endif %}">
         {% get_current_language_bidi as LANGUAGE_BIDI %}
         {% get_current_language as LANGUAGE_CODE %}
         <div hidden id="statiUrl" data-url='{% static "" %}'></div>
-        <span hidden id="whiteLabelCompany" data-company="{{ white_label_company_name }}"></span>
+        <span hidden id="whiteLabelCompany" data-company="{% if white_label_company_name == 'Horilla' %}高校人事一体化平台{% else %}{{ white_label_company_name }}{% endif %}"></span>
         <!-- Include Sidebar (sidebar.html owns id="sidebar" itself) -->
         {% include "horilla_theme/components/sidebar.html" %}
 

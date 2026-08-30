@@ -10,14 +10,14 @@
 {% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr06-page" data-module="HR06" data-section="preview" data-hr-page="change-preview" data-case-id="{{ case.id }}">
-  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR06 人事异动</span><strong>影响预览</strong></div>
+  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>影响预览</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-preview-title">
-    <div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR06 · 人事异动</div><h1 class="hr-v2-title" id="hr06-preview-title">影响预览 · {{ case.case_no }}</h1><p class="hr-v2-subtitle">以下阻断项与业务影响由当前案件实时计算；预览结果不是审批结论，也不会直接触发正式生效。</p></div>
+    <div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">人事异动 · 影响核对</div><h1 class="hr-v2-title" id="hr06-preview-title">影响预览 · {{ case.case_no }}</h1><p class="hr-v2-subtitle">以下待补充事项与业务影响根据当前案件实时核对；预览结果不是审批结论，也不会直接触发正式生效。</p></div>
     <div class="hr-v2-context"><span class="hr-v2-context__item"><strong>阻断项</strong> {{ blockers|length }}</span><span class="hr-v2-context__item"><strong>业务影响</strong> {{ warnings|length }}</span></div>
   </header>
   {% include "hr_changes/components/v2_nav.html" with active="center" %}
-  <div class="hr06-toolbar"><div><h2>实时影响结果</h2><p>阻断项必须先解决；warning 需要业务确认，但不由前端自行升级为 blocker。</p></div><a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-detail' case.id %}">返回案件详情</a></div>
-  <section class="hr06-panel"><div class="hr06-section-head"><div><h2>阻断项</h2><p>存在 blocker 时，后端 submit / apply 等关键动作必须 fail-closed。</p></div></div><div class="hr06-impact-list">
+  <div class="hr06-toolbar"><div><h2>实时影响结果</h2><p>待补充事项必须先解决；业务影响需要经办人逐项确认。</p></div><a class="hr06-button hr06-button--secondary" href="{% url 'hr06-change-detail' case.id %}">返回案件详情</a></div>
+  <section class="hr06-panel"><div class="hr06-section-head"><div><h2>待补充事项</h2><p>存在待补充事项时，案件不能提交审批或正式生效。</p></div></div><div class="hr06-impact-list">
     {% for b in blockers %}<article class="hr06-impact-item hr06-impact-item--blocker"><strong>{{ b.message }}</strong>{% if b.actionable %}<span>建议：{{ b.actionable }}</span>{% endif %}</article>{% empty %}<div class="hr06-state"><strong>当前未发现阻断项</strong><span>仅代表本次实时计算结果为空，不等于案件已获批准。</span></div>{% endfor %}
   </div></section>
   <section class="hr06-panel"><div class="hr06-section-head"><div><h2>业务影响</h2><p>用于提醒合同、岗位、薪酬、考勤等可能需要联动复核的事项。</p></div></div><div class="hr06-impact-list">

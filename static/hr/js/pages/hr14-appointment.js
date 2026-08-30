@@ -78,7 +78,8 @@
         body = {};
       }
       if (!response.ok) {
-        throw new Error(body?.error?.message || body?.error?.code || `HTTP ${response.status}`);
+        const detail = body?.error?.message;
+        throw new Error(detail && /[\u3400-\u9fff]/.test(detail) ? detail : `请求失败（状态码 ${response.status}）`);
       }
       return body;
     } finally {
@@ -87,7 +88,7 @@
   }
 
   function normalizeStatus(value) {
-    return statusText[value] || value || '—';
+    return statusText[value] || '状态待确认';
   }
 
   function renderRows() {

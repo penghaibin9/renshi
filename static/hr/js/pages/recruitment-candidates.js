@@ -31,8 +31,8 @@
         items.map(function (item) {
           return '<tr><td>' + escapeHtml(item.candidate_no || "—") + '</td><td>' + escapeHtml(item.legal_name || "—") + '</td><td>' +
             escapeHtml(item.primary_email || "—") + '</td><td>' + escapeHtml(item.primary_mobile_masked || "—") + '</td><td>' +
-            escapeHtml(item.sourceLabel || item.source || "—") + '</td><td><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(item.status) + '">' +
-            escapeHtml(item.statusLabel || item.status || "—") + '</span></td></tr>';
+            escapeHtml(item.sourceLabel || "来源待确认") + '</td><td><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(item.status) + '">' +
+            escapeHtml(window.HrApi.statusLabel(item.status, item.statusLabel)) + '</span></td></tr>';
         }).join("") + '</tbody></table>';
     } catch (err) {
       container.innerHTML = stateHtml("候选人读取失败", window.HrApi.apiErrorToMessage(err) || "请求失败", true);

@@ -51,46 +51,66 @@ def dashboard(request):
 
     from hr10_development.models.plan import HrDevelopmentPlan
     from hr10_development.models.learning_program import HrLearningProgram
-    from hr10_development.models.practice_project import HrEnterprisePracticeProject
+    from hr10_development.models.practice_models import HrEnterprisePracticeAssignment
     from hr10_development.models.development_fact import HrDevelopmentFact
     from hr10_development.models.development_fact import HrDevelopmentRiskCase
+    from hr10_development.models.training_request import HrTrainingRequest
 
-    active_plans = HrDevelopmentPlan.objects.filter(
-        tenant_id=tenant_id, lifecycle_status__in=["ACTIVE", "PUBLISHED"],
+    current_year = timezone.localdate().year
+    annual_plans = HrDevelopmentPlan.objects.filter(
+        tenant_id=tenant_id,
+        cycle_type="ANNUAL",
+        start_date__year=current_year,
     ).count()
     open_programs = HrLearningProgram.objects.filter(
         tenant_id=tenant_id, lifecycle_status__in=["PUBLISHED", "ACTIVE"],
     ).count()
-    active_practice = HrEnterprisePracticeProject.objects.filter(
-        tenant_id=tenant_id, lifecycle_status="ACTIVE",
-    ).count()
-    verified_facts = HrDevelopmentFact.objects.filter(
+    pending_requests = HrTrainingRequest.objects.filter(
         tenant_id=tenant_id,
-        verification_status__in=[
-            "SYSTEM_PROVIDER_VERIFIED", "TRAINING_PROVIDER_VERIFIED",
-            "INTERNAL_INSTRUCTOR_VERIFIED", "HR_VERIFIED",
-            "DOCUMENT_VERIFIED", "MANUAL_COMMITTEE_VERIFIED",
+        lifecycle_status__in=[
+            "SUBMITTED", "UNDER_MANAGER_REVIEW", "UNDER_COLLEGE_REVIEW",
+            "UNDER_HR_REVIEW", "UNDER_BUDGET_REVIEW", "COMPLETION_REVIEW",
         ],
     ).count()
+    active_practice = HrEnterprisePracticeAssignment.objects.filter(
+        tenant_id=tenant_id, assignment_status__in=["IN_PROGRESS", "SUSPENDED"],
+    ).count()
+    verified_statuses = [
+        "SYSTEM_PROVIDER_VERIFIED", "TRAINING_PROVIDER_VERIFIED",
+        "INTERNAL_INSTRUCTOR_VERIFIED", "HR_VERIFIED", "DOCUMENT_VERIFIED",
+        "MANUAL_COMMITTEE_VERIFIED", "MIGRATED_VERIFIED",
+    ]
+    facts = HrDevelopmentFact.objects.filter(tenant_id=tenant_id)
+    verified_facts = facts.filter(verification_status__in=verified_statuses).count()
+    total_facts = facts.count()
+    pending_facts = facts.exclude(verification_status__in=verified_statuses).count()
+    completion_rate = round(verified_facts / total_facts * 100) if total_facts else None
     open_risks = HrDevelopmentRiskCase.objects.filter(
         tenant_id=tenant_id, status__in=["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"],
     ).count()
 
     data = {
         "metrics": [
-            {"metricCode": "ACTIVE_PLANS", "value": active_plans, "unit": "COUNT",
-             "label": "在执行计划", "labelZh": "在执行计划"},
-            {"metricCode": "OPEN_PROGRAMS", "value": open_programs, "unit": "COUNT",
-             "label": "开放培训项目", "labelZh": "开放培训项目"},
-            {"metricCode": "ACTIVE_PRACTICE_PROJECTS", "value": active_practice, "unit": "COUNT",
-             "label": "进行中企业实践项目", "labelZh": "进行中企业实践项目"},
-            {"metricCode": "VERIFIED_FACTS", "value": verified_facts, "unit": "COUNT",
-             "label": "已核验发展事实", "labelZh": "已核验发展事实"},
-            {"metricCode": "OPEN_RISKS", "value": open_risks, "unit": "COUNT",
-             "label": "未解决风险", "labelZh": "未解决风险"},
+            {"metricCode": "ANNUAL_PLANS", "value": annual_plans, "unit": f"{current_year} 年",
+             "label": "年度计划", "labelZh": "年度计划"},
+            {"metricCode": "OPEN_PROGRAMS", "value": open_programs, "unit": "个",
+             "label": "进行中项目", "labelZh": "进行中项目"},
+            {"metricCode": "PENDING_REQUESTS", "value": pending_requests, "unit": "待办理",
+             "label": "申请待批", "labelZh": "申请待批"},
+            {"metricCode": "ACTIVE_PRACTICE", "value": active_practice, "unit": "教师",
+             "label": "企业实践中", "labelZh": "企业实践中"},
+            {"metricCode": "PENDING_FACTS", "value": pending_facts, "unit": "待核验",
+             "label": "成果待核验", "labelZh": "成果待核验"},
+            {"metricCode": "ANNUAL_COMPLETION", "value": completion_rate, "unit": "%" if completion_rate is not None else "暂无口径",
+             "label": "年度完成度", "labelZh": "年度完成度", "available": completion_rate is not None},
+        ],
+        "attention": [
+            {"label": "培训申请待审批", "count": pending_requests, "route": "/hr/development/requests"},
+            {"label": "发展成果待核验", "count": pending_facts, "route": "/hr/development/enterprise-practice/results"},
+            {"label": "发展风险待处理", "count": open_risks, "route": "/hr/development/dashboard"},
         ],
         "asOf": timezone.localdate().isoformat(),
-        "source": "hr10_development",
+        "source": "教师发展业务台账",
     }
     return JsonResponse(success(data))
 

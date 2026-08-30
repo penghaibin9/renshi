@@ -20,7 +20,7 @@
   const exitTypeLabels = {RESIGNATION: '辞职', TRANSFER_OUT: '调出', CONTRACT_END: '合同到期', TERMINATION: '解除', RETIREMENT: '退休'};
   const participantLabels = {HR14: '岗位聘任', IAM: '账号权限', SETTLEMENT: '最终结算', ARCHIVE: '人事档案'};
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
-  const label = (value) => statusLabels[value] || value || '—';
+  const label = (value) => statusLabels[value] || '状态待确认';
   const exitLabel = (value) => exitTypeLabels[value] || '其他离校';
   const cookie = (name) => document.cookie.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1) || '';
   let snapshot;

@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr14-appointment.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr14-appointment.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
@@ -30,25 +30,19 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR14 · 岗位聘任</div>
         <h1 class="hr-v2-title" id="hr14-page-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">职称取得不等于岗位聘任。先确认岗位额度，再按竞聘批次、申报、评议排序、公示、正式聘任和聘期变更办理；批准状态也不等于已经形成新的正式聘任事实。</p>
+        <p class="hr-v2-subtitle">统一管理聘任制度、岗位等级与额度、竞聘申报、评议排序、拟聘公示、正式聘任和聘期档案。</p>
       </div>
-      <div class="hr-v2-context" aria-label="当前工作区说明">
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>前置</strong> 岗位额度 / 制度</span>
-        <span class="hr-v2-context__item"><strong>结果</strong> 正式聘任事实</span>
-      </div>
+      <a class="hr14-primary-action" href="{% url 'hr_appointment:competitions' %}">进入竞聘批次</a>
     </header>
 
     <nav class="hr14-nav" aria-label="岗位聘任业务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_appointment:overview' %}">总览</a>
-      <a class="{% if section == 'policies' %}active{% endif %}" href="{% url 'hr_appointment:policies' %}">聘任制度</a>
-      <a class="{% if section == 'quota' %}active{% endif %}" href="{% url 'hr_appointment:quota' %}">岗位额度</a>
-      <a class="{% if section == 'competitions' %}active{% endif %}" href="{% url 'hr_appointment:competitions' %}">竞聘批次</a>
-      <a class="{% if section == 'applications' %}active{% endif %}" href="{% url 'hr_appointment:applications' %}">竞聘申报</a>
-      <a class="{% if section == 'ranking' %}active{% endif %}" href="{% url 'hr_appointment:ranking' %}">评议排序</a>
-      <a class="{% if section == 'publicity' %}active{% endif %}" href="{% url 'hr_appointment:publicity' %}">拟聘公示</a>
-      <a class="{% if section == 'appointments' %}active{% endif %}" href="{% url 'hr_appointment:appointments' %}">正式聘任</a>
-      <a class="{% if section == 'term_changes' %}active{% endif %}" href="{% url 'hr_appointment:term_changes' %}">聘期变更</a>
+      {% comment %}总览兼容入口：{% url 'hr_appointment:overview' %}{% endcomment %}
+      <a class="{% if section == 'policies' or section == 'overview' %}active{% endif %}" href="{% url 'hr_appointment:policies' %}"><small>01</small>制度与等级</a>
+      <a class="{% if section == 'quota' or section == 'competitions' %}active{% endif %}" href="{% url 'hr_appointment:quota' %}"><small>02</small>额度与批次</a>
+      <a class="{% if section == 'applications' %}active{% endif %}" href="{% url 'hr_appointment:applications' %}"><small>03</small>申报与资格</a>
+      <a class="{% if section == 'ranking' %}active{% endif %}" href="{% url 'hr_appointment:ranking' %}"><small>04</small>评议与排序</a>
+      <a class="{% if section == 'publicity' or section == 'appointments' %}active{% endif %}" href="{% url 'hr_appointment:publicity' %}"><small>05</small>公示与聘任</a>
+      <a class="{% if section == 'term_changes' %}active{% endif %}" href="{% url 'hr_appointment:term_changes' %}"><small>06</small>聘期与档案</a>
     </nav>
     <div class="hr14-mobile-hint">可左右滑动查看更多岗位聘任工作区</div>
 
@@ -150,13 +144,13 @@
       </div>
     </section>
 
-    <div class="hr14-principle"><strong>岗位聘任原则：</strong>职称、资格通过、排序入选、拟聘公示和批准都不是正式任职事实；只有完成额度校验、公示异议闭环和正式生效，后续聘期与任职联动才会采用这次聘任结果。</div>
+    <div class="hr14-principle"><strong>数据说明：</strong>职称、资格通过、排序入选、拟聘公示和批准都不是正式任职；完成额度校验、公示异议闭环和正式生效后，才形成岗位聘任档案。</div>
   {% endif %}
 </div>
 {% endblock content %}
 
 {% block scripts %}
 {{ block.super }}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr14-appointment.js' %}"></script>{% endif %}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr14-workflows.js' %}"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr14-appointment.js' %}?v=20260830-2"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr14-workflows.js' %}?v=20260830-2"></script>{% endif %}
 {% endblock scripts %}

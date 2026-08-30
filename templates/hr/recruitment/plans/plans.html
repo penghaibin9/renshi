@@ -17,11 +17,11 @@
     <div class="hr-v2-pagehead__copy">
       <div class="hr-v2-eyebrow">HR04 · 招聘与人才引进</div>
       <h1 class="hr-v2-title" id="hr04-plans-title">年度用人计划</h1>
-      <p class="hr-v2-subtitle">查看年度计划周期与学院用人需求。申请、批准、启动招聘和额度消耗均以服务端正式事实为准，本页不从列表自行推算 KPI。</p>
+      <p class="hr-v2-subtitle">查看年度计划周期与学院用人需求。申请、批准、启动招聘和额度消耗均以服务端正式数据为准，本页不从列表自行推算关键指标。</p>
     </div>
     <div class="hr-v2-context">
       <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-      <span class="hr-v2-context__item"><strong>真值</strong> 计划 Authority</span>
+      <span class="hr-v2-context__item"><strong>依据</strong> 正式计划记录</span>
       <span class="hr-v2-context__item"><strong>创建</strong> 暂不可用</span>
     </div>
   </header>
@@ -35,7 +35,7 @@
     <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
   </nav>
 
-  <div class="hr04-unavailable" role="note"><strong>创建入口：</strong><span>后端同路径 GET/POST 路由契约尚未完成可达性收口，因此本页不提供伪成功的新建计划周期操作；现有计划读取能力保持可用。</span></div>
+  <div class="hr04-unavailable" role="note"><strong>创建入口：</strong><span>服务端的新建与查询入口尚未完成统一，因此本页暂不提供新建计划周期操作；现有计划读取能力保持可用。</span></div>
 
   <section class="hr04-panel">
     <div class="hr04-toolbar">
@@ -52,7 +52,7 @@
     <div id="hr04-plan-requests" class="hr04-table-wrap"><div class="hr04-state"><strong>尚未选择计划周期</strong><span>计划周期加载完成后自动读取首个周期。</span></div></div>
   </section>
 
-  <div class="hr-v2-truth-note"><strong>事实边界</strong><span>页面不在浏览器端计算剩余额度，也不会把“提交需求”视为“学校批准”；状态迁移继续由 HR04 后端 Authority 决定。</span></div>
+  <div class="hr-v2-truth-note"><strong>事实边界</strong><span>页面不在浏览器端计算剩余额度，也不会把“提交需求”视为“学校批准”；状态变更继续由 HR04 服务端正式规则决定。</span></div>
 </div>
 {% endblock content %}
 

@@ -138,7 +138,7 @@
     state.selectedStaff = item;
     state.profile = null;
     selected.hidden = false;
-    selected.textContent = "正在读取 HR03 当前主岗…";
+    selected.textContent = "正在读取当前主岗…";
     createButton.disabled = true;
     try {
       const response = await window.HrApi.request(
@@ -149,10 +149,10 @@
       const primary = currentPrimary();
       if (!primary) throw new Error("HR03_CURRENT_PRIMARY_UNAVAILABLE");
       selected.textContent = `已选择 ${item.legal_name || "未命名"} · 原岗 ${primary.orgName || "组织未返回"} / ${primary.positionName || "岗位未返回"}`;
-      setMeta(bootstrapState, "人员主岗、动作与目标组织均已核验，可创建 DRAFT。", "success");
+      setMeta(bootstrapState, "人员主岗、异动类型与目标组织均已核对，可以创建草稿。", "success");
     } catch (error) {
       selected.textContent = `当前主岗读取失败：${window.HrApi.apiErrorToMessage(error)}`;
-      setMeta(bootstrapState, "无法核验 HR03 当前主岗，创建已禁用。", "error");
+      setMeta(bootstrapState, "无法核对当前主岗，暂不能创建草稿。", "error");
     }
     updateCreateAvailability();
   }
@@ -161,7 +161,7 @@
     const value = keyword.value.trim();
     if (!value) return renderStaffResults([]);
     searchButton.disabled = true;
-    results.textContent = "正在从 HR03 权威名册搜索…";
+    results.textContent = "正在从教职工名册搜索…";
     try {
       const response = await window.HrApi.request("/api/v1/hr/staff", {
         params: { keyword: value, page: 1, pageSize: 20 },
@@ -192,7 +192,7 @@
       priority.disabled = false;
       fillReasons();
       await fetchOrganizations();
-      setMeta(bootstrapState, "HR06 动作、原因与 HR02 组织已读取；请选择人员和日期。", "success");
+      setMeta(bootstrapState, "异动类型、原因与组织信息已准备，请选择人员和日期。", "success");
     } catch (error) {
       setMeta(bootstrapState, window.HrApi.apiErrorToMessage(error), "error");
       action.disabled = true;
@@ -210,7 +210,7 @@
       return;
     }
     createButton.disabled = true;
-    setMeta(createResult, "正在通过 TemporaryAssignmentService 创建草稿…");
+    setMeta(createResult, "正在通过临时异动服务创建草稿…");
     try {
       const response = await window.HrApi.request("/api/v1/hr/changes/temporary", {
         method: "POST",
