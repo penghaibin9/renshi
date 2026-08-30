@@ -2,15 +2,16 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
 from hr_payroll.services.finalization_service import (
     PayrollFinalizationError,
     PayrollFinalizationService,
 )
-from hr_time.models.close import HrTimeClosePeriod, HrTimeCloseSnapshot
+from hr_time.models.close import HrTimeClosePeriod
+from hr_time.services.close_service import CloseService
 
 
 class PayrollFinalizationServiceTests(TestCase):
@@ -115,6 +116,11 @@ class PayrollFinalizationServiceTests(TestCase):
 
 
 class PayrollTimeCloseBoundaryTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.reopen_requester = User.objects.create_user(username="hr15-time-reopen-requester")
+        self.reopen_approver = User.objects.create_user(username="hr15-time-reopen-approver")
+
     def _payroll(self, *, tenant_id=77, code="2026-08"):
         period = PayrollPeriod.objects.create(
             tenant_id=tenant_id,
@@ -141,20 +147,32 @@ class PayrollTimeCloseBoundaryTests(TestCase):
             tenant_id=tenant_id,
             start_date=date(2026, 8, 1),
             end_date=date(2026, 8, 31),
-            status=status,
-            closed_at=timezone.now() if status == "CLOSED" else None,
         )
-        snapshot = HrTimeCloseSnapshot.objects.create(
-            tenant_id=tenant_id,
-            period=period,
-            metric_definition_version="1.0",
-            attendance_fact_hash="a" * 64,
-            leave_ledger_hash="b" * 64,
-            overtime_fact_hash="c" * 64,
-        )
-        period.snapshot_id = snapshot.id
-        period.save(update_fields=["snapshot_id"])
+        snapshot = CloseService.close(tenant_id=tenant_id, period=period)
+        period.refresh_from_db()
+        if status == "REOPENED":
+            self._reopen_time_period(
+                period,
+                key=f"hr15-boundary-reopen-{tenant_id}",
+            )
         return period, snapshot
+
+    def _reopen_time_period(self, period, *, key):
+        batch = CloseService.request_reopen(
+            tenant_id=period.tenant_id,
+            period=period,
+            reason="HR15 payroll time-close boundary contract",
+            actor_user=self.reopen_requester,
+            idempotency_key=key,
+        )
+        CloseService.approve_reopen(
+            tenant_id=period.tenant_id,
+            period=period,
+            batch=batch,
+            actor_user=self.reopen_approver,
+        )
+        period.refresh_from_db()
+        return period
 
     def test_reviewed_payroll_without_hr11_closed_period_fails_closed(self):
         period, result = self._payroll()
@@ -185,9 +203,7 @@ class PayrollTimeCloseBoundaryTests(TestCase):
         self.assertEqual(
             period.time_source_snapshot_json["timeCloseSnapshotId"], snapshot.id
         )
-        self.assertEqual(
-            period.time_source_snapshot_json["attendanceFactHash"], "a" * 64
-        )
+        self.assertEqual(len(period.time_source_snapshot_json["attendanceFactHash"]), 64)
         self.assertEqual(
             period.time_source_snapshot_json["providerVersion"],
             "hr11-time-close-v1",
@@ -215,8 +231,7 @@ class PayrollTimeCloseBoundaryTests(TestCase):
         first = PayrollFinalizationService(77).finalize_period(period.id)
         frozen = dict(PayrollPeriod.objects.get(id=period.id).time_source_snapshot_json)
 
-        time_period.status = "REOPENED"
-        time_period.save(update_fields=["status"])
+        self._reopen_time_period(time_period, key="hr15-finalized-replay-reopen")
         replay = PayrollFinalizationService(77).finalize_period(period.id)
 
         self.assertEqual(replay.finalized_result_ids, first.finalized_result_ids)
