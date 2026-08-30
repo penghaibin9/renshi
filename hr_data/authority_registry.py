@@ -1,0 +1,37 @@
+"""Canonical HR18 governance/submission permissions and business events."""
+
+from horilla.hr_event_registry import BusinessEventDefinition, register_business_events
+from horilla.hr_permission_registry import PermissionDefinition, register_permissions
+
+PERMISSIONS = (
+    PermissionDefinition("hr.data.view", "HR18", "查看人事数据中心"),
+    PermissionDefinition("hr.data.define", "HR18", "维护人口、维度和指标定义"),
+    PermissionDefinition("hr.data.asof", "HR18", "执行历史时点证据重建"),
+    PermissionDefinition("hr.data.quality", "HR18", "执行数据质量治理"),
+    PermissionDefinition("hr.data.submit", "HR18", "创建并提交正式报送"),
+    PermissionDefinition("hr.data.approve", "HR18", "独立审批正式报送"),
+    PermissionDefinition("hr.data.receipt", "HR18", "登记外部正式回执"),
+)
+register_permissions(PERMISSIONS)
+
+EVENTS = (
+    BusinessEventDefinition(
+        "hr.data.quality_run.completed", "HR18", "quality_run", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.submission.queued", "HR18", "submission", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.submission.submitted", "HR18", "submission", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.submission.accepted", "HR18", "submission", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.submission.rejected", "HR18", "submission", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.submission.corrected", "HR18", "submission", 1
+    ),
+)
+register_business_events(EVENTS)
