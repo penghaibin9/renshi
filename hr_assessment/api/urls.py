@@ -26,6 +26,11 @@ urlpatterns = [
         probe.finalize_case,
         name="hr12-api-finalize",
     ),
+    path(
+        "api/v1/hr/assessments/results/<uuid:result_id>/corrections",
+        probe.result_corrections,
+        name="hr12-api-result-corrections",
+    ),
     path("api/v1/hr/assessments/policies", views_policy.policy_list, name="hr12-api-policy-list"),
     path("api/v1/hr/assessments/policies/<uuid:policy_id>", views_policy.policy_detail, name="hr12-api-policy-detail"),
     path(

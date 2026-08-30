@@ -129,7 +129,7 @@ def get_verified_development_facts(
             "requested canonical HR03 staff ids have no tenant-scoped HR10 identity mapping",
         )
 
-    facts = HrDevelopmentFact.objects.filter(
+    facts = HrDevelopmentFact.objects.effective().filter(
         tenant_id=tenant_id,
         staff_master_id__in=by_legacy,
         verification_status__in=TRUSTED_VERIFICATION_STATUSES,

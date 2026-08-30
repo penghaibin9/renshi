@@ -112,7 +112,9 @@ class ImmutabilityTest(TestCase):
             generated_at="2026-01-01T00:00Z", immutable_hash="abc123",
         )
         f.save()
-        self.assertEqual(f.immutable_hash, "abc123")
+        self.assertEqual(len(f.immutable_hash), 64)
+        self.assertEqual(f.immutable_hash, f.content_hash)
+        self.assertTrue(f.verify_content_hash())
 
     def test_plan_start_before_end_constraint(self):
         """plan start ≤ end 约束。"""

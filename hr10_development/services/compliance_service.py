@@ -68,7 +68,7 @@ class ComplianceService:
         """按规则窗口统计当前值。"""
         from hr10_development.models.development_fact import HrDevelopmentFact
 
-        facts = HrDevelopmentFact.objects.filter(
+        facts = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             fact_type=FactType.ENTERPRISE_PRACTICE,

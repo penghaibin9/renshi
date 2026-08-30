@@ -15,8 +15,94 @@ from __future__ import annotations
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from horilla.hr_domain_models import HrTenantScopedModel
+
+
+class _FormalAgreementQuerySet(models.QuerySet):
+    """Block ORM bulk paths that bypass ``Model.save`` authority guards."""
+
+    _IDENTITY_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "agreement_no",
+            "subject_type",
+            "staff_id",
+            "employment_relationship_id",
+            "subject_person_id",
+            "subject_reference_type",
+            "subject_reference_id",
+            "agreement_title",
+            "agreement_type",
+            "legacy_contract_id",
+        }
+    )
+
+    def update(self, **kwargs):
+        if self._IDENTITY_FIELDS.intersection(kwargs) and self.filter(
+            current_version_no__gt=0
+        ).exists():
+            raise ValidationError(
+                "Formal agreement identity is immutable after the first signed version."
+            )
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.exclude(status=HrContractAgreement.Status.DRAFT).exists() or self.filter(
+            current_version_no__gt=0
+        ).exists():
+            raise ValidationError("Only an unused DRAFT agreement may be deleted.")
+        return super().delete()
+
+
+class _FormalVersionQuerySet(models.QuerySet):
+    """Fail early for instance-bypassing writes; MySQL triggers are the final seal."""
+
+    def _sealed_pks(self, pks=None):
+        query = self
+        if pks is not None:
+            query = query.filter(pk__in=pks)
+        return query.exclude(status=HrContractVersion.Status.DRAFT)
+
+    def update(self, **kwargs):
+        if self._sealed_pks().exists():
+            raise ValidationError(
+                "Signed contract versions cannot be bulk-updated; use HR07 lifecycle services."
+            )
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self._sealed_pks().exists():
+            raise ValidationError("Signed contract versions cannot be deleted.")
+        return super().delete()
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        objects = list(objs)
+        if self._sealed_pks([obj.pk for obj in objects if obj.pk]).exists():
+            raise ValidationError(
+                "Signed contract versions cannot be bulk-updated; use HR07 lifecycle services."
+            )
+        return super().bulk_update(objects, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, *args, **kwargs):
+        objects = list(objs)
+        if any(obj.status != HrContractVersion.Status.DRAFT for obj in objects):
+            raise ValidationError(
+                "Formal contract versions must be signed through an HR07 authority service."
+            )
+        return super().bulk_create(objects, *args, **kwargs)
+
+
+class _AppendOnlyQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("Contract correction/void receipts are append-only.")
+
+    def delete(self):
+        raise ValidationError("Contract correction/void receipts are append-only.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError("Contract correction/void receipts are append-only.")
 
 
 class HrContractAgreement(HrTenantScopedModel):
@@ -57,6 +143,10 @@ class HrContractAgreement(HrTenantScopedModel):
     )
     current_version_no = models.PositiveIntegerField(default=0)
     legacy_contract_id = models.PositiveBigIntegerField(null=True, blank=True)
+
+    objects = models.Manager.from_queryset(_FormalAgreementQuerySet)()
+
+    _FORMAL_IDENTITY_FIELDS = _FormalAgreementQuerySet._IDENTITY_FIELDS
 
     class Meta:
         db_table = "hr07_contract_agreement"
@@ -110,6 +200,37 @@ class HrContractAgreement(HrTenantScopedModel):
             ),
         ]
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        fields_to_check = self._FORMAL_IDENTITY_FIELDS
+        if update_fields is not None:
+            fields_to_check = fields_to_check.intersection(update_fields)
+        if self.pk and fields_to_check:
+            persisted = (
+                type(self).objects.filter(pk=self.pk)
+                .values("current_version_no", *sorted(fields_to_check))
+                .first()
+            )
+            if persisted and persisted["current_version_no"] > 0:
+                changed = [
+                    field
+                    for field in sorted(fields_to_check)
+                    if persisted[field] != getattr(self, field)
+                ]
+                if changed:
+                    raise ValidationError(
+                        {
+                            field: "Formal agreement identity is immutable after signing."
+                            for field in changed
+                        }
+                    )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != self.Status.DRAFT or self.current_version_no > 0:
+            raise ValidationError("Only an unused DRAFT agreement may be deleted.")
+        return super().delete(*args, **kwargs)
+
 
 class HrContractVersion(HrTenantScopedModel):
     class Status(models.TextChoices):
@@ -119,6 +240,14 @@ class HrContractVersion(HrTenantScopedModel):
         SUPERSEDED = "SUPERSEDED", "Superseded"
         TERMINATED = "TERMINATED", "Terminated"
         EXPIRED = "EXPIRED", "Expired"
+        VOID = "VOID", "Void"
+
+    class VersionType(models.TextChoices):
+        INITIAL = "INITIAL", "Initial"
+        RENEWAL = "RENEWAL", "Renewal"
+        AMENDMENT = "AMENDMENT", "Amendment"
+        CORRECTION = "CORRECTION", "Correction"
+        MIGRATION = "MIGRATION", "Migration"
 
     agreement = models.ForeignKey(
         HrContractAgreement,
@@ -126,6 +255,12 @@ class HrContractVersion(HrTenantScopedModel):
         related_name="versions",
     )
     version_no = models.PositiveIntegerField()
+    version_type = models.CharField(
+        max_length=16,
+        choices=VersionType.choices,
+        default=VersionType.INITIAL,
+        db_index=True,
+    )
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
     signed_at = models.DateTimeField(null=True, blank=True)
@@ -142,12 +277,18 @@ class HrContractVersion(HrTenantScopedModel):
     source_business_type = models.CharField(max_length=50, blank=True, default="")
     source_business_id = models.CharField(max_length=100, blank=True, default="")
 
+    objects = models.Manager.from_queryset(_FormalVersionQuerySet)()
+
     class Meta:
         db_table = "hr07_contract_version"
         constraints = [
             models.UniqueConstraint(
                 fields=("tenant_id", "agreement", "version_no"),
                 name="uq_hr07_ver_agree_no",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "supersedes_version_id"),
+                name="uq_hr07_ver_successor",
             ),
             models.CheckConstraint(
                 condition=Q(effective_to__isnull=True)
@@ -171,6 +312,7 @@ class HrContractVersion(HrTenantScopedModel):
             "tenant_id",
             "agreement_id",
             "version_no",
+            "version_type",
             "effective_from",
             "signed_at",
             "signed_document_ref",
@@ -216,6 +358,81 @@ class HrContractVersion(HrTenantScopedModel):
                         }
                     )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != self.Status.DRAFT:
+            raise ValidationError("Signed contract versions cannot be deleted.")
+        return super().delete(*args, **kwargs)
+
+
+class HrContractVersionAction(HrTenantScopedModel):
+    """Sealed correction/void authority receipt; never rewrites signed content."""
+
+    class Kind(models.TextChoices):
+        CORRECTION = "CORRECTION", "Correction"
+        VOID = "VOID", "Void"
+
+    agreement = models.ForeignKey(
+        HrContractAgreement,
+        on_delete=models.PROTECT,
+        related_name="version_actions",
+    )
+    source_version = models.ForeignKey(
+        HrContractVersion,
+        on_delete=models.PROTECT,
+        related_name="authority_actions",
+    )
+    successor_version = models.OneToOneField(
+        HrContractVersion,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="source_authority_action",
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices, db_index=True)
+    reason = models.TextField()
+    evidence_ref = models.CharField(max_length=255)
+    authority_ref = models.CharField(max_length=200)
+    authority_receipt_json = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=128)
+    request_hash = models.CharField(max_length=64)
+    sealed_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    objects = models.Manager.from_queryset(_AppendOnlyQuerySet)()
+
+    class Meta:
+        db_table = "hr07_contract_version_action"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr07_ver_action_key",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "source_version", "kind"),
+                name="uq_hr07_ver_action_source_kind",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(kind="CORRECTION", successor_version__isnull=False)
+                    | Q(kind="VOID", successor_version__isnull=True)
+                ),
+                name="ck_hr07_ver_action_shape",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "agreement", "created_at"),
+                name="idx_hr07_ver_action_agree",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("Contract correction/void receipts are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Contract correction/void receipts are append-only.")
 
 
 class HrContractCase(HrTenantScopedModel):

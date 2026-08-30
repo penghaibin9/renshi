@@ -22,7 +22,7 @@ class LegacyProjectionService:
         from hr10_development.models.development_fact import HrDevelopmentFact
         from hr10_development.constants import FactType
 
-        facts = HrDevelopmentFact.objects.filter(
+        facts = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             fact_type=FactType.TRAINING_COMPLETION,
@@ -49,7 +49,7 @@ class LegacyProjectionService:
         from hr10_development.models.development_fact import HrDevelopmentFact
         from hr10_development.constants import FactType
 
-        facts = HrDevelopmentFact.objects.filter(
+        facts = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             fact_type=FactType.ENTERPRISE_PRACTICE,

@@ -38,7 +38,7 @@ class Hr09QualificationEvidenceProvider(QualificationEvidenceProvider):
             VerificationStatus.MANUAL_COMMITTEE_VERIFIED,
         ]
 
-        qs = HrDevelopmentFact.objects.filter(
+        qs = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             verification_status__in=VERIFIED_STATUSES,

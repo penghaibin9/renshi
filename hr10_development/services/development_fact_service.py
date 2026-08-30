@@ -36,6 +36,7 @@ class DevelopmentFactService:
 
         # 幂等检查
         existing = HrDevelopmentFact.objects.filter(
+            tenant_id=tenant_id,
             source_case_type="HrLearningCompletion",
             source_case_id=completion.id,
         ).first()
@@ -54,7 +55,7 @@ class DevelopmentFactService:
             verification_status=completion.verification_status,
             evidence_package_hash=completion.evidence_package_id,
             generated_at=datetime.now(timezone.utc),
-            immutable_hash=_compute_immutable_hash(completion),
+            sealed_by=completion.verified_by,
         )
         return fact
 
@@ -63,7 +64,7 @@ class DevelopmentFactService:
         """重建 HR09 证据索引。生产阶段通过异步 job 执行。"""
         from hr10_development.models.development_fact import HrDevelopmentFact
 
-        qs = HrDevelopmentFact.objects.filter(
+        qs = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id,
             verification_status__in=[
                 VerificationStatus.SYSTEM_PROVIDER_VERIFIED,

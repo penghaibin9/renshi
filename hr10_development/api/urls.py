@@ -87,6 +87,8 @@ urlpatterns = [
     path("api/v1/hr/development/development-records/<int:staff_id>/ledger", development_records.get_ledger, name="record-ledger"),
     path("api/v1/hr/development/development-records/<int:staff_id>/compliance", development_records.get_compliance, name="record-compliance"),
     path("api/v1/hr/development/development-records/<int:staff_id>/risks", development_records.get_risks, name="record-risks"),
+    path("api/v1/hr/development/development-facts/<int:fact_id>/correct", development_records.correct_fact, name="development-fact-correct"),
+    path("api/v1/hr/development/development-facts/<int:fact_id>/revoke", development_records.revoke_fact, name="development-fact-revoke"),
     path("api/v1/hr/development/dashboard", dashboard.dashboard, name="development-dashboard"),
     path("api/v1/hr/development/metrics/<str:metric_code>", dashboard.metric_detail, name="development-metric"),
 

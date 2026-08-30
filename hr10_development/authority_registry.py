@@ -17,6 +17,8 @@ EVENT_DEFINITIONS = (
     BusinessEventDefinition("hr.development.practice_evaluation.finalized", "HR10", "practice_evaluation", description="Enterprise-practice evaluation finalized"),
     BusinessEventDefinition("hr.development.development_fact.verified", "HR10", "development_fact", description="Formal development fact verified"),
     BusinessEventDefinition("hr.development.development_fact.superseded", "HR10", "development_fact", description="Formal development fact superseded by a new version"),
+    BusinessEventDefinition("hr.development.development_fact.corrected", "HR10", "development_fact", description="Formal development fact corrected by append-only successor"),
+    BusinessEventDefinition("hr.development.development_fact.revoked", "HR10", "development_fact", description="Formal development fact revoked by append-only successor"),
 )
 
 

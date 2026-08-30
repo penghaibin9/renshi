@@ -15,6 +15,8 @@ PERM_CASE_APPROVE = "hr.contracts.case.approve"
 PERM_CASE_SIGN = "hr.contracts.case.sign"
 PERM_CASE_ACTIVATE = "hr.contracts.case.activate"
 PERM_CASE_TERMINATE = "hr.contracts.case.terminate"
+PERM_VERSION_CORRECT = "hr.contracts.version.correct"
+PERM_VERSION_VOID = "hr.contracts.version.void"
 
 PERMISSION_DEFINITIONS = (
     PermissionDefinition(PERM_AGREEMENT_VIEW, "HR07", "查看学校合同主档及正式版本"),
@@ -27,6 +29,8 @@ PERMISSION_DEFINITIONS = (
     PermissionDefinition(PERM_CASE_SIGN, "HR07", "冻结续签或变更后的新合同版本"),
     PermissionDefinition(PERM_CASE_ACTIVATE, "HR07", "使续签或变更后的新合同版本生效"),
     PermissionDefinition(PERM_CASE_TERMINATE, "HR07", "执行已批准合同解除生效"),
+    PermissionDefinition(PERM_VERSION_CORRECT, "HR07", "更正已签署合同并追加正式后继版本"),
+    PermissionDefinition(PERM_VERSION_VOID, "HR07", "作废错误、重复或法律上未成立的签署版本"),
 )
 register_permissions(PERMISSION_DEFINITIONS)
 
