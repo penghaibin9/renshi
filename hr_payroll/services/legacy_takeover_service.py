@@ -297,10 +297,21 @@ class LegacyPayrollTakeoverService:
                                         "content_hash"
                                     ]
                                     payment = payment_map.get(payslip["payment_instruction_id"])
+                                    payment_evidence = (
+                                        payment.get("provider_receipt_json")
+                                        if payment is not None
+                                        else None
+                                    )
+                                    trusted_receipt = (
+                                        isinstance(payment_evidence, dict)
+                                        and isinstance(payment_evidence.get("dispatch"), dict)
+                                        and isinstance(payment_evidence.get("receipt"), dict)
+                                    )
                                     if (
                                         payment is None
                                         or payment["status"]
                                         != PayrollPaymentInstruction.Status.ACCEPTED
+                                        or not trusted_receipt
                                     ):
                                         mapping["reconciliation_status"] = "PAYMENT_RECEIPT_UNAVAILABLE"
                                         reason_codes.add("PAYMENT_RECEIPT_UNAVAILABLE")

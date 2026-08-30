@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from uuid import UUID
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from hr_staff.models import HrOutboxEvent
 from hr_payroll.calculation_models import (
@@ -24,6 +24,14 @@ from hr_payroll.services.finalization_service import PayrollFinalizationService
 from hr_payroll.services.payment_service import PayrollPaymentError, PayrollPaymentService
 
 
+@override_settings(
+    HR15_PAYMENT_PROVIDERS={
+        "SANDBOX_BANK": (
+            "hr_payroll.tests.test_payment_provider_boundary."
+            "TrustedSandboxPaymentProvider"
+        )
+    }
+)
 class PayrollCalculationPaymentChainTests(TestCase):
     tenant_id = 77
     actor_id = 901
@@ -58,6 +66,19 @@ class PayrollCalculationPaymentChainTests(TestCase):
         return {
             code: {"version": f"{code.lower()}-v1", "evidenceId": f"{code}-E-1"}
             for code in ("HR03", "HR11", "HR12", "HR14")
+        }
+
+    def provider_receipt(self, instruction, *, amount="8800.00", status="ACCEPTED"):
+        return {
+            "tenantId": self.tenant_id,
+            "instructionId": str(instruction.id),
+            "instructionNo": instruction.instruction_no,
+            "providerCode": instruction.provider_code,
+            "receiptNo": "BANK-RECEIPT-1501",
+            "status": status,
+            "settledAmount": amount,
+            "currencyCode": instruction.currency_code,
+            "idempotencyKey": f"hr15:{self.tenant_id}:{instruction.id}",
         }
 
     def create_rule(
@@ -177,13 +198,10 @@ class PayrollCalculationPaymentChainTests(TestCase):
         self.assertEqual(instruction.requested_amount, Decimal("8800.00"))
         self.assertEqual(len(instruction.account_ref_hash), 64)
         self.assertNotIn("vault://", instruction.account_ref_hash)
-        payment_service.mark_sent(instruction_id=instruction.id)
-        instruction = payment_service.record_receipt(
+        payment_service.dispatch(instruction_id=instruction.id)
+        instruction = payment_service.ingest_provider_receipt(
             instruction_id=instruction.id,
-            receipt_no="BANK-RECEIPT-1501",
-            accepted=True,
-            settled_amount="8800.00",
-            receipt_payload={"sandbox": True},
+            provider_payload=self.provider_receipt(instruction),
         )
         self.assertEqual(instruction.status, PayrollPaymentInstruction.Status.ACCEPTED)
 
@@ -314,24 +332,24 @@ class PayrollCalculationPaymentChainTests(TestCase):
             instruction_no="PAYMENT-RECEIPT-CONFLICT",
             provider_code="SANDBOX_BANK",
         )
-        payment_service.mark_sent(instruction_id=instruction.id)
-        payment_service.record_receipt(
+        payment_service.dispatch(instruction_id=instruction.id)
+        payment_service.ingest_provider_receipt(
             instruction_id=instruction.id,
-            receipt_no="BANK-SAME-REFERENCE",
-            accepted=True,
-            settled_amount="8800.00",
-            receipt_payload={"sandbox": True},
+            provider_payload={
+                **self.provider_receipt(instruction),
+                "receiptNo": "BANK-SAME-REFERENCE",
+            },
         )
 
         with self.assertRaises(PayrollPaymentError) as caught:
-            payment_service.record_receipt(
+            payment_service.ingest_provider_receipt(
                 instruction_id=instruction.id,
-                receipt_no="BANK-SAME-REFERENCE",
-                accepted=True,
-                settled_amount="8799.99",
-                receipt_payload={"sandbox": True},
+                provider_payload={
+                    **self.provider_receipt(instruction, amount="8799.99"),
+                    "receiptNo": "BANK-SAME-REFERENCE",
+                },
             )
-        self.assertEqual(caught.exception.code, "PAYROLL_PAYMENT_RECEIPT_CONFLICT")
+        self.assertEqual(caught.exception.code, "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID")
 
     def test_terminal_payment_identity_cannot_be_mutated_directly(self):
         self.prepare_calculation()
@@ -353,12 +371,13 @@ class PayrollCalculationPaymentChainTests(TestCase):
             instruction_no="PAYMENT-IMMUTABLE",
             provider_code="SANDBOX_BANK",
         )
-        payment_service.mark_sent(instruction_id=instruction.id)
-        instruction = payment_service.record_receipt(
+        payment_service.dispatch(instruction_id=instruction.id)
+        instruction = payment_service.ingest_provider_receipt(
             instruction_id=instruction.id,
-            receipt_no="BANK-IMMUTABLE",
-            accepted=True,
-            settled_amount="8800.00",
+            provider_payload={
+                **self.provider_receipt(instruction),
+                "receiptNo": "BANK-IMMUTABLE",
+            },
         )
 
         instruction.requested_amount = Decimal("1.00")

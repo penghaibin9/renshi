@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
+from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
@@ -22,6 +24,10 @@ from hr_payroll.calculation_models import (
     PayrollPayslipFact,
 )
 from hr_payroll.models import PayrollPeriod, PayrollProfile, PayrollResultFact
+from hr_payroll.services.payment_provider_registry import (
+    PaymentProviderRegistry,
+    PaymentProviderRegistryError,
+)
 
 
 class PayrollPaymentError(Exception):
@@ -140,71 +146,288 @@ class PayrollPaymentService:
             provider_code=provider_code,
         )
 
-    @transaction.atomic
-    def mark_sent(self, *, instruction_id) -> PayrollPaymentInstruction:
-        instruction = self._lock_instruction(instruction_id)
-        if instruction.status == PayrollPaymentInstruction.Status.SENT:
-            return instruction
-        if instruction.status != PayrollPaymentInstruction.Status.CREATED:
-            raise PayrollPaymentError(
-                "PAYROLL_PAYMENT_INVALID_STATE", "payment instruction cannot be sent"
-            )
-        instruction.status = PayrollPaymentInstruction.Status.SENT
-        instruction.sent_at = timezone.now()
-        instruction.updated_by = self.actor_user_id
-        instruction.save(update_fields=["status", "sent_at", "updated_by", "updated_at"])
-        return instruction
+    @staticmethod
+    def _idempotency_key(instruction: PayrollPaymentInstruction) -> str:
+        return f"hr15:{instruction.tenant_id}:{instruction.id}"
+
+    def _dispatch_request(self, instruction: PayrollPaymentInstruction) -> dict:
+        return {
+            "schemaVersion": "hr15.payment-dispatch.1",
+            "tenantId": int(instruction.tenant_id),
+            "instructionId": str(instruction.id),
+            "instructionNo": instruction.instruction_no,
+            "payrollResultId": str(instruction.payroll_result_id),
+            "staffId": str(instruction.staff_id),
+            "providerCode": instruction.provider_code,
+            "requestedAmount": str(_money(instruction.requested_amount)),
+            "currencyCode": instruction.currency_code,
+            "accountRefHash": instruction.account_ref_hash,
+            "idempotencyKey": self._idempotency_key(instruction),
+            "correlationId": self.correlation_id,
+        }
 
     @transaction.atomic
-    def record_receipt(
-        self,
-        *,
-        instruction_id,
-        receipt_no: str,
-        accepted: bool,
-        settled_amount,
-        receipt_payload: dict | None = None,
-    ) -> PayrollPaymentInstruction:
+    def _claim_dispatch(self, instruction_id):
         instruction = self._lock_instruction(instruction_id)
-        target = (
-            PayrollPaymentInstruction.Status.ACCEPTED
-            if accepted
-            else PayrollPaymentInstruction.Status.REJECTED
-        )
-        amount = _money(settled_amount)
-        receipt = {
-            "receiptNo": receipt_no,
-            "settledAmount": str(amount),
-            "receivedAt": timezone.now().isoformat(),
-            "providerPayload": receipt_payload or {},
-        }
+        if instruction.status == PayrollPaymentInstruction.Status.SENT:
+            return instruction, None, None
         if instruction.status in {
             PayrollPaymentInstruction.Status.ACCEPTED,
             PayrollPaymentInstruction.Status.REJECTED,
         }:
-            persisted_receipt = instruction.provider_receipt_json
-            if (
-                instruction.status != target
-                or persisted_receipt.get("receiptNo") != receipt_no
-                or persisted_receipt.get("settledAmount") != str(amount)
-                or persisted_receipt.get("providerPayload") != (receipt_payload or {})
-            ):
+            return instruction, None, None
+        if instruction.status != PayrollPaymentInstruction.Status.CREATED:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_INVALID_STATE", "payment instruction cannot be dispatched"
+            )
+        current = instruction.provider_receipt_json or {}
+        claim = current.get("dispatchClaim") if isinstance(current, Mapping) else None
+        if isinstance(claim, Mapping) and claim.get("state") == "RUNNING":
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_DISPATCH_IN_PROGRESS",
+                "payment provider dispatch already has an active claim",
+            )
+        request_payload = self._dispatch_request(instruction)
+        lease_token = uuid.uuid4().hex
+        instruction.provider_receipt_json = {
+            "dispatchClaim": {
+                "state": "RUNNING",
+                "leaseToken": lease_token,
+                "claimedAt": timezone.now().isoformat(),
+                "idempotencyKey": request_payload["idempotencyKey"],
+                "requestHash": _hash(request_payload),
+            }
+        }
+        instruction.updated_by = self.actor_user_id
+        instruction.save(
+            update_fields=["provider_receipt_json", "updated_by", "updated_at"]
+        )
+        return instruction, request_payload, lease_token
+
+    @transaction.atomic
+    def _release_dispatch_claim(self, instruction_id, lease_token: str, *, error: str):
+        instruction = self._lock_instruction(instruction_id)
+        if instruction.status != PayrollPaymentInstruction.Status.CREATED:
+            return instruction
+        current = instruction.provider_receipt_json or {}
+        claim = current.get("dispatchClaim") if isinstance(current, Mapping) else None
+        if not isinstance(claim, Mapping) or claim.get("leaseToken") != lease_token:
+            return instruction
+        instruction.provider_receipt_json = {
+            "dispatchClaim": {
+                **dict(claim),
+                "state": "FAILED",
+                "failedAt": timezone.now().isoformat(),
+                "error": str(error or "provider dispatch failed")[:500],
+            }
+        }
+        instruction.updated_by = self.actor_user_id
+        instruction.save(
+            update_fields=["provider_receipt_json", "updated_by", "updated_at"]
+        )
+        return instruction
+
+    @staticmethod
+    def _require_mapping(value, *, code: str, message: str) -> Mapping:
+        if not isinstance(value, Mapping):
+            raise PayrollPaymentError(code, message)
+        return value
+
+    def _normalize_dispatch_result(self, instruction, request_payload, raw) -> dict:
+        result = self._require_mapping(
+            raw,
+            code="PAYROLL_PAYMENT_PROVIDER_CONTRACT_INVALID",
+            message="payment provider dispatch result must be an object",
+        )
+        expected = {
+            "tenantId": int(instruction.tenant_id),
+            "instructionId": str(instruction.id),
+            "instructionNo": instruction.instruction_no,
+            "providerCode": instruction.provider_code,
+            "requestedAmount": str(_money(instruction.requested_amount)),
+            "currencyCode": instruction.currency_code,
+            "idempotencyKey": request_payload["idempotencyKey"],
+            "status": "SENT",
+        }
+        if any(str(result.get(key)) != str(value) for key, value in expected.items()):
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_CONTRACT_INVALID",
+                "payment provider dispatch identity does not match the instruction",
+            )
+        dispatch_receipt_id = str(result.get("dispatchReceiptId") or "").strip()
+        if not dispatch_receipt_id:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_CONTRACT_INVALID",
+                "payment provider dispatchReceiptId is required",
+            )
+        return {**expected, "dispatchReceiptId": dispatch_receipt_id}
+
+    @transaction.atomic
+    def _complete_dispatch(self, instruction_id, lease_token: str, result: dict):
+        instruction = self._lock_instruction(instruction_id)
+        if instruction.status == PayrollPaymentInstruction.Status.SENT:
+            persisted = (instruction.provider_receipt_json or {}).get("dispatch") or {}
+            if persisted != result:
+                raise PayrollPaymentError(
+                    "PAYROLL_PAYMENT_DISPATCH_CONFLICT",
+                    "payment instruction already has a different dispatch receipt",
+                )
+            return instruction
+        if instruction.status != PayrollPaymentInstruction.Status.CREATED:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_INVALID_STATE", "payment instruction cannot be marked sent"
+            )
+        claim = (instruction.provider_receipt_json or {}).get("dispatchClaim") or {}
+        if claim.get("leaseToken") != lease_token or claim.get("state") != "RUNNING":
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_DISPATCH_CLAIM_LOST",
+                "payment dispatch claim is no longer owned by this worker",
+            )
+        instruction.status = PayrollPaymentInstruction.Status.SENT
+        instruction.provider_receipt_json = {"dispatch": result}
+        instruction.sent_at = timezone.now()
+        instruction.updated_by = self.actor_user_id
+        instruction.save(
+            update_fields=[
+                "status",
+                "provider_receipt_json",
+                "sent_at",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+        return instruction
+
+    def dispatch(self, *, instruction_id) -> PayrollPaymentInstruction:
+        instruction = PayrollPaymentInstruction.objects.filter(
+            id=instruction_id, tenant_id=self.tenant_id
+        ).first()
+        if instruction is None:
+            raise PayrollPaymentError("PAYROLL_PAYMENT_NOT_FOUND", "payment instruction not found")
+        if instruction.status in {
+            PayrollPaymentInstruction.Status.SENT,
+            PayrollPaymentInstruction.Status.ACCEPTED,
+            PayrollPaymentInstruction.Status.REJECTED,
+        }:
+            return instruction
+        try:
+            provider = PaymentProviderRegistry.resolve(instruction.provider_code)
+        except PaymentProviderRegistryError as exc:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_UNAVAILABLE", str(exc)
+            ) from exc
+
+        claimed, request_payload, lease_token = self._claim_dispatch(instruction.id)
+        if request_payload is None:
+            return claimed
+        try:
+            raw_result = provider.dispatch(dict(request_payload))
+        except Exception as exc:
+            self._release_dispatch_claim(
+                instruction.id, lease_token, error="trusted provider dispatch failed"
+            )
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_UNAVAILABLE",
+                "trusted payment provider dispatch failed",
+            ) from exc
+        try:
+            result = self._normalize_dispatch_result(claimed, request_payload, raw_result)
+        except PayrollPaymentError as exc:
+            self._release_dispatch_claim(instruction.id, lease_token, error=str(exc))
+            raise
+        return self._complete_dispatch(instruction.id, lease_token, result)
+
+    def _normalize_provider_receipt(self, instruction, raw) -> dict:
+        receipt = self._require_mapping(
+            raw,
+            code="PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+            message="verified payment receipt must be an object",
+        )
+        status = str(receipt.get("status") or "").strip().upper()
+        if status not in {
+            PayrollPaymentInstruction.Status.ACCEPTED,
+            PayrollPaymentInstruction.Status.REJECTED,
+        }:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "verified payment receipt status must be ACCEPTED or REJECTED",
+            )
+        amount = _money(receipt.get("settledAmount"))
+        expected = {
+            "tenantId": int(instruction.tenant_id),
+            "instructionId": str(instruction.id),
+            "instructionNo": instruction.instruction_no,
+            "providerCode": instruction.provider_code,
+            "currencyCode": instruction.currency_code,
+            "idempotencyKey": self._idempotency_key(instruction),
+        }
+        if any(str(receipt.get(key)) != str(value) for key, value in expected.items()):
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "verified payment receipt identity does not match the instruction",
+            )
+        if status == PayrollPaymentInstruction.Status.ACCEPTED and amount != _money(
+            instruction.requested_amount
+        ):
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "accepted payment amount must match the dispatched instruction",
+            )
+        if status == PayrollPaymentInstruction.Status.REJECTED and amount != Decimal("0.00"):
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "rejected payment receipt cannot report a settled amount",
+            )
+        receipt_no = str(receipt.get("receiptNo") or "").strip()
+        if not receipt_no:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "verified payment receipt number is required",
+            )
+        return {
+            **expected,
+            "receiptNo": receipt_no,
+            "status": status,
+            "settledAmount": str(amount),
+        }
+
+    @transaction.atomic
+    def _apply_provider_receipt(self, instruction_id, receipt: dict):
+        instruction = self._lock_instruction(instruction_id)
+        target = receipt["status"]
+        if instruction.status in {
+            PayrollPaymentInstruction.Status.ACCEPTED,
+            PayrollPaymentInstruction.Status.REJECTED,
+        }:
+            persisted = (instruction.provider_receipt_json or {}).get("receipt") or {}
+            comparable = {
+                key: persisted.get(key)
+                for key in receipt
+            }
+            if instruction.status != target or comparable != receipt:
                 raise PayrollPaymentError(
                     "PAYROLL_PAYMENT_RECEIPT_CONFLICT",
-                    "payment already has a different terminal receipt",
+                    "payment already has a different terminal provider receipt",
                 )
             return instruction
         if instruction.status != PayrollPaymentInstruction.Status.SENT:
             raise PayrollPaymentError(
-                "PAYROLL_PAYMENT_INVALID_STATE", "only a sent instruction can receive a receipt"
+                "PAYROLL_PAYMENT_INVALID_STATE",
+                "only a provider-dispatched instruction can receive a trusted receipt",
             )
-        if not receipt_no:
+        dispatch = (instruction.provider_receipt_json or {}).get("dispatch")
+        if not isinstance(dispatch, Mapping):
             raise PayrollPaymentError(
-                "PAYROLL_PAYMENT_RECEIPT_REQUIRED", "receipt number is required"
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "payment dispatch evidence is missing",
             )
+        received_at = timezone.now()
         instruction.status = target
-        instruction.provider_receipt_json = receipt
-        instruction.received_at = timezone.now()
+        instruction.provider_receipt_json = {
+            "dispatch": dict(dispatch),
+            "receipt": {**receipt, "receivedAt": received_at.isoformat()},
+        }
+        instruction.received_at = received_at
         instruction.updated_by = self.actor_user_id
         instruction.save(
             update_fields=[
@@ -215,22 +438,72 @@ class PayrollPaymentService:
                 "updated_at",
             ]
         )
-        if accepted:
+        if target == PayrollPaymentInstruction.Status.ACCEPTED:
             emit_registered_event(
                 tenant_id=self.tenant_id,
                 event_name=EVENT_PAYMENT_ACCEPTED,
                 payload={
                     "paymentInstructionId": str(instruction.id),
                     "payrollResultId": str(instruction.payroll_result_id),
-                    "receiptNo": receipt_no,
+                    "receiptNo": receipt["receiptNo"],
                     "requestedAmount": str(instruction.requested_amount),
-                    "settledAmount": str(amount),
+                    "settledAmount": receipt["settledAmount"],
                     "currencyCode": instruction.currency_code,
-                    "receivedAt": instruction.received_at.isoformat(),
+                    "receivedAt": received_at.isoformat(),
                 },
                 correlation_id=self.correlation_id,
             )
         return instruction
+
+    def ingest_provider_receipt(
+        self, *, instruction_id, provider_payload: Mapping
+    ) -> PayrollPaymentInstruction:
+        instruction = PayrollPaymentInstruction.objects.filter(
+            id=instruction_id, tenant_id=self.tenant_id
+        ).first()
+        if instruction is None:
+            raise PayrollPaymentError("PAYROLL_PAYMENT_NOT_FOUND", "payment instruction not found")
+        try:
+            provider = PaymentProviderRegistry.resolve(instruction.provider_code)
+        except PaymentProviderRegistryError as exc:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_UNAVAILABLE", str(exc)
+            ) from exc
+        try:
+            verified = provider.verify_receipt(provider_payload)
+        except Exception as exc:
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
+                "payment provider could not authenticate the receipt",
+            ) from exc
+        receipt = self._normalize_provider_receipt(instruction, verified)
+        return self._apply_provider_receipt(instruction.id, receipt)
+
+    def mark_sent(self, *, instruction_id) -> PayrollPaymentInstruction:
+        del instruction_id
+        raise PayrollPaymentError(
+            "PAYROLL_PAYMENT_TRUSTED_PROVIDER_REQUIRED",
+            "payment state can only advance through a configured trusted provider",
+        )
+
+    def record_receipt(self, **kwargs) -> PayrollPaymentInstruction:
+        del kwargs
+        raise PayrollPaymentError(
+            "PAYROLL_PAYMENT_TRUSTED_RECEIPT_REQUIRED",
+            "payment receipt can only be ingested by a trusted provider worker",
+        )
+
+    @staticmethod
+    def _trusted_terminal_receipt(instruction: PayrollPaymentInstruction) -> Mapping:
+        evidence = instruction.provider_receipt_json or {}
+        dispatch = evidence.get("dispatch") if isinstance(evidence, Mapping) else None
+        receipt = evidence.get("receipt") if isinstance(evidence, Mapping) else None
+        if not isinstance(dispatch, Mapping) or not isinstance(receipt, Mapping):
+            raise PayrollPaymentError(
+                "PAYROLL_PAYMENT_TRUSTED_RECEIPT_REQUIRED",
+                "payment terminal evidence was not produced by the trusted provider boundary",
+            )
+        return receipt
 
     @transaction.atomic
     def publish_payslip(
@@ -285,6 +558,7 @@ class PayrollPaymentService:
             }
             for row in line_rows
         ]
+        receipt = self._trusted_terminal_receipt(instruction)
         statement = {
             "resultId": str(result.id),
             "staffId": str(result.staff_id),
@@ -293,7 +567,7 @@ class PayrollPaymentService:
             "grossAmount": str(result.gross_amount),
             "deductionAmount": str(result.deduction_amount),
             "netAmount": str(result.net_amount),
-            "paymentReceiptNo": instruction.provider_receipt_json["receiptNo"],
+            "paymentReceiptNo": receipt["receiptNo"],
             "lines": lines,
         }
         payslip = PayrollPayslipFact.objects.create(
@@ -352,7 +626,8 @@ class PayrollPaymentService:
                     "payment already has another reconciliation fact",
                 )
             return existing
-        settled = _money(instruction.provider_receipt_json.get("settledAmount"))
+        receipt = self._trusted_terminal_receipt(instruction)
+        settled = _money(receipt.get("settledAmount"))
         expected = _money(instruction.requested_amount)
         difference = settled - expected
         status = (

@@ -22,6 +22,17 @@ HR15 是高校薪酬福利 Authority：薪酬档案、薪资项目与规则版�
 - 法定缴费事实复用同一条“计算 → 复核 → 封板 → 支付”工资权威链；封板后只能在新工资期间追加调整，不能改历史。
 - 每条法定缴费事实保存规则哈希、输入哈希、计算证据哈希与复核证据哈希，便于审计复算。
 
+## 支付 Provider 边界
+
+- 系统不内置“自动成功”银行。部署必须通过 `HR15_PAYMENT_PROVIDERS` 将
+  `provider_code` 映射到可信适配器导入路径；未配置时支付保持 `CREATED` 并明确失败。
+- 适配器实现 `dispatch(request)` 和 `verify_receipt(payload)`。前者必须返回与
+  tenant、指令、金额、币种和幂等键完全一致的发送回执；后者负责验签/鉴权后返回
+  规范化银行回执。
+- 业务 HTTP API 只能发起发送，不能自行提交 `SENT/ACCEPTED`。回执由受信 worker
+  调用 `PayrollPaymentService.ingest_provider_receipt`，并再次执行归属、金额、币种、
+  幂等和终态校验。
+
 ## 小白看代码顺序
 
 1. `models.py` / `calculation_models.py` / `statutory_models.py`：薪酬档案、规则、期间、计算结果、法定缴费、支付/对账。

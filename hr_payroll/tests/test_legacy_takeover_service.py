@@ -117,7 +117,10 @@ class LegacyPayrollTakeoverSnapshotTests(SimpleTestCase):
                     "id": payment_id,
                     "status": PayrollPaymentInstruction.Status.ACCEPTED,
                     "requested_amount": Decimal("900.00"),
-                    "provider_receipt_json": {"receiptNo": "R-1"},
+                    "provider_receipt_json": {
+                        "dispatch": {"dispatchReceiptId": "D-1"},
+                        "receipt": {"receiptNo": "R-1"},
+                    },
                 }
             },
             finance_map={
@@ -154,6 +157,19 @@ class LegacyPayrollTakeoverSnapshotTests(SimpleTestCase):
         self.assertEqual(
             snapshot["mappings"][0]["reconciliation_status"],
             "FINANCE_EVIDENCE_UNAVAILABLE",
+        )
+
+    def test_legacy_flat_payment_receipt_is_not_trusted_cutover_evidence(self):
+        service = self._complete_service()
+        payment = next(iter(service.payments.values()))
+        payment["provider_receipt_json"] = {"receiptNo": "legacy-manual-R-1"}
+
+        snapshot = service._build_snapshot(lock_legacy=True)
+
+        self.assertEqual(snapshot["status"], "UNAVAILABLE")
+        self.assertEqual(
+            snapshot["mappings"][0]["reconciliation_status"],
+            "PAYMENT_RECEIPT_UNAVAILABLE",
         )
 
     def test_empty_legacy_history_is_unavailable(self):

@@ -96,7 +96,11 @@ def _json_body(request):
 
 def _workflow_error(exc) -> JsonResponse:
     code = exc.code
-    if code.endswith("_NOT_FOUND"):
+    if code.endswith("_PROVIDER_UNAVAILABLE"):
+        status = 503
+    elif code.endswith("_PROVIDER_CONTRACT_INVALID"):
+        status = 502
+    elif code.endswith("_NOT_FOUND"):
         status = 404
     elif any(
         marker in code
@@ -840,9 +844,11 @@ def send_payment(request, instruction_id):
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
         tenant_id = resolve_request_tenant(request, required_permission=PERM_PAYMENT)
-        instruction = PayrollPaymentService(tenant_id, _actor_id(request)).mark_sent(
-            instruction_id=instruction_id
-        )
+        instruction = PayrollPaymentService(
+            tenant_id,
+            _actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).dispatch(instruction_id=instruction_id)
     except HrPayrollAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     except PayrollPaymentError as exc:
@@ -854,24 +860,14 @@ def receive_payment(request, instruction_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        tenant_id = resolve_request_tenant(request, required_permission=PERM_PAYMENT)
-        payload = _json_body(request)
-        instruction = PayrollPaymentService(
-            tenant_id,
-            _actor_id(request),
-            correlation_id=request.headers.get("X-Correlation-ID", ""),
-        ).record_receipt(
-            instruction_id=instruction_id,
-            receipt_no=payload.get("receiptNo", ""),
-            accepted=payload.get("accepted") is True,
-            settled_amount=payload.get("settledAmount"),
-            receipt_payload=payload.get("providerPayload"),
-        )
+        resolve_request_tenant(request, required_permission=PERM_PAYMENT)
     except HrPayrollAccessError as exc:
         return _error(exc.code, exc.message, status=403)
-    except PayrollPaymentError as exc:
-        return _workflow_error(exc)
-    return JsonResponse({"data": {"id": str(instruction.id), "status": instruction.status}})
+    return _error(
+        "PAYROLL_PAYMENT_TRUSTED_RECEIPT_REQUIRED",
+        "payment receipts are accepted only from a trusted provider worker",
+        status=403,
+    )
 
 
 def publish_payslip(request, result_id):
