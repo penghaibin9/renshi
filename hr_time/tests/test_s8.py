@@ -12,6 +12,7 @@ HR11-S8 验收测试：
 
 from datetime import date, timedelta
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
@@ -99,10 +100,24 @@ class RequestLifecycleTests(TestCase):
         self.assertEqual(use_entries.count(), 1)
         self.assertEqual(float(use_entries.first().amount), -2.0)
         # RESERVE 已释放
-        self.assertFalse(
+        reserve = HrLeaveLedgerEntry.objects.get(
+            pk=req.reservation_id, entry_type=LeaveLedgerEntryType.RESERVE
+        )
+        self.assertTrue(
             HrLeaveLedgerEntry.objects.filter(
-                pk=req.reservation_id, entry_type=LeaveLedgerEntryType.RESERVE
+                reversal_of=reserve,
+                entry_type=LeaveLedgerEntryType.RESERVATION_RELEASE,
             ).exists()
+        )
+
+        # 审批重放幂等：不重复扣减，也不重复生成正式事实。
+        replay = LeaveRequestService.approve(req)
+        self.assertEqual(replay.id, fact.id)
+        self.assertEqual(
+            HrLeaveLedgerEntry.objects.filter(
+                account=self.acct, entry_type=LeaveLedgerEntryType.USE
+            ).count(),
+            1,
         )
 
     def test_reject_releases_reservation(self):
@@ -112,10 +127,44 @@ class RequestLifecycleTests(TestCase):
         LeaveRequestService.reject(req)
         req.refresh_from_db()
         self.assertEqual(req.status, LeaveRequestStatus.REJECTED)
-        released = HrLeaveLedgerEntry.objects.get(pk=reservation_id)
-        self.assertEqual(released.entry_type, LeaveLedgerEntryType.RESERVATION_RELEASE)
+        reserve = HrLeaveLedgerEntry.objects.get(pk=reservation_id)
+        self.assertEqual(reserve.entry_type, LeaveLedgerEntryType.RESERVE)
+        released = HrLeaveLedgerEntry.objects.get(
+            reversal_of=reserve,
+            entry_type=LeaveLedgerEntryType.RESERVATION_RELEASE,
+        )
+        self.assertEqual(float(released.amount), 2.0)
         # 余额恢复 5
         self.assertEqual(LeaveAccountService.balance(account=self.acct), 5.0)
+        self.assertEqual(LeaveRequestService.available_balance(self.acct), 5.0)
+
+    def test_leave_ledger_is_append_only(self):
+        req = self._request(days=1)
+        LeaveRequestService.submit(req)
+        reserve = HrLeaveLedgerEntry.objects.get(pk=req.reservation_id)
+        reserve.entry_type = LeaveLedgerEntryType.RESERVATION_RELEASE
+        with self.assertRaises(ValidationError):
+            reserve.save()
+        with self.assertRaises(ValidationError):
+            HrLeaveLedgerEntry.objects.filter(pk=reserve.pk).update(
+                entry_type=LeaveLedgerEntryType.RESERVATION_RELEASE
+            )
+        with self.assertRaises(ValidationError):
+            HrLeaveLedgerEntry.objects.filter(pk=reserve.pk).delete()
+
+    def test_cross_tenant_account_reference_fails_closed(self):
+        foreign_type = make_leave_type(tenant_id=2, code="FOREIGN")
+        foreign_account = make_account(2, 100, foreign_type, initial=5)
+        with self.assertRaises(ValidationError):
+            HrLeaveRequest.objects.create(
+                tenant_id=1,
+                staff_master_id=100,
+                leave_type=foreign_type,
+                account=foreign_account,
+                start_at=D,
+                end_at=D,
+                requested_amount=1,
+            )
 
     def test_returned_not_rejected(self):
         # RETURNED 可修改后再提交；REJECTED 终局

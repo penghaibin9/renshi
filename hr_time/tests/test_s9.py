@@ -61,12 +61,16 @@ class CloseFlowTests(TestCase):
         HrAttendanceDayFact.objects.create(
             tenant_id=1, staff_master_id=100, business_date=D,
             status=AttendanceStatus.PRESENT, expected_minutes=480,
-            actual_minutes=480, credited_minutes=480, finalized=True,
+            actual_minutes=480, credited_minutes=480,
         )
         snapshot = CloseService.close(tenant_id=1, period=period)
         period.refresh_from_db()
+        fact = HrAttendanceDayFact.objects.get(
+            tenant_id=1, staff_master_id=100, business_date=D
+        )
         self.assertEqual(period.status, "CLOSED")
         self.assertEqual(period.snapshot_id, snapshot.id)
+        self.assertTrue(fact.finalized)
         self.assertTrue(snapshot.attendance_fact_hash)
 
         # Payroll basis：regular 480，不含金额字段
@@ -90,8 +94,11 @@ class CloseFlowTests(TestCase):
 
         fact = HrAttendanceDayFact.objects.create(
             tenant_id=1, staff_master_id=100, business_date=D,
-            status=AttendanceStatus.PRESENT, finalized=True,
+            status=AttendanceStatus.PRESENT,
         )
+        period = make_period()
+        CloseService.close(tenant_id=1, period=period)
+        fact.refresh_from_db()
         with self.assertRaises(ValidationError):
             fact.delete()
         self.assertTrue(HrAttendanceDayFact.objects.filter(pk=fact.pk).exists())

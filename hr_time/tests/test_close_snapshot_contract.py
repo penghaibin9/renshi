@@ -7,6 +7,11 @@ from django.test import TestCase
 from hr_time.enums import AttendanceStatus
 from hr_time.models.attendance import HrAttendanceDayFact
 from hr_time.models.close import HrPayrollTimeBasis, HrTimeClosePeriod, HrTimeCloseSnapshot
+from hr_time.public import (
+    TimeCloseEvidenceUnavailable,
+    _verify_v2_snapshot,
+    get_closed_time_period_evidence,
+)
 from hr_time.services.close_service import CloseService
 
 
@@ -53,6 +58,20 @@ class CloseSnapshotContractTests(TestCase):
 
         basis = HrPayrollTimeBasis.objects.get(close_snapshot=snapshot, staff_master_id=9001)
         self.assertEqual(basis.regular_work_minutes, 480)
+        evidence = get_closed_time_period_evidence(
+            tenant_id=71,
+            start_date=self.period.start_date,
+            end_date=self.period.end_date,
+        )
+        self.assertEqual(evidence.snapshot_hash, snapshot.close_summary_json["snapshotHash"])
+
+        snapshot.close_summary_json = {
+            **snapshot.close_summary_json,
+            "basisHash": "0" * 64,
+        }
+        with self.assertRaises(TimeCloseEvidenceUnavailable) as exc:
+            _verify_v2_snapshot(snapshot)
+        self.assertEqual(exc.exception.code, "TIME_CLOSE_SNAPSHOT_INTEGRITY_INVALID")
 
     def test_closed_snapshot_and_payroll_basis_reject_model_and_queryset_tamper(self):
         snapshot = CloseService.close(tenant_id=71, period=self.period)

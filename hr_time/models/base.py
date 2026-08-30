@@ -10,6 +10,7 @@ HR11 抽象基类。
 """
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -40,3 +41,36 @@ class TimeTenantModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class AppendOnlyLedgerQuerySet(models.QuerySet):
+    """Ledger rows are evidence: corrections are new reversal rows, never rewrites."""
+
+    def update(self, **kwargs):
+        raise ValidationError(_("账本记录 append-only，禁止批量修改；请追加冲正记录"))
+
+    def delete(self):
+        raise ValidationError(_("账本记录 append-only，禁止批量删除"))
+
+
+class AppendOnlyLedgerManager(models.Manager):
+    def get_queryset(self):
+        return AppendOnlyLedgerQuerySet(self.model, using=self._db)
+
+
+class AppendOnlyLedgerModel(TimeTenantModel):
+    """Shared model-layer seal for HR11 time/leave/comp-time ledgers."""
+
+    objects = AppendOnlyLedgerManager()
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if self.pk and self.__class__._base_manager.filter(pk=self.pk).exists():
+            raise ValidationError(_("账本记录不可修改；请追加冲正记录"))
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("账本记录 append-only，禁止删除"))

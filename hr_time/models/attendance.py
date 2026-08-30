@@ -20,7 +20,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from hr_time.enums import AttendanceStatus
-from hr_time.models.base import TimeTenantModel
+from hr_time.models.base import AppendOnlyLedgerModel, TimeTenantModel
 
 
 # 考勤事实字段（finalized 后禁改；finalized 字段本身由 service 控制）
@@ -168,7 +168,7 @@ class HrAttendanceDayFact(TimeTenantModel):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.business_date} {self.status}"
 
 
-class HrTimeBalanceLedger(TimeTenantModel):
+class HrTimeBalanceLedger(AppendOnlyLedgerModel):
     """工时账户 Ledger（§64）。余额 = ledger 求和，禁止只存 running total。"""
 
     ACCOUNT_TYPE = [
@@ -214,6 +214,14 @@ class HrTimeBalanceLedger(TimeTenantModel):
             raise ValidationError(_("ledger 条目 credit/debit 不能同时为 0"))
         if self.credit_minutes > 0 and self.debit_minutes > 0:
             raise ValidationError(_("ledger 条目不允许同一条目同时有 credit 和 debit"))
+        if self.reversal_of_id:
+            reversal = self.reversal_of
+            if reversal.tenant_id != self.tenant_id:
+                raise ValidationError(_("冲正记录与原记录必须属于同一租户"))
+            if reversal.staff_master_id != self.staff_master_id:
+                raise ValidationError(_("冲正记录与原记录必须属于同一人员"))
+            if reversal.account_type != self.account_type:
+                raise ValidationError(_("冲正记录与原记录必须属于同一账户"))
 
     def __str__(self):
         sign = "+" if self.credit_minutes else "-"

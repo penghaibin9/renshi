@@ -15,6 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
 from hr_time.enums import PolicyStatus
 from hr_time.models.policy import HrTimePolicyPack, HrTimePolicyVersion
 
@@ -83,6 +84,18 @@ class PolicyService:
         )
         pack.current_version_id = version.id
         pack.save(update_fields=["current_version_id", "updated_at"])
+        emit_registered_event(
+            tenant_id=version.tenant_id,
+            event_name="hr.time.policy.published",
+            correlation_id=f"hr11-policy:{version.id}:{version.version_no}",
+            payload={
+                "policyPackId": pack.id,
+                "policyVersionId": version.id,
+                "versionNo": version.version_no,
+                "contentHash": version.content_hash,
+                "effectiveFrom": version.effective_from.isoformat(),
+            },
+        )
         return version
 
     @staticmethod

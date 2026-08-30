@@ -16,10 +16,12 @@ from hr_time.api.workbench import (
     close_action,
     exception_action,
     overtime_action,
+    overtime_fact_action,
 )
 from hr_time.models import (
     HrAttendanceException,
     HrOvertimeRequest,
+    HrOvertimeFact,
     HrTimeClosePeriod,
     HrTimeCloseSnapshot,
     HrWorkCalendar,
@@ -112,10 +114,12 @@ class Hr11WorkbenchTenantAndLifecycleTests(TestCase):
             tenant_id=802, code="FOREIGN-CAL", name="其他学校日历"
         )
         local_version = HrWorkCalendarVersion.objects.create(
-            tenant_id=801, calendar=local_calendar, year=2026, version_no=1, status="PUBLISHED"
+            tenant_id=801, calendar=local_calendar, year=2026, version_no=1,
+            status="PUBLISHED", published_at=timezone.now(), content_hash="a" * 64,
         )
         foreign_version = HrWorkCalendarVersion.objects.create(
-            tenant_id=802, calendar=foreign_calendar, year=2026, version_no=1, status="PUBLISHED"
+            tenant_id=802, calendar=foreign_calendar, year=2026, version_no=1,
+            status="PUBLISHED", published_at=timezone.now(), content_hash="b" * 64,
         )
         response = self.call_for_tenant(
             801,
@@ -196,6 +200,59 @@ class Hr11WorkbenchTenantAndLifecycleTests(TestCase):
         foreign.refresh_from_db()
         self.assertEqual(local.status, "APPROVED")
         self.assertEqual(foreign.status, "SUBMITTED")
+
+    def test_overtime_fact_verification_is_tenant_scoped_and_sealed(self):
+        now = timezone.now()
+        local = HrOvertimeFact.objects.create(
+            tenant_id=801,
+            staff_master_id=101,
+            actual_start_at=now,
+            actual_end_at=now + timedelta(hours=2),
+            actual_minutes=120,
+            eligible_minutes=90,
+        )
+        foreign = HrOvertimeFact.objects.create(
+            tenant_id=802,
+            staff_master_id=202,
+            actual_start_at=now,
+            actual_end_at=now + timedelta(hours=1),
+            actual_minutes=60,
+            eligible_minutes=60,
+        )
+        response = self.call_for_tenant(
+            801,
+            overtime_fact_action,
+            self.request(
+                f"/api/v1/hr/time/overtime-facts/{local.id}/verify",
+                {
+                    "settlementMode": "COMP_TIME",
+                    "evidenceSource": "attendance-pair:801-101",
+                    "idempotencyKey": "workspace-ot-verify-1",
+                },
+            ),
+            local.id,
+            "verify",
+        )
+        self.assertEqual(response.status_code, 200)
+        local.refresh_from_db()
+        self.assertEqual(local.verification_status, "VERIFIED")
+        self.assertTrue(local.verify_receipt())
+
+        response = self.call_for_tenant(
+            801,
+            overtime_fact_action,
+            self.request(
+                f"/api/v1/hr/time/overtime-facts/{foreign.id}/verify",
+                {
+                    "settlementMode": "COMP_TIME",
+                    "evidenceSource": "foreign",
+                    "idempotencyKey": "workspace-ot-verify-foreign",
+                },
+            ),
+            foreign.id,
+            "verify",
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_close_action_creates_real_snapshot_and_rejects_foreign_period(self):
         today = timezone.localdate()

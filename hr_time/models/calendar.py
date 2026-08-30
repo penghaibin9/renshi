@@ -109,6 +109,26 @@ class HrWorkCalendarVersion(TimeTenantModel):
     def __str__(self):
         return f"[{self.tenant_id}] {self.calendar.code} {self.year} v{self.version_no} ({self.status})"
 
+    def save(self, *args, **kwargs):
+        if self.calendar_id and self.calendar.tenant_id != self.tenant_id:
+            raise ValidationError(_("日历版本与日历必须属于同一租户"))
+        if self.pk:
+            old = HrWorkCalendarVersion._base_manager.filter(pk=self.pk).first()
+            if old and old.status in {"PUBLISHED", "SUPERSEDED"}:
+                immutable = (
+                    "tenant_id", "calendar_id", "year", "version_no", "source_type",
+                    "source_ref", "published_at", "published_by_id", "content_hash",
+                    "supersedes_version_id",
+                )
+                if any(getattr(old, field) != getattr(self, field) for field in immutable):
+                    raise ValidationError(_("已发布日历版本不可修改；请创建新版本"))
+                if not (
+                    self.status == old.status
+                    or (old.status == "PUBLISHED" and self.status == "SUPERSEDED")
+                ):
+                    raise ValidationError(_("日历版本状态转换非法"))
+        super().save(*args, **kwargs)
+
 
 class HrCalendarDay(TimeTenantModel):
     """日历日（属于版本；一天在版本内唯一）。"""
@@ -156,6 +176,20 @@ class HrCalendarDay(TimeTenantModel):
         # 法定节假日编码应与 day_type 一致
         if self.day_type == CalendarDayType.STATUTORY_HOLIDAY and not self.statutory_holiday_code:
             raise ValidationError(_("法定节假日必须填写 statutory_holiday_code"))
+        if self.calendar_version_id:
+            if self.calendar_version.tenant_id != self.tenant_id:
+                raise ValidationError(_("日历日与日历版本必须属于同一租户"))
+            if self.calendar_version.status != "DRAFT":
+                raise ValidationError(_("已发布日历版本的日历日不可修改"))
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.calendar_version.status != "DRAFT":
+            raise ValidationError(_("已发布日历版本的日历日不可删除"))
+        super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.calendar_version.calendar.code} {self.date} {self.get_day_type_display()}"

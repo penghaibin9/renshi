@@ -11,6 +11,7 @@ HR11-S6 验收测试：
 
 from datetime import date, datetime, timezone as dt_tz
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
@@ -109,11 +110,21 @@ class OvertimeEvaluationTests(TestCase):
 
 class CompTimeTests(TestCase):
     def setUp(self):
+        self.verifier = get_user_model().objects.create_user(username="hr11-ot-verifier")
         self.fact = OvertimeService.evaluate_overtime(
             tenant_id=1, staff_master_id=100,
             actual_start_at=dt(18), actual_end_at=dt(21),
             approved_window_start=dt(18), approved_window_end=dt(21),
             eligible_policy_minutes=180,
+        )
+
+    def _verify(self, fact=None, *, key="ot-verify-1"):
+        return OvertimeService.verify(
+            fact=fact or self.fact,
+            actor_user=self.verifier,
+            settlement_mode=OvertimeSettlementMode.COMP_TIME,
+            evidence_source="attendance-pair:verified",
+            idempotency_key=key,
         )
 
     def test_unverified_rejected(self):
@@ -123,8 +134,7 @@ class CompTimeTests(TestCase):
             )
 
     def test_verified_credit(self):
-        self.fact.verification_status = "VERIFIED"
-        self.fact.save()
+        self.fact = self._verify()
         entry = OvertimeService.verify_and_credit_comp_time(
             fact=self.fact, account_year=2026
         )
@@ -135,25 +145,49 @@ class CompTimeTests(TestCase):
             tenant_id=1, staff_master_id=100, account_year=2026
         )
         self.assertEqual(account.status, "ACTIVE")
+        replay = OvertimeService.verify_and_credit_comp_time(
+            fact=self.fact, account_year=2026
+        )
+        self.assertEqual(replay.id, entry.id)
 
     def test_zero_eligible_rejected(self):
-        self.fact.verification_status = "VERIFIED"
-        self.fact.eligible_minutes = 0
-        self.fact.save()
+        zero_fact = OvertimeService.evaluate_overtime(
+            tenant_id=1,
+            staff_master_id=100,
+            actual_start_at=dt(9),
+            actual_end_at=dt(10),
+            approved_window_start=dt(18),
+            approved_window_end=dt(19),
+            eligible_policy_minutes=60,
+        )
+        zero_fact = self._verify(zero_fact, key="ot-verify-zero")
         with self.assertRaises(OvertimeServiceError):
             OvertimeService.verify_and_credit_comp_time(
-                fact=self.fact, account_year=2026
+                fact=zero_fact, account_year=2026
             )
 
     def test_balance_accumulates(self):
-        self.fact.verification_status = "VERIFIED"
-        self.fact.save()
+        self.fact = self._verify()
         OvertimeService.verify_and_credit_comp_time(fact=self.fact, account_year=2026)
-        fact2 = HrOvertimeFact.objects.create(
-            tenant_id=1, staff_master_id=100,
-            actual_start_at=dt(18), actual_end_at=dt(20),
-            actual_minutes=120, eligible_minutes=120,
-            verification_status="VERIFIED",
+        fact2 = OvertimeService.evaluate_overtime(
+            tenant_id=1,
+            staff_master_id=100,
+            actual_start_at=dt(18),
+            actual_end_at=dt(20),
+            approved_window_start=dt(18),
+            approved_window_end=dt(20),
+            eligible_policy_minutes=120,
         )
+        fact2 = self._verify(fact2, key="ot-verify-2")
         entry2 = OvertimeService.verify_and_credit_comp_time(fact=fact2, account_year=2026)
         self.assertEqual(entry2.balance_after, 300)
+
+    def test_verification_is_attributable_and_idempotent(self):
+        verified = self._verify()
+        replay = self._verify()
+        self.assertEqual(replay.id, verified.id)
+        self.assertTrue(verified.verify_receipt())
+        self.assertEqual(verified.verified_by_id, self.verifier.id)
+        with self.assertRaises(ValidationError):
+            verified.eligible_minutes = 1
+            verified.save()

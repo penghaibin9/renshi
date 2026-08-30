@@ -190,7 +190,7 @@ class CloseService:
 
         # 事实（一次性物化，避免多次查询）；月结后将期间内事实置为终态（硬闸门）
         facts = list(
-            HrAttendanceDayFact.objects.filter(
+            HrAttendanceDayFact.objects.select_for_update().filter(
                 tenant_id=tenant_id,
                 business_date__range=(period.start_date, period.end_date),
             ).order_by("staff_master_id", "business_date")
@@ -215,7 +215,7 @@ class CloseService:
             for f in facts
         ]
         absences = list(
-            HrAbsenceFact.objects.filter(
+            HrAbsenceFact.objects.select_for_update().filter(
                 tenant_id=tenant_id,
                 start_at__lte=period.end_date,
                 end_at__gte=period.start_date,
@@ -238,7 +238,7 @@ class CloseService:
             for item in absences
         ]
         leave_ledger_entries = list(
-            HrLeaveLedgerEntry.objects.filter(
+            HrLeaveLedgerEntry.objects.select_for_update().filter(
                 tenant_id=tenant_id,
                 effective_date__range=(period.start_date, period.end_date),
             )
@@ -262,7 +262,7 @@ class CloseService:
             for item in leave_ledger_entries
         ]
         overtime_facts = list(
-            HrOvertimeFact.objects.filter(
+            HrOvertimeFact.objects.select_for_update().filter(
                 tenant_id=tenant_id,
                 actual_start_at__date__lte=period.end_date,
                 actual_end_at__date__gte=period.start_date,
@@ -425,12 +425,8 @@ class CloseService:
             batch_size=500,
         )
 
-        # 冻结：期间内事实置终态（月结硬闸门；评估器/delete/update 均被模型层拒绝）
-        HrAttendanceDayFact.objects.filter(
-            tenant_id=tenant_id,
-            business_date__range=(period.start_date, period.end_date),
-        ).update(finalized=True)
-
+        # 先在同一事务内封印期间与新快照关系，再冻结日事实。MySQL 日事实
+        # 触发器据此只接受由 CLOSED 期间覆盖的 finalize，事务提交前外部不可见。
         period.status = "CLOSED"
         period.close_rule_version = close_rule_version
         period.closed_at = closed_at
@@ -446,6 +442,36 @@ class CloseService:
                 "snapshot_id",
                 "updated_at",
             ]
+        )
+        HrAttendanceDayFact.objects.filter(
+            tenant_id=tenant_id,
+            business_date__range=(period.start_date, period.end_date),
+        ).update(finalized=True)
+
+        correlation_id = f"hr11-close:{period.id}:{snapshot.id}"
+        emit_registered_event(
+            tenant_id=tenant_id,
+            event_name="hr.time.attendance_fact.finalized",
+            correlation_id=correlation_id,
+            payload={
+                "periodId": period.id,
+                "closeSnapshotId": snapshot.id,
+                "attendanceFactCount": len(facts),
+                "attendanceFactHash": attendance_hash,
+            },
+        )
+        emit_registered_event(
+            tenant_id=tenant_id,
+            event_name="hr.time.time_close.closed",
+            correlation_id=correlation_id,
+            payload={
+                "periodId": period.id,
+                "closeSnapshotId": snapshot.id,
+                "startDate": period.start_date.isoformat(),
+                "endDate": period.end_date.isoformat(),
+                "snapshotHash": summary["snapshotHash"],
+                "basisHash": summary["basisHash"],
+            },
         )
 
         # 逾期风险：CLOSE_OVERDUE 清理（已关闭则消除）
@@ -595,13 +621,14 @@ class CloseService:
             update_fields=["status", "approved_by", "approved_at", "audit", "updated_at"]
         )
 
-        # 审批成功后才解冻；更正后 reclose 会重新冻结并生成新快照。
+        # 先把期间置 REOPENED 并保存批准批次，再解冻日事实；数据库触发器
+        # 只允许存在同期间 APPROVED 批次时执行这次 finalized True→False。
+        period.status = "REOPENED"
+        period.save(update_fields=["status", "updated_at"])
         HrAttendanceDayFact.objects.filter(
             tenant_id=tenant_id,
             business_date__range=(period.start_date, period.end_date),
         ).update(finalized=False)
-        period.status = "REOPENED"
-        period.save(update_fields=["status", "updated_at"])
         emit_registered_event(
             tenant_id=tenant_id,
             event_name="hr.time.time_close.reopen_approved",
@@ -640,6 +667,20 @@ class CloseService:
             period=period,
             batch=batch,
         )
+        period = HrTimeClosePeriod.objects.select_for_update().filter(
+            id=period.id,
+            tenant_id=tenant_id,
+        ).first()
+        batch = HrTimeCorrectionBatch.objects.select_for_update().filter(
+            id=batch.id,
+            tenant_id=tenant_id,
+            period=period,
+        ).first()
+        if period is None or batch is None:
+            raise CloseServiceError(
+                "CROSS_TENANT_REFERENCE",
+                "更正批次不属于当前 tenant/period",
+            )
         if batch.status != HrTimeCorrectionBatch.Status.APPROVED:
             raise CloseServiceError(
                 "REOPEN_APPROVAL_REQUIRED",

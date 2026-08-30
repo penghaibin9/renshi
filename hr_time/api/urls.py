@@ -21,6 +21,7 @@ urlpatterns = [
     path("api/hr/v1/time/exceptions/<int:exception_id>/<str:action>", workbench.exception_action, name="hr11-exception-action"),
     path("api/hr/v1/time/leaves/<int:leave_id>/<str:action>", workbench.leave_action, name="hr11-leave-action"),
     path("api/hr/v1/time/overtime/<int:overtime_id>/<str:action>", workbench.overtime_action, name="hr11-overtime-action"),
+    path("api/hr/v1/time/overtime-facts/<int:fact_id>/<str:action>", workbench.overtime_fact_action, name="hr11-overtime-fact-action"),
     path("api/hr/v1/time/close-periods/<int:period_id>/<str:action>", workbench.close_action, name="hr11-close-action"),
     path("api/hr/v1/time/risks/<int:risk_id>/<str:action>", workbench.risk_action, name="hr11-risk-action"),
 ]

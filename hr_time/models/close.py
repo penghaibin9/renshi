@@ -104,9 +104,27 @@ class HrTimeClosePeriod(TimeTenantModel):
         super().clean()
         if self.end_date < self.start_date:
             raise ValidationError(_("结束日期早于开始日期"))
+        if self.tenant_id and self.start_date and self.end_date:
+            overlap = HrTimeClosePeriod.objects.filter(
+                tenant_id=self.tenant_id,
+                start_date__lte=self.end_date,
+                end_date__gte=self.start_date,
+            ).exclude(pk=self.pk)
+            if overlap.exists():
+                raise ValidationError(_("同一租户的月结期间不得重叠"))
 
     def save(self, *args, **kwargs):
         self.clean()
+        if self.pk:
+            old = HrTimeClosePeriod._base_manager.filter(pk=self.pk).first()
+            transitions = {
+                "OPEN": {"OPEN", "PRE_CLOSE", "CLOSED"},
+                "PRE_CLOSE": {"PRE_CLOSE", "OPEN", "CLOSED"},
+                "CLOSED": {"CLOSED", "REOPENED"},
+                "REOPENED": {"REOPENED", "CLOSED"},
+            }
+            if old and self.status not in transitions.get(old.status, set()):
+                raise ValidationError(_("月结期间状态转换非法"))
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -140,6 +158,8 @@ class HrTimeCloseSnapshot(TimeTenantModel):
     def save(self, *args, **kwargs):
         if self.pk and HrTimeCloseSnapshot._base_manager.filter(pk=self.pk).exists():
             raise ValidationError(_("月结快照不可修改；重开后必须生成新快照"))
+        if self.period_id and self.period.tenant_id != self.tenant_id:
+            raise ValidationError(_("月结快照与期间必须属于同一租户"))
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -202,6 +222,15 @@ class HrTimeCorrectionBatch(TimeTenantModel):
     def __str__(self):
         return f"[{self.tenant_id}] period={self.period_id} batch={self.pk}"
 
+    def clean(self):
+        super().clean()
+        if self.period_id and self.period.tenant_id != self.tenant_id:
+            raise ValidationError(_("更正批次与期间必须属于同一租户"))
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class HrPayrollTimeBasis(TimeTenantModel):
     """HR15 时间基础（§119）：不包含工资金额。"""
@@ -236,6 +265,11 @@ class HrPayrollTimeBasis(TimeTenantModel):
     def save(self, *args, **kwargs):
         if self.pk and HrPayrollTimeBasis._base_manager.filter(pk=self.pk).exists():
             raise ValidationError(_("已生成的 Payroll basis 不可修改"))
+        if self.close_snapshot_id:
+            if self.close_snapshot.tenant_id != self.tenant_id:
+                raise ValidationError(_("Payroll basis 与快照必须属于同一租户"))
+            if self.close_snapshot.period.tenant_id != self.tenant_id:
+                raise ValidationError(_("Payroll basis 的期间租户不一致"))
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):

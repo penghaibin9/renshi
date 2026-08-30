@@ -32,9 +32,11 @@ from hr_time.models.attendance import (
     HrTimeSheetPeriod,
 )
 from hr_time.models.calendar import HrCalendarDay, HrWorkCalendar, HrWorkCalendarVersion
+from hr_time.models.close import HrTimeClosePeriod
 from hr_time.models.event import HrRawTimeEvent, HrTimeEventPair, HrTimeEventSource
 from hr_time.models.schedule import HrShiftDefinition, HrShiftVersion
 from hr_time.services.calendar_service import CalendarService
+from hr_time.services.close_service import CloseService
 from hr_time.services.evaluator import AttendanceEvaluator, EvaluatorError
 
 D = date(2026, 8, 9)
@@ -168,8 +170,12 @@ class EvaluatorTests(TestCase):
         # 月结冻结（finalized）后评估器一律拒绝覆盖，force 也不能解锁（须走 Reopen/Correction）
         HrAttendanceDayFact.objects.create(
             tenant_id=1, staff_master_id=100, business_date=D,
-            status=AttendanceStatus.PRESENT, finalized=True,
+            status=AttendanceStatus.PRESENT,
         )
+        period = HrTimeClosePeriod.objects.create(
+            tenant_id=1, start_date=D, end_date=D, period_type="CUSTOM"
+        )
+        CloseService.close(tenant_id=1, period=period)
         with self.assertRaises(EvaluatorError):
             AttendanceEvaluator.evaluate_day(
                 tenant_id=1, staff_master_id=100, business_date=D,
@@ -190,6 +196,40 @@ class EvaluatorTests(TestCase):
         )
         self.assertEqual(result.created, False)
         self.assertEqual(result.fact.evaluation_version, 2)
+
+    def test_force_recompute_appends_ledger_adjustments(self):
+        shift = HrShiftDefinition.objects.create(tenant_id=1, code="DAY", name="白班")
+        shift_ver = HrShiftVersion.objects.create(
+            tenant_id=1, shift=shift, version_no=1,
+            start_time=time(9, 0), end_time=time(18, 0),
+            standard_minutes=480, effective_from=D,
+        )
+        first = AttendanceEvaluator.evaluate_day(
+            tenant_id=1, staff_master_id=100, business_date=D,
+            shift_version_id=shift_ver.id,
+        )
+        self.assertEqual(first.fact.credited_minutes, 0)
+        in_at = datetime(2026, 8, 9, 9, 0, tzinfo=dt_tz.utc)
+        out_at = datetime(2026, 8, 9, 13, 0, tzinfo=dt_tz.utc)
+        make_pair(1, 100, in_at, out_at, self.source)
+
+        second = AttendanceEvaluator.evaluate_day(
+            tenant_id=1, staff_master_id=100, business_date=D,
+            shift_version_id=shift_ver.id, force=True,
+        )
+
+        work_adjust = HrTimeBalanceLedger.objects.get(
+            tenant_id=1, staff_master_id=100, account_type="WORK_HOURS",
+            source_type="ADJUST",
+        )
+        pending_adjust = HrTimeBalanceLedger.objects.get(
+            tenant_id=1, staff_master_id=100, account_type="PENDING",
+            source_type="ADJUST",
+        )
+        self.assertEqual(second.fact.evaluation_version, 2)
+        self.assertEqual(work_adjust.credit_minutes, 240)
+        self.assertEqual(pending_adjust.credit_minutes, 240)
+        self.assertEqual(work_adjust.source_id, f"dayfact:{second.fact.id}:v2")
 
     def test_ledger_created_for_credited_and_pending(self):
         shift = HrShiftDefinition.objects.create(tenant_id=1, code="DAY", name="白班")

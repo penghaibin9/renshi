@@ -255,6 +255,8 @@ class HrTimePolicyVersion(TimeTenantModel):
                 old = HrTimePolicyVersion.objects.get(pk=self.pk)
             except HrTimePolicyVersion.DoesNotExist:
                 old = None
+            if old is not None and old.status == PolicyStatus.RETIRED:
+                raise ValidationError(_("已退役版本不可修改"))
             if old is not None and old.status == PolicyStatus.PUBLISHED:
                 if old.status != self.status:
                     # 状态变更受控：仅允许 RETIRED（退役），不允许改回 DRAFT
@@ -274,6 +276,10 @@ class HrTimePolicyVersion(TimeTenantModel):
                     )
                 # 内容未变则保持原 hash
                 self.content_hash = old.content_hash
+        if self.policy_pack_id and self.policy_pack.tenant_id != self.tenant_id:
+            raise ValidationError(_("时间政策版本与政策包必须属于同一租户"))
+        if self.recording_profile_id and self.recording_profile.tenant_id != self.tenant_id:
+            raise ValidationError(_("时间政策版本与记录方式必须属于同一租户"))
         super().save(*args, **kwargs)
 
     def __str__(self):

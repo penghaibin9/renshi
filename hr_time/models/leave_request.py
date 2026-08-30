@@ -27,6 +27,23 @@ from hr_time.models.base import TimeTenantModel
 from hr_time.models.leave import HrLeaveAccount, HrLeaveLedgerEntry, HrLeaveType
 
 
+class ImmutableAbsenceQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if self.exists():
+            raise ValidationError(_("正式缺勤事实不可修改；请追加更正事实"))
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.exists():
+            raise ValidationError(_("正式缺勤事实不可删除"))
+        return super().delete()
+
+
+class ImmutableAbsenceManager(models.Manager):
+    def get_queryset(self):
+        return ImmutableAbsenceQuerySet(self.model, using=self._db)
+
+
 class HrLeaveRequest(TimeTenantModel):
     """请假申请（§98）。"""
 
@@ -103,6 +120,15 @@ class HrLeaveRequest(TimeTenantModel):
         super().clean()
         if self.end_at < self.start_at:
             raise ValidationError(_("结束日期早于开始日期"))
+        if self.leave_type_id and self.leave_type.tenant_id != self.tenant_id:
+            raise ValidationError(_("请假申请与假别必须属于同一租户"))
+        if self.account_id:
+            if self.account.tenant_id != self.tenant_id:
+                raise ValidationError(_("请假申请与账户必须属于同一租户"))
+            if self.account.staff_master_id != self.staff_master_id:
+                raise ValidationError(_("请假申请与账户必须属于同一人员"))
+            if self.account.leave_type_id != self.leave_type_id:
+                raise ValidationError(_("请假申请与账户必须属于同一假别"))
 
     def save(self, *args, **kwargs):
         self.clean()
@@ -132,9 +158,20 @@ class HrLeaveApprovalSnapshot(TimeTenantModel):
     def __str__(self):
         return f"[{self.tenant_id}] request={self.leave_request_id} v{self.workflow_version}"
 
+    def clean(self):
+        super().clean()
+        if self.leave_request_id and self.leave_request.tenant_id != self.tenant_id:
+            raise ValidationError(_("审批快照与请假申请必须属于同一租户"))
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class HrAbsenceFact(TimeTenantModel):
     """缺勤事实（§107）：独立于打卡，Time Card 只是展示/投影。"""
+
+    objects = ImmutableAbsenceManager()
 
     leave_request = models.ForeignKey(
         HrLeaveRequest, on_delete=models.PROTECT, related_name="absence_facts"
@@ -179,9 +216,32 @@ class HrAbsenceFact(TimeTenantModel):
                 name="hr11_absfact_ten_staff_start",
             ),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "leave_request", "fact_version"],
+                name="uniq_hr11_absence_fact_ver",
+            ),
+        ]
 
     def __str__(self):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.start_at}~{self.end_at}"
+
+    def clean(self):
+        super().clean()
+        if self.leave_request_id:
+            if self.leave_request.tenant_id != self.tenant_id:
+                raise ValidationError(_("缺勤事实与请假申请必须属于同一租户"))
+            if self.leave_request.staff_master_id != self.staff_master_id:
+                raise ValidationError(_("缺勤事实与请假申请必须属于同一人员"))
+
+    def save(self, *args, **kwargs):
+        if self.pk and HrAbsenceFact._base_manager.filter(pk=self.pk).exists():
+            raise ValidationError(_("正式缺勤事实不可修改；请追加更正事实"))
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("正式缺勤事实不可删除"))
 
 
 class HrReturnFromLeaveCase(TimeTenantModel):
@@ -207,6 +267,15 @@ class HrReturnFromLeaveCase(TimeTenantModel):
 
     def __str__(self):
         return f"[{self.tenant_id}] request={self.leave_request_id} return={self.actual_return_at}"
+
+    def clean(self):
+        super().clean()
+        if self.leave_request_id and self.leave_request.tenant_id != self.tenant_id:
+            raise ValidationError(_("销假案件与请假申请必须属于同一租户"))
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class HrLeaveEvidence(TimeTenantModel):
@@ -250,3 +319,12 @@ class HrLeaveEvidence(TimeTenantModel):
 
     def __str__(self):
         return f"[{self.tenant_id}] request={self.leave_request_id} {self.evidence_type}"
+
+    def clean(self):
+        super().clean()
+        if self.leave_request_id and self.leave_request.tenant_id != self.tenant_id:
+            raise ValidationError(_("请假证明与请假申请必须属于同一租户"))
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)

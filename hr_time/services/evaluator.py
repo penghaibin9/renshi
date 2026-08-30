@@ -23,13 +23,14 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
-from django.db import transaction
+from django.db import models, transaction
 
 from hr_time.enums import AttendanceStatus, PairingStatus
 from hr_time.models.attendance import HrAttendanceDayFact, HrTimeBalanceLedger
 from hr_time.models.calendar import HrCalendarDay
 from hr_time.models.event import HrTimeEventPair
 from hr_time.models.schedule import HrScheduleAssignment, HrShiftVersion
+from hr_time.services.period_guard import PeriodWriteBlocked, lock_writable_periods
 
 
 class EvaluatorError(Exception):
@@ -66,7 +67,51 @@ class AttendanceEvaluator:
         ).first()
         return cal_day.expected_work_minutes if cal_day else 0
 
+    @staticmethod
+    def _ledger_balance(*, tenant_id: int, staff_master_id: int, account_type: str) -> int:
+        """Return the authoritative balance from immutable rows, not a cached total."""
+        totals = HrTimeBalanceLedger.objects.filter(
+            tenant_id=tenant_id,
+            staff_master_id=staff_master_id,
+            account_type=account_type,
+        ).aggregate(
+            credits=models.Sum("credit_minutes"),
+            debits=models.Sum("debit_minutes"),
+        )
+        return int(totals["credits"] or 0) - int(totals["debits"] or 0)
+
     @classmethod
+    def _append_adjustment(
+        cls,
+        *,
+        tenant_id: int,
+        staff_master_id: int,
+        account_type: str,
+        delta: int,
+        fact: HrAttendanceDayFact,
+        business_date: date,
+    ) -> None:
+        if delta == 0:
+            return
+        balance_before = cls._ledger_balance(
+            tenant_id=tenant_id,
+            staff_master_id=staff_master_id,
+            account_type=account_type,
+        )
+        HrTimeBalanceLedger.objects.create(
+            tenant_id=tenant_id,
+            staff_master_id=staff_master_id,
+            account_type=account_type,
+            credit_minutes=max(delta, 0),
+            debit_minutes=max(-delta, 0),
+            source_type="ADJUST",
+            source_id=f"dayfact:{fact.id}:v{fact.evaluation_version}",
+            effective_date=business_date,
+            balance_after=balance_before + delta,
+        )
+
+    @classmethod
+    @transaction.atomic
     def evaluate_day(
         cls,
         *,
@@ -87,16 +132,33 @@ class AttendanceEvaluator:
           月结后更正必须走 S9 Reopen → Correction → reclose 流程。
         - force=True 且已存在非 finalized 事实时允许重算（version+1）。
         """
-        existing = HrAttendanceDayFact.objects.filter(
-            tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
-            business_date=business_date,
-        ).first()
+        try:
+            lock_writable_periods(
+                tenant_id=tenant_id,
+                start_date=business_date,
+                end_date=business_date,
+            )
+        except PeriodWriteBlocked as exc:
+            raise EvaluatorError("ATTENDANCE_PERIOD_CLOSED", str(exc)) from exc
+        existing = (
+            HrAttendanceDayFact.objects.select_for_update()
+            .filter(
+                tenant_id=tenant_id,
+                staff_master_id=staff_master_id,
+                business_date=business_date,
+            )
+            .first()
+        )
 
         if existing is not None and existing.finalized:
             raise EvaluatorError(
                 "ATTENDANCE_PERIOD_CLOSED",
                 "当日考勤事实已月结冻结，禁止覆盖；请走 Reopen/Correction 流程",
+            )
+        if existing is not None and not force:
+            raise EvaluatorError(
+                "VERSION_CONFLICT",
+                "当日事实已存在；重算必须显式 force=True 并保留新版本审计",
             )
 
         # 收集当日配对事件（一次性求值，避免 QuerySet 双重查询）
@@ -174,6 +236,8 @@ class AttendanceEvaluator:
                 )
                 created = True
             else:
+                previous_credited = existing.credited_minutes
+                previous_pending = max(0, existing.expected_minutes - existing.actual_minutes)
                 existing.actual_minutes = actual_minutes
                 existing.credited_minutes = (
                     min(actual_minutes, expected_minutes) if expected_minutes else actual_minutes
@@ -191,28 +255,59 @@ class AttendanceEvaluator:
 
             # 写工时 Ledger（credit=credited；若实际 < 期望，写 PENDING debit 差额）
             if created:
-                HrTimeBalanceLedger.objects.create(
-                    tenant_id=tenant_id,
-                    staff_master_id=staff_master_id,
-                    account_type="WORK_HOURS",
-                    credit_minutes=fact.credited_minutes,
-                    debit_minutes=0,
-                    source_type="ATTENDANCE_DAY_FACT",
-                    source_id=f"dayfact:{fact.id}",
-                    effective_date=business_date,
-                    balance_after=fact.credited_minutes,
-                )
+                if fact.credited_minutes:
+                    work_balance = cls._ledger_balance(
+                        tenant_id=tenant_id,
+                        staff_master_id=staff_master_id,
+                        account_type="WORK_HOURS",
+                    )
+                    HrTimeBalanceLedger.objects.create(
+                        tenant_id=tenant_id,
+                        staff_master_id=staff_master_id,
+                        account_type="WORK_HOURS",
+                        credit_minutes=fact.credited_minutes,
+                        debit_minutes=0,
+                        source_type="ATTENDANCE_DAY_FACT",
+                        source_id=f"dayfact:{fact.id}",
+                        effective_date=business_date,
+                        balance_after=work_balance + fact.credited_minutes,
+                    )
                 if expected_minutes > actual_minutes:
+                    shortage = expected_minutes - actual_minutes
+                    pending_balance = cls._ledger_balance(
+                        tenant_id=tenant_id,
+                        staff_master_id=staff_master_id,
+                        account_type="PENDING",
+                    )
                     HrTimeBalanceLedger.objects.create(
                         tenant_id=tenant_id,
                         staff_master_id=staff_master_id,
                         account_type="PENDING",
                         credit_minutes=0,
-                        debit_minutes=expected_minutes - actual_minutes,
+                        debit_minutes=shortage,
                         source_type="ATTENDANCE_DAY_FACT",
                         source_id=f"dayfact:{fact.id}",
                         effective_date=business_date,
-                        balance_after=0,
+                        balance_after=pending_balance - shortage,
                     )
+            else:
+                cls._append_adjustment(
+                    tenant_id=tenant_id,
+                    staff_master_id=staff_master_id,
+                    account_type="WORK_HOURS",
+                    delta=fact.credited_minutes - previous_credited,
+                    fact=fact,
+                    business_date=business_date,
+                )
+                # PENDING uses debit as outstanding time. Reducing an old shortage is a credit.
+                current_pending = max(0, expected_minutes - actual_minutes)
+                cls._append_adjustment(
+                    tenant_id=tenant_id,
+                    staff_master_id=staff_master_id,
+                    account_type="PENDING",
+                    delta=previous_pending - current_pending,
+                    fact=fact,
+                    business_date=business_date,
+                )
 
         return EvaluationResult(fact=fact, created=created)

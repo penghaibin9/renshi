@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import hashlib
+import json
+import re
 from uuid import UUID
 
 from hr_staff.models import HrStaffMaster
@@ -18,12 +21,91 @@ from hr_time.models.close import (
 )
 
 PROVIDER_VERSION = "hr11-time-close-v1"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class TimeCloseEvidenceUnavailable(Exception):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
+
+
+def _stable_hash(payload) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _basis_payload(snapshot: HrTimeCloseSnapshot) -> list[dict]:
+    return [
+        {
+            "staffId": row.staff_master_id,
+            "regularWorkMinutes": row.regular_work_minutes,
+            "payableAuthorizedAbsenceMinutes": row.payable_authorized_absence_minutes,
+            "unpaidAbsenceMinutes": row.unpaid_absence_minutes,
+            "verifiedOvertimeMinutes": row.verified_overtime_minutes,
+            "compTimeMinutes": row.comp_time_minutes,
+            "unexcusedAbsenceMinutes": row.unexcused_absence_minutes,
+            "basisVersion": row.basis_version,
+        }
+        for row in HrPayrollTimeBasis.objects.filter(
+            tenant_id=snapshot.tenant_id,
+            close_snapshot=snapshot,
+        ).order_by("staff_master_id", "id")
+    ]
+
+
+def _verify_v2_snapshot(snapshot: HrTimeCloseSnapshot) -> None:
+    """Recompute the seal before any downstream domain is allowed to trust it."""
+    if snapshot.metric_definition_version != "2.0":
+        return
+    summary = dict(snapshot.close_summary_json or {})
+    claimed_snapshot_hash = summary.pop("snapshotHash", "")
+    required_hashes = (
+        snapshot.attendance_fact_hash,
+        snapshot.leave_ledger_hash,
+        snapshot.overtime_fact_hash,
+        claimed_snapshot_hash,
+        summary.get("personnelScopeHash", ""),
+        summary.get("basisHash", ""),
+    )
+    payload = _basis_payload(snapshot)
+    period_payload = summary.get("period") or {}
+    try:
+        basis_row_count = int(summary.get("basisRowCount", -1))
+    except (TypeError, ValueError):
+        basis_row_count = -1
+    valid = (
+        all(_SHA256_RE.fullmatch(str(value or "")) for value in required_hashes)
+        and summary.get("schemaVersion") == "hr11-time-close-snapshot-v2"
+        and period_payload.get("startDate") == snapshot.period.start_date.isoformat()
+        and period_payload.get("endDate") == snapshot.period.end_date.isoformat()
+        and summary.get("basisHash") == _stable_hash(payload)
+        and summary.get("personnelScopeHash")
+        == _stable_hash([item["staffId"] for item in payload])
+        and basis_row_count == len(payload)
+        and snapshot.staff_count == len(payload)
+    )
+    expected_snapshot_hash = _stable_hash(
+        {
+            **summary,
+            "attendanceFactHash": snapshot.attendance_fact_hash,
+            "leaveLedgerHash": snapshot.leave_ledger_hash,
+            "overtimeFactHash": snapshot.overtime_fact_hash,
+            "policyVersions": snapshot.policy_versions,
+            "calendarVersions": snapshot.calendar_versions,
+        }
+    )
+    if not valid or claimed_snapshot_hash != expected_snapshot_hash:
+        raise TimeCloseEvidenceUnavailable(
+            "TIME_CLOSE_SNAPSHOT_INTEGRITY_INVALID",
+            "HR11 close snapshot or payroll basis seal verification failed",
+        )
 
 
 @dataclass(frozen=True)
@@ -162,6 +244,7 @@ def get_closed_time_period_evidence(
             "TIME_CLOSE_SNAPSHOT_INVALID",
             "HR11 active snapshot does not belong to this tenant/period",
         )
+    _verify_v2_snapshot(snapshot)
 
     return TimeCloseEvidence(
         period_id=period.id,

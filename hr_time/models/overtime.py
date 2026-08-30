@@ -17,13 +17,16 @@ S6 异常/补卡/加班（总册 §71-79、§190）。
 - 补卡不 UPDATE 原始事件（走 Correction Case → Fact V2）。
 """
 
+import hashlib
+import json
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from hr_time.enums import ExceptionCode, OvertimeSettlementMode
 from hr_time.models.attendance import HrAttendanceDayFact
-from hr_time.models.base import TimeTenantModel
+from hr_time.models.base import AppendOnlyLedgerModel, TimeTenantModel
 
 
 class HrAttendanceException(TimeTenantModel):
@@ -211,6 +214,17 @@ class HrOvertimeRequest(TimeTenantModel):
 class HrOvertimeFact(TimeTenantModel):
     """加班事实（§77）。可验证的候选/已核验加班。"""
 
+    IMMUTABLE_IDENTITY_FIELDS = (
+        "tenant_id",
+        "request_id",
+        "staff_master_id",
+        "actual_start_at",
+        "actual_end_at",
+        "actual_minutes",
+        "eligible_minutes",
+        "policy_version_id",
+    )
+
     request = models.ForeignKey(
         HrOvertimeRequest,
         on_delete=models.PROTECT,
@@ -239,6 +253,16 @@ class HrOvertimeFact(TimeTenantModel):
         choices=OvertimeSettlementMode.choices,
         default=OvertimeSettlementMode.POLICY_DEPENDENT,
     )
+    verification_receipt_json = models.JSONField(default=dict, blank=True)
+    verification_receipt_hash = models.CharField(max_length=64, blank=True, default="")
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        "horilla_auth.HorillaUser",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     class Meta:
         verbose_name = _("Overtime Fact")
@@ -254,6 +278,69 @@ class HrOvertimeFact(TimeTenantModel):
         super().clean()
         if self.eligible_minutes > self.actual_minutes:
             raise ValidationError(_("可结算时长不能大于实际时长"))
+        if self.request_id:
+            if self.request.tenant_id != self.tenant_id:
+                raise ValidationError(_("加班事实与申请必须属于同一租户"))
+            if self.request.staff_master_id != self.staff_master_id:
+                raise ValidationError(_("加班事实与申请必须属于同一人员"))
+        if self.verification_status == "VERIFIED":
+            if self.settlement_mode == OvertimeSettlementMode.POLICY_DEPENDENT:
+                raise ValidationError(_("已核验加班必须冻结明确结算方式"))
+            if not self.verified_at or not self.verified_by_id:
+                raise ValidationError(_("已核验加班必须记录核验人和核验时间"))
+            if not self.verify_receipt():
+                raise ValidationError(_("加班核验回执哈希无效"))
+
+    def verification_payload(self):
+        return {
+            "tenantId": int(self.tenant_id),
+            "overtimeFactId": int(self.id),
+            "staffMasterId": int(self.staff_master_id),
+            "requestId": int(self.request_id) if self.request_id else None,
+            "actualStartAt": self.actual_start_at.isoformat(),
+            "actualEndAt": self.actual_end_at.isoformat(),
+            "actualMinutes": int(self.actual_minutes),
+            "eligibleMinutes": int(self.eligible_minutes),
+            "policyVersionId": int(self.policy_version_id) if self.policy_version_id else None,
+            "evidenceSource": self.evidence_source,
+            "settlementMode": self.settlement_mode,
+            "verifiedAt": self.verified_at.isoformat() if self.verified_at else None,
+            "verifiedBy": int(self.verified_by_id) if self.verified_by_id else None,
+            "receipt": self.verification_receipt_json or {},
+        }
+
+    def compute_receipt_hash(self):
+        return hashlib.sha256(
+            json.dumps(
+                self.verification_payload(),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+    def verify_receipt(self):
+        return bool(self.verification_receipt_hash) and (
+            self.verification_receipt_hash == self.compute_receipt_hash()
+        )
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            old = HrOvertimeFact._base_manager.filter(pk=self.pk).first()
+            if old and any(
+                getattr(old, field) != getattr(self, field)
+                for field in self.IMMUTABLE_IDENTITY_FIELDS
+            ):
+                raise ValidationError(_("加班事实身份字段不可修改；更正必须追加新事实"))
+            if old and old.verification_status in {"VERIFIED", "REJECTED"}:
+                raise ValidationError(_("终局加班事实不可修改；更正必须追加新事实"))
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.verification_status in {"VERIFIED", "REJECTED"}:
+            raise ValidationError(_("终局加班事实不可删除"))
+        super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.actual_minutes}min {self.verification_status}"
@@ -287,7 +374,7 @@ class HrCompTimeAccount(TimeTenantModel):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.account_year}"
 
 
-class HrCompTimeLedger(TimeTenantModel):
+class HrCompTimeLedger(AppendOnlyLedgerModel):
     """调休 Ledger（§79）。来源必须是 verified overtime fact。"""
 
     account = models.ForeignKey(
@@ -325,6 +412,30 @@ class HrCompTimeLedger(TimeTenantModel):
                 name="hr11_comptime_ledger_date",
             ),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "source_fact", "entry_type"],
+                name="uniq_hr11_comp_fact_entry",
+            ),
+        ]
 
     def __str__(self):
         return f"[{self.tenant_id}] acct={self.account_id} {self.entry_type} {self.minutes}min"
+
+    def clean(self):
+        super().clean()
+        if self.account_id and self.account.tenant_id != self.tenant_id:
+            raise ValidationError(_("调休账本与账户必须属于同一租户"))
+        if self.source_fact_id:
+            if self.source_fact.tenant_id != self.tenant_id:
+                raise ValidationError(_("调休来源事实与账户必须属于同一租户"))
+            if self.source_fact.staff_master_id != self.account.staff_master_id:
+                raise ValidationError(_("调休来源事实与账户必须属于同一人员"))
+            if self.source_fact.verification_status != "VERIFIED":
+                raise ValidationError(_("调休入账只能引用已核验加班事实"))
+            if not self.source_fact.verify_receipt():
+                raise ValidationError(_("调休入账只能引用可信核验回执"))
+        if self.reversal_of_id:
+            reversal = self.reversal_of
+            if reversal.tenant_id != self.tenant_id or reversal.account_id != self.account_id:
+                raise ValidationError(_("调休冲正必须引用同租户、同账户原记录"))

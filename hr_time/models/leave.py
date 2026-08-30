@@ -16,8 +16,12 @@ S7 请假休假基础（总册 §83-91、§191）。
 - 余额=ledger 求和；调整必须经 Adjust Case（S8）。
 """
 
+import hashlib
+import json
+
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from hr_time.enums import (
@@ -26,7 +30,7 @@ from hr_time.enums import (
     LeaveUnit,
     PolicyStatus,
 )
-from hr_time.models.base import TimeTenantModel
+from hr_time.models.base import AppendOnlyLedgerModel, TimeTenantModel
 from hr_time.models.policy import VersionManager
 
 
@@ -172,8 +176,11 @@ class HrLeavePolicyVersion(TimeTenantModel):
 
     def save(self, *args, **kwargs):
         """immutable guard：已 PUBLISHED 版本不可修改关键内容。"""
+        old = None
         if self.pk:
             old = HrLeavePolicyVersion.objects.get(pk=self.pk)
+            if old.status == PolicyStatus.RETIRED:
+                raise ValidationError(_("已退役假别政策不可修改"))
             if old.status == PolicyStatus.PUBLISHED:
                 if self.status != PolicyStatus.RETIRED:
                     raise ValidationError(_("已发布假别政策只能退役（RETIRED）"))
@@ -188,6 +195,36 @@ class HrLeavePolicyVersion(TimeTenantModel):
                         % {"fields": ", ".join(sorted(changed))}
                     )
                 self.content_hash = old.content_hash
+        if self.leave_policy_pack_id and self.leave_policy_pack.tenant_id != self.tenant_id:
+            raise ValidationError(_("假别政策版本与政策包必须属于同一租户"))
+        if self.leave_type_id and self.leave_type.tenant_id != self.tenant_id:
+            raise ValidationError(_("假别政策版本与假别必须属于同一租户"))
+        if self.status == PolicyStatus.PUBLISHED and (
+            old is None or old.status != PolicyStatus.PUBLISHED
+        ):
+            payload = {
+                "tenantId": self.tenant_id,
+                "leavePolicyPackId": self.leave_policy_pack_id,
+                "leaveTypeId": self.leave_type_id,
+                "versionNo": self.version_no,
+                "entitlementMode": self.entitlement_mode,
+                "eligibilityRule": self.eligibility_rule,
+                "grantAccrualRule": self.grant_accrual_rule,
+                "carryForwardRule": self.carry_forward_rule,
+                "expiryRule": self.expiry_rule,
+                "reservationRule": self.reservation_rule,
+                "evidenceRule": self.evidence_rule,
+                "approvalRule": self.approval_rule,
+                "interactionRules": self.interaction_rules,
+                "effectiveFrom": self.effective_from.isoformat(),
+                "effectiveTo": self.effective_to.isoformat() if self.effective_to else None,
+            }
+            self.content_hash = hashlib.sha256(
+                json.dumps(
+                    payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+            ).hexdigest()
+            self.published_at = self.published_at or timezone.now()
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -260,7 +297,7 @@ class HrLeaveAccount(TimeTenantModel):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.leave_type.code} {self.account_year}"
 
 
-class HrLeaveLedgerEntry(TimeTenantModel):
+class HrLeaveLedgerEntry(AppendOnlyLedgerModel):
     """假期 Ledger（§88）。entry_type 冻结（GRANT/ACCRUAL/RESERVE/...）。"""
 
     account = models.ForeignKey(
@@ -277,7 +314,7 @@ class HrLeaveLedgerEntry(TimeTenantModel):
     source_type = models.CharField(max_length=32, verbose_name=_("来源类型"))
     source_id = models.CharField(max_length=64, blank=True, default="")
     reversal_of = models.ForeignKey(
-        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="reversals"
     )
     expires_at = models.DateField(null=True, blank=True, verbose_name=_("过期日"))
     balance_after = models.DecimalField(
@@ -293,11 +330,29 @@ class HrLeaveLedgerEntry(TimeTenantModel):
                 name="hr11_ledger_entry_date",
             ),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "reversal_of"],
+                name="uniq_hr11_leave_reversal",
+            ),
+        ]
 
     def clean(self):
         super().clean()
         if self.amount == 0:
             raise ValidationError(_("ledger 条目 amount 不能为 0"))
+        if self.account_id and self.account.tenant_id != self.tenant_id:
+            raise ValidationError(_("假期账本与账户必须属于同一租户"))
+        if self.reversal_of_id:
+            reversal = self.reversal_of
+            if reversal.tenant_id != self.tenant_id or reversal.account_id != self.account_id:
+                raise ValidationError(_("冲正记录与原记录必须属于同一租户、同一账户"))
+            if self.entry_type != LeaveLedgerEntryType.RESERVATION_RELEASE:
+                raise ValidationError(_("当前仅预占释放记录可引用 reversal_of"))
+            if reversal.entry_type != LeaveLedgerEntryType.RESERVE:
+                raise ValidationError(_("预占释放必须引用 RESERVE 记录"))
+            if self.amount != reversal.amount or self.unit != reversal.unit:
+                raise ValidationError(_("预占释放数量与单位必须和 RESERVE 完全一致"))
 
     def __str__(self):
         return f"[{self.tenant_id}] acct={self.account_id} {self.entry_type} {self.amount}"

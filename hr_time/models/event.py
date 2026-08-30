@@ -137,6 +137,7 @@ class HrRawTimeEvent(TimeTenantModel):
 
     IMMUTABLE_FIELDS = frozenset(
         {
+            "tenant_id",
             "staff_master_id",
             "event_type",
             "event_at_utc",
@@ -144,8 +145,11 @@ class HrRawTimeEvent(TimeTenantModel):
             "local_event_at",
             "source",
             "source_event_id",
+            "dedupe_key",
             "device",
+            "location_ref",
             "raw_payload_hash",
+            "trust_level",
         }
     )
 
@@ -219,6 +223,28 @@ class HrRawTimeEvent(TimeTenantModel):
                     _("原始事件不可变，禁止修改字段: %(fields)s；更正请走 Correction Case")
                     % {"fields": ", ".join(sorted(changed))}
                 )
+            allowed_transitions = {
+                TimeEventIngestStatus.RECEIVED: {
+                    TimeEventIngestStatus.RECEIVED,
+                    TimeEventIngestStatus.VALIDATED,
+                    TimeEventIngestStatus.PERSON_UNMAPPED,
+                    TimeEventIngestStatus.REJECTED,
+                    TimeEventIngestStatus.STAGED,
+                },
+                TimeEventIngestStatus.STAGED: {
+                    TimeEventIngestStatus.STAGED,
+                    TimeEventIngestStatus.VALIDATED,
+                    TimeEventIngestStatus.REJECTED,
+                },
+            }
+            if self.ingest_status not in allowed_transitions.get(
+                old.ingest_status, {old.ingest_status}
+            ):
+                raise ValidationError(_("原始事件处理状态转换非法"))
+        if self.source_id and self.source.tenant_id != self.tenant_id:
+            raise ValidationError(_("原始事件与来源必须属于同一租户"))
+        if self.device_id and self.device.tenant_id != self.tenant_id:
+            raise ValidationError(_("原始事件与设备必须属于同一租户"))
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):

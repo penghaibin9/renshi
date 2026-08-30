@@ -17,6 +17,7 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
 from hr_time.enums import CalendarDayType
 from hr_time.models.calendar import (
     HrCalendarDay,
@@ -96,6 +97,19 @@ class CalendarService:
         if existing and existing.id != version.id:
             HrWorkCalendarVersion.objects.filter(pk=existing.id).update(status="SUPERSEDED")
 
+        emit_registered_event(
+            tenant_id=version.tenant_id,
+            event_name="hr.time.calendar.published",
+            correlation_id=f"hr11-calendar:{version.id}:{version.version_no}",
+            payload={
+                "calendarId": calendar.id,
+                "calendarVersionId": version.id,
+                "year": version.year,
+                "versionNo": version.version_no,
+                "contentHash": version.content_hash,
+                "supersedesVersionId": version.supersedes_version_id,
+            },
+        )
         return version
 
     @staticmethod

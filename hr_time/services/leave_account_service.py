@@ -22,7 +22,7 @@ from typing import Optional
 from django.db import transaction
 from django.db.models import Sum
 
-from hr_time.enums import LeaveLedgerEntryType
+from hr_time.enums import LeaveLedgerEntryType, LeaveUnit
 from hr_time.models.leave import (
     HrLeaveAccount,
     HrLeaveLedgerEntry,
@@ -30,6 +30,7 @@ from hr_time.models.leave import (
     HrLeaveType,
     HrSchoolBreakFact,
 )
+from hr_time.services.period_guard import PeriodWriteBlocked, lock_writable_periods
 
 
 class LeaveAccountError(Exception):
@@ -54,19 +55,59 @@ class LeaveAccountService:
         entry_type: str = LeaveLedgerEntryType.GRANT,
         source_type: str = "GRANT",
         source_id: str = "",
+        reversal_of_id: Optional[int] = None,
+        unit: str = LeaveUnit.DAYS,
     ) -> HrLeaveLedgerEntry:
         """授予额度：创建账户（若不存在）+ ledger 条目。
 
         RESERVE / RESERVATION_RELEASE 为冻结语义：不改变账户余额（balance_after=冻结前余额），
         可用额度 = 余额 - 有效预占（§112）。
         """
+        if not tenant_id:
+            raise LeaveAccountError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
+        if not amount:
+            raise LeaveAccountError("LEDGER_AMOUNT_REQUIRED", "账本数量不能为 0")
+        try:
+            lock_writable_periods(
+                tenant_id=tenant_id,
+                start_date=effective_date,
+                end_date=effective_date,
+            )
+        except PeriodWriteBlocked as exc:
+            raise LeaveAccountError("ATTENDANCE_PERIOD_CLOSED", str(exc)) from exc
+        leave_type = HrLeaveType.objects.filter(
+            tenant_id=tenant_id, pk=leave_type_id
+        ).first()
+        if leave_type is None:
+            raise LeaveAccountError(
+                "CROSS_TENANT_REFERENCE", "假别不属于当前 tenant"
+            )
+        policy_version = None
+        if policy_version_id:
+            policy_version = HrLeavePolicyVersion.objects.filter(
+                tenant_id=tenant_id,
+                pk=policy_version_id,
+                leave_type_id=leave_type_id,
+            ).first()
+            if policy_version is None:
+                raise LeaveAccountError(
+                    "CROSS_TENANT_REFERENCE", "假别政策不属于当前 tenant/假别"
+                )
+
         account, _ = HrLeaveAccount.objects.get_or_create(
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
-            leave_type_id=leave_type_id,
+            leave_type=leave_type,
             account_year=account_year,
-            defaults={"policy_version_id": policy_version_id},
+            defaults={"policy_version": policy_version},
         )
+        account = HrLeaveAccount.objects.select_for_update().get(
+            pk=account.pk, tenant_id=tenant_id
+        )
+        if policy_version_id and account.policy_version_id not in (None, policy_version_id):
+            raise LeaveAccountError(
+                "LEAVE_POLICY_CONFLICT", "账户已绑定另一假别政策版本"
+            )
         balance_before = LeaveAccountService.balance(
             account=account, as_of=effective_date
         )
@@ -79,9 +120,11 @@ class LeaveAccountService:
             account=account,
             entry_type=entry_type,
             amount=amount,
+            unit=unit,
             effective_date=effective_date,
             source_type=source_type,
             source_id=source_id,
+            reversal_of_id=reversal_of_id,
             balance_after=balance_after,
         )
 

@@ -24,23 +24,26 @@ class CloseScopeGateTests(SimpleTestCase):
         self.assertEqual(cm.exception.code, "CROSS_TENANT_REFERENCE")
 
     @patch("hr_time.services.close_service.HrOvertimeFact.objects")
+    @patch("hr_time.services.close_service.HrAbsenceFact.objects")
     @patch("hr_time.services.close_service.HrLeaveRequest.objects")
     @patch("hr_time.services.close_service.HrAttendanceDayFact.objects")
     def test_pending_overtime_is_scoped_to_current_close_period(
         self,
         attendance_objects,
         leave_objects,
+        absence_objects,
         overtime_objects,
     ):
         attendance_objects.filter.return_value.count.return_value = 0
         leave_objects.filter.return_value.count.return_value = 0
+        absence_objects.filter.return_value.count.return_value = 0
         overtime_objects.filter.return_value.count.return_value = 0
         period = self._period()
 
         blockers = CloseService.precheck(tenant_id=77, period=period)
 
         self.assertEqual(blockers, [])
-        overtime_objects.filter.assert_called_once_with(
+        overtime_objects.filter.assert_any_call(
             tenant_id=77,
             actual_start_at__date__lte=date(2026, 8, 31),
             actual_end_at__date__gte=date(2026, 8, 1),

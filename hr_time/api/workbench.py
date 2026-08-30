@@ -17,6 +17,7 @@ from hr_time.models import (
     HrAttendanceException,
     HrLeaveRequest,
     HrOvertimeRequest,
+    HrOvertimeFact,
     HrScheduleAssignment,
     HrTimeClosePeriod,
     HrTimeCorrectionBatch,
@@ -25,7 +26,9 @@ from hr_time.models import (
     HrShiftVersion,
 )
 from hr_time.services.close_service import CloseService, CloseServiceError
+from hr_time.services.leave_account_service import LeaveAccountError
 from hr_time.services.leave_request_service import LeaveRequestError, LeaveRequestService
+from hr_time.services.overtime_service import OvertimeService, OvertimeServiceError
 from hr_time.services.schedule_service import ScheduleService
 
 
@@ -59,7 +62,12 @@ def _run(request, permission, callback):
         return callback(ctx)
     except HrTimeContextError as exc:
         return _error(request, exc.code, exc.message, getattr(exc, "status", 403))
-    except (LeaveRequestError, CloseServiceError) as exc:
+    except (
+        LeaveAccountError,
+        LeaveRequestError,
+        CloseServiceError,
+        OvertimeServiceError,
+    ) as exc:
         return _error(
             request,
             exc.code,
@@ -256,6 +264,45 @@ def overtime_action(request, overtime_id, action):
         return _success(request, {"id": item.id, "status": item.status, "statusLabel": item.get_status_display()})
 
     return _run(request, TimePermissionCode.HR11_OVERTIME_APPROVER, handle)
+
+
+@require_POST
+def overtime_fact_action(request, fact_id, action):
+    """Verify actual overtime evidence; request approval alone is never enough."""
+
+    def handle(ctx):
+        if action != "verify":
+            raise HrTimeContextError("INVALID_REQUEST", "未知加班事实操作", status=400)
+        fact = HrOvertimeFact.objects.filter(
+            tenant_id=ctx.tenant_id, id=fact_id
+        ).first()
+        if fact is None:
+            raise HrTimeContextError(
+                "TENANT_SCOPE_VIOLATION", "当前学校没有该加班事实", status=404
+            )
+        payload = _body(request)
+        verified = OvertimeService.verify(
+            fact=fact,
+            actor_user=request.user,
+            settlement_mode=str(payload.get("settlementMode", "")),
+            evidence_source=str(payload.get("evidenceSource", "")),
+            idempotency_key=(
+                request.headers.get("Idempotency-Key")
+                or payload.get("idempotencyKey")
+                or ""
+            ),
+        )
+        return _success(
+            request,
+            {
+                "id": verified.id,
+                "status": verified.verification_status,
+                "settlementMode": verified.settlement_mode,
+                "verificationReceiptHash": verified.verification_receipt_hash,
+            },
+        )
+
+    return _run(request, TimePermissionCode.HR11_ATTENDANCE_VERIFIER, handle)
 
 
 @require_POST
