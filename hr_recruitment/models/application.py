@@ -85,7 +85,8 @@ class HrJobApplication(models.Model):
                 condition=models.Q(is_active=True),
                 name="uniq_hr_application_active_per_position",
             ),
-            # application_no tenant 内唯一（§46 兜底，防并发撞号）
+            # application_no tenant 内唯一（§46 兜底，防并发撞号）。MySQL
+            # 的 generated-column 物理兜底由 0013 迁移安装。
             models.UniqueConstraint(
                 fields=["tenant_id", "application_no"],
                 condition=models.Q(application_no__gt=""),
