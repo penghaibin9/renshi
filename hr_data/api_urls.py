@@ -7,6 +7,7 @@ from . import (
     evaluation_api,
     legacy_api,
     metric_api,
+    metric_evaluation_api,
     quality_api,
     quality_finding_api,
     submission_api,
@@ -35,6 +36,11 @@ urlpatterns = [
         "definitions/metrics/",
         metric_api.create_metric_definition,
         name="metric-definition-create",
+    ),
+    path(
+        "metrics/evaluate/",
+        metric_evaluation_api.evaluate_metric,
+        name="metric-evaluation-create",
     ),
     path(
         "as-of/evidence/",

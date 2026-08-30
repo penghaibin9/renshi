@@ -394,6 +394,81 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+class MetricEvaluationSnapshot(HrTenantScopedModel):
+    """Immutable, auditable result of one generic metric DSL evaluation."""
+
+    evaluation_no = models.CharField(max_length=64)
+    metric_code = models.CharField(max_length=64)
+    metric_version = models.PositiveIntegerField()
+    population_code = models.CharField(max_length=64)
+    population_version = models.PositiveIntegerField()
+    dimension_versions_json = models.JSONField(default=list, blank=True)
+    as_of_date = models.DateField()
+    as_of_evidence_id = models.UUIDField()
+    evidence_hash = models.CharField(max_length=64)
+    source_receipts_json = models.JSONField(default=dict)
+    result_json = models.JSONField(default=dict)
+    input_row_count = models.PositiveIntegerField(default=0)
+    provider_version = models.CharField(max_length=64)
+    evaluator_version = models.CharField(max_length=64)
+    calculation_hash = models.CharField(max_length=64)
+    evaluated_at = models.DateTimeField(auto_now_add=True)
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "evaluation_no",
+        "metric_code",
+        "metric_version",
+        "population_code",
+        "population_version",
+        "dimension_versions_json",
+        "as_of_date",
+        "as_of_evidence_id",
+        "evidence_hash",
+        "source_receipts_json",
+        "result_json",
+        "input_row_count",
+        "provider_version",
+        "evaluator_version",
+        "calculation_hash",
+    )
+
+    class Meta:
+        db_table = "hr18_metric_evaluation_snapshot"
+        permissions = [
+            ("hr.data.metric.evaluate", "执行 HR18 通用指标表达式求值"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "evaluation_no"),
+                name="uq_hr18_metric_eval_no",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "metric_code", "metric_version", "as_of_date"),
+                name="idx_hr18_metric_eval_def",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "HR18_METRIC_EVALUATION_IMMUTABLE: evaluation snapshots must be appended"
+                    )
+        return super().save(*args, **kwargs)
+
+
 class SubmissionSnapshot(HrTenantScopedModel):
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"

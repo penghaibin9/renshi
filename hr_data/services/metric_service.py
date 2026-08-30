@@ -137,10 +137,15 @@ class HrMetricDefinitionService:
                 "metric source_domains must include all frozen population sources",
             )
         op, field = self._expression(expression)
-        if op == "COUNT" and value_type != "INTEGER":
+        if op in {"COUNT", "COUNT_DISTINCT"} and value_type != "INTEGER":
             raise HrDataDefinitionError(
                 "HR18_METRIC_VALUE_TYPE_MISMATCH",
-                "COUNT metrics must use INTEGER value_type",
+                "COUNT and COUNT_DISTINCT metrics must use INTEGER value_type",
+            )
+        if op == "AVG" and value_type != "DECIMAL":
+            raise HrDataDefinitionError(
+                "HR18_METRIC_VALUE_TYPE_MISMATCH",
+                "AVG metrics must use DECIMAL value_type",
             )
         unit = str(unit or "").strip()
         if len(unit) > 32:
