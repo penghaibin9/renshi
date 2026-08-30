@@ -6,6 +6,7 @@ app_name = "hr_self_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
     path("bootstrap/", api.bootstrap, name="bootstrap"),
+    path("records/", api.self_records, name="self_records"),
     path("services/", catalog_api.service_catalog, name="service_catalog"),
     path("services/<str:service_code>/pin/", api.service_pin, name="service_pin"),
 ]

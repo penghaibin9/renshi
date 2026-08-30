@@ -10,6 +10,7 @@ from .selectors import dashboard_snapshot
 from .services.bootstrap_service import SelfBootstrapService
 from .services.catalog_service import SelfCatalogError, SelfCatalogService
 from .services.identity_service import SelfIdentityError, SelfIdentityService
+from .services.self_records_service import SelfRecordsService
 
 READ_PERMISSION = "hr.self.view"
 
@@ -55,6 +56,30 @@ def _method_not_allowed():
     return response
 
 
+def _identity_override_forbidden(request):
+    forbidden = {
+        "staff_id",
+        "staffId",
+        "person_id",
+        "personId",
+        "employee_id",
+        "employeeId",
+    }
+    if any(key in request.GET for key in forbidden):
+        response = JsonResponse(
+            {
+                "error": {
+                    "code": "SELF_IDENTITY_OVERRIDE_FORBIDDEN",
+                    "message": "SELF identity is resolved only from the current login and tenant",
+                }
+            },
+            status=400,
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+    return None
+
+
 def dashboard(request):
     if request.method != "GET":
         return _method_not_allowed()
@@ -95,6 +120,37 @@ def bootstrap(request):
         {
             "apiVersion": "1.0",
             "schemaVersion": "hr17.bootstrap.1",
+            "generatedAt": timezone.now().isoformat(),
+        }
+    )
+    response = JsonResponse(data)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def self_records(request):
+    """Return controlled files, contract summaries and payslip summaries.
+
+    The route deliberately has no staff/person identifier.  Each source has an
+    independent health envelope; unavailable Authority data is returned as
+    ``null`` and is never forged into an empty list.
+    """
+
+    if request.method != "GET":
+        return _method_not_allowed()
+    override_error = _identity_override_forbidden(request)
+    if override_error is not None:
+        return override_error
+    try:
+        context = resolve_self_context(request)
+    except HrSelfAccessError as exc:
+        return _access_error(exc)
+
+    data = SelfRecordsService(context).build()
+    data.update(
+        {
+            "apiVersion": "1.0",
+            "schemaVersion": "hr17.self-records.1",
             "generatedAt": timezone.now().isoformat(),
         }
     )

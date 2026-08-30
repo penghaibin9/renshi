@@ -26,6 +26,7 @@ class Hr17UiContractTests(TestCase):
         expected = {
             "hr_self_api:dashboard": "/api/v1/hr/self/dashboard/",
             "hr_self_api:bootstrap": "/api/v1/hr/self/bootstrap/",
+            "hr_self_api:self_records": "/api/v1/hr/self/records/",
         }
         for name, path in expected.items():
             self.assertEqual(reverse(name), path)
