@@ -296,17 +296,26 @@ class AssessmentFinalizationService:
 
         finalized_at = timezone.now()
         content = {
+            "tenantId": int(self.tenant_id),
             "caseId": str(case.id),
             "assessmentType": case.assessment_type,
             "cycleId": str(case.cycle_id) if case.cycle_id else None,
             "gradeCode": payload.grade_code,
             "displayGrade": payload.display_grade_snapshot,
-            "calculatedScore": payload.calculated_score,
+            "calculatedScore": (
+                str(payload.calculated_score)
+                if payload.calculated_score is not None
+                else None
+            ),
             "decisionReason": payload.decision_reason,
             "policyVersionId": str(case.policy_version_id) if case.policy_version_id else None,
             "decisionSessionId": str(payload.decision_session_id),
-            "providerSnapshotSetId": str(case.provider_snapshot_set_id),
+            "finalizedAt": finalized_at.isoformat(),
+            "finalizedBy": (
+                str(self.actor_staff_id) if self.actor_staff_id else None
+            ),
             "resultVersionNo": 1,
+            "status": "FINALIZED",
         }
         result = HrFinalAssessmentResult.objects.create(
             tenant_id=self.tenant_id,
@@ -320,6 +329,7 @@ class AssessmentFinalizationService:
             policy_version_id=case.policy_version_id,
             decision_session_id=payload.decision_session_id,
             finalized_at=finalized_at,
+            sealed_at=finalized_at,
             finalized_by=self.actor_staff_id,
             result_version_no=1,
             content_hash=self._hash_payload(content),

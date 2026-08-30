@@ -6,6 +6,10 @@ from horilla.hr_permission_registry import PermissionDefinition, register_permis
 from hr_assessment.permissions import ASSESSMENT_PERMISSIONS
 
 
+EVENT_RESULT_CORRECTED = "hr.assessment.assessment_result.corrected"
+EVENT_RESULT_REVOKED = "hr.assessment.assessment_result.revoked"
+
+
 PERMISSION_DEFINITIONS = tuple(
     PermissionDefinition(key=key, module_code="HR12", description=description)
     for key, description in ASSESSMENT_PERMISSIONS
@@ -19,6 +23,8 @@ EVENT_DEFINITIONS = (
     BusinessEventDefinition("hr.assessment.assessment_objection.submitted", "HR12", "assessment_objection", description="Assessment objection submitted"),
     BusinessEventDefinition("hr.assessment.assessment_objection.decided", "HR12", "assessment_objection", description="Assessment objection decided"),
     BusinessEventDefinition("hr.assessment.assessment_result.revised", "HR12", "assessment_result", description="Formal result revised through version chain"),
+    BusinessEventDefinition(EVENT_RESULT_CORRECTED, "HR12", "assessment_result", description="Sealed assessment result corrected by append-only fact"),
+    BusinessEventDefinition(EVENT_RESULT_REVOKED, "HR12", "assessment_result", description="Sealed assessment result revoked by append-only fact"),
     BusinessEventDefinition("hr.assessment.term_assessment.finalized", "HR12", "term_assessment", description="Term assessment finalized"),
 )
 

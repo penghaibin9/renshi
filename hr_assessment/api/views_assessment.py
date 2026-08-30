@@ -25,6 +25,7 @@ from hr_assessment.models.result import (
     HrAssessmentDecisionSession,
     HrCalibrationSession,
     HrFinalAssessmentResult,
+    HrResultRevision,
 )
 from hr_assessment.permissions import require_assessment_permission
 from hr_assessment.service.evidence import (
@@ -36,6 +37,12 @@ from hr_assessment.services.finalization_service import (
     AssessmentFinalizationError,
     AssessmentFinalizationService,
     FinalResultInput,
+)
+from hr_assessment.services.result_correction_service import (
+    AssessmentResultCorrectionError,
+    AssessmentResultCorrectionService,
+    ResultCorrectionInput,
+    canonical_result_snapshot,
 )
 
 ANNUAL_GRADE_LABELS = {
@@ -225,19 +232,50 @@ def _snapshot_payload(snapshot: HrProviderSnapshotSet) -> dict:
 
 
 def _result_payload(result: HrFinalAssessmentResult) -> dict:
+    canonical = canonical_result_snapshot(result)
     return {
         "id": str(result.id),
         "caseId": str(result.case_id),
-        "status": result.status,
-        "gradeCode": result.grade_code,
-        "displayGrade": result.display_grade_snapshot_json or {},
-        "calculatedScore": str(result.calculated_score) if result.calculated_score is not None else None,
-        "decisionReason": result.decision_reason or "",
+        "status": canonical.get("status", result.status),
+        "gradeCode": canonical.get("gradeCode", result.grade_code),
+        "displayGrade": canonical.get(
+            "displayGrade", result.display_grade_snapshot_json or {}
+        ),
+        "calculatedScore": canonical.get(
+            "calculatedScore",
+            str(result.calculated_score) if result.calculated_score is not None else None,
+        ),
+        "decisionReason": canonical.get("decisionReason", result.decision_reason or ""),
         "decisionSessionId": str(result.decision_session_id) if result.decision_session_id else None,
         "finalizedAt": result.finalized_at.isoformat() if result.finalized_at else None,
         "finalizedBy": str(result.finalized_by) if result.finalized_by else None,
-        "resultVersionNo": result.result_version_no,
+        "resultVersionNo": canonical.get("version", result.result_version_no),
         "contentHash": result.content_hash,
+        "sealedAt": (
+            result.sealed_at.isoformat() if getattr(result, "sealed_at", None) else None
+        ),
+    }
+
+
+def _revision_payload(revision: HrResultRevision) -> dict:
+    return {
+        "id": str(revision.id),
+        "resultId": str(revision.result_id),
+        "correctionNo": revision.correction_no,
+        "previousVersion": revision.previous_version,
+        "newVersion": revision.new_version,
+        "revisionType": revision.revision_type,
+        "reason": revision.reason,
+        "authorityStaffId": (
+            str(revision.authority_staff_id) if revision.authority_staff_id else None
+        ),
+        "before": revision.before_snapshot_json or {},
+        "after": revision.after_snapshot_json or {},
+        "effectiveAt": (
+            revision.effective_at.isoformat() if revision.effective_at else None
+        ),
+        "contentHash": revision.content_hash,
+        "sealedAt": revision.sealed_at.isoformat() if revision.sealed_at else None,
     }
 
 
@@ -413,3 +451,81 @@ def finalize_case(request: HttpRequest, case_id) -> JsonResponse:
         data={"caseId": str(case_id), "result": _result_payload(result)},
         request_id=request_id,
     ))
+
+
+@require_assessment_permission("hr.assessment.result.correct")
+@require_http_methods(["GET", "POST"])
+def result_corrections(request: HttpRequest, result_id) -> JsonResponse:
+    """Read or append the immutable correction/revocation chain."""
+
+    tenant = request.tenant_id
+    request_id = request.headers.get("X-Request-ID", "")
+    result = HrFinalAssessmentResult.objects.filter(
+        id=result_id,
+        tenant_id=tenant,
+    ).first()
+    if result is None:
+        return JsonResponse(
+            api_error(
+                "ASSESSMENT_RESULT_NOT_FOUND",
+                "正式考核结果不存在或不属于当前学校",
+                request_id=request_id,
+                http_status=404,
+            ),
+            status=404,
+        )
+    if request.method == "GET":
+        revisions = result.revisions.order_by("new_version", "created_at")
+        return JsonResponse(
+            api_success(
+                data={
+                    "result": _result_payload(result),
+                    "revisions": [_revision_payload(item) for item in revisions],
+                },
+                request_id=request_id,
+            )
+        )
+    try:
+        body = json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse(
+            api_error(
+                "INVALID_REQUEST",
+                "请求正文不是有效 JSON",
+                request_id=request_id,
+                http_status=400,
+            ),
+            status=400,
+        )
+    try:
+        revision = AssessmentResultCorrectionService(
+            tenant,
+            actor_staff_id=getattr(request, "staff_id", None),
+            correlation_id=request_id,
+        ).append(
+            result_id=result_id,
+            payload=ResultCorrectionInput(
+                correction_no=body.get("correctionNo"),
+                expected_version=body.get("expectedVersion"),
+                revision_type=body.get("revisionType"),
+                reason=body.get("reason"),
+                changes=body.get("changes", {}),
+            ),
+        )
+    except AssessmentResultCorrectionError as exc:
+        status = 404 if exc.code == "ASSESSMENT_RESULT_NOT_FOUND" else 409
+        if exc.code.endswith("_INVALID") or exc.code.endswith("_REQUIRED") or exc.code.endswith("_FORBIDDEN"):
+            status = 400
+        return JsonResponse(
+            api_error(
+                exc.code,
+                str(exc),
+                request_id=request_id,
+                http_status=status,
+            ),
+            status=status,
+        )
+    return JsonResponse(
+        api_success(data={"revision": _revision_payload(revision)}, request_id=request_id),
+        status=201,
+    )

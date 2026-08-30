@@ -11,12 +11,52 @@
 - HrResultApplicationLedger
 """
 
+import hashlib
+import json
 import uuid
 
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from hr_assessment.models.base import TenantScopedModel
+
+
+def default_correction_no() -> str:
+    """Return a collision-resistant public idempotency key for old callers."""
+
+    return f"COR-{uuid.uuid4().hex.upper()}"
+
+
+def _canonical_hash(payload: dict) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class _AppendOnlyResultQuerySet(models.QuerySet):
+    immutable_code = "HR12_RESULT_FACT_IMMUTABLE"
+
+    def update(self, **kwargs):
+        raise ValueError(f"{self.immutable_code}: append a correction fact")
+
+    def delete(self):
+        raise ValueError(f"{self.immutable_code}: formal facts cannot be deleted")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError(f"{self.immutable_code}: append a correction fact")
+
+
+class _AppendOnlyResultManager(models.Manager.from_queryset(_AppendOnlyResultQuerySet)):
+    def bulk_create(self, objs, *args, **kwargs):
+        for obj in objs:
+            obj._prepare_seal()
+        return super().bulk_create(objs, *args, **kwargs)
 
 
 class HrCalibrationSession(TenantScopedModel):
@@ -88,7 +128,58 @@ class HrFinalAssessmentResult(TenantScopedModel):
     finalized_by = models.UUIDField(null=True, verbose_name=_("审定人"))
     result_version_no = models.PositiveSmallIntegerField(default=1, verbose_name=_("结果版本号"))
     content_hash = models.CharField(max_length=64, default="", verbose_name=_("内容哈希"))
+    sealed_at = models.DateTimeField(null=False, verbose_name=_("封板时间"))
     status = models.CharField(max_length=30, default="FINALIZED", db_index=True, verbose_name=_("结果状态"))
+
+    objects = _AppendOnlyResultManager()
+
+    def canonical_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "caseId": str(self.case_id),
+            "assessmentType": self.assessment_type,
+            "cycleId": str(self.cycle_id) if self.cycle_id else None,
+            "gradeCode": self.grade_code,
+            "displayGrade": self.display_grade_snapshot_json or {},
+            "calculatedScore": (
+                str(self.calculated_score) if self.calculated_score is not None else None
+            ),
+            "decisionReason": self.decision_reason or "",
+            "policyVersionId": (
+                str(self.policy_version_id) if self.policy_version_id else None
+            ),
+            "decisionSessionId": (
+                str(self.decision_session_id) if self.decision_session_id else None
+            ),
+            "finalizedAt": self.finalized_at.isoformat() if self.finalized_at else None,
+            "finalizedBy": str(self.finalized_by) if self.finalized_by else None,
+            "resultVersionNo": int(self.result_version_no),
+            "status": self.status,
+        }
+
+    def calculate_content_hash(self) -> str:
+        return _canonical_hash(self.canonical_payload())
+
+    def _prepare_seal(self) -> None:
+        if not self.finalized_at:
+            self.finalized_at = timezone.now()
+        if not self.sealed_at:
+            self.sealed_at = self.finalized_at
+        expected = self.calculate_content_hash()
+        if self.content_hash and self.content_hash != expected:
+            raise ValueError("HR12_RESULT_CONTENT_HASH_MISMATCH")
+        self.content_hash = expected
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            raise ValueError(
+                "HR12_FINAL_RESULT_IMMUTABLE: append HrResultRevision instead"
+            )
+        self._prepare_seal()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_FINAL_RESULT_IMMUTABLE: formal result cannot be deleted")
 
     class Meta:
         db_table = "hr_assessment_final_result"
@@ -144,6 +235,11 @@ class HrAssessmentObjection(TenantScopedModel):
 class HrResultRevision(TenantScopedModel):
     """结果修订记录 —— 总册 §99-100。"""
     result = models.ForeignKey(HrFinalAssessmentResult, on_delete=models.PROTECT, related_name="revisions", verbose_name=_("所属结果"))
+    correction_no = models.CharField(
+        max_length=80,
+        default=default_correction_no,
+        verbose_name=_("更正幂等编号"),
+    )
     previous_version = models.PositiveSmallIntegerField(verbose_name=_("前一版本号"))
     new_version = models.PositiveSmallIntegerField(verbose_name=_("新版本号"))
     revision_type = models.CharField(max_length=30, verbose_name=_("修订类型"))
@@ -152,9 +248,70 @@ class HrResultRevision(TenantScopedModel):
     before_snapshot_json = models.JSONField(default=dict, verbose_name=_("修订前快照"))
     after_snapshot_json = models.JSONField(default=dict, verbose_name=_("修订后快照"))
     effective_at = models.DateTimeField(null=True, verbose_name=_("生效时间"))
+    content_hash = models.CharField(max_length=64, default="", verbose_name=_("内容哈希"))
+    sealed_at = models.DateTimeField(null=False, verbose_name=_("封板时间"))
+
+    objects = _AppendOnlyResultManager()
+
+    def canonical_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "resultId": str(self.result_id),
+            "correctionNo": self.correction_no,
+            "previousVersion": int(self.previous_version),
+            "newVersion": int(self.new_version),
+            "revisionType": self.revision_type,
+            "reason": self.reason,
+            "authorityStaffId": (
+                str(self.authority_staff_id) if self.authority_staff_id else None
+            ),
+            "before": self.before_snapshot_json or {},
+            "after": self.after_snapshot_json or {},
+            "effectiveAt": self.effective_at.isoformat() if self.effective_at else None,
+        }
+
+    def calculate_content_hash(self) -> str:
+        return _canonical_hash(self.canonical_payload())
+
+    def _prepare_seal(self) -> None:
+        if not self.effective_at:
+            self.effective_at = timezone.now()
+        if not self.sealed_at:
+            self.sealed_at = self.effective_at
+        expected = self.calculate_content_hash()
+        if self.content_hash and self.content_hash != expected:
+            raise ValueError("HR12_RESULT_REVISION_CONTENT_HASH_MISMATCH")
+        self.content_hash = expected
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            raise ValueError(
+                "HR12_RESULT_REVISION_IMMUTABLE: append another correction fact"
+            )
+        self._prepare_seal()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "HR12_RESULT_REVISION_IMMUTABLE: correction history cannot be deleted"
+        )
 
     class Meta:
         db_table = "hr_assessment_result_revision"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "correction_no"),
+                name="hr12_revision_tenant_correction_uq",
+            ),
+            models.UniqueConstraint(
+                fields=("result", "new_version"),
+                name="hr12_revision_result_version_uq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(new_version__gt=models.F("previous_version")),
+                name="hr12_revision_version_forward_ck",
+            ),
+        ]
 
 
 class HrAssessmentArchivePackage(TenantScopedModel):
