@@ -12,7 +12,10 @@ from hr_assessment.models.provider_snapshot import HrProviderSnapshotItem, HrPro
 from hr_assessment.service.evidence import EvidenceSnapshotError, ProviderEvidenceSnapshotService
 from hr_assessment.services.finalization_service import AssessmentFinalizationService
 from hr_staff.models import HrPerson, HrStaffMaster
-from hr_time.models.close import HrPayrollTimeBasis, HrTimeClosePeriod, HrTimeCloseSnapshot
+from hr_time.enums import AttendanceStatus
+from hr_time.models.attendance import HrAttendanceDayFact
+from hr_time.models.close import HrTimeClosePeriod
+from hr_time.services.close_service import CloseService
 
 
 class ProviderEvidenceSnapshotServiceTests(TestCase):
@@ -57,32 +60,17 @@ class ProviderEvidenceSnapshotServiceTests(TestCase):
             period_type="MONTHLY",
             start_date=date(2026, 8, 1),
             end_date=date(2026, 8, 31),
-            status="CLOSED",
-            closed_at=timezone.now(),
         )
-        snapshot = HrTimeCloseSnapshot.objects.create(
+        HrAttendanceDayFact.objects.create(
             tenant_id=self.tenant_id,
-            period=period,
-            metric_definition_version="1.0",
-            attendance_fact_hash="a" * 64,
-            leave_ledger_hash="b" * 64,
-            overtime_fact_hash="c" * 64,
-        )
-        period.snapshot_id = snapshot.id
-        period.save(update_fields=["snapshot_id"])
-        HrPayrollTimeBasis.objects.create(
-            tenant_id=self.tenant_id,
-            close_snapshot=snapshot,
             staff_master_id=501,
-            regular_work_minutes=9600,
-            payable_authorized_absence_minutes=480,
-            unpaid_absence_minutes=0,
-            verified_overtime_minutes=180,
-            comp_time_minutes=60,
-            unexcused_absence_minutes=0,
-            basis_version="1.0",
+            business_date=date(2026, 8, 3),
+            expected_minutes=9600,
+            actual_minutes=9600,
+            credited_minutes=9600,
+            status=AttendanceStatus.PRESENT,
         )
-        return snapshot
+        return CloseService.close(tenant_id=self.tenant_id, period=period)
 
     def test_capture_freezes_hr10_hr11_and_replay_is_idempotent(self):
         fact = self._development_fact()

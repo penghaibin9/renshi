@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, timezone as dt_timezone
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
@@ -10,7 +11,10 @@ from hr10_development.models.development_fact import HrDevelopmentFact
 from hr_assessment.providers.base import ProviderContext, ProviderStatus
 from hr_assessment.providers.interfaces import DevelopmentProvider, TimeSummaryProvider
 from hr_staff.models import HrPerson, HrStaffMaster
-from hr_time.models.close import HrPayrollTimeBasis, HrTimeClosePeriod, HrTimeCloseSnapshot
+from hr_time.enums import AttendanceStatus
+from hr_time.models.attendance import HrAttendanceDayFact
+from hr_time.models.close import HrTimeClosePeriod
+from hr_time.services.close_service import CloseService
 
 
 class Hr10Hr11AssessmentProviderTests(TestCase):
@@ -22,6 +26,9 @@ class Hr10Hr11AssessmentProviderTests(TestCase):
             staff_no="ASSESS-PROVIDER-001",
             legacy_employee_id=501,
         )
+        User = get_user_model()
+        self.reopen_requester = User.objects.create_user(username="hr12-time-reopen-requester")
+        self.reopen_approver = User.objects.create_user(username="hr12-time-reopen-approver")
 
     def _ctx(self, *, ids=None, as_of=date(2026, 8, 15), tenant_id=77):
         return ProviderContext(
@@ -101,31 +108,18 @@ class Hr10Hr11AssessmentProviderTests(TestCase):
             period_type="MONTHLY",
             start_date=date(2026, 8, 1),
             end_date=date(2026, 8, 31),
-            status="CLOSED",
-            closed_at=timezone.now(),
         )
-        snapshot = HrTimeCloseSnapshot.objects.create(
+        HrAttendanceDayFact.objects.create(
             tenant_id=77,
-            period=period,
-            metric_definition_version="1.0",
-            attendance_fact_hash="a" * 64,
-            leave_ledger_hash="b" * 64,
-            overtime_fact_hash="c" * 64,
-        )
-        period.snapshot_id = snapshot.id
-        period.save(update_fields=["snapshot_id"])
-        HrPayrollTimeBasis.objects.create(
-            tenant_id=77,
-            close_snapshot=snapshot,
             staff_master_id=501,
-            regular_work_minutes=9600,
-            payable_authorized_absence_minutes=480,
-            unpaid_absence_minutes=0,
-            verified_overtime_minutes=180,
-            comp_time_minutes=60,
-            unexcused_absence_minutes=0,
-            basis_version="1.0",
+            business_date=date(2026, 8, 3),
+            expected_minutes=9600,
+            actual_minutes=9600,
+            credited_minutes=9600,
+            status=AttendanceStatus.PRESENT,
         )
+        snapshot = CloseService.close(tenant_id=77, period=period)
+        period.refresh_from_db()
         return period, snapshot
 
     def test_hr11_time_provider_reads_only_closed_snapshot_basis(self):
@@ -139,15 +133,26 @@ class Hr10Hr11AssessmentProviderTests(TestCase):
         row = result.data[0]
         self.assertEqual(row["staffId"], str(self.staff.id))
         self.assertEqual(row["regularWorkMinutes"], 9600)
-        self.assertEqual(row["verifiedOvertimeMinutes"], 180)
+        self.assertEqual(row["verifiedOvertimeMinutes"], 0)
         self.assertEqual(row["timeClose"]["timeClosePeriodId"], period.id)
         self.assertEqual(row["timeClose"]["timeCloseSnapshotId"], snapshot.id)
-        self.assertEqual(row["timeClose"]["attendanceFactHash"], "a" * 64)
+        self.assertEqual(len(row["timeClose"]["attendanceFactHash"]), 64)
 
     def test_hr11_reopened_period_is_unavailable_not_raw_fallback(self):
         period, _snapshot = self._closed_time_basis()
-        period.status = "REOPENED"
-        period.save(update_fields=["status"])
+        batch = CloseService.request_reopen(
+            tenant_id=77,
+            period=period,
+            reason="HR12 provider reopened-period contract",
+            actor_user=self.reopen_requester,
+            idempotency_key="hr12-provider-reopen",
+        )
+        CloseService.approve_reopen(
+            tenant_id=77,
+            period=period,
+            batch=batch,
+            actor_user=self.reopen_approver,
+        )
 
         result = TimeSummaryProvider().fetch(self._ctx())
 
