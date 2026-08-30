@@ -219,6 +219,9 @@ class MetricDefinitionVersion(HrVersionedModel):
             ("hr.data.define", "维护 HR18 人口维度指标定义"),
             ("hr.data.asof", "执行 HR18 历史时点重建"),
             ("hr.data.quality", "执行 HR18 数据质量治理"),
+            ("hr.data.submit", "创建并提交 HR18 正式数据报送"),
+            ("hr.data.approve", "独立审批 HR18 正式数据报送"),
+            ("hr.data.receipt", "登记 HR18 外部正式报送回执"),
         ]
         constraints = [
             models.UniqueConstraint(
