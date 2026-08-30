@@ -19,6 +19,8 @@ HR05_PERMISSIONS = (
     "hr05.case.create",
     "hr05.case.cancel",
     "hr05.case.activate",
+    "hr05.activation_fact.correct",
+    "hr05.activation_fact.revoke",
     # HR05-02 报到登记
     "hr05.report.checkin",
     # HR05-03 材料核验

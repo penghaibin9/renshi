@@ -69,6 +69,21 @@ urlpatterns = [
         api_views.hr05_case_activate,
         name="hr05-api-case-activate",
     ),
+    path(
+        "api/hr/v1/onboarding/activation-facts/<uuid:snapshot_id>",
+        api_views.hr05_activation_fact_detail,
+        name="hr05-api-activation-fact-detail",
+    ),
+    path(
+        "api/hr/v1/onboarding/activation-facts/<uuid:snapshot_id>/correct",
+        api_views.hr05_activation_fact_correct,
+        name="hr05-api-activation-fact-correct",
+    ),
+    path(
+        "api/hr/v1/onboarding/activation-facts/<uuid:snapshot_id>/revoke",
+        api_views.hr05_activation_fact_revoke,
+        name="hr05-api-activation-fact-revoke",
+    ),
     # HR05-03 材料核验（S5）
     path(
         "api/hr/v1/onboarding/cases/<uuid:case_id>/materials",

@@ -293,6 +293,10 @@ class ActivationService:
             staff_no=getattr(staff, "staff_no", "") or "",
             organization_id=case.planned_organization_id_id,
             position_id=case.planned_position_id_id,
+            source_type=case.source_type,
+            source_id=case.source_id,
+            hr04_proposed_hire_id=case.hr04_proposed_hire_id or "",
+            hr04_application_id=case.hr04_application_id or "",
             source_versions_json={"case_version": case.version, "handoff": case.source_id},
         )
 

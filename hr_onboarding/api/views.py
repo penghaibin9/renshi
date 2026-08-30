@@ -6,6 +6,8 @@ S3：cases 列表/详情、confirm-intent/request-delay/decline。
 S4-S7 陆续挂载 activation/materials/tasks/probations。
 """
 
+import json
+
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
@@ -145,6 +147,112 @@ def hr05_case_activate(request, case_id: str):
             tenant_id=context.tenant_id, actor_user_id=context.user_id
         ).activate(case, effective_at=effective, idempotency_key=idem_key)
         return api_base.ok(request, result)
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+@require_GET
+@require_hr05_permission("hr05.case.view")
+def hr05_activation_fact_detail(request, snapshot_id: str):
+    """Return the effective activation fact while retaining its full sealed chain."""
+
+    try:
+        context = api_base.make_hr05_context(request)
+        from hr_onboarding.services.activation_fact_service import ActivationFactService
+
+        result = ActivationFactService(tenant_id=context.tenant_id).get_effective_fact(
+            snapshot_id=snapshot_id
+        )
+        return api_base.ok(request, result)
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+def _activation_fact_request_payload(request):
+    if request.content_type == "application/json":
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise Hr05ApiError("JSON 请求体格式非法") from exc
+        if not isinstance(payload, dict):
+            raise Hr05ApiError("JSON 请求体必须是对象")
+        return payload
+    payload = request.POST.dict()
+    raw_changes = payload.get("changes_json")
+    if raw_changes:
+        try:
+            payload["changes"] = json.loads(raw_changes)
+        except json.JSONDecodeError as exc:
+            raise Hr05ApiError("changes_json 格式非法") from exc
+    return payload
+
+
+@require_POST
+@require_hr05_permission("hr05.activation_fact.correct")
+@csrf_exempt
+def hr05_activation_fact_correct(request, snapshot_id: str):
+    """Append a sealed correction; the original activation fact is never edited."""
+
+    try:
+        context = api_base.make_hr05_context(request)
+        payload = _activation_fact_request_payload(request)
+        changes = payload.get("changes") or {}
+        if not isinstance(changes, dict):
+            raise Hr05ApiError("changes 必须是对象")
+        from hr_onboarding.services.activation_fact_service import ActivationFactService
+
+        amendment = ActivationFactService(
+            tenant_id=context.tenant_id,
+            actor_user_id=context.user_id,
+        ).correct(
+            snapshot_id=snapshot_id,
+            changes=changes,
+            reason=payload.get("reason", ""),
+            idempotency_key=api_base.get_idempotency_key(request) or "",
+        )
+        return api_base.ok(
+            request,
+            {
+                "snapshot_id": str(amendment.snapshot_id),
+                "amendment_id": str(amendment.id),
+                "sequence_no": amendment.sequence_no,
+                "action": amendment.action,
+                "content_hash": amendment.content_hash,
+            },
+        )
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+@require_POST
+@require_hr05_permission("hr05.activation_fact.revoke")
+@csrf_exempt
+def hr05_activation_fact_revoke(request, snapshot_id: str):
+    """Append a terminal revocation fact under tenant lock and idempotency."""
+
+    try:
+        context = api_base.make_hr05_context(request)
+        payload = _activation_fact_request_payload(request)
+        from hr_onboarding.services.activation_fact_service import ActivationFactService
+
+        amendment = ActivationFactService(
+            tenant_id=context.tenant_id,
+            actor_user_id=context.user_id,
+        ).revoke(
+            snapshot_id=snapshot_id,
+            reason=payload.get("reason", ""),
+            idempotency_key=api_base.get_idempotency_key(request) or "",
+        )
+        return api_base.ok(
+            request,
+            {
+                "snapshot_id": str(amendment.snapshot_id),
+                "amendment_id": str(amendment.id),
+                "sequence_no": amendment.sequence_no,
+                "action": amendment.action,
+                "content_hash": amendment.content_hash,
+            },
+        )
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
 

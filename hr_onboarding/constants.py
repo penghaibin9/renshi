@@ -321,6 +321,8 @@ HR05_EVENT_TYPES = frozenset(
         "PrehireConfirmed",
         "EmployeeReported",
         "StaffActivated",
+        "ActivationFactCorrected",
+        "ActivationFactRevoked",
         "ProvisioningRequested",
         "ProvisioningSucceeded",
         "ProvisioningFailed",

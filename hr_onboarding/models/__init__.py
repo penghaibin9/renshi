@@ -6,7 +6,7 @@ hr_onboarding.models —— HR05 权威模型包（总册 §6-§25）。
 - case.py        HrOnboardingCase/StageTransition/ReportDelay/ReportCheckin
 - prehire.py     HrPrehireProfile/HrPrehirePortalAccess/HrOnboardingDataConflict
 - material.py    Requirement/Material/Verification/PersonnelFileTransfer
-- activation.py  HrActivationAttempt/HrOnboardingActivationSnapshot
+- activation.py  HrActivationAttempt/HrOnboardingActivationSnapshot/Amendment
 - task.py        HrOnboardingTaskInstance
 - provisioning.py HrProvisioningRequest
 - probation.py   HrProbationCase/Goal/Extension/Review
@@ -20,6 +20,7 @@ hr_onboarding.models —— HR05 权威模型包（总册 §6-§25）。
 
 from hr_onboarding.models.activation import (
     HrActivationAttempt,
+    HrOnboardingActivationAmendment,
     HrOnboardingActivationSnapshot,
 )
 from hr_onboarding.models.audit import HrOnboardingAuditEvent
@@ -74,6 +75,7 @@ __all__ = [
     "HrMaterialVerification",
     "HrPersonnelFileTransfer",
     "HrActivationAttempt",
+    "HrOnboardingActivationAmendment",
     "HrOnboardingActivationSnapshot",
     "HrOnboardingTaskInstance",
     "HrProvisioningRequest",
