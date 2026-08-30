@@ -2,9 +2,111 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+
 from django.db import models
 
 from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
+
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _require_sha256(value, *, code: str, optional: bool = False) -> str:
+    normalized = str(value or "").strip().lower()
+    if optional and not normalized:
+        return ""
+    if not _SHA256_RE.fullmatch(normalized):
+        raise ValueError(f"{code}: a lowercase SHA-256 hash is required")
+    return normalized
+
+
+class AppendOnlyEvidenceQuerySet(models.QuerySet):
+    """Close every ORM bulk path around already signed HR18 evidence."""
+
+    immutable_code = "HR18_EVIDENCE_IMMUTABLE"
+
+    def update(self, **kwargs):
+        raise ValueError(f"{self.immutable_code}: evidence rows must be appended")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(f"{self.immutable_code}: evidence rows cannot be bulk-updated")
+        return 0
+
+    def bulk_create(
+        self,
+        objs,
+        batch_size=None,
+        ignore_conflicts=False,
+        update_conflicts=False,
+        update_fields=None,
+        unique_fields=None,
+    ):
+        objs = list(objs)
+        if update_conflicts or update_fields:
+            raise ValueError(f"{self.immutable_code}: upsert cannot rewrite evidence")
+        for obj in objs:
+            obj._validate_integrity()
+        return super().bulk_create(
+            objs,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            update_conflicts=update_conflicts,
+            update_fields=update_fields,
+            unique_fields=unique_fields,
+        )
+
+    def delete(self):
+        raise ValueError(f"{self.immutable_code}: evidence rows cannot be deleted")
+
+
+class SubmissionSnapshotQuerySet(models.QuerySet):
+    """Force formal submission state changes through instance transition guards."""
+
+    def update(self, **kwargs):
+        raise ValueError(
+            "HR18_SUBMISSION_SERVICE_REQUIRED: queryset updates bypass the formal state machine"
+        )
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(
+                "HR18_SUBMISSION_SERVICE_REQUIRED: formal submissions cannot be bulk-updated"
+            )
+        return 0
+
+    def bulk_create(
+        self,
+        objs,
+        batch_size=None,
+        ignore_conflicts=False,
+        update_conflicts=False,
+        update_fields=None,
+        unique_fields=None,
+    ):
+        objs = list(objs)
+        if update_conflicts or update_fields:
+            raise ValueError(
+                "HR18_SUBMISSION_SERVICE_REQUIRED: upsert cannot rewrite formal submissions"
+            )
+        for obj in objs:
+            obj._validate_integrity()
+        return super().bulk_create(
+            objs,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            update_conflicts=update_conflicts,
+            update_fields=update_fields,
+            unique_fields=unique_fields,
+        )
+
+    def delete(self):
+        raise ValueError(
+            "HR18_SUBMISSION_IMMUTABLE: submission history cannot be deleted"
+        )
 
 
 class PopulationDefinitionVersion(HrVersionedModel):
@@ -340,6 +442,8 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
     evidence_hash = models.CharField(max_length=64)
     generated_at = models.DateTimeField(auto_now_add=True)
 
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
+
     _FACT_FIELDS = (
         "tenant_id",
         "evidence_no",
@@ -376,22 +480,21 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
             ),
         ]
 
+    def _validate_integrity(self):
+        self.evidence_hash = _require_sha256(
+            self.evidence_hash, code="HR18_ASOF_EVIDENCE_HASH_INVALID"
+        )
+
     def save(self, *args, **kwargs):
-        if self.pk:
-            persisted = type(self)._base_manager.filter(pk=self.pk).values(
-                *self._FACT_FIELDS
-            ).first()
-            if persisted:
-                changed = [
-                    field
-                    for field in self._FACT_FIELDS
-                    if getattr(self, field) != persisted[field]
-                ]
-                if changed:
-                    raise ValueError(
-                        "HR18_ASOF_EVIDENCE_IMMUTABLE: evidence snapshots must be appended"
-                    )
+        self._validate_integrity()
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_ASOF_EVIDENCE_IMMUTABLE: evidence snapshots must be appended"
+            )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR18_ASOF_EVIDENCE_IMMUTABLE: evidence cannot be deleted")
 
 
 class MetricEvaluationSnapshot(HrTenantScopedModel):
@@ -413,6 +516,8 @@ class MetricEvaluationSnapshot(HrTenantScopedModel):
     evaluator_version = models.CharField(max_length=64)
     calculation_hash = models.CharField(max_length=64)
     evaluated_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
 
     _FACT_FIELDS = (
         "tenant_id",
@@ -451,22 +556,24 @@ class MetricEvaluationSnapshot(HrTenantScopedModel):
             ),
         ]
 
+    def _validate_integrity(self):
+        self.evidence_hash = _require_sha256(
+            self.evidence_hash, code="HR18_METRIC_EVIDENCE_HASH_INVALID"
+        )
+        self.calculation_hash = _require_sha256(
+            self.calculation_hash, code="HR18_METRIC_CALCULATION_HASH_INVALID"
+        )
+
     def save(self, *args, **kwargs):
-        if self.pk:
-            persisted = type(self)._base_manager.filter(pk=self.pk).values(
-                *self._FACT_FIELDS
-            ).first()
-            if persisted:
-                changed = [
-                    field
-                    for field in self._FACT_FIELDS
-                    if getattr(self, field) != persisted[field]
-                ]
-                if changed:
-                    raise ValueError(
-                        "HR18_METRIC_EVALUATION_IMMUTABLE: evaluation snapshots must be appended"
-                    )
+        self._validate_integrity()
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_METRIC_EVALUATION_IMMUTABLE: evaluation snapshots must be appended"
+            )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR18_METRIC_EVALUATION_IMMUTABLE: evaluation cannot be deleted")
 
 
 class SubmissionSnapshot(HrTenantScopedModel):
@@ -506,6 +613,8 @@ class SubmissionSnapshot(HrTenantScopedModel):
     receipt_ref = models.CharField(max_length=255, blank=True, default="")
     parent_submission_id = models.UUIDField(null=True, blank=True)
 
+    objects = SubmissionSnapshotQuerySet.as_manager()
+
     _IDENTITY_FIELDS = (
         "tenant_id",
         "submission_no",
@@ -516,7 +625,70 @@ class SubmissionSnapshot(HrTenantScopedModel):
         "scope_json",
         "payload_hash",
         "parent_submission_id",
+        "created_at",
+        "created_by",
     )
+
+    _STATE_FIELDS = (
+        "status",
+        "dispatch_ref",
+        "dispatch_requested_at",
+        "dispatch_error",
+        "submitted_at",
+        "receipt_ref",
+        "updated_by",
+    )
+
+    _ALLOWED_TRANSITIONS = {
+        (Status.DRAFT, Status.VALIDATED): {"status", "updated_by"},
+        (Status.VALIDATED, Status.APPROVED): {"status", "updated_by"},
+        (Status.APPROVED, Status.DISPATCH_QUEUED): {
+            "status",
+            "dispatch_ref",
+            "dispatch_requested_at",
+            "dispatch_error",
+            "updated_by",
+        },
+        (Status.DISPATCH_FAILED, Status.DISPATCH_QUEUED): {
+            "status",
+            "dispatch_ref",
+            "dispatch_requested_at",
+            "dispatch_error",
+            "updated_by",
+        },
+        (Status.APPROVED, Status.DISPATCH_FAILED): {
+            "status",
+            "dispatch_error",
+            "updated_by",
+        },
+        (Status.DISPATCH_FAILED, Status.DISPATCH_FAILED): {
+            "dispatch_error",
+            "updated_by",
+        },
+        (Status.DISPATCH_QUEUED, Status.SUBMITTED): {
+            "status",
+            "submitted_at",
+            "dispatch_error",
+            "updated_by",
+        },
+        (Status.DISPATCH_QUEUED, Status.DISPATCH_FAILED): {
+            "status",
+            "dispatch_error",
+            "updated_by",
+        },
+        (Status.SUBMITTED, Status.ACCEPTED): {
+            "status",
+            "receipt_ref",
+            "updated_by",
+        },
+        (Status.SUBMITTED, Status.REJECTED): {
+            "status",
+            "receipt_ref",
+            "updated_by",
+        },
+        (Status.ACCEPTED, Status.CORRECTED): {"status", "updated_by"},
+        (Status.REJECTED, Status.CORRECTED): {"status", "updated_by"},
+    }
 
     class Meta:
         db_table = "hr18_submission_snapshot"
@@ -537,22 +709,55 @@ class SubmissionSnapshot(HrTenantScopedModel):
             ),
         ]
 
+    def _validate_integrity(self):
+        self.payload_hash = _require_sha256(
+            self.payload_hash, code="HR18_SUBMISSION_PAYLOAD_HASH_INVALID"
+        )
+
     def save(self, *args, **kwargs):
+        self._validate_integrity()
         if self.pk:
             persisted = type(self)._base_manager.filter(pk=self.pk).values(
-                *self._IDENTITY_FIELDS
+                *self._IDENTITY_FIELDS, *self._STATE_FIELDS
             ).first()
             if persisted:
-                changed = [
+                identity_changed = [
                     field
                     for field in self._IDENTITY_FIELDS
                     if getattr(self, field) != persisted[field]
                 ]
-                if changed:
+                if identity_changed:
                     raise ValueError(
                         "HR18_SUBMISSION_IDENTITY_IMMUTABLE: submission payload identity must be appended"
                     )
+                changed = {
+                    field
+                    for field in self._STATE_FIELDS
+                    if getattr(self, field) != persisted[field]
+                }
+                transition = (persisted["status"], self.status)
+                allowed = self._ALLOWED_TRANSITIONS.get(transition)
+                failed_retry_noop = transition == (
+                    self.Status.DISPATCH_FAILED,
+                    self.Status.DISPATCH_FAILED,
+                )
+                if (
+                    (not changed and not failed_retry_noop)
+                    or allowed is None
+                    or not changed.issubset(allowed)
+                ):
+                    raise ValueError(
+                        "HR18_SUBMISSION_STATE_TRANSITION_INVALID: formal state must change through the allowed lifecycle"
+                    )
+                update_fields = kwargs.get("update_fields")
+                if update_fields is not None and not changed.issubset(set(update_fields)):
+                    raise ValueError(
+                        "HR18_SUBMISSION_UPDATE_FIELDS_INCOMPLETE: all state changes must be persisted atomically"
+                    )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR18_SUBMISSION_IMMUTABLE: submission history cannot be deleted")
 
 
 class ExchangeDatasetVersion(HrVersionedModel):
@@ -795,6 +1000,8 @@ class ExchangeReceipt(HrTenantScopedModel):
     receipt_hash = models.CharField(max_length=64)
     received_at = models.DateTimeField()
 
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
+
     class Meta:
         db_table = "hr18_exchange_receipt"
         constraints = [
@@ -808,10 +1015,24 @@ class ExchangeReceipt(HrTenantScopedModel):
             ),
         ]
 
+    def _validate_integrity(self):
+        self.receipt_hash = _require_sha256(
+            self.receipt_hash, code="HR18_EXCHANGE_RECEIPT_HASH_INVALID"
+        )
+        self.received_payload_hash = _require_sha256(
+            self.received_payload_hash,
+            code="HR18_EXCHANGE_RECEIVED_PAYLOAD_HASH_INVALID",
+            optional=True,
+        )
+
     def save(self, *args, **kwargs):
+        self._validate_integrity()
         if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
             raise ValueError("HR18_EXCHANGE_RECEIPT_IMMUTABLE: receipts must be appended")
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR18_EXCHANGE_RECEIPT_IMMUTABLE: receipts cannot be deleted")
 
 
 class ExchangeReconciliation(HrTenantScopedModel):
@@ -833,6 +1054,9 @@ class ExchangeReconciliation(HrTenantScopedModel):
     status = models.CharField(max_length=16, choices=Status.choices)
     differences_json = models.JSONField(default=dict, blank=True)
     reconciled_at = models.DateTimeField()
+    reconciliation_hash = models.CharField(max_length=64)
+
+    objects = AppendOnlyEvidenceQuerySet.as_manager()
 
     class Meta:
         db_table = "hr18_exchange_reconciliation"
@@ -843,12 +1067,60 @@ class ExchangeReconciliation(HrTenantScopedModel):
             ),
         ]
 
+    def integrity_payload(self):
+        return {
+            "tenantId": int(self.tenant_id),
+            "jobId": str(self.job_id),
+            "receiptId": str(self.receipt_id),
+            "expectedPayloadHash": self.expected_payload_hash,
+            "receivedPayloadHash": self.received_payload_hash,
+            "expectedRecordCount": int(self.expected_record_count),
+            "receivedRecordCount": self.received_record_count,
+            "status": self.status,
+            "differences": self.differences_json or {},
+            "reconciledAt": self.reconciled_at.isoformat(),
+        }
+
+    def calculate_reconciliation_hash(self):
+        encoded = json.dumps(
+            self.integrity_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _validate_integrity(self):
+        self.expected_payload_hash = _require_sha256(
+            self.expected_payload_hash,
+            code="HR18_EXCHANGE_EXPECTED_PAYLOAD_HASH_INVALID",
+        )
+        self.received_payload_hash = _require_sha256(
+            self.received_payload_hash,
+            code="HR18_EXCHANGE_RECEIVED_PAYLOAD_HASH_INVALID",
+            optional=True,
+        )
+        self.reconciliation_hash = _require_sha256(
+            self.reconciliation_hash,
+            code="HR18_EXCHANGE_RECONCILIATION_HASH_INVALID",
+        )
+        if self.reconciliation_hash != self.calculate_reconciliation_hash():
+            raise ValueError(
+                "HR18_EXCHANGE_RECONCILIATION_HASH_MISMATCH: reconciliation content was changed"
+            )
+
     def save(self, *args, **kwargs):
+        self._validate_integrity()
         if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
             raise ValueError(
                 "HR18_EXCHANGE_RECONCILIATION_IMMUTABLE: reconciliations must be appended"
             )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "HR18_EXCHANGE_RECONCILIATION_IMMUTABLE: reconciliations cannot be deleted"
+        )
 
 
 class ExchangeDeadLetter(HrTenantScopedModel):

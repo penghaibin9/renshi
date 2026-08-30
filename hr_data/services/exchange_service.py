@@ -662,7 +662,7 @@ class ExchangeJobService:
             differences["accepted"] = {"expected": True, "received": False}
         elif differences:
             status = ExchangeReconciliation.Status.MISMATCH
-        reconciliation = ExchangeReconciliation.objects.create(
+        reconciliation = ExchangeReconciliation(
             tenant_id=self.tenant_id,
             job_id=job.id,
             receipt_id=receipt.id,
@@ -676,6 +676,10 @@ class ExchangeJobService:
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
+        reconciliation.reconciliation_hash = (
+            reconciliation.calculate_reconciliation_hash()
+        )
+        reconciliation.save(force_insert=True)
         if status == ExchangeReconciliation.Status.MATCHED:
             job.status = ExchangeJob.Status.RECONCILED
         else:

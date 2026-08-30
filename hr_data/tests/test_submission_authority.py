@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import Permission
 from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.utils import timezone
 
 from hr_data import submission_api
 from hr_data.models import AsOfEvidenceSnapshot, SubmissionSnapshot
@@ -35,6 +36,24 @@ class SubmissionAuthorityServiceTests(TestCase):
             blocked_domains_json=[],
             provider_versions_json={"HR03": "1.0"},
             evidence_hash="b" * 64,
+        )
+
+    def _terminal_submission(
+        self, evidence, *, submission_no, status, receipt_ref=None
+    ):
+        return SubmissionSnapshot.objects.create(
+            tenant_id=77,
+            submission_no=submission_no,
+            definition_kind=evidence.definition_kind,
+            definition_code=evidence.definition_code,
+            definition_version=evidence.definition_version,
+            as_of_date=evidence.as_of_date,
+            scope_json={"asOfEvidenceId": str(evidence.id)},
+            payload_hash="a" * 64,
+            status=status,
+            receipt_ref=receipt_ref or f"receipt-{submission_no.lower()}",
+            created_by=9,
+            updated_by=9,
         )
 
     def test_draft_identity_is_derived_from_tenant_owned_evidence(self):
@@ -126,14 +145,12 @@ class SubmissionAuthorityServiceTests(TestCase):
     def test_accepted_correction_preserves_chain_and_supersedes_parent(self):
         original_evidence = self._evidence()
         service = SubmissionLifecycleService(77, actor_user_id=9)
-        original = service.create_draft(
+        original = self._terminal_submission(
+            original_evidence,
             submission_no="SUB-ORIGINAL",
-            as_of_evidence_id=original_evidence.id,
-            payload_hash="a" * 64,
-        ).snapshot
-        original.status = SubmissionSnapshot.Status.REJECTED
-        original.receipt_ref = "receipt-original-rejected"
-        original.save(update_fields=["status", "receipt_ref", "updated_at"])
+            status=SubmissionSnapshot.Status.REJECTED,
+            receipt_ref="receipt-original-rejected",
+        )
 
         correction_evidence = self._evidence()
         correction = service.create_correction(
@@ -148,8 +165,25 @@ class SubmissionAuthorityServiceTests(TestCase):
         self.assertEqual(correction.status, SubmissionSnapshot.Status.DRAFT)
         self.assertEqual(original.payload_hash, "a" * 64)
 
-        correction.status = SubmissionSnapshot.Status.SUBMITTED
-        correction.save(update_fields=["status", "updated_at"])
+        service.validate(correction.id)
+        SubmissionLifecycleService(77, actor_user_id=10).approve(correction.id)
+        correction.refresh_from_db()
+        correction.status = SubmissionSnapshot.Status.DISPATCH_QUEUED
+        correction.dispatch_ref = "dispatch-correction-1"
+        correction.dispatch_requested_at = timezone.now()
+        correction.updated_by = 10
+        correction.save(
+            update_fields=[
+                "status",
+                "dispatch_ref",
+                "dispatch_requested_at",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+        service.confirm_dispatched(
+            correction.id, dispatch_ref="dispatch-correction-1"
+        )
         service.record_receipt(
             correction.id,
             accepted=True,
@@ -180,14 +214,17 @@ class SubmissionAuthorityServiceTests(TestCase):
             )
         self.assertEqual(ctx.exception.code, "SUBMISSION_CORRECTION_INVALID_STATE")
 
-        draft.status = SubmissionSnapshot.Status.REJECTED
-        draft.save(update_fields=["status", "updated_at"])
+        rejected = self._terminal_submission(
+            evidence,
+            submission_no="SUB-REJECTED-PARENT",
+            status=SubmissionSnapshot.Status.REJECTED,
+        )
         foreign_definition = self._evidence(
             definition_code="OTHER-FORMAL-DEFINITION"
         )
         with self.assertRaises(SubmissionLifecycleError) as ctx:
             service.create_correction(
-                draft.id,
+                rejected.id,
                 submission_no="SUB-SPOOF-CORRECTION",
                 as_of_evidence_id=foreign_definition.id,
                 payload_hash="b" * 64,

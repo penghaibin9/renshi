@@ -243,13 +243,31 @@ class MetricExpressionEvaluationServiceTests(TestCase):
             self._evaluate(evidence_id=foreign.id)
         self.assertEqual(ctx.exception.code, "HR18_METRIC_EVIDENCE_NOT_FOUND")
 
-        self.evidence.status = AsOfEvidenceSnapshot.Status.PARTIAL
-        AsOfEvidenceSnapshot.objects.filter(id=self.evidence.id).update(status="PARTIAL")
+        with self.assertRaisesRegex(ValueError, "HR18_EVIDENCE_IMMUTABLE"):
+            AsOfEvidenceSnapshot.objects.filter(id=self.evidence.id).update(
+                status="PARTIAL"
+            )
+        partial = AsOfEvidenceSnapshot.objects.create(
+            tenant_id=77,
+            evidence_no="METRIC-EVIDENCE-PARTIAL",
+            definition_kind=AsOfEvidenceSnapshot.DefinitionKind.METRIC,
+            definition_code=self.metric.metric_code,
+            definition_version=4,
+            as_of_date=date(2026, 8, 1),
+            status=AsOfEvidenceSnapshot.Status.PARTIAL,
+            source_statuses_json={"HR03": "UNAVAILABLE"},
+            blocked_domains_json=["HR03"],
+            provider_versions_json={"HR03": "hr03-source-v1"},
+            provider_evidence_hashes_json={"HR03": "c" * 64},
+            evidence_hash="8" * 64,
+        )
         with patch(
             "hr_data.services.metric_expression_service.import_string"
         ) as provider_loader:
             with self.assertRaises(MetricExpressionError) as ctx:
-                self._evaluate(evaluation_no="EVAL-INCOMPLETE")
+                self._evaluate(
+                    evaluation_no="EVAL-INCOMPLETE", evidence_id=partial.id
+                )
         self.assertEqual(ctx.exception.code, "HR18_METRIC_EVIDENCE_INCOMPLETE")
         provider_loader.assert_not_called()
 
