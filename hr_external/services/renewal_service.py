@@ -49,7 +49,7 @@ class RenewalService:
         requester_org_opinion: str = "",
         person_willingness: str = "",
     ) -> HrExternalRenewalReview:
-        eng = HrExternalEngagement.objects.filter(
+        eng = HrExternalEngagement.objects.select_for_update().filter(
             tenant_id=tenant_id, id=engagement_id
         ).first()
         if eng is None:
@@ -70,7 +70,8 @@ class RenewalService:
         # 触发 Engagement → REVIEW_DUE（§20）
         if eng.status in (ExternalEngagementStatus.ACTIVE, ExternalEngagementStatus.REVIEW_DUE):
             eng.status = ExternalEngagementStatus.REVIEW_DUE
-            eng.save(update_fields=["status", "updated_at"])
+            eng.version += 1
+            eng.save(update_fields=["status", "version", "updated_at"])
         return review
 
     @transaction.atomic
@@ -78,6 +79,7 @@ class RenewalService:
         self,
         review: HrExternalRenewalReview,
         *,
+        tenant_id: int,
         decision: str,
         decided_by=None,
         next_start: Optional[date] = None,
@@ -91,6 +93,18 @@ class RenewalService:
         CHANGE_HOST_ORG → next_host_org_id 指定新主办学院。
         未指定时沿用原值（RENEW/RENEW_WITH_CHANGES 默认语义）。
         """
+        review = (
+            HrExternalRenewalReview.objects.select_for_update()
+            .select_related("engagement_id", "engagement_id__category_id")
+            .filter(tenant_id=tenant_id, id=getattr(review, "pk", None))
+            .first()
+        )
+        if review is None:
+            raise RenewalStateConflict("EXTERNAL_RENEWAL_REVIEW_NOT_FOUND")
+        # The API historically advanced DRAFT immediately before deciding. Keep
+        # that HTTP behaviour, but perform both writes under this one tenant lock.
+        if review.status == RenewalReviewStatus.DRAFT:
+            review.status = RenewalReviewStatus.IN_REVIEW
         if review.status != RenewalReviewStatus.IN_REVIEW:
             raise RenewalStateConflict("review not in review status")
         if decision not in {d.value for d in RenewalDecision}:
@@ -109,7 +123,9 @@ class RenewalService:
         ):
             import uuid as _uuid
 
-            eng = review.engagement_id
+            eng = HrExternalEngagement.objects.select_for_update().get(
+                tenant_id=tenant_id, id=review.engagement_id_id
+            )
 
             from hr_external.models import HrExternalCategory
 
@@ -150,14 +166,21 @@ class RenewalService:
             review.next_engagement_id = new_eng
         elif decision == RenewalDecision.CONVERT_TO_REGULAR_HR_PROCESS:
             # 转正式员工：走 HR04/HR05/HR03 正式链（§62），不直接改 worker_kind
-            eng = review.engagement_id
+            eng = HrExternalEngagement.objects.select_for_update().get(
+                tenant_id=tenant_id, id=review.engagement_id_id
+            )
             eng.status = ExternalEngagementStatus.EXITING
-            eng.save(update_fields=["status", "updated_at"])
+            eng.version += 1
+            eng.save(update_fields=["status", "version", "updated_at"])
         elif decision == RenewalDecision.DO_NOT_RENEW:
-            eng = review.engagement_id
+            eng = HrExternalEngagement.objects.select_for_update().get(
+                tenant_id=tenant_id, id=review.engagement_id_id
+            )
             eng.status = ExternalEngagementStatus.EXPIRED
-            eng.save(update_fields=["status", "updated_at"])
+            eng.version += 1
+            eng.save(update_fields=["status", "version", "updated_at"])
 
+        review.version += 1
         review.save(
             update_fields=[
                 "decision",
@@ -165,6 +188,7 @@ class RenewalService:
                 "decided_by",
                 "decided_at",
                 "next_engagement_id",
+                "version",
                 "updated_at",
             ]
         )

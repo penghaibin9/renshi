@@ -106,15 +106,41 @@ class IndustryService:
             status=ContributionStatus.DRAFT,
         )
 
-    def submit_contribution(self, contribution: HrExternalContribution) -> None:
+    @transaction.atomic
+    def submit_contribution(
+        self, contribution: HrExternalContribution, *, tenant_id: int
+    ) -> HrExternalContribution:
         """DRAFT→SUBMITTED。之后进入核验流。"""
+        contribution = (
+            HrExternalContribution.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(contribution, "pk", None))
+            .first()
+        )
+        if contribution is None:
+            raise CrossTenantReference("EXTERNAL_CONTRIBUTION_NOT_FOUND")
         if contribution.status != ContributionStatus.DRAFT:
             raise InvalidContributionState("contribution not in DRAFT")
         contribution.status = ContributionStatus.SUBMITTED
-        contribution.save(update_fields=["status", "updated_at"])
+        contribution.version += 1
+        contribution.save(update_fields=["status", "version", "updated_at"])
+        return contribution
 
-    def verify_contribution(self, contribution: HrExternalContribution, *, verified: bool) -> None:
+    @transaction.atomic
+    def verify_contribution(
+        self,
+        contribution: HrExternalContribution,
+        *,
+        tenant_id: int,
+        verified: bool,
+    ) -> HrExternalContribution:
         """SUBMITTED/UNDER_REVIEW → VERIFIED/REJECTED。VERIFIED 后不可原地改（00 §20）。"""
+        contribution = (
+            HrExternalContribution.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(contribution, "pk", None))
+            .first()
+        )
+        if contribution is None:
+            raise CrossTenantReference("EXTERNAL_CONTRIBUTION_NOT_FOUND")
         if contribution.status in (ContributionStatus.VERIFIED, ContributionStatus.REJECTED):
             raise InvalidContributionState("contribution already finalized")
         contribution.status = (
@@ -123,7 +149,11 @@ class IndustryService:
         contribution.verification_status = (
             "VERIFIED" if verified else "REJECTED"
         )
-        contribution.save(update_fields=["status", "verification_status", "updated_at"])
+        contribution.version += 1
+        contribution.save(
+            update_fields=["status", "verification_status", "version", "updated_at"]
+        )
+        return contribution
 
     @transaction.atomic
     def create_workspace(

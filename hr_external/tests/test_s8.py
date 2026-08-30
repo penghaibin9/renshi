@@ -77,6 +77,7 @@ class RenewalTests(TestCase):
         review.save(update_fields=["status", "updated_at"])
         decision = self.renewal.decide(
             review,
+            tenant_id=self.tenant,
             decision=RenewalDecision.RENEW,
             decided_by=1,
             next_start=date(2026, 9, 1),
@@ -98,7 +99,12 @@ class RenewalTests(TestCase):
         )
         review.status = RenewalReviewStatus.IN_REVIEW
         review.save(update_fields=["status", "updated_at"])
-        self.renewal.decide(review, decision=RenewalDecision.DO_NOT_RENEW, decided_by=1)
+        self.renewal.decide(
+            review,
+            tenant_id=self.tenant,
+            decision=RenewalDecision.DO_NOT_RENEW,
+            decided_by=1,
+        )
         self.eng.refresh_from_db()
         self.assertEqual(self.eng.status, ExternalEngagementStatus.EXPIRED)
 
@@ -109,7 +115,10 @@ class RenewalTests(TestCase):
         review.status = RenewalReviewStatus.IN_REVIEW
         review.save(update_fields=["status", "updated_at"])
         self.renewal.decide(
-            review, decision=RenewalDecision.CONVERT_TO_REGULAR_HR_PROCESS, decided_by=1
+            review,
+            tenant_id=self.tenant,
+            decision=RenewalDecision.CONVERT_TO_REGULAR_HR_PROCESS,
+            decided_by=1,
         )
         self.eng.refresh_from_db()
         # 转正式走 HR04/05/03 正式链（§62），Engagement 进入 EXITING
@@ -130,6 +139,7 @@ class RenewalTests(TestCase):
         )
         self.renewal.decide(
             review,
+            tenant_id=self.tenant,
             decision=RenewalDecision.CHANGE_CATEGORY,
             decided_by=1,
             next_start=date(2026, 9, 1),
@@ -157,6 +167,7 @@ class RenewalTests(TestCase):
         with self.assertRaises(RenewalStateConflict):
             self.renewal.decide(
                 review,
+                tenant_id=self.tenant,
                 decision=RenewalDecision.CHANGE_CATEGORY,
                 decided_by=1,
                 next_category_id=uuid.uuid4(),  # 不存在的类别
@@ -204,7 +215,7 @@ class ExitTests(TestCase):
 
         case.status = "READY_TO_EXIT"
         case.save(update_fields=["status", "updated_at"])
-        self.service.start_exit(case)
+        case = self.service.start_exit(case, tenant_id=self.tenant)
         case = self.service.finalize_exit(case, tenant_id=self.tenant)
 
         self.eng.refresh_from_db()
@@ -283,7 +294,7 @@ class ExitTests(TestCase):
         )
         case.status = "READY_TO_EXIT"
         case.save(update_fields=["status", "updated_at"])
-        self.service.start_exit(case)
+        case = self.service.start_exit(case, tenant_id=self.tenant)
         self.service.finalize_exit(case, tenant_id=self.tenant)
 
         # eng 的 grant 被回收请求，eng2 的 grant 保持（§138.14/§99）

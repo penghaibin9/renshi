@@ -272,11 +272,11 @@ class ConcurrencyGuardTests(TestCase):
         self.profile.primary_category.save()
 
         svc = HiringService()
-        eng = svc.activate(case)
+        eng = svc.activate(case, tenant_id=self.tenant)
         self.assertIsNotNone(eng)
         # 第二次激活：case 已 ACTIVATED → 拒绝（防重复创建 Engagement）
         with self.assertRaises(InvalidHiringState):
-            svc.activate(case)
+            svc.activate(case, tenant_id=self.tenant)
 
     def test_double_engagement_create_rejected(self):
         """同一 person 两次创建重叠 active engagement：第二次被重叠检测拒绝。"""

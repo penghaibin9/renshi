@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from django.db import transaction
 from django.utils import timezone
 
 from hr_external.constants import ExternalAuthorityMode
@@ -40,6 +41,7 @@ class AuthorityService:
             return False
         return AuthorityService.get_mode(tenant_id) != ExternalAuthorityMode.HR08_AUTHORITY
 
+    @transaction.atomic
     def transition(
         self,
         *,
@@ -47,18 +49,21 @@ class AuthorityService:
         target: str,
         actor_id: Optional[int] = None,
     ) -> HrExternalAuthorityConfig:
-        current = AuthorityService.get_mode(tenant_id)
+        HrExternalAuthorityConfig.objects.get_or_create(
+            tenant_id=tenant_id,
+            defaults={
+                "authority_mode": ExternalAuthorityMode.LEGACY_EMPLOYEE_TAG_ONLY,
+                "legacy_write_disabled": False,
+            },
+        )
+        cfg = HrExternalAuthorityConfig.objects.select_for_update().get(
+            tenant_id=tenant_id
+        )
+        current = cfg.authority_mode
         if target not in _TRANSITIONS.get(current, set()):
             raise AuthorityTransitionInvalid(
                 f"illegal authority transition {current} -> {target}"
             )
-        cfg, _ = HrExternalAuthorityConfig.objects.get_or_create(
-            tenant_id=tenant_id,
-            defaults={
-                "authority_mode": current,
-                "legacy_write_disabled": current == ExternalAuthorityMode.HR08_AUTHORITY,
-            },
-        )
         cfg.authority_mode = target
         cfg.cutover_at = timezone.now()
         cfg.cutover_by = actor_id

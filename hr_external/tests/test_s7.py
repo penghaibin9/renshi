@@ -78,20 +78,22 @@ class TaskTests(TestCase):
     def test_task_lifecycle(self):
         t = self._task()
         self.assertEqual(t.status, ExternalTaskStatus.DRAFT)
-        self.service.assign(t)
-        self.service.accept(t, action="ACCEPTED")
+        self.service.assign(t, tenant_id=self.tenant)
+        self.service.accept(t, action="ACCEPTED", tenant_id=self.tenant)
         self.assertEqual(t.status, ExternalTaskStatus.ACCEPTED)
-        self.service.start(t)
+        self.service.start(t, tenant_id=self.tenant)
         self.assertEqual(t.status, ExternalTaskStatus.IN_PROGRESS)
-        self.service.submit(t)
-        self.service.review(t)
-        self.service.complete(t)
+        self.service.submit(t, tenant_id=self.tenant)
+        self.service.review(t, tenant_id=self.tenant)
+        self.service.complete(t, tenant_id=self.tenant)
         self.assertEqual(t.status, ExternalTaskStatus.COMPLETED)
 
     def test_decline_keeps_task(self):
         t = self._task()
-        self.service.assign(t)
-        self.service.accept(t, action="DECLINE_WITH_REASON", reason="时间冲突")
+        self.service.assign(t, tenant_id=self.tenant)
+        self.service.accept(
+            t, action="DECLINE_WITH_REASON", reason="时间冲突", tenant_id=self.tenant
+        )
         t.refresh_from_db()
         # 拒绝不直接删除任务（§56）
         self.assertIsNotNone(HrExternalServiceTask.objects.filter(id=t.id).first())
@@ -113,7 +115,9 @@ class TaskTests(TestCase):
         self.assertEqual(record.verification_status, WorkloadVerificationStatus.UNVERIFIED)
         self.assertEqual(record.settlement_status, SettlementStatus.NOT_ELIGIBLE)
         # 本人提交不自动成为正式数量（§52）
-        self.service.verify_workload(record, verified=True, by=99)
+        self.service.verify_workload(
+            record, tenant_id=self.tenant, verified=True, by=99
+        )
         record.refresh_from_db()
         self.assertEqual(record.verification_status, WorkloadVerificationStatus.VERIFIED)
         self.assertEqual(record.settlement_status, SettlementStatus.PENDING)
@@ -147,9 +151,11 @@ class TaskTests(TestCase):
             quantity=10,
             service_date=date(2026, 10, 1),
         )
-        self.service.verify_workload(record, verified=True)
+        self.service.verify_workload(record, tenant_id=self.tenant, verified=True)
         with self.assertRaises(TaskAlreadyFinalized):
-            self.service.verify_workload(record, verified=False)
+            self.service.verify_workload(
+                record, tenant_id=self.tenant, verified=False
+            )
 
     def test_settlement_basis_only_verified(self):
         rec1 = self.service.add_workload(
@@ -160,7 +166,7 @@ class TaskTests(TestCase):
             unit="学时",
             service_date=date(2026, 10, 1),
         )
-        self.service.verify_workload(rec1, verified=True)
+        self.service.verify_workload(rec1, tenant_id=self.tenant, verified=True)
         # 未验证的工作量
         self.service.add_workload(
             tenant_id=self.tenant,

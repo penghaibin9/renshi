@@ -57,7 +57,7 @@ class HiringAgreementRequirementTests(TestCase):
         self._set_requirement(AgreementRequirement.REQUIRED_BEFORE_ACTIVATION)
         case = self._case("BEFORE")
 
-        self.service.wait_agreement(case)
+        self.service.wait_agreement(case, tenant_id=self.tenant)
 
         case.refresh_from_db()
         self.assertEqual(case.status, ExternalHiringStatus.WAITING_AGREEMENT)
@@ -66,11 +66,11 @@ class HiringAgreementRequirementTests(TestCase):
         self._set_requirement(AgreementRequirement.NOT_REQUIRED)
         case = self._case("NONE")
 
-        self.service.wait_agreement(case)
+        self.service.wait_agreement(case, tenant_id=self.tenant)
         case.refresh_from_db()
         self.assertEqual(case.status, ExternalHiringStatus.READY_TO_ACTIVATE)
 
-        engagement = self.service.activate(case)
+        engagement = self.service.activate(case, tenant_id=self.tenant)
 
         self.assertEqual(engagement.agreement_requirement, AgreementRequirement.NOT_REQUIRED)
         self.assertEqual(
@@ -85,11 +85,11 @@ class HiringAgreementRequirementTests(TestCase):
         self._set_requirement(AgreementRequirement.REQUIRED_AFTER_ACTIVATION_GRACE)
         case = self._case("GRACE")
 
-        self.service.wait_agreement(case)
+        self.service.wait_agreement(case, tenant_id=self.tenant)
         case.refresh_from_db()
         self.assertEqual(case.status, ExternalHiringStatus.READY_TO_ACTIVATE)
 
-        engagement = self.service.activate(case)
+        engagement = self.service.activate(case, tenant_id=self.tenant)
 
         self.assertEqual(
             engagement.agreement_requirement,

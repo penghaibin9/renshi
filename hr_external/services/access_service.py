@@ -68,7 +68,12 @@ class AccessService:
         """Activation 后创建 scoped grants + GRANT provisioning requests（§43 step8/§104）。"""
         from hr_external.models import HrExternalCategory
 
-        if engagement.tenant_id != tenant_id:
+        engagement = (
+            HrExternalEngagement.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(engagement, "pk", None))
+            .first()
+        )
+        if engagement is None:
             raise AccessScopeInvalid("Engagement does not belong to tenant")
 
         category = HrExternalCategory.objects.filter(
@@ -125,11 +130,29 @@ class AccessService:
             grants.append(grant)
         return grants
 
-    def confirm_grant(self, grant: HrExternalAccessGrant, *, external_ref: str = ""):
+    @transaction.atomic
+    def confirm_grant(
+        self,
+        grant: HrExternalAccessGrant,
+        *,
+        tenant_id: int,
+        external_ref: str = "",
+    ):
         """IAM 下发成功回执（Provider 占位下由 scheduler/reconciliation 驱动）。"""
+        grant = (
+            HrExternalAccessGrant.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(grant, "pk", None))
+            .first()
+        )
+        if grant is None:
+            raise AccessScopeInvalid("Access grant does not belong to tenant")
         grant.status = AccessGrantStatus.GRANTED
         grant.provisioning_ref = external_ref or grant.provisioning_ref
-        grant.save(update_fields=["status", "provisioning_ref", "updated_at"])
+        grant.version += 1
+        grant.save(
+            update_fields=["status", "provisioning_ref", "version", "updated_at"]
+        )
+        return grant
 
     @transaction.atomic
     def revoke_engagement_access(
@@ -139,10 +162,15 @@ class AccessService:
         engagement: HrExternalEngagement,
     ) -> list[HrExternalAccessGrant]:
         """ExternalEngagementEnding → 逐 grant 发起 REVOKE（§66/§105）。"""
-        if engagement.tenant_id != tenant_id:
+        engagement = (
+            HrExternalEngagement.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(engagement, "pk", None))
+            .first()
+        )
+        if engagement is None:
             raise AccessScopeInvalid("Engagement does not belong to tenant")
         grants = list(
-            HrExternalAccessGrant.objects.filter(
+            HrExternalAccessGrant.objects.select_for_update().filter(
                 tenant_id=tenant_id,
                 engagement_id=engagement,
                 status__in=[AccessGrantStatus.PENDING, AccessGrantStatus.GRANTED, AccessGrantStatus.FAILED_RETRYABLE],
@@ -164,13 +192,26 @@ class AccessService:
                 },
             )
             grant.status = AccessGrantStatus.REVOKE_FAILED if grant.status == AccessGrantStatus.FAILED_RETRYABLE else AccessGrantStatus.PENDING
-            grant.save(update_fields=["status", "updated_at"])
+            grant.version += 1
+            grant.save(update_fields=["status", "version", "updated_at"])
         return grants
 
-    def mark_revoked(self, grant: HrExternalAccessGrant, *, revoked_at=None):
+    @transaction.atomic
+    def mark_revoked(
+        self, grant: HrExternalAccessGrant, *, tenant_id: int, revoked_at=None
+    ):
+        grant = (
+            HrExternalAccessGrant.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(grant, "pk", None))
+            .first()
+        )
+        if grant is None:
+            raise AccessScopeInvalid("Access grant does not belong to tenant")
         grant.status = AccessGrantStatus.REVOKED
         grant.revoked_at = revoked_at or timezone.now()
-        grant.save(update_fields=["status", "revoked_at", "updated_at"])
+        grant.version += 1
+        grant.save(update_fields=["status", "revoked_at", "version", "updated_at"])
+        return grant
 
     def raise_revocation_risk(self, *, tenant_id: int, engagement_id, note: str):
         """撤权失败 → Risk=CRITICAL（§105）；不反转 Engagement。"""

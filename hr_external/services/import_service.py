@@ -41,6 +41,17 @@ class ImportCommitError(Exception):
 
 
 class ImportService:
+    @staticmethod
+    def _lock_job(job: HrExternalImportJob, *, tenant_id: int) -> HrExternalImportJob:
+        locked = (
+            HrExternalImportJob.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(job, "pk", None))
+            .first()
+        )
+        if locked is None:
+            raise ImportValidationError("导入任务不存在")
+        return locked
+
     @transaction.atomic
     def create_job(
         self,
@@ -65,8 +76,11 @@ class ImportService:
         )
 
     @transaction.atomic
-    def parse_csv_to_rows(self, job: HrExternalImportJob, content: bytes) -> int:
+    def parse_csv_to_rows(
+        self, job: HrExternalImportJob, content: bytes, *, tenant_id: int
+    ) -> int:
         """解析 CSV 到 staging rows。"""
+        job = self._lock_job(job, tenant_id=tenant_id)
         try:
             text = content.decode("utf-8-sig")
         except UnicodeDecodeError as exc:
@@ -90,12 +104,15 @@ class ImportService:
         return len(rows)
 
     @transaction.atomic
-    def parse_spreadsheet_to_rows(self, job: HrExternalImportJob, content: bytes) -> int:
+    def parse_spreadsheet_to_rows(
+        self, job: HrExternalImportJob, content: bytes, *, tenant_id: int
+    ) -> int:
         """XLSX 解析并写入与 CSV 相同的 staging 账本。
 
         任何损坏 ZIP/XLSX 都统一转为稳定业务异常 ImportValidationError，
         不把 openpyxl/zipfile 的实现异常泄漏到 API/worker 边界。
         """
+        job = self._lock_job(job, tenant_id=tenant_id)
         try:
             from openpyxl import load_workbook
             from openpyxl.utils.exceptions import InvalidFileException
@@ -150,7 +167,10 @@ class ImportService:
         self,
         job: HrExternalImportJob,
         validator: Callable[[dict], list],
+        *,
+        tenant_id: int,
     ) -> HrExternalImportJob:
+        job = self._lock_job(job, tenant_id=tenant_id)
         job.status = ExternalImportJobStatus.VALIDATING
         job.save(update_fields=["status", "updated_at"])
 
@@ -189,14 +209,22 @@ class ImportService:
         )
         return job
 
-    def confirm_job(self, job: HrExternalImportJob) -> HrExternalImportJob:
+    @transaction.atomic
+    def confirm_job(
+        self, job: HrExternalImportJob, *, tenant_id: int
+    ) -> HrExternalImportJob:
         """confirm 只把 job 置 COMMITTING；真正执行由 runner 调用 execute_commit。"""
+        job = self._lock_job(job, tenant_id=tenant_id)
         job.status = ExternalImportJobStatus.COMMITTING
         job.save(update_fields=["status", "updated_at"])
         return job
 
-    def execute_commit(self, job: HrExternalImportJob) -> HrExternalImportJob:
+    @transaction.atomic
+    def execute_commit(
+        self, job: HrExternalImportJob, *, tenant_id: int
+    ) -> HrExternalImportJob:
         """异步执行 PROFILE commit：分批事务 + 逐行结果账本。"""
+        job = self._lock_job(job, tenant_id=tenant_id)
         if job.status != ExternalImportJobStatus.COMMITTING:
             raise ImportCommitError("job not in COMMITTING state")
 

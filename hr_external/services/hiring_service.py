@@ -115,16 +115,38 @@ class HiringService:
     def validate_transition(current: str, target: str) -> bool:
         return target in _HIRING_TRANSITIONS.get(current, set())
 
+    @staticmethod
+    def _lock_case(
+        case: HrExternalHiringCase, *, tenant_id: int
+    ) -> HrExternalHiringCase:
+        locked = (
+            HrExternalHiringCase.objects.select_for_update()
+            .select_related("category_id")
+            .filter(tenant_id=tenant_id, id=getattr(case, "pk", None))
+            .first()
+        )
+        if locked is None:
+            raise HiringCaseNotFound("hiring case not found inside tenant")
+        return locked
+
     def _transition(self, case: HrExternalHiringCase, target: str, actor_id=None):
         if not self.validate_transition(case.status, target):
             raise InvalidHiringState(f"illegal transition {case.status} -> {target}")
         case.status = target
-        case.save(update_fields=["status", "updated_at"])
+        case.version += 1
+        case.save(update_fields=["status", "version", "updated_at"])
+        return case
 
-    def submit(self, case: HrExternalHiringCase):
-        self._transition(case, ExternalHiringStatus.SUBMITTED)
+    @transaction.atomic
+    def submit(self, case: HrExternalHiringCase, *, tenant_id: int):
+        case = self._lock_case(case, tenant_id=tenant_id)
+        return self._transition(case, ExternalHiringStatus.SUBMITTED)
 
-    def return_to_draft(self, case: HrExternalHiringCase, reason: str = ""):
+    @transaction.atomic
+    def return_to_draft(
+        self, case: HrExternalHiringCase, reason: str = "", *, tenant_id: int
+    ):
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status not in (
             ExternalHiringStatus.SUBMITTED,
             ExternalHiringStatus.UNDER_COLLEGE_REVIEW,
@@ -133,15 +155,21 @@ class HiringService:
             ExternalHiringStatus.WAITING_AGREEMENT,
         ):
             raise InvalidHiringState("cannot return in current status")
-        self._transition(case, ExternalHiringStatus.RETURNED)
+        return self._transition(case, ExternalHiringStatus.RETURNED)
 
-    def college_approve(self, case: HrExternalHiringCase):
-        self._transition(case, ExternalHiringStatus.UNDER_HR_REVIEW)
+    @transaction.atomic
+    def college_approve(self, case: HrExternalHiringCase, *, tenant_id: int):
+        case = self._lock_case(case, tenant_id=tenant_id)
+        return self._transition(case, ExternalHiringStatus.UNDER_HR_REVIEW)
 
-    def hr_approve(self, case: HrExternalHiringCase):
-        self._transition(case, ExternalHiringStatus.UNDER_SCHOOL_APPROVAL)
+    @transaction.atomic
+    def hr_approve(self, case: HrExternalHiringCase, *, tenant_id: int):
+        case = self._lock_case(case, tenant_id=tenant_id)
+        return self._transition(case, ExternalHiringStatus.UNDER_SCHOOL_APPROVAL)
 
-    def school_approve(self, case: HrExternalHiringCase):
+    @transaction.atomic
+    def school_approve(self, case: HrExternalHiringCase, *, tenant_id: int):
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status != ExternalHiringStatus.UNDER_SCHOOL_APPROVAL:
             raise InvalidHiringState("case not under school approval")
         profile = _profile_for_case(case)
@@ -157,26 +185,28 @@ class HiringService:
             raise ComplianceBlocked(
                 "审批前检查存在 BLOCKER：" + "; ".join(c.message for c in result.blockers)
             )
-        self._transition(case, ExternalHiringStatus.APPROVED)
+        return self._transition(case, ExternalHiringStatus.APPROVED)
 
-    def reject(self, case: HrExternalHiringCase):
-        self._transition(case, ExternalHiringStatus.REJECTED)
+    @transaction.atomic
+    def reject(self, case: HrExternalHiringCase, *, tenant_id: int):
+        case = self._lock_case(case, tenant_id=tenant_id)
+        return self._transition(case, ExternalHiringStatus.REJECTED)
 
-    def wait_agreement(self, case: HrExternalHiringCase):
+    @transaction.atomic
+    def wait_agreement(self, case: HrExternalHiringCase, *, tenant_id: int):
         """Route an approved case according to its explicit agreement policy."""
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status != ExternalHiringStatus.APPROVED:
             raise InvalidHiringState("case not approved")
 
         requirement = case.category_id.agreement_requirement
         if requirement == AgreementRequirement.REQUIRED_BEFORE_ACTIVATION:
-            self._transition(case, ExternalHiringStatus.WAITING_AGREEMENT)
-            return
+            return self._transition(case, ExternalHiringStatus.WAITING_AGREEMENT)
         if requirement in (
             AgreementRequirement.NOT_REQUIRED,
             AgreementRequirement.REQUIRED_AFTER_ACTIVATION_GRACE,
         ):
-            self._transition(case, ExternalHiringStatus.READY_TO_ACTIVATE)
-            return
+            return self._transition(case, ExternalHiringStatus.READY_TO_ACTIVATE)
         raise InvalidHiringState(f"unsupported agreement requirement: {requirement}")
 
     def _agreement_result(
@@ -230,17 +260,11 @@ class HiringService:
         self,
         case: HrExternalHiringCase,
         *,
+        tenant_id: int,
         agreement_id: str,
     ) -> HrExternalHiringCase:
         """Bind the exact HR07 external agreement and unlock activation."""
-        locked = (
-            HrExternalHiringCase.objects.select_for_update()
-            .select_related("category_id")
-            .filter(id=case.id, tenant_id=case.tenant_id)
-            .first()
-        )
-        if locked is None:
-            raise HiringCaseNotFound("hiring case not found inside tenant")
+        locked = self._lock_case(case, tenant_id=tenant_id)
         if locked.status != ExternalHiringStatus.WAITING_AGREEMENT:
             raise InvalidHiringState("case not waiting for agreement")
         if not agreement_id:
@@ -255,20 +279,22 @@ class HiringService:
 
         locked.agreement_id = str(agreement_id)
         locked.status = ExternalHiringStatus.READY_TO_ACTIVATE
-        locked.save(update_fields=["agreement_id", "status", "updated_at"])
+        locked.version += 1
+        locked.save(
+            update_fields=["agreement_id", "status", "version", "updated_at"]
+        )
         return locked
 
     @transaction.atomic
-    def activate(self, case: HrExternalHiringCase, *, actor_id=None) -> HrExternalEngagement:
+    def activate(
+        self,
+        case: HrExternalHiringCase,
+        *,
+        tenant_id: int,
+        actor_id=None,
+    ) -> HrExternalEngagement:
         """Activate an external engagement only from a tenant-bound ready case."""
-        case = (
-            HrExternalHiringCase.objects.select_for_update()
-            .select_related("category_id")
-            .filter(id=case.id, tenant_id=case.tenant_id)
-            .first()
-        )
-        if case is None:
-            raise HiringCaseNotFound("hiring case not found inside tenant")
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status != ExternalHiringStatus.READY_TO_ACTIVATE:
             raise InvalidHiringState("case not ready to activate")
 

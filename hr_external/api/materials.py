@@ -190,6 +190,7 @@ def material_upload(request, material_id):
 
     material = MaterialService().save_material_file(
         material=material,
+        tenant_id=ctx.tenant_id,
         content=content,
         original_filename=uploaded.name or "",
         mime_type=getattr(uploaded, "content_type", "") or "",

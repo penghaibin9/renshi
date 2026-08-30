@@ -86,24 +86,26 @@ class HiringFlowTests(TestCase):
         self.service = HiringService()
 
     def test_full_approval_flow(self):
-        self.service.submit(self.case)
+        self.case = self.service.submit(self.case, tenant_id=self.tenant)
         self.assertEqual(self.case.status, ExternalHiringStatus.SUBMITTED)
-        self.service.college_approve(self.case)
+        self.case = self.service.college_approve(self.case, tenant_id=self.tenant)
         self.assertEqual(self.case.status, ExternalHiringStatus.UNDER_HR_REVIEW)
-        self.service.hr_approve(self.case)
+        self.case = self.service.hr_approve(self.case, tenant_id=self.tenant)
         self.assertEqual(self.case.status, ExternalHiringStatus.UNDER_SCHOOL_APPROVAL)
-        self.service.school_approve(self.case)
+        self.case = self.service.school_approve(self.case, tenant_id=self.tenant)
         self.assertEqual(self.case.status, ExternalHiringStatus.APPROVED)
-        self.service.wait_agreement(self.case)
+        self.case = self.service.wait_agreement(self.case, tenant_id=self.tenant)
         self.assertEqual(self.case.status, ExternalHiringStatus.WAITING_AGREEMENT)
 
     def test_illegal_transition_blocked(self):
         with self.assertRaises(InvalidHiringState):
-            self.service.college_approve(self.case)  # DRAFT 不能直接学院审批
+            self.service.college_approve(
+                self.case, tenant_id=self.tenant
+            )  # DRAFT 不能直接学院审批
 
     def test_return_flow(self):
-        self.service.submit(self.case)
-        self.service.college_approve(self.case)
+        self.case = self.service.submit(self.case, tenant_id=self.tenant)
+        self.case = self.service.college_approve(self.case, tenant_id=self.tenant)
         self.service.return_to_draft(self.case)
         self.assertEqual(self.case.status, ExternalHiringStatus.RETURNED)
 
@@ -111,34 +113,34 @@ class HiringFlowTests(TestCase):
         # 撤回身份核验 → 学校批准必须被 BLOCKER 阻断（§35）
         self.profile.identity_verification_status = "UNVERIFIED"
         self.profile.save()
-        self.service.submit(self.case)
-        self.service.college_approve(self.case)
-        self.service.hr_approve(self.case)
+        self.case = self.service.submit(self.case, tenant_id=self.tenant)
+        self.case = self.service.college_approve(self.case, tenant_id=self.tenant)
+        self.case = self.service.hr_approve(self.case, tenant_id=self.tenant)
         with self.assertRaises(ComplianceBlocked):
-            self.service.school_approve(self.case)
+            self.service.school_approve(self.case, tenant_id=self.tenant)
         self.assertEqual(self.case.status, ExternalHiringStatus.UNDER_SCHOOL_APPROVAL)
 
     def test_activation_requires_ready_to_activate(self):
         with self.assertRaises(InvalidHiringState):
-            self.service.activate(self.case)
+            self.service.activate(self.case, tenant_id=self.tenant)
 
     def test_activation_creates_engagement_assignment_event(self):
         # 走完整审批到 WAITING_AGREEMENT → 手动置 READY_TO_ACTIVATE（协议已签场景）
-        self.service.submit(self.case)
-        self.service.college_approve(self.case)
-        self.service.hr_approve(self.case)
-        self.service.school_approve(self.case)
-        self.service.wait_agreement(self.case)
+        self.case = self.service.submit(self.case, tenant_id=self.tenant)
+        self.case = self.service.college_approve(self.case, tenant_id=self.tenant)
+        self.case = self.service.hr_approve(self.case, tenant_id=self.tenant)
+        self.case = self.service.school_approve(self.case, tenant_id=self.tenant)
+        self.case = self.service.wait_agreement(self.case, tenant_id=self.tenant)
         self.case.status = ExternalHiringStatus.READY_TO_ACTIVATE
         self.case.save(update_fields=["status", "updated_at"])
         # 类别 REQUIRED_BEFORE_ACTIVATION 且 Provider 占位 UNAVAILABLE → 激活被协议闸门阻断
         with self.assertRaises(AgreementNotReady):
-            self.service.activate(self.case)
+            self.service.activate(self.case, tenant_id=self.tenant)
 
         # 模拟协议已签（直接改 agreement gate 不适用时，把类别改为 NOT_REQUIRED 场景）
         self.category.agreement_requirement = "NOT_REQUIRED"
         self.category.save()
-        eng = self.service.activate(self.case)
+        eng = self.service.activate(self.case, tenant_id=self.tenant)
         # activate 为并发安全会 select_for_update 重新读取 case；刷新调用方实例再断言终态。
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, ExternalHiringStatus.ACTIVATED)

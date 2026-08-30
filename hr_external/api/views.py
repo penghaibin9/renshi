@@ -438,9 +438,11 @@ def import_job_upload(request):
         )
         content = uploaded.read()
         if uploaded.name.endswith(".csv"):
-            service.parse_csv_to_rows(job, content)
+            service.parse_csv_to_rows(job, content, tenant_id=ctx.tenant_id)
         elif uploaded.name.endswith((".xlsx", ".xls")):
-            service.parse_spreadsheet_to_rows(job, content)
+            service.parse_spreadsheet_to_rows(
+                job, content, tenant_id=ctx.tenant_id
+            )
         else:
             raise ImportValidationError("仅支持 CSV / XLSX")
     except ImportValidationError as exc:
@@ -480,7 +482,9 @@ def import_job_validate(request, job_id):
             issues.append("documentNumber:证件号过短")
         return issues
 
-    job = ImportService().validate_job(job, _validate_profile)
+    job = ImportService().validate_job(
+        job, _validate_profile, tenant_id=ctx.tenant_id
+    )
     body = api_root(request)
     body["data"] = {
         "jobId": str(job.id),
@@ -504,7 +508,7 @@ def import_job_confirm(request, job_id):
     if job is None:
         return error_response(request, "INVALID_REQUEST", "导入任务不存在", 404)
 
-    job = ImportService().confirm_job(job)
+    job = ImportService().confirm_job(job, tenant_id=ctx.tenant_id)
     body = api_root(request)
     body["data"] = {
         "jobId": str(job.id),
@@ -528,7 +532,7 @@ def import_job_execute(request, job_id):
         return error_response(request, "INVALID_REQUEST", "导入任务不存在", 404)
 
     try:
-        job = ImportService().execute_commit(job)
+        job = ImportService().execute_commit(job, tenant_id=ctx.tenant_id)
     except ImportCommitError as exc:
         return error_response(request, exc.code, str(exc), 409)
 

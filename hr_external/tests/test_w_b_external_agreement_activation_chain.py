@@ -89,11 +89,11 @@ class WBExternalAgreementActivationChainTests(TestCase):
         self.hiring = HiringService()
 
     def _approve_to_waiting_agreement(self):
-        self.hiring.submit(self.case)
-        self.hiring.college_approve(self.case)
-        self.hiring.hr_approve(self.case)
-        self.hiring.school_approve(self.case)
-        self.hiring.wait_agreement(self.case)
+        self.case = self.hiring.submit(self.case, tenant_id=TENANT)
+        self.case = self.hiring.college_approve(self.case, tenant_id=TENANT)
+        self.case = self.hiring.hr_approve(self.case, tenant_id=TENANT)
+        self.case = self.hiring.school_approve(self.case, tenant_id=TENANT)
+        self.case = self.hiring.wait_agreement(self.case, tenant_id=TENANT)
         self.assertEqual(self.case.status, ExternalHiringStatus.WAITING_AGREEMENT)
 
     def _make_effective_external_agreement(self, *, agreement_no: str, person_id):
@@ -200,17 +200,19 @@ class WBExternalAgreementActivationChainTests(TestCase):
         with self.assertRaises(AgreementNotReady):
             self.hiring.confirm_agreement(
                 other_case,
+                tenant_id=TENANT,
                 agreement_id=str(agreement.id),
             )
 
         ready = self.hiring.confirm_agreement(
             self.case,
+            tenant_id=TENANT,
             agreement_id=str(agreement.id),
         )
         self.assertEqual(ready.status, ExternalHiringStatus.READY_TO_ACTIVATE)
         self.assertEqual(ready.agreement_id, str(agreement.id))
 
-        engagement = self.hiring.activate(ready, actor_id=1)
+        engagement = self.hiring.activate(ready, tenant_id=TENANT, actor_id=1)
         ready.refresh_from_db()
         self.assertEqual(ready.status, ExternalHiringStatus.ACTIVATED)
         self.assertEqual(engagement.status, ExternalEngagementStatus.ACTIVE)
@@ -256,6 +258,7 @@ class WBExternalAgreementActivationChainTests(TestCase):
         with self.assertRaises(AgreementNotReady):
             self.hiring.confirm_agreement(
                 self.case,
+                tenant_id=TENANT,
                 agreement_id=str(wrong_agreement.id),
             )
         self.case.refresh_from_db()

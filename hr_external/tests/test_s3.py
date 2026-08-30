@@ -216,7 +216,12 @@ class ImportServiceTests(TestCase):
         job = self.service.create_job(
             tenant_id=self.tenant, job_type="PROFILE", file_name="profiles.csv"
         )
-        self.assertEqual(self.service.parse_csv_to_rows(job, self._csv_bytes()), 2)
+        self.assertEqual(
+            self.service.parse_csv_to_rows(
+                job, self._csv_bytes(), tenant_id=self.tenant
+            ),
+            2,
+        )
         self.assertEqual(job.rows.count(), 2)
 
         def validator(raw):
@@ -227,7 +232,7 @@ class ImportServiceTests(TestCase):
                 issues.append("documentNumber:证件号过短")
             return issues
 
-        job = self.service.validate_job(job, validator)
+        job = self.service.validate_job(job, validator, tenant_id=self.tenant)
         self.assertEqual(job.status, "VALIDATION_FAILED")
         self.assertEqual(job.success_count, 1)
         self.assertEqual(job.failed_count, 1)
@@ -238,7 +243,9 @@ class ImportServiceTests(TestCase):
         )
         # 坏文件（非 XLSX 字节）→ ImportValidationError，不静默
         with self.assertRaises(ImportValidationError):
-            self.service.parse_spreadsheet_to_rows(job, b"this is not an xlsx")
+            self.service.parse_spreadsheet_to_rows(
+                job, b"this is not an xlsx", tenant_id=self.tenant
+            )
 
     def test_xlsx_parse_and_commit_end_to_end(self):
         """XLSX → 同一 staging/validate/confirm/execute 链路过账本（任务 4）。"""
@@ -261,7 +268,10 @@ class ImportServiceTests(TestCase):
             tenant_id=self.tenant, job_type="PROFILE", file_name="profiles.xlsx"
         )
         self.assertEqual(
-            self.service.parse_spreadsheet_to_rows(job, buf.getvalue()), 2
+            self.service.parse_spreadsheet_to_rows(
+                job, buf.getvalue(), tenant_id=self.tenant
+            ),
+            2,
         )
         self.assertEqual(job.rows.count(), 2)
 
@@ -273,13 +283,13 @@ class ImportServiceTests(TestCase):
                 issues.append("documentNumber:证件号过短")
             return issues
 
-        job = self.service.validate_job(job, validator)
+        job = self.service.validate_job(job, validator, tenant_id=self.tenant)
         self.assertEqual(job.status, "VALIDATION_FAILED")
         self.assertEqual(job.success_count, 1)
         self.assertEqual(job.failed_count, 1)
 
-        job = self.service.confirm_job(job)
-        job = self.service.execute_commit(job)
+        job = self.service.confirm_job(job, tenant_id=self.tenant)
+        job = self.service.execute_commit(job, tenant_id=self.tenant)
         self.assertEqual(job.status, "PARTIAL_FAILED")  # 1 成功 1 失败（精确失败行账本）
         self.assertEqual(
             HrExternalTeacherProfile.objects.filter(
@@ -295,7 +305,7 @@ class ImportServiceTests(TestCase):
         job = self.service.create_job(
             tenant_id=self.tenant, job_type="PROFILE", file_name="profiles.csv"
         )
-        job = self.service.confirm_job(job)
+        job = self.service.confirm_job(job, tenant_id=self.tenant)
         self.assertEqual(job.status, "COMMITTING")
 
     def test_execute_commit_end_to_end(self):
@@ -306,7 +316,9 @@ class ImportServiceTests(TestCase):
         job = self.service.create_job(
             tenant_id=self.tenant, job_type="PROFILE", file_name="profiles.csv"
         )
-        self.service.parse_csv_to_rows(job, self._csv_bytes())
+        self.service.parse_csv_to_rows(
+            job, self._csv_bytes(), tenant_id=self.tenant
+        )
 
         def validator(raw):
             issues = []
@@ -316,13 +328,13 @@ class ImportServiceTests(TestCase):
                 issues.append("documentNumber:证件号过短")
             return issues
 
-        job = self.service.validate_job(job, validator)
+        job = self.service.validate_job(job, validator, tenant_id=self.tenant)
         self.assertEqual(job.status, "VALIDATION_FAILED")
         self.assertEqual(job.success_count, 1)  # 第一行合法
         self.assertEqual(job.failed_count, 1)  # 第二行缺 legalName
 
-        job = self.service.confirm_job(job)
-        job = self.service.execute_commit(job)
+        job = self.service.confirm_job(job, tenant_id=self.tenant)
+        job = self.service.execute_commit(job, tenant_id=self.tenant)
         # 1 行 VALID commit 成功；1 行 validate 阶段 INVALID 保留失败
         self.assertEqual(job.status, "PARTIAL_FAILED")
         self.assertEqual(job.success_count, 1)

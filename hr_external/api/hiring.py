@@ -277,7 +277,7 @@ def hiring_submit(request, case_id):
     if err:
         return err
     try:
-        HiringService().submit(case)
+        case = HiringService().submit(case, tenant_id=ctx.tenant_id)
     except InvalidHiringState as exc:
         return error_response(request, exc.code, str(exc), 409)
     write_external_audit(
@@ -295,7 +295,7 @@ def hiring_return(request, case_id):
     if err:
         return err
     try:
-        HiringService().return_to_draft(case)
+        case = HiringService().return_to_draft(case, tenant_id=ctx.tenant_id)
     except InvalidHiringState as exc:
         return error_response(request, exc.code, str(exc), 409)
     body = api_root(request)
@@ -312,13 +312,13 @@ def hiring_approve(request, case_id):
     service = HiringService()
     try:
         if case.status == ExternalHiringStatus.SUBMITTED:
-            service.college_approve(case)
+            case = service.college_approve(case, tenant_id=ctx.tenant_id)
         elif case.status == ExternalHiringStatus.UNDER_COLLEGE_REVIEW:
-            service.hr_approve(case)
+            case = service.hr_approve(case, tenant_id=ctx.tenant_id)
         elif case.status == ExternalHiringStatus.UNDER_HR_REVIEW:
-            service.school_approve(case)
+            case = service.school_approve(case, tenant_id=ctx.tenant_id)
         elif case.status == ExternalHiringStatus.APPROVED:
-            service.wait_agreement(case)
+            case = service.wait_agreement(case, tenant_id=ctx.tenant_id)
         else:
             return error_response(request, "VERSION_CONFLICT", f"当前状态不可审批: {case.status}", 409)
     except Exception as exc:  # noqa: BLE001 —— 统一信封
@@ -340,7 +340,9 @@ def hiring_activate(request, case_id):
     if err:
         return err
     try:
-        eng = HiringService().activate(case, actor_id=ctx.user_id)
+        eng = HiringService().activate(
+            case, tenant_id=ctx.tenant_id, actor_id=ctx.user_id
+        )
     except (InvalidHiringState, AgreementNotReady) as exc:
         return error_response(request, getattr(exc, "code", "VERSION_CONFLICT"), str(exc), 409)
 

@@ -94,6 +94,7 @@ def hiring_confirm_agreement(request, case_id):
     try:
         ready = HiringService().confirm_agreement(
             case,
+            tenant_id=ctx.tenant_id,
             agreement_id=str(payload.get("agreementId") or "").strip(),
         )
     except (InvalidHiringState, AgreementNotReady) as exc:

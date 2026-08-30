@@ -76,9 +76,9 @@ class IndustryTests(TestCase):
             qualitative_summary="指导 5 名学徒完成中级工考核",
         )
         self.assertEqual(c.status, ContributionStatus.DRAFT)
-        self.service.submit_contribution(c)
+        self.service.submit_contribution(c, tenant_id=self.tenant)
         self.assertEqual(c.status, ContributionStatus.SUBMITTED)
-        self.service.verify_contribution(c, verified=True)
+        self.service.verify_contribution(c, tenant_id=self.tenant, verified=True)
         c.refresh_from_db()
         self.assertEqual(c.status, ContributionStatus.VERIFIED)
         self.assertEqual(c.verification_status, EvidenceVerificationStatus.VERIFIED)
@@ -90,14 +90,14 @@ class IndustryTests(TestCase):
             contribution_type="OTHER",
             title="历史成果",
         )
-        self.service.submit_contribution(c)
-        self.service.verify_contribution(c, verified=True)
+        self.service.submit_contribution(c, tenant_id=self.tenant)
+        self.service.verify_contribution(c, tenant_id=self.tenant, verified=True)
         c.refresh_from_db()
         # VERIFIED 后不可原地改（00 §20）：再提交/再核验必须拒绝
         with self.assertRaises(InvalidContributionState):
-            self.service.submit_contribution(c)
+            self.service.submit_contribution(c, tenant_id=self.tenant)
         with self.assertRaises(InvalidContributionState):
-            self.service.verify_contribution(c, verified=False)
+            self.service.verify_contribution(c, tenant_id=self.tenant, verified=False)
 
     def test_workspace_create_and_date_constraint(self):
         ws = self.service.create_workspace(

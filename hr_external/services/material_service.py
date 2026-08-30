@@ -16,6 +16,7 @@ from datetime import timedelta
 from typing import Optional
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from hr_external.models import (
@@ -100,6 +101,7 @@ class MaterialService:
     def _hash_token(token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+    @transaction.atomic
     def issue_ticket(
         self,
         *,
@@ -110,6 +112,13 @@ class MaterialService:
         token: Optional[str] = None,
     ) -> HrExternalFileTicket:
         """签发短时效下载票据（一次性默认）。token 由调用方传入（与 API 返回给前端的一致）。"""
+        material = (
+            HrExternalMaterial.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(material, "pk", None))
+            .first()
+        )
+        if material is None:
+            raise MaterialAccessDenied("material not found inside tenant")
         token = token or self.sign_token(tenant_id=tenant_id, material_id=str(material.id))
         return HrExternalFileTicket.objects.create(
             tenant_id=tenant_id,
@@ -121,6 +130,7 @@ class MaterialService:
             max_uses=DEFAULT_MAX_USES,
         )
 
+    @transaction.atomic
     def redeem_ticket(
         self,
         *,
@@ -150,9 +160,12 @@ class MaterialService:
         if int(expires_ts) < int(timezone.now().timestamp()):
             raise TicketInvalid("ticket expired")
 
-        ticket = HrExternalFileTicket.objects.select_related("material_id").filter(
-            token_hash=self._hash_token(token)
-        ).first()
+        ticket = (
+            HrExternalFileTicket.objects.select_for_update()
+            .select_related("material_id")
+            .filter(token_hash=self._hash_token(token))
+            .first()
+        )
         if ticket is None:
             raise TicketInvalid("ticket not found")
         if tenant_id is not None and ticket.tenant_id != tenant_id:
@@ -220,10 +233,12 @@ class MaterialService:
             uploaded_by=uploaded_by,
         )
 
+    @transaction.atomic
     def save_material_file(
         self,
         *,
         material: HrExternalMaterial,
+        tenant_id: int,
         content: bytes,
         original_filename: str = "",
         mime_type: str = "",
@@ -233,6 +248,14 @@ class MaterialService:
         文件不进 public /media/ 路径（00 §34）。
         上传前必须经过 validate_material_file（扩展名 + magic bytes + 大小）。"""
         import hashlib
+
+        material = (
+            HrExternalMaterial.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(material, "pk", None))
+            .first()
+        )
+        if material is None:
+            raise MaterialAccessDenied("material not found inside tenant")
 
         from hr_external.services.storage_backends import get_material_storage
 

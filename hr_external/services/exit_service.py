@@ -45,7 +45,7 @@ class ExitService:
         planned_end_at: date,
         clearance_policy: str = "",
     ) -> HrExternalExitCase:
-        eng = HrExternalEngagement.objects.filter(
+        eng = HrExternalEngagement.objects.select_for_update().filter(
             tenant_id=tenant_id, id=engagement_id
         ).first()
         if eng is None:
@@ -75,30 +75,57 @@ class ExitService:
         )
         # Engagement → EXITING（§20）
         eng.status = ExternalEngagementStatus.EXITING
-        eng.save(update_fields=["status", "updated_at"])
+        eng.version += 1
+        eng.save(update_fields=["status", "version", "updated_at"])
         return case
 
-    def start_exit(self, case: HrExternalExitCase):
+    def _lock_case(self, case: HrExternalExitCase, *, tenant_id: int) -> HrExternalExitCase:
+        """Resolve a caller supplied reference inside the authoritative tenant boundary."""
+        if not tenant_id or getattr(case, "pk", None) is None:
+            raise ExitBlocked("EXTERNAL_EXIT_CASE_NOT_FOUND")
+        locked = (
+            HrExternalExitCase.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=case.pk)
+            .first()
+        )
+        if locked is None:
+            # Deliberately do not reveal whether the UUID exists in another tenant.
+            raise ExitBlocked("EXTERNAL_EXIT_CASE_NOT_FOUND")
+        return locked
+
+    @staticmethod
+    def _save_case(case: HrExternalExitCase, *fields: str) -> HrExternalExitCase:
+        case.version += 1
+        case.save(update_fields=[*fields, "version", "updated_at"])
+        return case
+
+    @transaction.atomic
+    def start_exit(self, case: HrExternalExitCase, *, tenant_id: int):
         """READY_TO_EXIT → EXITING；记录实际结束日。"""
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status != ExitStatus.READY_TO_EXIT:
             raise ExitStateConflict("case not ready to exit")
         case.status = ExitStatus.EXITING
         case.actual_end_at = case.actual_end_at or date.today()
-        case.save(update_fields=["status", "actual_end_at", "updated_at"])
+        return self._save_case(case, "status", "actual_end_at")
 
-    def submit_review(self, case: HrExternalExitCase):
+    @transaction.atomic
+    def submit_review(self, case: HrExternalExitCase, *, tenant_id: int):
         """PLANNED → UNDER_REVIEW without ending the engagement."""
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status != ExitStatus.PLANNED:
             raise ExitStateConflict("case not in planned state")
         case.status = ExitStatus.UNDER_REVIEW
-        case.save(update_fields=["status", "updated_at"])
+        return self._save_case(case, "status")
 
-    def approve_exit(self, case: HrExternalExitCase):
+    @transaction.atomic
+    def approve_exit(self, case: HrExternalExitCase, *, tenant_id: int):
         """UNDER_REVIEW → READY_TO_EXIT; finalization stays a separate action."""
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status != ExitStatus.UNDER_REVIEW:
             raise ExitStateConflict("case not under review")
         case.status = ExitStatus.READY_TO_EXIT
-        case.save(update_fields=["status", "updated_at"])
+        return self._save_case(case, "status")
 
     @transaction.atomic
     def finalize_exit(
@@ -111,7 +138,7 @@ class ExitService:
 
         生产级并发防护：锁 exit case + engagement（避免并发 complete 重复回收/重复置 ENDED）。
         """
-        case = HrExternalExitCase.objects.select_for_update().get(id=case.id)
+        case = self._lock_case(case, tenant_id=tenant_id)
         if case.status not in (ExitStatus.EXITING, ExitStatus.CLEARANCE_PENDING):
             raise ExitStateConflict("case not in exiting state")
 
@@ -124,30 +151,50 @@ class ExitService:
             # 幂等：已结束则只收尾 case，不重复回收（00 §23）
             case.status = ExitStatus.ENDED
             case.actual_end_at = case.actual_end_at or date.today()
-            case.save(update_fields=["status", "actual_end_at", "updated_at"])
-            return case
+            return self._save_case(case, "status", "actual_end_at")
 
         eng.status = ExternalEngagementStatus.ENDED
-        eng.save(update_fields=["status", "updated_at"])
+        eng.version += 1
+        eng.save(update_fields=["status", "version", "updated_at"])
 
         # 权限回收闭环（§66）：发起 REVOKE 请求；失败 → Risk=CRITICAL（§105）
         self.access.revoke_engagement_access(tenant_id=tenant_id, engagement=eng)
 
         case.status = ExitStatus.ENDED
         case.actual_end_at = case.actual_end_at or date.today()
-        case.save(update_fields=["status", "actual_end_at", "updated_at"])
-        return case
+        return self._save_case(case, "status", "actual_end_at")
 
-    def close_exit(self, case: HrExternalExitCase, *, clearance_ok: bool = True):
+    @transaction.atomic
+    def close_exit(
+        self,
+        case: HrExternalExitCase,
+        *,
+        tenant_id: int,
+        clearance_ok: bool = True,
+    ):
         """ENDED → CLOSED（或 CLEARANCE_PENDING）。"""
+        case = self._lock_case(case, tenant_id=tenant_id)
+        if case.status not in (ExitStatus.ENDED, ExitStatus.CLEARANCE_PENDING):
+            raise ExitStateConflict("case not ended")
         if clearance_ok:
             case.status = ExitStatus.CLOSED
         else:
             case.status = ExitStatus.CLEARANCE_PENDING
-        case.save(update_fields=["status", "updated_at"])
+        return self._save_case(case, "status")
 
-    def record_clearance(self, case: HrExternalExitCase, items: list, ok: bool = True):
+    @transaction.atomic
+    def record_clearance(
+        self,
+        case: HrExternalExitCase,
+        items: list,
+        *,
+        tenant_id: int,
+        ok: bool = True,
+    ):
         """记录退出清单（§69）：任务验收/成绩提交/协议/结算/设备/账号/门禁/教务/归档。"""
+        case = self._lock_case(case, tenant_id=tenant_id)
+        if case.status not in (ExitStatus.ENDED, ExitStatus.CLEARANCE_PENDING):
+            raise ExitStateConflict("case not ended")
         case.clearance_items = items
         case.status = ExitStatus.CLOSED if ok else ExitStatus.CLEARANCE_PENDING
-        case.save(update_fields=["clearance_items", "status", "updated_at"])
+        return self._save_case(case, "clearance_items", "status")

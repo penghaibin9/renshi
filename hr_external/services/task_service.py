@@ -84,11 +84,24 @@ class TaskService:
     def validate_transition(current: str, target: str) -> bool:
         return target in _TASK_TRANSITIONS.get(current, set())
 
-    def _transition(self, task: HrExternalServiceTask, target: str):
+    @staticmethod
+    def _lock_task(task: HrExternalServiceTask, *, tenant_id: int) -> HrExternalServiceTask:
+        locked = (
+            HrExternalServiceTask.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(task, "pk", None))
+            .first()
+        )
+        if locked is None:
+            raise TaskOutsideEngagement("EXTERNAL_TASK_NOT_FOUND")
+        return locked
+
+    def _transition_locked(self, task: HrExternalServiceTask, target: str, *extra_fields: str):
         if not self.validate_transition(task.status, target):
             raise TaskStateConflict(f"illegal task transition {task.status} -> {target}")
         task.status = target
-        task.save(update_fields=["status", "updated_at"])
+        task.version += 1
+        task.save(update_fields=["status", *extra_fields, "version", "updated_at"])
+        return task
 
     @transaction.atomic
     def create_task(
@@ -140,41 +153,69 @@ class TaskService:
             status=ExternalTaskStatus.DRAFT,
         )
 
-    def assign(self, task: HrExternalServiceTask):
-        self._transition(task, ExternalTaskStatus.ASSIGNED)
+    @transaction.atomic
+    def assign(self, task: HrExternalServiceTask, *, tenant_id: int):
+        task = self._lock_task(task, tenant_id=tenant_id)
+        return self._transition_locked(task, ExternalTaskStatus.ASSIGNED)
 
-    def accept(self, task: HrExternalServiceTask, action: str, reason: str = ""):
+    @transaction.atomic
+    def accept(
+        self,
+        task: HrExternalServiceTask,
+        action: str,
+        reason: str = "",
+        *,
+        tenant_id: int,
+    ):
         """Task Acceptance（§56）。拒绝不删除任务。
 
         兼容早期客户端发出的 ``DECLINE_WITH_REASON``，落库始终规范化为
         ``DECLINED_WITH_REASON``，避免线上旧客户端因枚举文字升级失效。
         """
+        task = self._lock_task(task, tenant_id=tenant_id)
         if action == TaskAcceptance.ACCEPTED:
             task.acceptance = TaskAcceptance.ACCEPTED
-            self._transition(task, ExternalTaskStatus.ACCEPTED)
+            return self._transition_locked(
+                task, ExternalTaskStatus.ACCEPTED, "acceptance"
+            )
         elif action == TaskAcceptance.REQUEST_CLARIFICATION:
             task.acceptance = TaskAcceptance.REQUEST_CLARIFICATION
-            task.save(update_fields=["acceptance", "updated_at"])
+            task.version += 1
+            task.save(update_fields=["acceptance", "version", "updated_at"])
         elif action in (TaskAcceptance.DECLINED_WITH_REASON, "DECLINE_WITH_REASON"):
             task.acceptance = TaskAcceptance.DECLINED_WITH_REASON
-            task.save(update_fields=["acceptance", "updated_at"])
+            task.version += 1
+            task.save(update_fields=["acceptance", "version", "updated_at"])
+        else:
+            raise TaskStateConflict("invalid task acceptance action")
+        return task
 
-    def start(self, task: HrExternalServiceTask):
+    @transaction.atomic
+    def start(self, task: HrExternalServiceTask, *, tenant_id: int):
         # ASSIGNED 和 ACCEPTED 都是状态机允许的启动来源。之前只处理 ASSIGNED，
         # 导致标准“先接受再开始”流程停在 ACCEPTED。
-        self._transition(task, ExternalTaskStatus.IN_PROGRESS)
+        task = self._lock_task(task, tenant_id=tenant_id)
+        return self._transition_locked(task, ExternalTaskStatus.IN_PROGRESS)
 
-    def submit(self, task: HrExternalServiceTask):
-        self._transition(task, ExternalTaskStatus.SUBMITTED)
+    @transaction.atomic
+    def submit(self, task: HrExternalServiceTask, *, tenant_id: int):
+        task = self._lock_task(task, tenant_id=tenant_id)
+        return self._transition_locked(task, ExternalTaskStatus.SUBMITTED)
 
-    def review(self, task: HrExternalServiceTask):
-        self._transition(task, ExternalTaskStatus.UNDER_REVIEW)
+    @transaction.atomic
+    def review(self, task: HrExternalServiceTask, *, tenant_id: int):
+        task = self._lock_task(task, tenant_id=tenant_id)
+        return self._transition_locked(task, ExternalTaskStatus.UNDER_REVIEW)
 
-    def complete(self, task: HrExternalServiceTask):
-        self._transition(task, ExternalTaskStatus.COMPLETED)
+    @transaction.atomic
+    def complete(self, task: HrExternalServiceTask, *, tenant_id: int):
+        task = self._lock_task(task, tenant_id=tenant_id)
+        return self._transition_locked(task, ExternalTaskStatus.COMPLETED)
 
-    def reject_for_correction(self, task: HrExternalServiceTask):
-        self._transition(task, ExternalTaskStatus.REJECTED_FOR_CORRECTION)
+    @transaction.atomic
+    def reject_for_correction(self, task: HrExternalServiceTask, *, tenant_id: int):
+        task = self._lock_task(task, tenant_id=tenant_id)
+        return self._transition_locked(task, ExternalTaskStatus.REJECTED_FOR_CORRECTION)
 
     def add_evidence(
         self,
@@ -256,16 +297,27 @@ class TaskService:
         return record
 
     @transaction.atomic
-    def verify_workload(self, record: HrExternalWorkloadRecord, *, verified: bool, by=None):
+    def verify_workload(
+        self,
+        record: HrExternalWorkloadRecord,
+        *,
+        tenant_id: int,
+        verified: bool,
+        by=None,
+    ):
         """学院验证（§52）。VERIFIED 后不可原地改，且正式工作量不得突破 cap。"""
         record = HrExternalWorkloadRecord.objects.select_for_update().select_related(
             "engagement_id"
-        ).get(id=record.id)
+        ).filter(tenant_id=tenant_id, id=getattr(record, "pk", None)).first()
+        if record is None:
+            raise TaskOutsideEngagement("EXTERNAL_WORKLOAD_NOT_FOUND")
         if record.verification_status == WorkloadVerificationStatus.VERIFIED:
             raise TaskAlreadyFinalized("workload already verified")
 
         if verified:
-            eng = record.engagement_id
+            eng = HrExternalEngagement.objects.select_for_update().get(
+                tenant_id=tenant_id, id=record.engagement_id_id
+            )
             if eng.workload_cap is not None:
                 total = self._verified_total(eng, exclude_record_id=record.id)
                 if total + record.quantity > eng.workload_cap:
@@ -279,12 +331,14 @@ class TaskService:
         from django.utils import timezone
 
         record.verified_at = timezone.now() if verified else None
+        record.version += 1
         record.save(
             update_fields=[
                 "verification_status",
                 "settlement_status",
                 "verified_by",
                 "verified_at",
+                "version",
                 "updated_at",
             ]
         )

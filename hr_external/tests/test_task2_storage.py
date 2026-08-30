@@ -65,6 +65,7 @@ class PrivateStorageTests(TestCase):
     def _upload(self, data: bytes = b"%PDF-1.4 fake pdf content"):
         self.service.save_material_file(
             material=self.material,
+            tenant_id=self.tenant,
             content=data,
             original_filename="proof.pdf",
             mime_type="application/pdf",

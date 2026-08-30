@@ -236,15 +236,21 @@ class EngagementService:
         engagement.save(update_fields=["status", "version", "updated_at"])
         return engagement
 
+    @transaction.atomic
     def set_agreement_status(
         self,
         engagement: HrExternalEngagement,
         provider_status: str,
         *,
         tenant_id: int,
-    ) -> None:
+    ) -> HrExternalEngagement:
         """从 HR07 Provider 结果投影 agreement_status；显式 tenant 防止跨校对象写入。"""
-        if getattr(engagement, "tenant_id", None) != tenant_id:
+        engagement = (
+            HrExternalEngagement.objects.select_for_update()
+            .filter(tenant_id=tenant_id, id=getattr(engagement, "pk", None))
+            .first()
+        )
+        if engagement is None:
             raise CrossTenantReference("engagement tenant mismatch")
         valid = {c.value for c in AgreementProviderStatus}
         engagement.agreement_status = (
@@ -252,7 +258,11 @@ class EngagementService:
             if provider_status in valid
             else AgreementProviderStatus.UNAVAILABLE.value
         )
-        engagement.save(update_fields=["agreement_status", "updated_at"])
+        engagement.version += 1
+        engagement.save(
+            update_fields=["agreement_status", "version", "updated_at"]
+        )
+        return engagement
 
     def agreement_gate_passed(self, engagement: HrExternalEngagement) -> bool:
         """Agreement gate（§42/§93）：激活前协议就绪。"""

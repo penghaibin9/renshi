@@ -295,7 +295,7 @@ def contribution_submit(request, contribution_id):
     if c is None:
         return error_response(request, "INVALID_REQUEST", "成果不存在", 404)
     try:
-        IndustryService().submit_contribution(c)
+        c = IndustryService().submit_contribution(c, tenant_id=ctx.tenant_id)
     except InvalidContributionState as exc:
         return error_response(request, exc.code, str(exc), 409)
     body = api_root(request)
@@ -320,7 +320,9 @@ def contribution_verify(request, contribution_id):
     if c is None:
         return error_response(request, "INVALID_REQUEST", "成果不存在", 404)
     try:
-        IndustryService().verify_contribution(c, verified=verified)
+        c = IndustryService().verify_contribution(
+            c, tenant_id=ctx.tenant_id, verified=verified
+        )
     except InvalidContributionState as exc:
         return error_response(request, exc.code, str(exc), 409)
 

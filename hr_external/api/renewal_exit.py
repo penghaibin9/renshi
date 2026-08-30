@@ -22,7 +22,6 @@ from hr_external.api.base import (
     json_response,
     make_external_context,
 )
-from hr_external.constants import RenewalReviewStatus
 from hr_external.display_labels import (
     engagement_status_label,
     exit_reason_label,
@@ -145,14 +144,10 @@ def renewal_decide(request, review_id):
     except json.JSONDecodeError:
         return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON", 400)
 
-    # DRAFT → IN_REVIEW 才能决策
-    if review.status == RenewalReviewStatus.DRAFT:
-        review.status = RenewalReviewStatus.IN_REVIEW
-        review.save(update_fields=["status", "updated_at"])
-
     try:
         decision = RenewalService().decide(
             review,
+            tenant_id=ctx.tenant_id,
             decision=payload.get("decision") or "",
             decided_by=ctx.user_id,
             next_start=parse_date(payload["nextStart"]) if payload.get("nextStart") else None,
@@ -162,6 +157,7 @@ def renewal_decide(request, review_id):
         )
     except RenewalStateConflict as exc:
         return error_response(request, exc.code, str(exc), 409)
+    review.refresh_from_db()
 
     write_external_audit(
         tenant_id=ctx.tenant_id, action="ExternalEngagementRenewed", actor_user_id=ctx.user_id,
@@ -234,9 +230,9 @@ def exit_prepare(request, exit_id):
     service = ExitService()
     try:
         if case.status == "PLANNED":
-            service.submit_review(case)
+            case = service.submit_review(case, tenant_id=ctx.tenant_id)
         elif case.status == "UNDER_REVIEW":
-            service.approve_exit(case)
+            case = service.approve_exit(case, tenant_id=ctx.tenant_id)
         else:
             raise ExitStateConflict("case cannot advance review from current state")
     except ExitStateConflict as exc:
@@ -300,16 +296,18 @@ def exit_complete(request, exit_id):
 
     service = ExitService()
     if case.status == "READY_TO_EXIT":
-        service.start_exit(case)
+        case = service.start_exit(case, tenant_id=ctx.tenant_id)
     try:
         case = service.finalize_exit(case, tenant_id=ctx.tenant_id)
     except ExitStateConflict as exc:
         return error_response(request, exc.code, str(exc), 409)
 
     if items:
-        service.record_clearance(case, items, ok=clearance_ok)
+        case = service.record_clearance(
+            case, items, tenant_id=ctx.tenant_id, ok=clearance_ok
+        )
     elif clearance_ok:
-        service.close_exit(case)
+        case = service.close_exit(case, tenant_id=ctx.tenant_id)
 
     write_external_audit(
         tenant_id=ctx.tenant_id, action="ExternalEngagementEnded", actor_user_id=ctx.user_id,

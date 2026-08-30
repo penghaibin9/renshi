@@ -49,10 +49,15 @@ class PortalService:
         issued_by: Optional[int] = None,
     ) -> tuple[str, HrExternalPortalToken]:
         """签发 portal token：返回明文一次（调用方负责交付本人），库中只存 hash。"""
+        profile = HrExternalTeacherProfile.objects.filter(
+            tenant_id=tenant_id, id=external_profile_id
+        ).first()
+        if profile is None:
+            raise PortalDataDenied("external profile not found inside tenant")
         raw = secrets.token_urlsafe(32)
         token = HrExternalPortalToken.objects.create(
             tenant_id=tenant_id,
-            external_profile_id_id=external_profile_id,
+            external_profile_id=profile,
             token_hash=self._hash(raw),
             expires_at=timezone.now() + timedelta(hours=PORTAL_TOKEN_TTL_HOURS),
             issued_by=issued_by,

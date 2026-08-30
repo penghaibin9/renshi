@@ -171,7 +171,7 @@ def task_create(request):
             reviewer_id=payload.get("reviewerId"),
             settlement_eligible=bool(payload.get("settlementEligible", False)),
         )
-        service.assign(t)
+        t = service.assign(t, tenant_id=ctx.tenant_id)
     except (TaskOutsideEngagement, ValueError) as exc:
         return _err_response(request, exc)
 
@@ -220,7 +220,9 @@ def task_accept(request, task_id):
         return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON", 400)
 
     try:
-        TaskService().accept(t, action, payload.get("reason") or "")
+        t = TaskService().accept(
+            t, action, payload.get("reason") or "", tenant_id=ctx.tenant_id
+        )
     except TaskStateConflict as exc:
         return _err_response(request, exc)
     body = api_root(request)
@@ -234,7 +236,7 @@ def task_start(request, task_id):
     if err:
         return err
     try:
-        TaskService().start(t)
+        t = TaskService().start(t, tenant_id=ctx.tenant_id)
     except TaskStateConflict as exc:
         return _err_response(request, exc)
     body = api_root(request)
@@ -248,7 +250,7 @@ def task_submit(request, task_id):
     if err:
         return err
     try:
-        TaskService().submit(t)
+        t = TaskService().submit(t, tenant_id=ctx.tenant_id)
     except TaskStateConflict as exc:
         return _err_response(request, exc)
     body = api_root(request)
@@ -270,11 +272,11 @@ def task_verify(request, task_id):
 
     try:
         svc = TaskService()
-        svc.review(t)
+        t = svc.review(t, tenant_id=ctx.tenant_id)
         if action == "COMPLETE":
-            svc.complete(t)
+            t = svc.complete(t, tenant_id=ctx.tenant_id)
         else:
-            svc.reject_for_correction(t)
+            t = svc.reject_for_correction(t, tenant_id=ctx.tenant_id)
     except TaskStateConflict as exc:
         return _err_response(request, exc)
 
