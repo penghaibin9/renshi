@@ -35,7 +35,6 @@ class Hr12ToHr13MaterialProviderTests(TestCase):
             decision_reason="集体审定通过",
             finalized_at=datetime(2026, 8, 1, 8, 0, tzinfo=timezone.utc),
             result_version_no=2,
-            content_hash="c" * 64,
             status="FINALIZED",
         )
         self.title_case = TitleApplicationCase.objects.create(
@@ -68,7 +67,7 @@ class Hr12ToHr13MaterialProviderTests(TestCase):
         self.assertEqual(first.source_domain, "HR12")
         self.assertEqual(first.source_ref, str(self.result.id))
         self.assertEqual(first.source_version, PROVIDER_VERSION)
-        self.assertEqual(first.content_hash, "c" * 64)
+        self.assertEqual(first.content_hash, self.result.content_hash)
         self.assertEqual(first.snapshot_json["gradeCode"], "A")
         self.assertEqual(first.snapshot_json["calculatedScore"], "93.25")
         self.assertEqual(first.snapshot_json["staffId"], str(self.staff.id))
@@ -142,7 +141,6 @@ class Hr12ToHr13MaterialProviderTests(TestCase):
             grade_code="B",
             finalized_at=datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc),
             result_version_no=1,
-            content_hash="d" * 64,
             status="REVISED",
         )
 
