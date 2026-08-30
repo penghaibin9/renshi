@@ -15,20 +15,24 @@ from hr_changes.selectors.ledger import LedgerSelector
 from hr_changes.services.change_service import ChangeService, ChangeServiceError
 from hr_changes.services.correction_service import CorrectionService, CorrectionServiceError
 from hr_changes.services.rescind_service import RescindService, RescindServiceError
-from hr_changes.tests.factories import make_case, make_org, make_position
+from hr_changes.tests.factories import (
+    make_case,
+    make_effective_case as make_trusted_effective_case,
+    make_org,
+    make_position,
+)
 
 TENANT = 1
 
 
 def make_effective_case(**kw):
-    case = make_case(TENANT, status=CaseStatus.EFFECTIVE, **kw)
-    return case
+    return make_trusted_effective_case(TENANT, **kw)
 
 
 class LedgerSelectorTests(TestCase):
     def test_list_and_filters(self):
         org = make_org(TENANT, "RGXY", "人工智能学院", date(2020, 1, 1))
-        c1 = make_case(TENANT, target_org=org, status=CaseStatus.EFFECTIVE)
+        c1 = make_effective_case(target_org=org)
         c2 = make_case(TENANT, ChangeActionCode.MANAGER_CHANGE, status=CaseStatus.DRAFT)
 
         selector = LedgerSelector(TENANT)
@@ -50,7 +54,7 @@ class LedgerSelectorTests(TestCase):
         self.assertEqual(by_year["total"], 2)
 
     def test_staff_history(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_effective_case()
         data = LedgerSelector(TENANT).staff_history(case.staff_master_id_id)
         self.assertEqual(data["items"][0]["caseNo"], case.case_no)
         self.assertEqual(data["items"][0]["statusLabel"], "已生效")
@@ -59,14 +63,7 @@ class LedgerSelectorTests(TestCase):
 class CorrectionServiceTests(TestCase):
     def setUp(self):
         self.case = make_effective_case()
-        HrChangeEffectiveSnapshot.objects.create(
-            change_case_id=self.case,
-            applied_at="2026-09-01T00:00:00Z",
-            effective_at=date(2026, 9, 1),
-            before_json={"a": 1},
-            after_json={"a": 2},
-            checksum="prev-hash",
-        )
+        self.assertIsNotNone(self.case.effective_snapshot)
 
     def test_full_correction_flow(self):
         svc = CorrectionService(TENANT, actor_user_id=1)
@@ -79,7 +76,8 @@ class CorrectionServiceTests(TestCase):
             idempotency_key="s7-create-full",
         )
         self.assertEqual(correction.status, "DRAFT")
-        self.assertEqual(correction.previous_snapshot_hash, "prev-hash")
+        original_snapshot_hash = self.case.effective_snapshot.checksum
+        self.assertEqual(correction.previous_snapshot_hash, original_snapshot_hash)
 
         correction = svc.submit(correction.id)
         correction = svc.approve(correction.id)
@@ -90,7 +88,7 @@ class CorrectionServiceTests(TestCase):
         )
         self.assertEqual(applied.status, "APPLIED")
         self.assertTrue(applied.new_snapshot_hash)
-        self.assertNotEqual(applied.new_snapshot_hash, "prev-hash")
+        self.assertNotEqual(applied.new_snapshot_hash, original_snapshot_hash)
         # 案件转 CORRECTED
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, CaseStatus.CORRECTED)

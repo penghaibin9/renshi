@@ -11,7 +11,7 @@ from hr_changes.constants import CaseStatus
 from hr_changes.context import HrChangeContextError
 from hr_changes.models import HrChangeCorrection, HrChangeOutboxEvent
 from hr_changes.services.correction_service import CorrectionService, CorrectionServiceError
-from hr_changes.tests.factories import make_case
+from hr_changes.tests.factories import make_case, make_effective_case
 from hr_staff.models import HrCorrectionCase, HrOutboxEvent
 
 
@@ -124,7 +124,7 @@ class CorrectionApiContractTests(SimpleTestCase):
 
 class CorrectionAuthorityProviderTests(TestCase):
     def setUp(self):
-        self.case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        self.case = make_effective_case(TENANT)
         self.service = CorrectionService(TENANT, actor_user_id=9001)
 
     def _create(self, *, key="create-1", fields=None):

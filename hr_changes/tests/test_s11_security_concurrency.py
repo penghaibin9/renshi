@@ -22,6 +22,7 @@ from hr_changes.services.rebase_service import RebaseService
 from hr_changes.tests.factories import (
     make_action,
     make_case,
+    make_effective_case,
     make_org,
     make_person,
     make_position,
@@ -44,7 +45,7 @@ class TenantIsolationTests(TestCase):
     """学校 A 不能读到学校 B 的异动数据（fail-closed）。"""
 
     def test_detail_cross_tenant_returns_none(self):
-        case_a = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case_a = make_effective_case(TENANT)
         self.assertIsNone(CaseDetailSelector(TENANT_B).get(case_a.id))
 
     def test_list_tenant_scoped(self):
@@ -123,17 +124,9 @@ class EffectiveSnapshotInvariantTests(TestCase):
     """正式已生效快照不可原地改（总册 §33）。"""
 
     def test_effective_snapshot_immutable_record(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
-        HrChangeEffectiveSnapshot.objects.create(
-            change_case_id=case,
-            applied_at="2026-09-01T00:00:00Z",
-            effective_at=date(2026, 9, 1),
-            before_json={"organization": "A"},
-            after_json={"organization": "B"},
-            checksum="sum-1",
-        )
+        case = make_effective_case(TENANT)
         snap = HrChangeEffectiveSnapshot.objects.get(change_case_id=case)
-        self.assertEqual(snap.checksum, "sum-1")
+        self.assertEqual(len(snap.content_hash), 64)
         self.assertEqual(HrChangeEffectiveSnapshot.objects.filter(change_case_id=case).count(), 1)
 
 
@@ -143,9 +136,9 @@ class DataQualityTests(TestCase):
     def test_effective_requires_snapshot(self):
         from hr_changes.models import HrChangeEffectiveSnapshot
 
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_effective_case(TENANT)
         has_snapshot = HrChangeEffectiveSnapshot.objects.filter(change_case_id=case).exists()
-        self.assertFalse(has_snapshot)
+        self.assertTrue(has_snapshot)
 
 
 class PermissionContractTests(TestCase):

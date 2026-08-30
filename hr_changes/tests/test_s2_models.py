@@ -24,6 +24,7 @@ from hr_changes.models import (
     HrTemporaryAssignmentLink,
 )
 from hr_staff.tests.factories import make_org, make_person, make_staff
+from hr_changes.tests.factories import make_effective_case as make_trusted_effective_case
 
 TENANT = 1
 
@@ -118,15 +119,8 @@ class ImpactSnapshotTests(TestCase):
 
 class ApprovalAndEffectiveSnapshotTests(TestCase):
     def test_effective_snapshot_one_per_case(self):
-        case = make_case()
-        HrChangeEffectiveSnapshot.objects.create(
-            change_case_id=case, applied_at=date(2026, 9, 1).isoformat() + "T00:00:00Z",
-            effective_at=date(2026, 9, 1),
-            before_json={"organization": "计算机学院"},
-            after_json={"organization": "人工智能学院"},
-            checksum="abc123",
-        )
-        self.assertEqual(case.effective_snapshot.checksum, "abc123")
+        case = make_trusted_effective_case(TENANT)
+        self.assertEqual(len(case.effective_snapshot.content_hash), 64)
 
     def test_approval_snapshot_versions(self):
         case = make_case()
@@ -201,7 +195,7 @@ class CorrectionRescindBulkTests(TestCase):
         self.assertEqual(c.status, "DRAFT")
 
     def test_rescind_status(self):
-        case = make_case(status=CaseStatus.EFFECTIVE)
+        case = make_trusted_effective_case(TENANT)
         r = HrChangeRescind.objects.create(
             tenant_id=TENANT, change_case_id=case, reason="政策调整",
         )

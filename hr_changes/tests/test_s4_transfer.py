@@ -16,6 +16,7 @@ from hr_changes.services.change_service import ChangeServiceError
 from hr_changes.services.transfer_service import TransferService
 from hr_changes.tests.factories import (
     make_action,
+    make_effective_case,
     make_org,
     make_person,
     make_position,
@@ -249,10 +250,11 @@ class TransferApiTests(TestCase):
         self.assertEqual(data["beforeAfter"]["after"]["position"], "AI-P200")
 
     def test_transfer_list_api(self):
-        from hr_changes.tests.factories import make_case
-
-        make_case(TENANT, ChangeActionCode.ORG_POSITION_TRANSFER,
-                  target_org=self.target_org, status=CaseStatus.EFFECTIVE)
+        make_effective_case(
+            TENANT,
+            ChangeActionCode.ORG_POSITION_TRANSFER,
+            target_org=self.target_org,
+        )
         with mock.patch("hr_changes.api.transfers.make_hr_change_context", return_value=ctx()):
             resp = transfers_api.transfer_list(self._req("get", "/api/hr/v1/changes/transfers"))
         body = json.loads(resp.content)

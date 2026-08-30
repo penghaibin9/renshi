@@ -12,7 +12,7 @@ from hr_changes.models import (
 from hr_changes.services.authority_receipt_service import effective_execution_chain
 from hr_changes.services.correction_service import CorrectionService
 from hr_changes.services.rescind_service import RescindService
-from hr_changes.tests.factories import make_case
+from hr_changes.tests.factories import make_case, make_effective_case
 
 
 TENANT = 6060
@@ -51,6 +51,10 @@ class EffectiveFactSealContractTests(SimpleTestCase):
 
 class EffectiveFactSealDatabaseTests(TestCase):
     def _snapshot(self, case):
+        try:
+            return case.effective_snapshot
+        except HrChangeEffectiveSnapshot.DoesNotExist:
+            pass
         return HrChangeEffectiveSnapshot.objects.create(
             change_case_id=case,
             applied_at=timezone.now(),
@@ -63,7 +67,7 @@ class EffectiveFactSealDatabaseTests(TestCase):
         )
 
     def test_execution_snapshot_is_hr03_boundary_and_immutable(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_effective_case(TENANT)
         snapshot = self._snapshot(case)
         self.assertEqual(snapshot.tenant_id, TENANT)
         self.assertEqual(snapshot.authority_domain, "HR03")
@@ -75,7 +79,7 @@ class EffectiveFactSealDatabaseTests(TestCase):
             HrChangeEffectiveSnapshot.objects.filter(id=snapshot.id).delete()
 
     def test_hr03_correction_appends_sealed_provider_receipt(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_effective_case(TENANT)
         self._snapshot(case)
         service = CorrectionService(TENANT, actor_user_id=9001)
         correction = service.create_correction(
@@ -110,7 +114,7 @@ class EffectiveFactSealDatabaseTests(TestCase):
         self.assertEqual(case.authority_receipts.count(), 1)
 
     def test_rescind_receipt_explicitly_cannot_claim_hr03_reversal(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_effective_case(TENANT)
         self._snapshot(case)
         service = RescindService(TENANT, actor_user_id=1)
         rescind = service.request_rescind(case_id=case.id, reason="政策调整")
@@ -127,7 +131,7 @@ class EffectiveFactSealDatabaseTests(TestCase):
         self.assertFalse(chain["receipts"][0]["authorityEffect"])
 
     def test_cross_tenant_snapshot_parent_is_rejected(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_case(TENANT)
         case.staff_master_id.tenant_id = TENANT + 1
         case.staff_master_id.save(update_fields=["tenant_id"])
         with self.assertRaisesRegex(ValueError, "TENANT_MISMATCH"):

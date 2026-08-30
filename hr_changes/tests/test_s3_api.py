@@ -13,6 +13,7 @@ from hr_changes.context import HrChangeRequestContext, HrChangeScope
 from hr_changes.tests.factories import (
     make_action,
     make_case,
+    make_effective_case,
     make_org,
     make_person,
     make_reason,
@@ -118,7 +119,7 @@ class ChangeApiTests(TestCase):
         self.assertEqual(body["data"]["items"][0]["caseNo"], case.case_no)
 
     def test_machine_field_names_no_chinese(self):
-        case = make_case(TENANT, status=CaseStatus.EFFECTIVE)
+        case = make_effective_case(TENANT)
         with mock.patch("hr_changes.api.changes.make_hr_change_context", return_value=ctx()):
             resp = changes_api.change_detail(self._req("get", f"/api/hr/v1/changes/{case.id}"), case.id)
         data = self._body(resp)["data"]
