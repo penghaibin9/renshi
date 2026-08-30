@@ -131,7 +131,7 @@ def install_trusted_execution_triggers(apps, schema_editor):
                OR CAST(JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.tenantId')) AS UNSIGNED) <> NEW.tenant_id
                OR REPLACE(JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.caseId')), '-', '') <> NEW.change_case_id_id
                OR CAST(JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.caseVersion')) AS UNSIGNED) <> NEW.case_version
-               OR JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.effectiveAt')) <> DATE_FORMAT(NEW.effective_at, '%Y-%m-%d')
+               OR JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.effectiveAt')) <> DATE_FORMAT(NEW.effective_at, '%%Y-%%m-%%d')
                OR REPLACE(JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.approvalSnapshotId')), '-', '') <> NEW.approval_snapshot_id
                OR JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.approvalSnapshotHash')) <> NEW.approval_snapshot_hash
                OR JSON_UNQUOTE(JSON_EXTRACT(NEW.provider_receipt_json, '$.idempotencyKey')) <> NEW.execution_idempotency_key
