@@ -78,14 +78,14 @@ class TaskTests(TestCase):
     def test_task_lifecycle(self):
         t = self._task()
         self.assertEqual(t.status, ExternalTaskStatus.DRAFT)
-        self.service.assign(t, tenant_id=self.tenant)
-        self.service.accept(t, action="ACCEPTED", tenant_id=self.tenant)
+        t = self.service.assign(t, tenant_id=self.tenant)
+        t = self.service.accept(t, action="ACCEPTED", tenant_id=self.tenant)
         self.assertEqual(t.status, ExternalTaskStatus.ACCEPTED)
-        self.service.start(t, tenant_id=self.tenant)
+        t = self.service.start(t, tenant_id=self.tenant)
         self.assertEqual(t.status, ExternalTaskStatus.IN_PROGRESS)
-        self.service.submit(t, tenant_id=self.tenant)
-        self.service.review(t, tenant_id=self.tenant)
-        self.service.complete(t, tenant_id=self.tenant)
+        t = self.service.submit(t, tenant_id=self.tenant)
+        t = self.service.review(t, tenant_id=self.tenant)
+        t = self.service.complete(t, tenant_id=self.tenant)
         self.assertEqual(t.status, ExternalTaskStatus.COMPLETED)
 
     def test_decline_keeps_task(self):

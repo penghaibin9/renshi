@@ -106,7 +106,9 @@ class HiringFlowTests(TestCase):
     def test_return_flow(self):
         self.case = self.service.submit(self.case, tenant_id=self.tenant)
         self.case = self.service.college_approve(self.case, tenant_id=self.tenant)
-        self.service.return_to_draft(self.case)
+        self.case = self.service.return_to_draft(
+            self.case, tenant_id=self.tenant
+        )
         self.assertEqual(self.case.status, ExternalHiringStatus.RETURNED)
 
     def test_compliance_blocker_blocks_school_approval(self):

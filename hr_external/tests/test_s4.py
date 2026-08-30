@@ -76,9 +76,9 @@ class IndustryTests(TestCase):
             qualitative_summary="指导 5 名学徒完成中级工考核",
         )
         self.assertEqual(c.status, ContributionStatus.DRAFT)
-        self.service.submit_contribution(c, tenant_id=self.tenant)
+        c = self.service.submit_contribution(c, tenant_id=self.tenant)
         self.assertEqual(c.status, ContributionStatus.SUBMITTED)
-        self.service.verify_contribution(c, tenant_id=self.tenant, verified=True)
+        c = self.service.verify_contribution(c, tenant_id=self.tenant, verified=True)
         c.refresh_from_db()
         self.assertEqual(c.status, ContributionStatus.VERIFIED)
         self.assertEqual(c.verification_status, EvidenceVerificationStatus.VERIFIED)
