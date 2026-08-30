@@ -37,6 +37,11 @@ class TimeCloseEvidence:
     attendance_fact_hash: str
     leave_ledger_hash: str
     overtime_fact_hash: str
+    close_rule_version: str
+    source_as_of: str
+    snapshot_hash: str
+    personnel_scope_hash: str
+    basis_hash: str
     source_version: str = PROVIDER_VERSION
 
     def snapshot(self) -> dict:
@@ -51,6 +56,11 @@ class TimeCloseEvidence:
             "attendanceFactHash": self.attendance_fact_hash,
             "leaveLedgerHash": self.leave_ledger_hash,
             "overtimeFactHash": self.overtime_fact_hash,
+            "closeRuleVersion": self.close_rule_version,
+            "sourceAsOf": self.source_as_of,
+            "snapshotHash": self.snapshot_hash,
+            "personnelScopeHash": self.personnel_scope_hash,
+            "basisHash": self.basis_hash,
         }
 
 
@@ -163,6 +173,11 @@ def get_closed_time_period_evidence(
         attendance_fact_hash=snapshot.attendance_fact_hash,
         leave_ledger_hash=snapshot.leave_ledger_hash,
         overtime_fact_hash=snapshot.overtime_fact_hash,
+        close_rule_version=period.close_rule_version,
+        source_as_of=snapshot.close_summary_json.get("sourceAsOf", ""),
+        snapshot_hash=snapshot.close_summary_json.get("snapshotHash", ""),
+        personnel_scope_hash=snapshot.close_summary_json.get("personnelScopeHash", ""),
+        basis_hash=snapshot.close_summary_json.get("basisHash", ""),
     )
 
 

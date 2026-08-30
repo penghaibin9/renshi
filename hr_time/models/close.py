@@ -23,6 +23,42 @@ from django.utils.translation import gettext_lazy as _
 from hr_time.models.base import TimeTenantModel
 
 
+class ImmutableSnapshotQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if self.exists():
+            raise ValidationError(_("月结快照不可修改；重开后必须生成新快照"))
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.exists():
+            raise ValidationError(_("月结快照不可删除"))
+        return super().delete()
+
+
+class ImmutableSnapshotManager(models.Manager):
+    def get_queryset(self):
+        return ImmutableSnapshotQuerySet(self.model, using=self._db)
+
+
+class FrozenBasisQuerySet(models.QuerySet):
+    def _assert_writable(self):
+        if self.exists():
+            raise ValidationError(_("已生成的 Payroll basis 不可修改或删除"))
+
+    def update(self, **kwargs):
+        self._assert_writable()
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._assert_writable()
+        return super().delete()
+
+
+class FrozenBasisManager(models.Manager):
+    def get_queryset(self):
+        return FrozenBasisQuerySet(self.model, using=self._db)
+
+
 class HrTimeClosePeriod(TimeTenantModel):
     """月结期间（§113）。"""
 
@@ -80,6 +116,8 @@ class HrTimeClosePeriod(TimeTenantModel):
 class HrTimeCloseSnapshot(TimeTenantModel):
     """月结快照（§115）：供 HR15/HR12 引用。"""
 
+    objects = ImmutableSnapshotManager()
+
     period = models.ForeignKey(
         HrTimeClosePeriod, on_delete=models.PROTECT, related_name="snapshots"
     )
@@ -98,6 +136,14 @@ class HrTimeCloseSnapshot(TimeTenantModel):
 
     def __str__(self):
         return f"[{self.tenant_id}] period={self.period_id} snapshot={self.pk}"
+
+    def save(self, *args, **kwargs):
+        if self.pk and HrTimeCloseSnapshot._base_manager.filter(pk=self.pk).exists():
+            raise ValidationError(_("月结快照不可修改；重开后必须生成新快照"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("月结快照不可删除"))
 
 
 class HrTimeCorrectionBatch(TimeTenantModel):
@@ -132,6 +178,8 @@ class HrTimeCorrectionBatch(TimeTenantModel):
 class HrPayrollTimeBasis(TimeTenantModel):
     """HR15 时间基础（§119）：不包含工资金额。"""
 
+    objects = FrozenBasisManager()
+
     close_snapshot = models.ForeignKey(
         HrTimeCloseSnapshot, on_delete=models.PROTECT, related_name="payroll_bases"
     )
@@ -156,6 +204,14 @@ class HrPayrollTimeBasis(TimeTenantModel):
 
     def __str__(self):
         return f"[{self.tenant_id}] snapshot={self.close_snapshot_id} staff={self.staff_master_id}"
+
+    def save(self, *args, **kwargs):
+        if self.pk and HrPayrollTimeBasis._base_manager.filter(pk=self.pk).exists():
+            raise ValidationError(_("已生成的 Payroll basis 不可修改"))
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("已生成的 Payroll basis 不可删除"))
 
 
 class HrTimeRiskCase(TimeTenantModel):

@@ -23,7 +23,7 @@ import json
 from django.db import transaction
 from django.utils import timezone
 
-from hr_time.enums import AttendanceStatus, LeaveRequestStatus
+from hr_time.enums import AttendanceStatus, LeaveRequestStatus, OvertimeSettlementMode
 from hr_time.models.attendance import HrAttendanceDayFact
 from hr_time.models.close import (
     HrPayrollTimeBasis,
@@ -32,7 +32,8 @@ from hr_time.models.close import (
     HrTimeCorrectionBatch,
     HrTimeRiskCase,
 )
-from hr_time.models.leave_request import HrLeaveRequest
+from hr_time.models.leave import HrLeaveLedgerEntry
+from hr_time.models.leave_request import HrAbsenceFact, HrLeaveRequest
 from hr_time.models.overtime import HrOvertimeFact
 
 
@@ -42,6 +43,17 @@ class CloseServiceError(Exception):
         self.message = message
         self.blockers = blockers or []
         super().__init__(message)
+
+
+def _stable_hash(payload) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 class CloseService:
@@ -110,6 +122,36 @@ class CloseService:
         if pending_ot:
             blockers.append({"code": "PENDING_OVERTIME", "count": pending_ot})
 
+        unresolved_absence = HrAbsenceFact.objects.filter(
+            tenant_id=tenant_id,
+            start_at__lte=period.end_date,
+            end_at__gte=period.start_date,
+            status="ACTIVE",
+            paid_classification="POLICY_DEPENDENT",
+        ).count()
+        if unresolved_absence:
+            blockers.append(
+                {
+                    "code": "UNRESOLVED_ABSENCE_CLASSIFICATION",
+                    "count": unresolved_absence,
+                }
+            )
+
+        unresolved_overtime = HrOvertimeFact.objects.filter(
+            tenant_id=tenant_id,
+            actual_start_at__date__lte=period.end_date,
+            actual_end_at__date__gte=period.start_date,
+            verification_status="VERIFIED",
+            settlement_mode=OvertimeSettlementMode.POLICY_DEPENDENT,
+        ).count()
+        if unresolved_overtime:
+            blockers.append(
+                {
+                    "code": "UNRESOLVED_OVERTIME_SETTLEMENT",
+                    "count": unresolved_overtime,
+                }
+            )
+
         return blockers
 
     @staticmethod
@@ -119,8 +161,16 @@ class CloseService:
     ) -> HrTimeCloseSnapshot:
         """月结：P0 blockers 清零后才允许；生成快照 + Payroll basis。"""
         CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
+        period = HrTimeClosePeriod.objects.select_for_update().filter(
+            id=period.id,
+            tenant_id=tenant_id,
+        ).first()
+        if period is None:
+            raise CloseServiceError("CROSS_TENANT_REFERENCE", "月结期间不属于当前 tenant")
         if period.status == "CLOSED":
             raise CloseServiceError("VERSION_CONFLICT", "期间已关闭")
+        if period.status not in {"OPEN", "PRE_CLOSE", "REOPENED"}:
+            raise CloseServiceError("VERSION_CONFLICT", f"期间状态 {period.status} 不允许月结")
         blockers = CloseService.precheck(tenant_id=tenant_id, period=period)
         if blockers:
             raise CloseServiceError(
@@ -134,48 +184,235 @@ class CloseService:
                 business_date__range=(period.start_date, period.end_date),
             ).order_by("staff_master_id", "business_date")
         )
-        fact_hash = hashlib.sha256(
-            json.dumps(
-                [
-                    (
-                        f.staff_master_id,
-                        f.business_date.isoformat(),
-                        f.status,
-                        f.credited_minutes,
-                    )
-                    for f in facts
-                ],
-                sort_keys=True,
-            ).encode("utf-8")
-        ).hexdigest()
-
-        snapshot = HrTimeCloseSnapshot.objects.create(
-            tenant_id=tenant_id,
-            period=period,
-            metric_definition_version="1.0",
-            staff_count=len({f.staff_master_id for f in facts}),
-            attendance_fact_hash=fact_hash,
+        attendance_payload = [
+            {
+                "id": f.id,
+                "staffId": f.staff_master_id,
+                "businessDate": f.business_date.isoformat(),
+                "policyVersionId": f.policy_version_id,
+                "calendarVersionId": f.calendar_version_id,
+                "scheduleSnapshot": f.schedule_snapshot_json,
+                "expectedMinutes": f.expected_minutes,
+                "actualMinutes": f.actual_minutes,
+                "creditedMinutes": f.credited_minutes,
+                "authorizedAbsenceMinutes": f.authorized_absence_minutes,
+                "overtimeCandidateMinutes": f.overtime_minutes_candidate,
+                "status": f.status,
+                "evaluationVersion": f.evaluation_version,
+                "sourcePairIds": f.source_pair_ids,
+            }
+            for f in facts
+        ]
+        absences = list(
+            HrAbsenceFact.objects.filter(
+                tenant_id=tenant_id,
+                start_at__lte=period.end_date,
+                end_at__gte=period.start_date,
+                status="ACTIVE",
+            ).order_by("staff_master_id", "start_at", "id")
         )
+        absence_payload = [
+            {
+                "id": item.id,
+                "staffId": item.staff_master_id,
+                "leaveRequestId": item.leave_request_id,
+                "startDate": item.start_at.isoformat(),
+                "endDate": item.end_at.isoformat(),
+                "scheduledMinutesImpacted": item.scheduled_minutes_impacted,
+                "paidClassification": item.paid_classification,
+                "policyVersionId": item.policy_version_id,
+                "factVersion": item.fact_version,
+                "effectiveSnapshot": item.effective_snapshot,
+            }
+            for item in absences
+        ]
+        leave_ledger_entries = list(
+            HrLeaveLedgerEntry.objects.filter(
+                tenant_id=tenant_id,
+                effective_date__range=(period.start_date, period.end_date),
+            )
+            .select_related("account")
+            .order_by("account__staff_master_id", "effective_date", "id")
+        )
+        leave_ledger_payload = [
+            {
+                "id": item.id,
+                "staffId": item.account.staff_master_id,
+                "accountId": item.account_id,
+                "entryType": item.entry_type,
+                "amount": str(item.amount),
+                "unit": item.unit,
+                "effectiveDate": item.effective_date.isoformat(),
+                "sourceType": item.source_type,
+                "sourceId": item.source_id,
+                "reversalOfId": item.reversal_of_id,
+                "balanceAfter": str(item.balance_after),
+            }
+            for item in leave_ledger_entries
+        ]
+        overtime_facts = list(
+            HrOvertimeFact.objects.filter(
+                tenant_id=tenant_id,
+                actual_start_at__date__lte=period.end_date,
+                actual_end_at__date__gte=period.start_date,
+                verification_status="VERIFIED",
+            ).order_by("staff_master_id", "actual_start_at", "id")
+        )
+        overtime_payload = [
+            {
+                "id": item.id,
+                "staffId": item.staff_master_id,
+                "startAt": item.actual_start_at.isoformat(),
+                "endAt": item.actual_end_at.isoformat(),
+                "actualMinutes": item.actual_minutes,
+                "eligibleMinutes": item.eligible_minutes,
+                "policyVersionId": item.policy_version_id,
+                "settlementMode": item.settlement_mode,
+                "evidenceSource": item.evidence_source,
+            }
+            for item in overtime_facts
+        ]
 
-        # 生成 Payroll basis（不含金额；按 staff 聚合一次完成，避免 N+1）
+        # 生成 Payroll basis（不含金额）；先物化再统一 hash，供 HR15 验签。
         staff_rows = {}
         for f in facts:
             row = staff_rows.setdefault(
                 f.staff_master_id,
-                {"regular": 0, "unpaid": 0},
+                {
+                    "regular": 0,
+                    "payable_absence": 0,
+                    "unpaid": 0,
+                    "overtime": 0,
+                    "comp": 0,
+                    "unexcused": 0,
+                },
             )
             row["regular"] += f.credited_minutes
             if f.status == AttendanceStatus.UNEXCUSED_ABSENCE:
-                row["unpaid"] += f.expected_minutes
-        for staff_id, row in staff_rows.items():
-            HrPayrollTimeBasis.objects.create(
-                tenant_id=tenant_id,
-                close_snapshot=snapshot,
-                staff_master_id=staff_id,
-                regular_work_minutes=row["regular"],
-                unpaid_absence_minutes=row["unpaid"],
-                basis_version="1.0",
+                row["unexcused"] += f.expected_minutes
+        for item in absences:
+            row = staff_rows.setdefault(
+                item.staff_master_id,
+                {
+                    "regular": 0,
+                    "payable_absence": 0,
+                    "unpaid": 0,
+                    "overtime": 0,
+                    "comp": 0,
+                    "unexcused": 0,
+                },
             )
+            if item.paid_classification == "PAID":
+                row["payable_absence"] += item.scheduled_minutes_impacted
+            elif item.paid_classification == "UNPAID":
+                row["unpaid"] += item.scheduled_minutes_impacted
+        for item in overtime_facts:
+            row = staff_rows.setdefault(
+                item.staff_master_id,
+                {
+                    "regular": 0,
+                    "payable_absence": 0,
+                    "unpaid": 0,
+                    "overtime": 0,
+                    "comp": 0,
+                    "unexcused": 0,
+                },
+            )
+            if item.settlement_mode == OvertimeSettlementMode.PAY_CANDIDATE:
+                row["overtime"] += item.eligible_minutes
+            elif item.settlement_mode == OvertimeSettlementMode.COMP_TIME:
+                row["comp"] += item.eligible_minutes
+
+        basis_payload = [
+            {
+                "staffId": staff_id,
+                "regularWorkMinutes": row["regular"],
+                "payableAuthorizedAbsenceMinutes": row["payable_absence"],
+                "unpaidAbsenceMinutes": row["unpaid"],
+                "verifiedOvertimeMinutes": row["overtime"],
+                "compTimeMinutes": row["comp"],
+                "unexcusedAbsenceMinutes": row["unexcused"],
+                "basisVersion": "1.0",
+            }
+            for staff_id, row in sorted(staff_rows.items())
+        ]
+        attendance_hash = _stable_hash(attendance_payload)
+        leave_hash = _stable_hash(
+            {"absenceFacts": absence_payload, "leaveLedgerEntries": leave_ledger_payload}
+        )
+        overtime_hash = _stable_hash(overtime_payload)
+        personnel_scope_hash = _stable_hash([item["staffId"] for item in basis_payload])
+        policy_versions = sorted(
+            {
+                str(value)
+                for value in [
+                    *[f.policy_version_id for f in facts],
+                    *[item.policy_version_id for item in absences],
+                    *[item.account.policy_version_id for item in leave_ledger_entries],
+                    *[item.policy_version_id for item in overtime_facts],
+                ]
+                if value is not None
+            }
+        )
+        calendar_versions = sorted(
+            {str(f.calendar_version_id) for f in facts if f.calendar_version_id is not None}
+        )
+        closed_at = timezone.now()
+        close_rule_version = period.close_rule_version or "hr11-close-v1"
+        summary = {
+            "schemaVersion": "hr11-time-close-snapshot-v2",
+            "period": {
+                "startDate": period.start_date.isoformat(),
+                "endDate": period.end_date.isoformat(),
+            },
+            "closeRuleVersion": close_rule_version,
+            "sourceAsOf": closed_at.isoformat(),
+            "sealedBy": str(actor_user.id) if actor_user is not None else "SYSTEM",
+            "personnelScopeHash": personnel_scope_hash,
+            "basisHash": _stable_hash(basis_payload),
+            "basisRowCount": len(basis_payload),
+        }
+        summary["snapshotHash"] = _stable_hash(
+            {
+                **summary,
+                "attendanceFactHash": attendance_hash,
+                "leaveLedgerHash": leave_hash,
+                "overtimeFactHash": overtime_hash,
+                "policyVersions": policy_versions,
+                "calendarVersions": calendar_versions,
+            }
+        )
+        snapshot = HrTimeCloseSnapshot.objects.create(
+            tenant_id=tenant_id,
+            period=period,
+            metric_definition_version="2.0",
+            policy_versions=policy_versions,
+            calendar_versions=calendar_versions,
+            staff_count=len(basis_payload),
+            attendance_fact_hash=attendance_hash,
+            leave_ledger_hash=leave_hash,
+            overtime_fact_hash=overtime_hash,
+            close_summary_json=summary,
+        )
+
+        HrPayrollTimeBasis.objects.bulk_create(
+            [
+                HrPayrollTimeBasis(
+                    tenant_id=tenant_id,
+                    close_snapshot=snapshot,
+                    staff_master_id=item["staffId"],
+                    regular_work_minutes=item["regularWorkMinutes"],
+                    payable_authorized_absence_minutes=item["payableAuthorizedAbsenceMinutes"],
+                    unpaid_absence_minutes=item["unpaidAbsenceMinutes"],
+                    verified_overtime_minutes=item["verifiedOvertimeMinutes"],
+                    comp_time_minutes=item["compTimeMinutes"],
+                    unexcused_absence_minutes=item["unexcusedAbsenceMinutes"],
+                    basis_version=item["basisVersion"],
+                )
+                for item in basis_payload
+            ],
+            batch_size=500,
+        )
 
         # 冻结：期间内事实置终态（月结硬闸门；评估器/delete/update 均被模型层拒绝）
         HrAttendanceDayFact.objects.filter(
@@ -184,11 +421,21 @@ class CloseService:
         ).update(finalized=True)
 
         period.status = "CLOSED"
-        period.closed_at = timezone.now()
+        period.close_rule_version = close_rule_version
+        period.closed_at = closed_at
         if actor_user is not None:
             period.closed_by_id = actor_user.id
         period.snapshot_id = snapshot.id
-        period.save()
+        period.save(
+            update_fields=[
+                "status",
+                "close_rule_version",
+                "closed_at",
+                "closed_by",
+                "snapshot_id",
+                "updated_at",
+            ]
+        )
 
         # 逾期风险：CLOSE_OVERDUE 清理（已关闭则消除）
         HrTimeRiskCase.objects.filter(
@@ -203,13 +450,21 @@ class CloseService:
     ) -> HrTimeCorrectionBatch:
         """重开申请：生成 Correction Batch（§116-117）；旧 snapshot 保留。"""
         CloseService._assert_period_tenant(tenant_id=tenant_id, period=period)
+        if not reason or not reason.strip():
+            raise CloseServiceError("REOPEN_REASON_REQUIRED", "重开月结必须说明更正原因")
+        period = HrTimeClosePeriod.objects.select_for_update().filter(
+            id=period.id,
+            tenant_id=tenant_id,
+        ).first()
+        if period is None:
+            raise CloseServiceError("CROSS_TENANT_REFERENCE", "月结期间不属于当前 tenant")
         if period.status != "CLOSED":
             raise CloseServiceError("VERSION_CONFLICT", "仅已关闭期间可申请重开")
         before = period.snapshot_id
         batch = HrTimeCorrectionBatch.objects.create(
             tenant_id=tenant_id,
             period=period,
-            reason=reason,
+            reason=reason.strip(),
             before_snapshot_id=before,
             approved_by=actor_user,
         )
