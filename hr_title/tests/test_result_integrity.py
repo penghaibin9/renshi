@@ -155,8 +155,7 @@ class ProfessionalTitleResultIntegrityTests(TestCase):
             ProfessionalTitleResult.objects.create(**base)
 
         forged = ProfessionalTitleResult(
-            **base,
-            result_no="RESULT-FORGED-HASH",
+            **{**base, "result_no": "RESULT-FORGED-HASH"},
             sealed_at=timezone.now(),
             content_hash="0" * 64,
         )
