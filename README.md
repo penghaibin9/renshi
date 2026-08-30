@@ -2,8 +2,7 @@
 
 > 仓库：`penghaibin9/renshi`  
 > 底座：Horilla HRMS 2.0（正在逐步接管，不再按 Horilla 上游开发分支规则施工）  
-> 当前开发总线：`agent/renshi-takeover-cleanup-20260810`  
-> 默认稳定分支：`main`（**没有全绿验收，不合并 main**）
+> 当前集成目标：`main`（**没有全绿验收，不合并 main**）
 
 ## 先看这一段
 
@@ -18,15 +17,15 @@
 
 ## 当前最重要的事实
 
-### 1. 暂停新增 HR13~HR18 功能
+### 1. HR01~HR18 已进入统一施工与收口
 
-当前优先任务不是继续堆功能，而是把 HR01~HR12 从“模块内完成”收敛成“全系统可运行、可测试、可上线”。
+18 个模块都已有正式代码目录。当前工作是补齐真实业务链、权限、迁移、MySQL 测试和跨域验收，旧报告里的“完成”不能代替当前代码证据。
 
 ### 2. 目标数据库是 MySQL-only
 
 `docs/00_高校人事系统全局架构与Horilla接管合同.md` 已冻结：开发、测试、CI、迁移验收、生产统一以 MySQL 为目标。
 
-**注意：当前 `docker-compose.yml` 和部分 CI 仍是 PostgreSQL，这是待清理的历史欠账，不代表目标架构。**
+`docker-compose.yml`、生产 overlay 和主 CI 都以 MySQL 8.4 为签字数据库；SQLite/PostgreSQL 结果不能替代 MySQL 验收。
 
 ### 3. 文档里的 READY 不能代替代码验收
 
@@ -73,7 +72,7 @@ docs/                    系统设计、总控、模块施工册、验收资料
 .github/workflows/        GitHub Actions 门禁（当前需要重建为 main + MySQL）
 ```
 
-### HR01~HR12 对应代码目录
+### HR01~HR18 对应代码目录
 
 | 模块 | 业务 | 代码目录 |
 |---|---|---|
@@ -89,6 +88,12 @@ docs/                    系统设计、总控、模块施工册、验收资料
 | HR10 | 培训进修与企业实践 | `hr10_development/` |
 | HR11 | 考勤与请假 | `hr_time/` |
 | HR12 | 年度与聘期考核 | `hr_assessment/` |
+| HR13 | 职称评审 | `hr_title/` |
+| HR14 | 岗位聘任 | `hr_appointment/` |
+| HR15 | 薪酬福利 | `hr_payroll/` |
+| HR16 | 退休与离校 | `hr_exit/` |
+| HR17 | 教职工服务 | `hr_self/` |
+| HR18 | 人事数据中心 | `hr_data/` |
 
 ## 新手每天只做这 5 步
 
@@ -116,7 +121,7 @@ git status
 - 不要跨域 import 对方正式模型后 `.save()`
 - 不要把 PostgreSQL/SQLite 测试通过当成 MySQL 已验收
 - 不要看到旧文档写 READY 就继续往后开发
-- 不要在 HR01~HR12 系统收口前继续铺 HR13~HR18
+- 不要绕过 18 模块统一门禁单独宣称某模块 100%
 - 不要一次性大范围重写旧 Horilla；必须按 Authority Cutover 逐域退出
 
 ## 当前开发顺序
@@ -133,7 +138,8 @@ C0 新手化与仓库真相清洗
 → C6 HR06 → HR08 → HR09 → HR10 → HR11 → HR12
 → C7 HR01 聚合收口
 → C8 跨域 E2E / Failure Injection / Backup-Restore / Security
-→ 全绿后才开始 HR13
+→ C9 HR13 → HR18 正式 Authority 与 18 模块统一集成
+→ 全绿后形成 main 合并候选
 ```
 
 详细验收条件见 [`docs/开发顺序_接管版.md`](docs/开发顺序_接管版.md)。

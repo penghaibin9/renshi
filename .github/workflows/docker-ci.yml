@@ -25,6 +25,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
 
+      - name: Production Compose must parse as MySQL-only
+        shell: bash
+        run: |
+          cp .env.dist .env
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+          rendered=$(docker compose -f docker-compose.yml -f docker-compose.prod.yml config)
+          if printf '%s' "$rendered" | grep -Eqi 'postgres|5432'; then
+            echo "Production Compose contains a PostgreSQL remnant"
+            exit 1
+          fi
+          rm -f .env
+
       - name: Build web image
         run: docker compose -f "$COMPOSE_FILE" build web
 
