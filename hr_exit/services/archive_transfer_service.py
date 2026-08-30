@@ -304,6 +304,9 @@ class ArchiveTransferService:
         receipt.status = ArchiveTransferReceipt.Status.RECEIVED
         receipt.operator_user_id = self.actor_user_id
         receipt.updated_by = self.actor_user_id
+        receipt.evidence_ref = evidence
+        receipt.sealed_at = timezone.now()
+        receipt.content_hash = receipt.calculate_content_hash()
         receipt.save(
             update_fields=[
                 "received_by",
@@ -312,6 +315,9 @@ class ArchiveTransferService:
                 "status",
                 "operator_user_id",
                 "updated_by",
+                "evidence_ref",
+                "sealed_at",
+                "content_hash",
                 "updated_at",
             ]
         )
@@ -324,6 +330,9 @@ class ArchiveTransferService:
                 "caseId": str(receipt.case_id),
                 "personId": str(receipt.person_id),
                 "receivedBy": receipt.received_by,
+                "evidenceRef": receipt.evidence_ref,
+                "contentHash": receipt.content_hash,
+                "sealedAt": receipt.sealed_at.isoformat(),
             },
         )
         return receipt
@@ -363,6 +372,9 @@ class ArchiveTransferService:
         receipt.status = ArchiveTransferReceipt.Status.RETURNED
         receipt.operator_user_id = self.actor_user_id
         receipt.updated_by = self.actor_user_id
+        receipt.evidence_ref = evidence or receipt.archive_attachment_ref
+        receipt.sealed_at = timezone.now()
+        receipt.content_hash = receipt.calculate_content_hash()
         receipt.save(
             update_fields=[
                 "return_reason",
@@ -370,6 +382,9 @@ class ArchiveTransferService:
                 "status",
                 "operator_user_id",
                 "updated_by",
+                "evidence_ref",
+                "sealed_at",
+                "content_hash",
                 "updated_at",
             ]
         )
@@ -382,6 +397,9 @@ class ArchiveTransferService:
                 "caseId": str(receipt.case_id),
                 "personId": str(receipt.person_id),
                 "reason": reason,
+                "evidenceRef": receipt.evidence_ref,
+                "contentHash": receipt.content_hash,
+                "sealedAt": receipt.sealed_at.isoformat(),
             },
         )
         return receipt

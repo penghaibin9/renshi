@@ -14,6 +14,7 @@ PERM_EXIT_FACT_CORRECT = "hr.exit.fact.correct"
 PERM_EXIT_FACT_REVOKE = "hr.exit.fact.revoke"
 PERM_RETIREMENT_POLICY_MANAGE = "hr.exit.retirement_policy.manage"
 PERM_RETIREMENT_PRECHECK = "hr.exit.retirement_precheck.execute"
+PERM_RETIREMENT_PENSION_MANAGE = "hr.exit.retirement.pension.manage"
 
 register_permissions(
     (
@@ -43,6 +44,11 @@ register_permissions(
             "HR16",
             "执行可解释退休日期预审",
         ),
+        PermissionDefinition(
+            PERM_RETIREMENT_PENSION_MANAGE,
+            "HR16",
+            "推进退休养老金办理进度并提交证据",
+        ),
     )
 )
 
@@ -54,8 +60,11 @@ EVENT_EXIT_FACT_EFFECTIVE = "hr.exit.exit_fact.effective"
 EVENT_EXIT_FACT_REVISED = "hr.exit.exit_fact.revised"
 EVENT_EXIT_FACT_REVOKED = "hr.exit.exit_fact.revoked"
 EVENT_RETIREMENT_FACT_EFFECTIVE = "hr.exit.retirement_fact.effective"
+EVENT_RETIREMENT_FACT_REVISED = "hr.exit.retirement_fact.revised"
+EVENT_RETIREMENT_FACT_REVOKED = "hr.exit.retirement_fact.revoked"
 EVENT_RETIREMENT_POLICY_ACTIVATED = "hr.exit.retirement_policy.activated"
 EVENT_RETIREMENT_PRECHECK_COMPLETED = "hr.exit.retirement_precheck.completed"
+EVENT_RETIREMENT_PENSION_STATUS_CHANGED = "hr.exit.retirement.pension_status_changed"
 
 register_business_events(
     (
@@ -82,6 +91,14 @@ register_business_events(
             EVENT_RETIREMENT_PRECHECK_COMPLETED,
             "HR16",
             "retirement_precheck",
+            1,
+        ),
+        BusinessEventDefinition(EVENT_RETIREMENT_FACT_REVISED, "HR16", "retirement_fact", 1),
+        BusinessEventDefinition(EVENT_RETIREMENT_FACT_REVOKED, "HR16", "retirement_fact", 1),
+        BusinessEventDefinition(
+            EVENT_RETIREMENT_PENSION_STATUS_CHANGED,
+            "HR16",
+            "retirement",
             1,
         ),
     )

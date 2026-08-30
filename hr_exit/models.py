@@ -52,6 +52,7 @@ class ExitCase(HrTenantScopedModel):
             ("hr.exit.fact.revoke", "撤销 HR16 已封板离校正式事实"),
             ("hr.exit.retirement_policy.manage", "维护 HR16 版本化退休政策"),
             ("hr.exit.retirement_precheck.execute", "执行 HR16 退休日期预审"),
+            ("hr.exit.retirement.pension.manage", "推进 HR16 养老金办理进度并提交证据"),
         ]
         constraints = [
             models.UniqueConstraint(fields=("tenant_id", "case_no"), name="uq_hr16_case_tenant_no"),
@@ -409,6 +410,24 @@ class ExitFact(HrTenantScopedModel):
         return super().delete(*args, **kwargs)
 
 
+class RetirementFactQuerySet(models.QuerySet):
+    """Formal retirement snapshots are never bulk-mutated or deleted."""
+
+    _ERROR = "RETIREMENT_FACT_IMMUTABLE: formal fields are append-only"
+
+    def _assert_unsealed(self):
+        if self.filter(sealed_at__isnull=False).exists():
+            raise ValueError(self._ERROR)
+
+    def update(self, **kwargs):
+        self._assert_unsealed()
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._assert_unsealed()
+        return super().delete()
+
+
 class RetirementFact(HrTenantScopedModel):
     class PensionStatus(models.TextChoices):
         NOT_STARTED = "NOT_STARTED", "Not started"
@@ -429,15 +448,184 @@ class RetirementFact(HrTenantScopedModel):
     )
     status = models.CharField(max_length=16, choices=ExitFact.Status.choices, default=ExitFact.Status.EFFECTIVE, db_index=True)
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
+    evidence_ref = models.CharField(max_length=256, blank=True, default="")
+    content_hash = models.CharField(max_length=64, blank=True, default="")
+    sealed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = RetirementFactQuerySet.as_manager()
+
+    _FORMAL_FIELDS = (
+        "tenant_id",
+        "fact_no",
+        "person_id",
+        "exit_fact_id",
+        "retirement_type",
+        "statutory_date",
+        "effective_date",
+        "status",
+        "supersedes_fact_id",
+        "evidence_ref",
+        "content_hash",
+        "sealed_at",
+        "created_by",
+    )
 
     class Meta:
         db_table = "hr16_retirement_fact"
         constraints = [
             models.UniqueConstraint(fields=("tenant_id", "fact_no"), name="uq_hr16_retire_fact_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "exit_fact_id"),
+                name="uq_hr16_retire_exit_fact",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "supersedes_fact_id"),
+                name="uq_hr16_retire_successor",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    sealed_at__isnull=False,
+                    evidence_ref__gt="",
+                    content_hash__regex=r"^[0-9a-f]{64}$",
+                ),
+                name="ck_hr16_retire_fact_seal",
+            ),
         ]
         indexes = [
             models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr16_retire_fact_person"),
         ]
+        base_manager_name = "objects"
+
+    def integrity_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "factNo": self.fact_no,
+            "personId": str(self.person_id),
+            "exitFactId": str(self.exit_fact_id),
+            "retirementType": self.retirement_type,
+            "statutoryDate": self.statutory_date.isoformat() if self.statutory_date else None,
+            "effectiveDate": self.effective_date.isoformat(),
+            "status": self.status,
+            "supersedesFactId": str(self.supersedes_fact_id) if self.supersedes_fact_id else None,
+            "evidenceRef": self.evidence_ref,
+            "sealedAt": self.sealed_at.isoformat() if self.sealed_at else None,
+            "createdBy": self.created_by,
+        }
+
+    def calculate_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.integrity_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FORMAL_FIELDS,
+                "pension_processing_status",
+            ).first()
+            if persisted and persisted["sealed_at"] is not None:
+                changed = [
+                    field
+                    for field in self._FORMAL_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "RETIREMENT_FACT_IMMUTABLE: formal identity/date facts "
+                        "must follow the ExitFact successor chain"
+                    )
+                order = {
+                    self.PensionStatus.NOT_STARTED: 0,
+                    self.PensionStatus.IN_PROGRESS: 1,
+                    self.PensionStatus.COMPLETED: 2,
+                }
+                old_status = persisted["pension_processing_status"]
+                if self.pension_processing_status not in order or (
+                    order[self.pension_processing_status] < order[old_status]
+                    or order[self.pension_processing_status] > order[old_status] + 1
+                ):
+                    raise ValueError(
+                        "RETIREMENT_PENSION_STATUS_INVALID_TRANSITION: progress "
+                        "must move forward exactly one state"
+                    )
+        if self.sealed_at is None or not self.evidence_ref:
+            raise ValueError("RETIREMENT_FACT_SEAL_REQUIRED")
+        if self.content_hash != self.calculate_content_hash():
+            raise ValueError("RETIREMENT_FACT_HASH_INVALID")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(
+            pk=self.pk, sealed_at__isnull=False
+        ).exists():
+            raise ValueError("RETIREMENT_FACT_IMMUTABLE: formal facts cannot be deleted")
+        return super().delete(*args, **kwargs)
+
+
+class AppendOnlyPensionTransitionQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("RETIREMENT_PENSION_TRANSITION_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("RETIREMENT_PENSION_TRANSITION_IMMUTABLE")
+
+
+class RetirementPensionTransition(HrTenantScopedModel):
+    """Append-only evidence for each controlled pension progress transition."""
+
+    retirement_fact_id = models.UUIDField(db_index=True)
+    from_status = models.CharField(max_length=16, choices=RetirementFact.PensionStatus.choices)
+    to_status = models.CharField(max_length=16, choices=RetirementFact.PensionStatus.choices)
+    evidence_ref = models.CharField(max_length=256)
+    content_hash = models.CharField(max_length=64)
+    sealed_at = models.DateTimeField()
+
+    objects = AppendOnlyPensionTransitionQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr16_retirement_pension_transition"
+        base_manager_name = "objects"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "retirement_fact_id", "to_status"),
+                name="uq_hr16_retire_pension_step",
+            ),
+            models.CheckConstraint(
+                condition=Q(evidence_ref__gt="", content_hash__regex=r"^[0-9a-f]{64}$"),
+                name="ck_hr16_retire_pension_evidence",
+            ),
+        ]
+
+    def integrity_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "retirementFactId": str(self.retirement_fact_id),
+            "fromStatus": self.from_status,
+            "toStatus": self.to_status,
+            "evidenceRef": self.evidence_ref,
+            "sealedAt": self.sealed_at.isoformat(),
+            "createdBy": self.created_by,
+        }
+
+    def calculate_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.integrity_payload(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("RETIREMENT_PENSION_TRANSITION_IMMUTABLE")
+        if self.content_hash != self.calculate_content_hash():
+            raise ValueError("RETIREMENT_PENSION_TRANSITION_HASH_INVALID")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("RETIREMENT_PENSION_TRANSITION_IMMUTABLE")
 
 
 class RetirementPolicy(HrVersionedModel):

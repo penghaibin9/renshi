@@ -51,6 +51,13 @@ def _data(receipt: ArchiveTransferReceipt) -> dict:
         "supersedesReceiptId": (
             str(receipt.supersedes_receipt_id) if receipt.supersedes_receipt_id else None
         ),
+        "evidenceRef": getattr(receipt, "evidence_ref", ""),
+        "contentHash": getattr(receipt, "content_hash", ""),
+        "sealedAt": (
+            getattr(receipt, "sealed_at", None).isoformat()
+            if getattr(receipt, "sealed_at", None)
+            else None
+        ),
     }
 
 

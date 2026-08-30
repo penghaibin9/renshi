@@ -9,7 +9,6 @@ from django.utils.dateparse import parse_date
 
 from .api import (
     EFFECT_PERMISSION,
-    MANAGE_PERMISSION,
     HrExitAccessError,
     _error,
     _payload,
@@ -17,6 +16,7 @@ from .api import (
 )
 from .services.retirement_service import RetirementFactError, RetirementFactService
 from .archive_registry import (
+    PERM_RETIREMENT_PENSION_MANAGE,
     PERM_RETIREMENT_POLICY_MANAGE,
     PERM_RETIREMENT_PRECHECK,
 )
@@ -25,6 +25,8 @@ from .services.retirement_policy_service import (
     RetirementPolicyService,
     RetirementPrecheckService,
 )
+
+MANAGE_PERMISSION = PERM_RETIREMENT_PENSION_MANAGE
 
 
 def _status(code: str) -> int:
@@ -35,7 +37,10 @@ def _status(code: str) -> int:
         "RETIREMENT_EXIT_TYPE_REQUIRED",
         "RETIREMENT_FACT_IDEMPOTENCY_CONFLICT",
         "RETIREMENT_FACT_ALREADY_EXISTS",
+        "RETIREMENT_PREDECESSOR_NOT_FOUND",
+        "RETIREMENT_FACT_ALREADY_SUPERSEDED",
         "RETIREMENT_PENSION_STATUS_REGRESSION",
+        "RETIREMENT_PENSION_STATUS_SKIP",
     }:
         return 409
     return 400
@@ -52,6 +57,13 @@ def _serialize(fact):
         "effectiveDate": fact.effective_date.isoformat(),
         "pensionProcessingStatus": fact.pension_processing_status,
         "status": fact.status,
+        "evidenceRef": getattr(fact, "evidence_ref", ""),
+        "contentHash": getattr(fact, "content_hash", ""),
+        "sealedAt": (
+            getattr(fact, "sealed_at", None).isoformat()
+            if getattr(fact, "sealed_at", None)
+            else None
+        ),
     }
 
 
@@ -89,6 +101,7 @@ def finalize_retirement(request, exit_fact_id):
             fact_no=payload.get("factNo", ""),
             retirement_type=payload.get("retirementType", ""),
             statutory_date=statutory_date,
+            evidence_ref=payload.get("evidenceRef", ""),
         )
     except RetirementFactError as exc:
         return _error(exc.code, str(exc), status=_status(exc.code))
@@ -118,12 +131,15 @@ def set_pension_status(request, retirement_fact_id):
     except ValueError:
         return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
     try:
+        pension_kwargs = {"status": payload.get("status", "")}
+        if payload.get("evidenceRef"):
+            pension_kwargs["evidence_ref"] = payload["evidenceRef"]
         fact = RetirementFactService(
             tenant_id,
             actor_user_id=getattr(request.user, "id", None),
         ).set_pension_status(
             retirement_fact_id,
-            status=payload.get("status", ""),
+            **pension_kwargs,
         )
     except RetirementFactError as exc:
         return _error(exc.code, str(exc), status=_status(exc.code))
