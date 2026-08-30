@@ -69,10 +69,19 @@ class AppointmentTermServiceTests(TestCase):
             level_code="L7",
             effective_from=date(2026, 9, 1),
             effective_to=date(2029, 9, 1),
-            status=PositionAppointmentFact.Status.EFFECTIVE,
             effect_receipt_json={
                 "hr03AssignmentId": "A-1",
                 "hr14CollectiveDecisionId": str(decision.id),
+            },
+            created_by=9,
+            updated_by=9,
+        )
+        fact.seal(
+            status=PositionAppointmentFact.Status.EFFECTIVE,
+            actor_user_id=9,
+            authority_receipt={
+                "permissionCode": "hr.appointment.fact.publish",
+                "authorityRef": str(decision.id),
             },
         )
         case.status = AppointmentApplicationCase.Status.EFFECTIVE

@@ -7,6 +7,7 @@ from . import (
     batch_configuration_api,
     capacity_api,
     decision_api,
+    fact_api,
     population_api,
     term_api,
     term_effect_api,
@@ -131,6 +132,16 @@ urlpatterns = [
         "appointment-facts/<uuid:fact_id>/term/",
         term_api.register_term,
         name="term-register",
+    ),
+    path(
+        "appointment-facts/<uuid:fact_id>/corrections/",
+        fact_api.correct_fact,
+        name="appointment-fact-correct",
+    ),
+    path(
+        "appointment-facts/<uuid:fact_id>/revocations/",
+        fact_api.revoke_fact,
+        name="appointment-fact-revoke",
     ),
     path(
         "terms/<uuid:term_id>/expiring/",

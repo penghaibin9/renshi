@@ -19,6 +19,7 @@ READ_PERMISSION = "hr.appointment.view"
 REVIEW_PERMISSION = "hr.appointment.review"
 PUBLICITY_PERMISSION = "hr.appointment.publicity"
 EFFECT_PERMISSION = "hr.appointment.effect"
+FACT_PUBLISH_PERMISSION = "hr.appointment.fact.publish"
 
 
 class HrAppointmentAccessError(Exception):
@@ -424,7 +425,18 @@ def apply_effect(request, case_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        tenant_id = resolve_request_tenant(request, required_permission=EFFECT_PERMISSION)
+        try:
+            tenant_id = resolve_request_tenant(
+                request, required_permission=FACT_PUBLISH_PERMISSION
+            )
+        except HrAppointmentAccessError as publish_exc:
+            if publish_exc.code != "PERMISSION_DENIED":
+                raise
+            # Compatibility bridge for roles created before the dedicated
+            # publication permission.  Correction/revocation never use it.
+            tenant_id = resolve_request_tenant(
+                request, required_permission=EFFECT_PERMISSION
+            )
     except HrAppointmentAccessError as exc:
         return _error(exc.code, exc.message, status=403)
 
@@ -460,16 +472,22 @@ def apply_effect(request, case_id):
         )
 
     try:
-        outcome = AppointmentEffectService(
-            tenant_id,
-            actor_user_id=getattr(request.user, "id", None),
-        ).apply(
+        effect_kwargs = dict(
             case_id=case_id,
             appointment_no=appointment_no,
             reservation_id=reservation_id,
             effective_from=effective_from,
             level_code=str(payload.get("levelCode", "") or "").strip(),
         )
+        request_idempotency_key = str(
+            request.headers.get("Idempotency-Key", "") or ""
+        ).strip()
+        if request_idempotency_key:
+            effect_kwargs["idempotency_key"] = request_idempotency_key
+        outcome = AppointmentEffectService(
+            tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).apply(**effect_kwargs)
     except AppointmentEffectError as exc:
         return _error(exc.code, str(exc), status=_effect_status(exc.code))
 
@@ -485,6 +503,22 @@ def apply_effect(request, case_id):
                 "status": fact.status,
                 "effective": outcome.effective,
                 "effectReceipt": fact.effect_receipt_json,
+                "factKind": getattr(fact, "fact_kind", "INITIAL"),
+                "supersedesFactId": (
+                    str(fact.supersedes_fact_id)
+                    if getattr(fact, "supersedes_fact_id", None)
+                    else None
+                ),
+                "contentHash": getattr(fact, "content_hash", ""),
+                "sealedAt": (
+                    fact.sealed_at.isoformat()
+                    if getattr(fact, "sealed_at", None)
+                    else None
+                ),
+                "publishedBy": getattr(fact, "published_by", None),
+                "authorityReceipt": getattr(
+                    fact, "authority_receipt_json", {}
+                ),
                 "error": outcome.error,
             },
             "apiVersion": "1.0",

@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import uuid
+
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
 
@@ -23,6 +28,9 @@ class AppointmentPolicyVersion(HrVersionedModel):
             ("hr.appointment.review", "执行 HR14 评议排序"),
             ("hr.appointment.publicity", "维护 HR14 拟聘公示与异议"),
             ("hr.appointment.effect", "执行 HR14 正式聘任生效"),
+            ("hr.appointment.fact.publish", "首次发布 HR14 正式任命事实"),
+            ("hr.appointment.fact.correct", "追加 HR14 正式任命更正事实"),
+            ("hr.appointment.fact.revoke", "追加 HR14 正式任命撤销事实"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -494,6 +502,34 @@ class AppointmentPublicityObjection(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+def _appointment_fact_idempotency_key():
+    return f"fact:{uuid.uuid4().hex}"
+
+
+class PositionAppointmentFactQuerySet(models.QuerySet):
+    """There is no bulk mutation path for the HR14 authority ledger."""
+
+    _MUTATION_ERROR = (
+        "POSITION_APPOINTMENT_FACT_APPEND_ONLY: use the HR14 fact authority service"
+    )
+
+    def update(self, **kwargs):
+        raise ValueError(self._MUTATION_ERROR)
+
+    def delete(self):
+        raise ValueError(self._MUTATION_ERROR)
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValueError(self._MUTATION_ERROR)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        raise ValueError(self._MUTATION_ERROR)
+
+
+class PositionAppointmentFactManager(models.Manager.from_queryset(PositionAppointmentFactQuerySet)):
+    pass
+
+
 class PositionAppointmentFact(HrTenantScopedModel):
     class Status(models.TextChoices):
         EFFECT_PENDING = "EFFECT_PENDING", "Final, waiting for HR03 effect"
@@ -501,6 +537,13 @@ class PositionAppointmentFact(HrTenantScopedModel):
         REVISED = "REVISED", "Revised"
         ENDED = "ENDED", "Ended"
         REVOKED = "REVOKED", "Revoked"
+
+    class FactKind(models.TextChoices):
+        INITIAL = "INITIAL", "Initial formal appointment"
+        TERM_SUCCESSOR = "TERM_SUCCESSOR", "Term-governance successor"
+        CORRECTION = "CORRECTION", "Authorized correction"
+        REVOCATION = "REVOCATION", "Authorized revocation"
+        EXIT_CLOSURE = "EXIT_CLOSURE", "Exit closure"
 
     appointment_no = models.CharField(max_length=64)
     person_id = models.UUIDField()
@@ -519,6 +562,45 @@ class PositionAppointmentFact(HrTenantScopedModel):
     effect_receipt_json = models.JSONField(default=dict, blank=True)
     last_effect_error = models.TextField(blank=True, default="")
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
+    fact_kind = models.CharField(
+        max_length=24,
+        choices=FactKind.choices,
+        default=FactKind.INITIAL,
+        db_index=True,
+    )
+    revision_reason = models.TextField(blank=True, default="")
+    authority_receipt_json = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(
+        max_length=128,
+        default=_appointment_fact_idempotency_key,
+    )
+    content_hash = models.CharField(max_length=64, blank=True, default="")
+    sealed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    published_by = models.PositiveBigIntegerField(null=True, blank=True)
+
+    objects = PositionAppointmentFactManager()
+
+    _HASH_FIELDS = (
+        "id",
+        "tenant_id",
+        "appointment_no",
+        "person_id",
+        "position_instance_id",
+        "application_case_id",
+        "reservation_id",
+        "level_code",
+        "effective_from",
+        "effective_to",
+        "status",
+        "effect_receipt_json",
+        "supersedes_fact_id",
+        "fact_kind",
+        "revision_reason",
+        "authority_receipt_json",
+        "idempotency_key",
+        "sealed_at",
+        "published_by",
+    )
 
     class Meta:
         db_table = "hr14_position_appointment_fact"
@@ -532,6 +614,41 @@ class PositionAppointmentFact(HrTenantScopedModel):
                 | Q(effective_to__gt=models.F("effective_from")),
                 name="ck_hr14_fact_effective_range",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="EFFECT_PENDING", sealed_at__isnull=True, content_hash="")
+                    | (
+                        ~Q(status="EFFECT_PENDING")
+                        & Q(sealed_at__isnull=False)
+                        & ~Q(content_hash="")
+                        & Q(published_by__isnull=False)
+                    )
+                ),
+                name="ck_hr14_fact_seal_state",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(fact_kind="INITIAL", supersedes_fact_id__isnull=True)
+                    | (
+                        ~Q(fact_kind="INITIAL")
+                        & Q(supersedes_fact_id__isnull=False)
+                    )
+                ),
+                name="ck_hr14_fact_lineage_kind",
+            ),
+            models.CheckConstraint(
+                condition=Q(supersedes_fact_id__isnull=True)
+                | ~Q(supersedes_fact_id=models.F("id")),
+                name="ck_hr14_fact_not_self_parent",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "supersedes_fact_id"),
+                name="uq_hr14_fact_one_successor",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr14_fact_idempotency",
+            ),
         ]
         indexes = [
             models.Index(
@@ -543,3 +660,114 @@ class PositionAppointmentFact(HrTenantScopedModel):
                 name="idx_hr14_fact_tenant_position",
             ),
         ]
+
+    @staticmethod
+    def _canonical_value(value):
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        if isinstance(value, uuid.UUID):
+            return str(value)
+        return value
+
+    def calculate_content_hash(self) -> str:
+        body = {
+            field: self._canonical_value(getattr(self, field))
+            for field in self._HASH_FIELDS
+        }
+        encoded = json.dumps(
+            body,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def verify_content_hash(self) -> bool:
+        return bool(self.sealed_at and self.content_hash) and (
+            self.content_hash == self.calculate_content_hash()
+        )
+
+    def seal(
+        self,
+        *,
+        status: str,
+        actor_user_id: int,
+        authority_receipt: dict,
+        effect_receipt: dict | None = None,
+    ):
+        if self.sealed_at is not None:
+            if self.status == status and self.verify_content_hash():
+                return self
+            raise ValueError(
+                "POSITION_APPOINTMENT_FACT_ALREADY_SEALED: sealed facts cannot be changed"
+            )
+        if status == self.Status.EFFECT_PENDING:
+            raise ValueError("POSITION_APPOINTMENT_FACT_FINAL_STATUS_REQUIRED")
+        if not actor_user_id:
+            raise ValueError("POSITION_APPOINTMENT_FACT_PUBLISH_ACTOR_REQUIRED")
+        if not isinstance(authority_receipt, dict) or not authority_receipt.get(
+            "permissionCode"
+        ):
+            raise ValueError("POSITION_APPOINTMENT_FACT_AUTHORITY_RECEIPT_REQUIRED")
+        if self.fact_kind != self.FactKind.INITIAL and not self.supersedes_fact_id:
+            raise ValueError("POSITION_APPOINTMENT_FACT_SUPERSEDES_REQUIRED")
+
+        self.status = status
+        if effect_receipt is not None:
+            self.effect_receipt_json = dict(effect_receipt)
+        if self.fact_kind == self.FactKind.INITIAL and status == self.Status.EFFECTIVE:
+            # The collective-decision pre-save gate enriches this receipt. Do
+            # it before hashing so signal execution cannot change sealed bytes.
+            from hr_appointment.decision_models import _approved_decision_for_fact
+
+            decision = _approved_decision_for_fact(self)
+            if decision is not None:
+                receipt = dict(self.effect_receipt_json or {})
+                receipt["hr14CollectiveDecisionId"] = str(decision.id)
+                receipt["hr14CollectiveDecisionNo"] = decision.decision_no
+                self.effect_receipt_json = receipt
+        self.authority_receipt_json = dict(authority_receipt)
+        self.published_by = int(actor_user_id)
+        self.updated_by = int(actor_user_id)
+        self.sealed_at = timezone.now()
+        self.content_hash = self.calculate_content_hash()
+        self._allow_fact_seal = True
+        try:
+            self.save()
+        finally:
+            self._allow_fact_seal = False
+        return self
+
+    def save(self, *args, **kwargs):
+        if self.tenant_id is None:
+            raise ValueError("tenant_id is required (fail-closed)")
+        persisted = None
+        if not self._state.adding:
+            persisted = (
+                type(self).objects.filter(pk=self.pk)
+                .values("sealed_at", "content_hash")
+                .first()
+            )
+        if persisted and persisted["sealed_at"] is not None:
+            raise ValueError(
+                "POSITION_APPOINTMENT_FACT_APPEND_ONLY: sealed facts cannot be updated"
+            )
+        if self.status != self.Status.EFFECT_PENDING:
+            if self.sealed_at is None or not getattr(self, "_allow_fact_seal", False):
+                raise ValueError(
+                    "POSITION_APPOINTMENT_FACT_SERVICE_REQUIRED: formal facts must be sealed by authority service"
+                )
+            expected = self.calculate_content_hash()
+            if self.content_hash != expected:
+                raise ValueError("POSITION_APPOINTMENT_FACT_HASH_MISMATCH")
+        elif self.sealed_at is not None or self.content_hash:
+            raise ValueError("POSITION_APPOINTMENT_FACT_PENDING_CANNOT_BE_SEALED")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.sealed_at is not None:
+            raise ValueError(
+                "POSITION_APPOINTMENT_FACT_APPEND_ONLY: sealed facts cannot be deleted"
+            )
+        return super().delete(*args, **kwargs)

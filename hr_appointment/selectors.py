@@ -1,6 +1,8 @@
 """Tenant-scoped read models for the HR14 appointment workspace."""
 from collections import Counter
 
+from django.db.models import Exists, OuterRef
+
 from .models import (
     AppointmentApplicationCase,
     AppointmentBatch,
@@ -22,6 +24,12 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     batches = AppointmentBatch.objects.filter(tenant_id=tenant_id)
     policies = AppointmentPolicyVersion.objects.filter(tenant_id=tenant_id)
     facts = PositionAppointmentFact.objects.filter(tenant_id=tenant_id)
+    fact_successors = PositionAppointmentFact.objects.filter(
+        tenant_id=tenant_id, supersedes_fact_id=OuterRef("id")
+    )
+    current_facts = facts.annotate(has_successor=Exists(fact_successors)).filter(
+        has_successor=False
+    )
     rankings = AppointmentRankingResult.objects.filter(tenant_id=tenant_id)
     publicities = AppointmentPublicityRecord.objects.filter(tenant_id=tenant_id)
     objections = AppointmentPublicityObjection.objects.filter(tenant_id=tenant_id)
@@ -70,7 +78,16 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "publicityObjections": objections.count(),
             "unresolvedObjections": unresolved_objections.count(),
             "upheldObjections": objections.filter(status=AppointmentPublicityObjection.Status.UPHELD).count(),
-            "effectiveAppointments": facts.filter(status="EFFECTIVE").count(),
+            "effectiveAppointments": current_facts.filter(
+                status__in=["EFFECTIVE", "REVISED"]
+            ).count(),
+            "sealedAppointmentFacts": facts.filter(sealed_at__isnull=False).count(),
+            "unsealedFormalFacts": facts.exclude(status="EFFECT_PENDING").filter(
+                sealed_at__isnull=True
+            ).count(),
+            "appointmentFactChainHeads": current_facts.count(),
+            "correctedAppointmentFacts": facts.filter(fact_kind="CORRECTION").count(),
+            "revokedAppointmentFacts": facts.filter(fact_kind="REVOCATION").count(),
             "appointmentTerms": terms.count(),
             "activeTerms": terms.filter(status__in=active_term_statuses).count(),
             "expiringTerms": terms.filter(status=AppointmentTerm.Status.EXPIRING).count(),
@@ -122,7 +139,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             facts.order_by("-effective_from", "-created_at")[:12].values(
                 "id", "appointment_no", "person_id", "position_instance_id",
                 "application_case_id", "level_code", "effective_from", "effective_to",
-                "status", "supersedes_fact_id", "effect_receipt_json", "created_at"
+                "status", "fact_kind", "supersedes_fact_id", "revision_reason",
+                "idempotency_key", "content_hash", "sealed_at", "published_by",
+                "authority_receipt_json", "effect_receipt_json", "created_at"
             )
         ),
         "recentTerms": list(
@@ -182,5 +201,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "publicityObjection": True,
             "termChange": True,
             "termEffect": True,
+            "appointmentFactSeal": True,
+            "appointmentFactCorrection": True,
+            "appointmentFactRevocation": True,
         },
     }

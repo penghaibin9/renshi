@@ -116,9 +116,15 @@ class AppointmentCollectiveDecisionTests(TestCase):
             effective_from=date(2026, 9, 1),
             status=PositionAppointmentFact.Status.EFFECT_PENDING,
         )
-        fact.status = PositionAppointmentFact.Status.EFFECTIVE
-        fact.effect_receipt_json = {"hr03AssignmentId": "assignment-1"}
-        fact.save(update_fields=["status", "effect_receipt_json", "updated_at"])
+        fact.seal(
+            status=PositionAppointmentFact.Status.EFFECTIVE,
+            actor_user_id=9,
+            authority_receipt={
+                "permissionCode": "hr.appointment.fact.publish",
+                "authorityRef": str(decision.id),
+            },
+            effect_receipt={"hr03AssignmentId": "assignment-1"},
+        )
         fact.refresh_from_db()
 
         self.assertEqual(

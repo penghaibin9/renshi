@@ -76,6 +76,7 @@ class AppointmentEffectService:
         reservation_id: int,
         effective_from: date,
         level_code: str,
+        idempotency_key: str,
     ) -> PositionAppointmentFact:
         fact = (
             PositionAppointmentFact.objects.select_for_update()
@@ -90,6 +91,7 @@ class AppointmentEffectService:
                 or fact.reservation_id != reservation_id
                 or fact.effective_from != effective_from
                 or fact.level_code != level_code
+                or fact.idempotency_key != idempotency_key
             ):
                 raise AppointmentEffectError(
                     "APPOINTMENT_EFFECT_IDEMPOTENCY_CONFLICT",
@@ -114,6 +116,7 @@ class AppointmentEffectService:
             level_code=level_code,
             effective_from=effective_from,
             status=PositionAppointmentFact.Status.EFFECT_PENDING,
+            idempotency_key=idempotency_key,
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
@@ -245,6 +248,7 @@ class AppointmentEffectService:
         reservation_id: int,
         effective_from: date,
         level_code: str = "",
+        idempotency_key: str = "",
     ) -> AppointmentEffectResult:
         """Create/retry a formal appointment and apply it to HR03 atomically."""
         appointment_no = str(appointment_no or "").strip()
@@ -261,6 +265,11 @@ class AppointmentEffectService:
             raise AppointmentEffectError(
                 "APPOINTMENT_EFFECTIVE_FROM_INVALID",
                 "effective_from must be a date",
+            )
+        if not self.actor_user_id:
+            raise AppointmentEffectError(
+                "APPOINTMENT_FACT_PUBLISH_ACTOR_REQUIRED",
+                "formal appointment publication requires an authenticated actor",
             )
 
         case = self._lock_case(case_id)
@@ -291,6 +300,10 @@ class AppointmentEffectService:
             reservation_id=reservation_id,
             effective_from=effective_from,
             level_code=frozen_level,
+            idempotency_key=(
+                str(idempotency_key or "").strip()
+                or f"hr14-effect:{case.id}:{appointment_no}"
+            )[:128],
         )
         if fact.status == PositionAppointmentFact.Status.EFFECTIVE:
             if quota_reservation.status != AppointmentQuotaReservation.Status.CONSUMED:
@@ -298,6 +311,15 @@ class AppointmentEffectService:
                     "APPOINTMENT_EFFECT_QUOTA_RECEIPT_INCONSISTENT",
                     "effective appointment requires a consumed HR14 quota receipt",
                 )
+            if not fact.verify_content_hash():
+                raise AppointmentEffectError(
+                    "APPOINTMENT_FACT_HASH_MISMATCH",
+                    "stored appointment fact hash is invalid",
+                )
+            from hr_appointment.authority_registry import EVENT_FACT_EFFECTIVE
+            from hr_appointment.services.fact_authority_service import emit_fact_event
+
+            emit_fact_event(fact=fact, event_name=EVENT_FACT_EFFECTIVE)
             return AppointmentEffectResult(fact=fact, effective=True)
 
         reservation, position = self._lock_capacity_receipt(case, reservation_id)
@@ -347,8 +369,7 @@ class AppointmentEffectService:
                 error=fact.last_effect_error,
             )
 
-        fact.status = PositionAppointmentFact.Status.EFFECTIVE
-        fact.effect_receipt_json = {
+        effect_receipt = {
             "hr14PublicityId": str(publicity.id),
             "hr14QuotaReservationId": str(quota_reservation.id),
             "hr03AssignmentId": str(assignment.id),
@@ -357,16 +378,31 @@ class AppointmentEffectService:
             "hr02PositionId": position.id,
         }
         fact.last_effect_error = ""
-        fact.updated_by = self.actor_user_id
-        fact.save(
-            update_fields=[
-                "status",
-                "effect_receipt_json",
-                "last_effect_error",
-                "updated_by",
-                "updated_at",
-            ]
+        # Assign before seal so non-persistent provider doubles expose the same
+        # result contract as the real model; seal performs the only DB write.
+        fact.status = PositionAppointmentFact.Status.EFFECTIVE
+        fact.effect_receipt_json = effect_receipt
+        from hr_appointment.authority_registry import EVENT_FACT_EFFECTIVE
+        from hr_appointment.services.fact_authority_service import (
+            emit_fact_event,
+            initial_publish_receipt,
         )
+
+        fact.seal(
+            status=PositionAppointmentFact.Status.EFFECTIVE,
+            actor_user_id=self.actor_user_id,
+            authority_receipt=initial_publish_receipt(
+                actor_user_id=self.actor_user_id,
+                authority_ref=f"collective-decision/publicity:{publicity.id}",
+                evidence={
+                    "applicationCaseId": str(case.id),
+                    "publicityId": str(publicity.id),
+                    "quotaReservationId": str(quota_reservation.id),
+                },
+            ),
+            effect_receipt=effect_receipt,
+        )
+        emit_fact_event(fact=fact, event_name=EVENT_FACT_EFFECTIVE)
         case.status = AppointmentApplicationCase.Status.EFFECTIVE
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])

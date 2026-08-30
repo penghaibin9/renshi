@@ -75,10 +75,19 @@ class AppointmentTermEffectServiceTests(TestCase):
             level_code="L7",
             effective_from=date(2026, 9, 1),
             effective_to=date(2029, 9, 1),
-            status=PositionAppointmentFact.Status.EFFECTIVE,
             effect_receipt_json={
                 "hr03AssignmentId": "old-assignment",
                 "hr14CollectiveDecisionId": str(decision.id),
+            },
+            created_by=9,
+            updated_by=9,
+        )
+        fact.seal(
+            status=PositionAppointmentFact.Status.EFFECTIVE,
+            actor_user_id=9,
+            authority_receipt={
+                "permissionCode": "hr.appointment.fact.publish",
+                "authorityRef": str(decision.id),
             },
         )
         case.status = AppointmentApplicationCase.Status.EFFECTIVE
@@ -178,7 +187,7 @@ class AppointmentTermEffectServiceTests(TestCase):
         change.refresh_from_db()
         source_fact.refresh_from_db()
         source_term.refresh_from_db()
-        self.assertEqual(source_fact.effective_to, date(2027, 9, 1))
+        self.assertEqual(source_fact.effective_to, date(2029, 9, 1))
         self.assertEqual(result.fact.position_instance_id, 101)
         self.assertEqual(result.fact.level_code, "L6")
         self.assertEqual(result.fact.supersedes_fact_id, source_fact.id)
@@ -224,7 +233,7 @@ class AppointmentTermEffectServiceTests(TestCase):
         self.assertTrue(result.applied)
         self.assertIsNone(result.term)
         self.assertEqual(result.fact.status, PositionAppointmentFact.Status.ENDED)
-        self.assertEqual(source_fact.effective_to, date(2027, 6, 1))
+        self.assertEqual(source_fact.effective_to, date(2029, 9, 1))
         self.assertEqual(source_term.status, AppointmentTerm.Status.TERMINATED)
         self.assertEqual(change.status, AppointmentChangeCase.Status.APPLIED)
         self.assertIsNone(change.successor_term_id)

@@ -187,6 +187,7 @@ class AppointmentEffectServiceTests(TestCase):
         service._get_or_create_pending_fact.assert_not_called()
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    @patch("hr_appointment.services.fact_authority_service.emit_fact_event")
     @patch("hr_appointment.services.quota_service.AppointmentQuotaService")
     @patch("hr_structure.services.position.PositionService")
     @patch("hr_staff.services.assignment_service.AssignmentService")
@@ -195,6 +196,7 @@ class AppointmentEffectServiceTests(TestCase):
         assignment_service_cls,
         position_service_cls,
         quota_service_cls,
+        _emit_fact_event,
         publicity_gate,
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
@@ -320,8 +322,9 @@ class AppointmentEffectServiceTests(TestCase):
         service._get_or_create_pending_fact.assert_not_called()
 
     @patch("hr_appointment.services.publicity_service.AppointmentPublicityService.assert_ready_for_effect")
+    @patch("hr_appointment.services.fact_authority_service.emit_fact_event")
     def test_already_effective_fact_requires_consumed_quota_and_skips_provider_effect(
-        self, publicity_gate
+        self, _emit_fact_event, publicity_gate
     ):
         service = AppointmentEffectService(77, actor_user_id=9)
         (

@@ -238,6 +238,8 @@ class AppointmentTermEffectService:
             effective_from=effective_from,
             effective_to=effective_to,
             status=PositionAppointmentFact.Status.EFFECT_PENDING,
+            fact_kind=PositionAppointmentFact.FactKind.TERM_SUCCESSOR,
+            idempotency_key=f"hr14-term:{source_kind}:{source_id}",
             effect_receipt_json={
                 "sourceKind": source_kind,
                 "sourceId": str(source_id),
@@ -259,10 +261,9 @@ class AppointmentTermEffectService:
                 "APPOINTMENT_SOURCE_FACT_ALREADY_ENDED",
                 "source appointment fact ended before the successor boundary",
             )
-        if source_fact.effective_to != boundary:
-            source_fact.effective_to = boundary
-            source_fact.updated_by = self.actor_user_id
-            source_fact.save(update_fields=["effective_to", "updated_by", "updated_at"])
+        # The sealed source remains untouched.  The successor's effective_from
+        # is the authoritative chain boundary; historical as-of reads select
+        # the applicable chain node instead of shortening the old row.
 
     def _create_successor_term(
         self,
@@ -356,18 +357,41 @@ class AppointmentTermEffectService:
         )
 
     def _finalize_fact(self, fact, *, status: str, receipt: dict) -> None:
+        pending_receipt = dict(fact.effect_receipt_json or {})
+        fact.last_effect_error = ""
         fact.status = status
         fact.effect_receipt_json = receipt
-        fact.last_effect_error = ""
-        fact.updated_by = self.actor_user_id
-        fact.save(
-            update_fields=[
-                "status",
-                "effect_receipt_json",
-                "last_effect_error",
-                "updated_by",
-                "updated_at",
-            ]
+        if not self.actor_user_id:
+            raise AppointmentTermEffectError(
+                "APPOINTMENT_FACT_PUBLISH_ACTOR_REQUIRED",
+                "term effect requires an authenticated actor",
+            )
+        from hr_appointment.authority_registry import (
+            EVENT_FACT_EFFECTIVE,
+            EVENT_FACT_ENDED,
+        )
+        from hr_appointment.services.fact_authority_service import emit_fact_event
+
+        source_kind = str(pending_receipt.get("sourceKind", "TERM_EFFECT"))
+        source_id = str(pending_receipt.get("sourceId", ""))
+        fact.seal(
+            status=status,
+            actor_user_id=self.actor_user_id,
+            authority_receipt={
+                "permissionCode": "hr.appointment.term",
+                "authorityRef": f"{source_kind}:{source_id}",
+                "actorUserId": self.actor_user_id,
+                "evidence": dict(receipt),
+            },
+            effect_receipt=receipt,
+        )
+        emit_fact_event(
+            fact=fact,
+            event_name=(
+                EVENT_FACT_ENDED
+                if status == PositionAppointmentFact.Status.ENDED
+                else EVENT_FACT_EFFECTIVE
+            ),
         )
 
     def _record_effect_failure(self, fact, exc: Exception) -> AppointmentTermEffectResult:

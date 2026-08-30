@@ -80,8 +80,17 @@ class Hr14ExitProviderReplayTests(TestCase):
             application_case_id=self.application_case_id,
             level_code="L3",
             effective_from=date(2026, 1, 1),
-            status=PositionAppointmentFact.Status.EFFECTIVE,
             effect_receipt_json={"hr03AssignmentId": "assignment-before-exit"},
+            created_by=9,
+            updated_by=9,
+        )
+        self.appointment.seal(
+            status=PositionAppointmentFact.Status.EFFECTIVE,
+            actor_user_id=9,
+            authority_receipt={
+                "permissionCode": "hr.appointment.fact.publish",
+                "authorityRef": "test:hr14-exit-provider-replay",
+            },
         )
 
     def _effect(self, version):
@@ -108,11 +117,15 @@ class Hr14ExitProviderReplayTests(TestCase):
         )
 
         self.assertEqual(first["endedAppointmentCount"], 1)
-        self.assertEqual(first["endedAppointmentIds"], [str(self.appointment.id)])
+        closed = PositionAppointmentFact.objects.get(
+            supersedes_fact_id=self.appointment.id,
+            fact_kind=PositionAppointmentFact.FactKind.EXIT_CLOSURE,
+        )
+        self.assertEqual(first["endedAppointmentIds"], [str(closed.id)])
         self.appointment.refresh_from_db()
-        self.assertEqual(self.appointment.status, PositionAppointmentFact.Status.ENDED)
-        self.assertEqual(self.appointment.effective_to, self.boundary)
-        original_effect_id = self.appointment.effect_receipt_json["hr16Exit"]["effectId"]
+        self.assertEqual(self.appointment.status, PositionAppointmentFact.Status.EFFECTIVE)
+        self.assertIsNone(self.appointment.effective_to)
+        original_effect_id = closed.effect_receipt_json["hr16Exit"]["effectId"]
 
         # Simulates a new HR16 recovery effect after HR14 committed but the old
         # participant SUCCESS receipt was not durably recorded.
@@ -126,16 +139,14 @@ class Hr14ExitProviderReplayTests(TestCase):
 
         self.assertEqual(replay["endedAppointmentCount"], 1)
         self.assertEqual(replay["endedAppointmentIds"], first["endedAppointmentIds"])
-        self.appointment.refresh_from_db()
+        closed.refresh_from_db()
         self.assertEqual(
-            self.appointment.effect_receipt_json["hr16Exit"]["effectId"],
+            closed.effect_receipt_json["hr16Exit"]["effectId"],
             original_effect_id,
         )
 
     def test_different_exit_business_closure_is_not_replayed_as_success(self):
-        self.appointment.status = PositionAppointmentFact.Status.ENDED
-        self.appointment.effective_to = self.boundary
-        self.appointment.effect_receipt_json = {
+        conflicting_receipt = {
             "hr16Exit": {
                 "exitFactId": str(uuid.uuid4()),
                 "exitCaseId": str(self.case.id),
@@ -143,8 +154,28 @@ class Hr14ExitProviderReplayTests(TestCase):
                 "effectId": str(uuid.uuid4()),
             }
         }
-        self.appointment.save(
-            update_fields=["status", "effective_to", "effect_receipt_json", "updated_at"]
+        conflicting = PositionAppointmentFact.objects.create(
+            tenant_id=self.tenant_id,
+            appointment_no=f"END-CONFLICT-{uuid.uuid4().hex[:12]}",
+            person_id=self.person_id,
+            position_instance_id=self.position_instance_id,
+            application_case_id=self.application_case_id,
+            level_code="L3",
+            effective_from=self.appointment.effective_from,
+            effective_to=self.boundary,
+            supersedes_fact_id=self.appointment.id,
+            fact_kind=PositionAppointmentFact.FactKind.EXIT_CLOSURE,
+            effect_receipt_json=conflicting_receipt,
+            created_by=9,
+            updated_by=9,
+        )
+        conflicting.seal(
+            status=PositionAppointmentFact.Status.ENDED,
+            actor_user_id=9,
+            authority_receipt={
+                "permissionCode": "hr.appointment.term",
+                "authorityRef": "test:conflicting-exit",
+            },
         )
 
         with self.assertRaisesRegex(ValueError, "HR14_EXIT_RECEIPT_CONFLICT"):
