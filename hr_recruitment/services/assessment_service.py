@@ -70,6 +70,11 @@ class AssessmentService:
         self.allow_score_override = allow_score_override
         self.enforce_score_actor = enforce_score_actor
 
+    @staticmethod
+    def _decimal_evidence(value) -> str:
+        """Canonicalize DecimalField evidence before and after a DB round trip."""
+        return format(Decimal(str(value)).quantize(Decimal("0.01")), "f")
+
     def _assert_score_actor(self, sheet: HrCandidateScoreSheet) -> None:
         """Only the assigned auth principal may read/write a score sheet."""
         if not self.enforce_score_actor:
@@ -516,7 +521,7 @@ class AssessmentService:
         score_rows = [
             {
                 "criterionId": str(row.criterion_id_id),
-                "score": str(row.score),
+                "score": self._decimal_evidence(row.score),
                 "comment": row.comment,
             }
             for row in sheet.scores.order_by("criterion_id_id")
@@ -526,7 +531,7 @@ class AssessmentService:
             "sheetId": str(sheet.id),
             "revisionNo": revision_no,
             "scores": score_rows,
-            "totalScore": str(sheet.total_score),
+            "totalScore": self._decimal_evidence(sheet.total_score),
             "previousChecksum": previous.checksum if previous else "",
         }
         checksum = hashlib.sha256(
@@ -556,7 +561,7 @@ class AssessmentService:
         current_scores = [
             {
                 "criterionId": str(row.criterion_id_id),
-                "score": str(row.score),
+                "score": self._decimal_evidence(row.score),
                 "comment": row.comment,
             }
             for row in sheet.scores.order_by("criterion_id_id")
@@ -566,7 +571,7 @@ class AssessmentService:
             "sheetId": str(sheet.id),
             "revisionNo": revision.revision_no,
             "scores": revision.scores_json,
-            "totalScore": str(revision.total_score),
+            "totalScore": self._decimal_evidence(revision.total_score),
             "previousChecksum": revision.previous_checksum,
         }
         expected_checksum = hashlib.sha256(

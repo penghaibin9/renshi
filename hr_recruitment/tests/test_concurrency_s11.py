@@ -166,6 +166,9 @@ class ConcurrencyIdempotencyTests(TestCase):
         proposed = proposed_service.create(
             application_id=str(app.id), rank=1, reservation_id="r1"
         )
+        proposed_service.decide(
+            proposed_hire_id=str(proposed.id), decision="APPROVE"
+        )
         offer_service = OfferService(tenant_id=TENANT, actor="hr")
         offer = offer_service.create_offer(
             proposed_hire_id=str(proposed.id), offer_no="OFFER-CONC-1"

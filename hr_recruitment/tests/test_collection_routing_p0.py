@@ -189,7 +189,8 @@ class Hr04CollectionSecurityAndErrorTests(TestCase):
         self.assertEqual(response.json()["error"]["code"], "TENANT_CONTEXT_REQUIRED")
 
     @patch("hr_recruitment.api.base.resolve_tenant_from_request", return_value=41004)
-    def test_missing_permission_fails_closed(self, _tenant):
+    @patch("base.auth_backends.get_allowed_company_ids", return_value={41004})
+    def test_missing_permission_fails_closed(self, _allowed, _tenant):
         response = self._client_for(self.no_perm_user).get(
             "/api/v1/hr/recruitment/candidates"
         )
