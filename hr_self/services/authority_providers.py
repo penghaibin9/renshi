@@ -53,6 +53,359 @@ def _ok(data, *, source_updated_at=None, provider_version: str, authority: str):
     )
 
 
+def hr04_self_provider(context: SelfIdentityContext):
+    """Read the recruitment trail linked to this canonical HR03 staff record.
+
+    HR04 intentionally has no mutable staff FK because a candidate predates an
+    employee.  The immutable HR04→HR05 handoff and HR05→HR03 activation links
+    provide the safe mapping; email, phone, identity ciphertext and application
+    form snapshots are never exposed here.
+    """
+
+    from hr_onboarding.models import HrOnboardingCase
+    from hr_recruitment.models import (
+        HrJobApplication,
+        HrProposedHire,
+        HrRecruitmentOffer,
+    )
+
+    links = list(
+        HrOnboardingCase.objects.filter(
+            tenant_id=context.tenant_id,
+            hr03_staff_master_id=context.staff_id,
+        ).order_by("-updated_at")[:20]
+    )
+    application_ids = {
+        str(row.hr04_application_id)
+        for row in links
+        if row.hr04_application_id
+    }
+    proposed_hire_ids = {
+        str(row.hr04_proposed_hire_id)
+        for row in links
+        if row.hr04_proposed_hire_id
+    }
+    applications = list(
+        HrJobApplication.objects.filter(
+            tenant_id=context.tenant_id,
+            id__in=application_ids,
+        ).order_by("-updated_at")[:20]
+    ) if application_ids else []
+    proposed_hires = list(
+        HrProposedHire.objects.filter(
+            tenant_id=context.tenant_id,
+            id__in=proposed_hire_ids,
+        ).order_by("-updated_at")[:20]
+    ) if proposed_hire_ids else []
+    offers = list(
+        HrRecruitmentOffer.objects.filter(
+            tenant_id=context.tenant_id,
+            proposed_hire_id__in=proposed_hire_ids,
+        ).order_by("-updated_at")[:20]
+    ) if proposed_hire_ids else []
+
+    return _ok(
+        {
+            "applications": [
+                {
+                    "id": _identifier(row.id),
+                    "applicationNo": row.application_no,
+                    "status": row.canonical_status,
+                    "workflowStageName": row.workflow_stage_name,
+                    "submittedAt": _iso(row.submitted_at),
+                    "finalDecisionAt": _iso(row.final_decision_at),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in applications
+            ],
+            "proposedHires": [
+                {
+                    "id": _identifier(row.id),
+                    "applicationId": _identifier(row.application_id_id),
+                    "decision": row.decision,
+                    "approvalStatus": row.approval_status,
+                    "approvedAt": _iso(row.approved_at),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in proposed_hires
+            ],
+            "offers": [
+                {
+                    "id": _identifier(row.id),
+                    "offerNo": row.offer_no,
+                    "proposedHireId": _identifier(row.proposed_hire_id_id),
+                    "status": row.status,
+                    "issuedAt": _iso(row.issued_at),
+                    "expiresAt": _iso(row.expires_at),
+                    "acceptedAt": _iso(row.accepted_at),
+                    "expectedReportDate": _iso(row.expected_report_date),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in offers
+            ],
+        },
+        source_updated_at=_latest_source_updated_at(
+            links, applications, proposed_hires, offers
+        ),
+        provider_version="hr04.recruitment-handoff-self.1",
+        authority="HR04_RECRUITMENT_AUTHORITY",
+    )
+
+
+def hr05_self_provider(context: SelfIdentityContext):
+    """Read onboarding progress, staff-visible tasks and probation outcome."""
+
+    from hr_onboarding.models import (
+        HrOnboardingCase,
+        HrOnboardingTaskInstance,
+        HrProbationCase,
+    )
+
+    cases = list(
+        HrOnboardingCase.objects.filter(
+            tenant_id=context.tenant_id,
+            hr03_staff_master_id=context.staff_id,
+        ).order_by("-updated_at")[:20]
+    )
+    case_ids = [row.id for row in cases]
+    tasks = list(
+        HrOnboardingTaskInstance.objects.filter(
+            tenant_id=context.tenant_id,
+            case_id__in=case_ids,
+        ).select_related("definition").order_by("due_at", "created_at")[:100]
+    ) if case_ids else []
+    probation = list(
+        HrProbationCase.objects.filter(
+            tenant_id=context.tenant_id,
+            staff_master_id=context.staff_id,
+        ).order_by("-updated_at")[:20]
+    )
+
+    return _ok(
+        {
+            "onboardingCases": [
+                {
+                    "id": _identifier(row.id),
+                    "caseNo": row.case_no,
+                    "status": row.status,
+                    "currentStageCode": row.current_stage_code,
+                    "activationStatus": row.activation_status,
+                    "expectedReportDate": _iso(row.expected_report_date),
+                    "actualReportAt": _iso(row.actual_report_at),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in cases
+            ],
+            "tasks": [
+                {
+                    "id": _identifier(row.id),
+                    "caseId": _identifier(row.case_id),
+                    "code": row.definition.code,
+                    "title": row.definition.title,
+                    "status": row.status,
+                    "availableAt": _iso(row.available_at),
+                    "dueAt": _iso(row.due_at),
+                    "completedAt": _iso(row.completed_at),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in tasks
+            ],
+            "probationCases": [
+                {
+                    "id": _identifier(row.id),
+                    "status": row.status,
+                    "result": row.result,
+                    "startDate": _iso(row.start_date),
+                    "plannedEndDate": _iso(row.planned_end_date),
+                    "actualEndDate": _iso(row.actual_end_date),
+                    "extensionCount": row.extension_count,
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in probation
+            ],
+        },
+        source_updated_at=_latest_source_updated_at(cases, tasks, probation),
+        provider_version="hr05.onboarding-authority-self.1",
+        authority="HR05_ONBOARDING_AUTHORITY",
+    )
+
+
+def hr06_self_provider(context: SelfIdentityContext):
+    """Read this staff member's personnel-change cases without approval internals."""
+
+    from hr_changes.models import HrPersonnelChangeCase
+
+    cases = list(
+        HrPersonnelChangeCase.objects.filter(
+            tenant_id=context.tenant_id,
+            staff_master_id=context.staff_id,
+        ).select_related("action_id", "reason_id").order_by("-updated_at")[:50]
+    )
+    return _ok(
+        {
+            "changeCases": [
+                {
+                    "id": _identifier(row.id),
+                    "caseNo": row.case_no,
+                    "actionCode": row.action_id.code,
+                    "reasonCode": row.reason_id.code,
+                    "status": row.status,
+                    "requestedEffectiveAt": _iso(row.requested_effective_at),
+                    "approvedEffectiveAt": _iso(row.approved_effective_at),
+                    "submittedAt": _iso(row.submitted_at),
+                    "approvedAt": _iso(row.approved_at),
+                    "appliedAt": _iso(row.applied_at),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in cases
+            ]
+        },
+        source_updated_at=_latest_source_updated_at(cases),
+        provider_version="hr06.change-authority-self.1",
+        authority="HR06_CHANGE_AUTHORITY",
+    )
+
+
+def hr08_self_provider(context: SelfIdentityContext):
+    """Read external-engagement history for the resolved canonical person."""
+
+    from hr_external.models import HrExternalEngagement
+
+    engagements = list(
+        HrExternalEngagement.objects.filter(
+            tenant_id=context.tenant_id,
+            person_id=context.person_id,
+        ).order_by("-updated_at")[:50]
+    )
+    return _ok(
+        {
+            "externalEngagements": [
+                {
+                    "id": _identifier(row.id),
+                    "engagementNo": row.engagement_no,
+                    "purpose": row.purpose,
+                    "hostOrganizationId": _identifier(row.host_organization_id),
+                    "startAt": _iso(row.start_at),
+                    "endAt": _iso(row.end_at),
+                    "reviewAt": _iso(row.review_at),
+                    "agreementStatus": row.agreement_status,
+                    "status": row.status,
+                    "riskLevel": row.current_risk_level,
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in engagements
+            ]
+        },
+        source_updated_at=_latest_source_updated_at(engagements),
+        provider_version="hr08.external-authority-self.1",
+        authority="HR08_EXTERNAL_AUTHORITY",
+    )
+
+
+def hr11_self_provider(context: SelfIdentityContext):
+    """Read attendance, leave balance and timesheet facts for SELF.
+
+    HR11 currently stores its staff key as the resolved legacy employee id.
+    Missing identity mapping is therefore UNAVAILABLE, never a plausible empty
+    attendance history.
+    """
+
+    from hr_self.services.provider_gateway import SelfProviderResult
+
+    if context.legacy_employee_id is None:
+        return SelfProviderResult.unavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            "HR11 requires a resolved legacy employee mapping",
+            provider_version="hr11.time-authority-self.1",
+        )
+
+    from hr_time.models import (
+        HrAttendanceDayFact,
+        HrLeaveAccount,
+        HrLeaveLedgerEntry,
+        HrTimeSheetPeriod,
+    )
+
+    staff_key = context.legacy_employee_id
+    day_facts = list(
+        HrAttendanceDayFact.objects.filter(
+            tenant_id=context.tenant_id,
+            staff_master_id=staff_key,
+        ).order_by("-business_date")[:62]
+    )
+    accounts = list(
+        HrLeaveAccount.objects.filter(
+            tenant_id=context.tenant_id,
+            staff_master_id=staff_key,
+        ).select_related("leave_type").order_by("-account_year", "leave_type__code")[:50]
+    )
+    account_ids = [row.id for row in accounts]
+    ledger_rows = list(
+        HrLeaveLedgerEntry.objects.filter(
+            tenant_id=context.tenant_id,
+            account_id__in=account_ids,
+        ).order_by("account_id", "-effective_date", "-created_at")
+    ) if account_ids else []
+    latest_balance = {}
+    for row in ledger_rows:
+        latest_balance.setdefault(row.account_id, row.balance_after)
+    timesheets = list(
+        HrTimeSheetPeriod.objects.filter(
+            tenant_id=context.tenant_id,
+            staff_master_id=staff_key,
+        ).order_by("-end_date", "-created_at")[:24]
+    )
+
+    return _ok(
+        {
+            "attendanceDayFacts": [
+                {
+                    "id": _identifier(row.id),
+                    "businessDate": _iso(row.business_date),
+                    "status": row.status,
+                    "expectedMinutes": row.expected_minutes,
+                    "actualMinutes": row.actual_minutes,
+                    "creditedMinutes": row.credited_minutes,
+                    "authorizedAbsenceMinutes": row.authorized_absence_minutes,
+                    "overtimeMinutesCandidate": row.overtime_minutes_candidate,
+                    "finalized": bool(row.finalized),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in day_facts
+            ],
+            "leaveAccounts": [
+                {
+                    "id": _identifier(row.id),
+                    "leaveTypeCode": row.leave_type.code,
+                    "leaveTypeName": row.leave_type.name,
+                    "accountYear": row.account_year,
+                    "status": row.status,
+                    "balance": _amount(latest_balance.get(row.id, Decimal("0"))),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in accounts
+            ],
+            "timesheets": [
+                {
+                    "id": _identifier(row.id),
+                    "startDate": _iso(row.start_date),
+                    "endDate": _iso(row.end_date),
+                    "status": row.status,
+                    "submittedAt": _iso(row.submitted_at),
+                    "approvedAt": _iso(row.approved_at),
+                    "updatedAt": _iso(row.updated_at),
+                }
+                for row in timesheets
+            ],
+        },
+        source_updated_at=_latest_source_updated_at(
+            day_facts, accounts, ledger_rows, timesheets
+        ),
+        provider_version="hr11.time-authority-self.1",
+        authority="HR11_TIME_AUTHORITY",
+    )
+
+
 def hr09_self_provider(context: SelfIdentityContext):
     """Read HR09 credential facts without exposing certificate ciphertext/hash."""
 

@@ -81,15 +81,20 @@ class Hr17ProviderGatewayTests(SimpleTestCase):
             "HR04": "hr_self.tests.test_provider_gateway.configured_hr04_provider"
         }
     )
-    def test_default_registry_loads_explicit_integration_provider(self):
+    @patch("hr_self.services.authority_providers.hr04_self_provider")
+    def test_runtime_configuration_cannot_shadow_canonical_hr04(self, hr04_provider):
+        hr04_provider.return_value = SelfProviderResult.ok(
+            {"source": "canonical-HR04"},
+            provider_version="hr04.canonical-test.1",
+        )
         registry = default_self_provider_registry()
         self.assertIn("HR03", registry.registered_domains())
         self.assertIn("HR04", registry.registered_domains())
 
         result = registry.call("HR04", self.context)
         self.assertEqual(result.status, ProviderStatus.OK)
-        self.assertEqual(result.data["source"], "HR04")
-        self.assertEqual(result.provider_version, "hr04.self-test.1")
+        self.assertEqual(result.data["source"], "canonical-HR04")
+        self.assertEqual(result.provider_version, "hr04.canonical-test.1")
 
     @override_settings(
         HR17_SELF_PROVIDER_PATHS={
@@ -97,12 +102,16 @@ class Hr17ProviderGatewayTests(SimpleTestCase):
             "HR99": "hr_self.tests.test_provider_gateway.configured_hr04_provider",
         }
     )
-    def test_invalid_or_unsupported_config_does_not_fake_registration(self):
+    @patch("hr_self.services.authority_providers.hr04_self_provider")
+    def test_invalid_config_cannot_remove_canonical_registration(self, hr04_provider):
+        hr04_provider.return_value = SelfProviderResult.ok(
+            {"source": "canonical-HR04"}
+        )
         registry = default_self_provider_registry()
-        self.assertNotIn("HR04", registry.registered_domains())
+        self.assertIn("HR04", registry.registered_domains())
         result = registry.call("HR04", self.context)
-        self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
-        self.assertIsNone(result.data)
+        self.assertEqual(result.status, ProviderStatus.OK)
+        self.assertEqual(result.data["source"], "canonical-HR04")
 
     @override_settings(
         HR17_SELF_PROVIDER_PATHS={

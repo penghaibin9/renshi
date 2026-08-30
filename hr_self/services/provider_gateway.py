@@ -366,8 +366,13 @@ def configured_self_provider_paths() -> dict[str, str]:
 
 def default_self_provider_registry() -> SelfProviderRegistry:
     from hr_self.services.authority_providers import (
+        hr04_self_provider,
+        hr05_self_provider,
+        hr06_self_provider,
+        hr08_self_provider,
         hr09_self_provider,
         hr10_self_provider,
+        hr11_self_provider,
         hr12_self_provider,
         hr13_self_provider,
         hr15_self_provider,
@@ -376,9 +381,14 @@ def default_self_provider_registry() -> SelfProviderRegistry:
     registry = SelfProviderRegistry()
     canonical_providers = {
         "HR03": hr03_self_provider,
+        "HR04": hr04_self_provider,
+        "HR05": hr05_self_provider,
+        "HR06": hr06_self_provider,
         "HR07": hr07_self_provider,
+        "HR08": hr08_self_provider,
         "HR09": hr09_self_provider,
         "HR10": hr10_self_provider,
+        "HR11": hr11_self_provider,
         "HR12": hr12_self_provider,
         "HR13": hr13_self_provider,
         "HR14": hr14_self_provider,
