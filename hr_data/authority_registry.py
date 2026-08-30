@@ -13,6 +13,7 @@ PERMISSIONS = (
     PermissionDefinition("hr.data.receipt", "HR18", "登记外部正式回执"),
     PermissionDefinition("hr.data.exchange", "HR18", "管理异步数据交换与对账"),
     PermissionDefinition("hr.data.metric.evaluate", "HR18", "执行通用指标表达式求值"),
+    PermissionDefinition("hr.data.legacy.takeover", "HR18", "执行旧报表证据接管与写封锁"),
 )
 register_permissions(PERMISSIONS)
 
@@ -41,6 +42,18 @@ EVENTS = (
     BusinessEventDefinition("hr.data.exchange.dead_lettered", "HR18", "exchange", 1),
     BusinessEventDefinition(
         "hr.data.metric_evaluation.completed", "HR18", "metric_evaluation", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.legacy_report.inventoried", "HR18", "legacy_report", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.legacy_report.reconciled", "HR18", "legacy_report", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.legacy_report.cutover", "HR18", "legacy_report", 1
+    ),
+    BusinessEventDefinition(
+        "hr.data.legacy_report.write_blocked", "HR18", "legacy_report", 1
     ),
 )
 register_business_events(EVENTS)

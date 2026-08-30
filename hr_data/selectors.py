@@ -8,6 +8,10 @@ from .models import (
     MetricDefinitionVersion,
     PopulationDefinitionVersion,
     SubmissionSnapshot,
+    LegacyReportAssetVersion,
+    LegacyReportCutoverStep,
+    LegacyReportReconciliation,
+    LegacyReportWriteBlock,
 )
 
 
@@ -23,6 +27,24 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     findings = DataQualityFinding.objects.filter(tenant_id=tenant_id)
     evidences = AsOfEvidenceSnapshot.objects.filter(tenant_id=tenant_id)
     submissions = SubmissionSnapshot.objects.filter(tenant_id=tenant_id)
+    legacy_assets = LegacyReportAssetVersion.objects.filter(tenant_id=tenant_id)
+    legacy_reconciliations = LegacyReportReconciliation.objects.filter(tenant_id=tenant_id)
+    legacy_cutovers = LegacyReportCutoverStep.objects.filter(tenant_id=tenant_id)
+    legacy_block = (
+        LegacyReportWriteBlock.objects.filter(tenant_id=tenant_id)
+        .select_related("cutover_step")
+        .first()
+    )
+    legacy_takeover_complete = bool(
+        legacy_block
+        and legacy_block.evidence_hash
+        and legacy_block.cutover_step.phase
+        == LegacyReportCutoverStep.Phase.LEGACY_WRITE_BLOCKED
+        and legacy_block.cutover_step.unavailable_count == 0
+        and legacy_block.cutover_step.asset_count
+        == legacy_block.cutover_step.matched_count
+        + legacy_block.cutover_step.archived_count
+    )
     open_findings = findings.filter(status__in=["OPEN", "ACKNOWLEDGED"])
     return {
         "summary": {
@@ -49,6 +71,13 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "acceptedReceipts": submissions.filter(status=SubmissionSnapshot.Status.ACCEPTED).exclude(receipt_ref="").count(),
             "rejectedReceipts": submissions.filter(status=SubmissionSnapshot.Status.REJECTED).exclude(receipt_ref="").count(),
             "corrections": submissions.filter(status=SubmissionSnapshot.Status.CORRECTED).count(),
+            "legacyReportAssetVersions": legacy_assets.count(),
+            "legacyReportReconciliations": legacy_reconciliations.count(),
+            "legacyReportUnavailable": legacy_reconciliations.filter(
+                status=LegacyReportReconciliation.Status.UNAVAILABLE
+            ).count(),
+            "legacyReportCutoverSteps": legacy_cutovers.count(),
+            "legacyReportWritesBlocked": 1 if legacy_block else 0,
         },
         "recentPopulations": list(
             populations.order_by("population_code", "-version_no")[:12].values(
@@ -124,6 +153,6 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "asyncExchange": True,
             "submissionReceipt": True,
             "correctionWorkflow": True,
-            "legacyReportTakeover": False,
+            "legacyReportTakeover": legacy_takeover_complete,
         },
     }

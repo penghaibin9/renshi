@@ -1,4 +1,7 @@
 from unittest.mock import patch
+from types import SimpleNamespace
+import json
+import uuid
 
 from django.test import RequestFactory, SimpleTestCase
 
@@ -59,3 +62,76 @@ class Hr18LegacyReportAssetApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 405)
         self.assertIn(b"METHOD_NOT_ALLOWED", response.content)
+
+    @patch("hr_data.legacy_api.resolve_request_tenant", return_value=7)
+    @patch("hr_data.legacy_api.LegacyReportTakeoverService")
+    def test_inventory_requires_takeover_permission_and_returns_evidence_step(
+        self, service_cls, resolve_tenant
+    ):
+        step = SimpleNamespace(
+            id=uuid.uuid4(),
+            cutover_code="TAKEOVER_2026",
+            step_no=1,
+            phase="INVENTORIED",
+            asset_count=3,
+            matched_count=0,
+            archived_count=0,
+            unavailable_count=3,
+            evidence_hash="a" * 64,
+        )
+        service_cls.return_value.inventory.return_value = SimpleNamespace(
+            value=step, created=True
+        )
+        request = self.factory.post(
+            "/api/v1/hr/data/legacy/report-takeover/inventory/",
+            data=json.dumps(
+                {
+                    "cutoverCode": "TAKEOVER_2026",
+                    "idempotencyKey": "inventory-1",
+                }
+            ),
+            content_type="application/json",
+        )
+        request.user = SuperuserStub()
+
+        response = legacy_api.inventory(request)
+
+        self.assertEqual(response.status_code, 201)
+        resolve_tenant.assert_called_once_with(
+            request, required_permission="hr.data.legacy.takeover"
+        )
+        self.assertIn(b'"phase": "INVENTORIED"', response.content)
+        self.assertIn(b'"evidenceHash"', response.content)
+
+    @patch("hr_data.legacy_api.resolve_request_tenant", return_value=7)
+    @patch("hr_data.legacy_api.LegacyReportTakeoverService")
+    def test_reconcile_surfaces_unavailable_instead_of_faking_match(
+        self, service_cls, _tenant
+    ):
+        result = SimpleNamespace(
+            id=uuid.uuid4(),
+            run_no="RUN_1",
+            status="UNAVAILABLE",
+            legacy_output_hash="",
+            canonical_output_hash="",
+            differences_json={},
+            evidence_hash="b" * 64,
+        )
+        service_cls.return_value.reconcile.return_value = SimpleNamespace(
+            value=result, created=True
+        )
+        asset_id = uuid.uuid4()
+        request = self.factory.post(
+            f"/api/v1/hr/data/legacy/report-takeover/assets/{asset_id}/reconcile/",
+            data=json.dumps(
+                {"runNo": "RUN_1", "idempotencyKey": "reconcile-1"}
+            ),
+            content_type="application/json",
+        )
+        request.user = SuperuserStub()
+
+        response = legacy_api.reconcile_asset(request, asset_id)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIn(b'"status": "UNAVAILABLE"', response.content)
+        self.assertNotIn(b'"status": "MATCHED"', response.content)

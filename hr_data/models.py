@@ -897,3 +897,209 @@ class ExchangeDeadLetter(HrTenantScopedModel):
                     "HR18_EXCHANGE_DEAD_LETTER_IDENTITY_IMMUTABLE: failure evidence cannot change"
                 )
         return super().save(*args, **kwargs)
+
+
+class LegacyReportAssetVersion(HrVersionedModel):
+    """Immutable HR18 classification/mapping of one legacy report preference asset."""
+
+    class Disposition(models.TextChoices):
+        MIGRATE = "MIGRATE", "Migrate to canonical report asset"
+        ARCHIVE = "ARCHIVE", "Archive legacy preference"
+        UNAVAILABLE = "UNAVAILABLE", "Evidence unavailable"
+
+    legacy_source = models.CharField(max_length=64, default="report.ReportTemplate")
+    legacy_object_id = models.PositiveBigIntegerField()
+    report_slug = models.CharField(max_length=100)
+    legacy_name = models.CharField(max_length=100)
+    legacy_config_hash = models.CharField(max_length=64)
+    disposition = models.CharField(max_length=16, choices=Disposition.choices)
+    canonical_asset_ref = models.CharField(max_length=255, blank=True, default="")
+    provider_key = models.CharField(max_length=64, blank=True, default="")
+    mapping_json = models.JSONField(default=dict, blank=True)
+    mapping_idempotency_key = models.CharField(
+        max_length=128, null=True, blank=True
+    )
+    source_evidence_hash = models.CharField(max_length=64)
+    inventoried_at = models.DateTimeField()
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "version_no",
+        "status",
+        "content_hash",
+        "legacy_source",
+        "legacy_object_id",
+        "report_slug",
+        "legacy_name",
+        "legacy_config_hash",
+        "disposition",
+        "canonical_asset_ref",
+        "provider_key",
+        "mapping_json",
+        "mapping_idempotency_key",
+        "source_evidence_hash",
+        "inventoried_at",
+    )
+
+    class Meta:
+        db_table = "hr18_legacy_report_asset_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "legacy_source", "legacy_object_id", "version_no"),
+                name="uq_hr18_legacy_asset_ver",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "mapping_idempotency_key"),
+                name="uq_hr18_legacy_mapping_idem",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "legacy_source", "legacy_object_id", "status"),
+                name="idx_hr18_legacy_asset_current",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted and any(
+                getattr(self, field) != persisted[field] for field in self._FACT_FIELDS
+            ):
+                raise ValueError(
+                    "HR18_LEGACY_REPORT_ASSET_IMMUTABLE: asset versions must be appended"
+                )
+        return super().save(*args, **kwargs)
+
+
+class LegacyReportReconciliation(HrTenantScopedModel):
+    """Append-only dual-read comparison; UNAVAILABLE is a first-class result."""
+
+    class Status(models.TextChoices):
+        MATCHED = "MATCHED", "Legacy and canonical outputs match"
+        MISMATCH = "MISMATCH", "Outputs differ"
+        UNAVAILABLE = "UNAVAILABLE", "One or both evidence sources unavailable"
+
+    run_no = models.CharField(max_length=64)
+    idempotency_key = models.CharField(max_length=128)
+    asset_version = models.ForeignKey(
+        LegacyReportAssetVersion,
+        on_delete=models.PROTECT,
+        related_name="reconciliations",
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, db_index=True)
+    provider_version = models.CharField(max_length=64, blank=True, default="")
+    legacy_output_hash = models.CharField(max_length=64, blank=True, default="")
+    canonical_output_hash = models.CharField(max_length=64, blank=True, default="")
+    legacy_record_count = models.PositiveBigIntegerField(null=True, blank=True)
+    canonical_record_count = models.PositiveBigIntegerField(null=True, blank=True)
+    differences_json = models.JSONField(default=dict, blank=True)
+    evidence_json = models.JSONField(default=dict, blank=True)
+    evidence_hash = models.CharField(max_length=64)
+    reconciled_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "hr18_legacy_report_reconciliation"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr18_legacy_reconcile_idem",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "run_no"),
+                name="uq_hr18_legacy_reconcile_run",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "asset_version", "status", "reconciled_at"),
+                name="idx_hr18_leg_recon_asset",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_LEGACY_REPORT_RECONCILIATION_IMMUTABLE: results must be appended"
+            )
+        return super().save(*args, **kwargs)
+
+
+class LegacyReportCutoverStep(HrTenantScopedModel):
+    """Append-only cutover ledger for inventory, dual-read, cutover and write block."""
+
+    class Phase(models.TextChoices):
+        INVENTORIED = "INVENTORIED", "Assets inventoried"
+        DUAL_READ_VERIFIED = "DUAL_READ_VERIFIED", "Dual-read evidence verified"
+        CUTOVER = "CUTOVER", "Canonical reads activated"
+        LEGACY_WRITE_BLOCKED = "LEGACY_WRITE_BLOCKED", "Legacy writes blocked"
+        UNAVAILABLE = "UNAVAILABLE", "Required evidence unavailable"
+
+    cutover_code = models.CharField(max_length=64)
+    step_no = models.PositiveIntegerField()
+    phase = models.CharField(max_length=24, choices=Phase.choices, db_index=True)
+    idempotency_key = models.CharField(max_length=128)
+    asset_count = models.PositiveIntegerField(default=0)
+    matched_count = models.PositiveIntegerField(default=0)
+    archived_count = models.PositiveIntegerField(default=0)
+    unavailable_count = models.PositiveIntegerField(default=0)
+    evidence_json = models.JSONField(default=dict, blank=True)
+    evidence_hash = models.CharField(max_length=64)
+    recorded_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "hr18_legacy_report_cutover_step"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "cutover_code", "step_no"),
+                name="uq_hr18_legacy_cutover_step",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr18_legacy_cutover_idem",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "cutover_code", "phase", "step_no"),
+                name="idx_hr18_legacy_cutover_state",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_LEGACY_REPORT_CUTOVER_IMMUTABLE: cutover steps must be appended"
+            )
+        return super().save(*args, **kwargs)
+
+
+class LegacyReportWriteBlock(HrTenantScopedModel):
+    """Immutable switch proving the legacy preference writer is disabled."""
+
+    legacy_source = models.CharField(max_length=64, default="report.ReportTemplate")
+    cutover_step = models.OneToOneField(
+        LegacyReportCutoverStep,
+        on_delete=models.PROTECT,
+        related_name="write_block",
+    )
+    evidence_hash = models.CharField(max_length=64)
+    activated_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "hr18_legacy_report_write_block"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "legacy_source"),
+                name="uq_hr18_legacy_write_block",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "HR18_LEGACY_REPORT_WRITE_BLOCK_IMMUTABLE: write block cannot be changed"
+            )
+        return super().save(*args, **kwargs)

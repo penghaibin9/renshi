@@ -23,6 +23,26 @@ urlpatterns = [
         name="legacy-report-assets",
     ),
     path(
+        "legacy/report-takeover/inventory/",
+        legacy_api.inventory,
+        name="legacy-report-takeover-inventory",
+    ),
+    path(
+        "legacy/report-takeover/assets/<uuid:asset_id>/mapping/",
+        legacy_api.map_asset,
+        name="legacy-report-takeover-asset-mapping",
+    ),
+    path(
+        "legacy/report-takeover/assets/<uuid:asset_id>/reconcile/",
+        legacy_api.reconcile_asset,
+        name="legacy-report-takeover-asset-reconcile",
+    ),
+    path(
+        "legacy/report-takeover/cutovers/<str:cutover_code>/advance/",
+        legacy_api.advance_cutover,
+        name="legacy-report-takeover-advance",
+    ),
+    path(
         "definitions/populations/",
         api.create_population_definition,
         name="population-definition-create",

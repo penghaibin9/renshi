@@ -9,6 +9,28 @@ from horilla.decorators import login_required
 from report.models import ReportTemplate
 
 
+def _legacy_write_block_response(request):
+    """Fail closed on writes after an evidence-backed HR18 tenant cutover."""
+
+    tenant_id = getattr(request, "tenant_id", None)
+    if not tenant_id:
+        return None
+    from hr_data.services.legacy_report_asset_service import legacy_report_write_block
+
+    block = legacy_report_write_block(tenant_id)
+    if not block:
+        return None
+    return JsonResponse(
+        {
+            "error": "LEGACY_REPORT_WRITES_BLOCKED",
+            "message": "Legacy report template writes are disabled after HR18 cutover.",
+            "cutoverCode": block.cutover_step.cutover_code,
+            "evidenceHash": block.evidence_hash,
+        },
+        status=409,
+    )
+
+
 @login_required
 @require_http_methods(["GET"])
 def list_report_templates(request):
@@ -30,6 +52,10 @@ def save_report_template(request):
     Save (or overwrite, if the same name already exists for this user and
     report) the current field arrangement as a named template.
     """
+    blocked = _legacy_write_block_response(request)
+    if blocked:
+        return blocked
+
     try:
         body = json.loads(request.body)
     except (ValueError, TypeError):
@@ -75,6 +101,9 @@ def get_report_template(request, template_id):
 @login_required
 @require_http_methods(["POST"])
 def delete_report_template(request, template_id):
+    blocked = _legacy_write_block_response(request)
+    if blocked:
+        return blocked
     deleted, _deleted_details = ReportTemplate.objects.filter(
         id=template_id, created_by=request.user
     ).delete()
