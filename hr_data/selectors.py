@@ -123,9 +123,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "qualityRuleExecution": True,
             "builtinHr03QualityProvider": True,
             "asyncSubmissionDispatch": True,
-            "asyncExchange": False,
+            "asyncExchange": True,
             "submissionReceipt": True,
-            "correctionWorkflow": False,
+            "correctionWorkflow": True,
             "legacyReportTakeover": False,
         },
     }
