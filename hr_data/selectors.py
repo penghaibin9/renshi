@@ -117,9 +117,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "hr03AssignmentCountEvaluation": True,
             "formalFactProviderEvidence": True,
             "formalFactPersonCountEvaluation": True,
-            # General expression evaluation is not implemented; historical values
-            # remain intentionally limited to bounded COUNT evaluators.
-            "metricEvaluation": False,
+            "metricEvaluation": True,
             "qualityRuleExecution": True,
             "builtinHr03QualityProvider": True,
             "asyncSubmissionDispatch": True,

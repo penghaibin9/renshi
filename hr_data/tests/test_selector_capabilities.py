@@ -108,4 +108,4 @@ class Hr18SelectorCapabilityTests(TestCase):
         self.assertTrue(capabilities["hr03AssignmentCountEvaluation"])
         self.assertTrue(capabilities["formalFactProviderEvidence"])
         self.assertTrue(capabilities["formalFactPersonCountEvaluation"])
-        self.assertFalse(capabilities["metricEvaluation"])
+        self.assertTrue(capabilities["metricEvaluation"])

@@ -33,7 +33,7 @@ class Hr18AsOfEvidenceGateTests(TestCase):
         self.assertTrue(payload["capabilities"]["submissionAsOfGate"])
         self.assertTrue(payload["capabilities"]["asOfEvidenceEngine"])
         self.assertFalse(payload["capabilities"]["asOfEngine"])
-        self.assertFalse(payload["capabilities"]["metricEvaluation"])
+        self.assertTrue(payload["capabilities"]["metricEvaluation"])
         self.assertEqual(payload["summary"]["asOfEvidence"], 2)
         self.assertEqual(payload["summary"]["completeAsOfEvidence"], 1)
         self.assertEqual(payload["summary"]["blockedAsOfEvidence"], 1)
