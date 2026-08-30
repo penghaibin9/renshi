@@ -159,6 +159,10 @@ def remove_mysql_authority_seals(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # MySQL CREATE/DROP TRIGGER causes an implicit commit and must never run
+    # inside Django's migration transaction boundary.
+    atomic = False
+
     dependencies = [
         ('hr_contracts', '0002_external_workforce_agreement_subject'),
     ]
@@ -196,7 +200,11 @@ class Migration(migrations.Migration):
             name='status',
             field=models.CharField(choices=[('DRAFT', 'Draft'), ('SIGNED', 'Signed'), ('EFFECTIVE', 'Effective'), ('SUPERSEDED', 'Superseded'), ('TERMINATED', 'Terminated'), ('EXPIRED', 'Expired'), ('VOID', 'Void')], db_index=True, default='DRAFT', max_length=20),
         ),
-        migrations.RunPython(classify_existing_versions, migrations.RunPython.noop),
+        migrations.RunPython(
+            classify_existing_versions,
+            migrations.RunPython.noop,
+            atomic=True,
+        ),
         migrations.AddConstraint(
             model_name='hrcontractversion',
             constraint=models.UniqueConstraint(fields=('tenant_id', 'supersedes_version_id'), name='uq_hr07_ver_successor'),
@@ -232,5 +240,9 @@ class Migration(migrations.Migration):
             model_name='hrcontractversionaction',
             constraint=models.CheckConstraint(condition=models.Q(models.Q(('kind', 'CORRECTION'), ('successor_version__isnull', False)), models.Q(('kind', 'VOID'), ('successor_version__isnull', True)), _connector='OR'), name='ck_hr07_ver_action_shape'),
         ),
-        migrations.RunPython(install_mysql_authority_seals, remove_mysql_authority_seals),
+        migrations.RunPython(
+            install_mysql_authority_seals,
+            remove_mysql_authority_seals,
+            atomic=False,
+        ),
     ]

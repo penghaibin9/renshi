@@ -191,6 +191,9 @@ def drop_mysql_authority_triggers(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # MySQL trigger DDL is non-transactional (implicit commit).
+    atomic = False
+
     dependencies = [
         ('hr_qualification', '0005_hrdoubleteacherevidencepackage_frozen_at'),
     ]
@@ -245,6 +248,7 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             seal_legacy_final_decisions,
             migrations.RunPython.noop,
+            atomic=True,
         ),
         migrations.AddConstraint(
             model_name='hrdoubleteacherfinaldecision',
@@ -275,5 +279,6 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             create_mysql_authority_triggers,
             drop_mysql_authority_triggers,
+            atomic=False,
         ),
     ]

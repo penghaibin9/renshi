@@ -124,6 +124,10 @@ def remove_mysql_fact_seal(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # MySQL 8.x implicitly commits CREATE/DROP TRIGGER.  Keeping this
+    # migration atomic raises TransactionManagementError during a real migrate.
+    atomic = False
+
     dependencies = [
         ('hr10_development', '0022_alter_hr10developmentpermissionmeta_options'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
@@ -173,7 +177,11 @@ class Migration(migrations.Migration):
             name='sealed_by',
             field=models.BigIntegerField(blank=True, null=True),
         ),
-        migrations.RunPython(seal_legacy_facts, migrations.RunPython.noop),
+        migrations.RunPython(
+            seal_legacy_facts,
+            migrations.RunPython.noop,
+            atomic=True,
+        ),
         migrations.AddConstraint(
             model_name='hrdevelopmentfact',
             constraint=models.UniqueConstraint(fields=('tenant_id', 'supersedes_fact_id'), name='uq_hr10_fact_one_successor'),
@@ -190,5 +198,9 @@ class Migration(migrations.Migration):
             model_name='hrdevelopmentfact',
             constraint=models.CheckConstraint(condition=models.Q(('sealed_at__isnull', False), models.Q(('content_hash', ''), _negated=True), models.Q(('immutable_hash', ''), _negated=True)), name='ck_hr10_fact_sealed'),
         ),
-        migrations.RunPython(install_mysql_fact_seal, remove_mysql_fact_seal),
+        migrations.RunPython(
+            install_mysql_fact_seal,
+            remove_mysql_fact_seal,
+            atomic=False,
+        ),
     ]

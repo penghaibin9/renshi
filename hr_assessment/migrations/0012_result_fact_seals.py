@@ -164,6 +164,9 @@ def remove_mysql_result_seals(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL CREATE/DROP TRIGGER is not rollback-safe and implicitly commits.
+    atomic = False
+
     dependencies = [("hr_assessment", "0011_legacy_pms_writer_seal")]
 
     operations = [
@@ -187,7 +190,11 @@ class Migration(migrations.Migration):
             name="sealed_at",
             field=models.DateTimeField(null=True, verbose_name="封板时间"),
         ),
-        migrations.RunPython(backfill_result_seals, migrations.RunPython.noop),
+        migrations.RunPython(
+            backfill_result_seals,
+            migrations.RunPython.noop,
+            atomic=True,
+        ),
         migrations.AlterField(
             model_name="hrfinalassessmentresult",
             name="sealed_at",
@@ -231,5 +238,6 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             install_mysql_result_seals,
             remove_mysql_result_seals,
+            atomic=False,
         ),
     ]
