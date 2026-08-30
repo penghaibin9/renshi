@@ -224,6 +224,9 @@ def remove_mysql_hiring_seals(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # CREATE/DROP TRIGGER must execute outside an atomic migration on MySQL.
+    atomic = False
+
 
     dependencies = [
         ('hr_recruitment', '0011_alter_hrrecruitmentpermissionmeta_options_and_more'),

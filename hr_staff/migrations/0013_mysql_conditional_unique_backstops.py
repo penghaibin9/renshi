@@ -72,6 +72,10 @@ def remove_mysql_backstops(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL DDL performs implicit commits; keep generated-column/index setup
+    # outside Django's migration transaction in both forward and reverse paths.
+    atomic = False
+
     dependencies = [("hr_staff", "0012_hrpersonmergecase_hrpersonmergealias_and_more")]
 
     operations = [

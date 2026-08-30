@@ -142,6 +142,8 @@ def remove_mysql_execution_seals(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # Forward and reverse trigger DDL must run outside Django's transaction.
+    atomic = False
 
     dependencies = [
         ('hr_changes', '0006_correction_authority_provider'),

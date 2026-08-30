@@ -203,6 +203,9 @@ PERMISSIONS = (
 
 
 class Migration(migrations.Migration):
+    # CREATE/DROP TRIGGER cannot run inside an atomic migration on MySQL.
+    atomic = False
+
     dependencies = [("hr_staff", "0014_personnel_decision_reward_disciplinary")]
 
     operations = [

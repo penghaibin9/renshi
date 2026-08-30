@@ -186,6 +186,8 @@ def drop_mysql_activation_seals(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL trigger DDL implicitly commits and is unsafe in an atomic migration.
+    atomic = False
 
     dependencies = [
         ('hr_onboarding', '0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx'),

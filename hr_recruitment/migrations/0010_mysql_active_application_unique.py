@@ -51,6 +51,10 @@ def remove_mysql_active_application_backstop(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # ALTER TABLE / CREATE INDEX implicitly commit on MySQL; reverse DDL has
+    # the same requirement.
+    atomic = False
+
     dependencies = [("hr_recruitment", "0009_hrassessmentparticipant")]
 
     operations = [
