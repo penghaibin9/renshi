@@ -67,7 +67,17 @@ class HrOnboardingAuthorityModeAdmin(ReadOnlyAdmin):
 
 @admin.register(HrOnboardingOutboxEvent)
 class HrOnboardingOutboxEventAdmin(ReadOnlyAdmin):
-    list_display = ("event_type", "tenant_id", "aggregate_id", "status", "occurred_at")
+    list_display = (
+        "event_type",
+        "tenant_id",
+        "aggregate_id",
+        "status",
+        "attempts",
+        "next_attempt_at",
+        "lease_expires_at",
+        "external_ref",
+        "occurred_at",
+    )
     list_filter = ("status", "event_type")
 
 

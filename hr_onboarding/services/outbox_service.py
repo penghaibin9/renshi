@@ -35,18 +35,35 @@ def enqueue_outbox(
     )
 
 
-def mark_sent(event_id: str) -> None:
-    """消费者确认后标记 SENT（外部投递成功）。"""
+def mark_sent(event_id: str, *, external_ref: str) -> None:
+    """兼容入口：只有携带稳定外部回执的消费者确认才可标记 SENT。"""
     from django.utils import timezone
 
-    HrOnboardingOutboxEvent.objects.filter(event_id=event_id).update(
+    external_ref = str(external_ref or "").strip()
+    if not external_ref:
+        raise ValueError("HR05_OUTBOX_ACK_RECEIPT_REQUIRED")
+    HrOnboardingOutboxEvent.objects.filter(
+        event_id=event_id,
+        status=HrOnboardingOutboxEvent.Status.PENDING,
+    ).update(
         status=HrOnboardingOutboxEvent.Status.SENT,
+        external_ref=external_ref[:255],
         sent_at=timezone.now(),
+        next_attempt_at=None,
+        lease_owner="",
+        lease_expires_at=None,
+        last_error="",
     )
 
 
 def mark_failed(event_id: str, error: str) -> None:
-    HrOnboardingOutboxEvent.objects.filter(event_id=event_id).update(
+    HrOnboardingOutboxEvent.objects.filter(
+        event_id=event_id,
+        status=HrOnboardingOutboxEvent.Status.PENDING,
+    ).update(
         status=HrOnboardingOutboxEvent.Status.FAILED,
         last_error=error[:2000],
+        next_attempt_at=None,
+        lease_owner="",
+        lease_expires_at=None,
     )

@@ -15,7 +15,11 @@ from django.test import TestCase
 
 from hr_onboarding.api.exceptions import Hr05ApiError
 from hr_onboarding.constants import MaterialBlockingPhase, ProbationStatus
-from hr_onboarding.jobs.outbox_dispatcher import dispatch_pending
+from hr_onboarding.jobs.outbox_dispatcher import (
+    DispatchResult,
+    OutboxHandlerRegistry,
+    dispatch_pending,
+)
 from hr_onboarding.models import (
     HrOnboardingCase,
     HrOnboardingMaterialRequirement,
@@ -142,7 +146,7 @@ class ProbationReviewDueTests(TestCase):
 
 class OutboxDispatcherTests(TestCase):
     def test_dispatch_pending_marks_sent(self):
-        """R4-5：PENDING 事件投递后置 SENT（幂等/重试/死信占位）。"""
+        """R4-5：只有已注册 handler 的明确外部回执才置 SENT。"""
         case = _active_case()
         event = enqueue_outbox(
             tenant_id=1,
@@ -150,11 +154,17 @@ class OutboxDispatcherTests(TestCase):
             aggregate_type="HrOnboardingCase",
             aggregate_id=str(case.id),
         )
-        result = dispatch_pending(tenant_id=1)
+        registry = OutboxHandlerRegistry()
+        registry.register(
+            "StaffActivated",
+            lambda envelope: DispatchResult.ack(f"test:{envelope.event_id}"),
+        )
+        result = dispatch_pending(tenant_id=1, registry=registry)
         self.assertEqual(result["dispatched"], 1)
         event.refresh_from_db()
         self.assertEqual(event.status, HrOnboardingOutboxEvent.Status.SENT)
         self.assertEqual(event.attempts, 1)
+        self.assertEqual(event.external_ref, f"test:{event.event_id}")
 
 
 class ApiMethodDecoratorTests(TestCase):

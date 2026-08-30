@@ -4,6 +4,8 @@ hr_onboarding/models/outbox.py
 Transactional Outbox（00 §16 / 05 §48）：
 - 正式事务必须 domain state + audit + outbox 同事务；
 - 发布失败可重试；消费者按 eventId 幂等；
+- PENDING 行用 lease_owner/lease_expires_at 并发认领，崩溃后可回收；
+- 只有带 external_ref 的明确外部回执才可进入 SENT；
 - 事件信封：eventId/eventType/eventVersion/tenantId/aggregateType/aggregateId/occurredAt/correlationId/payload。
 """
 
@@ -36,6 +38,11 @@ class HrOnboardingOutboxEvent(models.Model):
     )
     attempts = models.PositiveIntegerField(default=0)
     last_error = models.TextField(blank=True, default="")
+    next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    lease_owner = models.CharField(max_length=64, blank=True, default="")
+    lease_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    external_ref = models.CharField(max_length=255, blank=True, default="")
     occurred_at = models.DateTimeField(auto_now_add=True)
     sent_at = models.DateTimeField(null=True, blank=True)
 
@@ -44,6 +51,10 @@ class HrOnboardingOutboxEvent(models.Model):
         verbose_name_plural = _("HR Onboarding Outbox Events")
         indexes = [
             models.Index(fields=["tenant_id", "status", "occurred_at"]),
+            models.Index(
+                fields=["tenant_id", "status", "next_attempt_at"],
+                name="hr05_outbox_due_idx",
+            ),
         ]
 
     def __str__(self):
