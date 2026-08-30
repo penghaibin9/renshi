@@ -37,7 +37,7 @@ def dashboard_snapshot(context) -> dict:
             "home": True,
             "providerGateway": True,
             "providerRegistration": True,
-            "hr03To16Providers": False,
+            "hr03To16Providers": True,
             "todos": True,
             "progress": True,
             "files": False,
