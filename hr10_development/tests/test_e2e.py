@@ -14,10 +14,11 @@ Error path:
 3. Self-approval blocked
 """
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr10_development.constants import (
     PlanLifecycleStatus, ProgramLifecycleStatus, OfferingStatus,
@@ -79,12 +80,14 @@ class EnrollmentE2ETest(TestCase):
     TENANT_ID = 10001
 
     def setUp(self):
+        starts_at = timezone.now() + timedelta(days=10)
         self.program = HrLearningProgram.objects.create(
             tenant_id=self.TENANT_ID, program_code="E2E-PROG-001", title="E2E培训",
         )
         self.offering = HrLearningOffering.objects.create(
             tenant_id=self.TENANT_ID, program_version_id=1, offering_no="E2E-OFF-001",
             delivery_mode="ONSITE", capacity=2, waitlist_capacity=1,
+            start_at=starts_at, end_at=starts_at + timedelta(hours=2),
         )
 
     def test_enroll_then_cancel_promotes_waitlist(self):
