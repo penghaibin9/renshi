@@ -2,6 +2,8 @@
 
 本仓库的开发、测试、迁移和生产签字数据库统一为 **MySQL 8.4**。Redis 7 用于缓存与运行时协调；Django/Gunicorn 提供 Web 服务。旧文档中的 PostgreSQL 命令不适用于当前系统。
 
+HR03～HR18 的正式事实使用 MySQL Trigger 作为数据库层防篡改兜底。Compose 已启用 `log_bin_trust_function_creators=1`，使不具备 `SUPER` 权限的专用 migration 用户可以在开启 binary log 的 MySQL 8.4 上安装这些触发器；外部托管 MySQL 也必须由 DBA 配置同等能力，禁止给日常 Web 账号授予 `SUPER`。
+
 ## 新手本地启动
 
 需要 Docker Desktop（含 Docker Compose）。开发栈自带本地开发凭据，不需要先配置数据库：

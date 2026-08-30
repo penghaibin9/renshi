@@ -43,6 +43,10 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
       - --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
+      # HR03-HR18 use database triggers as the final anti-tamper backstop.
+      # MySQL 8.4 enables binary logging by default; allow the non-SUPER
+      # migration user to install those deterministic triggers.
+      - --log-bin-trust-function-creators=1
     environment:
       MYSQL_DATABASE: horilla_db
       MYSQL_USER: horilla_user

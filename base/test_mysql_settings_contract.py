@@ -8,6 +8,11 @@ from pathlib import Path
 
 
 class MySQLSettingsContractTests(unittest.TestCase):
+    def test_compose_allows_migration_user_to_install_triggers(self):
+        repository_root = Path(__file__).resolve().parents[1]
+        compose = (repository_root / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertIn("--log-bin-trust-function-creators=1", compose)
+
     def test_db_engine_mysql_never_inherits_sqlite_timeout(self):
         repository_root = Path(__file__).resolve().parents[1]
         environment = os.environ.copy()
