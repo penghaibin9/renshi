@@ -64,7 +64,7 @@ def dashboard(request):
     active_practice = HrEnterprisePracticeProject.objects.filter(
         tenant_id=tenant_id, lifecycle_status="ACTIVE",
     ).count()
-    verified_facts = HrDevelopmentFact.objects.filter(
+    verified_facts = HrDevelopmentFact.objects.effective().filter(
         tenant_id=tenant_id,
         verification_status__in=[
             "SYSTEM_PROVIDER_VERIFIED", "TRAINING_PROVIDER_VERIFIED",
@@ -106,8 +106,8 @@ def metric_detail(request, metric_code):
     from hr10_development.models.development_fact import HrDevelopmentFact
 
     if metric_code == MetricCode.TRAINING_COVERAGE_RATE:
-        total = HrDevelopmentFact.objects.filter(tenant_id=tenant_id).count()
-        verified = HrDevelopmentFact.objects.filter(
+        total = HrDevelopmentFact.objects.effective().filter(tenant_id=tenant_id).count()
+        verified = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id,
             verification_status__in=[
                 "SYSTEM_PROVIDER_VERIFIED", "TRAINING_PROVIDER_VERIFIED",
@@ -120,7 +120,7 @@ def metric_detail(request, metric_code):
         denominator = f"当前学校发展事实 {total} 条"
     elif metric_code == MetricCode.AVG_VERIFIED_TRAINING_HOURS:
         from hr10_development.models.development_fact import HrDevelopmentFact
-        facts = HrDevelopmentFact.objects.filter(
+        facts = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id, fact_type=FactType.TRAINING_COMPLETION,
         )
         total_hours = sum(float(f.verified_hours or 0) for f in facts[:2000])

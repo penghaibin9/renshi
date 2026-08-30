@@ -12,7 +12,7 @@ class RecordSelector:
 
     @staticmethod
     def get_staff_overview(tenant_id: int, staff_master_id: int) -> dict:
-        facts = HrDevelopmentFact.objects.filter(
+        facts = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id, staff_master_id=staff_master_id,
         )
         verified_facts = facts.filter(
@@ -34,7 +34,7 @@ class RecordSelector:
 
     @staticmethod
     def list_staff_facts(tenant_id: int, staff_master_id: int, fact_type: str | None = None):
-        qs = HrDevelopmentFact.objects.filter(
+        qs = HrDevelopmentFact.objects.effective().filter(
             tenant_id=tenant_id, staff_master_id=staff_master_id,
         ).order_by("-valid_from")
         if fact_type:

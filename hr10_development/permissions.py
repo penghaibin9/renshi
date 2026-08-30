@@ -41,6 +41,8 @@ HR10_PERMISSIONS = (
     "hr.development.output.verify",
     # HR10-06 发展档案
     "hr.development.record.view",
+    "hr.development.fact.correct",
+    "hr.development.fact.revoke",
     "hr.development.analytics.read",
     "hr.development.audit",
     "hr.development.import.manage",
