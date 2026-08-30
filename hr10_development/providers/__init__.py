@@ -7,6 +7,7 @@ from .base import (
     ScheduleConflictResult,
 )
 from .person_provider import Hr03PersonProvider
+from .education_writeback_provider import Hr03EducationWritebackProvider
 from .qualification_provider import Hr09QualificationEvidenceProvider
 from .time_provider import Hr11TimeConflictProvider, Hr11DevelopmentTimeProvider
 from .stub_providers import (
@@ -25,6 +26,7 @@ __all__ = [
     "EducationWritebackProvider",
     "ProviderResult", "ProviderStatus", "ScheduleConflictResult",
     "Hr03PersonProvider",
+    "Hr03EducationWritebackProvider",
     "Hr09QualificationEvidenceProvider",
     "Hr11TimeConflictProvider",
     "Hr11DevelopmentTimeProvider",

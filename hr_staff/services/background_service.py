@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_staff.constants import SourceCategory, VerificationStatus
 from hr_staff.models import (
@@ -58,6 +59,12 @@ class BackgroundService:
         start_date=None,
         end_date=None,
         is_highest_education: bool = False,
+        verification_status: str = VerificationStatus.UNVERIFIED,
+        verified_by: int | None = None,
+        verified_at=None,
+        source: str = SourceCategory.HR_ENTERED,
+        source_domain: str = "",
+        source_business_id: str | None = None,
     ) -> HrEducationExperience:
         self._assert_policy("background.education")
         staff = resolve_staff(self.tenant_id, staff_id)  # P1-6 跨租户防线
@@ -74,7 +81,14 @@ class BackgroundService:
             start_date=start_date,
             end_date=end_date,
             is_highest_education=is_highest_education,
-            source=SourceCategory.HR_ENTERED,
+            verification_status=verification_status,
+            verified_by=verified_by,
+            verified_at=verified_at or (
+                timezone.now() if verification_status == VerificationStatus.VERIFIED else None
+            ),
+            source=source,
+            source_domain=source_domain,
+            source_business_id=source_business_id,
         )
         write_audit_event(
             tenant_id=self.tenant_id,
@@ -91,7 +105,22 @@ class BackgroundService:
 
     # ---------------- 学位 ----------------
     @transaction.atomic
-    def add_degree(self, *, staff_id, degree_level: str, degree_name="", granting_institution="", major="", awarded_date=None) -> HrDegreeRecord:
+    def add_degree(
+        self,
+        *,
+        staff_id,
+        degree_level: str,
+        degree_name="",
+        granting_institution="",
+        major="",
+        awarded_date=None,
+        verification_status: str = VerificationStatus.UNVERIFIED,
+        verified_by: int | None = None,
+        verified_at=None,
+        source: str = SourceCategory.HR_ENTERED,
+        source_domain: str = "",
+        source_business_id: str | None = None,
+    ) -> HrDegreeRecord:
         self._assert_policy("background.education")
         staff = resolve_staff(self.tenant_id, staff_id)  # P1-6
         record = HrDegreeRecord.objects.create(
@@ -102,7 +131,14 @@ class BackgroundService:
             granting_institution=granting_institution,
             major=major,
             awarded_date=awarded_date,
-            source=SourceCategory.HR_ENTERED,
+            verification_status=verification_status,
+            verified_by=verified_by,
+            verified_at=verified_at or (
+                timezone.now() if verification_status == VerificationStatus.VERIFIED else None
+            ),
+            source=source,
+            source_domain=source_domain,
+            source_business_id=source_business_id,
         )
         write_audit_event(
             tenant_id=self.tenant_id,
@@ -152,6 +188,11 @@ class BackgroundService:
         expiry_date=None,
         level: str = "",
         source_domain: str = "",
+        source_business_id: str = "",
+        verification_status: str = VerificationStatus.UNVERIFIED,
+        verified_by: int | None = None,
+        verified_at=None,
+        source: str = SourceCategory.HR_ENTERED,
     ) -> HrCredential:
         self._assert_policy("background.credential")
         staff = resolve_staff(self.tenant_id, staff_id)  # P1-6
@@ -167,7 +208,13 @@ class BackgroundService:
             expiry_date=expiry_date,
             level=level,
             source_domain=source_domain,
-            source=SourceCategory.HR_ENTERED,
+            source_business_id=source_business_id,
+            verification_status=verification_status,
+            verified_by=verified_by,
+            verified_at=verified_at or (
+                timezone.now() if verification_status == VerificationStatus.VERIFIED else None
+            ),
+            source=source,
         )
         write_audit_event(
             tenant_id=self.tenant_id,

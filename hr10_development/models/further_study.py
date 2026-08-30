@@ -40,6 +40,18 @@ class HrFurtherStudyMilestone(DevelopmentTenantModel):
     status = models.CharField(max_length=16, default="PENDING", verbose_name=_("状态"))
     evidence_refs = models.JSONField(blank=True, default=dict, verbose_name=_("证据引用"))
     verification_status = models.CharField(max_length=48, default="SELF_REPORTED", verbose_name=_("核验状态"))
+    writeback_status = models.CharField(
+        max_length=16,
+        default="NOT_REQUIRED",
+        db_index=True,
+        verbose_name=_("HR03 写回状态"),
+    )
+    writeback_refs = models.JSONField(blank=True, default=dict, verbose_name=_("HR03 写回引用"))
+    writeback_request_hash = models.CharField(
+        max_length=64, blank=True, default="", verbose_name=_("写回请求哈希")
+    )
+    writeback_error = models.TextField(blank=True, default="", verbose_name=_("写回错误"))
+    writeback_at = models.DateTimeField(null=True, blank=True, verbose_name=_("写回时间"))
     notes = models.TextField(blank=True, default="")
 
     class Meta:

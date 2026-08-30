@@ -42,6 +42,8 @@ class HrEducationExperience(models.Model):
     source = models.CharField(
         max_length=24, choices=SourceCategory.choices, default=SourceCategory.HR_ENTERED
     )
+    source_domain = models.CharField(max_length=32, blank=True, default="")
+    source_business_id = models.CharField(max_length=64, null=True, blank=True)
     version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -55,6 +57,10 @@ class HrEducationExperience(models.Model):
                 | models.Q(start_date__isnull=True)
                 | models.Q(end_date__gte=models.F("start_date")),
                 name="chk_hr_education_end_gte_start",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant_id", "source_domain", "source_business_id"],
+                name="uniq_hr03_education_source_fact",
             ),
         ]
         indexes = [
@@ -86,6 +92,8 @@ class HrDegreeRecord(models.Model):
     source = models.CharField(
         max_length=24, choices=SourceCategory.choices, default=SourceCategory.HR_ENTERED
     )
+    source_domain = models.CharField(max_length=32, blank=True, default="")
+    source_business_id = models.CharField(max_length=64, null=True, blank=True)
     version = models.BigIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -95,6 +103,12 @@ class HrDegreeRecord(models.Model):
         verbose_name_plural = _("HR Degree Records")
         indexes = [
             models.Index(fields=["tenant_id", "staff_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "source_domain", "source_business_id"],
+                name="uniq_hr03_degree_source_fact",
+            ),
         ]
 
     def __str__(self):
