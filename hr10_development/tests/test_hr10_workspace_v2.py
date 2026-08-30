@@ -100,6 +100,7 @@ class Hr10WorkbenchTenantContractTests(TestCase):
             request = self.factory.get(path)
         else:
             request = self.factory.post(path, data=json.dumps(body or {}), content_type="application/json")
+            request._dont_enforce_csrf_checks = True
         request.tenant_id = tenant_id
         request.user = SimpleNamespace(is_authenticated=True, is_superuser=True)
         return request

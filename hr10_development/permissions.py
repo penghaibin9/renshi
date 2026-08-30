@@ -17,6 +17,7 @@ from functools import wraps
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import models
+from django.views.decorators.csrf import csrf_protect
 
 # fmt: off
 HR10_PERMISSIONS = (
@@ -73,15 +74,21 @@ def require_hr10_permission(perm_code):
     不允许用 200 + empty 伪装。
     """
     def decorator(view_func):
+        csrf_protected_view = csrf_protect(view_func)
+
         @wraps(view_func)
         def _wrapped(request, *args, **kwargs):
             if not request.user.is_authenticated:
                 raise PermissionDenied("UNAUTHENTICATED")
             if not (request.user.is_superuser or request.user.has_perm(perm_code)):
                 raise PermissionDenied("PERMISSION_DENIED")
-            return view_func(request, *args, **kwargs)
+            # Public HR10 APIs are consumed by the same-origin session UI.
+            # Enforce CSRF inside this guard even while legacy outer
+            # ``csrf_exempt`` annotations are being retired.
+            return csrf_protected_view(request, *args, **kwargs)
 
         _wrapped.hr10_permission_code = perm_code
+        _wrapped.hr10_csrf_protected = True
         return _wrapped
 
     return decorator

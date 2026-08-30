@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseForbidden
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from hr10_development.api.urls import urlpatterns
@@ -10,6 +11,10 @@ from hr10_development.permissions import (
     HR10_PERMISSIONS,
     require_hr10_internal_service,
 )
+
+
+def test_csrf_failure(_request, reason=""):
+    return HttpResponseForbidden(reason)
 
 
 class Hr10ApiPermissionMatrixTests(SimpleTestCase):
@@ -51,6 +56,25 @@ class Hr10ApiPermissionMatrixTests(SimpleTestCase):
         )
         with self.assertRaises(PermissionDenied):
             callback(forbidden)
+
+    @override_settings(
+        CSRF_FAILURE_VIEW=(
+            "hr10_development.tests.test_api_permission_matrix.test_csrf_failure"
+        )
+    )
+    def test_public_write_route_rejects_missing_csrf_token(self):
+        callback = next(p.callback for p in urlpatterns if p.name == "plan-create")
+        request = RequestFactory().post(
+            "/api/v1/hr/development/plans/create",
+            data="{}",
+            content_type="application/json",
+        )
+        request.user = SimpleNamespace(is_authenticated=True, is_superuser=True)
+
+        response = callback(request)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(getattr(callback, "hr10_csrf_protected", False))
 
     @override_settings(HR10_INTERNAL_SERVICE_CREDENTIALS={"HR09": "test-secret"})
     def test_internal_service_guard_requires_fixed_caller_and_secret(self):

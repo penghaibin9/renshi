@@ -139,6 +139,7 @@ class DevelopmentFactAuthorityTests(TestCase):
         ).encode()
         request.user = self.user
         request.tenant_id = 101
+        request._dont_enforce_csrf_checks = True
         response = correct_fact(request, self.fact.id)
         self.assertEqual(response.status_code, 201)
         payload = json.loads(response.content)["data"]
