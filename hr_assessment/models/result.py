@@ -55,7 +55,30 @@ class _AppendOnlyResultQuerySet(models.QuerySet):
 class _AppendOnlyResultManager(models.Manager.from_queryset(_AppendOnlyResultQuerySet)):
     def bulk_create(self, objs, *args, **kwargs):
         for obj in objs:
+            validate_chain = getattr(obj, "_validate_chain", None)
+            if validate_chain is not None:
+                validate_chain()
             obj._prepare_seal()
+        return super().bulk_create(objs, *args, **kwargs)
+
+
+class _AppendOnlyLedgerQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR12_RESULT_APPLICATION_LEDGER_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("HR12_RESULT_APPLICATION_LEDGER_IMMUTABLE")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError("HR12_RESULT_APPLICATION_LEDGER_IMMUTABLE")
+
+
+class _AppendOnlyLedgerManager(
+    models.Manager.from_queryset(_AppendOnlyLedgerQuerySet)
+):
+    def bulk_create(self, objs, *args, **kwargs):
+        for obj in objs:
+            obj._validate_scope()
         return super().bulk_create(objs, *args, **kwargs)
 
 
@@ -121,6 +144,15 @@ class HrFinalAssessmentResult(TenantScopedModel):
     grade_code = models.CharField(max_length=30, verbose_name=_("档次代码"))
     display_grade_snapshot_json = models.JSONField(default=dict, verbose_name=_("档次显示快照"))
     calculated_score = models.DecimalField(max_digits=10, decimal_places=2, null=True, verbose_name=_("计算分"))
+    calculation_snapshot_json = models.JSONField(
+        default=dict,
+        verbose_name=_("服务端计算依据快照"),
+    )
+    calculation_hash = models.CharField(
+        max_length=64,
+        default="",
+        verbose_name=_("计算依据哈希"),
+    )
     decision_reason = models.TextField(default="", verbose_name=_("审定理由"))
     policy_version_id = models.UUIDField(null=True, verbose_name=_("政策版本 ID"))
     decision_session_id = models.UUIDField(null=True, verbose_name=_("审定会话 ID"))
@@ -160,6 +192,9 @@ class HrFinalAssessmentResult(TenantScopedModel):
     def calculate_content_hash(self) -> str:
         return _canonical_hash(self.canonical_payload())
 
+    def calculate_calculation_hash(self) -> str:
+        return _canonical_hash(self.calculation_snapshot_json or {})
+
     def _prepare_seal(self) -> None:
         if not self.finalized_at:
             self.finalized_at = timezone.now()
@@ -169,6 +204,10 @@ class HrFinalAssessmentResult(TenantScopedModel):
         if self.content_hash and self.content_hash != expected:
             raise ValueError("HR12_RESULT_CONTENT_HASH_MISMATCH")
         self.content_hash = expected
+        calculation_hash = self.calculate_calculation_hash()
+        if self.calculation_hash and self.calculation_hash != calculation_hash:
+            raise ValueError("HR12_RESULT_CALCULATION_HASH_MISMATCH")
+        self.calculation_hash = calculation_hash
 
     def save(self, *args, **kwargs) -> None:
         if not self._state.adding:
@@ -273,6 +312,57 @@ class HrResultRevision(TenantScopedModel):
     def calculate_content_hash(self) -> str:
         return _canonical_hash(self.canonical_payload())
 
+    @staticmethod
+    def _base_snapshot(result: HrFinalAssessmentResult) -> dict:
+        return {
+            "sourceResultId": str(result.id),
+            "sourceContentHash": result.content_hash,
+            "version": int(result.result_version_no),
+            "status": result.status,
+            "gradeCode": result.grade_code,
+            "displayGrade": result.display_grade_snapshot_json or {},
+            "calculatedScore": (
+                str(result.calculated_score)
+                if result.calculated_score is not None
+                else None
+            ),
+            "decisionReason": result.decision_reason or "",
+        }
+
+    def _validate_chain(self) -> None:
+        if not self.result_id:
+            raise ValueError("HR12_RESULT_REVISION_RESULT_REQUIRED")
+        result = self.result
+        if int(result.tenant_id) != int(self.tenant_id):
+            raise ValueError("HR12_RESULT_REVISION_SCOPE_MISMATCH")
+        if int(self.new_version) != int(self.previous_version) + 1:
+            raise ValueError("HR12_RESULT_REVISION_VERSION_INVALID")
+        latest = (
+            HrResultRevision.objects.filter(
+                tenant_id=self.tenant_id,
+                result_id=self.result_id,
+            )
+            .order_by("-new_version", "-effective_at", "-id")
+            .first()
+        )
+        expected_before = (
+            latest.after_snapshot_json or {}
+            if latest is not None
+            else self._base_snapshot(result)
+        )
+        current_version = (
+            int(latest.new_version)
+            if latest is not None
+            else int(result.result_version_no)
+        )
+        if int(self.previous_version) != current_version:
+            raise ValueError("HR12_RESULT_REVISION_VERSION_CONFLICT")
+        if (self.before_snapshot_json or {}) != expected_before:
+            raise ValueError("HR12_RESULT_REVISION_BEFORE_SNAPSHOT_MISMATCH")
+        after = self.after_snapshot_json or {}
+        if int(after.get("version") or 0) != int(self.new_version):
+            raise ValueError("HR12_RESULT_REVISION_AFTER_SNAPSHOT_INVALID")
+
     def _prepare_seal(self) -> None:
         if not self.effective_at:
             self.effective_at = timezone.now()
@@ -288,6 +378,7 @@ class HrResultRevision(TenantScopedModel):
             raise ValueError(
                 "HR12_RESULT_REVISION_IMMUTABLE: append another correction fact"
             )
+        self._validate_chain()
         self._prepare_seal()
         super().save(*args, **kwargs)
 
@@ -337,7 +428,44 @@ class HrResultApplicationLedger(TenantScopedModel):
     consumed_at = models.DateTimeField(auto_now_add=True, verbose_name=_("消费时间"))
     consumer_status = models.CharField(max_length=30, default="CONSUMED", verbose_name=_("消费状态"))
 
+    objects = _AppendOnlyLedgerManager()
+
+    def _validate_scope(self) -> None:
+        if not self.result_id:
+            raise ValueError("HR12_RESULT_APPLICATION_LEDGER_RESULT_REQUIRED")
+        if int(self.result.tenant_id) != int(self.tenant_id):
+            raise ValueError("HR12_RESULT_APPLICATION_LEDGER_SCOPE_MISMATCH")
+        if (
+            self.consumer_object_id is None
+            or not str(self.consumer_domain or "").strip()
+            or not str(self.purpose or "").strip()
+            or int(self.result_version or 0) < 1
+        ):
+            raise ValueError("HR12_RESULT_APPLICATION_LEDGER_INVALID")
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            raise ValueError("HR12_RESULT_APPLICATION_LEDGER_IMMUTABLE")
+        self._validate_scope()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_RESULT_APPLICATION_LEDGER_IMMUTABLE")
+
     class Meta:
         db_table = "hr_assessment_result_application_ledger"
         verbose_name = _("结果应用台账")
         indexes = [models.Index(fields=["consumer_domain", "result_version"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "tenant_id",
+                    "result",
+                    "consumer_domain",
+                    "consumer_object_id",
+                    "purpose",
+                    "result_version",
+                ),
+                name="hr12_result_application_idempotency_uq",
+            )
+        ]

@@ -214,13 +214,18 @@ class PolicyDrivenProviderSnapshotTests(TestCase):
         )
 
         snapshot.authority_json = {}
-        snapshot.save(update_fields=["authority_json", "updated_at"])
-        blockers = AssessmentFinalizationService(self.tenant_id)._provider_snapshot_blockers(
-            case=self.case
-        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "HR12_PROVIDER_SNAPSHOT_SET_IMMUTABLE",
+        ):
+            snapshot.save(update_fields=["authority_json", "updated_at"])
+        snapshot.refresh_from_db()
+        self.assertTrue(snapshot.authority_json)
         self.assertEqual(
-            blockers[0]["code"],
-            "ASSESSMENT_PROVIDER_SNAPSHOT_AUTHORITY_REQUIRED",
+            AssessmentFinalizationService(self.tenant_id)._provider_snapshot_blockers(
+                case=self.case
+            ),
+            [],
         )
 
     def test_capability_probe_reports_connector_capability_not_empty_id_health(self):

@@ -22,6 +22,7 @@ class LegacyPmsWriteSealTests(TestCase):
             start_date=date(2026, 1, 1),
             end_date=date(2026, 12, 31),
         )
+        period_pk = period.pk
 
         seal = set_pms_write_frozen(
             frozen=True,
@@ -57,8 +58,9 @@ class LegacyPmsWriteSealTests(TestCase):
         self.assertEqual(seal.revision, 2)
 
         period.period_name = "legacy-seal-after-unfreeze"
+        period.pk = period_pk
         period.save()
-        self.assertTrue(Period.objects.filter(pk=period.pk).exists())
+        self.assertTrue(Period._base_manager.filter(pk=period_pk).exists())
 
         self.assertEqual(
             list(HrLegacyPmsWriterSealEvent.objects.values_list("action", flat=True)),

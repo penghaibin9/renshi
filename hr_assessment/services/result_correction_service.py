@@ -150,6 +150,7 @@ class AssessmentResultCorrectionService:
             payload.revision_type,
             normalized_changes,
         )
+        expected_after["version"] = existing.new_version
         if (
             str(existing.result_id) != str(result_id)
             or existing.previous_version != payload.expected_version

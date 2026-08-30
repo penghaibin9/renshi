@@ -38,6 +38,7 @@ class Hr12ResultOrmSealTests(SimpleTestCase):
         with patch.object(TenantScopedModel, "save", return_value=None):
             result.save()
         self.assertEqual(len(result.content_hash), 64)
+        self.assertEqual(len(result.calculation_hash), 64)
         self.assertIsNotNone(result.sealed_at)
 
         result._state.adding = False
@@ -54,6 +55,20 @@ class Hr12ResultOrmSealTests(SimpleTestCase):
             content_hash="a" * 64,
         )
         with self.assertRaisesRegex(ValueError, "HR12_RESULT_CONTENT_HASH_MISMATCH"):
+            HrFinalAssessmentResult.objects.bulk_create([result])
+
+    def test_calculation_snapshot_hash_is_server_sealed(self):
+        result = HrFinalAssessmentResult(
+            tenant_id=77,
+            case_id=uuid.uuid4(),
+            assessment_type="ANNUAL",
+            grade_code="QUALIFIED",
+            calculation_snapshot_json={"evaluationIds": ["EV-1"]},
+            calculation_hash="a" * 64,
+        )
+        with self.assertRaisesRegex(
+            ValueError, "HR12_RESULT_CALCULATION_HASH_MISMATCH"
+        ):
             HrFinalAssessmentResult.objects.bulk_create([result])
 
 

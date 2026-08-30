@@ -9,6 +9,7 @@ from hr_assessment.providers.interfaces import (
     DevelopmentProvider, AcademicProvider, ResearchProvider, EthicsFactProvider,
 )
 from hr_assessment.providers.base import ProviderContext, ProviderStatus
+from hr_assessment.services.result_correction_service import base_result_snapshot
 import uuid
 
 
@@ -49,12 +50,14 @@ class E2EObjectionRevisionChainTest(TestCase):
             tenant_id=self.tenant_id, case_id=uuid.uuid4(), assessment_type="ANNUAL",
             grade_code="UNQUALIFIED", result_version_no=1, status="FINALIZED",
         )
+        before = base_result_snapshot(result)
+        after = {**before, "version": 2, "status": "CORRECTED", "gradeCode": "QUALIFIED"}
         revision = HrResultRevision.objects.create(
             tenant_id=self.tenant_id, result=result,
             previous_version=1, new_version=2, revision_type="OBJECTION_UPHELD",
             reason="教学指标更正后重新评价",
-            before_snapshot_json={"grade": "UNQUALIFIED"},
-            after_snapshot_json={"grade": "QUALIFIED"},
+            before_snapshot_json=before,
+            after_snapshot_json=after,
         )
         self.assertEqual(revision.previous_version, 1)
         self.assertEqual(revision.new_version, 2)
@@ -71,10 +74,12 @@ class E2EObjectionRevisionChainTest(TestCase):
             purpose="TITLE_REFERENCE", result_version=1,
         )
         # V2 产生后追踪
+        before = base_result_snapshot(result)
+        after = {**before, "version": 2, "status": "CORRECTED"}
         revision = HrResultRevision.objects.create(
             tenant_id=self.tenant_id, result=result,
             previous_version=1, new_version=2, revision_type="CORRECTION",
-            reason="修正", before_snapshot_json={}, after_snapshot_json={},
+            reason="修正", before_snapshot_json=before, after_snapshot_json=after,
         )
         HrResultApplicationLedger.objects.create(
             tenant_id=self.tenant_id, result=result,

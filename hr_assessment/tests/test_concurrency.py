@@ -1,7 +1,6 @@
 """S11 并发测试 — 10 个场景。"""
 
-from concurrent.futures import ThreadPoolExecutor
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase
 from hr_assessment.models.result import HrFinalAssessmentResult
 from hr_assessment.models.case import HrAssessmentCase, HrAnnualAssessmentCase
 from hr_assessment.models.evidence import HrSelfAssessment
@@ -9,7 +8,7 @@ from hr_assessment.models.policy import HrAssessmentPolicyPack
 import uuid
 
 
-class ConcurrencyTest(TransactionTestCase):
+class ConcurrencyTest(TestCase):
     def setUp(self):
         self.tenant_id = 10001
 
@@ -82,15 +81,18 @@ class ConcurrencyTest(TransactionTestCase):
 
     def test_revision_creates_new_version(self):
         from hr_assessment.models.result import HrResultRevision
+        from hr_assessment.services.result_correction_service import base_result_snapshot
         result = HrFinalAssessmentResult.objects.create(
             tenant_id=self.tenant_id, case_id=uuid.uuid4(), assessment_type="ANNUAL",
             grade_code="QUALIFIED", result_version_no=1, status="FINALIZED",
         )
+        before = base_result_snapshot(result)
+        after = {**before, "version": 2, "status": "CORRECTED"}
         revision = HrResultRevision.objects.create(
             tenant_id=self.tenant_id, result=result,
             previous_version=1, new_version=2,
             revision_type="CORRECTION", reason="数据纠错：展示标签修正",
-            before_snapshot_json={"grade": "QUALIFIED"}, after_snapshot_json={"grade": "QUALIFIED"},
+            before_snapshot_json=before, after_snapshot_json=after,
         )
         self.assertEqual(revision.new_version, 2)
         self.assertEqual(revision.revision_type, "CORRECTION")

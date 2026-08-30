@@ -4,7 +4,10 @@ from decimal import Decimal
 from django.test import TestCase
 
 from hr_assessment.models.case import HrAssessmentCase
-from hr_assessment.models.result import HrFinalAssessmentResult
+from hr_assessment.models.result import (
+    HrFinalAssessmentResult,
+    HrResultApplicationLedger,
+)
 from hr_assessment.public import PROVIDER_VERSION
 from hr_staff.models import HrPerson, HrStaffMaster
 from hr_title.models import TitleApplicationCase, TitleMaterialSnapshot
@@ -71,10 +74,20 @@ class Hr12ToHr13MaterialProviderTests(TestCase):
         self.assertEqual(first.snapshot_json["gradeCode"], "A")
         self.assertEqual(first.snapshot_json["calculatedScore"], "93.25")
         self.assertEqual(first.snapshot_json["staffId"], str(self.staff.id))
+        self.assertEqual(first.snapshot_json["calculationHash"], self.result.calculation_hash)
         self.assertEqual(
             TitleMaterialSnapshot.objects.filter(tenant_id=77, source_domain="HR12").count(),
             1,
         )
+        ledger = HrResultApplicationLedger.objects.get(
+            tenant_id=77,
+            result=self.result,
+            consumer_domain="HR13",
+        )
+        self.assertEqual(ledger.consumer_object_id, first.id)
+        self.assertEqual(ledger.result_version, 2)
+        self.assertEqual(ledger.purpose, "PROFESSIONAL_TITLE_MATERIAL")
+        self.assertEqual(HrResultApplicationLedger.objects.count(), 1)
 
     def test_result_from_another_person_is_rejected(self):
         other_person = HrPerson.objects.create(tenant_id=77, legal_name="另一位教师")

@@ -15,7 +15,7 @@ from hr_qualification.providers.base import (
     ProviderEvidenceResult,
 )
 
-PROVIDER_VERSION = "hr12-final-assessment-v1"
+PROVIDER_VERSION = "hr12-final-assessment-v2"
 
 
 class Hr12AssessmentProvider(HrEvidenceProvider):

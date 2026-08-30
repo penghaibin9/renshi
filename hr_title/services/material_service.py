@@ -119,6 +119,7 @@ class TitleMaterialService:
         )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+    @transaction.atomic
     def attach_hr12_final_assessment(
         self,
         *,
@@ -138,6 +139,7 @@ class TitleMaterialService:
             PROVIDER_VERSION,
             AssessmentEvidenceUnavailable,
             get_finalized_assessment_evidence,
+            record_result_application,
         )
 
         case = self._get_case(application_case_id)
@@ -154,7 +156,7 @@ class TitleMaterialService:
 
         snapshot = evidence.snapshot()
         content_hash = evidence.content_hash or self._content_hash(snapshot)
-        return self.attach_snapshot(
+        material = self.attach_snapshot(
             TitleMaterialInput(
                 material_no=material_no,
                 application_case_id=case.id,
@@ -169,6 +171,17 @@ class TitleMaterialService:
                 snapshot_json=snapshot,
             )
         )
+        try:
+            record_result_application(
+                tenant_id=self.tenant_id,
+                evidence=evidence,
+                consumer_domain="HR13",
+                consumer_object_id=material.id,
+                purpose="PROFESSIONAL_TITLE_MATERIAL",
+            )
+        except AssessmentEvidenceUnavailable as exc:
+            raise TitleMaterialError(exc.code, str(exc)) from exc
+        return material
 
     @transaction.atomic
     def attach_snapshot(self, payload: TitleMaterialInput) -> TitleMaterialSnapshot:

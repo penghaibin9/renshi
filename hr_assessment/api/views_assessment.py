@@ -232,6 +232,12 @@ def _snapshot_payload(snapshot: HrProviderSnapshotSet) -> dict:
 
 def _result_payload(result: HrFinalAssessmentResult) -> dict:
     canonical = canonical_result_snapshot(result)
+    revision_manager = getattr(result, "revisions", None)
+    latest_revision = (
+        revision_manager.order_by("-new_version", "-effective_at", "-id").first()
+        if revision_manager is not None
+        else None
+    )
     return {
         "id": str(result.id),
         "caseId": str(result.case_id),
@@ -249,9 +255,18 @@ def _result_payload(result: HrFinalAssessmentResult) -> dict:
         "finalizedAt": result.finalized_at.isoformat() if result.finalized_at else None,
         "finalizedBy": str(result.finalized_by) if result.finalized_by else None,
         "resultVersionNo": canonical.get("version", result.result_version_no),
-        "contentHash": result.content_hash,
+        "contentHash": (
+            latest_revision.content_hash if latest_revision else result.content_hash
+        ),
+        "sourceResultContentHash": result.content_hash,
+        "calculationHash": getattr(result, "calculation_hash", ""),
+        "revisionId": str(latest_revision.id) if latest_revision else None,
         "sealedAt": (
-            result.sealed_at.isoformat() if getattr(result, "sealed_at", None) else None
+            latest_revision.sealed_at.isoformat()
+            if latest_revision and latest_revision.sealed_at
+            else result.sealed_at.isoformat()
+            if getattr(result, "sealed_at", None)
+            else None
         ),
     }
 

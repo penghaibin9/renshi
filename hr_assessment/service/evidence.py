@@ -587,14 +587,15 @@ class ProviderEvidenceSnapshotService:
                 "authority_json": authority_json,
                 "required_providers_json": required,
                 "provider_status_json": provider_status,
-                "status": status,
-                "captured_at": timezone.now(),
+                "status": "CAPTURING",
+                "captured_at": None,
                 "request_id": request_id or "",
             },
         )
         if created:
             for name in required:
                 self._write_items(snapshot_set=snapshot_set, provider_name=name, result=results[name], as_of=as_of_dt)
+            snapshot_set.seal_capture(status=status)
 
         if case.provider_snapshot_set_id != snapshot_set.id:
             case.provider_snapshot_set_id = snapshot_set.id

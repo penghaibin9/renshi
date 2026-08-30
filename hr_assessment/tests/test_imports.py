@@ -134,6 +134,6 @@ class TestAllImports(TestCase):
             PERMISSION_SCOPE,
             SOD_CONFLICT_PAIRS,
         )
-        self.assertEqual(len(ASSESSMENT_PERMISSIONS), 14)
+        self.assertEqual(len(ASSESSMENT_PERMISSIONS), 15)
         self.assertIn("hr.assessment.policy.admin", dict(ASSESSMENT_PERMISSIONS))
         self.assertIn("hr.assessment.employee_self", PERMISSION_SCOPE)

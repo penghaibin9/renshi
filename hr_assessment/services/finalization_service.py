@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -107,6 +108,68 @@ class AssessmentFinalizationService:
                     "snapshotSetId": str(snapshot_set.id),
                     "status": snapshot_set.status,
                     "providerStatus": snapshot_set.provider_status_json,
+                }
+            ]
+
+        if not re.fullmatch(r"[0-9a-f]{64}", snapshot_set.content_hash or ""):
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_HASH_INVALID",
+                    "snapshotSetId": str(snapshot_set.id),
+                }
+            ]
+
+        items = list(snapshot_set.items.all())
+        item_providers: set[str] = set()
+        integrity_errors: list[dict] = []
+        for item in items:
+            item_providers.add(item.provider_type)
+            if (
+                int(item.tenant_id) != int(self.tenant_id)
+                or item.case_id != case.id
+                or item.snapshot_set_id != snapshot_set.id
+            ):
+                integrity_errors.append(
+                    {"itemId": str(item.id), "reason": "SCOPE_MISMATCH"}
+                )
+                continue
+            if item.snapshot_hash != item.calculate_snapshot_hash():
+                integrity_errors.append(
+                    {"itemId": str(item.id), "reason": "CONTENT_HASH_MISMATCH"}
+                )
+            if item.status != "VERIFIED" or item.trust_level != "SOURCE_VERIFIED":
+                integrity_errors.append(
+                    {"itemId": str(item.id), "reason": "SOURCE_NOT_VERIFIED"}
+                )
+            if item.source_as_of and item.source_as_of > snapshot_set.as_of:
+                integrity_errors.append(
+                    {"itemId": str(item.id), "reason": "SOURCE_AFTER_AS_OF"}
+                )
+        required_providers = set(snapshot_set.required_providers_json or [])
+        if item_providers != required_providers:
+            integrity_errors.append(
+                {
+                    "reason": "PROVIDER_COVERAGE_MISMATCH",
+                    "requiredProviders": sorted(required_providers),
+                    "itemProviders": sorted(item_providers),
+                }
+            )
+        provider_status = snapshot_set.provider_status_json or {}
+        for provider_name in required_providers:
+            state = provider_status.get(provider_name) or {}
+            if state.get("status") != "OK":
+                integrity_errors.append(
+                    {
+                        "reason": "PROVIDER_STATUS_NOT_OK",
+                        "provider": provider_name,
+                    }
+                )
+        if integrity_errors:
+            return [
+                {
+                    "code": "ASSESSMENT_PROVIDER_SNAPSHOT_INTEGRITY_FAILED",
+                    "snapshotSetId": str(snapshot_set.id),
+                    "errors": integrity_errors,
                 }
             ]
 
@@ -550,6 +613,7 @@ class AssessmentFinalizationService:
             grade_code=calculated.grade_code,
             display_grade_snapshot_json=calculated.display_grade_snapshot,
             calculated_score=calculated.calculated_score,
+            calculation_snapshot_json=calculated.calculation_snapshot,
             decision_reason=payload.decision_reason,
             policy_version_id=case.policy_version_id,
             decision_session_id=payload.decision_session_id,

@@ -5,10 +5,51 @@ append-only for audit and replay. Provider snapshot items freeze the exact
 source-owned evidence payload used by the assessment.
 """
 
+import hashlib
+import json
+import re
+
 from django.db import models
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from hr_assessment.models.base import TenantScopedModel
+
+
+def _canonical_hash(payload) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+class _AppendOnlySnapshotQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR12_PROVIDER_SNAPSHOT_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("HR12_PROVIDER_SNAPSHOT_IMMUTABLE")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError("HR12_PROVIDER_SNAPSHOT_IMMUTABLE")
+
+
+class _AppendOnlySnapshotManager(
+    models.Manager.from_queryset(_AppendOnlySnapshotQuerySet)
+):
+    def bulk_create(self, objs, *args, **kwargs):
+        for obj in objs:
+            prepare = getattr(obj, "_prepare_seal", None)
+            if prepare is not None:
+                prepare()
+            validate_scope = getattr(obj, "_validate_scope", None)
+            if validate_scope is not None:
+                validate_scope()
+        return super().bulk_create(objs, *args, **kwargs)
 
 
 class HrProviderSnapshotSet(TenantScopedModel):
@@ -23,6 +64,43 @@ class HrProviderSnapshotSet(TenantScopedModel):
     status = models.CharField(max_length=30, default="BLOCKED", db_index=True, verbose_name=_("状态"))
     captured_at = models.DateTimeField(null=True, verbose_name=_("采集完成时间"))
     request_id = models.CharField(max_length=100, default="", blank=True, verbose_name=_("请求追踪 ID"))
+
+    objects = _AppendOnlySnapshotManager()
+
+    def _prepare_seal(self) -> None:
+        if not re.fullmatch(r"[0-9a-f]{64}", self.content_hash or ""):
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_HASH_REQUIRED")
+        if self.status != "CAPTURING" or self.captured_at is not None:
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_MUST_START_CAPTURING")
+
+    def seal_capture(self, *, status: str, captured_at=None) -> None:
+        """Close membership exactly once after all provider rows are appended."""
+
+        if self._state.adding or self.status != "CAPTURING":
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_ALREADY_SEALED")
+        if status not in {"READY", "BLOCKED"}:
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_STATUS_INVALID")
+        sealed_at = captured_at or timezone.now()
+        queryset = type(self).objects.filter(pk=self.pk, status="CAPTURING")
+        updated = models.QuerySet.update(
+            queryset,
+            status=status,
+            captured_at=sealed_at,
+            updated_at=timezone.now(),
+        )
+        if updated != 1:
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_ALREADY_SEALED")
+        self.status = status
+        self.captured_at = sealed_at
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_IMMUTABLE")
+        self._prepare_seal()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_PROVIDER_SNAPSHOT_SET_IMMUTABLE")
 
     class Meta:
         db_table = "hr_assessment_provider_snapshot_set"
@@ -61,6 +139,38 @@ class HrProviderSnapshotItem(TenantScopedModel):
     snapshot_json = models.JSONField(default=dict, verbose_name=_("证据快照"))
     status = models.CharField(max_length=30, db_index=True, verbose_name=_("证据状态"))
     error_message = models.TextField(default="", blank=True, verbose_name=_("错误信息"))
+
+    objects = _AppendOnlySnapshotManager()
+
+    def calculate_snapshot_hash(self) -> str:
+        return _canonical_hash(self.snapshot_json or {})
+
+    def _prepare_seal(self) -> None:
+        expected = self.calculate_snapshot_hash()
+        if self.snapshot_hash and self.snapshot_hash != expected:
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_HASH_MISMATCH")
+        self.snapshot_hash = expected
+
+    def _validate_scope(self) -> None:
+        if self.snapshot_set_id:
+            parent = self.snapshot_set
+            if (
+                int(parent.tenant_id) != int(self.tenant_id)
+                or parent.case_id != self.case_id
+            ):
+                raise ValueError("HR12_PROVIDER_SNAPSHOT_SCOPE_MISMATCH")
+            if parent.status != "CAPTURING":
+                raise ValueError("HR12_PROVIDER_SNAPSHOT_MEMBERSHIP_SEALED")
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            raise ValueError("HR12_PROVIDER_SNAPSHOT_ITEM_IMMUTABLE")
+        self._prepare_seal()
+        self._validate_scope()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_PROVIDER_SNAPSHOT_ITEM_IMMUTABLE")
 
     class Meta:
         db_table = "hr_assessment_provider_snapshot_item"
