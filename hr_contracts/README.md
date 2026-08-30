@@ -22,3 +22,17 @@
 3. 历史版本必须可追溯，不能覆盖旧合同事实。
 4. 到期提醒、导入导出必须可审计。
 5. 正式 API 统一 `/api/v1/hr/...`。
+
+## 合同到期 worker
+
+生产调度器只需要调用同一个显式入口，不得在 Web 请求或旧
+`payroll.Contract` 上自行扫描：
+
+```text
+python manage.py hr07_scan_expiry --tenant-id <学校ID> --as-of YYYY-MM-DD --dry-run
+python manage.py hr07_scan_expiry --tenant-id <学校ID> --as-of YYYY-MM-DD
+```
+
+每个学校必须先发布且只发布一个匹配合同类型的有效到期策略。策略缺失、
+策略冲突、当前合同版本或签署证据不完整时，本次合同处理会明确阻断。命令
+本身不包含定时器；部署环境应按学校逐一排程，并显式传入业务日期。

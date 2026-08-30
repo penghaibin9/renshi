@@ -8,6 +8,9 @@ EVENT_AGREEMENT_EFFECTIVE = "hr.contracts.agreement.effective"
 EVENT_AGREEMENT_TERMINATED = "hr.contracts.agreement.terminated"
 EVENT_AGREEMENT_CORRECTED = "hr.contracts.agreement.corrected"
 EVENT_AGREEMENT_VOIDED = "hr.contracts.agreement.voided"
+EVENT_EXPIRY_ACTION_CREATED = (
+    "hr.contracts.expiry_action.created"
+)
 
 EVENT_DEFINITIONS = (
     BusinessEventDefinition(
@@ -27,6 +30,13 @@ EVENT_DEFINITIONS = (
     ),
     BusinessEventDefinition(
         EVENT_AGREEMENT_VOIDED, "HR07", "agreement", 1, "错误或未成立的签署合同作废"
+    ),
+    BusinessEventDefinition(
+        EVENT_EXPIRY_ACTION_CREATED,
+        "HR07",
+        "expiry_action",
+        1,
+        "合同到期扫描创建续签或人工复核动作",
     ),
 )
 register_business_events(EVENT_DEFINITIONS)

@@ -95,10 +95,11 @@ class ContractLifecycleService:
             HrContractCase.CaseType.RENEW,
             HrContractCase.CaseType.CHANGE,
             HrContractCase.CaseType.TERMINATE,
+            HrContractCase.CaseType.REVIEW,
         }:
             raise ContractServiceError(
                 "CONTRACT_CASE_TYPE_INVALID",
-                "only RENEW/CHANGE/TERMINATE are supported",
+                "only RENEW/CHANGE/TERMINATE/REVIEW are supported",
             )
         case_no = case_no.strip()
         if not case_no:
@@ -122,6 +123,7 @@ class ContractLifecycleService:
             HrContractAgreement.Status.ACTIVE,
             HrContractAgreement.Status.EXPIRING,
             HrContractAgreement.Status.RENEWAL_IN_PROGRESS,
+            HrContractAgreement.Status.EXPIRED,
         }:
             raise ContractServiceError(
                 "CONTRACT_CASE_NOT_ALLOWED",

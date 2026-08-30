@@ -12,6 +12,9 @@ must not fabricate a formal employment relationship.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -116,6 +119,24 @@ class _AppendOnlyQuerySet(models.QuerySet):
 
     def bulk_update(self, objs, fields, batch_size=None):
         raise ValidationError("Contract correction/void receipts are append-only.")
+
+
+class _ImmutablePolicyQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if set(kwargs) != {"active"}:
+            raise ValidationError("Expiry policy content is immutable; publish a new version.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        raise ValidationError("Expiry policies are immutable authority snapshots.")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if set(fields) != {"active"}:
+            raise ValidationError("Expiry policy content is immutable; publish a new version.")
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(self, objs, *args, **kwargs):
+        raise ValidationError("Expiry policies must be published individually.")
 
 
 class HrContractAgreement(HrTenantScopedModel):
@@ -454,6 +475,7 @@ class HrContractCase(HrTenantScopedModel):
         RENEW = "RENEW", "Renew"
         CHANGE = "CHANGE", "Change"
         TERMINATE = "TERMINATE", "Terminate"
+        REVIEW = "REVIEW", "Manual review"
 
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Draft"
@@ -507,3 +529,144 @@ class HrContractCase(HrTenantScopedModel):
                 name="idx_hr07_case_agree",
             ),
         ]
+
+
+class HrContractExpiryPolicy(HrTenantScopedModel):
+    """Versioned tenant policy used by the canonical expiry worker.
+
+    Policy content is immutable. Changing it means publishing a new
+    ``policy_version``; only the operational ``active`` selector may change.
+    The worker fails closed if more than one active snapshot matches.
+    """
+
+    class ActionType(models.TextChoices):
+        CREATE_RENEWAL_CASE = "CREATE_RENEWAL_CASE", "Create renewal case"
+        MANUAL_REVIEW = "MANUAL_REVIEW", "Create manual review case"
+
+    policy_version = models.CharField(max_length=64)
+    agreement_type = models.CharField(max_length=50, blank=True, default="")
+    warning_days = models.PositiveIntegerField()
+    critical_after_days = models.PositiveIntegerField(default=0)
+    action_type = models.CharField(max_length=32, choices=ActionType.choices)
+    active = models.BooleanField(default=True, db_index=True)
+    content_hash = models.CharField(max_length=64, editable=False)
+
+    objects = models.Manager.from_queryset(_ImmutablePolicyQuerySet)()
+
+    class Meta:
+        db_table = "hr07_contract_expiry_policy"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "policy_version", "agreement_type"),
+                name="uq_hr07_exp_pol_version",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "agreement_type", "active"),
+                name="idx_hr07_exp_pol_match",
+            ),
+        ]
+
+    def authority_payload(self) -> dict:
+        return {
+            "tenantId": self.tenant_id,
+            "policyVersion": self.policy_version,
+            "agreementType": self.agreement_type,
+            "warningDays": self.warning_days,
+            "criticalAfterDays": self.critical_after_days,
+            "actionType": self.action_type,
+        }
+
+    def expected_content_hash(self) -> str:
+        payload = json.dumps(
+            self.authority_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            update_fields = set(kwargs.get("update_fields") or ())
+            if not update_fields or not update_fields.issubset(
+                {"active", "updated_by", "updated_at"}
+            ):
+                raise ValidationError(
+                    "Expiry policy content is immutable; publish a new policy version."
+                )
+            return super().save(*args, **kwargs)
+        self.content_hash = self.expected_content_hash()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Expiry policies are immutable authority snapshots.")
+
+
+class HrContractExpiryRiskFact(HrTenantScopedModel):
+    """Append-only explanation and idempotency fact for an expiry action."""
+
+    class Stage(models.TextChoices):
+        EXPIRING = "EXPIRING", "Expiring"
+        OVERDUE = "OVERDUE", "Overdue"
+
+    class Severity(models.TextChoices):
+        MEDIUM = "MEDIUM", "Medium"
+        HIGH = "HIGH", "High"
+        CRITICAL = "CRITICAL", "Critical"
+
+    agreement = models.ForeignKey(
+        HrContractAgreement,
+        on_delete=models.PROTECT,
+        related_name="expiry_risk_facts",
+    )
+    contract_version = models.ForeignKey(
+        HrContractVersion,
+        on_delete=models.PROTECT,
+        related_name="expiry_risk_facts",
+    )
+    action_case = models.ForeignKey(
+        HrContractCase,
+        on_delete=models.PROTECT,
+        related_name="expiry_risk_facts",
+    )
+    risk_stage = models.CharField(max_length=16, choices=Stage.choices)
+    severity = models.CharField(max_length=16, choices=Severity.choices)
+    due_date = models.DateField()
+    observed_as_of = models.DateField()
+    days_to_expiry = models.IntegerField()
+    policy_version = models.CharField(max_length=64)
+    policy_hash = models.CharField(max_length=64)
+    evidence_json = models.JSONField(default=dict)
+    evidence_hash = models.CharField(max_length=64)
+    idempotency_key = models.CharField(max_length=128)
+
+    objects = models.Manager.from_queryset(_AppendOnlyQuerySet)()
+
+    class Meta:
+        db_table = "hr07_contract_expiry_risk"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr07_exp_risk_key",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "agreement", "risk_stage"),
+                name="idx_hr07_exp_risk_agree",
+            ),
+            models.Index(
+                fields=("tenant_id", "due_date", "severity"),
+                name="idx_hr07_exp_risk_due",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError("Contract expiry risk facts are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Contract expiry risk facts are append-only.")
