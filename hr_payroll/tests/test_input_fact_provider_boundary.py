@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
 from hr_payroll import api
@@ -202,6 +202,21 @@ class PayrollInputFactProviderBoundaryTests(TestCase):
             period_id=self.period.id,
             staff_id=self.staff_id,
         )
+        if connection.vendor == "mysql":
+            with self.assertRaises(DatabaseError), transaction.atomic():
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE hr15_payroll_input_snapshot "
+                        "SET variables_json = %s WHERE id = %s",
+                        [json.dumps({"approvedMonthlySalary": "1.00"}), snapshot.id.hex],
+                    )
+            snapshot.refresh_from_db()
+            self.assertNotEqual(
+                snapshot.variables_json,
+                {"approvedMonthlySalary": "1.00"},
+            )
+            return
+
         with connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE hr15_payroll_input_snapshot SET variables_json = %s WHERE id = %s",

@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr_exit.models import ExitCase, ExitEffect, ExitFact
 from hr_payroll.exit_provider import exit_settlement_participant_provider
@@ -36,7 +37,7 @@ class Hr15ExitSettlementReplayTests(TestCase):
             requested_date=date(2026, 8, 1),
             planned_employment_end_date=self.boundary,
         )
-        self.exit_fact = ExitFact.objects.create(
+        self.exit_fact = ExitFact(
             tenant_id=self.tenant_id,
             fact_no=f"EXIT-PAY-FACT-{uuid.uuid4().hex}",
             person_id=self.person.id,
@@ -45,7 +46,10 @@ class Hr15ExitSettlementReplayTests(TestCase):
             exit_type=self.case.exit_type,
             employment_end_date=self.boundary,
             status=ExitFact.Status.EFFECTIVE,
+            sealed_at=timezone.now(),
         )
+        self.exit_fact.content_hash = self.exit_fact.calculate_content_hash()
+        self.exit_fact.save()
         self.profile = PayrollProfile.objects.create(
             tenant_id=self.tenant_id,
             staff_id=self.staff.id,
