@@ -11,6 +11,41 @@ hr_external/permissions.py —— HR08 权限合同（S1）。
 
 from django.core.exceptions import PermissionDenied
 
+from horilla.hr_permission_registry import PermissionDefinition, register_permissions
+
+
+_PERMISSION_DESCRIPTIONS = {
+    "profile.view": "查看本校外聘人员业务档案",
+    "profile.create": "创建本校外聘人员业务档案",
+    "profile.sensitive_view": "查看外聘人员受限敏感字段",
+    "profile.export": "导出外聘人员受控数据",
+    "industry.view": "查看产业导师与企业实践事实",
+    "industry.manage": "维护产业导师与企业实践事实",
+    "hiring.create": "发起外聘聘用申请",
+    "hiring.review": "复核外聘聘用申请",
+    "hiring.approve": "审批外聘聘用申请",
+    "hiring.activate": "激活已满足协议要求的外聘聘任",
+    "task.view": "查看外聘任务与派任",
+    "task.manage": "维护外聘任务与派任",
+    "task.verify": "核验外聘任务完成事实",
+    "workload.verify": "核验外聘工作量事实",
+    "renewal.review": "查看外聘续聘评审",
+    "renewal.decide": "作出外聘续聘决定",
+    "exit.manage": "执行外聘到期与终止流程",
+    "access.view": "查看外聘系统权限与回执",
+    "access.manage": "下发或回收外聘系统权限",
+}
+
+PERMISSION_DEFINITIONS = tuple(
+    PermissionDefinition(
+        f"hr.external.{action}",
+        "HR08",
+        description,
+    )
+    for action, description in _PERMISSION_DESCRIPTIONS.items()
+)
+register_permissions(PERMISSION_DEFINITIONS)
+
 # 公开对外聘本人开放的最小权限（External Teacher Portal，§90）。
 # 仅列出本人门户所需子集；完整权限码见 constants.HR08_PERMISSIONS。
 SELF_VIEW_PERMISSIONS = frozenset(
