@@ -23,3 +23,18 @@ class HrPermissionAliasTests(SimpleTestCase):
             permission_aliases("hr.time.leave.approve"),
             frozenset({"hr.time.leave.approve", "hr11.leave.approve"}),
         )
+
+    def test_non_structural_historic_aliases_are_bidirectional(self):
+        pairs = (
+            (
+                "hr.recruitment.assessment.score.override",
+                "hr04.assessment.score_override",
+            ),
+            ("hr.recruitment.handoff_hr05.execute", "hr04.handoff_hr05"),
+            ("hr.onboarding.export.standard", "hr05.export"),
+            ("hr.onboarding.export.sensitive", "hr05.sensitive_export"),
+        )
+        for canonical, historic in pairs:
+            with self.subTest(canonical=canonical):
+                self.assertIn(historic, permission_aliases(canonical))
+                self.assertIn(canonical, permission_aliases(historic))

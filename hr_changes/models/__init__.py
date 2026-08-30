@@ -18,6 +18,7 @@ from hr_changes.models.downstream import HrChangeDownstreamEffect
 from hr_changes.models.field_definition import HrChangeFieldDefinition
 from hr_changes.models.impact import HrChangeImpactSnapshot
 from hr_changes.models.outbox import HrChangeOutboxEvent
+from hr_changes.models.permission import HrChangePermissionMeta
 from hr_changes.models.proposal import HrChangeProposal
 from hr_changes.models.reason import HrChangeReason
 from hr_changes.models.rescind import HrChangeRescind
@@ -52,4 +53,5 @@ __all__ = [
     "HrBulkChangeBatch",
     "HrBulkChangeItem",
     "HrChangeOutboxEvent",
+    "HrChangePermissionMeta",
 ]

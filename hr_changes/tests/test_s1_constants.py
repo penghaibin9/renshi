@@ -1,5 +1,6 @@
 """S1 合同常量测试：枚举 / 错误码 / 权限码 / 事件类型 / 动作-原因种子。"""
 
+from django.contrib.auth.models import Permission
 from django.test import TestCase
 
 from hr_changes.constants import (
@@ -127,6 +128,15 @@ class PermissionContractTests(TestCase):
             "hr.change.ledger.export",
         ):
             self.assertIn(perm, HR_CHANGE_PERMISSIONS)
+
+    def test_all_canonical_permissions_are_materialized(self):
+        materialized = set(
+            Permission.objects.filter(
+                content_type__app_label="hr_changes",
+                codename__in=HR_CHANGE_PERMISSIONS,
+            ).values_list("codename", flat=True)
+        )
+        self.assertEqual(materialized, set(HR_CHANGE_PERMISSIONS))
 
 
 class EventTypeContractTests(TestCase):

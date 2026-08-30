@@ -33,6 +33,17 @@ CANONICAL_PREFIX_ALIASES = {
     "hr18.": "hr.data.",
 }
 
+# Early modules shipped a few codenames whose word boundaries cannot be
+# derived by prefix substitution alone. Preserve those grants explicitly.
+EXACT_PERMISSION_ALIASES = {
+    "hr.recruitment.assessment.score.override": frozenset(
+        {"hr04.assessment.score_override"}
+    ),
+    "hr.recruitment.handoff_hr05.execute": frozenset({"hr04.handoff_hr05"}),
+    "hr.onboarding.export.standard": frozenset({"hr05.export"}),
+    "hr.onboarding.export.sensitive": frozenset({"hr05.sensitive_export"}),
+}
+
 _HR_LEGACY_RE = re.compile(r"^hr\d{2}\.")
 
 
@@ -48,6 +59,10 @@ def permission_aliases(code: str) -> frozenset[str]:
             aliases.add(canonical_prefix + code[len(legacy_prefix) :])
         if code.startswith(canonical_prefix):
             aliases.add(legacy_prefix + code[len(canonical_prefix) :])
+    for canonical, historic in EXACT_PERMISSION_ALIASES.items():
+        family = {canonical, *historic}
+        if code in family:
+            aliases.update(family)
     return frozenset(aliases)
 
 
