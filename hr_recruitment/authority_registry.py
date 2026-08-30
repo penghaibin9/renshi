@@ -24,6 +24,8 @@ CANONICAL_PERMISSION_KEYS = (
     "hr.recruitment.proposed_hire.manage",
     "hr.recruitment.public_notice.publish",
     "hr.recruitment.offer.manage",
+    "hr.recruitment.hiring_decision.correct",
+    "hr.recruitment.hiring_decision.revoke",
     "hr.recruitment.handoff_hr05.execute",
 )
 PERMISSION_DEFINITIONS = tuple(
@@ -45,6 +47,9 @@ EVENT_SCORE_REOPENED = "hr.recruitment.score_sheet.reopened"
 EVENT_SCORE_REOPEN_REQUESTED = "hr.recruitment.score_sheet.reopen_requested"
 EVENT_SCORE_REOPEN_APPROVED = "hr.recruitment.score_sheet.reopen_approved"
 EVENT_SCORE_OVERRIDE_ACCESSED = "hr.recruitment.score_sheet.override_accessed"
+EVENT_HIRING_DECISION_RECORDED = "hr.recruitment.hiring_decision.recorded"
+EVENT_HIRING_DECISION_CORRECTED = "hr.recruitment.hiring_decision.corrected"
+EVENT_HIRING_DECISION_REVOKED = "hr.recruitment.hiring_decision.revoked"
 
 EVENT_DEFINITIONS = (
     BusinessEventDefinition(EVENT_PLAN_REQUEST_SUBMITTED, "HR04", "plan_request", 1),
@@ -64,6 +69,15 @@ EVENT_DEFINITIONS = (
     BusinessEventDefinition(EVENT_SCORE_REOPEN_APPROVED, "HR04", "score_sheet", 1),
     BusinessEventDefinition(
         EVENT_SCORE_OVERRIDE_ACCESSED, "HR04", "score_sheet", 1
+    ),
+    BusinessEventDefinition(
+        EVENT_HIRING_DECISION_RECORDED, "HR04", "hiring_decision", 1
+    ),
+    BusinessEventDefinition(
+        EVENT_HIRING_DECISION_CORRECTED, "HR04", "hiring_decision", 1
+    ),
+    BusinessEventDefinition(
+        EVENT_HIRING_DECISION_REVOKED, "HR04", "hiring_decision", 1
     ),
 )
 register_business_events(EVENT_DEFINITIONS)

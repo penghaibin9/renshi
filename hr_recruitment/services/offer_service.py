@@ -83,12 +83,14 @@ class OfferService:
             offer.issued_at = timezone.now()
         if target == OfferStatus.ACCEPTED:
             offer.accepted_at = timezone.now()
-            self._on_accepted(offer)
         if target == OfferStatus.DECLINED:
             offer.declined_at = timezone.now()
         offer.status = target
         offer.version += 1
         offer.save(update_fields=["status", "issued_at", "accepted_at", "declined_at", "version"])
+        if target == OfferStatus.ACCEPTED:
+            self._on_accepted(offer)
+            self._seal_hiring_authority(offer)
         return offer
 
     @transaction.atomic
@@ -96,6 +98,7 @@ class OfferService:
         """接受 Offer（幂等：已 ACCEPTED 直接返回；过期拒绝）。"""
         offer = self._get(offer_id)
         if offer.status == OfferStatus.ACCEPTED:
+            self._seal_hiring_authority(offer)
             return offer  # 幂等重放
         if offer.expires_at and offer.expires_at < timezone.now():
             raise OfferServiceError(
@@ -107,7 +110,19 @@ class OfferService:
         offer.version += 1
         offer.save(update_fields=["status", "accepted_at", "version"])
         self._on_accepted(offer)
+        self._seal_hiring_authority(offer)
         return offer
+
+    def _seal_hiring_authority(self, offer: HrRecruitmentOffer) -> None:
+        """Create the immutable hiring fact in the same database transaction."""
+        from hr_recruitment.services.hiring_authority_service import (
+            HiringAuthorityService,
+        )
+
+        HiringAuthorityService(
+            tenant_id=self.tenant_id,
+            actor_id=self.actor,
+        ).seal_accepted_offer(offer_id=offer.id)
 
     def _on_accepted(self, offer: HrRecruitmentOffer) -> None:
         """Offer 接受 → 申请状态 OFFER_ACCEPTED（走状态机 + 写 ledger，幂等）。"""
@@ -135,7 +150,7 @@ class OfferService:
 
     def _get(self, offer_id: str) -> HrRecruitmentOffer:
         try:
-            return HrRecruitmentOffer.objects.select_related(
+            return HrRecruitmentOffer.objects.select_for_update().select_related(
                 "proposed_hire_id__application_id"
             ).get(id=offer_id, tenant_id=self.tenant_id)
         except HrRecruitmentOffer.DoesNotExist:

@@ -34,6 +34,12 @@ from hr_recruitment.integrations.hr05 import Hr05OnboardingConsumer
 from hr_recruitment.labels import PROPOSED_HIRE_STATUS_LABELS, status_label
 from hr_recruitment.permissions import require_hr04_permission
 from hr_recruitment.services.handoff_service import HandoffService, HandoffServiceError
+from hr_recruitment.services.hiring_authority_service import (
+    HiringAuthorityError,
+    HiringAuthorityService,
+    HiringRevisionInput,
+    effective_hiring_decision_snapshot,
+)
 from hr_recruitment.services.notice_service import NoticeService, NoticeServiceError
 from hr_recruitment.services.offer_service import OfferService, OfferServiceError
 from hr_recruitment.services.proposed_hire_service import (
@@ -51,7 +57,14 @@ def _handle(request, exc):
         return error(request, "NOT_FOUND", "资源不存在", 404)
     if isinstance(
         exc,
-        (Hr04ApiError, ProposedHireServiceError, NoticeServiceError, OfferServiceError, HandoffServiceError),
+        (
+            Hr04ApiError,
+            ProposedHireServiceError,
+            NoticeServiceError,
+            OfferServiceError,
+            HandoffServiceError,
+            HiringAuthorityError,
+        ),
     ):
         return error(request, exc.code, exc.message, getattr(exc, "http_status", exc.status_code if hasattr(exc, "status_code") else 422))
     return error(request, "INTERNAL_ERROR", "服务器内部错误", 500)
@@ -236,6 +249,83 @@ def accept_offer(request, offer_id):
         service = OfferService(tenant_id=ctx.tenant_id, actor=str(request.user.id))
         offer = service.accept(offer_id=offer_id)
         return ok(request, {"id": str(offer.id), "status": offer.status})
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
+
+
+@require_http_methods(["GET", "POST"])
+def hiring_decision_revisions(request, fact_id):
+    """Read the effective fact or append a controlled correction/revocation."""
+
+    try:
+        ctx = make_hr04_context(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    if request.method == "GET":
+        if not (
+            request.user.is_superuser
+            or request.user.has_perm("hr04.offer.manage")
+        ):
+            return error(request, "PERMISSION_DENIED", "无查看录用事实权限", 403)
+        from hr_recruitment.models import HrHiringDecisionFact
+
+        fact = HrHiringDecisionFact.objects.filter(
+            id=fact_id,
+            tenant_id=ctx.tenant_id,
+        ).first()
+        if fact is None:
+            return error(request, "HIRING_FACT_NOT_FOUND", "录用事实不存在", 404)
+        return ok(
+            request,
+            {
+                "factId": str(fact.id),
+                "contentHash": fact.content_hash,
+                "sealedAt": fact.sealed_at.isoformat(),
+                "effective": effective_hiring_decision_snapshot(fact),
+            },
+        )
+
+    try:
+        body = json.loads(request.body or b"{}")
+        revision_type = str(body.get("revisionType") or "").strip().upper()
+        required_permission = (
+            "hr04.hiring_decision.revoke"
+            if revision_type == "REVOCATION"
+            else "hr04.hiring_decision.correct"
+        )
+        if not (
+            request.user.is_superuser
+            or request.user.has_perm(required_permission)
+        ):
+            return error(request, "PERMISSION_DENIED", "无录用事实更正/撤销权限", 403)
+        revision = HiringAuthorityService(
+            tenant_id=ctx.tenant_id,
+            actor_id=str(request.user.id),
+        ).append_revision(
+            fact_id=fact_id,
+            payload=HiringRevisionInput(
+                correction_no=body.get("correctionNo", ""),
+                expected_version=body.get("expectedVersion"),
+                revision_type=revision_type,
+                reason=body.get("reason", ""),
+                changes=body.get("changes", {}),
+                evidence_ref=body.get("evidenceRef", ""),
+            ),
+        )
+        return ok(
+            request,
+            {
+                "factId": str(revision.fact_id),
+                "revisionId": str(revision.id),
+                "previousVersion": revision.previous_version,
+                "newVersion": revision.new_version,
+                "revisionType": revision.revision_type,
+                "contentHash": revision.content_hash,
+                "sealedAt": revision.sealed_at.isoformat(),
+                "effective": revision.after_snapshot_json,
+            },
+            status=201,
+        )
     except Exception as exc:  # noqa: BLE001
         return _handle(request, exc)
 

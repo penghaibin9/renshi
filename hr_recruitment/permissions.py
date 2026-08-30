@@ -40,6 +40,8 @@ HR04_PERMISSIONS = (
     "hr04.proposed_hire.manage",
     "hr04.public_notice.publish",
     "hr04.offer.manage",
+    "hr04.hiring_decision.correct",
+    "hr04.hiring_decision.revoke",
     "hr04.handoff_hr05",
 )
 # fmt: on

@@ -70,6 +70,11 @@ urlpatterns = [
         proposed_hire_api.accept_offer,
         name="hr04-api-offer-accept",
     ),
+    path(
+        "api/hr/v1/recruitment/hiring-decisions/<uuid:fact_id>/revisions",
+        proposed_hire_api.hiring_decision_revisions,
+        name="hr04-api-hiring-decision-revisions",
+    ),
     # HR04-05 考试面试与考察（总册 12）
     path(
         "api/hr/v1/recruitment/assessment/schemes",

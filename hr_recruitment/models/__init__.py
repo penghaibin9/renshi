@@ -63,6 +63,10 @@ from hr_recruitment.models.offer import (
     HrRecruitmentHandoff,
     HrRecruitmentOffer,
 )
+from hr_recruitment.models.hiring_authority import (
+    HrHiringDecisionFact,
+    HrHiringDecisionRevision,
+)
 from hr_recruitment.models.audit import (
     HrRecruitmentAuditEvent,
     HrSensitiveCandidateAccessLog,
@@ -103,6 +107,8 @@ __all__ = [
     "HrPublicNoticeEntry",
     "HrNoticeObjection",
     "HrRecruitmentOffer",
+    "HrHiringDecisionFact",
+    "HrHiringDecisionRevision",
     "HrRecruitmentHandoff",
     "HrRecruitmentAuditEvent",
     "HrSensitiveCandidateAccessLog",
