@@ -60,6 +60,21 @@ urlpatterns = [
         name="retirement-pension-status",
     ),
     path(
+        "retirement-policies/",
+        retirement_api.create_retirement_policy,
+        name="retirement-policy-create",
+    ),
+    path(
+        "retirement-policies/<uuid:policy_id>/activate/",
+        retirement_api.activate_retirement_policy,
+        name="retirement-policy-activate",
+    ),
+    path(
+        "retirement-prechecks/",
+        retirement_api.run_retirement_precheck,
+        name="retirement-precheck-run",
+    ),
+    path(
         "cases/<uuid:case_id>/handover-items/",
         api.create_handover_item,
         name="handover-item-create",

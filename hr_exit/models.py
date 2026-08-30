@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.db import models
 
-from horilla.hr_domain_models import HrTenantScopedModel
+from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
 
 
 class ExitCase(HrTenantScopedModel):
@@ -44,6 +44,8 @@ class ExitCase(HrTenantScopedModel):
             ("hr.exit.manage", "办理 HR16 退休与离校流程"),
             ("hr.exit.handover", "维护 HR16 离校交接清单"),
             ("hr.exit.effect", "执行 HR16 正式离校就业关系生效"),
+            ("hr.exit.retirement_policy.manage", "维护 HR16 版本化退休政策"),
+            ("hr.exit.retirement_precheck.execute", "执行 HR16 退休日期预审"),
         ]
         constraints = [
             models.UniqueConstraint(fields=("tenant_id", "case_no"), name="uq_hr16_case_tenant_no"),
@@ -305,3 +307,133 @@ class RetirementFact(HrTenantScopedModel):
         indexes = [
             models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr16_retire_fact_person"),
         ]
+
+
+class RetirementPolicy(HrVersionedModel):
+    """Versioned, explainable retirement rule; ACTIVE versions are immutable."""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Draft"
+        ACTIVE = "ACTIVE", "Active"
+        RETIRED = "RETIRED", "Retired"
+
+    class Gender(models.TextChoices):
+        ANY = "ANY", "Any"
+        MALE = "M", "Male"
+        FEMALE = "F", "Female"
+        OTHER = "O", "Other"
+        UNSPECIFIED = "U", "Unspecified"
+
+    policy_code = models.CharField(max_length=64)
+    retirement_type = models.CharField(max_length=32)
+    gender_code = models.CharField(max_length=3, choices=Gender.choices, default=Gender.ANY)
+    staff_category_code = models.CharField(max_length=32, blank=True, default="")
+    relationship_type = models.CharField(max_length=32, blank=True, default="")
+    special_condition_code = models.CharField(max_length=64, blank=True, default="")
+    retirement_age_months = models.PositiveIntegerField()
+    minimum_service_months = models.PositiveIntegerField(default=0)
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    priority = models.IntegerField(default=0)
+    rationale = models.TextField()
+    supersedes_policy_id = models.UUIDField(null=True, blank=True)
+
+    _IMMUTABLE_FIELDS = (
+        "policy_code",
+        "version_no",
+        "retirement_type",
+        "gender_code",
+        "staff_category_code",
+        "relationship_type",
+        "special_condition_code",
+        "retirement_age_months",
+        "minimum_service_months",
+        "effective_from",
+        "effective_to",
+        "priority",
+        "rationale",
+        "supersedes_policy_id",
+        "content_hash",
+    )
+
+    class Meta:
+        db_table = "hr16_retirement_policy"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "policy_code", "version_no"),
+                name="uq_hr16_retire_policy_ver",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(retirement_age_months__gt=0),
+                name="ck_hr16_retire_age_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gt=models.F("effective_from")),
+                name="ck_hr16_retire_policy_dates",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "status", "effective_from", "effective_to"),
+                name="idx_hr16_retire_policy_active",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self).objects.filter(pk=self.pk).values(
+                "status", *self._IMMUTABLE_FIELDS
+            ).first()
+            if persisted and persisted["status"] == "ACTIVE":
+                changed = [
+                    field
+                    for field in self._IMMUTABLE_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "RETIREMENT_POLICY_IMMUTABLE: ACTIVE policy must be superseded"
+                    )
+        return super().save(*args, **kwargs)
+
+
+class RetirementPrecheck(HrTenantScopedModel):
+    """Immutable evidence of one policy evaluation without storing raw birth date."""
+
+    class Decision(models.TextChoices):
+        ELIGIBLE = "ELIGIBLE", "Eligible"
+        NOT_YET = "NOT_YET", "Not yet eligible"
+        MANUAL_REVIEW = "MANUAL_REVIEW", "Manual review"
+
+    idempotency_key = models.CharField(max_length=128)
+    person_id = models.UUIDField(db_index=True)
+    employment_relationship_id = models.UUIDField(db_index=True)
+    as_of = models.DateField()
+    decision = models.CharField(max_length=20, choices=Decision.choices, db_index=True)
+    retirement_type = models.CharField(max_length=32, blank=True, default="")
+    statutory_date = models.DateField(null=True, blank=True)
+    matched_policy_id = models.UUIDField(null=True, blank=True)
+    matched_policy_version = models.PositiveIntegerField(null=True, blank=True)
+    input_snapshot_json = models.JSONField(default=dict)
+    explanation_json = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "hr16_retirement_precheck"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr16_retire_precheck_idem",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "person_id", "as_of"),
+                name="idx_hr16_retire_pre_person",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("RETIREMENT_PRECHECK_IMMUTABLE: create a new precheck")
+        return super().save(*args, **kwargs)

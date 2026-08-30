@@ -21,7 +21,9 @@ class Hr16AuthorityRegistryTests(SimpleTestCase):
                 "hr.exit.effect",
                 "hr.exit.archive_transfer.view",
                 "hr.exit.archive_transfer.manage",
+                "hr.exit.retirement_policy.manage",
+                "hr.exit.retirement_precheck.execute",
             },
         )
-        self.assertGreaterEqual(len(events), 6)
+        self.assertGreaterEqual(len(events), 8)
         self.assertTrue(all(row.name.startswith("hr.exit.") for row in events))
