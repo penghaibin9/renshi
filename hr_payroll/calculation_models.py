@@ -104,14 +104,39 @@ class SalaryRuleVersion(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+class PayrollInputSnapshotQuerySet(models.QuerySet):
+    _MUTATION_ERROR = (
+        "PAYROLL_INPUT_IMMUTABLE: trusted payroll input snapshots are append-only"
+    )
+
+    def update(self, **kwargs):
+        raise ValueError(self._MUTATION_ERROR)
+
+    def delete(self):
+        raise ValueError(self._MUTATION_ERROR)
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValueError(self._MUTATION_ERROR)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        raise ValueError(self._MUTATION_ERROR)
+
+
+class PayrollInputSnapshotManager(models.Manager.from_queryset(PayrollInputSnapshotQuerySet)):
+    pass
+
+
 class PayrollInputSnapshot(HrTenantScopedModel):
     payroll_period_id = models.UUIDField()
     staff_id = models.UUIDField()
     currency_code = models.CharField(max_length=3, default="CNY")
+    snapshot_version = models.CharField(max_length=64, blank=True, default="")
     source_versions_json = models.JSONField(default=dict)
     variables_json = models.JSONField(default=dict)
     content_hash = models.CharField(max_length=64)
     captured_at = models.DateTimeField()
+
+    objects = PayrollInputSnapshotManager()
 
     class Meta:
         db_table = "hr15_payroll_input_snapshot"
@@ -132,6 +157,11 @@ class PayrollInputSnapshot(HrTenantScopedModel):
         if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
             raise ValueError("PAYROLL_INPUT_IMMUTABLE: capture a new payroll period")
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "PAYROLL_INPUT_IMMUTABLE: trusted payroll input snapshots are append-only"
+        )
 
 
 class PayrollCalculationBatch(HrTenantScopedModel):

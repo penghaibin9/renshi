@@ -669,14 +669,22 @@ def capture_period_input(request, period_id):
     try:
         tenant_id = resolve_request_tenant(request, required_permission=PERM_INPUT_MANAGE)
         payload = _json_body(request)
+        forbidden = sorted(
+            {"sourceVersions", "variables", "currencyCode"}.intersection(payload)
+        )
+        if forbidden:
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_CLIENT_AUTHORITY_FORBIDDEN",
+                "authoritative payroll input is collected only from trusted providers: "
+                + ",".join(forbidden),
+            )
         snapshot = PayrollCalculationService(
-            tenant_id, _actor_id(request)
+            tenant_id,
+            _actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
         ).capture_input(
             period_id=period_id,
             staff_id=payload.get("staffId"),
-            source_versions=payload.get("sourceVersions"),
-            variables=payload.get("variables"),
-            currency_code=payload.get("currencyCode", "CNY"),
         )
     except HrPayrollAccessError as exc:
         return _error(exc.code, exc.message, status=403)
@@ -690,10 +698,11 @@ def capture_period_input(request, period_id):
                 "id": str(snapshot.id),
                 "periodId": str(snapshot.payroll_period_id),
                 "staffId": str(snapshot.staff_id),
+                "snapshotVersion": snapshot.snapshot_version,
                 "contentHash": snapshot.content_hash,
             },
             "apiVersion": "1.0",
-            "schemaVersion": "hr15.input-snapshot.1",
+            "schemaVersion": "hr15.input-snapshot.2",
         },
         status=201,
     )

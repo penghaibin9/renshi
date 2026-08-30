@@ -3,11 +3,15 @@ from decimal import Decimal
 from unittest.mock import patch
 from uuid import UUID
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from hr_payroll.calculation_models import PayrollCalculationLine, PayrollReviewFact, SalaryRuleVersion
-from hr_payroll.models import PayrollPeriod, PayrollResultFact
-from hr_payroll.services.calculation_service import PayrollCalculationService, PayrollRuleService
+from hr_payroll.models import PayrollPeriod, PayrollProfile, PayrollResultFact
+from hr_payroll.services.calculation_service import (
+    PayrollCalculationError,
+    PayrollCalculationService,
+    PayrollRuleService,
+)
 from hr_payroll.services.finalization_service import PayrollFinalizationService
 from hr_payroll.services.statutory_contribution_service import (
     StatutoryContributionError,
@@ -17,9 +21,14 @@ from hr_payroll.statutory_models import (
     StatutoryContributionFact,
     StatutoryContributionRuleVersion,
 )
+from hr_payroll.tests.test_input_fact_provider_boundary import (
+    INPUT_PROVIDERS,
+    TrustedPayrollInputProvider,
+)
 from hr_staff.models import HrOutboxEvent
 
 
+@override_settings(HR15_PAYROLL_INPUT_PROVIDERS=INPUT_PROVIDERS)
 class StatutoryContributionChainTests(TestCase):
     tenant_id = 1515
     other_tenant_id = 1616
@@ -27,12 +36,25 @@ class StatutoryContributionChainTests(TestCase):
     staff_id = UUID("00000000-0000-0000-0000-000000001515")
 
     def setUp(self):
+        TrustedPayrollInputProvider.provided_variables = {
+            "approvedMonthlySalary": "20000.00",
+            "socialInsuranceBase": "5000.00",
+            "housingFundBase": "40000.00",
+        }
         self.period = PayrollPeriod.objects.create(
             tenant_id=self.tenant_id,
             period_code="2026-08",
             start_date=date(2026, 8, 1),
             end_date=date(2026, 8, 31),
             status=PayrollPeriod.Status.INPUT_FROZEN,
+        )
+        PayrollProfile.objects.create(
+            tenant_id=self.tenant_id,
+            staff_id=self.staff_id,
+            payroll_identity_no="PAY-ID-1515",
+            pay_group_code="FACULTY",
+            currency_code="CNY",
+            effective_from=date(2026, 1, 1),
         )
         self.calculation = PayrollCalculationService(
             self.tenant_id, actor_user_id=self.actor_id, correlation_id="stat-chain"
@@ -52,13 +74,6 @@ class StatutoryContributionChainTests(TestCase):
             effective_from=date(2026, 1, 1),
         )
         PayrollRuleService(self.tenant_id, self.actor_id).publish(salary.id)
-
-    @staticmethod
-    def source_versions():
-        return {
-            code: {"version": f"{code.lower()}-v1", "evidenceId": f"{code}-E-1515"}
-            for code in ("HR03", "HR11", "HR12", "HR14")
-        }
 
     def create_rule(
         self,
@@ -115,12 +130,6 @@ class StatutoryContributionChainTests(TestCase):
         self.calculation.capture_input(
             period_id=self.period.id,
             staff_id=self.staff_id,
-            source_versions=self.source_versions(),
-            variables={
-                "approvedMonthlySalary": "20000.00",
-                "socialInsuranceBase": "5000.00",
-                "housingFundBase": "40000.00",
-            },
         )
         outcome = self.calculation.calculate(
             period_id=self.period.id,
@@ -212,18 +221,15 @@ class StatutoryContributionChainTests(TestCase):
             employee_rate="0.02",
             employer_rate="0.10",
         )
-        self.calculation.capture_input(
-            period_id=self.period.id,
-            staff_id=self.staff_id,
-            source_versions=self.source_versions(),
-            variables={"approvedMonthlySalary": "20000.00"},
-        )
-        with self.assertRaisesRegex(Exception, "socialInsuranceBase"):
-            self.calculation.calculate(
+        TrustedPayrollInputProvider.provided_variables = {
+            "approvedMonthlySalary": "20000.00"
+        }
+        with self.assertRaises(PayrollCalculationError) as caught:
+            self.calculation.capture_input(
                 period_id=self.period.id,
-                batch_no="STAT-MISSING",
-                idempotency_key="stat-missing",
+                staff_id=self.staff_id,
             )
+        self.assertEqual(caught.exception.code, "PAYROLL_INPUT_PROVIDER_INCOMPLETE")
         self.period.refresh_from_db()
         self.assertEqual(self.period.status, PayrollPeriod.Status.INPUT_FROZEN)
         self.assertFalse(PayrollResultFact.objects.exists())

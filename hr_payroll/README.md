@@ -33,6 +33,23 @@ HR15 是高校薪酬福利 Authority：薪酬档案、薪资项目与规则版�
   调用 `PayrollPaymentService.ingest_provider_receipt`，并再次执行归属、金额、币种、
   幂等和终态校验。
 
+## 工资输入事实 Provider 边界
+
+- `period inputs` 业务 API 只接受 `staffId` 这类业务选择；客户端提交
+  `sourceVersions`、`variables` 或 `currencyCode` 会被拒绝，不能自行声明权威金额。
+- 部署通过 `HR15_PAYROLL_INPUT_PROVIDERS` 显式映射 HR03、HR11、HR12、HR14
+  及其他实际薪资输入 Authority。每个适配器实现 `collect(request)`，返回与
+  tenant、period、staff 完全一致的版本化证据、来源快照及它拥有的变量。
+- 可选内置适配器位于 `hr_payroll.services.input_fact_providers`，复用 HR03 人员、
+  HR11 月结考勤、HR12 正式考核和 HR14 已封印聘任事实。HR14 合同不输出金额；
+  `approvedMonthlySalary` 等实际钱数仍须由学校配置的正式薪酬审批 Provider 提供。
+- 四个内置类依次为 `Hr03PayrollInputProvider`、`Hr11PayrollInputProvider`、
+  `Hr12PayrollInputProvider`、`Hr14PayrollInputProvider`；可另加如 `COMPENSATION`
+  的学校适配器提供正式审批后的金额，registry 会同时封存它的来源证据。
+- 缺任一必需 Provider、必需变量、跨租户身份或来源证据时冻结失败。服务端保存
+  provider 版本、evidence id/hash、不可变来源快照、变量和总内容哈希；计算重放及
+  工资单发布都会重新校验这条证据链。
+
 ## 小白看代码顺序
 
 1. `models.py` / `calculation_models.py` / `statutory_models.py`：薪酬档案、规则、期间、计算结果、法定缴费、支付/对账。

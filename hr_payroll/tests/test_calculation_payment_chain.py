@@ -22,9 +22,14 @@ from hr_payroll.services.calculation_service import (
 )
 from hr_payroll.services.finalization_service import PayrollFinalizationService
 from hr_payroll.services.payment_service import PayrollPaymentError, PayrollPaymentService
+from hr_payroll.tests.test_input_fact_provider_boundary import (
+    INPUT_PROVIDERS,
+    TrustedPayrollInputProvider,
+)
 
 
 @override_settings(
+    HR15_PAYROLL_INPUT_PROVIDERS=INPUT_PROVIDERS,
     HR15_PAYMENT_PROVIDERS={
         "SANDBOX_BANK": (
             "hr_payroll.tests.test_payment_provider_boundary."
@@ -38,6 +43,9 @@ class PayrollCalculationPaymentChainTests(TestCase):
     staff_id = UUID("00000000-0000-0000-0000-000000001501")
 
     def setUp(self):
+        TrustedPayrollInputProvider.provided_variables = {
+            "approvedMonthlySalary": "10000.00"
+        }
         self.period = PayrollPeriod.objects.create(
             tenant_id=self.tenant_id,
             period_code="2026-08",
@@ -60,13 +68,6 @@ class PayrollCalculationPaymentChainTests(TestCase):
         self.rule_service = PayrollRuleService(
             self.tenant_id, actor_user_id=self.actor_id
         )
-
-    @staticmethod
-    def source_versions():
-        return {
-            code: {"version": f"{code.lower()}-v1", "evidenceId": f"{code}-E-1"}
-            for code in ("HR03", "HR11", "HR12", "HR14")
-        }
 
     def provider_receipt(self, instruction, *, amount="8800.00", status="ACCEPTED"):
         return {
@@ -124,8 +125,6 @@ class PayrollCalculationPaymentChainTests(TestCase):
         snapshot = self.calculation.capture_input(
             period_id=self.period.id,
             staff_id=self.staff_id,
-            source_versions=self.source_versions(),
-            variables={"approvedMonthlySalary": "10000.00"},
         )
         return basic, pension, snapshot
 
@@ -232,17 +231,18 @@ class PayrollCalculationPaymentChainTests(TestCase):
             },
         )
 
+    @override_settings(
+        HR15_PAYROLL_INPUT_PROVIDERS={
+            key: value for key, value in INPUT_PROVIDERS.items() if key != "HR14"
+        }
+    )
     def test_input_freeze_fails_closed_without_all_provider_evidence(self):
-        sources = self.source_versions()
-        sources.pop("HR14")
         with self.assertRaises(PayrollCalculationError) as caught:
             self.calculation.capture_input(
                 period_id=self.period.id,
                 staff_id=self.staff_id,
-                source_versions=sources,
-                variables={"approvedMonthlySalary": "10000.00"},
             )
-        self.assertEqual(caught.exception.code, "PAYROLL_SOURCE_SNAPSHOT_INCOMPLETE")
+        self.assertEqual(caught.exception.code, "PAYROLL_INPUT_PROVIDER_UNAVAILABLE")
 
     def test_dependency_cycle_rolls_back_without_fake_results(self):
         self.create_rule(
@@ -262,8 +262,6 @@ class PayrollCalculationPaymentChainTests(TestCase):
         self.calculation.capture_input(
             period_id=self.period.id,
             staff_id=self.staff_id,
-            source_versions=self.source_versions(),
-            variables={"unused": "1.00"},
         )
         with self.assertRaises(PayrollCalculationError) as caught:
             self.calculation.calculate(

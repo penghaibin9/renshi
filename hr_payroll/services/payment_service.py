@@ -24,6 +24,10 @@ from hr_payroll.calculation_models import (
     PayrollPayslipFact,
 )
 from hr_payroll.models import PayrollPeriod, PayrollProfile, PayrollResultFact
+from hr_payroll.services.calculation_service import (
+    PayrollCalculationError,
+    verify_payroll_result_input_evidence,
+)
 from hr_payroll.services.payment_provider_registry import (
     PaymentProviderRegistry,
     PaymentProviderRegistryError,
@@ -521,6 +525,10 @@ class PayrollPaymentService:
         )
         if result is None:
             raise PayrollPaymentError("PAYROLL_RESULT_NOT_FOUND", "payroll result not found")
+        try:
+            verify_payroll_result_input_evidence(result)
+        except PayrollCalculationError as exc:
+            raise PayrollPaymentError(exc.code, str(exc)) from exc
         instruction = PayrollPaymentInstruction.objects.filter(
             tenant_id=self.tenant_id,
             payroll_result_id=result.id,

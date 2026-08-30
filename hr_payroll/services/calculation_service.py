@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Q
@@ -23,7 +26,12 @@ from hr_payroll.calculation_models import (
     PayrollReviewFact,
     SalaryRuleVersion,
 )
-from hr_payroll.models import PayrollPeriod, PayrollResultFact
+from hr_payroll.models import PayrollPeriod, PayrollProfile, PayrollResultFact
+from hr_payroll.services.input_fact_provider_registry import (
+    REQUIRED_INPUT_AUTHORITIES,
+    PayrollInputProviderRegistry,
+    PayrollInputProviderRegistryError,
+)
 from hr_payroll.statutory_models import StatutoryContributionFact
 from hr_payroll.services.statutory_contribution_service import (
     StatutoryContributionError,
@@ -43,7 +51,8 @@ class PayrollCalculationOutcome:
     result_ids: tuple[str, ...]
 
 
-REQUIRED_SOURCE_AUTHORITIES = frozenset({"HR03", "HR11", "HR12", "HR14"})
+REQUIRED_SOURCE_AUTHORITIES = REQUIRED_INPUT_AUTHORITIES
+INPUT_SNAPSHOT_VERSION = "hr15-payroll-input-v2"
 ROUNDING_MODES = {
     "HALF_UP": ROUND_HALF_UP,
     "HALF_EVEN": ROUND_HALF_EVEN,
@@ -61,6 +70,153 @@ def _hash(payload) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _canonical_json(value):
+    if isinstance(value, Mapping):
+        return {str(key): _canonical_json(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json(item) for item in value]
+    if isinstance(value, (Decimal, UUID, date, datetime)):
+        return str(value)
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _snapshot_hash_payload(snapshot: PayrollInputSnapshot) -> dict:
+    return {
+        "snapshotVersion": snapshot.snapshot_version,
+        "periodId": str(snapshot.payroll_period_id),
+        "staffId": str(snapshot.staff_id),
+        "currencyCode": snapshot.currency_code,
+        "sources": snapshot.source_versions_json,
+        "variables": snapshot.variables_json,
+    }
+
+
+def verify_payroll_input_snapshot(snapshot: PayrollInputSnapshot) -> None:
+    if snapshot.snapshot_version != INPUT_SNAPSHOT_VERSION:
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_SNAPSHOT_UNTRUSTED",
+            "payroll input was not captured through the trusted provider boundary",
+        )
+    sources = snapshot.source_versions_json
+    variables = snapshot.variables_json
+    if not isinstance(sources, Mapping) or not isinstance(variables, Mapping):
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_SNAPSHOT_TAMPERED", "payroll input snapshot is malformed"
+        )
+    missing = REQUIRED_SOURCE_AUTHORITIES - set(sources)
+    if missing:
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
+            "payroll input source evidence is incomplete",
+        )
+    merged_variables = {}
+    for authority, source in sources.items():
+        if not isinstance(source, Mapping):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_SNAPSHOT_TAMPERED", "payroll input source evidence is malformed"
+            )
+        source_variables = source.get("variables")
+        source_snapshot = source.get("snapshot")
+        if (
+            not source.get("version")
+            or not source.get("evidenceId")
+            or not source.get("evidenceHash")
+            or not isinstance(source_variables, Mapping)
+            or not isinstance(source_snapshot, Mapping)
+        ):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_SNAPSHOT_TAMPERED", "payroll input source evidence is incomplete"
+            )
+        evidence_payload = {
+            "authority": authority,
+            "tenantId": int(snapshot.tenant_id),
+            "periodId": str(snapshot.payroll_period_id),
+            "staffId": str(snapshot.staff_id),
+            "version": source["version"],
+            "evidenceId": source["evidenceId"],
+            "snapshot": source_snapshot,
+            "variables": source_variables,
+        }
+        if source["evidenceHash"] != _hash(evidence_payload):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_SNAPSHOT_TAMPERED", "payroll input source hash is invalid"
+            )
+        for key, value in source_variables.items():
+            if key in merged_variables and merged_variables[key] != value:
+                raise PayrollCalculationError(
+                    "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
+                    "payroll input sources contain conflicting variables",
+                )
+            merged_variables[key] = value
+    if merged_variables != dict(variables):
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
+            "payroll input variables do not match their source evidence",
+        )
+    if snapshot.content_hash != _hash(_snapshot_hash_payload(snapshot)):
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_SNAPSHOT_TAMPERED", "payroll input content hash is invalid"
+        )
+
+
+def verify_payroll_result_input_evidence(result: PayrollResultFact) -> PayrollInputSnapshot:
+    line_evidence = list(
+        PayrollCalculationLine.objects.filter(
+            tenant_id=result.tenant_id,
+            payroll_result_id=result.id,
+        ).values_list("explanation_json", flat=True)
+    )
+    if not line_evidence or any(
+        not isinstance(explanation, Mapping)
+        or not explanation.get("inputSnapshotId")
+        or not explanation.get("inputContentHash")
+        for explanation in line_evidence
+    ):
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_EVIDENCE_REQUIRED",
+            "every payroll calculation line must reference trusted input evidence",
+        )
+    references = {
+        (
+            str(explanation.get("inputSnapshotId") or ""),
+            str(explanation.get("inputContentHash") or ""),
+        )
+        for explanation in line_evidence
+        if isinstance(explanation, Mapping)
+    }
+    if len(references) != 1:
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_EVIDENCE_REQUIRED",
+            "payroll result has no unambiguous trusted input snapshot",
+        )
+    snapshot_id, expected_hash = references.pop()
+    if not snapshot_id or not expected_hash:
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_EVIDENCE_REQUIRED",
+            "payroll result input evidence is incomplete",
+        )
+    snapshot = PayrollInputSnapshot.objects.filter(
+        id=snapshot_id,
+        tenant_id=result.tenant_id,
+        payroll_period_id=result.payroll_period_id,
+        staff_id=result.staff_id,
+    ).first()
+    if snapshot is None:
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_EVIDENCE_REQUIRED",
+            "payroll result input snapshot is unavailable in this tenant",
+        )
+    verify_payroll_input_snapshot(snapshot)
+    if snapshot.content_hash != expected_hash:
+        raise PayrollCalculationError(
+            "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
+            "payroll result points to a different input snapshot hash",
+        )
+    return snapshot
 
 
 def _decimal(value, *, code: str) -> Decimal:
@@ -244,21 +400,15 @@ class PayrollCalculationService:
         self.actor_user_id = actor_user_id
         self.correlation_id = correlation_id
 
-    @transaction.atomic
     def capture_input(
         self,
         *,
         period_id,
         staff_id,
-        source_versions: dict,
-        variables: dict,
-        currency_code: str = "CNY",
     ) -> PayrollInputSnapshot:
-        period = (
-            PayrollPeriod.objects.select_for_update()
-            .filter(id=period_id, tenant_id=self.tenant_id)
-            .first()
-        )
+        period = PayrollPeriod.objects.filter(
+            id=period_id, tenant_id=self.tenant_id
+        ).first()
         if period is None:
             raise PayrollCalculationError("PAYROLL_PERIOD_NOT_FOUND", "payroll period not found")
         if period.status != PayrollPeriod.Status.INPUT_FROZEN:
@@ -266,39 +416,213 @@ class PayrollCalculationService:
                 "PAYROLL_INPUT_NOT_FROZEN",
                 "input snapshots can only be captured for an input-frozen period",
             )
-        if not isinstance(source_versions, dict):
+        profile = self._effective_payroll_profile(period=period, staff_id=staff_id)
+        try:
+            providers = PayrollInputProviderRegistry.resolve_all()
+        except PayrollInputProviderRegistryError as exc:
             raise PayrollCalculationError(
-                "PAYROLL_SOURCE_SNAPSHOT_INVALID", "source_versions must be an object"
+                "PAYROLL_INPUT_PROVIDER_UNAVAILABLE", str(exc)
+            ) from exc
+        required_variables = self._required_variable_keys(period)
+        request = {
+            "schemaVersion": "hr15.payroll-input-request.2",
+            "tenantId": self.tenant_id,
+            "periodId": str(period.id),
+            "periodCode": period.period_code,
+            "staffId": str(staff_id),
+            "startDate": period.start_date.isoformat(),
+            "endDate": period.end_date.isoformat(),
+            "asOf": period.end_date.isoformat(),
+            "requiredVariableKeys": sorted(required_variables),
+            "correlationId": self.correlation_id,
+        }
+        source_versions = {}
+        variables = {}
+        for authority, provider in providers:
+            provider_request = {**request, "authority": authority}
+            try:
+                raw = provider.collect(dict(provider_request))
+            except Exception as exc:
+                raise PayrollCalculationError(
+                    "PAYROLL_INPUT_PROVIDER_UNAVAILABLE",
+                    f"trusted payroll input provider {authority} is unavailable",
+                ) from exc
+            source, provider_variables = self._normalize_provider_result(
+                authority=authority,
+                request=provider_request,
+                raw=raw,
             )
-        missing = sorted(REQUIRED_SOURCE_AUTHORITIES - set(source_versions))
-        if missing:
+            source_versions[authority] = source
+            for key, value in provider_variables.items():
+                if key in variables and variables[key] != value:
+                    raise PayrollCalculationError(
+                        "PAYROLL_INPUT_PROVIDER_CONTRACT_INVALID",
+                        f"trusted providers disagree on payroll variable {key}",
+                    )
+                variables[key] = value
+
+        missing_variables = sorted(required_variables - set(variables))
+        if missing_variables:
             raise PayrollCalculationError(
-                "PAYROLL_SOURCE_SNAPSHOT_INCOMPLETE",
-                "missing versioned provider evidence: " + ",".join(missing),
+                "PAYROLL_INPUT_PROVIDER_INCOMPLETE",
+                "trusted providers did not supply required variables: "
+                + ",".join(missing_variables),
             )
-        invalid = sorted(
-            key
-            for key in REQUIRED_SOURCE_AUTHORITIES
-            if not isinstance(source_versions.get(key), dict)
-            or not source_versions[key].get("version")
-            or not source_versions[key].get("evidenceId")
+        for key in required_variables:
+            _decimal(variables[key], code="PAYROLL_INPUT_VALUE_INVALID")
+        return self._persist_input_snapshot(
+            period=period,
+            staff_id=staff_id,
+            currency_code=str(profile.currency_code).strip().upper(),
+            source_versions=source_versions,
+            variables=variables,
         )
-        if invalid:
-            raise PayrollCalculationError(
-                "PAYROLL_SOURCE_SNAPSHOT_INVALID",
-                "provider evidence requires version and evidenceId: " + ",".join(invalid),
+
+    def _effective_payroll_profile(self, *, period, staff_id) -> PayrollProfile:
+        profiles = list(
+            PayrollProfile.objects.filter(
+                tenant_id=self.tenant_id,
+                staff_id=staff_id,
+                status=PayrollProfile.Status.ACTIVE,
+                effective_from__lte=period.end_date,
             )
-        if not isinstance(variables, dict) or not variables:
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=period.start_date))
+            .order_by("-effective_from", "id")[:2]
+        )
+        if not profiles:
             raise PayrollCalculationError(
-                "PAYROLL_INPUT_VARIABLES_REQUIRED", "calculation variables are required"
+                "PAYROLL_PROFILE_NOT_FOUND",
+                "no effective payroll profile exists for this staff and tenant",
             )
-        currency_code = str(currency_code or "").upper()
+        if len(profiles) > 1:
+            raise PayrollCalculationError(
+                "PAYROLL_PROFILE_OVERLAP",
+                "multiple payroll profiles are effective for this staff and period",
+            )
+        currency_code = str(profiles[0].currency_code or "").strip().upper()
         if len(currency_code) != 3:
             raise PayrollCalculationError(
-                "PAYROLL_INPUT_CURRENCY_INVALID", "currency code must contain three letters"
+                "PAYROLL_INPUT_CURRENCY_INVALID",
+                "effective payroll profile has an invalid currency",
+            )
+        return profiles[0]
+
+    def _required_variable_keys(self, period) -> set[str]:
+        rules = list(
+            SalaryRuleVersion.objects.filter(
+                tenant_id=self.tenant_id,
+                status=SalaryRuleVersion.Status.PUBLISHED,
+                effective_from__lte=period.end_date,
+            )
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=period.start_date))
+            .order_by("priority", "item_code", "version_no")
+        )
+        for rule in rules:
+            PayrollRuleService._validate_formula(rule)
+        item_codes = {rule.item_code for rule in rules}
+        required = {
+            str(rule.formula_json["key"])
+            for rule in rules
+            if str(rule.formula_json.get("op", "")).upper() == "INPUT"
+        }
+        required.update(
+            str(rule.formula_json["base"])
+            for rule in rules
+            if str(rule.formula_json.get("op", "")).upper() == "PERCENT"
+            and rule.formula_json.get("base") not in item_codes
+        )
+        statutory = StatutoryContributionService(self.tenant_id).effective_rules(period)
+        required.update(str(rule.base_variable_key) for rule in statutory)
+        return required
+
+    def _normalize_provider_result(self, *, authority, request, raw):
+        if not isinstance(raw, Mapping):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_PROVIDER_CONTRACT_INVALID",
+                f"trusted payroll input provider {authority} must return an object",
+            )
+        expected = {
+            "authority": authority,
+            "tenantId": self.tenant_id,
+            "periodId": request["periodId"],
+            "staffId": request["staffId"],
+        }
+        if any(str(raw.get(key)) != str(value) for key, value in expected.items()):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_PROVIDER_CONTRACT_INVALID",
+                f"trusted payroll input provider {authority} returned mismatched identity",
+            )
+        version = str(raw.get("version") or "").strip()
+        evidence_id = str(raw.get("evidenceId") or "").strip()
+        snapshot = raw.get("snapshot")
+        provider_variables = raw.get("variables")
+        if (
+            not version
+            or not evidence_id
+            or not isinstance(snapshot, Mapping)
+            or not isinstance(provider_variables, Mapping)
+        ):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_PROVIDER_CONTRACT_INVALID",
+                f"trusted payroll input provider {authority} returned incomplete evidence",
+            )
+        if not all(isinstance(key, str) and key for key in provider_variables):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_PROVIDER_CONTRACT_INVALID",
+                f"trusted payroll input provider {authority} returned invalid variable keys",
+            )
+        canonical_snapshot = _canonical_json(snapshot)
+        canonical_variables = _canonical_json(provider_variables)
+        evidence_payload = {
+            **expected,
+            "version": version,
+            "evidenceId": evidence_id,
+            "snapshot": canonical_snapshot,
+            "variables": canonical_variables,
+        }
+        source = {
+            "version": version,
+            "evidenceId": evidence_id,
+            "evidenceHash": _hash(evidence_payload),
+            "snapshot": canonical_snapshot,
+            "variables": canonical_variables,
+        }
+        return source, canonical_variables
+
+    @transaction.atomic
+    def _persist_input_snapshot(
+        self, *, period, staff_id, currency_code, source_versions, variables
+    ):
+        locked_period = PayrollPeriod.objects.select_for_update().filter(
+            id=period.id, tenant_id=self.tenant_id
+        ).first()
+        if locked_period is None:
+            raise PayrollCalculationError("PAYROLL_PERIOD_NOT_FOUND", "payroll period not found")
+        if locked_period.status != PayrollPeriod.Status.INPUT_FROZEN:
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_NOT_FROZEN",
+                "input snapshots can only be captured for an input-frozen period",
+            )
+        if (
+            locked_period.start_date != period.start_date
+            or locked_period.end_date != period.end_date
+            or locked_period.period_code != period.period_code
+        ):
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_PERIOD_CHANGED",
+                "payroll period changed while trusted provider facts were collected",
+            )
+        locked_profile = self._effective_payroll_profile(
+            period=locked_period, staff_id=staff_id
+        )
+        if str(locked_profile.currency_code).strip().upper() != currency_code:
+            raise PayrollCalculationError(
+                "PAYROLL_INPUT_PROFILE_CHANGED",
+                "payroll profile changed while trusted provider facts were collected",
             )
         payload = {
-            "periodId": str(period.id),
+            "snapshotVersion": INPUT_SNAPSHOT_VERSION,
+            "periodId": str(locked_period.id),
             "staffId": str(staff_id),
             "currencyCode": currency_code,
             "sources": source_versions,
@@ -307,10 +631,11 @@ class PayrollCalculationService:
         content_hash = _hash(payload)
         existing = PayrollInputSnapshot.objects.filter(
             tenant_id=self.tenant_id,
-            payroll_period_id=period.id,
+            payroll_period_id=locked_period.id,
             staff_id=staff_id,
         ).first()
         if existing:
+            verify_payroll_input_snapshot(existing)
             if existing.content_hash != content_hash:
                 raise PayrollCalculationError(
                     "PAYROLL_INPUT_IDEMPOTENCY_CONFLICT",
@@ -321,9 +646,10 @@ class PayrollCalculationService:
             tenant_id=self.tenant_id,
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
-            payroll_period_id=period.id,
+            payroll_period_id=locked_period.id,
             staff_id=staff_id,
             currency_code=currency_code,
+            snapshot_version=INPUT_SNAPSHOT_VERSION,
             source_versions_json=source_versions,
             variables_json=variables,
             content_hash=content_hash,
@@ -478,6 +804,20 @@ class PayrollCalculationService:
                 .values_list("payroll_result_id", flat=True)
                 .distinct()
             )
+            results = list(
+                PayrollResultFact.objects.filter(
+                    tenant_id=self.tenant_id,
+                    payroll_period_id=period.id,
+                    id__in=ids,
+                )
+            )
+            if not ids or len(results) != len(ids) or existing.result_count != len(ids):
+                raise PayrollCalculationError(
+                    "PAYROLL_INPUT_EVIDENCE_REQUIRED",
+                    "completed calculation results are incomplete",
+                )
+            for result in results:
+                verify_payroll_result_input_evidence(result)
             return PayrollCalculationOutcome(existing, ids)
 
         if period.status != PayrollPeriod.Status.INPUT_FROZEN:
@@ -531,6 +871,8 @@ class PayrollCalculationService:
             raise PayrollCalculationError(
                 "PAYROLL_INPUT_SNAPSHOT_REQUIRED", "period has no frozen staff input"
             )
+        for snapshot in snapshots:
+            verify_payroll_input_snapshot(snapshot)
 
         batch = PayrollCalculationBatch.objects.create(
             tenant_id=self.tenant_id,
