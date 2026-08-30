@@ -4,6 +4,7 @@ from . import (
     api,
     archive_api,
     case_api,
+    fact_api,
     legacy_api,
     participant_api,
     retirement_api,
@@ -53,6 +54,16 @@ urlpatterns = [
         "exit-facts/<uuid:exit_fact_id>/retirement/",
         retirement_api.finalize_retirement,
         name="retirement-finalize",
+    ),
+    path(
+        "exit-facts/<uuid:fact_id>/correct/",
+        fact_api.correct_exit_fact,
+        name="exit-fact-correct",
+    ),
+    path(
+        "exit-facts/<uuid:fact_id>/revoke/",
+        fact_api.revoke_exit_fact,
+        name="exit-fact-revoke",
     ),
     path(
         "retirement-facts/<uuid:retirement_fact_id>/pension-status/",

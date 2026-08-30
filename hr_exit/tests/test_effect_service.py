@@ -88,10 +88,11 @@ class ExitEffectServiceTests(TestCase):
             ],
         )
 
+    @patch("hr_exit.services.effect_service.emit_registered_event")
     @patch("hr_exit.services.effect_service.ExitEffectSagaService")
     @patch("hr_staff.services.employment_service.EmploymentService")
     def test_effective_published_only_after_hr03_success_is_recorded(
-        self, employment_service_cls, saga_cls
+        self, employment_service_cls, saga_cls, emit_event
     ):
         service = ExitEffectService(77, actor_user_id=9)
         case, relationship, fact, effect = self._fixtures()
@@ -128,6 +129,8 @@ class ExitEffectServiceTests(TestCase):
             success_call.kwargs["receipt"]["hr03RelationshipStatus"], "ENDED"
         )
         self.assertEqual(fact.status, ExitFact.Status.EFFECTIVE)
+        self.assertIsNotNone(fact.sealed_at)
+        emit_event.assert_called_once()
         self.assertEqual(case.status, ExitCase.Status.EFFECTIVE)
 
     @patch("hr_exit.services.effect_service.ExitEffectSagaService")

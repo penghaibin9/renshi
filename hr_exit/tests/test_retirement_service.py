@@ -2,6 +2,7 @@ import uuid
 from datetime import date
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr_exit.models import ExitCase, ExitFact, RetirementFact
 from hr_exit.services.retirement_service import RetirementFactError, RetirementFactService
@@ -9,7 +10,7 @@ from hr_exit.services.retirement_service import RetirementFactError, RetirementF
 
 class RetirementFactServiceTests(TestCase):
     def _exit_fact(self, *, status=ExitFact.Status.EFFECTIVE, exit_type=ExitCase.ExitType.RETIREMENT):
-        return ExitFact.objects.create(
+        fact = ExitFact(
             tenant_id=77,
             fact_no=f"EXIT-{uuid.uuid4().hex[:8]}",
             person_id=uuid.uuid4(),
@@ -20,6 +21,11 @@ class RetirementFactServiceTests(TestCase):
             last_working_date=date(2026, 8, 31),
             status=status,
         )
+        if status != ExitFact.Status.EFFECT_PENDING:
+            fact.sealed_at = timezone.now()
+            fact.content_hash = fact.calculate_content_hash()
+        fact.save(force_insert=True)
+        return fact
 
     def test_effective_retirement_exit_materializes_append_only_retirement_fact(self):
         exit_fact = self._exit_fact()

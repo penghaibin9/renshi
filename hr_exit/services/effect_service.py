@@ -17,8 +17,12 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from django.db import transaction
+from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_exit.archive_registry import EVENT_EXIT_FACT_EFFECTIVE
 from hr_exit.models import ExitCase, ExitEffect, ExitFact
+from hr_exit.services.fact_correction_service import exit_fact_event_payload
 from hr_exit.services.saga_service import ExitEffectSagaService
 
 
@@ -263,14 +267,25 @@ class ExitEffectService:
         fact.effect_receipt_json = receipt
         fact.last_effect_error = ""
         fact.updated_by = self.actor_user_id
+        fact.sealed_at = timezone.now()
+        fact.content_hash = fact.calculate_content_hash()
         fact.save(
             update_fields=[
                 "status",
                 "effect_receipt_json",
                 "last_effect_error",
                 "updated_by",
+                "sealed_at",
+                "content_hash",
                 "updated_at",
             ]
+        )
+
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_EXIT_FACT_EFFECTIVE,
+            payload=exit_fact_event_payload(fact),
+            correlation_id=correlation_id,
         )
 
         case.status = ExitCase.Status.EFFECTIVE

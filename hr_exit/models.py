@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from django.db import models
+from django.db.models import Q
 
 from horilla.hr_domain_models import HrTenantScopedModel, HrVersionedModel
 
@@ -44,6 +48,8 @@ class ExitCase(HrTenantScopedModel):
             ("hr.exit.manage", "办理 HR16 退休与离校流程"),
             ("hr.exit.handover", "维护 HR16 离校交接清单"),
             ("hr.exit.effect", "执行 HR16 正式离校就业关系生效"),
+            ("hr.exit.fact.correct", "更正 HR16 已封板离校正式事实"),
+            ("hr.exit.fact.revoke", "撤销 HR16 已封板离校正式事实"),
             ("hr.exit.retirement_policy.manage", "维护 HR16 版本化退休政策"),
             ("hr.exit.retirement_precheck.execute", "执行 HR16 退休日期预审"),
         ]
@@ -248,6 +254,30 @@ class ExitEffect(HrTenantScopedModel):
         ]
 
 
+class ExitFactQuerySet(models.QuerySet):
+    """Block ORM bulk mutation of sealed HR16 authority facts.
+
+    The MySQL triggers installed by the authority migration are the final guard
+    for raw SQL.  Keeping the same rule in the ORM gives callers a useful domain
+    error before the statement reaches the database and also protects SQLite
+    development/test databases.
+    """
+
+    _ERROR = "EXIT_FACT_IMMUTABLE: append a superseding fact"
+
+    def _assert_unsealed(self):
+        if self.filter(sealed_at__isnull=False).exists():
+            raise ValueError(self._ERROR)
+
+    def update(self, **kwargs):
+        self._assert_unsealed()
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._assert_unsealed()
+        return super().delete()
+
+
 class ExitFact(HrTenantScopedModel):
     class Status(models.TextChoices):
         EFFECT_PENDING = "EFFECT_PENDING", "Waiting for HR03 employment effect"
@@ -267,15 +297,116 @@ class ExitFact(HrTenantScopedModel):
     effect_receipt_json = models.JSONField(default=dict, blank=True)
     last_effect_error = models.TextField(blank=True, default="")
     supersedes_fact_id = models.UUIDField(null=True, blank=True)
+    change_reason = models.CharField(max_length=128, blank=True, default="")
+    evidence_ref = models.CharField(max_length=256, blank=True, default="")
+    content_hash = models.CharField(max_length=64, blank=True, default="")
+    sealed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ExitFactQuerySet.as_manager()
+
+    _FORMAL_STATUSES = frozenset({Status.EFFECTIVE, Status.REVISED, Status.REVOKED})
 
     class Meta:
         db_table = "hr16_exit_fact"
         constraints = [
             models.UniqueConstraint(fields=("tenant_id", "fact_no"), name="uq_hr16_exit_fact_tenant_no"),
+            models.UniqueConstraint(
+                fields=("tenant_id", "supersedes_fact_id"),
+                name="uq_hr16_exit_fact_successor",
+            ),
+            models.CheckConstraint(
+                condition=Q(last_working_date__isnull=True)
+                | Q(last_working_date__lte=models.F("employment_end_date")),
+                name="ck_hr16_exit_fact_dates",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="EFFECT_PENDING", sealed_at__isnull=True, content_hash="")
+                    | Q(
+                        status__in=("EFFECTIVE", "REVISED", "REVOKED"),
+                        sealed_at__isnull=False,
+                        content_hash__regex=r"^[0-9a-f]{64}$",
+                    )
+                ),
+                name="ck_hr16_exit_fact_seal",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="EFFECTIVE", supersedes_fact_id__isnull=True)
+                    | Q(
+                        status__in=("REVISED", "REVOKED"),
+                        supersedes_fact_id__isnull=False,
+                        change_reason__gt="",
+                        evidence_ref__gt="",
+                    )
+                    | Q(status="EFFECT_PENDING", supersedes_fact_id__isnull=True)
+                ),
+                name="ck_hr16_exit_fact_chain",
+            ),
         ]
         indexes = [
             models.Index(fields=("tenant_id", "person_id", "status"), name="idx_hr16_exit_fact_person"),
         ]
+        base_manager_name = "objects"
+
+    def integrity_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "factNo": self.fact_no,
+            "personId": str(self.person_id),
+            "employmentRelationshipId": str(self.employment_relationship_id),
+            "sourceCaseId": str(self.source_case_id),
+            "exitType": self.exit_type,
+            "employmentEndDate": self.employment_end_date.isoformat(),
+            "lastWorkingDate": (
+                self.last_working_date.isoformat() if self.last_working_date else None
+            ),
+            "accessEndAt": self.access_end_at.isoformat() if self.access_end_at else None,
+            "status": self.status,
+            "effectReceipt": self.effect_receipt_json or {},
+            "supersedesFactId": (
+                str(self.supersedes_fact_id) if self.supersedes_fact_id else None
+            ),
+            "changeReason": self.change_reason,
+            "evidenceRef": self.evidence_ref,
+            "sealedAt": self.sealed_at.isoformat() if self.sealed_at else None,
+            "createdBy": self.created_by,
+            "updatedBy": self.updated_by,
+        }
+
+    def calculate_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.integrity_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(
+            pk=self.pk, sealed_at__isnull=False
+        ).exists():
+            raise ValueError(
+                "EXIT_FACT_IMMUTABLE: sealed facts must be superseded, not edited in place"
+            )
+        if self.status in self._FORMAL_STATUSES:
+            if self.sealed_at is None:
+                raise ValueError("EXIT_FACT_SEAL_REQUIRED: sealed_at is required")
+            if self.content_hash != self.calculate_content_hash():
+                raise ValueError(
+                    "EXIT_FACT_HASH_INVALID: content_hash does not match the formal fact"
+                )
+        elif self.sealed_at is not None or self.content_hash:
+            raise ValueError("EXIT_FACT_PENDING_MUST_BE_UNSEALED")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(
+            pk=self.pk, sealed_at__isnull=False
+        ).exists():
+            raise ValueError("EXIT_FACT_IMMUTABLE: sealed facts cannot be deleted")
+        return super().delete(*args, **kwargs)
 
 
 class RetirementFact(HrTenantScopedModel):

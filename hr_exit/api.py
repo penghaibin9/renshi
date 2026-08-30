@@ -334,10 +334,17 @@ def apply_effect(request, case_id):
                 "financeStatus": effect.finance_status,
                 "archiveStatus": effect.archive_status,
                 "effectReceipt": fact.effect_receipt_json,
+                "supersedesFactId": (
+                    str(fact.supersedes_fact_id) if fact.supersedes_fact_id else None
+                ),
+                "changeReason": fact.change_reason,
+                "evidenceRef": fact.evidence_ref,
+                "contentHash": fact.content_hash,
+                "sealedAt": fact.sealed_at.isoformat() if fact.sealed_at else None,
                 "error": outcome.error,
             },
             "apiVersion": "1.0",
-            "schemaVersion": "hr16.exit-effect.1",
+            "schemaVersion": "hr16.exit-effect.2",
         },
         status=200 if outcome.effective else 202,
     )

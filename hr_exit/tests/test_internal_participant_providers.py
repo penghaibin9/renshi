@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr_appointment.models import PositionAppointmentFact
 from hr_exit.models import ExitCase, ExitEffect, ExitFact
@@ -30,7 +31,7 @@ class InternalExitParticipantProviderTests(TestCase):
             requested_date=date(2026, 8, 1),
             planned_employment_end_date=date(2026, 9, 1),
         )
-        self.exit_fact = ExitFact.objects.create(
+        self.exit_fact = ExitFact(
             tenant_id=77,
             fact_no="EXIT-FACT-INTERNAL-001",
             person_id=self.person.id,
@@ -40,6 +41,9 @@ class InternalExitParticipantProviderTests(TestCase):
             employment_end_date=date(2026, 9, 1),
             status=ExitFact.Status.EFFECTIVE,
         )
+        self.exit_fact.sealed_at = timezone.now()
+        self.exit_fact.content_hash = self.exit_fact.calculate_content_hash()
+        self.exit_fact.save(force_insert=True)
 
     def _effect(self, participant):
         values = {

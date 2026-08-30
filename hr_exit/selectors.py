@@ -23,6 +23,10 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     cases = ExitCase.objects.filter(tenant_id=tenant_id)
     effects = ExitEffect.objects.filter(tenant_id=tenant_id)
     exits = ExitFact.objects.filter(tenant_id=tenant_id)
+    superseded_exit_ids = exits.exclude(
+        supersedes_fact_id__isnull=True
+    ).values_list("supersedes_fact_id", flat=True)
+    current_exits = exits.exclude(id__in=superseded_exit_ids)
     retirements = RetirementFact.objects.filter(tenant_id=tenant_id)
     handover_items = ExitHandoverItem.objects.filter(tenant_id=tenant_id)
     required_handover = handover_items.filter(required=True)
@@ -41,7 +45,12 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "completedRequiredHandover": required_handover.filter(status="COMPLETED").count(),
             "waivedRequiredHandover": required_handover.filter(status="WAIVED").count(),
             "effectExceptions": effects.filter(status__in=["PARTIAL_FAILED", "FAILED"]).count(),
-            "effectiveExits": exits.filter(status="EFFECTIVE").count(),
+            "effectiveExits": current_exits.filter(
+                status__in=(ExitFact.Status.EFFECTIVE, ExitFact.Status.REVISED)
+            ).count(),
+            "revokedExits": current_exits.filter(
+                status=ExitFact.Status.REVOKED
+            ).count(),
             "retirementFacts": retirements.filter(status="EFFECTIVE").count(),
         },
         "recentCases": list(
@@ -68,7 +77,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         "recentExitFacts": list(
             exits.order_by("-employment_end_date", "-created_at")[:12].values(
                 "id", "fact_no", "person_id", "source_case_id", "exit_type", "employment_end_date",
-                "last_working_date", "access_end_at", "status", "last_effect_error", "created_at"
+                "last_working_date", "access_end_at", "status", "last_effect_error",
+                "supersedes_fact_id", "change_reason", "evidence_ref", "content_hash",
+                "sealed_at", "created_at"
             )
         ),
         "recentRetirements": list(
@@ -81,6 +92,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "exitCase": True,
             "effectSaga": True,
             "exitFact": True,
+            "exitFactCorrection": True,
+            "exitFactRevocation": True,
             "retirementFact": True,
             "approvalWorkflow": True,
             "handoverChecklist": True,
