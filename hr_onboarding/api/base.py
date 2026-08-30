@@ -30,7 +30,11 @@ import uuid
 from django.http import JsonResponse
 from django.utils import timezone
 
-from hr_onboarding.api.exceptions import Hr05ApiError, TenantContextRequiredError
+from hr_onboarding.api.exceptions import (
+    Hr05ApiError,
+    PermissionDeniedError,
+    TenantContextRequiredError,
+)
 from hr_onboarding.context import build_hr05_context, resolve_tenant_from_request
 
 logger = logging.getLogger(__name__)
@@ -91,6 +95,22 @@ def make_hr05_context(request):
     if tenant_id is None:
         raise TenantContextRequiredError()
 
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionDeniedError("请先登录")
+
+    # selected_company is server-side session context, but it is not proof of
+    # tenant membership.  Every HR05 management read/write reaches this
+    # context builder before touching its selector/service.  An empty allowed
+    # set therefore means no school access and must fail closed.  Platform
+    # superusers retain the existing cross-school administration rule.
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        allowed = get_allowed_company_ids(user)
+        if tenant_id not in (allowed or ()):
+            raise TenantContextRequiredError("当前账号无权访问该学校数据")
+
     scope_type = request.GET.get("scope_type", "SCHOOL")
     scope_org_id = request.GET.get("scope_id")
     if scope_org_id in (None, "", "null"):
@@ -105,7 +125,7 @@ def make_hr05_context(request):
         return build_hr05_context(
             tenant_id=tenant_id,
             school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
-            user_id=request.user.id if request.user.is_authenticated else None,
+            user_id=user.id,
             as_of=request.GET.get("as_of"),
             period_from=request.GET.get("period_from"),
             period_to=request.GET.get("period_to"),

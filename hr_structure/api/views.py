@@ -152,14 +152,31 @@ from hr_structure.display_labels import CHANGE_TYPE, CHANGE_CASE_STATUS, AUTHORI
 
 def _make_scope(request) -> Hr02Scope:
     """服务端解析 scope：认证 + tenant + 用户授权范围（总册 35.1，不信前端任意值）。"""
-    if not getattr(request.user, "is_authenticated", False):
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
         raise HrContextError("HR02_SCOPE_DENIED", "请先登录")
     tenant_id = resolve_tenant_from_request(request)
     if tenant_id is None:
         raise HrContextError("HR02_TENANT_CONTEXT_REQUIRED", "请选择当前学校")
+
+    # selected_company 只是会话里的当前选择，不是租户授权凭据。非平台超级
+    # 管理员必须被明确分配到当前学校；空集合表示没有任何学校权限，不能被
+    # 当作“未配置限制/全校可见”。这里是 HR02 所有 canonical 读写入口共用
+    # 的 scope 构造器，因此在业务 service 取数或写库之前统一 fail-closed。
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        allowed = get_allowed_company_ids(user)
+        if tenant_id not in (allowed or ()):
+            raise HrContextError(
+                "HR02_TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校数据"
+            )
+
     # scope_type 白名单由 resolve_scope 校验；scope_id 仅当用户是 superuser 或拥有组织权限时接受
     scope_type = request.GET.get("scope_type", "SCHOOL")
-    if scope_type != "SCHOOL" and not has_hr02_permission(request.user, "hr.structure.organization.view"):
+    if scope_type != "SCHOOL" and not has_hr02_permission(
+        user, "hr.structure.organization.view"
+    ):
         raise HrContextError("HR02_SCOPE_DENIED", "无该数据范围权限")
     return resolve_scope(
         tenant_id,
