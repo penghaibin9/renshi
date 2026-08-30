@@ -51,9 +51,20 @@ class HrTodoProvider:
     """
 
     provider_key = "base"
+    required_permission = ""
 
     def get_summary(self, context) -> TodoSummary:
         raise NotImplementedError
 
     def list_todos(self, context, filters=None, page=1, page_size=20):
         raise NotImplementedError
+
+
+class TodoProviderUnavailable(Exception):
+    """A provider could not produce a trustworthy current result."""
+
+    def __init__(self, provider_key: str, reason_code: str, message: str = ""):
+        self.provider_key = provider_key
+        self.reason_code = reason_code
+        self.message = message
+        super().__init__(message or reason_code)

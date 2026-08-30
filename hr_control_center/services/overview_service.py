@@ -56,9 +56,38 @@ class OverviewService:
     HR01-01 人事总览聚合服务。
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        todo_service_factory=None,
+        alert_service_factory=None,
+        quick_action_service_factory=None,
+    ):
         self.registry = get_registry()
         self.legacy_provider = LegacyEmployeeMetricProvider()
+        self.todo_service_factory = todo_service_factory or self._make_todo_service
+        self.alert_service_factory = alert_service_factory or self._make_alert_service
+        self.quick_action_service_factory = (
+            quick_action_service_factory or self._make_quick_action_service
+        )
+
+    @staticmethod
+    def _make_todo_service():
+        from hr_control_center.services.todo_service import TodoService
+
+        return TodoService()
+
+    @staticmethod
+    def _make_alert_service():
+        from hr_control_center.services.alert_service import AlertService
+
+        return AlertService()
+
+    @staticmethod
+    def _make_quick_action_service():
+        from hr_control_center.services.quick_action_service import QuickActionService
+
+        return QuickActionService()
 
     def _resolve_provider(self, metric_key: str, authority_mode: str):
         """
@@ -127,7 +156,7 @@ class OverviewService:
 
         return self._to_contract(result, context, definition.key)
 
-    def get_bootstrap(self, context: HrRequestContext) -> dict:
+    def get_bootstrap(self, context: HrRequestContext, user=None) -> dict:
         """
         首屏 bootstrap 聚合（单请求返回 6 KPI + freshnessSummary）。
         """
@@ -151,6 +180,15 @@ class OverviewService:
         overall_status = OK if ok_count == len(CORE_METRIC_KEYS) else PARTIAL
         if error_count:
             overall_status = PARTIAL
+
+        todo_summary = self._todo_summary(context, user)
+        alert_summary = self._alert_summary(context, user)
+        quick_actions = self._quick_actions(context, user)
+        partial_sources = []
+        if todo_summary.get("status") in ("PARTIAL", "UNAVAILABLE", "ERROR"):
+            partial_sources.append("todos")
+        if alert_summary.get("status") in ("PARTIAL", "UNAVAILABLE", "ERROR"):
+            partial_sources.append("alerts")
 
         return {
             "context": {
@@ -178,18 +216,67 @@ class OverviewService:
                 "authorityMode": context.authority_mode or LEGACY_ONLY,
             },
             "metrics": metrics,
-            "todoSummary": None,  # S4 接入
-            "alertSummary": None,  # S5 接入
-            "quickActions": [],  # S7 接入
+            "todoSummary": todo_summary,
+            "alertSummary": alert_summary,
+            "quickActions": quick_actions,
             "freshnessSummary": {
                 "okCount": ok_count,
                 "staleCount": stale_count,
                 "errorCount": error_count,
             },
             "dataQuality": {},
-            "partialSources": [],
-            "consistency": overall_status,
+            "partialSources": partial_sources,
+            "consistency": PARTIAL if partial_sources else overall_status,
         }
+
+    @staticmethod
+    def _has_permission(user, code: str) -> bool:
+        if user is None:
+            return False
+        return bool(getattr(user, "is_superuser", False) or user.has_perm(code))
+
+    def _todo_summary(self, context: HrRequestContext, user) -> dict:
+        if not self._has_permission(user, "hr.dashboard.todo.view"):
+            return {"status": "FILTERED", "items": None}
+        try:
+            return self.todo_service_factory().get_summary(context, user=user)
+        except Exception:
+            return {
+                "status": "UNAVAILABLE",
+                "overdue": None,
+                "today": None,
+                "week": None,
+                "total": None,
+                "asOf": context.as_of.isoformat(),
+                "reasonCode": "TODO_SERVICE_UNAVAILABLE",
+            }
+
+    def _alert_summary(self, context: HrRequestContext, user) -> dict:
+        if not self._has_permission(user, "hr.dashboard.alert.view"):
+            return {"status": "FILTERED", "items": None}
+        try:
+            summary = self.alert_service_factory().get_summary(context)
+            summary["status"] = "OK"
+            return summary
+        except Exception:
+            return {
+                "status": "UNAVAILABLE",
+                "critical": None,
+                "high": None,
+                "medium": None,
+                "low": None,
+                "info": None,
+                "asOf": context.as_of.isoformat(),
+                "reasonCode": "ALERT_SERVICE_UNAVAILABLE",
+            }
+
+    def _quick_actions(self, context: HrRequestContext, user) -> list:
+        if not self._has_permission(user, "hr.dashboard.quick_action.use"):
+            return []
+        try:
+            return self.quick_action_service_factory().get_catalog(context, user)
+        except Exception:
+            return []
 
     # ---- 内部工具 ---------------------------------------------------------
 

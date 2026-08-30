@@ -158,7 +158,7 @@ def home_bootstrap(request):
 
     try:
         service = OverviewService()
-        payload = service.get_bootstrap(context)
+        payload = service.get_bootstrap(context, user=request.user)
     except HrProviderError as exc:
         logger.warning(str(exc))
         return _error(
@@ -433,7 +433,7 @@ def todo_summary(request):
         context = _make_context(request)
         from hr_control_center.services.todo_service import TodoService
 
-        payload = TodoService().get_summary(context)
+        payload = TodoService().get_summary(context, user=request.user)
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
     except Exception:
@@ -472,6 +472,7 @@ def todo_list(request):
             },
             page=page,
             page_size=page_size,
+            user=request.user,
         )
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
