@@ -50,7 +50,7 @@ class BaseProvider:
     default_timeout_ms = 3000
 
     def _require_tenant(self, tenant_id: Any) -> None:
-        if tenant_id is None:
+        if not tenant_id:
             raise ValueError("TENANT_CONTEXT_REQUIRED: provider requires tenant context")
 
     def unavailable(self, error_code: str, message: str, **kw) -> ProviderResult:

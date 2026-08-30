@@ -26,7 +26,7 @@ from hr_external.models import (
     HrExternalLifecycleEvent,
     HrExternalProvisioningRequest,
 )
-from hr_external.services.access_service import AccessService
+from hr_external.services.access_service import AccessScopeInvalid, AccessService
 from hr_external.services.category_service import CategoryService
 from hr_external.services.engagement_service import EngagementService, EngagementCreateInput
 from hr_external.services.profile_service import ProfileService
@@ -66,7 +66,9 @@ class AccessLifecycleTests(TestCase):
         for g in grants:
             self.assertIn(g.target_system, {"EXTERNAL_PORTAL", "ACADEMIC", "LIBRARY"})
             # expires_at <= end_at + grace（§67）
-            max_expiry = datetime.combine(self.eng.end_at, datetime.min.time()) + timedelta(days=7)
+            max_expiry = timezone.make_aware(
+                datetime.combine(self.eng.end_at, datetime.min.time())
+            ) + timedelta(days=7)
             self.assertLessEqual(g.expires_at, max_expiry)
         self.assertEqual(
             HrExternalProvisioningRequest.objects.filter(
@@ -76,16 +78,39 @@ class AccessLifecycleTests(TestCase):
         )
 
     def test_provisioning_idempotency_key_unique(self):
-        self.service.provision_engagement_access(tenant_id=self.tenant, engagement=self.eng)
-        # 幂等键 tenant+key 唯一 → 重复 provision 的 ProvisioningRequest 违反唯一约束（事务回滚）
-        from django.db import IntegrityError
+        first = self.service.provision_engagement_access(
+            tenant_id=self.tenant, engagement=self.eng
+        )
+        repeated = self.service.provision_engagement_access(
+            tenant_id=self.tenant, engagement=self.eng
+        )
 
-        with self.assertRaises(IntegrityError):
-            self.service.provision_engagement_access(tenant_id=self.tenant, engagement=self.eng)
-        # 回滚后 grant 不新增
+        self.assertEqual(
+            {grant.id for grant in repeated},
+            {grant.id for grant in first},
+        )
         self.assertEqual(
             HrExternalAccessGrant.objects.filter(tenant_id=self.tenant, engagement_id=self.eng).count(),
             3,
+        )
+        self.assertEqual(
+            HrExternalProvisioningRequest.objects.filter(
+                tenant_id=self.tenant,
+                engagement_id=self.eng,
+                operation="GRANT",
+            ).count(),
+            3,
+        )
+
+    def test_wrong_tenant_provisioning_is_fail_closed(self):
+        with self.assertRaises(AccessScopeInvalid):
+            self.service.provision_engagement_access(
+                tenant_id=999,
+                engagement=self.eng,
+            )
+
+        self.assertFalse(
+            HrExternalAccessGrant.objects.filter(engagement_id=self.eng).exists()
         )
 
     def test_revoke_only_affects_own_grants(self):

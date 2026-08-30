@@ -1,9 +1,8 @@
 """
 hr_external/integrations/iam.py —— IAM Provisioning Provider（S2，总册 §94/§98/§99/§104/§105）。
 
-# [总控占位] IAM 系统未接入。
-- 当前返回 UNAVAILABLE（禁止 mock 冒充成功；00 §69）。
-- 替换时机：真实 IAM 接口接入后实现 scoped grant 下发与回收。
+生产接入由 ``HR08_IAM_PROVIDER`` 配置提供 BASE_URL、TOKEN、TIMEOUT_MS。
+缺配置返回 UNAVAILABLE；写调用必须携带幂等键且成功响应必须包含 receiptId。
 
 契约：
   provision_grant(*, tenant_id, target_system, role_code, scope_json, expires_at, idempotency_key)
@@ -19,12 +18,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from hr_external.integrations.base import BaseProvider, ProviderResult
+from hr_external.integrations.base import ProviderResult
+from hr_external.integrations.http import ConfiguredJsonProvider
 
 
-class IamProvisioningProvider(BaseProvider):
+class IamProvisioningProvider(ConfiguredJsonProvider):
     owner_domain = "IAM"
     sensitivity = "RESTRICTED_HR"
+    settings_name = "HR08_IAM_PROVIDER"
 
     def provision_grant(
         self,
@@ -37,10 +38,18 @@ class IamProvisioningProvider(BaseProvider):
         idempotency_key: str = "",
     ) -> ProviderResult:
         self._require_tenant(tenant_id)
-        # [总控占位] IAM 未接入：返回 UNAVAILABLE。替换为真实 GRANT。
-        return self.unavailable(
-            "PROVIDER_UNAVAILABLE",
-            "IAM system not integrated yet",
+        return self._request(
+            tenant_id=tenant_id,
+            method="POST",
+            path="grants/provision",
+            idempotency_key=idempotency_key,
+            payload={
+                "targetSystem": target_system,
+                "roleCode": role_code,
+                "scope": scope_json,
+                "expiresAt": expires_at,
+            },
+            receipt_required=True,
         )
 
     def revoke_grant(
@@ -53,16 +62,24 @@ class IamProvisioningProvider(BaseProvider):
         idempotency_key: str = "",
     ) -> ProviderResult:
         self._require_tenant(tenant_id)
-        # [总控占位] IAM 未接入：返回 UNAVAILABLE。替换为真实 REVOKE。
-        return self.unavailable(
-            "PROVIDER_UNAVAILABLE",
-            "IAM system not integrated yet",
+        return self._request(
+            tenant_id=tenant_id,
+            method="POST",
+            path="grants/revoke",
+            idempotency_key=idempotency_key,
+            payload={
+                "targetSystem": target_system,
+                "roleCode": role_code,
+                "scope": scope_json,
+            },
+            receipt_required=True,
         )
 
     def reconcile(self, *, tenant_id: int, engagement_id: str) -> ProviderResult:
         self._require_tenant(tenant_id)
-        # [总控占位] IAM 未接入：返回 UNAVAILABLE。替换为周期对账（access 漂移 → Risk）。
-        return self.unavailable(
-            "PROVIDER_UNAVAILABLE",
-            "IAM system not integrated yet",
+        return self._request(
+            tenant_id=tenant_id,
+            method="GET",
+            path="grants/reconcile",
+            params={"engagementId": engagement_id},
         )

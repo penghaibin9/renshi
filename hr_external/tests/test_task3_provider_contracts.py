@@ -11,11 +11,22 @@
 """
 
 from django.test import SimpleTestCase
+from unittest.mock import Mock
 
 from hr_external.integrations.academic import AcademicProvider
 from hr_external.integrations.base import ProviderStatus
 from hr_external.integrations.hr07 import AgreementProvider
 from hr_external.integrations.hr15 import SettlementProvider
+from hr_external.integrations.iam import IamProvisioningProvider
+
+
+class _JsonResponse:
+    def __init__(self, status_code, data):
+        self.status_code = status_code
+        self._data = data
+
+    def json(self):
+        return self._data
 
 
 class ProviderContractBasics(SimpleTestCase):
@@ -128,3 +139,79 @@ class AcademicProviderContractTests(SimpleTestCase):
             tenant_id=1, academic_teacher_id="T20260001", term="2026-2027-1"
         )
         self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
+
+    def test_configured_activation_requires_and_returns_receipt(self):
+        session = Mock()
+        session.request.return_value = _JsonResponse(
+            200,
+            {"receiptId": "academic-receipt-1", "sourceVersion": "2026-08"},
+        )
+        provider = AcademicProvider(
+            config={
+                "BASE_URL": "https://academic.example.invalid/api/",
+                "TOKEN": "test-token",
+                "TIMEOUT_MS": 750,
+            },
+            session=session,
+        )
+
+        result = provider.activate_teacher_identity(
+            tenant_id=7,
+            external_teacher_no="EXT-7",
+            academic_teacher_id="T-7",
+            valid_from="2026-09-01",
+            valid_to=None,
+            idempotency_key="academic:activate:7",
+        )
+
+        self.assertEqual(result.status, ProviderStatus.OK)
+        self.assertEqual(result.data["receiptId"], "academic-receipt-1")
+        request = session.request.call_args.kwargs
+        self.assertEqual(request["headers"]["X-Tenant-ID"], "7")
+        self.assertEqual(
+            request["headers"]["Idempotency-Key"], "academic:activate:7"
+        )
+        self.assertEqual(request["timeout"], 0.75)
+
+    def test_configured_write_without_receipt_fails_closed(self):
+        session = Mock()
+        session.request.return_value = _JsonResponse(200, {"accepted": True})
+        provider = AcademicProvider(
+            config={"BASE_URL": "https://academic.example.invalid", "TOKEN": "x"},
+            session=session,
+        )
+
+        result = provider.deactivate_teacher_identity(
+            tenant_id=7,
+            academic_teacher_id="T-7",
+            idempotency_key="academic:deactivate:7",
+        )
+
+        self.assertEqual(result.status, ProviderStatus.ERROR)
+        self.assertEqual(result.error_code, "PROVIDER_RECEIPT_INVALID")
+
+
+class IamProviderContractTests(SimpleTestCase):
+    def test_configured_grant_carries_scope_and_idempotency(self):
+        session = Mock()
+        session.request.return_value = _JsonResponse(
+            201, {"receiptId": "iam-receipt-1"}
+        )
+        provider = IamProvisioningProvider(
+            config={"BASE_URL": "https://iam.example.invalid/v1", "TOKEN": "x"},
+            session=session,
+        )
+
+        result = provider.provision_grant(
+            tenant_id=8,
+            target_system="ACADEMIC",
+            role_code="ACADEMIC_TEACHER",
+            scope_json={"engagementId": "eng-8"},
+            expires_at="2027-08-31T00:00:00+08:00",
+            idempotency_key="iam:grant:eng-8",
+        )
+
+        self.assertEqual(result.status, ProviderStatus.OK)
+        sent = session.request.call_args.kwargs
+        self.assertEqual(sent["json"]["scope"], {"engagementId": "eng-8"})
+        self.assertEqual(sent["headers"]["Idempotency-Key"], "iam:grant:eng-8")

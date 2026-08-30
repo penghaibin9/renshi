@@ -51,6 +51,8 @@ class AccessService:
     def policy_for_category(self, category) -> dict:
         """按 category.access_policy_code 返回目标系统×角色×grace 的默认策略。
         # [总控占位] 访问策略模型未建（S6 后接 policy 字典），先用内置默认集。"""
+        if category is None:
+            raise AccessScopeInvalid("External category is unavailable inside tenant")
         code = (category.access_policy_code or "").strip()
         if not code:
             return dict(DEFAULT_ACCESS_POLICY)
@@ -66,33 +68,59 @@ class AccessService:
         """Activation 后创建 scoped grants + GRANT provisioning requests（§43 step8/§104）。"""
         from hr_external.models import HrExternalCategory
 
+        if engagement.tenant_id != tenant_id:
+            raise AccessScopeInvalid("Engagement does not belong to tenant")
+
         category = HrExternalCategory.objects.filter(
             tenant_id=tenant_id, id=engagement.category_id_id
         ).first()
         policy = self.policy_for_category(category)
 
         grants = []
-        end_dt = datetime.combine(engagement.end_at, datetime.min.time()) if engagement.end_at else None
+        end_dt = (
+            timezone.make_aware(
+                datetime.combine(engagement.end_at, datetime.min.time())
+            )
+            if engagement.end_at
+            else None
+        )
         for system, rule in policy.items():
             expires_at = end_dt + timedelta(days=rule.get("graceDays", 0)) if end_dt else None
-            grant = HrExternalAccessGrant.objects.create(
-                tenant_id=tenant_id,
-                engagement_id=engagement,
-                target_system=system,
-                role_code=rule.get("roleCode", ""),
-                scope_json={"engagementId": str(engagement.id)},
-                granted_at=timezone.now(),
-                expires_at=expires_at,
-                status=AccessGrantStatus.PENDING,
+            role_code = rule.get("roleCode", "")
+            grant = (
+                HrExternalAccessGrant.objects.select_for_update()
+                .filter(
+                    tenant_id=tenant_id,
+                    engagement_id=engagement,
+                    target_system=system,
+                    role_code=role_code,
+                )
+                .first()
             )
-            HrExternalProvisioningRequest.objects.create(
+            if grant is None:
+                grant = HrExternalAccessGrant.objects.create(
+                    tenant_id=tenant_id,
+                    engagement_id=engagement,
+                    target_system=system,
+                    role_code=role_code,
+                    scope_json={"engagementId": str(engagement.id)},
+                    granted_at=timezone.now(),
+                    expires_at=expires_at,
+                    status=AccessGrantStatus.PENDING,
+                )
+            HrExternalProvisioningRequest.objects.get_or_create(
                 tenant_id=tenant_id,
-                engagement_id=engagement,
-                target_system=system,
-                operation=ProvisioningOperation.GRANT,
-                scope_json={"roleCode": rule.get("roleCode", ""), "engagementId": str(engagement.id)},
                 idempotency_key=f"grant:{engagement.id}:{system}",
-                status=ProvisioningStatus.PENDING,
+                defaults={
+                    "engagement_id": engagement,
+                    "target_system": system,
+                    "operation": ProvisioningOperation.GRANT,
+                    "scope_json": {
+                        "roleCode": role_code,
+                        "engagementId": str(engagement.id),
+                    },
+                    "status": ProvisioningStatus.PENDING,
+                },
             )
             grants.append(grant)
         return grants
@@ -111,6 +139,8 @@ class AccessService:
         engagement: HrExternalEngagement,
     ) -> list[HrExternalAccessGrant]:
         """ExternalEngagementEnding → 逐 grant 发起 REVOKE（§66/§105）。"""
+        if engagement.tenant_id != tenant_id:
+            raise AccessScopeInvalid("Engagement does not belong to tenant")
         grants = list(
             HrExternalAccessGrant.objects.filter(
                 tenant_id=tenant_id,
@@ -119,14 +149,19 @@ class AccessService:
             )
         )
         for grant in grants:
-            HrExternalProvisioningRequest.objects.create(
+            HrExternalProvisioningRequest.objects.get_or_create(
                 tenant_id=tenant_id,
-                engagement_id=engagement,
-                target_system=grant.target_system,
-                operation=ProvisioningOperation.REVOKE,
-                scope_json={"roleCode": grant.role_code, "engagementId": str(engagement.id)},
                 idempotency_key=f"revoke:{grant.id}",
-                status=ProvisioningStatus.PENDING,
+                defaults={
+                    "engagement_id": engagement,
+                    "target_system": grant.target_system,
+                    "operation": ProvisioningOperation.REVOKE,
+                    "scope_json": {
+                        "roleCode": grant.role_code,
+                        "engagementId": str(engagement.id),
+                    },
+                    "status": ProvisioningStatus.PENDING,
+                },
             )
             grant.status = AccessGrantStatus.REVOKE_FAILED if grant.status == AccessGrantStatus.FAILED_RETRYABLE else AccessGrantStatus.PENDING
             grant.save(update_fields=["status", "updated_at"])
