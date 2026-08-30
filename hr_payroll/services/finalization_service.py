@@ -15,6 +15,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from horilla.db_retry import retry_mysql_transaction
+from horilla.hr_event_service import emit_registered_event
+from hr_payroll.authority_registry import EVENT_PERIOD_FINALIZED
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
 
 
@@ -159,6 +161,17 @@ class PayrollFinalizationService:
                 "time_source_snapshot_json",
                 "updated_at",
             ]
+        )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_PERIOD_FINALIZED,
+            payload={
+                "periodId": str(period.id),
+                "periodCode": period.period_code,
+                "resultIds": finalized_ids,
+                "timeSourceSnapshot": time_source_snapshot,
+                "finalizedAt": period.finalized_at.isoformat(),
+            },
         )
         return PayrollFinalizationResult(
             period=period,

@@ -7,4 +7,8 @@ class HrPayrollConfig(AppConfig):
     verbose_name = "HR15 薪酬福利"
 
     def ready(self):
-        from . import authority_models, authority_registry  # noqa: F401
+        from . import (  # noqa: F401
+            authority_models,
+            authority_registry,
+            calculation_models,
+        )

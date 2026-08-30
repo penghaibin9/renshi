@@ -32,10 +32,11 @@ class PayrollFinalizationServiceTests(TestCase):
         "_time_source_snapshot",
         return_value={"providerVersion": "hr11-time-close-v1", "timeCloseSnapshotId": 11},
     )
+    @patch("hr_payroll.services.finalization_service.emit_registered_event")
     @patch("hr_payroll.services.finalization_service.PayrollResultFact.objects")
     @patch("hr_payroll.services.finalization_service.PayrollPeriod.objects")
     def test_finalize_locks_period_and_results_before_marking_final(
-        self, period_objects, result_objects, time_source_snapshot
+        self, period_objects, result_objects, emit_event, time_source_snapshot
     ):
         period = MagicMock()
         period.id = "00000000-0000-0000-0000-000000000101"
@@ -77,6 +78,7 @@ class PayrollFinalizationServiceTests(TestCase):
             ]
         )
         self.assertEqual(outcome.finalized_result_ids, (str(result.id),))
+        emit_event.assert_called_once()
 
     @patch("hr_payroll.services.finalization_service.PayrollResultFact.objects")
     @patch("hr_payroll.services.finalization_service.PayrollPeriod.objects")
