@@ -169,6 +169,30 @@ class Hr14RankingServiceTests(TestCase):
             AppointmentRankingResult.objects.filter(ranking_no="RK-MISSING").exists()
         )
 
+    def test_eligible_participant_cannot_be_silently_omitted_from_ranking(self):
+        target, _, _ = self._participant("90")
+        AppointmentApplicationCase.objects.create(
+            tenant_id=self.tenant_id,
+            case_no=f"CASE-ELIGIBLE-{uuid.uuid4().hex[:8]}",
+            person_id=uuid.uuid4(),
+            policy_version_id=self.batch.policy_version_id,
+            position_instance_id=target.position_instance_id,
+            batch_no=self.batch.batch_no,
+            requested_level_code="L2",
+            status=AppointmentApplicationCase.Status.ELIGIBLE,
+        )
+
+        with self.assertRaises(AppointmentRankingError) as ctx:
+            AppointmentRankingService(self.tenant_id).finalize(
+                case_id=target.id, ranking_no="RK-INCOMPLETE-SCOPE"
+            )
+
+        self.assertEqual(
+            ctx.exception.code, "APPOINTMENT_RANKING_PARTICIPANT_SCOPE_INCOMPLETE"
+        )
+        self.batch.refresh_from_db()
+        self.assertEqual(self.batch.status, AppointmentBatch.Status.REVIEWING)
+
     def test_service_rejects_client_forged_authority_fields(self):
         target, _, _ = self._participant("90")
         with self.assertRaises(AppointmentRankingError) as ctx:

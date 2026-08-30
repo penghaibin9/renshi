@@ -137,6 +137,17 @@ class AppointmentRankingService:
         from hr_assessment.services.result_correction_service import canonical_result_snapshot
         from hr_appointment.population_models import AppointmentPopulationMemberSnapshot
 
+        unresolved_participants = AppointmentApplicationCase.objects.filter(
+            tenant_id=self.tenant_id,
+            batch_no=batch.batch_no,
+            position_instance_id=target.position_instance_id,
+            status=AppointmentApplicationCase.Status.ELIGIBLE,
+        )
+        if unresolved_participants.exists():
+            raise AppointmentRankingError(
+                "APPOINTMENT_RANKING_PARTICIPANT_SCOPE_INCOMPLETE",
+                "all eligible applications for the position must enter review before ranking",
+            )
         group = list(
             AppointmentApplicationCase.objects.select_for_update()
             .filter(
