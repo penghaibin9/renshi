@@ -174,6 +174,12 @@ class ExitEffect(HrTenantScopedModel):
         default=ParticipantStatus.PENDING,
     )
     hr03_receipt_json = models.JSONField(default=dict, blank=True)
+    hr07_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    hr07_receipt_json = models.JSONField(default=dict, blank=True)
     hr14_status = models.CharField(
         max_length=16,
         choices=ParticipantStatus.choices,
@@ -186,12 +192,24 @@ class ExitEffect(HrTenantScopedModel):
         default=ParticipantStatus.NOT_REQUIRED,
     )
     iam_receipt_json = models.JSONField(default=dict, blank=True)
+    asset_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    asset_receipt_json = models.JSONField(default=dict, blank=True)
     settlement_status = models.CharField(
         max_length=16,
         choices=ParticipantStatus.choices,
         default=ParticipantStatus.NOT_REQUIRED,
     )
     settlement_receipt_json = models.JSONField(default=dict, blank=True)
+    finance_status = models.CharField(
+        max_length=16,
+        choices=ParticipantStatus.choices,
+        default=ParticipantStatus.NOT_REQUIRED,
+    )
+    finance_receipt_json = models.JSONField(default=dict, blank=True)
     archive_status = models.CharField(
         max_length=16,
         choices=ParticipantStatus.choices,

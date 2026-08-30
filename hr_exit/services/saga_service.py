@@ -20,9 +20,12 @@ class ExitSagaError(Exception):
 class ExitEffectSagaService:
     PARTICIPANTS = {
         "HR03": ("hr03_status", "hr03_receipt_json"),
+        "HR07": ("hr07_status", "hr07_receipt_json"),
         "HR14": ("hr14_status", "hr14_receipt_json"),
         "IAM": ("iam_status", "iam_receipt_json"),
+        "ASSET": ("asset_status", "asset_receipt_json"),
         "SETTLEMENT": ("settlement_status", "settlement_receipt_json"),
+        "FINANCE": ("finance_status", "finance_receipt_json"),
         "ARCHIVE": ("archive_status", "archive_receipt_json"),
     }
     FAILURE_STATUSES = {

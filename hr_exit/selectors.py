@@ -1,7 +1,19 @@
 """Tenant-scoped read models for HR16 retirement and exit."""
 from collections import Counter
 
+from django.conf import settings
+
 from .models import ExitCase, ExitEffect, ExitFact, ExitHandoverItem, RetirementFact
+
+
+def _external_provider_ready(participant: str) -> bool:
+    configured = getattr(settings, "HR16_EXIT_EXTERNAL_PROVIDERS", {}) or {}
+    item = configured.get(participant, {}) if isinstance(configured, dict) else {}
+    return bool(
+        isinstance(item, dict)
+        and str(item.get("url", "") or "").strip()
+        and str(item.get("token", "") or "").strip()
+    )
 
 
 def dashboard_snapshot(tenant_id: int) -> dict:
@@ -47,8 +59,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         ),
         "recentEffects": list(
             effects.order_by("-requested_at")[:12].values(
-                "id", "case_id", "effect_version", "status", "hr03_status", "hr14_status",
-                "iam_status", "settlement_status", "archive_status", "last_error", "requested_at",
+                "id", "case_id", "effect_version", "status", "hr03_status", "hr07_status",
+                "hr14_status", "iam_status", "asset_status", "settlement_status",
+                "finance_status", "archive_status", "last_error", "requested_at",
                 "applied_at", "reconciled_at"
             )
         ),
@@ -73,9 +86,9 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "handoverChecklist": True,
             "retirementPolicy": False,
             "retirementPrecheck": False,
-            "assetProvider": False,
-            "iamProvider": False,
-            "financeProvider": False,
-            "archiveProvider": False,
+            "assetProvider": _external_provider_ready("ASSET"),
+            "iamProvider": _external_provider_ready("IAM"),
+            "financeProvider": _external_provider_ready("FINANCE"),
+            "archiveProvider": True,
         },
     }

@@ -1,22 +1,25 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase
+from django.test import TestCase
 
 from hr_exit.models import ExitEffect
 from hr_exit.services.saga_service import ExitEffectSagaService, ExitSagaError
 
 
-class ExitEffectSagaServiceTests(SimpleTestCase):
+class ExitEffectSagaServiceTests(TestCase):
     def setUp(self):
         self.service = ExitEffectSagaService(77, actor_user_id=9)
 
     def _effect(self, **overrides):
         values = {
             "hr03_status": ExitEffect.ParticipantStatus.SUCCESS,
+            "hr07_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
             "hr14_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
             "iam_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            "asset_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
             "settlement_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            "finance_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
             "archive_status": ExitEffect.ParticipantStatus.NOT_REQUIRED,
         }
         values.update(overrides)
@@ -49,9 +52,12 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
             case_id="case-1",
             correlation_id="corr-1",
             hr03_status=ExitEffect.ParticipantStatus.SUCCESS,
+            hr07_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             hr14_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             iam_status=ExitEffect.ParticipantStatus.SUCCESS,
+            asset_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             settlement_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            finance_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             archive_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
         )
         effect_objects.select_for_update.return_value.filter.return_value.first.return_value = existing
@@ -83,9 +89,12 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
             case_id="case-1",
             correlation_id="corr-1",
             hr03_status=ExitEffect.ParticipantStatus.SUCCESS,
+            hr07_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             hr14_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             iam_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            asset_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             settlement_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            finance_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             archive_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
         )
         effect_objects.select_for_update.return_value.filter.return_value.first.return_value = existing
@@ -112,9 +121,12 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
             case_id="case-1",
             correlation_id="corr-1",
             hr03_status=ExitEffect.ParticipantStatus.SUCCESS,
+            hr07_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             hr14_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             iam_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            asset_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             settlement_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
+            finance_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
             archive_status=ExitEffect.ParticipantStatus.NOT_REQUIRED,
         )
         effect_objects.select_for_update.return_value.filter.return_value.first.return_value = existing
@@ -155,10 +167,13 @@ class ExitEffectSagaServiceTests(SimpleTestCase):
         self.assertEqual(kwargs["effect_version"], 3)
         self.assertEqual(kwargs["correlation_id"], "corr-3")
         self.assertEqual(kwargs["hr03_status"], ExitEffect.ParticipantStatus.PENDING)
+        self.assertEqual(kwargs["hr07_status"], ExitEffect.ParticipantStatus.NOT_REQUIRED)
         self.assertEqual(kwargs["iam_status"], ExitEffect.ParticipantStatus.PENDING)
+        self.assertEqual(kwargs["asset_status"], ExitEffect.ParticipantStatus.NOT_REQUIRED)
         self.assertEqual(kwargs["archive_status"], ExitEffect.ParticipantStatus.PENDING)
         self.assertEqual(kwargs["hr14_status"], ExitEffect.ParticipantStatus.NOT_REQUIRED)
         self.assertEqual(kwargs["settlement_status"], ExitEffect.ParticipantStatus.NOT_REQUIRED)
+        self.assertEqual(kwargs["finance_status"], ExitEffect.ParticipantStatus.NOT_REQUIRED)
 
     def test_effect_requires_stable_idempotency_key(self):
         with self.assertRaises(ExitSagaError) as cm:

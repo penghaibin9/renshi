@@ -77,7 +77,7 @@ class ExitParticipantServiceTests(TestCase):
         )
 
         self.assertEqual(result.status, ExitEffect.ParticipantStatus.UNAVAILABLE)
-        self.assertIn("no formal IAM provider", result.error)
+        self.assertIn("IAM provider URL/token is not configured", result.error)
         effect.refresh_from_db()
         self.assertEqual(effect.iam_status, ExitEffect.ParticipantStatus.UNAVAILABLE)
         self.assertEqual(effect.status, ExitEffect.Status.PARTIAL_FAILED)

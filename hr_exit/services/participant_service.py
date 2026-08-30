@@ -51,10 +51,16 @@ class _ParticipantClaim:
 
 
 class ExitParticipantService:
-    NON_CORE = frozenset({"HR14", "IAM", "SETTLEMENT", "ARCHIVE"})
+    NON_CORE = frozenset(
+        {"HR07", "HR14", "IAM", "ASSET", "SETTLEMENT", "FINANCE", "ARCHIVE"}
+    )
     BUILTIN_PROVIDERS = {
+        "HR07": "hr_contracts.exit_provider.exit_participant_provider",
         "HR14": "hr_appointment.exit_provider.exit_participant_provider",
+        "IAM": "hr_exit.services.external_participant_providers.iam_participant_provider",
+        "ASSET": "hr_exit.services.external_participant_providers.asset_participant_provider",
         "SETTLEMENT": "hr_payroll.exit_provider.exit_settlement_participant_provider",
+        "FINANCE": "hr_exit.services.external_participant_providers.finance_participant_provider",
         "ARCHIVE": "hr_exit.services.archive_transfer_service.archive_participant_provider",
     }
     DEFAULT_LEASE_SECONDS = 900

@@ -194,6 +194,26 @@ else:
         }
     }
 
+# HR16 external effect providers. Empty URL/token pairs intentionally fail
+# closed as UNAVAILABLE until deployment supplies real authority endpoints.
+HR16_EXIT_EXTERNAL_PROVIDERS = {
+    "IAM": {
+        "url": env("HR16_IAM_PROVIDER_URL", default=""),
+        "token": env("HR16_IAM_PROVIDER_TOKEN", default=""),
+        "timeoutSeconds": env.int("HR16_IAM_PROVIDER_TIMEOUT", default=10),
+    },
+    "ASSET": {
+        "url": env("HR16_ASSET_PROVIDER_URL", default=""),
+        "token": env("HR16_ASSET_PROVIDER_TOKEN", default=""),
+        "timeoutSeconds": env.int("HR16_ASSET_PROVIDER_TIMEOUT", default=10),
+    },
+    "FINANCE": {
+        "url": env("HR16_FINANCE_PROVIDER_URL", default=""),
+        "token": env("HR16_FINANCE_PROVIDER_TOKEN", default=""),
+        "timeoutSeconds": env.int("HR16_FINANCE_PROVIDER_TIMEOUT", default=10),
+    },
+}
+
 # SQLite: enable WAL so reads (list/search) don't block session writes from
 # concurrent requests like notification polling.
 from django.db.backends.signals import connection_created

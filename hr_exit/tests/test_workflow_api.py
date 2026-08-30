@@ -150,9 +150,12 @@ class Hr16WorkflowApiTests(SimpleTestCase):
             effect_version=1,
             status="FAILED",
             hr03_status="FAILED",
+            hr07_status="NOT_REQUIRED",
             hr14_status="NOT_REQUIRED",
             iam_status="NOT_REQUIRED",
+            asset_status="NOT_REQUIRED",
             settlement_status="NOT_REQUIRED",
+            finance_status="NOT_REQUIRED",
             archive_status="NOT_REQUIRED",
         )
         service_cls.return_value.apply.return_value = SimpleNamespace(
