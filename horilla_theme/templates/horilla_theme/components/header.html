@@ -26,8 +26,12 @@
 
 <div id="mainHeader" class="oh-main-header flex justify-between items-center bg-white py-3 px-5 border-b border-b-dark-50 fixed z-40">
     <div id="breadcrumbs-container">
+        {% if request.path|slice:":4" == "/hr/" %}
+            {% include "hr/components/header_breadcrumb.html" %}
+        {% else %}
         {% if breadcrumbs %}
             {% include "base/navbar_components/breadcrumbs_view.html" %}
+        {% endif %}
         {% endif %}
     </div>
 
@@ -65,7 +69,7 @@
                 id="themeToggleButton"
                 class="md:block p-2 group text-primary-600 w-12 h-12 bg-primary-100 hover:bg-primary-600 rounded-full transition duration-300 flex items-center justify-center"
             >
-                <a href="#" aria-label="{% trans 'Toggle theme' %}" onclick="return false">
+                <a href="#" aria-label="切换明暗主题" onclick="return false">
                     {% if request.session.theme == "dark" %}
                         <i class="fa-solid fa-lightbulb transition duration-300 group-hover:text-white"></i>
                     {% else %}
@@ -85,7 +89,7 @@
                 <button
                     id="tourLauncherBtn"
                     type="button"
-                    title="{% trans 'Take a tour' %}"
+                    title="查看使用引导"
                     onclick="if(window.horillaTour){window.horillaTour.toggle();}"
                     class="hidden md:block p-2 group text-primary-600 w-12 h-12 bg-primary-100 hover:bg-primary-600 rounded-full transition duration-300 relative"
                 >
@@ -187,10 +191,10 @@
             >
                 <i class="fa-solid fa-angle-right"></i>
             </button>
-            {% trans "All Notifications" %}
+            全部通知
         </h3>
         <button class="text-primary-600 text-xs flex justify-center font-semibold hover:text-[#ac3b2a] transition duration-300">
-            {% trans "Clear All" %}
+            全部清除
         </button>
     </div>
     <div class="" id="sidebarModalBody"></div>

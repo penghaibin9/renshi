@@ -39,7 +39,8 @@
     let body = {};
     try { body = await response.json(); } catch (_error) { /* explicit fallback below */ }
     if (!response.ok) {
-      const error = new Error(body.error?.message || `办理失败（HTTP ${response.status}）`);
+      const serverMessage = body.error?.message;
+      const error = new Error(serverMessage && /[\u3400-\u9fff]/.test(serverMessage) ? serverMessage : `办理失败（状态码 ${response.status}）`);
       error.details = body.error?.details || {};
       throw error;
     }
@@ -76,7 +77,7 @@
 
   async function runAction(action, recordId, payload = {}, button = null) {
     if (button) button.disabled = true;
-    setFeedback('正在提交到 HR11 Authority…');
+    setFeedback('正在提交到考勤业务台账…');
     try {
       const data = await request(endpoint(action, recordId), payload);
       if (action === 'close-precheck') {
@@ -99,7 +100,7 @@
     'exception-resolve': {title: '解决考勤异常', fields: textarea('处理说明', 'note', '请记录核验依据，不会覆盖原始打卡。')},
     'exception-dismiss': {title: '排除考勤异常', fields: textarea('排除说明', 'note', '说明为何该异常不成立。')},
     'leave-reject': {title: '拒绝请假申请', fields: textarea('拒绝原因', 'reason', '拒绝是终局决定，与退回修改不同。')},
-    'leave-return': {title: '办理销假', fields: field('实际返岗日期', 'actualReturnAt', 'date', '销假会形成独立 case，不覆盖原批准记录。')},
+    'leave-return': {title: '办理销假', fields: field('实际返岗日期', 'actualReturnAt', 'date', '销假会形成独立办理事项，不覆盖原批准记录。')},
     'close-reopen': {title: '申请重开月结', fields: textarea('重开原因', 'reason', '系统会形成更正批次并保留旧快照。')},
     'risk-resolve': {title: '解决考勤风险', fields: textarea('解决说明', 'note', '请记录源事实修复与核验依据。')}
   };

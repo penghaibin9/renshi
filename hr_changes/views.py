@@ -45,15 +45,41 @@ def change_center(request):
         )
     selector = CaseListSelector(ctx)
     view = request.GET.get("view", "initiated")
-    data = selector.list(view=view, user_id=request.user.id)
+    if view not in {"initiated", "todos", "approval", "waiting", "effective", "anomalies"}:
+        view = "initiated"
+    try:
+        page = max(int(request.GET.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+    filters = {
+        "keyword": request.GET.get("q", "").strip(),
+        "action_code": request.GET.get("action", "").strip(),
+        "organization_code": request.GET.get("org", "").strip(),
+        "period": request.GET.get("period", "").strip(),
+    }
+    data = selector.list(
+        view=view,
+        user_id=request.user.id,
+        page=page,
+        page_size=10,
+        **filters,
+    )
+    stats = selector.stats(request.user.id)
+    counts = selector.view_counts(request.user.id)
     view_tabs = [
-        ("initiated", "我的发起"),
-        ("todos", "我的待办"),
-        ("approval", "审批中"),
-        ("waiting", "待生效"),
-        ("effective", "已生效"),
-        ("anomalies", "异常"),
+        {"key": "initiated", "label": "我发起的", "count": counts["initiated"]},
+        {"key": "todos", "label": "待我处理", "count": counts["todos"]},
+        {"key": "approval", "label": "审批中", "count": counts["approval"]},
+        {"key": "waiting", "label": "待生效", "count": counts["waiting"]},
+        {"key": "effective", "label": "已生效", "count": counts["effective"]},
+        {"key": "anomalies", "label": "异常", "count": counts["anomalies"]},
     ]
+    upcoming = selector.list(
+        view="waiting",
+        user_id=request.user.id,
+        page=1,
+        page_size=4,
+    )["items"]
     return render(
         request,
         "hr_changes/change_center.html",
@@ -62,7 +88,14 @@ def change_center(request):
             "view_tabs": view_tabs,
             "items": data["items"],
             "total": data["total"],
-            "stats": selector.stats(request.user.id),
+            "page": data["page"],
+            "page_size": data["pageSize"],
+            "has_next": data["hasNext"],
+            "stats": stats,
+            "filter_options": selector.filter_options(),
+            "filters": filters,
+            "has_filters": any(filters.values()),
+            "upcoming": upcoming,
             "request": request,
         },
     )

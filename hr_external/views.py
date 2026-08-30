@@ -7,9 +7,10 @@ hr_external/views.py —— HR08 页面视图（S1 骨架 + S3 外聘教师库�
 - /hr/external-teachers/<profile_id>/       Profile 详情
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, render
 
 from hr_external.context import resolve_tenant_from_request
@@ -228,6 +229,19 @@ def external_teachers_home(request):
     industry_count = HrExternalTeacherProfile.objects.filter(
         tenant_id=tenant_id, primary_category__code__in=["INDUSTRY_PROFESSOR", "INDUSTRY_ADJUNCT", "SKILL_MASTER"]
     ).count()
+    pending_hiring_count = HrExternalHiringCase.objects.filter(tenant_id=tenant_id).exclude(
+        status__in=["ACTIVATED", "REJECTED", "WITHDRAWN", "CANCELLED"]
+    ).count()
+    today = date.today()
+    expiring_15_count = HrExternalEngagement.objects.filter(
+        tenant_id=tenant_id,
+        status__in=_ACTIVE_ENGAGEMENT_STATUSES,
+        end_at__gte=today,
+        end_at__lte=today + timedelta(days=15),
+    ).count()
+    risk_count = HrExternalTeacherProfile.objects.filter(tenant_id=tenant_id).filter(
+        ~Q(identity_verification_status="VERIFIED") | ~Q(ethics_status="PASS")
+    ).count()
 
     for item in items:
         item["poolStatusLabel"] = pool_status_label(item["poolStatus"])
@@ -239,6 +253,9 @@ def external_teachers_home(request):
         "items": items,
         "engaged_count": engaged_count,
         "industry_count": industry_count,
+        "pending_hiring_count": pending_hiring_count,
+        "expiring_15_count": expiring_15_count,
+        "risk_count": risk_count,
         "pool_status": spec.pool_status,
         "categories": CategoryService().list_categories(tenant_id),
     }

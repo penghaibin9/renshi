@@ -11,6 +11,12 @@
   function safeStatusClass(value) {
     return String(value || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "unknown";
   }
+  const STATUS_LABELS = {
+    DRAFT: "草稿", PLANNED: "筹备中", PUBLISHED: "已发布", OPEN: "开放报名",
+    CLOSED: "报名已截止", IN_PROGRESS: "进行中", COMPLETED: "已完成",
+    CANCELLED: "已取消", SUSPENDED: "已暂停",
+  };
+  function statusLabel(value, provided) { return provided || STATUS_LABELS[value] || "状态待确认"; }
   function stateHtml(title, detail, isError) {
     return '<div class="hr04-state"' + (isError ? ' data-state="error"' : "") + '><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail || "") + '</span></div>';
   }
@@ -45,7 +51,7 @@
         return;
       }
       container.innerHTML = items.map(function (item) {
-        const status = item.statusLabel || item.status || "—";
+        const status = statusLabel(item.status, item.statusLabel);
         const closeAt = item.application_close_at ? "截止 " + new Date(item.application_close_at).toLocaleDateString() : "未设截止";
         return '<article class="hr04-campaign-card">' +
           '<div class="hr04-campaign-card__head"><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(item.status) + '">' + escapeHtml(status) + '</span>' +

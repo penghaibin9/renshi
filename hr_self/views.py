@@ -23,7 +23,11 @@ def workspace(request, section="overview"):
         return render(
             request,
             "hr_self/workspace.html",
-            {"access_error": str(exc), "section": section, "section_title": title},
+            {
+                "access_error": "当前账号尚未关联教职工主档，暂时无法进入本人服务。请联系人事管理员完成身份关联。",
+                "section": section,
+                "section_title": title,
+            },
             status=403,
         )
     return render(

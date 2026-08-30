@@ -1,0 +1,23 @@
+<nav class="hr-shell-breadcrumb" aria-label="当前位置">
+  <a href="/hr/overview">人事</a><i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+  <strong>
+    {% if '/hr/changes/' in request.path %}人事异动中心
+    {% elif '/hr/contracts/' in request.path %}合同管理
+    {% elif '/hr/external-teachers/' in request.path %}外聘人员
+    {% elif '/hr/qualifications/' in request.path or '/hr/double-teacher/' in request.path %}资格资质
+    {% elif '/hr/development/' in request.path %}教师发展
+    {% elif '/hr/time/' in request.path %}考勤时间
+    {% elif '/hr/assessments/' in request.path %}考核管理
+    {% elif '/hr/titles/' in request.path %}职称评审
+    {% elif '/hr/appointments/' in request.path %}岗位聘任
+    {% elif '/hr/payroll/' in request.path %}薪酬福利
+    {% elif '/hr/exit/' in request.path %}退休离校
+    {% elif '/hr/self/' in request.path %}教职工服务
+    {% elif '/hr/data/' in request.path %}人事数据中心
+    {% elif '/hr/structure/' in request.path %}组织岗位
+    {% elif '/hr/staff/' in request.path %}教职工主档
+    {% elif '/hr/recruitment/' in request.path %}招聘管理
+    {% elif '/hr/onboarding/' in request.path %}入职管理
+    {% else %}人事工作台{% endif %}
+  </strong>
+</nav>

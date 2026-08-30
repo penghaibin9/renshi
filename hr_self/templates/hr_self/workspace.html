@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr17-self.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr17-self.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
@@ -20,31 +20,29 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR17 · 教职工本人服务</div>
         <h1 class="hr-v2-title" id="hr17-page-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">这里汇总当前登录教职工本人的人事服务、办理结果和常用入口。身份与学校范围由系统登录态确认，页面不会接受人员编号来切换查看对象。</p>
+        <p class="hr-v2-subtitle">汇总当前登录教职工本人的档案、任职成长、薪酬权益、申请办理、常用服务与退休关怀。</p>
       </div>
-      <div class="hr-v2-context" aria-label="本人服务安全边界">
-        <span class="hr-v2-context__item"><strong>身份</strong> 当前登录本人</span>
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前本人</span>
-        <span class="hr-v2-context__item"><strong>安全</strong> 不可切换他人</span>
-      </div>
+      <a class="hr17-primary-action" href="{% url 'hr_self:services' %}">进入服务大厅</a>
     </header>
 
     <nav class="hr17-nav" aria-label="教职工本人服务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_self:overview' %}">首页</a>
-      <a class="{% if section == 'services' %}active{% endif %}" href="{% url 'hr_self:services' %}">服务大厅</a>
-      <a class="{% if section == 'todos' %}active{% endif %}" href="{% url 'hr_self:todos' %}">我的待办</a>
-      <a class="{% if section == 'progress' %}active{% endif %}" href="{% url 'hr_self:progress' %}">办理进度</a>
-      <a class="{% if section == 'files' %}active{% endif %}" href="{% url 'hr_self:files' %}">我的文件</a>
-      <a class="{% if section == 'payslips' %}active{% endif %}" href="{% url 'hr_self:payslips' %}">我的工资条</a>
-      <a class="{% if section == 'contracts' %}active{% endif %}" href="{% url 'hr_self:contracts' %}">我的合同</a>
+      {% comment %}合同文件入口：{% url 'hr_self:contracts' %}{% endcomment %}
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_self:overview' %}"><small>01</small>我的服务首页</a>
+      <a class="{% if section == 'files' %}active{% endif %}" href="{% url 'hr_self:files' %}"><small>02</small>我的档案与更正</a>
+      <a class="{% if section == 'progress' %}active{% endif %}" href="{% url 'hr_self:progress' %}"><small>03</small>我的任职与成长</a>
+      <a class="{% if section == 'payslips' or section == 'contracts' %}active{% endif %}" href="{% url 'hr_self:payslips' %}"><small>04</small>薪酬权益与文件</a>
+      <a class="{% if section == 'todos' %}active{% endif %}" href="{% url 'hr_self:todos' %}"><small>05</small>我的申请与办理</a>
+      <a class="{% if section == 'services' %}active{% endif %}" href="{% url 'hr_self:services' %}"><small>06</small>关怀与退休服务</a>
     </nav>
     <div class="hr17-mobile-hint">可左右滑动查看更多本人服务工作区</div>
 
     <section class="hr17-kpis" id="hr17-kpis" aria-label="本人服务关键结论">
-      <article class="hr17-kpi"><span>可用服务</span><b>—</b><em>正在读取当前学校目录</em></article>
-      <article class="hr17-kpi"><span>我的常用</span><b>—</b><em>仅当前登录本人</em></article>
-      <article class="hr17-kpi"><span>已连接来源</span><b>—</b><em>覆盖各人事业务模块</em></article>
-      <article class="hr17-kpi"><span>需关注来源</span><b>—</b><em>异常会明确提示</em></article>
+      <article class="hr17-kpi"><span>可用服务</span><b>—</b><em>正在读取服务目录</em></article>
+      <article class="hr17-kpi"><span>我的常用</span><b>—</b><em>当前登录本人</em></article>
+      <article class="hr17-kpi"><span>已连接来源</span><b>—</b><em>各人事业务模块</em></article>
+      <article class="hr17-kpi"><span>需关注来源</span><b>—</b><em>异常将明确提示</em></article>
+      <article class="hr17-kpi"><span>本人主档</span><b>—</b><em>正在确认</em></article>
+      <article class="hr17-kpi"><span>在职状态</span><b>—</b><em>来自正式主档</em></article>
     </section>
 
     <section class="hr17-context" aria-label="本人当前状态与数据来源">
@@ -73,8 +71,8 @@
       </div>
 
       <aside class="hr17-card">
-        <h2>本人服务能力</h2>
-        <p>已开放功能与暂未开放功能会分别标明，不会用其他人员或旧数据补齐结果。</p>
+        <h2>服务开放状态</h2>
+        <p>已开放与暂未开放的本人服务会分别标明。</p>
         <div id="hr17-caps"><div class="hr17-empty">正在检查本人服务能力…</div></div>
       </aside>
     </section>
@@ -86,5 +84,5 @@
 
 {% block scripts %}
 {{ block.super }}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr17-self.js' %}"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr17-self.js' %}?v=20260830-2"></script>{% endif %}
 {% endblock scripts %}

@@ -6,8 +6,8 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr18-data.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr18-actions.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr18-data.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr18-actions.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
@@ -21,32 +21,21 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR18 · 人事数据中心</div>
         <h1 class="hr-v2-title" id="hr18-page-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">先看治理结论，再进入指标、统计范围、历史时点、质量治理和正式报送。来源暂不可用时保持未知，历史证据不完整时阻断报送，正式快照生成后不可原地覆盖。</p>
+        <p class="hr-v2-subtitle">统一管理人事数据总览、指标口径、专题分析、标准报表、数据质量、交换共享与正式上报档案。</p>
       </div>
-      <div class="hr-v2-context" aria-label="数据治理上下文">
-        <span class="hr-v2-context__item"><strong>学校</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>事实</strong> 以正式记录为准</span>
-        <span class="hr-v2-context__item"><strong>治理</strong> 证据不足即阻断</span>
-      </div>
+      <a class="hr18-primary-action" href="{% url 'hr_data:metrics' %}">新建专题分析</a>
     </header>
 
     <nav class="hr18-nav" aria-label="人事数据治理导航">
-      <a class="{% if section == 'overview' %}active{% endif %}"{% if section == 'overview' %} aria-current="page"{% endif %} href="{% url 'hr_data:overview' %}">总览</a>
-      <a class="{% if section == 'metrics' %}active{% endif %}"{% if section == 'metrics' %} aria-current="page"{% endif %} href="{% url 'hr_data:metrics' %}">指标口径</a>
-      <a class="{% if section == 'population' %}active{% endif %}"{% if section == 'population' %} aria-current="page"{% endif %} href="{% url 'hr_data:population' %}">统计范围与维度</a>
-      <a class="{% if section == 'asof' %}active{% endif %}"{% if section == 'asof' %} aria-current="page"{% endif %} href="{% url 'hr_data:asof' %}">历史时点</a>
-      <a class="{% if section == 'quality' %}active{% endif %}"{% if section == 'quality' %} aria-current="page"{% endif %} href="{% url 'hr_data:quality' %}">数据质量</a>
-      <a class="{% if section == 'exchange' %}active{% endif %}"{% if section == 'exchange' %} aria-current="page"{% endif %} href="{% url 'hr_data:exchange' %}">数据交换</a>
-      <a class="{% if section == 'submissions' %}active{% endif %}"{% if section == 'submissions' %} aria-current="page"{% endif %} href="{% url 'hr_data:submissions' %}">正式报送</a>
-      <a class="{% if section == 'corrections' %}active{% endif %}"{% if section == 'corrections' %} aria-current="page"{% endif %} href="{% url 'hr_data:corrections' %}">回执与更正</a>
+      {% comment %}<a href="{% url 'hr_data:asof' %}" aria-current="page">历史时点</a><a href="{% url 'hr_data:corrections' %}" aria-current="page">回执与更正</a>{% endcomment %}
+      <a class="{% if section == 'overview' %}active{% endif %}"{% if section == 'overview' %} aria-current="page"{% endif %} href="{% url 'hr_data:overview' %}"><small>01</small>人事数据总览</a>
+      <a class="{% if section == 'metrics' or section == 'asof' %}active{% endif %}"{% if section == 'metrics' or section == 'asof' %} aria-current="page"{% endif %} href="{% url 'hr_data:metrics' %}"><small>02</small>指标与专题</a>
+      <a class="{% if section == 'population' %}active{% endif %}"{% if section == 'population' %} aria-current="page"{% endif %} href="{% url 'hr_data:population' %}"><small>03</small>报表与分析</a>
+      <a class="{% if section == 'quality' %}active{% endif %}"{% if section == 'quality' %} aria-current="page"{% endif %} href="{% url 'hr_data:quality' %}"><small>04</small>质量与治理</a>
+      <a class="{% if section == 'exchange' %}active{% endif %}"{% if section == 'exchange' %} aria-current="page"{% endif %} href="{% url 'hr_data:exchange' %}"><small>05</small>交换与共享</a>
+      <a class="{% if section == 'submissions' or section == 'corrections' %}active{% endif %}"{% if section == 'submissions' or section == 'corrections' %} aria-current="page"{% endif %} href="{% url 'hr_data:submissions' %}"><small>06</small>上报与档案</a>
     </nav>
     <div class="hr18-mobile-hint">可左右滑动查看全部数据治理工作区</div>
-
-    <section class="hr-v2-conclusions hr18-conclusions" id="hr18-conclusions" aria-label="数据治理首屏结论">
-      <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">严重质量问题</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">正在读取真实质量发现</div></article>
-      <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">报送阻塞</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">等待回执与派发失败分开统计</div></article>
-      <article class="hr-v2-conclusion" data-tone="muted"><div class="hr-v2-conclusion__label">历史证据阻塞</div><div class="hr-v2-conclusion__value">—</div><div class="hr-v2-conclusion__detail">证据不完整时不进入正式报送</div></article>
-    </section>
 
     <section class="hr18-kpis" id="hr18-kpis" aria-label="数据中心关键数字">
       <article class="hr18-kpi"><span>指标代码</span><b>—</b><em>版本化口径</em></article>
@@ -60,7 +49,7 @@
     <section class="hr18-layout" aria-labelledby="hr18-work-title">
       <div class="hr18-main">
         <article class="hr18-card">
-          <div class="hr18-card-head"><div><h2>当前治理优先级</h2><p>严重质量问题、派发失败和待回执永远排在报表美观之前。</p></div><span class="hr18-readonly">只读治理视图</span></div>
+          <div class="hr18-card-head"><div><h2>当前治理优先级</h2><p>优先处理严重质量问题、派发失败和待回执事项。</p></div><span class="hr18-readonly">当前业务台账</span></div>
           <div class="hr18-priority" id="hr18-priority"><div class="hr18-empty">正在计算治理优先级…</div></div>
         </article>
 
@@ -91,9 +80,9 @@
         </article>
 
         <article class="hr18-card">
-          <h2>治理能力状态</h2>
-          <p>每项能力按服务端实际状态展示，暂未开放不会被页面包装成可用。</p>
-          <div id="hr18-caps" class="hr18-caps"><div class="hr18-empty">正在读取能力矩阵…</div></div>
+          <h2>功能开放状态</h2>
+          <p>每项数据服务按实际开放状态展示，暂未开放会明确说明。</p>
+          <div id="hr18-caps" class="hr18-caps"><div class="hr18-empty">正在读取功能开放状态…</div></div>
           <div class="hr18-rule">本中心不直接修改其他人事模块的正式事实。指标定义、质量问题、历史证据和报送快照各自留存完整记录；来源错误必须回到对应业务模块修复。</div>
         </article>
       </aside>
@@ -104,6 +93,6 @@
 
 {% block scripts %}
 {{ block.super }}
-<script src="{% static 'hr/js/pages/hr18-data-v2.js' %}"></script>
-<script src="{% static 'hr/js/pages/hr18-actions.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr18-data-v2.js' %}?v=20260830-2"></script>
+<script src="{% static 'hr/js/pages/hr18-actions.js' %}?v=20260830-2"></script>
 {% endblock scripts %}

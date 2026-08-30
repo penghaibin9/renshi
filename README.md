@@ -2,8 +2,16 @@
 
 > 仓库：`penghaibin9/renshi`  
 > 底座：Horilla HRMS 2.0（正在逐步接管，不再按 Horilla 上游开发分支规则施工）  
-> 当前开发总线：`agent/renshi-takeover-cleanup-20260810`  
+> 当前本地开发总线：`agent/renshi-ui-v2-20260827`
 > 默认稳定分支：`main`（**没有全绿验收，不合并 main**）
+
+## 本地开发只认这三个入口
+
+1. 打开 [`Renshi-18模块.code-workspace`](Renshi-18模块.code-workspace)，文件树只显示 HR01～HR18。
+2. 阅读 [`docs/新手本地开发总控.md`](docs/新手本地开发总控.md)，按固定步骤施工。
+3. 进入 [`modules/README.md`](modules/README.md)，一次只选择一个模块。
+
+`modules/` 是给人看的 18 模块控制面；现有 `hr_*` Django app 暂不移动，避免破坏 Python 导入、migration 历史和测试。前端文件按模块逐步迁回各自 app，不做一次性大搬家。
 
 ## 先看这一段
 

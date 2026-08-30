@@ -27,28 +27,31 @@
 }
 
 .hr14-nav {
-  display: flex;
-  gap: var(--hr-space-2);
+  display: grid;
+  grid-template-columns: repeat(6, minmax(126px, 1fr));
   overflow-x: auto;
   margin: 0 0 var(--hr-space-4);
-  padding: var(--hr-space-1);
   border: 1px solid var(--hr-border);
-  border-radius: var(--hr-radius-md);
+  border-radius: 5px;
   background: var(--hr-surface);
-  box-shadow: var(--hr-shadow-card);
   scrollbar-width: thin;
 }
 
 .hr14-nav a {
-  flex: 0 0 auto;
-  padding: 9px 12px;
-  border-radius: var(--hr-radius-sm);
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:126px;
+  padding:13px 14px;
+  border-right:1px solid var(--hr-border);
   color: var(--hr-text-700);
   font-size: 13px;
   font-weight: 700;
   line-height: 20px;
   white-space: nowrap;
 }
+.hr14-nav a:last-child { border-right:0; }
+.hr14-nav a small { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#f1f4f8; color:#758195; font-size:10px; }
 
 .hr14-nav a:hover,
 .hr14-nav a:focus-visible {
@@ -57,10 +60,10 @@
   outline: none;
 }
 
-.hr14-nav a.active {
-  background: var(--hr-primary-600);
-  color: #fff;
-}
+.hr14-nav a.active { background:#f5f8ff; color:#1f64dc; box-shadow:inset 0 -2px #1f64dc; }
+.hr14-nav a.active small { background:#1f64dc; color:#fff; }
+.hr14-primary-action { display:inline-flex; align-items:center; justify-content:center; min-height:38px; padding:0 16px; border-radius:5px; background:#1f64dc; color:#fff; font-size:13px; font-weight:700; text-decoration:none; white-space:nowrap; }
+.hr14-primary-action:hover { background:#1856c1; color:#fff; }
 
 .hr14-mobile-hint {
   display: none;
@@ -73,19 +76,24 @@
 .hr14-kpis {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: var(--hr-space-3);
   margin: 0 0 var(--hr-space-6);
+  border:1px solid var(--hr-border);
+  border-radius:5px;
+  background:#fff;
+  overflow:hidden;
 }
 
 .hr14-kpi {
   min-width: 0;
   min-height: 100px;
   padding: var(--hr-space-4);
-  border: 1px solid var(--hr-border);
-  border-radius: var(--hr-radius-md);
+  border: 0;
+  border-right: 1px solid var(--hr-border);
+  border-radius: 0;
   background: var(--hr-surface);
-  box-shadow: var(--hr-shadow-card);
+  box-shadow: none;
 }
+.hr14-kpi:last-child { border-right:0; }
 
 .hr14-kpi span,
 .hr14-kpi em {
@@ -447,6 +455,7 @@
 .hr14-principle strong {
   color: var(--hr-primary-700);
 }
+.hr14-process__step,.hr14-card { border-radius:5px; box-shadow:none; }
 
 /* Preserve all existing HR14 write workflows while visually aligning them
  * with the common V2 surface and token palette. Child templates load inline
@@ -527,6 +536,7 @@
 }
 
 @media (max-width: 1180px) {
+  .hr14-nav { display:flex; }
   .hr14-kpis,
   .hr14-process {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -859,6 +869,7 @@
 }
 
 @media (max-width: 680px) {
+  .hr14-primary-action { width:100%; }
   .hr14-workflow-row,
   .hr14-effect-row {
     grid-template-columns: minmax(0, 1fr) auto;

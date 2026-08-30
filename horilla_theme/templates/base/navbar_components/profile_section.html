@@ -4,7 +4,7 @@
         <div class="relative flex items-center cursor-pointer w-max">
             <img
                 src="{{request.user.employee_get.get_avatar}}"
-                alt="{% trans 'user' %}"
+                alt="用户头像"
                 class="w-11 h-11 rounded-full"
                 loading="lazy"
             >
@@ -20,9 +20,9 @@
                 <h5 class="font-semibold text-sm">{{ user.employee_get.get_full_name|title }}</h5>
                 <p class="text-xs text-dark-200">
                     {% if user.employee_get.check_online %}
-                        {% trans "Online" %}
+                        在线
                     {% else %}
-                        {% trans "Offline" %}
+                        离线
                     {% endif %}
                 </p>
             </div>
@@ -50,7 +50,7 @@
                         hx-select="#ohMainContent > *"
                         hx-swap="innerHTML show:window:top"
                         hx-push-url="true"
-                    >{% trans "My Profile" %}</a>
+                    >我的资料</a>
                 </button>
             </li>
             <li>
@@ -63,7 +63,7 @@
                         hx-select="#ohMainContent > *"
                         hx-swap="innerHTML show:window:top"
                         hx-push-url="true"
-                    >{% trans "Change Username" %}</a>
+                    >修改用户名</a>
                 </button>
             </li>
             <li>
@@ -76,7 +76,7 @@
                         hx-select="#ohMainContent > *"
                         hx-swap="innerHTML show:window:top"
                         hx-push-url="true"
-                    >{% trans "Change Password" %}</a>
+                    >修改密码</a>
                 </button>
             </li>
         {% endif %}
@@ -84,7 +84,7 @@
         <hr class="text-[#1c1c1c] my-2">
         <li>
             <button class="py-1.5 hover:text-primary-600 transition duration-300 text-sm gap-4 items-center flex w-full">
-                <a class="text-[13px]" href="{% url 'logout' %}"> {% trans "Logout" %} </a>
+                <a class="text-[13px]" href="{% url 'logout' %}"> 退出登录 </a>
             </button>
         </li>
     </ul>

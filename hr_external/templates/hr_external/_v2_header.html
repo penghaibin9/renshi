@@ -1,26 +1,26 @@
 <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
-  <span>HR08 外聘教师</span>
+  <span>外聘人员</span>
   <strong>{{ section_title }}</strong>
 </div>
 
 <header class="hr-v2-pagehead" aria-labelledby="hr08-title">
   <div class="hr-v2-pagehead__copy">
-    <div class="hr-v2-eyebrow">HR08 · 外聘教师管理</div>
-    <h1 class="hr-v2-title" id="hr08-title">{{ section_title }}</h1>
-    <p class="hr-v2-subtitle">{{ section_description }}</p>
+    <div class="hr-v2-eyebrow">外聘人员 · 人才与聘期管理</div>
+    <h1 class="hr-v2-title" id="hr08-title">{% if section == 'home' %}外聘人员{% else %}{{ section_title }}{% endif %}</h1>
+    <p class="hr-v2-subtitle">{% if section == 'home' %}先看人才是否可聘，再看本次聘用、任务与协议是否仍然有效。{% else %}{{ section_description }}{% endif %}</p>
   </div>
   <aside class="hr08-truth-note">
-    <strong>正式事实只认 Authority</strong>
-    <span>HR08 管外聘档案、聘期、任务、续聘与退出；组织来自 HR02，正式协议来自 HR07，页面不跨域改写。</span>
+    <strong>办理范围</strong>
+    <span>人员档案、聘期、任务、续聘与退出在此办理；组织和正式协议沿用系统已有信息。</span>
   </aside>
 </header>
 
 <nav class="hr08-nav" aria-label="外聘教师工作区">
-  <a href="{% url 'hr08-home' %}" class="{% if section == 'home' %}is-active{% endif %}"><span>01</span>人才库</a>
-  <a href="{% url 'hr08-pool' %}" class="{% if section == 'pool' %}is-active{% endif %}"><span>02</span>候选池</a>
-  <a href="{% url 'hr08-industry-home' %}" class="{% if section == 'industry' %}is-active{% endif %}"><span>03</span>产业人才</a>
+  <a href="{% url 'hr08-home' %}" class="{% if section == 'home' %}is-active{% endif %}"><span>01</span>外聘教师库</a>
+  <a href="{% url 'hr08-pool' %}" class="{% if section == 'pool' %}is-active{% endif %}"><span>02</span>候选人才池</a>
+  <a href="{% url 'hr08-industry-home' %}" class="{% if section == 'industry' %}is-active{% endif %}"><span>03</span>产业教授与技能大师</a>
   <a href="{% url 'hr08-hiring-home' %}" class="{% if section == 'hiring' %}is-active{% endif %}"><span>04</span>聘用审批</a>
-  <a href="{% url 'hr08-tasks-home' %}" class="{% if section == 'tasks' %}is-active{% endif %}"><span>05</span>任务矩阵</a>
-  <a href="{% url 'hr08-renewals-home' %}" class="{% if section == 'renewals' %}is-active{% endif %}"><span>06</span>续聘</a>
-  <a href="{% url 'hr08-exits-home' %}" class="{% if section == 'exits' %}is-active{% endif %}"><span>07</span>退出</a>
+  <a href="{% url 'hr08-tasks-home' %}" class="{% if section == 'tasks' %}is-active{% endif %}"><span>05</span>教学与服务任务</a>
+  <a href="{% url 'hr08-renewals-home' %}" class="{% if section == 'renewals' %}is-active{% endif %}"><span>06</span>续聘评估</a>
+  <a href="{% url 'hr08-exits-home' %}" class="{% if section == 'exits' %}is-active{% endif %}"><span>07</span>退出办理</a>
 </nav>

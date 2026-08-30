@@ -6,8 +6,8 @@ from .api import HrDataAccessError, resolve_request_tenant
 SECTIONS = {
     "overview": "人事数据总览",
     "metrics": "指标口径中心",
-    "population": "Population / Dimension",
-    "asof": "历史时点 As-of",
+    "population": "标准报表与自助分析",
+    "asof": "历史时点分析",
     "quality": "数据质量中心",
     "exchange": "数据交换",
     "submissions": "正式报送",

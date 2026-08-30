@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr15-payroll.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr15-payroll.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
@@ -21,27 +21,19 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR15 · 薪酬福利</div>
         <h1 class="hr-v2-title" id="hr15-page-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">工资核算、封板、支付和财务对账是不同事实。先确认工资期间与薪酬档案，再进入核算和正式结果；未接通的支付、社保或规则能力明确保持“暂不可用”。</p>
+        <p class="hr-v2-subtitle">统一管理薪酬档案、薪资项目与规则、月度工资核算、调资津补贴、社保公积金、工资条与财务对账。</p>
       </div>
-      <div class="hr-v2-context" aria-label="当前工作区说明">
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>正式结果</strong> 已封板 / 已调整</span>
-        <span class="hr-v2-context__item"><strong>调整</strong> 追加差额记录</span>
-      </div>
+      <a class="hr15-primary-action" href="{% url 'hr_payroll:periods' %}">进入工资期间</a>
     </header>
 
     <nav class="hr15-nav" aria-label="薪酬福利业务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_payroll:overview' %}">总览</a>
-      <a class="{% if section == 'profiles' %}active{% endif %}" href="{% url 'hr_payroll:profiles' %}">薪酬档案</a>
-      <a class="{% if section == 'periods' %}active{% endif %}" href="{% url 'hr_payroll:periods' %}">工资期间</a>
-      <a class="{% if section == 'calculations' %}active{% endif %}" href="{% url 'hr_payroll:calculations' %}">工资核算</a>
-      <a class="{% if section == 'rules' %}active{% endif %}" href="{% url 'hr_payroll:rules' %}">薪资规则</a>
-      <a class="{% if section == 'allowances' %}active{% endif %}" href="{% url 'hr_payroll:allowances' %}">津补贴</a>
-      <a class="{% if section == 'social_security' %}active{% endif %}" href="{% url 'hr_payroll:social_security' %}">社保公积金</a>
-      <a class="{% if section == 'results' %}active{% endif %}" href="{% url 'hr_payroll:results' %}">正式结果</a>
-      <a class="{% if section == 'payments' %}active{% endif %}" href="{% url 'hr_payroll:payments' %}">支付与工资条</a>
-      <a class="{% if section == 'reconciliation' %}active{% endif %}" href="{% url 'hr_payroll:reconciliation' %}">财务对账</a>
-      <a class="{% if section == 'legacy_takeover' %}active{% endif %}" href="{% url 'hr_payroll:legacy_takeover' %}">历史工资对账</a>
+      {% comment %}总览、期间、结果及历史对账兼容入口：{% url 'hr_payroll:overview' %} {% url 'hr_payroll:periods' %} {% url 'hr_payroll:results' %} {% url 'hr_payroll:reconciliation' %} {% url 'hr_payroll:legacy_takeover' %}{% endcomment %}
+      <a class="{% if section == 'profiles' or section == 'overview' %}active{% endif %}" href="{% url 'hr_payroll:profiles' %}"><small>01</small>薪酬档案</a>
+      <a class="{% if section == 'rules' %}active{% endif %}" href="{% url 'hr_payroll:rules' %}"><small>02</small>薪资项目与规则</a>
+      <a class="{% if section == 'periods' or section == 'calculations' %}active{% endif %}" href="{% url 'hr_payroll:calculations' %}"><small>03</small>月度工资核算</a>
+      <a class="{% if section == 'allowances' %}active{% endif %}" href="{% url 'hr_payroll:allowances' %}"><small>04</small>调资与津补贴</a>
+      <a class="{% if section == 'social_security' %}active{% endif %}" href="{% url 'hr_payroll:social_security' %}"><small>05</small>社保与公积金</a>
+      <a class="{% if section == 'results' or section == 'payments' or section == 'reconciliation' or section == 'legacy_takeover' %}active{% endif %}" href="{% url 'hr_payroll:payments' %}"><small>06</small>工资条与财务</a>
     </nav>
     <div class="hr15-mobile-hint">可左右滑动查看更多薪酬工作区</div>
 
@@ -72,7 +64,7 @@
       <div class="hr-v2-section__head"><div><h2 id="hr15-work-title">当前薪酬工作区</h2><p>先消除未封板和事实边界问题，再进入支付或历史接管。</p></div></div>
       <div class="hr15-layout">
         <div>
-          <article class="hr15-card"><h2>本期先处理什么</h2><p>从真实期间状态和能力合同生成当前优先级。</p><div id="hr15-tasks" class="hr15-tasks"><div class="hr15-empty">正在计算本期重点…</div></div></article>
+          <article class="hr15-card"><h2>本期先处理什么</h2><p>从工资期间状态和实际业务能力生成当前优先级。</p><div id="hr15-tasks" class="hr15-tasks"><div class="hr15-empty">正在计算本期重点…</div></div></article>
           <article class="hr15-card"><h2 id="hr15-title">{{ section_title }}</h2><p id="hr15-desc">正在读取当前学校薪酬事实。</p><div class="hr15-toolbar"><input id="hr15-search" class="hr15-search" type="search" placeholder="搜索期间、薪酬身份、结果编号…" aria-label="搜索当前薪酬工作区"><select id="hr15-status" class="hr15-select" aria-label="按状态筛选"><option value="">全部状态</option></select></div><div id="hr15-rows" class="hr15-list"><div class="hr15-empty">正在读取真实薪酬数据…</div></div></article>
         </div>
         <aside>
@@ -89,14 +81,14 @@
       </div>
     </section>
 
-    <div class="hr15-principle"><strong>薪酬事实原则：</strong>测算、复核、封板、支付、工资条和财务回执是不同状态；只有“已封板”或“已调整”的工资结果才能作为正式金额依据，后续调整必须追加可追溯的差额记录。</div>
+    <div class="hr15-principle"><strong>数据说明：</strong>测算、复核、封板、支付、工资条和财务回执分别记录；只有已封板或已调整的工资结果可作为正式金额依据。</div>
   {% endif %}
 </div>
 {% endblock content %}
 
 {% block scripts %}
 {{ block.super }}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-payroll.js' %}"></script>{% endif %}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-actions.js' %}"></script>{% endif %}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-legacy.js' %}"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-payroll.js' %}?v=20260830-2"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-actions.js' %}?v=20260830-2"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-legacy.js' %}?v=20260830-2"></script>{% endif %}
 {% endblock scripts %}

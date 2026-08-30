@@ -1,0 +1,34 @@
+{
+  "folders": [
+    { "name": "HR01 人事工作台", "path": "hr_control_center" },
+    { "name": "HR02 组织机构与编制岗位", "path": "hr_structure" },
+    { "name": "HR03 教职工主档", "path": "hr_staff" },
+    { "name": "HR04 招聘与人才引进", "path": "hr_recruitment" },
+    { "name": "HR05 入职管理", "path": "hr_onboarding" },
+    { "name": "HR06 人事异动", "path": "hr_changes" },
+    { "name": "HR07 合同与聘用", "path": "hr_contracts" },
+    { "name": "HR08 兼职外聘教师", "path": "hr_external" },
+    { "name": "HR09 教师资格与双师型", "path": "hr_qualification" },
+    { "name": "HR10 培训进修与企业实践", "path": "hr10_development" },
+    { "name": "HR11 考勤与请假", "path": "hr_time" },
+    { "name": "HR12 年度与聘期考核", "path": "hr_assessment" },
+    { "name": "HR13 职称评审", "path": "hr_title" },
+    { "name": "HR14 岗位聘任", "path": "hr_appointment" },
+    { "name": "HR15 薪酬福利", "path": "hr_payroll" },
+    { "name": "HR16 退休与离校", "path": "hr_exit" },
+    { "name": "HR17 教职工服务", "path": "hr_self" },
+    { "name": "HR18 人事数据中心", "path": "hr_data" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/.pytest_cache": true
+    },
+    "search.exclude": {
+      "**/migrations": true,
+      "**/node_modules": true,
+      "**/staticfiles": true
+    }
+  }
+}

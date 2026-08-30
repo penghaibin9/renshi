@@ -21,7 +21,7 @@ HrPositionStatusBadge — 岗位状态徽章。
        {% elif st == 'closed' %}hr-position-status--closed
        {% elif st == 'draft' %}hr-position-status--draft
        {% elif st == 'active' %}hr-position-status--active{% endif %}"
-       {% if status %}title="{{ status }}"{% endif %}>
+       {% if status %}title="{% trans '岗位状态' %}"{% endif %}>
     {% if label %}
       {{ label }}
     {% else %}

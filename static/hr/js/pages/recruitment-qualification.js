@@ -11,6 +11,14 @@
   function safeStatusClass(value) {
     return String(value || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "unknown";
   }
+  const STATUS_LABELS = {
+    DRAFT: "草稿", SUBMITTED: "已提交", PENDING: "待审核",
+    UNDER_REVIEW: "审核中", QUALIFIED: "资格通过", RETURNED: "退回补件",
+    DISQUALIFIED: "资格不符", APPROVED: "已通过", REJECTED: "未通过",
+  };
+  function statusLabel(value, provided) {
+    return provided || STATUS_LABELS[value] || "状态待确认";
+  }
   function stateHtml(title, detail, isError) {
     return '<div class="hr04-state"' + (isError ? ' data-state="error"' : "") + '><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail || "") + '</span></div>';
   }
@@ -38,7 +46,7 @@
           const submitted = item.submitted_at ? new Date(item.submitted_at).toLocaleString() : "—";
           return '<tr><td>' + escapeHtml(item.application_no || "—") + '</td><td>' + escapeHtml(item.candidate_name || "—") + '</td><td>' +
             escapeHtml(item.position || "—") + '</td><td><span class="hr-rec-badge hr-rec-badge--' + safeStatusClass(item.canonical_status) + '">' +
-            escapeHtml(item.statusLabel || item.canonical_status || "—") + '</span></td><td>' + escapeHtml(submitted) + '</td></tr>';
+            escapeHtml(statusLabel(item.canonical_status, item.statusLabel)) + '</span></td><td>' + escapeHtml(submitted) + '</td></tr>';
         }).join("") + '</tbody></table>';
     } catch (err) {
       const message = window.HrApi.apiErrorToMessage(err) || "请求失败";

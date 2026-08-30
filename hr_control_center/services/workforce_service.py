@@ -95,14 +95,14 @@ class WorkforceService:
                 context,
                 metric_key,
                 reason_code="AUTHORITY_SOURCE_UNAVAILABLE",
-                message="权威事实服务尚未建设，AUTHORITY_ONLY 模式下不提供 Legacy 快照数据。",
+                message="正式业务数据服务尚未建设，当前运行模式不提供历史系统快照数据。",
             )
         if context.as_of is not None and context.as_of != context.today():
             return self._unavailable_contract(
                 context,
                 metric_key,
                 reason_code="AS_OF_NOT_CURRENT",
-                message="Legacy 当前快照仅支持 as_of 为今天（学校时区）的查询，历史/未来日期无法提供。",
+                message="当前系统快照仅支持查询学校所在时区的当天数据，无法提供历史或未来日期数据。",
             )
         return None
 

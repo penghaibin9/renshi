@@ -1,14 +1,34 @@
 {% extends "hr_external/workspace_base.html" %}
 {% block workspace_content %}
 <section class="hr-v2-kpis hr08-kpis" aria-label="人才库概览">
-  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">外聘人才档案</div><div class="hr-v2-kpi__value">{{ total }}</div><div class="hr-v2-kpi__note">当前筛选结果</div></article>
-  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">当前受聘</div><div class="hr-v2-kpi__value">{{ engaged_count }}</div><div class="hr-v2-kpi__note">有效或待生效聘期</div></article>
-  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">产业专家</div><div class="hr-v2-kpi__value">{{ industry_count }}</div><div class="hr-v2-kpi__note">正式分类档案</div></article>
+  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">人才库</div><div class="hr-v2-kpi__value">{{ total }}</div><div class="hr-v2-kpi__note">当前筛选结果</div></article>
+  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">当前聘用</div><div class="hr-v2-kpi__value">{{ engaged_count }}</div><div class="hr-v2-kpi__note">有效或待生效聘期</div></article>
+  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">产业教授 / 技能大师</div><div class="hr-v2-kpi__value">{{ industry_count }}</div><div class="hr-v2-kpi__note">已完成分类建档</div></article>
+  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">聘用待办</div><div class="hr-v2-kpi__value">{{ pending_hiring_count }}</div><div class="hr-v2-kpi__note">尚未完成的聘用申请</div></article>
+  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">15 天内到期</div><div class="hr-v2-kpi__value">{{ expiring_15_count }}</div><div class="hr-v2-kpi__note">需要续聘或退出评估</div></article>
+  <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">资料与合规风险</div><div class="hr-v2-kpi__value">{{ risk_count }}</div><div class="hr-v2-kpi__note">身份或师德状态待核对</div></article>
+</section>
+
+<section class="hr08-overview-grid" aria-label="外聘人才与提醒">
+  <article class="hr08-card hr08-card--overview">
+    <div class="hr08-card__head"><div><h2>人才速览</h2><p>“人员档案”和“本次聘用关系”分开查看。</p></div><a class="hr08-link" href="{% url 'hr08-pool' %}">查看候选池</a></div>
+    <div class="hr08-people-list">
+      {% for item in items|slice:":4" %}
+      <a href="{% url 'hr08-profile-detail' item.id %}"><span class="hr08-person-avatar">{{ item.legalName|slice:":1" }}</span><span><strong>{{ item.legalName }}</strong><small>{{ item.sourceOrganization|default:"来源单位未填写" }} · {{ item.industryDomain|default:"专业领域未填写" }}</small></span><em>{{ item.poolStatusLabel }}</em></a>
+      {% empty %}<div class="hr08-empty">当前筛选条件下没有外聘人才档案。</div>{% endfor %}
+    </div>
+  </article>
+  <aside class="hr08-card hr08-card--attention">
+    <div class="hr08-card__head"><div><h2>需要关注</h2><p>按当前真实办理状态汇总。</p></div></div>
+    <a href="{% url 'hr08-hiring-home' %}"><span>聘用申请待办理</span><strong>{{ pending_hiring_count }}</strong></a>
+    <a href="{% url 'hr08-renewals-home' %}"><span>15 天内聘期到期</span><strong>{{ expiring_15_count }}</strong></a>
+    <a href="{% url 'hr08-home' %}?pool_status=UNDER_REVIEW"><span>资料与合规待核对</span><strong>{{ risk_count }}</strong></a>
+  </aside>
 </section>
 
 <section class="hr08-card">
   <div class="hr08-card__head">
-    <div><h2>人才档案</h2><p>查询外聘编号、姓名、类别和合作状态；敏感身份信息不在列表展示。</p></div>
+    <div><h2>外聘人才台账</h2><p>按姓名、类别和合作状态查询；敏感身份信息不在列表展示。</p></div>
     {% if can_profile_create %}<button class="hr08-btn hr08-btn--primary" type="button" data-open-panel="profile-create">新建外聘档案</button>{% endif %}
   </div>
   {% if can_profile_create %}

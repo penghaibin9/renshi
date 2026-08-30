@@ -59,7 +59,7 @@
       const error = payload && payload.error;
       throw new Error(
         (error && (error.message || error.code)) ||
-          "请求失败（HTTP " + response.status + "）"
+          "请求失败（状态码 " + response.status + "）"
       );
     }
     return payload && Object.prototype.hasOwnProperty.call(payload, "data")
@@ -87,6 +87,18 @@
     return labels[status] || text(status);
   }
 
+  function agreementTypeLabel(value) {
+    const labels = {
+      PUBLIC_INSTITUTION_EMPLOYMENT: "事业单位聘用合同", LABOR_CONTRACT: "劳动合同",
+      FIXED_TERM: "固定期限聘用合同", OPEN_ENDED: "无固定期限合同",
+      LABOR_DISPATCH: "劳务协议", EXTERNAL_TEACHER: "外聘教师协议",
+      TALENT_INTRODUCTION: "人才引进协议", SUPPLEMENTARY: "补充协议",
+      CONFIDENTIALITY: "保密协议", INTELLECTUAL_PROPERTY: "知识产权协议",
+      PROBATION: "试用期协议", OTHER: "其他",
+    };
+    return labels[value] || text(value);
+  }
+
   function agreementLabel(row) {
     const subject = [row.staffName, row.staffNo].filter(Boolean).join(" · ");
     return `${text(row.agreementNo)} · ${text(row.title)}${subject ? " · " + subject : ""}`;
@@ -102,14 +114,37 @@
   function updateKpis(rows) {
     const total = document.getElementById("hr07-kpi-total");
     const active = document.getElementById("hr07-kpi-active");
+    const expiring = document.getElementById("hr07-kpi-expiring");
     const pending = document.getElementById("hr07-kpi-pending");
-    const updated = document.getElementById("hr07-kpi-updated");
+    const renewing = document.getElementById("hr07-kpi-renewing");
+    const risk = document.getElementById("hr07-kpi-risk");
+    const now = new Date();
+    const inThirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const expiringRows = rows.filter((row) => {
+      if (!row.effectiveTo || !["ACTIVE", "EXPIRING", "RENEWAL_IN_PROGRESS"].includes(row.status)) return false;
+      const end = new Date(row.effectiveTo + "T23:59:59");
+      return !Number.isNaN(end.getTime()) && end >= now && end <= inThirtyDays;
+    });
     if (total) total.textContent = rows.length;
     if (active) active.textContent = rows.filter((row) => row.status === "ACTIVE").length;
+    if (expiring) expiring.textContent = expiringRows.length;
     if (pending) pending.textContent = rows.filter((row) =>
       ["DRAFT", "WAITING_SIGNATURE", "SIGNED_WAITING_EFFECTIVE", "RENEWAL_IN_PROGRESS"].includes(row.status)
     ).length;
-    if (updated) updated.textContent = rows.length ? dateOnly(rows[0].updatedAt) : "—";
+    if (renewing) renewing.textContent = rows.filter((row) => row.status === "RENEWAL_IN_PROGRESS").length;
+    if (risk) risk.textContent = rows.filter((row) => ["EXPIRED", "TERMINATED"].includes(row.status)).length;
+    const stages = {
+      "hr07-stage-draft": rows.filter((row) => row.status === "DRAFT").length,
+      "hr07-stage-signing": rows.filter((row) => ["WAITING_SIGNATURE", "SIGNED"].includes(row.status)).length,
+      "hr07-stage-waiting": rows.filter((row) => ["SIGNED_WAITING_EFFECTIVE", "EFFECT_PENDING"].includes(row.status)).length,
+      "hr07-stage-active": rows.filter((row) => row.status === "ACTIVE").length,
+      "hr07-stage-renewing": rows.filter((row) => ["RENEWAL_IN_PROGRESS", "EXPIRING"].includes(row.status)).length,
+      "hr07-stage-closed": rows.filter((row) => ["EXPIRED", "TERMINATED", "SUPERSEDED"].includes(row.status)).length,
+    };
+    Object.entries(stages).forEach(([id, count]) => {
+      const node = document.getElementById(id);
+      if (node) node.textContent = count + " 项";
+    });
   }
 
   function renderLedger() {
@@ -130,9 +165,10 @@
     body.innerHTML = rows.map((row) => `<tr>
       <td><strong>${escapeHtml(row.agreementNo)}</strong></td><td>${escapeHtml(row.title)}</td>
       <td><strong>${escapeHtml(row.staffName)}</strong><small class="hr07-cell-note">${escapeHtml(subjectMeta(row))}</small></td>
-      <td>${escapeHtml(row.agreementType)}</td>
+      <td>${escapeHtml(agreementTypeLabel(row.agreementType))}</td>
+      <td><strong>${escapeHtml(dateOnly(row.effectiveFrom))}</strong><small class="hr07-cell-note">至 ${escapeHtml(dateOnly(row.effectiveTo))}</small></td>
       <td><span class="hr07-status" data-status="${escapeHtml(row.status)}">${escapeHtml(statusLabel(row.status))}</span></td>
-      <td>V${escapeHtml(row.currentVersionNo || 0)}</td><td>${escapeHtml(dateTime(row.updatedAt))}</td>
+      <td>${escapeHtml(dateTime(row.updatedAt))}</td>
       <td><button type="button" class="hr07-link-btn" data-detail-id="${escapeHtml(row.id)}">查看详情</button></td>
     </tr>`).join("");
   }
@@ -160,7 +196,7 @@
 
   async function loadLedger() {
     const body = document.getElementById("hr07-ledger-body");
-    if (body) body.innerHTML = '<tr><td colspan="8" class="hr07-loading">正在读取合同 Authority…</td></tr>';
+    if (body) body.innerHTML = '<tr><td colspan="8" class="hr07-loading">正在读取合同台账…</td></tr>';
     try {
       agreements = await request(API + "?limit=100");
       if (!Array.isArray(agreements)) agreements = [];
@@ -230,7 +266,7 @@
     const box = document.getElementById("hr07-staff-results");
     if (!keyword || !box) return;
     if (button) button.disabled = true;
-    box.hidden = false; box.textContent = "正在从 HR03 权威名册查询…";
+    box.hidden = false; box.textContent = "正在从教职工名册查询…";
     try {
       const payload = await request("/api/v1/hr/staff?keyword=" + encodeURIComponent(keyword) + "&page=1&pageSize=20");
       renderStaffResults(Array.isArray(payload.items) ? payload.items : []);
@@ -305,7 +341,7 @@
     </form>`;
     if (active) return `${versionBlock}<div class="hr07-inline-state">当前合同已有正式生效版本，无需重复激活。</div>`;
     return `${versionBlock}<form class="hr07-sign-form" id="hr07-activate-form">
-      <div class="is-wide"><strong>已签署版本 V${escapeHtml(signed.versionNo)}</strong><p>激活仍由 Agreement Authority 校验生效日和当前版本。</p></div>
+      <div class="is-wide"><strong>已签署第 ${escapeHtml(signed.versionNo)} 版</strong><p>激活仍由合同正式规则校验生效日和当前版本。</p></div>
       <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">激活正式版本</button><span id="hr07-activate-message" class="hr07-form-message"></span></div>
     </form>`;
   }
@@ -313,7 +349,7 @@
   async function loadSigningWorkspace(id) {
     const box = document.getElementById("hr07-sign-workspace");
     if (!box) return;
-    box.className = "hr07-inline-state"; box.textContent = "正在读取合同 Authority…";
+    box.className = "hr07-inline-state"; box.textContent = "正在读取合同信息…";
     try {
       const detail = await request(API + "/" + encodeURIComponent(id));
       box.className = "hr07-sign-panel";
@@ -460,6 +496,11 @@
     document.getElementById("hr07-detail-close")?.addEventListener("click", () => { document.getElementById("hr07-detail-panel").hidden = true; });
     const createForm = document.getElementById("hr07-create-form");
     document.getElementById("hr07-create-toggle")?.addEventListener("click", () => { createForm.hidden = !createForm.hidden; });
+    document.querySelector("[data-open-contract-create]")?.addEventListener("click", () => {
+      if (!createForm) return;
+      createForm.hidden = false;
+      createForm.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     document.getElementById("hr07-create-cancel")?.addEventListener("click", () => { createForm.hidden = true; createForm.reset(); resetStaffPicker(createForm); });
     document.getElementById("hr07-staff-search")?.addEventListener("click", searchStaff);
     document.getElementById("hr07-staff-keyword")?.addEventListener("keydown", (event) => {

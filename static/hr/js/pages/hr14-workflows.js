@@ -45,7 +45,7 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[char]);
   const csrf = () => (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || '');
-  const label = (value) => stateLabels[value] || value || '—';
+  const label = (value) => stateLabels[value] || '状态待确认';
   const dateTime = (value) => value ? String(value).slice(0, 16).replace('T', ' ') : '—';
   const localInput = (date) => {
     const pad = (value) => String(value).padStart(2, '0');
@@ -65,7 +65,8 @@
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(payload?.error?.message || '办理失败，请核对当前状态后重试');
+      const serverMessage = payload?.error?.message;
+      const error = new Error(serverMessage && /[\u3400-\u9fff]/.test(serverMessage) ? serverMessage : '办理失败，请核对当前状态后重试');
       error.code = payload?.error?.code || `HTTP_${response.status}`;
       error.data = payload?.data || null;
       throw error;
@@ -78,7 +79,7 @@
       credentials: 'same-origin',
       headers: {'X-Requested-With': 'XMLHttpRequest'},
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`数据刷新失败（状态码 ${response.status}）`);
     snapshot = await response.json();
     renderSection();
   }

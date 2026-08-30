@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr13-title.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr13-title.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
@@ -23,25 +23,19 @@
       <div class="hr-v2-pagehead__copy">
         <div class="hr-v2-eyebrow">HR13 · 职称评审</div>
         <h1 class="hr-v2-title" id="hr13-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">资格审查通过不等于职称通过，专家评分不等于正式结果。按申报、资格、材料、专家评审、评议、公示异议和正式结果逐段办理，每一步都保留独立业务事实。</p>
+        <p class="hr-v2-subtitle">统一办理职称制度、申报资格、业绩材料、专家评审、评议公示、复核监管与正式职称档案。</p>
       </div>
-      <div class="hr-v2-context" aria-label="当前工作区说明">
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>依据</strong> 制度版本 / 申报批次</span>
-        <span class="hr-v2-context__item"><strong>结果</strong> 正式生效事实</span>
-      </div>
+      <a class="hr13-primary-action" href="{% url 'hr_title:applications' %}">进入职称申报</a>
     </header>
 
     <nav class="hr13-nav" aria-label="职称评审业务导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_title:overview' %}">总览</a>
-      <a class="{% if section == 'applications' %}active{% endif %}" href="{% url 'hr_title:applications' %}">职称申报</a>
-      <a class="{% if section == 'eligibility' %}active{% endif %}" href="{% url 'hr_title:eligibility' %}">资格审查</a>
-      <a class="{% if section == 'materials' %}active{% endif %}" href="{% url 'hr_title:materials' %}">材料成果</a>
-      <a class="{% if section == 'experts' %}active{% endif %}" href="{% url 'hr_title:experts' %}">专家评委</a>
-      <a class="{% if section == 'deliberation' %}active{% endif %}" href="{% url 'hr_title:deliberation' %}">评议表决</a>
-      <a class="{% if section == 'publicity' %}active{% endif %}" href="{% url 'hr_title:publicity' %}">结果公示</a>
-      <a class="{% if section == 'appeals' %}active{% endif %}" href="{% url 'hr_title:appeals' %}">异议复核</a>
-      <a class="{% if section == 'results' %}active{% endif %}" href="{% url 'hr_title:results' %}">正式结果</a>
+      {% comment %}细分入口：{% url 'hr_title:eligibility' %} {% url 'hr_title:publicity' %} {% url 'hr_title:results' %}{% endcomment %}
+      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_title:overview' %}"><small>01</small>制度与标准</a>
+      <a class="{% if section == 'applications' or section == 'eligibility' %}active{% endif %}" href="{% url 'hr_title:applications' %}"><small>02</small>申报与资格</a>
+      <a class="{% if section == 'materials' %}active{% endif %}" href="{% url 'hr_title:materials' %}"><small>03</small>业绩与成果</a>
+      <a class="{% if section == 'experts' %}active{% endif %}" href="{% url 'hr_title:experts' %}"><small>04</small>专家与评审</a>
+      <a class="{% if section == 'deliberation' or section == 'publicity' %}active{% endif %}" href="{% url 'hr_title:deliberation' %}"><small>05</small>表决与公示</a>
+      <a class="{% if section == 'appeals' or section == 'results' %}active{% endif %}" href="{% url 'hr_title:appeals' %}"><small>06</small>复核与档案</a>
     </nav>
     <div class="hr13-mobile-hint">可左右滑动查看更多职称评审工作区</div>
 
@@ -134,7 +128,7 @@
 
           <article class="hr13c-card">
             <h2>能力接通状态</h2>
-            <p>以下状态来自 HR13 dashboard capability contract。</p>
+            <p>以下状态来自当前学校职称评审业务能力检查。</p>
             <div id="hr13c-caps">
               <div class="hr13c-empty">正在检查真实能力…</div>
             </div>
@@ -143,7 +137,7 @@
       </div>
     </section>
 
-    <div class="hr13-principle"><strong>职称结果原则：</strong>资格通过、专家推荐、委员会票决和公示状态都只是过程事实；只有正式生效的结果记录才可用于任职、聘任和档案。</div>
+    <div class="hr13-principle"><strong>数据说明：</strong>资格通过、专家推荐、委员会票决和公示都是评审过程；只有正式生效的职称结果才能进入聘任和人事档案。</div>
   {% endif %}
 </div>
 {% endblock content %}

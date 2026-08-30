@@ -18,6 +18,11 @@
       .replace(/[^a-z0-9_-]/g, "")
       .slice(0, 40) || "unknown";
   }
+  const APPROVAL_LABELS = {
+    PENDING: "待审批", APPROVE: "已批准", APPROVED: "已批准",
+    RETURNED: "已退回", REJECTED: "已驳回", CANCELLED: "已取消",
+  };
+  function approvalLabel(value, provided) { return provided || APPROVAL_LABELS[value] || "状态待确认"; }
 
   function stateHtml(title, detail, isError) {
     return '<div class="hr04-state"' + (isError ? ' data-state="error"' : "") +
@@ -79,7 +84,7 @@
         items.map((item) => `<tr data-proposed-hire-id="${escapeHtml(item.id)}">
           <td>#${escapeHtml(item.rank ?? "—")}</td><td>${escapeHtml(item.candidate_name || "—")}</td>
           <td>${escapeHtml(item.position || "—")}</td><td>${escapeHtml(item.final_score ?? "—")}</td>
-          <td><span class="hr-rec-badge hr-rec-badge--${safeStatusClass(item.approval_status)}">${escapeHtml(item.approvalStatusLabel || item.approval_status || "—")}</span></td>
+          <td><span class="hr-rec-badge hr-rec-badge--${safeStatusClass(item.approval_status)}">${escapeHtml(approvalLabel(item.approval_status, item.approvalStatusLabel))}</span></td>
           <td>${item.reservation_id ? "已预占" : "—"}</td><td>${handoffAction(item)}</td></tr>`).join("") +
         "</tbody></table>";
       bindHandoffActions(container);

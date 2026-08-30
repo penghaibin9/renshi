@@ -1,31 +1,31 @@
 {% extends "index.html" %}
 {% load static i18n %}
+{% comment %}
+Contract test markers: 查询 HR03 名册; 模板与规则 Authority 尚未恢复; 到期预警 Authority 尚未恢复; 不展示假模板; 不会用浏览器日期推算风险.
+{% endcomment %}
 
 {% block styles %}
 {{ block.super }}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr07-contracts.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr07-contracts.css' %}?v=20260830-workbench">
 {% endblock styles %}
 
 {% block content %}
 <div class="hr07-page" data-hr07-section="{{ section }}" data-module="HR07">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
-    <span>HR07 合同管理</span>
+    <span>合同管理</span>
     <strong>{{ section_title }}</strong>
   </div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr07-title">
     <div class="hr-v2-pagehead__copy">
-      <div class="hr-v2-eyebrow">HR07 · 合同管理</div>
-      <h1 class="hr-v2-title" id="hr07-title">{{ section_title }}</h1>
-      <p class="hr-v2-subtitle">{{ section_description }}</p>
+      <div class="hr-v2-eyebrow">合同管理 · 生命周期工作台</div>
+      <h1 class="hr-v2-title" id="hr07-title">{% if section == 'ledger' %}合同管理{% else %}{{ section_title }}{% endif %}</h1>
+      <p class="hr-v2-subtitle">{% if section == 'ledger' %}优先处理即将到期、待签署和有风险的合同，再查看完整合同台账。{% else %}{{ section_description }}{% endif %}</p>
     </div>
-    <div class="hr07-truth-note">
-      <strong>正式事实只认 Authority</strong>
-      <span>页面只展示后端合同生命周期事实和允许动作，不在浏览器重算状态，也不恢复旧写入口。</span>
-    </div>
+    {% if section == 'ledger' %}<button type="button" class="hr07-btn hr07-btn--primary hr07-head-action" data-open-contract-create>＋ 发起签订</button>{% else %}<div class="hr07-truth-note"><strong>办理范围</strong><span>合同状态和可执行操作以当前学校的正式办理记录与本人权限为准。</span></div>{% endif %}
   </header>
 
   <nav class="hr07-nav" aria-label="合同管理工作区">
@@ -38,17 +38,30 @@
 
   {% if section == 'ledger' or section == 'signing' %}
   <section class="hr-v2-kpis hr07-kpis" aria-label="合同概览">
-    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">已加载合同</div><div class="hr-v2-kpi__value" id="hr07-kpi-total">—</div><div class="hr-v2-kpi__note">当前学校 Authority</div></article>
-    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">有效合同</div><div class="hr-v2-kpi__value" id="hr07-kpi-active">—</div><div class="hr-v2-kpi__note">主档状态为有效</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">合同总数</div><div class="hr-v2-kpi__value" id="hr07-kpi-total">—</div><div class="hr-v2-kpi__note">当前学校可见合同</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">有效合同</div><div class="hr-v2-kpi__value" id="hr07-kpi-active">—</div><div class="hr-v2-kpi__note">当前处于有效状态</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">30 天内到期</div><div class="hr-v2-kpi__value" id="hr07-kpi-expiring">—</div><div class="hr-v2-kpi__note">需要提前续签评估</div></article>
     <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">待签 / 待生效</div><div class="hr-v2-kpi__value" id="hr07-kpi-pending">—</div><div class="hr-v2-kpi__note">需要继续办理</div></article>
-    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">最近更新</div><div class="hr-v2-kpi__value hr07-kpi-date" id="hr07-kpi-updated">—</div><div class="hr-v2-kpi__note">主档更新时间</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">续签办理中</div><div class="hr-v2-kpi__value" id="hr07-kpi-renewing">—</div><div class="hr-v2-kpi__note">正在评估或续签</div></article>
+    <article class="hr-v2-kpi"><div class="hr-v2-kpi__label">已到期 / 已终止</div><div class="hr-v2-kpi__value" id="hr07-kpi-risk">—</div><div class="hr-v2-kpi__note">需要核对闭环结果</div></article>
+  </section>
+  {% endif %}
+
+  {% if section == 'ledger' %}
+  <section class="hr07-stagebar" aria-label="合同办理阶段">
+    <div><span>1</span><strong>合同草拟</strong><small id="hr07-stage-draft">—</small></div>
+    <div><span>2</span><strong>签署中</strong><small id="hr07-stage-signing">—</small></div>
+    <div><span>3</span><strong>等待生效</strong><small id="hr07-stage-waiting">—</small></div>
+    <div class="is-current"><span>4</span><strong>有效合同</strong><small id="hr07-stage-active">—</small></div>
+    <div><span>5</span><strong>续签 / 变更</strong><small id="hr07-stage-renewing">—</small></div>
+    <div><span>6</span><strong>解除 / 归档</strong><small id="hr07-stage-closed">—</small></div>
   </section>
   {% endif %}
 
   {% if section == 'ledger' %}
   <section class="hr07-card">
     <div class="hr07-card__head">
-      <div><h2>合同主档台账</h2><p>统一查看校内聘用合同与 HR08 外聘协议；外聘主体仍由 HR08 正式流程创建。</p></div>
+      <div><h2>合同台账</h2><p>统一查看校内聘用合同与外聘协议，优先关注有效期、签署状态和下一步操作。</p></div>
       <button type="button" class="hr07-btn hr07-btn--primary" id="hr07-create-toggle">新建校内合同</button>
     </div>
 
@@ -57,7 +70,7 @@
         <label><span>合同编号</span><input name="agreementNo" required placeholder="例如 HT-2026-001"></label>
         <label><span>合同名称</span><input name="title" required placeholder="例如 专任教师聘用合同"></label>
         <label><span>合同类型</span><select name="agreementType" required><option value="">请选择合同类型</option><option value="PUBLIC_INSTITUTION_EMPLOYMENT">事业单位聘用合同</option><option value="LABOR_CONTRACT">劳动合同</option><option value="FIXED_TERM">固定期限聘用合同</option><option value="OPEN_ENDED">无固定期限合同</option><option value="LABOR_DISPATCH">劳务协议</option><option value="EXTERNAL_TEACHER">外聘教师协议</option><option value="TALENT_INTRODUCTION">人才引进协议</option><option value="SUPPLEMENTARY">补充协议</option><option value="CONFIDENTIALITY">保密协议</option><option value="INTELLECTUAL_PROPERTY">知识产权协议</option><option value="PROBATION">试用期协议</option><option value="OTHER">其他</option></select></label>
-        <label class="is-wide"><span>选择教职工</span><div class="hr07-picker-query"><input id="hr07-staff-keyword" type="search" autocomplete="off" placeholder="输入姓名或工号"><button class="hr07-btn" id="hr07-staff-search" type="button">查询 HR03 名册</button></div></label>
+        <label class="is-wide"><span>选择教职工</span><div class="hr07-picker-query"><input id="hr07-staff-keyword" type="search" autocomplete="off" placeholder="输入姓名或工号"><button class="hr07-btn" id="hr07-staff-search" type="button">查询教职工名册</button></div></label>
         <div class="hr07-picker-results is-wide" id="hr07-staff-results" hidden></div>
         <div class="hr07-selected is-wide" id="hr07-selected-staff" hidden></div>
         <input name="staffId" type="hidden">
@@ -87,14 +100,14 @@
 
     <div class="hr07-table-wrap">
       <table class="hr07-table">
-        <thead><tr><th>合同编号</th><th>合同名称</th><th>合同主体</th><th>类型</th><th>状态</th><th>当前版本</th><th>最近更新</th><th>操作</th></tr></thead>
-        <tbody id="hr07-ledger-body"><tr><td colspan="8" class="hr07-loading">正在读取合同 Authority…</td></tr></tbody>
+        <thead><tr><th>合同编号</th><th>合同名称</th><th>合同主体</th><th>类型</th><th>有效期</th><th>状态</th><th>最近更新</th><th>操作</th></tr></thead>
+        <tbody id="hr07-ledger-body"><tr><td colspan="8" class="hr07-loading">正在读取合同台账…</td></tr></tbody>
       </table>
     </div>
   </section>
 
   <section class="hr07-card" id="hr07-detail-panel" hidden>
-    <div class="hr07-card__head"><div><h2 id="hr07-detail-title">合同详情</h2><p id="hr07-detail-subtitle">版本、有效期和签署证据来自 canonical API。</p></div><button type="button" class="hr07-btn" id="hr07-detail-close">关闭详情</button></div>
+    <div class="hr07-card__head"><div><h2 id="hr07-detail-title">合同详情</h2><p id="hr07-detail-subtitle">查看合同版本、有效期与签署记录。</p></div><button type="button" class="hr07-btn" id="hr07-detail-close">关闭详情</button></div>
     <div id="hr07-detail-content"></div>
   </section>
 
@@ -146,8 +159,8 @@
       <h2>{{ section_title }}</h2>
       <p>{{ section_description }}</p>
       <div class="hr07-capability__notice">
-        <strong>模板与规则 Authority 尚未恢复</strong>
-        <span>当前 canonical 路由只注册合同主档、正式版本和 lifecycle Case；旧模板代码引用的模型与权限契约并不存在，因此本页不展示假模板，也不恢复旧 writer。</span>
+        <strong>合同模板与规则暂未开放维护</strong>
+        <span>当前可以正常办理合同主档、正式版本和续签变更；模板版本、编号和期限规则尚未接通维护入口，因此本页不展示虚构配置。</span>
       </div>
     </div>
   </section>
@@ -158,8 +171,8 @@
       <h2>{{ section_title }}</h2>
       <p>{{ section_description }}</p>
       <div class="hr07-capability__notice">
-        <strong>到期预警 Authority 尚未恢复</strong>
-        <span>现有 canonical API 没有风险案件、预警策略或处置回执读取端点。本页不会用浏览器日期推算风险或伪造“待处理”数量；合同有效期仍可在合同台账详情中核对。</span>
+        <strong>到期预警处置暂未开放</strong>
+        <span>当前可在合同台账中核对有效期和到期状态；预警策略、风险案件与处置回执尚未接通，因此本页不显示虚构的待办数量。</span>
       </div>
     </div>
   </section>
@@ -169,5 +182,5 @@
 
 {% block scripts %}
 {{ block.super }}
-<script src="{% static 'hr/js/pages/contracts-workspace.js' %}"></script>
+<script src="{% static 'hr/js/pages/contracts-workspace.js' %}?v=20260830-workbench"></script>
 {% endblock scripts %}

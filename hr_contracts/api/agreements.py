@@ -65,6 +65,19 @@ def _agreement_data(
     staff_item = (staff or {}).get(agreement.staff_id)
     relationship = (relationships or {}).get(agreement.employment_relationship_id)
     person = (people or {}).get(agreement.subject_person_id)
+    current_version = None
+    versions = list(agreement.versions.all())
+    if agreement.current_version_no:
+        current_version = next(
+            (
+                item
+                for item in versions
+                if item.version_no == agreement.current_version_no
+            ),
+            None,
+        )
+    if current_version is None and versions:
+        current_version = max(versions, key=lambda item: item.version_no)
     data = {
         "id": str(agreement.id),
         "agreementNo": agreement.agreement_no,
@@ -84,6 +97,14 @@ def _agreement_data(
         "agreementType": agreement.agreement_type,
         "status": agreement.status,
         "currentVersionNo": agreement.current_version_no,
+        "effectiveFrom": (
+            current_version.effective_from.isoformat() if current_version else None
+        ),
+        "effectiveTo": (
+            current_version.effective_to.isoformat()
+            if current_version and current_version.effective_to
+            else None
+        ),
         "staffNo": staff_item.staff_no if staff_item else None,
         "staffName": (
             staff_item.person_id.legal_name
@@ -113,7 +134,7 @@ def _agreement_data(
                 "contentHash": version.content_hash,
                 "status": version.status,
             }
-            for version in agreement.versions.order_by("version_no")
+            for version in sorted(versions, key=lambda item: item.version_no)
         ]
     return data
 
@@ -160,7 +181,7 @@ def agreement_collection(request):
     tenant_id = resolve_contract_tenant(request)
 
     if request.method == "GET":
-        qs = HrContractAgreement.objects.filter(tenant_id=tenant_id).order_by(
+        qs = HrContractAgreement.objects.filter(tenant_id=tenant_id).prefetch_related("versions").order_by(
             "-updated_at", "-id"
         )
         staff_id = request.GET.get("staff_id")
@@ -210,7 +231,9 @@ def agreement_detail(request, agreement_id):
     enforce_contract_permission(request, PERM_AGREEMENT_VIEW)
     tenant_id = resolve_contract_tenant(request)
     agreement = (
-        HrContractAgreement.objects.filter(id=agreement_id, tenant_id=tenant_id).first()
+        HrContractAgreement.objects.filter(id=agreement_id, tenant_id=tenant_id)
+        .prefetch_related("versions")
+        .first()
     )
     if agreement is None:
         return api_error(

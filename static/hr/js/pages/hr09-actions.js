@@ -43,7 +43,7 @@
     APPLICATION_CLOSED: '进入评审', REVIEWING: '进入结果审定', RESULT_PENDING: '发布结果',
     RESULT_PUBLISHED: '结束批次',
   };
-  const zh = (value, map = STATUS) => map[value] || STATUS[value] || value || '—';
+  const zh = (value, map = STATUS) => map[value] || STATUS[value] || '待确认';
   const cookie = (name) => document.cookie.split(';').map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) || '';
 
@@ -59,7 +59,7 @@
     try { payload = await response.json(); } catch (_error) { /* handled by status */ }
     if (!response.ok) {
       const error = payload.error || {};
-      throw new Error([error.code, error.message].filter(Boolean).join(' · ') || `HTTP ${response.status}`);
+      throw new Error(error.message && /[\u3400-\u9fff]/.test(error.message) ? error.message : `请求失败（状态码 ${response.status}）`);
     }
     return payload.data ?? payload;
   }
@@ -97,7 +97,7 @@
   const personLine = (person) => [person?.name, person?.staff_no].filter(Boolean).join(' · ') || '未命名人员';
 
   async function credentials() {
-    const host = card('资格证书办理', '录入、核验、续证、暂停和撤销均形成正式状态记录；证书号只提交给服务端加密保存。');
+    const host = card('资格证书办理', '录入、核验、续证、暂停和撤销都会保留完整办理记录；证书号会加密保存。');
     host.insertAdjacentHTML('beforeend', `<div class="hr09-action-toolbar"><button class="hr09-action-btn primary" data-open type="button">录入资格证书</button></div>
       <form class="hr09-action-form" id="credential-create"><div class="hr09-action-grid">
         ${field('教职工', personSelect())}${field('资格目录', '<select name="catalog_item_id" required><option value="">正在读取目录…</option></select>')}
@@ -179,7 +179,7 @@
   }
 
   async function applications() {
-    const host = card('双师申报办理', '管理端从当前学校教职工中代建申报；预检、提交、退回补正和形式审查都经过服务端状态机。');
+    const host = card('双师申报办理', '从当前学校教职工中发起申报，并依次完成预检、提交、退回补正和形式审查。');
     host.insertAdjacentHTML('beforeend', `<div class="hr09-action-toolbar"><button class="hr09-action-btn primary" data-open type="button">发起申报</button></div><form class="hr09-action-form" id="application-create"><div class="hr09-action-grid">
       ${field('认定批次', '<select name="batch_id" required><option value="">正在读取开放批次…</option></select>')}${field('申报人', personSelect())}${field('目标层级', '<select name="target_level"><option value="DOUBLE_TEACHER_JUNIOR">初级双师型</option><option value="DOUBLE_TEACHER_INTERMEDIATE">中级双师型</option><option value="DOUBLE_TEACHER_SENIOR">高级双师型</option></select>')}${field('申报说明', '<textarea name="applicant_statement" placeholder="说明申报依据和主要证据"></textarea>', '', true)}
       </div><div class="hr09-action-toolbar"><button class="hr09-action-btn primary" type="submit">创建申报草稿</button></div></form><div class="hr09-action-list" data-list><div class="hr09-action-empty">正在读取申报…</div></div>`);
@@ -246,5 +246,5 @@
   }
 
   ({ credentials, batches, applications, recognitions, risks }[section]?.() || Promise.resolve())
-    .catch((error) => { const host = card('HR09 办理区加载失败', '页面不会回退到旧接口或扩大数据范围。'); result(host, 'error', error.message); });
+    .catch((error) => { const host = card('资格办理区加载失败', '请检查当前学校和本人数据权限后重试。'); result(host, 'error', error.message); });
 })();

@@ -28,7 +28,7 @@ HrStateView — 数据状态占位（loading/empty/partial/stale/unavailable/per
     <div class="hr-empty-state">
       <div class="hr-empty-state__title">{% trans "数据暂时无法计算" %}</div>
       {% if message %}<div class="hr-meta">{{ message }}</div>{% endif %}
-      {% if request_id %}<div class="hr-meta">requestId: {{ request_id }}</div>{% endif %}
+      {% if request_id %}<div class="hr-meta">请求编号：{{ request_id }}</div>{% endif %}
     </div>
   {% endif %}
 </div>

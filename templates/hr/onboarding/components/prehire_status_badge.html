@@ -21,5 +21,5 @@
 {% elif status == "CANCELLED" %}<span class="oh-badge oh-badge--neutral">{% trans "已取消" %}</span>
 {% elif status == "PROBATION_EXTENDED" %}<span class="oh-badge oh-badge--warning">{% trans "试用期延长" %}</span>
 {% elif status == "PROBATION_FAILED" %}<span class="oh-badge oh-badge--danger">{% trans "试用不合格" %}</span>
-{% else %}<span class="oh-badge oh-badge--secondary">{{ status|default:_("未知") }}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{% trans "未知状态" %}</span>
 {% endif %}

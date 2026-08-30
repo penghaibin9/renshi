@@ -24,8 +24,8 @@
     </div>
     <div class="hr-v2-context" aria-label="当前工作区说明">
       <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-      <span class="hr-v2-context__item"><strong>事实</strong> Authority</span>
-      <span class="hr-v2-context__item"><strong>口径</strong> effective-dated</span>
+      <span class="hr-v2-context__item"><strong>事实</strong> 正式业务记录</span>
+      <span class="hr-v2-context__item"><strong>口径</strong> 按生效日期</span>
     </div>
   </header>
 
@@ -47,7 +47,7 @@
     </article>
     <article class="hr-v2-conclusion">
       <div class="hr-v2-conclusion__label">事实来源</div>
-      <div class="hr-v2-conclusion__value">Authority</div>
+      <div class="hr-v2-conclusion__value">正式记录</div>
       <div class="hr-v2-conclusion__detail">状态、生效日期与冲突判断继续由现有后端规则负责。</div>
     </article>
     <article class="hr-v2-conclusion">
@@ -62,14 +62,14 @@
     <div class="hr-v2-section__head">
       <div>
         <h2 id="hr02-relation-title">建立组织关系</h2>
-        <p>关系创建走现有 HR02 Authority；关闭与冲突判断仍由后端服务负责。</p>
+        <p>关系创建写入 HR02 正式记录；关闭与冲突判断仍由服务端负责。</p>
       </div>
     </div>
     <div class="hr-v2-panel hr02-card">
       <form class="hr02-form" id="hr02-relation-form">
-        <label><span>来源机构 ID</span><input name="sourceOrgId" type="number" min="1" required></label>
-        <label><span>目标机构 ID</span><input name="targetOrgId" type="number" min="1" required></label>
-        <label><span>关系类型</span><input name="relationType" required placeholder="例如 PARTY_LEADERSHIP"></label>
+        <label><span>来源机构编号</span><input name="sourceOrgId" type="number" min="1" required></label>
+        <label><span>目标机构编号</span><input name="targetOrgId" type="number" min="1" required></label>
+        <label><span>关系类型</span><input name="relationType" required placeholder="例如：党组织领导关系"></label>
         <label><span>生效日期</span><input name="validityFrom" type="date" required></label>
         <label><span>失效日期</span><input name="validityTo" type="date"></label>
         <div class="hr02-form__actions">
@@ -79,7 +79,7 @@
       </form>
       <div class="hr02-boundary">
         <strong>当前读接口边界</strong>
-        <span>当前 HEAD 内关系列表 selector 已存在，但 URL registry 尚未公开对应 GET 路由。前端不绕过路由直接读 ORM，因此这里不伪造关系台账；创建成功后给出明确结果。</span>
+        <span>当前系统已具备关系列表读取能力，但尚未开放对应查询入口。页面不会绕过正式接口直接读取数据库，因此这里不伪造关系台账；创建成功后会给出明确结果。</span>
       </div>
     </div>
   </section>
@@ -98,7 +98,7 @@
         <input type="search" id="hr02-search" placeholder="搜索编号、名称、状态或类型">
       </div>
       <div id="hr02-list" class="hr02-list" aria-live="polite">
-        <div class="hr02-state">正在读取 Authority…</div>
+        <div class="hr02-state">正在读取正式业务记录…</div>
       </div>
     </div>
   </section>

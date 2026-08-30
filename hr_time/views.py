@@ -2,7 +2,7 @@
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import render
 
 from hr_time.constants import ALL_TIME_PERMISSIONS
@@ -21,7 +21,7 @@ from hr_time.models import (
 
 
 SECTIONS = {
-    "overview": "考勤时间总览",
+    "overview": "工作制度与考勤规则",
     "attendance": "日考勤与异常",
     "schedule": "工作日历与排班",
     "leave": "请假与销假",
@@ -142,15 +142,34 @@ def workspace(request, section="overview"):
     active_schedules = schedules.filter(effective_from__lte=today).filter(
         Q(effective_to__isnull=True) | Q(effective_to__gt=today)
     )
+    schedule_conflicts = (
+        active_schedules.values("staff_master_id")
+        .annotate(schedule_count=Count("id"))
+        .filter(schedule_count__gt=1)
+        .count()
+    )
+    latest_close = close_periods.order_by("-end_date", "-id").first()
+    closed_periods = close_periods.filter(status="CLOSED").count()
+    period_count = close_periods.count()
+    close_progress = round(closed_periods / period_count * 100) if period_count else None
 
     summary = {
         "today_facts": day_facts.filter(business_date=today).count(),
         "open_exceptions": exceptions.filter(status__in=["OPEN", "REVIEWING"]).count(),
+        "today_exceptions": exceptions.filter(
+            business_date=today, status__in=["OPEN", "REVIEWING"],
+        ).count(),
         "pending_leave": leaves.filter(status__in=["SUBMITTED", "UNDER_REVIEW"]).count(),
         "pending_overtime": overtime_requests.filter(status="SUBMITTED").count(),
         "active_schedules": active_schedules.count(),
+        "schedule_conflicts": schedule_conflicts,
         "open_close_periods": close_periods.filter(status__in=["OPEN", "PRE_CLOSE", "REOPENED"]).count(),
+        "month_close_progress": f"{close_progress}%" if close_progress is not None else "—",
+        "month_close_status": latest_close.get_status_display() if latest_close else "尚未建立月结期间",
         "open_risks": risks.exclude(status__in=["RESOLVED", "CLOSED"]).count(),
+        "high_risks": risks.filter(severity__in=["HIGH", "CRITICAL"]).exclude(
+            status__in=["RESOLVED", "CLOSED"],
+        ).count(),
         "verified_overtime": overtime_facts.filter(verification_status="VERIFIED").count(),
     }
 

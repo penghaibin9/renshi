@@ -26,5 +26,5 @@ class OverviewSelector:
             "items": [],
             "dataBasis": "LEGACY_CURRENT_SNAPSHOT",
             "available": False,
-            "message": "最近异动时间线依赖 HR03 权威任职历史，Legacy 快照无法提供。",
+            "message": "最近异动时间线依赖 HR03 正式任职历史，当前系统快照无法提供。",
         }

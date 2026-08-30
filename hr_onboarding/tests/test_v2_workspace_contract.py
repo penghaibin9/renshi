@@ -98,7 +98,7 @@ class Hr05V2WorkspaceContractTests(SimpleTestCase):
         self.assertNotIn("data-action=\"submit-review\"", template)
         self.assertNotIn("reviews_by_type", template)
         self.assertNotIn("stats.", template)
-        self.assertIn("尚无单条详情 GET 契约", template)
+        self.assertIn("尚无单条详情查询入口", template)
 
     def test_shared_navigation_keeps_all_five_real_hr05_workspaces(self):
         nav = self._source("templates/hr/onboarding/components/v2_nav.html")

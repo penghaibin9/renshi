@@ -6,8 +6,8 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr12-assessment.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr12-actions.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr12-assessment.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr12-actions.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
@@ -22,50 +22,31 @@
 
     <header class="hr-v2-pagehead" aria-labelledby="hr12-title">
       <div class="hr-v2-pagehead__copy">
-        <div class="hr-v2-eyebrow">HR12 · 教职工考核管理</div>
+        <div class="hr-v2-eyebrow">HR12 · 考核管理</div>
         <h1 class="hr-v2-title" id="hr12-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">先确认制度与指标，再按目标、年度、聘期、师德、评议与归档顺序办理。正式结果必须可追溯；未接通的数据不会当作 0 分或“无问题”。</p>
+        <p class="hr-v2-subtitle">统一管理考核制度、目标任务、年度与聘期考核、师德专项、评议审定和结果归档。</p>
       </div>
-      <div class="hr-v2-context" aria-label="当前工作区说明">
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>依据</strong> 制度 / 指标 / 量表</span>
-        <span class="hr-v2-context__item"><strong>数据</strong> 真实接入状态</span>
-      </div>
+      <a class="hr12-primary-action" href="{% url 'hr_assessment:hr12-annual' %}">进入年度考核</a>
     </header>
 
     <nav class="hr12-nav" aria-label="考核管理导航">
-      <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_assessment:hr12-index' %}">工作台</a>
-      <a class="{% if section == 'policies' %}active{% endif %}" href="{% url 'hr_assessment:hr12-policies' %}">制度与指标</a>
-      <a class="{% if section == 'goals' %}active{% endif %}" href="{% url 'hr_assessment:hr12-goals' %}">目标任务</a>
-      <a class="{% if section == 'annual' %}active{% endif %}" href="{% url 'hr_assessment:hr12-annual' %}">年度考核</a>
-      <a class="{% if section == 'term' %}active{% endif %}" href="{% url 'hr_assessment:hr12-term' %}">聘期考核</a>
-      <a class="{% if section == 'ethics' %}active{% endif %}" href="{% url 'hr_assessment:hr12-ethics' %}">师德专项</a>
-      <a class="{% if section == 'review' %}active{% endif %}" href="{% url 'hr_assessment:hr12-review' %}">评议审定</a>
-      <a class="{% if section == 'archive' %}active{% endif %}" href="{% url 'hr_assessment:hr12-archive' %}">结果档案</a>
+      {% comment %}工作台与归档兼容入口：{% url 'hr_assessment:hr12-index' %} {% url 'hr_assessment:hr12-archive' %}{% endcomment %}
+      <a class="{% if section == 'policies' or section == 'overview' %}active{% endif %}" href="{% url 'hr_assessment:hr12-policies' %}"><small>01</small>制度与指标</a>
+      <a class="{% if section == 'goals' %}active{% endif %}" href="{% url 'hr_assessment:hr12-goals' %}"><small>02</small>目标与平时</a>
+      <a class="{% if section == 'annual' %}active{% endif %}" href="{% url 'hr_assessment:hr12-annual' %}"><small>03</small>年度考核</a>
+      <a class="{% if section == 'term' %}active{% endif %}" href="{% url 'hr_assessment:hr12-term' %}"><small>04</small>聘期考核</a>
+      <a class="{% if section == 'ethics' %}active{% endif %}" href="{% url 'hr_assessment:hr12-ethics' %}"><small>05</small>师德专项</a>
+      <a class="{% if section == 'review' or section == 'archive' %}active{% endif %}" href="{% url 'hr_assessment:hr12-review' %}"><small>06</small>评议与档案</a>
     </nav>
     <div class="hr12-mobile-hint">可左右滑动查看更多考核工作区</div>
 
-    <section class="hr-v2-kpis hr12-primary-kpis" aria-label="考核关键结论">
-      <article class="hr-v2-kpi">
-        <div class="hr-v2-kpi__label">考核制度</div>
-        <div class="hr-v2-kpi__value" id="policyCount">—</div>
-        <div class="hr-v2-kpi__note">当前学校可读取的制度包</div>
-      </article>
-      <article class="hr-v2-kpi">
-        <div class="hr-v2-kpi__label">有效指标</div>
-        <div class="hr-v2-kpi__value" id="indicatorCount">—</div>
-        <div class="hr-v2-kpi__note">当前可用于考核的指标事实</div>
-      </article>
-      <article class="hr-v2-kpi">
-        <div class="hr-v2-kpi__label">评分量表</div>
-        <div class="hr-v2-kpi__value" id="scaleCount">—</div>
-        <div class="hr-v2-kpi__note">按版本和适用范围保留</div>
-      </article>
-      <article class="hr-v2-kpi" id="sourceHealthCard">
-        <div class="hr-v2-kpi__label">业务来源</div>
-        <div class="hr-v2-kpi__value" id="sourceHealth">读取中</div>
-        <div class="hr-v2-kpi__note">主档、合同、资格、发展、考勤等</div>
-      </article>
+    <section class="hr12-primary-kpis" aria-label="考核关键结论">
+      <article class="hr12-kpi"><span>当前周期</span><strong>{{ summary.cycle_name }}</strong><small>当前学校考核周期</small></article>
+      <article class="hr12-kpi"><span>参评人数</span><strong>{{ summary.participant_count }}</strong><small>周期人员快照</small></article>
+      <article class="hr12-kpi"><span>整体完成度</span><strong>{{ summary.completion_display }}</strong><small>正式结果 / 参评人数</small></article>
+      <article class="hr12-kpi"><span>待评议</span><strong>{{ summary.pending_review }}</strong><small>评议人待办理</small></article>
+      <article class="hr12-kpi"><span>师德异常</span><strong>{{ summary.ethics_abnormal }}</strong><small>需要复核的师德事项</small></article>
+      <article class="hr12-kpi"><span>待归档</span><strong>{{ summary.pending_archive }}</strong><small>已定稿未归档</small></article>
     </section>
 
     {% if section == 'overview' %}
@@ -90,27 +71,27 @@
         <div class="hr-v2-section__head">
           <div>
             <h2 id="hr12-chain-title">考核业务链</h2>
-            <p>按老师实际办理顺序组织；全部链接现有真实工作区，不新造 URL。</p>
+            <p>按学校考核的实际办理顺序组织，每一步都进入对应业务页面。</p>
           </div>
         </div>
         <div class="hr12-process" aria-label="考核六段业务链">
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-policies' %}">
-            <span class="hr12-process__no">01</span><strong>制度与指标</strong><small>确认制度版本、指标口径和评分量表</small>
+            <span class="hr12-process__no">01</span><strong>制度发布</strong><small>确认制度版本、指标口径和评分量表</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-goals' %}">
-            <span class="hr12-process__no">02</span><strong>目标与平时</strong><small>目标任务、进展、检查点和日常事实</small>
+            <span class="hr12-process__no">02</span><strong>目标确认</strong><small>确认个人目标、任务和考核要求</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-annual' %}">
-            <span class="hr12-process__no">03</span><strong>年度考核</strong><small>年度对象、评议、结果和异议处理</small>
+            <span class="hr12-process__no">03</span><strong>个人总结</strong><small>提交年度总结与相关考核材料</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-term' %}">
-            <span class="hr12-process__no">04</span><strong>聘期考核</strong><small>聘期过程与正式结果独立留痕</small>
+            <span class="hr12-process__no">04</span><strong>部门评议</strong><small>部门按指标和事实完成评议</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-ethics' %}">
-            <span class="hr12-process__no">05</span><strong>师德专项</strong><small>独立事实来源、专项评价和证据边界</small>
+            <span class="hr12-process__no">05</span><strong>学校审定</strong><small>集中评议、校准并形成审定结论</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-review' %}">
-            <span class="hr12-process__no">06</span><strong>评议与结果归档</strong><small>评议、审定后进入正式结果档案</small>
+            <span class="hr12-process__no">06</span><strong>结果归档</strong><small>结果告知、确认、异议与档案归集</small>
           </a>
         </div>
       </section>
@@ -140,7 +121,7 @@
           <div class="hr12-panel__head">
             <div>
               <h2>业务数据接入</h2>
-              <p>PARTIAL / UNAVAILABLE 会原样表达为部分可用 / 暂不可用。</p>
+              <p>部分可用或暂不可用的数据会明确标注，不影响其它已接通数据展示。</p>
             </div>
           </div>
           <div class="hr12-cap-list" id="sourceStatus">
@@ -150,12 +131,12 @@
       </div>
     </section>
 
-    <div class="hr12-principle"><strong>考核数据原则：</strong>考核结果必须能追溯到制度版本、考核周期、对象快照、证据与评议过程；未接通的数据来源会明确提示，不会自动当作“无问题”或“0 分”。</div>
+    <div class="hr12-principle"><strong>数据说明：</strong>考核结果可追溯到制度版本、考核周期、人员快照、证据与评议过程；暂不可用的数据会明确提示。</div>
   {% endif %}
 </div>
 {% if not access_error %}
   {# HR12 boots directly after its root so script execution cannot depend on a theme block. #}
-  <script src="{% static 'hr/js/pages/hr12-assessment.js' %}"></script>
-  <script src="{% static 'hr/js/pages/hr12-actions.js' %}"></script>
+  <script src="{% static 'hr/js/pages/hr12-assessment.js' %}?v=20260830-2"></script>
+  <script src="{% static 'hr/js/pages/hr12-actions.js' %}?v=20260830-2"></script>
 {% endif %}
 {% endblock content %}

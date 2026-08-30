@@ -51,10 +51,8 @@
       }
       if (!response.ok) {
         const error = payload.error || {};
-        throw new Error(
-          [error.code, error.message, error.detail].filter(Boolean).join(' · ')
-          || `HTTP ${response.status}`,
-        );
+        const detail = [error.message, error.detail].find((item) => item && /[\u3400-\u9fff]/.test(item));
+        throw new Error(detail || `请求失败（状态码 ${response.status}）`);
       }
       return payload.data ?? payload;
     } finally {
@@ -114,7 +112,7 @@
     <div class="hr12-action-list" data-list>
       <div class="hr12-action-empty">正在读取制度包…</div>
     </div>
-    <div class="hr12-action-note"><strong>办理边界：</strong>制度包建立、名称维护和已有草稿版本发布可在此办理；目标、聘期、师德、评议与档案工作区读取正式 Authority 事实，未授权的写动作不会在页面中伪造。</div>
+    <div class="hr12-action-note"><strong>办理说明：</strong>制度建立、名称维护和已有草稿版本发布可在此办理；目标、聘期、师德、评议与档案页面读取正式业务记录。</div>
   `;
 
   const principle = root.querySelector('.hr12-principle');
@@ -249,13 +247,13 @@
             versions.dataset.loaded = 'true';
             versions.innerHTML = items.length
               ? ''
-              : '<div class="hr12-action-empty">该制度包尚无版本；当前 API 未暴露版本创建动作。</div>';
+              : '<div class="hr12-action-empty">该制度尚无版本；请先完成制度内容和适用范围配置。</div>';
 
             items.forEach((version) => {
               const item = document.createElement('div');
               item.className = 'hr12-action-version';
               item.innerHTML = `
-                <div><b>v${esc(version.version_no)} · ${esc(statusLabels[version.status] || '状态待确认')}</b><small>${esc(version.effective_from || '未设生效日')} ~ ${esc(version.effective_to || '长期')}</small></div>
+                <div><b>第 ${esc(version.version_no)} 版 · ${esc(statusLabels[version.status] || '状态待确认')}</b><small>${esc(version.effective_from || '未设生效日')} 至 ${esc(version.effective_to || '长期')}</small></div>
                 ${version.status === 'DRAFT' ? '<button class="hr12-action-btn success" type="button" data-publish>发布版本</button>' : ''}
               `;
               item.querySelector('[data-publish]')?.addEventListener('click', async (publishEvent) => {

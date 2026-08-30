@@ -115,7 +115,7 @@
     try {
       const value = await getJson('/api/v1/hr/assessments/annual');
       const items = Array.isArray(value) ? value : [];
-      box.innerHTML = items.length ? items.map(annualRow).join('') : empty('暂无年度考核 Case', '当前学校尚未建立可办理的年度考核对象。');
+      box.innerHTML = items.length ? items.map(annualRow).join('') : empty('暂无年度考核对象', '当前学校尚未建立可办理的年度考核对象。');
     } catch (error) {
       box.innerHTML = empty('年度考核数据读取失败', error.message || '请稍后重试。');
     }
@@ -193,8 +193,8 @@
 
     if (section === 'annual') {
       title.textContent = '年度考核';
-      description.textContent = '先锁定当前 Case 的真实证据快照，再基于已完成审定会形成不可静默覆盖的正式结果。';
-      box.innerHTML = empty('正在读取年度考核', '正在核对当前学校年度 Case、证据快照和审定状态。');
+      description.textContent = '先锁定当前考核对象的证据快照，再基于已完成审定会形成可追溯的正式结果。';
+      box.innerHTML = empty('正在读取年度考核', '正在核对当前学校年度考核对象、证据快照和审定状态。');
       loadAnnualCases();
       return;
     }

@@ -3,5 +3,5 @@
 {% if status == "REPORTED" %}<span class="oh-badge oh-badge--success">{% trans "已报到" %}</span>
 {% elif status == "PENDING" %}<span class="oh-badge oh-badge--secondary">{% trans "待报到" %}</span>
 {% elif status == "SCHEDULED" %}<span class="oh-badge oh-badge--info">{% trans "已预约" %}</span>
-{% else %}<span class="oh-badge oh-badge--secondary">{{ status|default:_("—") }}</span>
+{% else %}<span class="oh-badge oh-badge--secondary">{% trans "未知状态" %}</span>
 {% endif %}

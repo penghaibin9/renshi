@@ -149,7 +149,7 @@ class LegacyEmployeeMetricProvider:
             provider_key=self.provider_key,
             metric_key=definition.key,
             reason_code="PERSONNEL_CATEGORY_DICT_MISSING",
-            message="专任教师口径依赖 HR03 人员类别权威字典，当前 Legacy 快照无法可靠判定。",
+            message="专任教师口径依赖 HR03 人员类别正式字典，当前系统快照无法可靠判定。",
             definition_version=definition.definition_version,
             authority_mode=context.authority_mode or LEGACY_ONLY,
         )
@@ -224,7 +224,7 @@ class LegacyEmployeeMetricProvider:
             provider_key=self.provider_key,
             metric_key=definition.key,
             reason_code="NO_EXIT_FACT_IN_LEGACY",
-            message="本年离退需权威离退事实（HR03/HR16），Legacy 当前快照无法可靠计算。",
+            message="本年离退需要 HR03/HR16 正式离退记录，当前系统快照无法可靠计算。",
             definition_version=definition.definition_version,
             authority_mode=context.authority_mode or LEGACY_ONLY,
         )

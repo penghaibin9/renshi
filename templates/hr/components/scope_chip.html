@@ -11,7 +11,7 @@ Usage:
 {% load i18n %}
 {% if label %}
   <span class="hr-scope-chip"
-        {% if scope %}title="{% trans '数据范围' %}: {{ scope }}"{% endif %}
+        {% if scope %}title="{% trans '数据范围' %}: {{ label }}"{% endif %}
         aria-label="{% trans '数据范围' %}: {{ label }}">
     {{ label }}
   </span>

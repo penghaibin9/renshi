@@ -11,10 +11,10 @@
 {% block content %}
 <div class="hr-v2-page hr05-page" data-module="HR05" data-section="reporting" data-hr-page="onboarding-reporting-list">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>报到登记</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-reporting-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-reporting-title">报到登记</h1><p class="hr-v2-subtitle">先选择真实入职 case，再进入单 case 报到页执行事实登记；列表页本身不提供空 case 写操作。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>原则</strong> 先选 case</span><span class="hr-v2-context__item"><strong>写入</strong> 仅详情页</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-reporting-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-reporting-title">报到登记</h1><p class="hr-v2-subtitle">先选择真实入职单，再进入单人报到页登记正式信息；列表页本身不提供未选择对象的写入操作。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>原则</strong> 先选入职单</span><span class="hr-v2-context__item"><strong>写入</strong> 仅详情页</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="reporting" %}
-  <section class="hr05-panel"><div class="hr05-toolbar"><div class="hr05-toolbar__copy"><h2>选择报到对象</h2><p>列表来自 canonical cases API，已报到时间和当前状态按服务端结果展示。</p></div><input class="hr05-search" id="hr05-reporting-keyword" placeholder="搜索入职单/来源编号" autocomplete="off"></div><div id="hr05-reporting-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取报到对象</strong><span>等待当前学校可见入职 case。</span></div></div></section>
-  <div class="hr05-truth-note"><strong>写操作边界</strong><span>确认报到与正式生效仍是两个独立动作；本页只负责选择对象，不再渲染缺失 case id 的保存/确认按钮。</span></div>
+  <section class="hr05-panel"><div class="hr05-toolbar"><div class="hr05-toolbar__copy"><h2>选择报到对象</h2><p>列表来自正式入职单数据，已报到时间和当前状态按服务端结果展示。</p></div><input class="hr05-search" id="hr05-reporting-keyword" placeholder="搜索入职单/来源编号" autocomplete="off"></div><div id="hr05-reporting-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取报到对象</strong><span>等待当前学校可见入职单。</span></div></div></section>
+  <div class="hr05-truth-note"><strong>写操作边界</strong><span>确认报到与正式生效仍是两个独立动作；本页只负责选择对象，不显示缺少入职单编号的保存或确认按钮。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-reporting-list.js' %}"></script>{% endblock scripts %}

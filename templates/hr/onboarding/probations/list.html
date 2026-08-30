@@ -5,10 +5,10 @@
 {% block content %}
 <div class="hr-v2-page hr05-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probations-list">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>试用与转正</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-probations-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probations-title">试用与转正</h1><p class="hr-v2-subtitle">读取当前学校试用记录，列表只展示服务端返回的真实状态、计划转正日和延长次数。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>来源</strong> probations API</span><span class="hr-v2-context__item"><strong>统计</strong> 成功后计算</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-probations-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probations-title">试用与转正</h1><p class="hr-v2-subtitle">读取当前学校试用记录，列表只展示服务端返回的真实状态、计划转正日和延长次数。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>来源</strong> 正式试用记录</span><span class="hr-v2-context__item"><strong>统计</strong> 成功后计算</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}
-  <section class="hr05-panel"><div id="hr05-probation-summary" class="hr05-meta"><span>试用统计：正在读取</span></div><div id="hr05-probation-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>等待 canonical probations API。</span></div></div></section>
-  <div class="hr05-truth-note"><strong>真实性边界</strong><span>只有 API 成功后才计算“试用中/已延期/已结束”等数量；读取失败不会回退成 0。</span></div>
+  <section class="hr05-panel"><div id="hr05-probation-summary" class="hr05-meta"><span>试用统计：正在读取</span></div><div id="hr05-probation-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>等待服务端返回正式试用记录。</span></div></div></section>
+  <div class="hr05-truth-note"><strong>真实性边界</strong><span>只有服务端成功返回后才计算“试用中/已延期/已结束”等数量；读取失败不会回退成 0。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probations.js' %}"></script>{% endblock scripts %}

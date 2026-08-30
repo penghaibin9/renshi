@@ -81,11 +81,15 @@
     const summary = data.summary || {};
     const registered = Array.isArray(data.registeredProviderDomains) ? data.registeredProviderDomains.length : 0;
     const degraded = Array.isArray(data.degradedDomains) ? data.degradedDomains.length : 0;
+    const identity = data.identity || {};
+    const primaryStatus = data.primaryStatus || {};
     const items = [
       [summary.availableServices ?? 0, '可用服务', '当前学校已开放'],
       [summary.pinnedServices ?? 0, '我的常用', '仅影响本人入口'],
       [registered, '已连接来源', '各人事业务模块'],
       [degraded, '需关注来源', degraded ? '详情见来源状态' : '当前状态正常'],
+      [statusLabel(primaryStatus.status || 'UNAVAILABLE'), '本人主档', '当前登录本人'],
+      [employmentLabels[identity.employmentStatus] || '待确认', '在职状态', '来自正式主档'],
     ];
     target.innerHTML = items.map(([value, name, note]) => (
       `<article class="hr17-kpi"><span>${esc(name)}</span><b>${esc(value)}</b><em>${esc(note)}</em></article>`

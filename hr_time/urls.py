@@ -8,6 +8,7 @@ app_name = "hr_time"
 
 urlpatterns = [
     path("", views.workspace, {"section": "overview"}, name="hr11-overview"),
+    path("rules/", views.workspace, {"section": "overview"}, name="hr11-rules"),
     path("attendance/", views.workspace, {"section": "attendance"}, name="hr11-attendance"),
     path("schedule/", views.workspace, {"section": "schedule"}, name="hr11-schedule"),
     path("leave/", views.workspace, {"section": "leave"}, name="hr11-leave"),

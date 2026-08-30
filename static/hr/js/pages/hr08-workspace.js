@@ -29,7 +29,7 @@
     try { payload = await response.json(); } catch (_error) { /* HTTP status remains authoritative. */ }
     if (!response.ok) {
       const error = payload.error || {};
-      throw new Error([error.code, error.message].filter(Boolean).join(' · ') || `请求失败（${response.status}）`);
+      throw new Error(error.message && /[\u3400-\u9fff]/.test(error.message) ? error.message : `请求失败（状态码 ${response.status}）`);
     }
     return payload.data ?? payload;
   }
@@ -82,7 +82,7 @@
       const bootstrap = await call('/api/v1/hr/structure/organizations/bootstrap');
       const base = bootstrap.data ?? bootstrap;
       const rootOrg = base.root;
-      if (!rootOrg?.id) throw new Error('HR02 正式组织根节点不可用');
+      if (!rootOrg?.id) throw new Error('当前学校组织信息暂不可用');
       const items = [{id: String(rootOrg.id), code: rootOrg.code || '', name: rootOrg.name || rootOrg.code || '学校'}];
       const queue = [String(rootOrg.id)];
       const visited = new Set();
@@ -108,7 +108,7 @@
         select.appendChild(option);
       });
     } catch (error) {
-      select.innerHTML = '<option value="">HR02 正式组织暂不可用</option>';
+      select.innerHTML = '<option value="">组织信息暂不可用</option>';
       select.disabled = true;
       const form = select.closest('form');
       if (form) setMessage(form, error.message, 'error');

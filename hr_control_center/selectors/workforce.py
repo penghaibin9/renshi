@@ -56,7 +56,7 @@ _UNAVAILABLE_DIMENSIONS = {
     ),
     "title": (
         "TITLE_FACT_MISSING",
-        "职称需权威聘任事实（HR07），Legacy 快照无职称字段。",
+        "职称需要 HR07 正式聘任记录，当前系统快照没有职称字段。",
     ),
     "doubleTeacher": (
         "MODULE_NOT_AVAILABLE",
@@ -194,7 +194,7 @@ class WorkforceSelector:
             ),
             "fullTimeTeacher": self._unavailable_section(
                 "PERSONNEL_CATEGORY_DICT_MISSING",
-                "专任教师口径依赖 HR03 人员类别权威字典，Legacy 快照无法可靠判定。",
+                "专任教师口径依赖 HR03 人员类别正式字典，当前系统快照无法可靠判定。",
             ),
             "department": self._distribution_section(dept_result),
             "jobPosition": self._distribution_section(position_result),

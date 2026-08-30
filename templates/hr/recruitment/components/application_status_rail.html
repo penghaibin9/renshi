@@ -9,7 +9,18 @@ Usage:
   <div class="hr-rec-status-rail__row">
     <span class="hr-meta">{% trans "权威状态" %}</span>
     <span class="hr-rec-badge hr-rec-badge--{{ application.canonical_status|lower }}">
-      {{ application.canonical_status }}
+      {% with st=application.canonical_status %}
+        {% if application.status_label %}{{ application.status_label }}
+        {% elif st == "DRAFT" %}草稿
+        {% elif st == "SUBMITTED" %}已提交
+        {% elif st == "UNDER_REVIEW" %}审核中
+        {% elif st == "APPROVED" %}已批准
+        {% elif st == "REJECTED" %}已驳回
+        {% elif st == "RETURNED" %}已退回
+        {% elif st == "EFFECTIVE" %}已生效
+        {% elif st == "CANCELLED" %}已取消
+        {% else %}状态待确认{% endif %}
+      {% endwith %}
     </span>
   </div>
   {% if application.workflow_stage %}

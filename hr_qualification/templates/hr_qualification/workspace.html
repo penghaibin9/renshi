@@ -5,7 +5,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr09-qualification.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr09-qualification.css' %}?v=20260830-workbench">
 <link id="hr09-action-styles" rel="stylesheet" href="{% static 'hr/css/hr09-actions.css' %}">
 
 <div class="hr-v2-page hr09" data-module="HR09" data-section="{{ section }}">
@@ -13,20 +13,20 @@
     <div class="hr09-access" role="alert">{{ access_error }}</div>
   {% else %}
     <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
-      <span>HR09 资格资质</span>
+      <span>资格资质</span>
       <strong>{{ section_title }}</strong>
     </div>
 
     <header class="hr-v2-pagehead" aria-labelledby="hr09-title">
       <div class="hr-v2-pagehead__copy">
-        <div class="hr-v2-eyebrow">HR09 · 教师资格与双师型管理</div>
-        <h1 class="hr-v2-title" id="hr09-title">{{ section_title }}</h1>
-        <p class="hr-v2-subtitle">先确认资格是否真实、有效、可核验，再处理双师认定。证书有效不等于双师认定通过；认定结果必须经过批次规则、申报、评审和正式审定。</p>
+        <div class="hr-v2-eyebrow">资格资质 · 教师资格与双师认定</div>
+        <h1 class="hr-v2-title" id="hr09-title">{% if section == 'overview' %}资格资质{% else %}{{ section_title }}{% endif %}</h1>
+        <p class="hr-v2-subtitle">先核对教师资格是否真实、有效并完成核验，再办理双师申报、评审与认定。</p>
       </div>
       <div class="hr-v2-context" aria-label="当前工作区说明">
-        <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
-        <span class="hr-v2-context__item"><strong>事实</strong> 资格与认定</span>
-        <span class="hr-v2-context__item"><strong>权限</strong> Authority 实时判定</span>
+        <span class="hr-v2-context__item"><strong>数据范围</strong> 当前学校</span>
+        <span class="hr-v2-context__item"><strong>办理内容</strong> 资格与双师认定</span>
+        <span class="hr-v2-context__item"><strong>操作权限</strong> 按本人权限开放</span>
       </div>
     </header>
 
@@ -59,7 +59,17 @@
       <article class="hr-v2-kpi {% if summary.open_risks %}hr09-kpi--danger{% endif %}">
         <div class="hr-v2-kpi__label">未关闭资格风险</div>
         <div class="hr-v2-kpi__value">{{ summary.open_risks }}</div>
-        <div class="hr-v2-kpi__note">仅统计当前学校真实未关闭风险</div>
+        <div class="hr-v2-kpi__note">当前学校未关闭风险</div>
+      </article>
+      <article class="hr-v2-kpi">
+        <div class="hr-v2-kpi__label">有效双师认定</div>
+        <div class="hr-v2-kpi__value">{{ summary.active_recognitions }}</div>
+        <div class="hr-v2-kpi__note">正式生效且未被替代</div>
+      </article>
+      <article class="hr-v2-kpi {% if summary.pending_applications %}hr09-kpi--warning{% endif %}">
+        <div class="hr-v2-kpi__label">双师认定中</div>
+        <div class="hr-v2-kpi__value">{{ summary.pending_applications }}</div>
+        <div class="hr-v2-kpi__note">申报、评审或待审定</div>
       </article>
     </section>
 
@@ -68,7 +78,7 @@
         <div class="hr-v2-section__head">
           <div>
             <h2 id="hr09-priority-title">今天优先处理</h2>
-            <p>只根据当前学校真实未完成事项生成；没有事项就保持真实空态。</p>
+            <p>根据当前学校尚未完成的事项生成；没有事项时保持空白提醒。</p>
           </div>
         </div>
         <div class="hr09-focus-grid">
@@ -84,7 +94,7 @@
           {% else %}
             <div class="hr-v2-empty hr09-focus-empty">
               <strong>当前没有需要优先处理的资格或双师事项</strong>
-              <span>页面不会为了填满首屏制造风险、待核验或待评审数量。</span>
+              <span>当前学校暂时没有待核验、待评审或未关闭风险。</span>
             </div>
           {% endif %}
         </div>
@@ -94,7 +104,7 @@
         <div class="hr-v2-section__head">
           <div>
             <h2 id="hr09-chain-title">资格与双师认定业务链</h2>
-            <p>按老师实际办理顺序组织入口；页面不新造路由，全部指向现有真实工作区。</p>
+            <p>按实际办理顺序组织入口，逐步完成资格登记、申报、评审与复核。</p>
           </div>
         </div>
         <div class="hr09-process" aria-label="资格与双师认定五段业务链">
@@ -158,7 +168,7 @@
                   </tbody>
                 </table>
               {% else %}
-                <div class="hr-v2-empty"><strong>当前学校暂无资格证书记录</strong><span>这是 Authority 数据的真实空状态。</span></div>
+                <div class="hr-v2-empty"><strong>当前学校暂无资格证书记录</strong><span>录入并完成核验后的资格证书会显示在这里。</span></div>
               {% endif %}
             </div>
           </article>
@@ -235,7 +245,7 @@
                   <td><span class="hr09-pill {% if row.status == '退回补正' %}hr09-pill--warning{% elif row.status == '认定通过' %}hr09-pill--success{% elif row.status == '未通过认定' %}hr09-pill--danger{% else %}hr09-pill--info{% endif %}">{{ row.status }}</span></td>
                 </tr>{% endfor %}</tbody>
               </table>
-            {% else %}<div class="hr-v2-empty"><strong>当前没有双师申报记录</strong><span>申报必须来自真实认定批次，不会创建演示申请。</span></div>{% endif %}
+            {% else %}<div class="hr-v2-empty"><strong>当前没有双师申报记录</strong><span>发布认定批次并开始申报后，相关记录会显示在这里。</span></div>{% endif %}
           </div>
         </div>
       </section>
@@ -258,7 +268,7 @@
                   <td><span class="hr09-pill {% if row.status == '有效' %}hr09-pill--success{% elif row.status == '到期复核' or row.status == '复核中' %}hr09-pill--warning{% elif row.status == '已撤销' or row.status == '无效' %}hr09-pill--danger{% endif %}">{{ row.status }}</span></td>
                 </tr>{% endfor %}</tbody>
               </table>
-            {% else %}<div class="hr-v2-empty"><strong>暂无正式双师认定结果</strong><span>只有完成正式审定并生成 Authority 结果后才会出现在这里。</span></div>{% endif %}
+            {% else %}<div class="hr-v2-empty"><strong>暂无正式双师认定结果</strong><span>完成正式审定并生效后的认定结果会出现在这里。</span></div>{% endif %}
           </div>
         </div>
       </section>
@@ -280,19 +290,19 @@
                   <td><span class="hr09-pill {% if row.status == '已解决' or row.status == '已关闭' %}hr09-pill--success{% elif row.status == '待处理' %}hr09-pill--danger{% else %}hr09-pill--warning{% endif %}">{{ row.status }}</span></td>
                 </tr>{% endfor %}</tbody>
               </table>
-            {% else %}<div class="hr-v2-empty"><strong>当前没有资格风险记录</strong><span>风险中心只展示真实风险案例，不根据空数据自动判定“0 风险”。</span></div>{% endif %}
+            {% else %}<div class="hr-v2-empty"><strong>当前没有资格风险记录</strong><span>发现资格缺失、核验异常、到期或证据失效后，相关事项会显示在这里。</span></div>{% endif %}
           </div>
         </div>
       </section>
     {% endif %}
 
     <div class="hr-v2-truth-note">
-      <strong>数据边界</strong>
-      <span>本工作区只读取当前学校 HR09 Authority 模型；办理动作由服务端重新判定学校、权限和状态，不接受页面传入的学校范围。</span>
+      <strong>数据范围</strong>
+      <span>本工作区只展示当前学校以及本人权限范围内的资格与认定信息；可办理操作会根据当前状态重新核对。</span>
     </div>
     {{ staff_options|json_script:"hr09-staff-options" }}
     {{ rule_version_options|json_script:"hr09-rule-version-options" }}
   {% endif %}
 </div>
-<script id="hr09-action-script" src="{% static 'hr/js/pages/hr09-actions.js' %}"></script>
+<script id="hr09-action-script" src="{% static 'hr/js/pages/hr09-actions.js' %}?v=20260830-business-copy"></script>
 {% endblock %}

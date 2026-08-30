@@ -33,7 +33,6 @@ HrValidationResultPanel — 方案校验结果面板。
             {% elif r.level|lower == "warning" %}{% trans "警告" %}
             {% else %}{% trans "提示" %}{% endif %}
           </span>
-          {% if r.code %}<code class="hr-validation-panel__code">{{ r.code }}</code>{% endif %}
           <span class="hr-validation-panel__message">{{ r.message }}</span>
         </li>
       {% endfor %}
