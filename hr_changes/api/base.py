@@ -79,7 +79,9 @@ def make_hr_change_context(request, *, tenant_membership_check=True):
         from base.auth_backends import get_allowed_company_ids
 
         allowed = get_allowed_company_ids(request.user)
-        if allowed and tenant_id not in allowed:
+        # An empty membership set means the account belongs to no tenant.  It
+        # must never be interpreted as an unrestricted account.
+        if tenant_id not in allowed:
             raise HrChangeContextError(
                 "TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校数据"
             )

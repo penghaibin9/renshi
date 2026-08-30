@@ -72,29 +72,40 @@ class CorrectionServiceTests(TestCase):
         svc = CorrectionService(TENANT, actor_user_id=1)
         correction = svc.create_correction(
             case_id=self.case.id,
-            correction_type="DATE",
-            requested_values={"effective_at": "2026-09-02"},
+            correction_type="TARGET_VALUE",
+            requested_values={"fields": {"person.preferred_name": "小张"}},
             reason="系统误录",
+            authority_version=self.case.staff_master_id.version,
+            idempotency_key="s7-create-full",
         )
         self.assertEqual(correction.status, "DRAFT")
         self.assertEqual(correction.previous_snapshot_hash, "prev-hash")
 
-        svc.submit(correction.id)
-        svc.approve(correction.id)
-        applied = svc.apply(correction.id)
+        correction = svc.submit(correction.id)
+        correction = svc.approve(correction.id)
+        applied = svc.apply(
+            correction.id,
+            expected_version=correction.version,
+            idempotency_key="s7-apply-full",
+        )
         self.assertEqual(applied.status, "APPLIED")
         self.assertTrue(applied.new_snapshot_hash)
         self.assertNotEqual(applied.new_snapshot_hash, "prev-hash")
         # 案件转 CORRECTED
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, CaseStatus.CORRECTED)
+        self.case.staff_master_id.person_id.refresh_from_db()
+        self.assertEqual(self.case.staff_master_id.person_id.preferred_name, "小张")
+        self.assertTrue(applied.provider_case_id)
 
     def test_correction_requires_effective(self):
         draft_case = make_case(TENANT, status=CaseStatus.DRAFT)
         with self.assertRaises(CorrectionServiceError) as cm:
             CorrectionService(TENANT).create_correction(
                 case_id=draft_case.id, correction_type="DATE",
-                requested_values={}, reason="x",
+                requested_values={"fields": {"person.preferred_name": "x"}}, reason="x",
+                authority_version=draft_case.staff_master_id.version,
+                idempotency_key="s7-create-draft",
             )
         self.assertEqual(cm.exception.code, "CHANGE_INVALID_STATE")
 
@@ -102,11 +113,17 @@ class CorrectionServiceTests(TestCase):
         svc = CorrectionService(TENANT, actor_user_id=1)
         correction = svc.create_correction(
             case_id=self.case.id, correction_type="TARGET_VALUE",
-            requested_values={"organization": "X"}, reason="纠错",
+            requested_values={"fields": {"person.preferred_name": "X"}}, reason="纠错",
+            authority_version=self.case.staff_master_id.version,
+            idempotency_key="s7-create-unapproved",
         )
         svc.submit(correction.id)
         with self.assertRaises(CorrectionServiceError) as cm:
-            svc.apply(correction.id)
+            svc.apply(
+                correction.id,
+                expected_version=2,
+                idempotency_key="s7-apply-unapproved",
+            )
         self.assertEqual(cm.exception.code, "CHANGE_CORRECTION_REQUIRES_APPROVAL")
 
 

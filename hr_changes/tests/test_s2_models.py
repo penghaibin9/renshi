@@ -195,6 +195,8 @@ class CorrectionRescindBulkTests(TestCase):
             correction_type="DATE",
             requested_values_json={"effective_at": "2026-09-02"},
             reason="系统误录",
+            create_idempotency_key="model-correction-1",
+            create_request_hash="fixture",
         )
         self.assertEqual(c.status, "DRAFT")
 

@@ -52,6 +52,17 @@ class HrChangeCorrection(models.Model):
     applied_at = models.DateTimeField(null=True, blank=True)
     previous_snapshot_hash = models.CharField(max_length=64, blank=True, default="")
     new_snapshot_hash = models.CharField(max_length=64, blank=True, default="")
+    authority_version = models.BigIntegerField(default=0)
+    authority_snapshot_hash = models.CharField(max_length=64, blank=True, default="")
+    provider_code = models.CharField(max_length=32, blank=True, default="")
+    provider_case_id = models.UUIDField(null=True, blank=True)
+    provider_case_version = models.BigIntegerField(null=True, blank=True)
+    applied_fields_json = models.JSONField(default=list, blank=True)
+    evidence_material_id = models.UUIDField(null=True, blank=True)
+    create_idempotency_key = models.CharField(max_length=64)
+    create_request_hash = models.CharField(max_length=64, blank=True, default="")
+    apply_idempotency_key = models.CharField(max_length=64, blank=True, default="")
+    apply_error = models.TextField(blank=True, default="")
     version = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -61,6 +72,12 @@ class HrChangeCorrection(models.Model):
         verbose_name_plural = _("HR Change Corrections")
         indexes = [
             models.Index(fields=["tenant_id", "status", "created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "create_idempotency_key"],
+                name="uniq_hr_change_correction_create_key",
+            ),
         ]
 
     def __str__(self):

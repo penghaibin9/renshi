@@ -64,7 +64,13 @@ def _service_error(request, exc):
         return error_response(request, "CHANGE_INVALID_STATE", str(exc), status=409)
     code = getattr(exc, "code", "CHANGE_INVALID_PAYLOAD")
     message = getattr(exc, "message", str(exc))
-    status = 409 if code in ("VERSION_CONFLICT", "CHANGE_INVALID_STATE") else 400
+    status = 409 if code in (
+        "VERSION_CONFLICT",
+        "AUTHORITY_VERSION_CONFLICT",
+        "IDEMPOTENCY_KEY_CONFLICT",
+        "CHANGE_INVALID_STATE",
+        "CHANGE_CORRECTION_REQUIRES_APPROVAL",
+    ) else 400
     return error_response(request, code, message, status=status)
 
 

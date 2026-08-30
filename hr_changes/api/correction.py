@@ -55,8 +55,24 @@ def _correction_payload(correction):
         "status": correction.status,
         "previousSnapshotHash": correction.previous_snapshot_hash,
         "newSnapshotHash": correction.new_snapshot_hash,
+        "authorityVersion": correction.authority_version,
+        "providerCode": correction.provider_code,
+        "providerCaseId": str(correction.provider_case_id) if correction.provider_case_id else None,
+        "providerCaseVersion": correction.provider_case_version,
+        "appliedFields": correction.applied_fields_json,
+        "applyError": correction.apply_error,
         "version": correction.version,
     }
+
+
+def _version(request, body):
+    raw = request.headers.get("If-Match") or body.get("version")
+    if raw in (None, ""):
+        return None
+    try:
+        return int(str(raw).strip().strip('"'))
+    except (TypeError, ValueError):
+        raise ChangeServiceError("VERSION_INVALID", "If-Match/version 必须是整数") from None
 
 
 @require_http_methods(["POST"])
@@ -72,6 +88,10 @@ def create_correction(request, case_id):
             correction_type=body.get("correctionType", "TARGET_VALUE"),
             requested_values=body.get("requestedValues", {}),
             reason=body.get("reason", ""),
+            authority_version=body.get("authorityVersion"),
+            idempotency_key=request.headers.get("Idempotency-Key", ""),
+            case_version=_version(request, body),
+            evidence_material_id=body.get("evidenceMaterialId"),
         )
     except (CorrectionServiceError, ChangeServiceError, KeyError) as exc:
         if isinstance(exc, KeyError):
@@ -92,14 +112,19 @@ def correction_action(request, correction_id, action: str):
     try:
         body = _body(request)
         svc = _svc(request, ctx)
+        expected_version = _version(request, body)
         if action == "submit":
-            correction = svc.submit(correction_id)
+            correction = svc.submit(correction_id, expected_version=expected_version)
         elif action == "approve":
-            correction = svc.approve(correction_id)
+            correction = svc.approve(correction_id, expected_version=expected_version)
         elif action == "reject":
-            correction = svc.reject(correction_id)
+            correction = svc.reject(correction_id, expected_version=expected_version)
         elif action == "apply":
-            correction = svc.apply(correction_id)
+            correction = svc.apply(
+                correction_id,
+                expected_version=expected_version,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+            )
         else:
             return error_response(request, "CHANGE_INVALID_ACTION", f"未知动作 {action}", status=404)
     except (CorrectionServiceError, ChangeServiceError) as exc:
