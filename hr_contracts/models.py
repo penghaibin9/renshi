@@ -18,6 +18,19 @@ from django.db.models import Q
 from django.utils import timezone
 
 from horilla.hr_domain_models import HrTenantScopedModel
+from hr_contracts.permissions import PERMISSION_DEFINITIONS
+
+
+class HrContractsPermissionMeta(models.Model):
+    """Django content-type anchor for the canonical HR07 permissions."""
+
+    class Meta:
+        managed = False
+        default_permissions = ()
+        permissions = tuple(
+            (definition.key, definition.description)
+            for definition in PERMISSION_DEFINITIONS
+        )
 
 
 class _FormalAgreementQuerySet(models.QuerySet):

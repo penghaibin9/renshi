@@ -46,3 +46,4 @@ from hr_assessment.models.legacy import (  # noqa: F401
     HrLegacyPmsWriterSeal,
     HrLegacyPmsWriterSealEvent,
 )
+from hr_assessment.models.permissions import HrAssessmentPermissionMeta  # noqa: F401

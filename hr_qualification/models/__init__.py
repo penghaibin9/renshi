@@ -50,6 +50,7 @@ from hr_qualification.models.recognition import HrDoubleTeacherRecognition
 from hr_qualification.models.recheck import HrDoubleTeacherRecheckCase
 from hr_qualification.models.evidence_usage import HrEvidenceUsage
 from hr_qualification.models.objection import HrDoubleTeacherObjection
+from hr_qualification.models.permissions import HrQualificationPermissionMeta
 
 __all__ = [
     # S2
@@ -85,4 +86,5 @@ __all__ = [
     "HrDoubleTeacherScoreSheet",
     "HrDoubleTeacherVote",
     "HrEvidenceUsage",
+    "HrQualificationPermissionMeta",
 ]

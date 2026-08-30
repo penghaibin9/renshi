@@ -34,6 +34,7 @@ from hr_external.models.lifecycle import HrExternalLifecycleEvent
 from hr_external.models.material import HrExternalFileTicket, HrExternalMaterial
 from hr_external.models.profile import HrExternalTeacherProfile
 from hr_external.models.portal import HrExternalPortalToken
+from hr_external.models.permissions import HrExternalPermissionMeta
 from hr_external.models.projection import HrExternalProjectionState
 from hr_external.models.renewal_exit import HrExternalExitCase, HrExternalRenewalReview
 from hr_external.models.task import (
@@ -75,4 +76,5 @@ __all__ = [
     "HrExternalMaterial",
     "HrExternalFileTicket",
     "HrExternalPortalToken",
+    "HrExternalPermissionMeta",
 ]
