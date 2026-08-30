@@ -109,6 +109,8 @@ class CorrectionService:
                 field_code=field_code,
                 old_value_masked=item.get("old_value_masked", ""),
                 new_value_masked=item.get("new_value_masked", ""),
+                old_value_ref=item.get("old_value_ref", ""),
+                new_value_ref=item.get("new_value_ref", ""),
                 effective_date=item.get("effective_date"),
                 impact_level=impact,
             )
@@ -273,19 +275,22 @@ class CorrectionService:
           [原子块2] 应用主逻辑（APPLYING → apply_fn → APPLIED + version+1）
           异常时：FAILED 用独立 update() 落库（块2 回滚不影响），再抛 CORRECTION_APPLY_FAILED
         """
-        with transaction.atomic():
-            case = HrCorrectionCase.objects.select_for_update().get(
-                tenant_id=self.tenant_id, id=case_id
-            )
-            self._assert_status(case, CorrectionStatus.APPROVED)
-            if expected_version is not None and case.version != expected_version:
-                raise CorrectionStateError(
-                    "VERSION_CONFLICT: 更正已过期，请刷新后重试", code="VERSION_CONFLICT"
-                )
+        case = None
+        application_started = False
         try:
             with transaction.atomic():
+                case = HrCorrectionCase.objects.select_for_update().get(
+                    tenant_id=self.tenant_id, id=case_id
+                )
+                self._assert_status(case, CorrectionStatus.APPROVED)
+                if expected_version is not None and case.version != expected_version:
+                    raise CorrectionStateError(
+                        "VERSION_CONFLICT: 更正已过期，请刷新后重试",
+                        code="VERSION_CONFLICT",
+                    )
                 case.status = CorrectionStatus.APPLYING
                 case.save(update_fields=["status"])
+                application_started = True
                 if apply_fn is None:
                     apply_fn = self._default_apply
                 apply_fn(case)
@@ -297,7 +302,15 @@ class CorrectionService:
                 HrCorrectionItem.objects.filter(
                     tenant_id=self.tenant_id, case_id=case
                 ).update(applied=True)
+                from hr_staff.services.outbox_service import staff_basic_info_corrected
+
+                fields = list(case.items.values_list("field_code", flat=True))
+                staff_basic_info_corrected(
+                    self.tenant_id, case.staff_id_id, case.id, fields
+                )
         except Exception as exc:  # 应用失败必须可追踪（独立落库，不被块2回滚）
+            if not application_started or case is None:
+                raise
             HrCorrectionCase.objects.filter(pk=case.pk).update(
                 status=CorrectionStatus.FAILED,
                 apply_error=f"{exc.__class__.__name__}: {exc}",
@@ -320,11 +333,6 @@ class CorrectionService:
             business_type="CORRECTION",
             business_id=str(case.id),
         )
-        # outbox
-        from hr_staff.services.outbox_service import staff_basic_info_corrected
-
-        fields = list(case.items.values_list("field_code", flat=True))
-        staff_basic_info_corrected(self.tenant_id, case.staff_id_id, case.id, fields)
         case.refresh_from_db()
         return case
 
@@ -339,32 +347,9 @@ class CorrectionService:
 
     def _apply_item(self, case: HrCorrectionCase, item):
         """按 field_code 应用单个更正 item。"""
-        from hr_staff.models import HrPerson, HrPersonContact
+        from hr_staff.services.correction_fields import get_correction_field_handler
 
-        staff = case.staff_id
-        field_code = item.field_code
-        new_value = item.new_value_masked
-
-        if field_code == "person.legal_name":
-            person = staff.person_id
-            person.legal_name = new_value or person.legal_name
-            person.save(update_fields=["legal_name", "updated_at"])
-        elif field_code == "person.preferred_name":
-            person = staff.person_id
-            person.preferred_name = new_value or ""
-            person.save(update_fields=["preferred_name", "updated_at"])
-        elif field_code in ("contact.work_email", "contact.personal_email"):
-            self._upsert_contact(staff, "WORK_EMAIL" if "work" in field_code else "PERSONAL_EMAIL", new_value)
-        elif field_code in ("contact.work_phone", "contact.personal_mobile"):
-            self._upsert_contact(staff, "WORK_MOBILE" if "work" in field_code else "PERSONAL_MOBILE", new_value)
-        elif field_code in ("identity.document_number", "staff.staff_no", "employment.effective_from",
-                            "employment.effective_to", "assignment.organization", "assignment.position"):
-            # 高敏/权威业务字段：内置应用器不静默处理，需显式业务域/高权限应用器
-            raise NotImplementedError(
-                f"{field_code} 需要显式专用应用器（高敏/权威业务字段），禁止静默应用"
-            )
-        else:
-            raise NotImplementedError(f"未实现 {field_code} 的应用逻辑")
+        get_correction_field_handler(item.field_code).apply(self, case, item)
 
     @staticmethod
     def _upsert_contact(staff, kind: str, value: str):

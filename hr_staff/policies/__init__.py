@@ -45,6 +45,12 @@ FIELD_GOVERNANCE_REGISTRY: dict[str, FieldPolicy] = {
         required_evidence=False,
         approval_policy="HR_REVIEW",
     ),
+    "person.preferred_name": FieldPolicy(
+        field_code="person.preferred_name",
+        edit_mode=CorrectionEditMode.HR_DIRECT,
+        sensitivity_level=SensitivityLevel.PUBLIC_HR,
+        required_permission="hr.staff.edit_basic",
+    ),
     "person.gender_code": FieldPolicy(
         field_code="person.gender_code",
         edit_mode=CorrectionEditMode.SELF_REQUEST,
