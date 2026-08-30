@@ -12,6 +12,7 @@ must not fabricate a formal employment relationship.
 
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
@@ -164,6 +165,57 @@ class HrContractVersion(HrTenantScopedModel):
                 name="idx_hr07_ver_expiry",
             ),
         ]
+
+    _SIGNED_IMMUTABLE_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "agreement_id",
+            "version_no",
+            "effective_from",
+            "signed_at",
+            "signed_document_ref",
+            "content_snapshot_json",
+            "content_hash",
+            "supersedes_version_id",
+            "source_business_type",
+            "source_business_id",
+        }
+    )
+
+    def save(self, *args, **kwargs):
+        """Keep a signed version's identity, document and content immutable.
+
+        Lifecycle services may still close ``effective_to`` and advance the
+        status projection. Material changes must create a successor version.
+        """
+        update_fields = kwargs.get("update_fields")
+        fields_to_check = self._SIGNED_IMMUTABLE_FIELDS
+        if update_fields is not None:
+            fields_to_check = fields_to_check.intersection(update_fields)
+
+        if self.pk and fields_to_check:
+            persisted = (
+                type(self).objects.filter(pk=self.pk)
+                .values("status", *sorted(fields_to_check))
+                .first()
+            )
+            if persisted and persisted["status"] != self.Status.DRAFT:
+                changed = [
+                    field
+                    for field in sorted(fields_to_check)
+                    if persisted[field] != getattr(self, field)
+                ]
+                if changed:
+                    raise ValidationError(
+                        {
+                            field: (
+                                "Signed contract versions are immutable; "
+                                "create a successor version instead."
+                            )
+                            for field in changed
+                        }
+                    )
+        return super().save(*args, **kwargs)
 
 
 class HrContractCase(HrTenantScopedModel):

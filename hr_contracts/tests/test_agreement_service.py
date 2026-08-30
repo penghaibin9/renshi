@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from hr_contracts.models import HrContractAgreement, HrContractVersion
@@ -144,3 +145,35 @@ class AgreementServiceTests(TestCase):
         )
         self.assertEqual(version.status, HrContractVersion.Status.EFFECTIVE)
         self.assertEqual(agreement.status, HrContractAgreement.Status.ACTIVE)
+
+    def test_signed_version_content_cannot_be_overwritten_in_place(self):
+        agreement = HrContractAgreement.objects.create(
+            tenant_id=77,
+            agreement_no="IMMUTABLE-001",
+            staff_id="11111111-1111-1111-1111-111111111111",
+            employment_relationship_id="22222222-2222-2222-2222-222222222222",
+            agreement_title="Immutable agreement",
+            agreement_type="EMPLOYMENT",
+            current_version_no=1,
+        )
+        version = HrContractVersion.objects.create(
+            tenant_id=77,
+            agreement=agreement,
+            version_no=1,
+            effective_from=date(2026, 8, 1),
+            signed_at=datetime(2026, 7, 20, tzinfo=timezone.utc),
+            signed_document_ref="private://signed/immutable-001",
+            content_snapshot_json={"clauses": ["original"]},
+            content_hash=AgreementService._content_hash({"clauses": ["original"]}),
+            status=HrContractVersion.Status.SIGNED,
+        )
+
+        version.content_snapshot_json = {"clauses": ["silently replaced"]}
+        version.content_hash = AgreementService._content_hash(
+            version.content_snapshot_json
+        )
+        with self.assertRaises(ValidationError):
+            version.save(update_fields=["content_snapshot_json", "content_hash"])
+
+        version.refresh_from_db()
+        self.assertEqual(version.content_snapshot_json, {"clauses": ["original"]})
