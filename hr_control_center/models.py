@@ -74,9 +74,11 @@ class HrAlertInstance(HorillaModel):
         verbose_name = _("HR Alert Instance")
         verbose_name_plural = _("HR Alert Instances")
         constraints = [
-            # OPEN 逻辑唯一：同一 dedupe_key 不允许同时存在多个 OPEN/ACKNOWLEDGED 实例
+            # 活跃态逻辑唯一：同一 dedupe_key 在 OPEN/ACKNOWLEDGED/SNOOZED
+            # 之间流转时仍只能有一条实例。MySQL 的物理兜底由 0003 迁移用
+            # generated column + unique index 实现。
             models.UniqueConstraint(
-                fields=["tenant_id", "dedupe_key", "status"],
+                fields=["tenant_id", "dedupe_key"],
                 condition=models.Q(status__in=["OPEN", "ACKNOWLEDGED", "SNOOZED"]),
                 name="uniq_hr_alert_open_dedupe",
             ),
