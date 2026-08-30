@@ -19,6 +19,7 @@ CANONICAL_PERMISSION_KEYS = (
     "hr.recruitment.qualification.finalize",
     "hr.recruitment.assessment.manage",
     "hr.recruitment.assessment.score",
+    "hr.recruitment.assessment.score.override",
     "hr.recruitment.assessment.unlock_score",
     "hr.recruitment.proposed_hire.manage",
     "hr.recruitment.public_notice.publish",
@@ -38,6 +39,12 @@ EVENT_CAMPAIGN_CREATED = "hr.recruitment.campaign.created"
 EVENT_MEDICAL_CHECK_RECORDED = "hr.recruitment.medical_check.recorded"
 EVENT_BACKGROUND_CHECK_RECORDED = "hr.recruitment.background_check.recorded"
 EVENT_HANDOFF_CREATED = "hr.recruitment.handoff.created"
+EVENT_SCORE_SUBMITTED = "hr.recruitment.score_sheet.submitted"
+EVENT_SCORE_LOCKED = "hr.recruitment.score_sheet.locked"
+EVENT_SCORE_REOPENED = "hr.recruitment.score_sheet.reopened"
+EVENT_SCORE_REOPEN_REQUESTED = "hr.recruitment.score_sheet.reopen_requested"
+EVENT_SCORE_REOPEN_APPROVED = "hr.recruitment.score_sheet.reopen_approved"
+EVENT_SCORE_OVERRIDE_ACCESSED = "hr.recruitment.score_sheet.override_accessed"
 
 EVENT_DEFINITIONS = (
     BusinessEventDefinition(EVENT_PLAN_REQUEST_SUBMITTED, "HR04", "plan_request", 1),
@@ -48,5 +55,15 @@ EVENT_DEFINITIONS = (
         EVENT_BACKGROUND_CHECK_RECORDED, "HR04", "background_check", 1
     ),
     BusinessEventDefinition(EVENT_HANDOFF_CREATED, "HR04", "handoff", 1),
+    BusinessEventDefinition(EVENT_SCORE_SUBMITTED, "HR04", "score_sheet", 1),
+    BusinessEventDefinition(EVENT_SCORE_LOCKED, "HR04", "score_sheet", 1),
+    BusinessEventDefinition(EVENT_SCORE_REOPENED, "HR04", "score_sheet", 1),
+    BusinessEventDefinition(
+        EVENT_SCORE_REOPEN_REQUESTED, "HR04", "score_sheet", 1
+    ),
+    BusinessEventDefinition(EVENT_SCORE_REOPEN_APPROVED, "HR04", "score_sheet", 1),
+    BusinessEventDefinition(
+        EVENT_SCORE_OVERRIDE_ACCESSED, "HR04", "score_sheet", 1
+    ),
 )
 register_business_events(EVENT_DEFINITIONS)

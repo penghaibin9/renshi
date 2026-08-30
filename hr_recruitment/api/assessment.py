@@ -46,7 +46,26 @@ def _handle(request, exc):
 
 def _service(request):
     ctx = make_hr04_context(request)
-    return AssessmentService(tenant_id=ctx.tenant_id, actor=str(request.user.id)), ctx
+    can_override = request.user.is_superuser or request.user.has_perm(
+        "hr04.assessment.score_override"
+    )
+    return AssessmentService(
+        tenant_id=ctx.tenant_id,
+        actor=str(request.user.id),
+        actor_user_id=request.user.id,
+        allow_score_override=can_override,
+        enforce_score_actor=True,
+    ), ctx
+
+
+def _expected_version(request, body):
+    raw = request.headers.get("If-Match") or body.get("version")
+    if raw in (None, ""):
+        return None
+    try:
+        return int(str(raw).strip().strip('"'))
+    except (TypeError, ValueError):
+        raise Hr04ApiError("If-Match/version 必须是整数", status_code=400) from None
 
 
 def _perm(request, code, msg):
@@ -154,10 +173,18 @@ def assign_evaluator(request, event_id):
         assignment = service.assign_evaluator(
             event_id=event_id,
             evaluator_staff_id=body.get("evaluator_staff_id"),
+            evaluator_auth_user_id=body.get("evaluator_auth_user_id"),
             role=body.get("role", ""),
             blind_mode=body.get("blind_mode", False),
         )
-        return ok(request, {"id": str(assignment.id)}, status=201)
+        return ok(
+            request,
+            {
+                "id": str(assignment.id),
+                "evaluator_auth_bound": assignment.evaluator_auth_user_id is not None,
+            },
+            status=201,
+        )
     except Exception as exc:  # noqa: BLE001
         return _handle(request, exc)
 
@@ -253,6 +280,7 @@ def save_scores(request, score_sheet_id):
             score_sheet_id=score_sheet_id,
             scores=body.get("scores", {}),
             submit=body.get("submit", False),
+            expected_version=_expected_version(request, body),
         )
         return ok(
             request,
@@ -260,6 +288,12 @@ def save_scores(request, score_sheet_id):
                 "id": str(sheet.id),
                 "status": sheet.status,
                 "total_score": str(sheet.total_score),  # 服务端计算
+                "version": sheet.version,
+                "evidence_checksum": (
+                    sheet.revisions.order_by("-revision_no")
+                    .values_list("checksum", flat=True)
+                    .first()
+                ),
             },
         )
     except Exception as exc:  # noqa: BLE001

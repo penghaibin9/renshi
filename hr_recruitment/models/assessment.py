@@ -128,6 +128,9 @@ class HrEvaluatorAssignment(models.Model):
         verbose_name=_("Event"),
     )
     evaluator_staff_id = models.BigIntegerField(db_index=True)
+    # The authenticated principal allowed to submit this evaluator's score.
+    # Staff ids are business identities and must never be treated as auth ids.
+    evaluator_auth_user_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     evaluator_name = models.CharField(max_length=128, blank=True, default="")
     role = models.CharField(max_length=32, blank=True, default="")
     conflict_status = models.CharField(
@@ -294,6 +297,50 @@ class HrCandidateScore(models.Model):
 
     def __str__(self):
         return f"{self.sheet_id} {self.criterion_id} = {self.score}"
+
+
+class HrScoreSheetRevision(models.Model):
+    """Append-only evidence for every submitted score-sheet version."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    sheet_id = models.ForeignKey(
+        HrCandidateScoreSheet,
+        on_delete=models.PROTECT,
+        related_name="revisions",
+        verbose_name=_("Score Sheet"),
+    )
+    revision_no = models.PositiveIntegerField()
+    scores_json = models.JSONField(default=list)
+    total_score = models.DecimalField(max_digits=8, decimal_places=2)
+    previous_checksum = models.CharField(max_length=64, blank=True, default="")
+    checksum = models.CharField(max_length=64, unique=True)
+    submitted_by_user_id = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("Score Sheet Revision")
+        verbose_name_plural = _("Score Sheet Revisions")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sheet_id", "revision_no"],
+                name="uniq_hr_score_sheet_revision_no",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant_id", "sheet_id", "revision_no"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValueError("SCORE_REVISION_IMMUTABLE")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("SCORE_REVISION_IMMUTABLE")
+
+    def __str__(self):
+        return f"{self.sheet_id_id} revision#{self.revision_no}"
 
 
 class HrSelectionResultSnapshot(models.Model):

@@ -18,6 +18,8 @@ HR04-05 考试面试与考察服务（《04_HR04_总册》§12）。
 
 from __future__ import annotations
 
+import hashlib
+import json
 from decimal import Decimal
 
 from django.db import transaction
@@ -36,6 +38,7 @@ from hr_recruitment.models import (
     HrEvaluatorAssignment,
     HrRecruitmentPosition,
     HrScoreCriterion,
+    HrScoreSheetRevision,
     HrScoreSheetTemplate,
     HrSelectionComponent,
     HrSelectionResultSnapshot,
@@ -52,9 +55,60 @@ class AssessmentServiceError(Exception):
 
 
 class AssessmentService:
-    def __init__(self, *, tenant_id: int, actor: str = ""):
+    def __init__(
+        self,
+        *,
+        tenant_id: int,
+        actor: str = "",
+        actor_user_id: int | None = None,
+        allow_score_override: bool = False,
+        enforce_score_actor: bool = False,
+    ):
         self.tenant_id = tenant_id
         self.actor = actor
+        self.actor_user_id = actor_user_id
+        self.allow_score_override = allow_score_override
+        self.enforce_score_actor = enforce_score_actor
+
+    def _assert_score_actor(self, sheet: HrCandidateScoreSheet) -> None:
+        """Only the assigned auth principal may read/write a score sheet."""
+        if not self.enforce_score_actor:
+            return
+        assigned_user_id = sheet.evaluator_id.evaluator_auth_user_id
+        if assigned_user_id is not None and assigned_user_id == self.actor_user_id:
+            return
+        if self.allow_score_override:
+            from hr_recruitment.services.audit_service import audit_event
+
+            audit_event(
+                tenant_id=self.tenant_id,
+                event_type="hr.recruitment.score_sheet.override_accessed",
+                business_object="HrCandidateScoreSheet",
+                business_object_id=sheet.id,
+                actor_id=self.actor,
+                action="OVERRIDE_ACCESS",
+                summary="特权账号代评/查看评分表",
+            )
+            return
+        raise AssessmentServiceError(
+            "SCORE_EVALUATOR_MISMATCH",
+            "当前账号不是该评分表分配的评委",
+            http_status=403,
+        )
+
+    def _write_score_event(self, sheet, event_type: str, action: str, summary: str) -> None:
+        from hr_recruitment.services.audit_service import audit_event
+
+        audit_event(
+            tenant_id=self.tenant_id,
+            event_type=event_type,
+            business_object="HrCandidateScoreSheet",
+            business_object_id=sheet.id,
+            actor_id=self.actor,
+            action=action,
+            summary=summary,
+            after={"status": sheet.status, "version": sheet.version},
+        )
 
     # ---- 评分方案 ----
 
@@ -171,14 +225,22 @@ class AssessmentService:
         *,
         event_id: str,
         evaluator_staff_id: int,
+        evaluator_auth_user_id: int | None = None,
         role="",
         blind_mode=False,
     ) -> HrEvaluatorAssignment:
         event = HrAssessmentEvent.objects.get(id=event_id, tenant_id=self.tenant_id)
+        if self.enforce_score_actor and not evaluator_auth_user_id:
+            raise AssessmentServiceError(
+                "EVALUATOR_ACCOUNT_REQUIRED",
+                "必须绑定评委登录账号，禁止创建无法归属责任人的评分分配",
+                http_status=422,
+            )
         return HrEvaluatorAssignment.objects.create(
             tenant_id=self.tenant_id,
             event_id=event,
             evaluator_staff_id=evaluator_staff_id,
+            evaluator_auth_user_id=evaluator_auth_user_id,
             role=role,
             conflict_status=ConflictStatus.CLEAR,
             blind_mode=blind_mode,
@@ -260,13 +322,39 @@ class AssessmentService:
         """创建评分表（event+candidate+evaluator 唯一）。"""
         from hr_recruitment.models import HrJobApplication
 
-        event = HrAssessmentEvent.objects.get(id=event_id, tenant_id=self.tenant_id)
+        event = HrAssessmentEvent.objects.select_related(
+            "component_id__scheme_version_id"
+        ).get(id=event_id, tenant_id=self.tenant_id)
         app = HrJobApplication.objects.get(id=application_id, tenant_id=self.tenant_id)
+        evaluator = HrEvaluatorAssignment.objects.filter(
+            id=evaluator_id,
+            tenant_id=self.tenant_id,
+            event_id=event,
+        ).first()
+        if evaluator is None:
+            raise AssessmentServiceError(
+                "EVALUATOR_ASSIGNMENT_MISMATCH",
+                "评委分配不属于当前学校或当前场次",
+                http_status=403,
+            )
+        if evaluator.conflict_status not in (ConflictStatus.CLEAR, ConflictStatus.OVERRIDDEN):
+            raise AssessmentServiceError(
+                "EVALUATOR_RECUSED",
+                "该评委存在未解除的回避冲突，禁止创建评分表",
+                http_status=409,
+            )
+        scheme_position_id = event.component_id.scheme_version_id.recruitment_position_id_id
+        if app.recruitment_position_id_id != scheme_position_id:
+            raise AssessmentServiceError(
+                "ASSESSMENT_POSITION_MISMATCH",
+                "申请岗位与评分场次的选拔方案不一致",
+                http_status=409,
+            )
         sheet = HrCandidateScoreSheet.objects.create(
             tenant_id=self.tenant_id,
             application_id=app,
             event_id=event,
-            evaluator_id_id=evaluator_id,
+            evaluator_id=evaluator,
             status=ScoreSheetStatus.DRAFT,
         )
         return sheet
@@ -299,6 +387,7 @@ class AssessmentService:
         sheet = HrCandidateScoreSheet.objects.select_related(
             "application_id", "event_id", "evaluator_id"
         ).get(id=score_sheet_id, tenant_id=self.tenant_id)
+        self._assert_score_actor(sheet)
         component = sheet.event_id.component_id
         criteria = self._criteria_for_component(component)
         scores = {
@@ -311,6 +400,12 @@ class AssessmentService:
             "event_title": sheet.event_id.title,
             "event_date": sheet.event_id.event_date.isoformat(),
             "score_sheet_status": sheet.status,
+            "version": sheet.version,
+            "evidence_checksum": (
+                sheet.revisions.order_by("-revision_no")
+                .values_list("checksum", flat=True)
+                .first()
+            ),
             "criteria": [
                 {
                     "id": str(c.id),
@@ -331,6 +426,7 @@ class AssessmentService:
         score_sheet_id: str,
         scores: dict,
         submit: bool = False,
+        expected_version: int | None = None,
     ) -> HrCandidateScoreSheet:
         """保存评分（DRAFT 可改；submit 后进入 SUBMITTED，服务端算总分）。"""
         sheet = (
@@ -340,8 +436,14 @@ class AssessmentService:
         )
         if sheet is None:
             raise AssessmentServiceError("SCORE_SHEET_NOT_FOUND", "评分表不存在", http_status=404)
-        if sheet.status not in (ScoreSheetStatus.DRAFT, ScoreSheetStatus.SUBMITTED):
-            # LOCKED / REOPEN_REQUESTED / REOPEN_APPROVED 均不可编辑（§12.7）
+        self._assert_score_actor(sheet)
+        if expected_version is not None and sheet.version != expected_version:
+            raise AssessmentServiceError(
+                "VERSION_CONFLICT", "评分表版本已变化，请刷新后重试", http_status=409
+            )
+        if sheet.status != ScoreSheetStatus.DRAFT:
+            # SUBMITTED and later states are immutable until the privileged
+            # reopen workflow has returned the sheet to DRAFT.
             raise ScoreAlreadyLockedError(
                 f"评分表状态 {sheet.status} 不可编辑（需特权解锁回到 DRAFT）"
             )
@@ -398,7 +500,92 @@ class AssessmentService:
         sheet.total_score = total
         sheet.version += 1
         sheet.save(update_fields=["status", "submitted_at", "total_score", "version"])
+        if submit:
+            self._create_score_revision(sheet)
+            self._write_score_event(
+                sheet,
+                "hr.recruitment.score_sheet.submitted",
+                "SUBMIT",
+                "评分提交并生成不可变版本证据",
+            )
         return sheet
+
+    def _create_score_revision(self, sheet: HrCandidateScoreSheet) -> HrScoreSheetRevision:
+        previous = sheet.revisions.order_by("-revision_no").first()
+        revision_no = (previous.revision_no if previous else 0) + 1
+        score_rows = [
+            {
+                "criterionId": str(row.criterion_id_id),
+                "score": str(row.score),
+                "comment": row.comment,
+            }
+            for row in sheet.scores.order_by("criterion_id_id")
+        ]
+        evidence = {
+            "tenantId": self.tenant_id,
+            "sheetId": str(sheet.id),
+            "revisionNo": revision_no,
+            "scores": score_rows,
+            "totalScore": str(sheet.total_score),
+            "previousChecksum": previous.checksum if previous else "",
+        }
+        checksum = hashlib.sha256(
+            json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        return HrScoreSheetRevision.objects.create(
+            tenant_id=self.tenant_id,
+            sheet_id=sheet,
+            revision_no=revision_no,
+            scores_json=score_rows,
+            total_score=sheet.total_score,
+            previous_checksum=previous.checksum if previous else "",
+            checksum=checksum,
+            submitted_by_user_id=self.actor_user_id,
+        )
+
+    def _verify_score_revision(self, sheet: HrCandidateScoreSheet) -> HrScoreSheetRevision:
+        revision = sheet.revisions.order_by("-revision_no").first()
+        if revision is None:
+            raise AssessmentServiceError(
+                "SCORE_EVIDENCE_MISSING",
+                "评分缺少不可变提交证据，禁止封板或参与排名",
+                http_status=409,
+            )
+        current_scores = [
+            {
+                "criterionId": str(row.criterion_id_id),
+                "score": str(row.score),
+                "comment": row.comment,
+            }
+            for row in sheet.scores.order_by("criterion_id_id")
+        ]
+        evidence = {
+            "tenantId": self.tenant_id,
+            "sheetId": str(sheet.id),
+            "revisionNo": revision.revision_no,
+            "scores": revision.scores_json,
+            "totalScore": str(revision.total_score),
+            "previousChecksum": revision.previous_checksum,
+        }
+        expected_checksum = hashlib.sha256(
+            json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        if (
+            revision.tenant_id != self.tenant_id
+            or revision.scores_json != current_scores
+            or revision.total_score != sheet.total_score
+            or revision.checksum != expected_checksum
+        ):
+            raise AssessmentServiceError(
+                "SCORE_EVIDENCE_TAMPERED",
+                "评分内容与提交证据不一致，禁止封板或参与排名",
+                http_status=409,
+            )
+        return revision
 
     @transaction.atomic
     def lock_score_sheet(self, *, score_sheet_id: str) -> HrCandidateScoreSheet:
@@ -408,10 +595,14 @@ class AssessmentService:
             raise InvalidStateTransitionError(
                 f"当前状态 {sheet.status} 不可锁定"
             )
+        self._verify_score_revision(sheet)
         sheet.status = ScoreSheetStatus.LOCKED
         sheet.locked_at = timezone.now()
         sheet.version += 1
         sheet.save(update_fields=["status", "locked_at", "version"])
+        self._write_score_event(
+            sheet, "hr.recruitment.score_sheet.locked", "LOCK", "评分表已封板"
+        )
         return sheet
 
     @transaction.atomic
@@ -437,17 +628,32 @@ class AssessmentService:
             sheet.reopened_by = self.actor
             sheet.version += 1
             sheet.save(update_fields=["status", "reopened_reason", "reopened_by", "version"])
+            self._write_score_event(
+                sheet, "hr.recruitment.score_sheet.reopen_requested", "REOPEN_REQUEST", reason
+            )
             return sheet
         if sheet.status == ScoreSheetStatus.REOPEN_REQUESTED and approve:
             sheet.status = ScoreSheetStatus.REOPEN_APPROVED
             sheet.reopened_by = approving_user or self.actor
             sheet.version += 1
             sheet.save(update_fields=["status", "reopened_by", "version"])
+            self._write_score_event(
+                sheet,
+                "hr.recruitment.score_sheet.reopen_approved",
+                "REOPEN_APPROVE",
+                "评分解锁已批准",
+            )
             return sheet
         if sheet.status == ScoreSheetStatus.REOPEN_APPROVED:
             sheet.status = ScoreSheetStatus.DRAFT
             sheet.version += 1
             sheet.save(update_fields=["status", "version"])
+            self._write_score_event(
+                sheet,
+                "hr.recruitment.score_sheet.reopened",
+                "REOPEN",
+                "评分表回到草稿，新提交将生成新版本",
+            )
             return sheet
         raise InvalidStateTransitionError(
             f"当前状态 {sheet.status} 不可解锁"
@@ -479,6 +685,8 @@ class AssessmentService:
             raise AssessmentServiceError(
                 "NO_LOCKED_SCORES", "没有已锁定的评分结果，禁止冻结选拔排名", http_status=409
             )
+        for sheet in sheets:
+            self._verify_score_revision(sheet)
 
         # (application_id, component_id) → [sheet.total_score]（同一组件多位评估人）
         # sheet.total_score 已含组件权重（save_scores 中 raw/max×weight），此处不再重复乘权重

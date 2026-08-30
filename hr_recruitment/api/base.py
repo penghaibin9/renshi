@@ -29,7 +29,11 @@ import uuid
 from django.http import JsonResponse
 from django.utils import timezone
 
-from hr_recruitment.api.exceptions import Hr04ApiError, TenantContextRequiredError
+from hr_recruitment.api.exceptions import (
+    Hr04ApiError,
+    PermissionDeniedError,
+    TenantContextRequiredError,
+)
 from hr_recruitment.context import build_hr04_context, resolve_tenant_from_request
 
 logger = logging.getLogger(__name__)
@@ -88,6 +92,19 @@ def make_hr04_context(request):
     tenant_id = resolve_tenant_from_request(request)
     if tenant_id is None:
         raise TenantContextRequiredError()
+
+    user = getattr(request, "user", None)
+    if user is None or not user.is_authenticated:
+        raise PermissionDeniedError("请先登录")
+
+    # Selected-company is session state, not an authorization decision.  An
+    # empty membership set means no school access and must fail closed.
+    if not user.is_superuser:
+        from base.auth_backends import get_allowed_company_ids
+
+        allowed = get_allowed_company_ids(user)
+        if tenant_id not in allowed:
+            raise TenantContextRequiredError("当前账号无权访问该学校数据")
 
     scope_type = request.GET.get("scope_type", "SCHOOL")
     scope_org_id = request.GET.get("scope_id")

@@ -34,6 +34,7 @@ HR04_PERMISSIONS = (
     # HR04-05 考试面试与考察
     "hr04.assessment.manage",
     "hr04.assessment.score",
+    "hr04.assessment.score_override",
     "hr04.assessment.unlock_score",
     # HR04-06 录用与人才引进
     "hr04.proposed_hire.manage",
