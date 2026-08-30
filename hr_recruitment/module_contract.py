@@ -5,6 +5,8 @@ MODULE_NAME = "招聘管理"
 APP_LABEL = "hr_recruitment"
 CANONICAL_API_ROOT = "/api/v1/hr"
 LEGACY_API_ROOTS = ("/api/hr/v1",)
+PERMISSION_PREFIX = "hr.recruitment"
+AUTHORITY_KIND = "RECRUITMENT_PROCESS_AUTHORITY"
 
 OWNS = (
     "招聘需求与岗位招聘计划",

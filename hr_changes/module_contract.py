@@ -5,6 +5,8 @@ MODULE_NAME = "人事异动"
 APP_LABEL = "hr_changes"
 CANONICAL_API_ROOT = "/api/v1/hr"
 LEGACY_API_ROOTS = ("/api/hr/v1",)
+PERMISSION_PREFIX = "hr.change"
+AUTHORITY_KIND = "PERSONNEL_CHANGE_AUTHORITY"
 
 OWNS = (
     "调动、转岗、离岗等人事异动案例",

@@ -5,6 +5,8 @@ MODULE_NAME = "入职办理"
 APP_LABEL = "hr_onboarding"
 CANONICAL_API_ROOT = "/api/v1/hr"
 LEGACY_API_ROOTS = ("/api/hr/v1",)
+PERMISSION_PREFIX = "hr.onboarding"
+AUTHORITY_KIND = "ONBOARDING_PROCESS_AUTHORITY"
 
 OWNS = (
     "录用后入职案例与材料",
