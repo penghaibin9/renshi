@@ -4,17 +4,14 @@ from hr_external.events import EVENT_DEFINITIONS
 from hr_external.permissions import PERMISSION_DEFINITIONS
 from horilla.hr_event_registry import global_event_registry
 from horilla.hr_permission_registry import permission_registry
-
-
-def test_hr08_module_contract_is_canonical():
-    assert contract.MODULE_CODE == "HR08"
-    assert contract.APP_LABEL == "hr_external"
-    assert contract.CANONICAL_API_ROOT == "/api/v1/hr"
-    assert contract.REQUIRED_GUARDS
-    assert contract.FORBIDDEN_DIRECT_WRITES
-
-
 class Hr08RegistryContractTests(SimpleTestCase):
+    def test_hr08_module_contract_is_canonical(self):
+        self.assertEqual(contract.MODULE_CODE, "HR08")
+        self.assertEqual(contract.APP_LABEL, "hr_external")
+        self.assertEqual(contract.CANONICAL_API_ROOT, "/api/v1/hr")
+        self.assertTrue(contract.REQUIRED_GUARDS)
+        self.assertTrue(contract.FORBIDDEN_DIRECT_WRITES)
+
     def test_canonical_permissions_have_real_module_and_domain(self):
         self.assertTrue(PERMISSION_DEFINITIONS)
         for expected in PERMISSION_DEFINITIONS:
