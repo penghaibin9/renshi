@@ -26,6 +26,10 @@ class HrTitleConfig(AppConfig):
     verbose_name = "HR13 职称评审"
 
     def ready(self):
+        # Import-only canonical registration. No database query or mutation is
+        # performed here; the global gate can therefore verify HR13 at startup.
+        from . import authority_registry  # noqa: F401
+
         # 0007 originally introduced this permission through RunPython only.
         # Django flush removes that data row and does not replay data migrations;
         # restore it on post_migrate so isolated/full-suite databases keep the
