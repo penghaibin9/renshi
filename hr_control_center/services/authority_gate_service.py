@@ -29,7 +29,7 @@ from hr_control_center.services.legacy_reconciliation_aggregator import (
 )
 
 
-AUTHORITY_GATE_SCHEMA = "hr.authority-gate.2"
+AUTHORITY_GATE_SCHEMA = "hr.authority-gate.3"
 MODULE_CONTRACT_MODULES = (
     "hr_control_center.module_contract",
     "hr_structure.module_contract",
@@ -61,6 +61,7 @@ _REQUIRED_SEMANTIC_WRITE_SURFACES = (
     "dynamic-import",
     "orm-resolved-write",
 )
+_EVENT_OPTIONAL_MODULES = frozenset({"HR01", "HR17"})
 
 
 def load_module_contracts() -> tuple[dict, ...]:
@@ -111,12 +112,30 @@ def _walk_urlpatterns(patterns, prefix=""):
             yield from _walk_urlpatterns(entry.url_patterns, route)
             continue
         callback = entry.callback
-        yield route, str(getattr(callback, "__module__", "") or "")
+        callback_module = str(getattr(callback, "__module__", "") or "")
+        callback_name = str(
+            getattr(callback, "__qualname__", getattr(callback, "__name__", "")) or ""
+        )
+        yield route, callback_module, f"{callback_module}.{callback_name}".strip(".")
 
 
 def _normalize_route(value: str) -> str:
     value = str(value or "").replace("^", "")
     return value.lstrip("/")
+
+
+def _duplicate_canonical_routes(routes) -> dict[str, tuple[str, ...]]:
+    callbacks_by_route: dict[str, set[str]] = {}
+    for route, _callback_module, callback_identity in routes:
+        normalized = _normalize_route(route).rstrip("/")
+        if not normalized.startswith("api/v1/hr/"):
+            continue
+        callbacks_by_route.setdefault(normalized, set()).add(callback_identity)
+    return {
+        route: tuple(sorted(callbacks))
+        for route, callbacks in sorted(callbacks_by_route.items())
+        if len(callbacks) > 1
+    }
 
 
 class AuthorityGateService:
@@ -189,7 +208,7 @@ class AuthorityGateService:
             normalized_prefix = _normalize_route(api_prefix).rstrip("/")
             callback_routes = [
                 route
-                for route, callback_module in routes
+                for route, callback_module, _callback_identity in routes
                 if _normalize_route(route).startswith(normalized_prefix)
                 and (
                     callback_module == app_label
@@ -221,10 +240,22 @@ class AuthorityGateService:
 
         permission_counts = self._registry_counts(permission_registry.all())
         event_counts = self._registry_counts(global_event_registry.all())
-        if not any(permission_counts.values()):
-            warnings.append("runtime permission definition registry is empty")
-        if not any(event_counts.values()):
-            warnings.append("runtime business event registry is empty")
+        for code in expected_codes:
+            if permission_counts[code] == 0:
+                errors.append(f"{code} has no registered canonical permission definitions")
+            if code not in _EVENT_OPTIONAL_MODULES and event_counts[code] == 0:
+                errors.append(f"{code} has no registered canonical business events")
+        for row in module_rows:
+            code = row["moduleCode"]
+            row["permissionDefinitionCount"] = permission_counts[code]
+            row["eventDefinitionCount"] = event_counts[code]
+
+        duplicate_routes = _duplicate_canonical_routes(routes)
+        for route, callbacks in duplicate_routes.items():
+            errors.append(
+                f"duplicate canonical route has different callbacks: /{route}/ -> "
+                + ", ".join(callbacks)
+            )
 
         legacy_policy = legacy_cutover_policy_snapshot()
         if legacy_policy.get("formalWriterRollbackAllowed") is not False:
@@ -286,6 +317,7 @@ class AuthorityGateService:
             "modules": module_rows,
             "permissionDefinitionCountByModule": permission_counts,
             "eventDefinitionCountByModule": event_counts,
+            "duplicateCanonicalRoutes": duplicate_routes,
             "legacyCutoverPolicy": legacy_policy,
             "legacyWriteAttemptMetric": {
                 "name": LEGACY_WRITE_ATTEMPTS_METRIC,

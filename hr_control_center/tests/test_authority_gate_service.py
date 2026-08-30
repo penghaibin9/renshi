@@ -6,6 +6,7 @@ from django.test import SimpleTestCase
 
 from hr_control_center.services.authority_gate_service import (
     AuthorityGateService,
+    _duplicate_canonical_routes,
     load_module_contracts,
 )
 
@@ -91,3 +92,33 @@ class AuthorityGateServiceTests(SimpleTestCase):
     def test_tenant_and_all_tenants_are_mutually_exclusive(self):
         with self.assertRaises(ValueError):
             AuthorityGateService(tenant_id=7, all_tenants=True)
+
+    def test_duplicate_canonical_route_with_different_callbacks_is_rejected(self):
+        duplicates = _duplicate_canonical_routes(
+            (
+                (
+                    "api/v1/hr/recruitment/candidates/<uuid:candidate_id>/",
+                    "hr_recruitment.api.candidates",
+                    "hr_recruitment.api.candidates.detail",
+                ),
+                (
+                    "api/v1/hr/recruitment/candidates/<uuid:candidate_id>/",
+                    "hr_recruitment.api.candidates",
+                    "hr_recruitment.api.candidates.update",
+                ),
+                ("health/", "horilla.health", "horilla.health.check"),
+            )
+        )
+        self.assertEqual(
+            set(duplicates),
+            {"api/v1/hr/recruitment/candidates/<uuid:candidate_id>"},
+        )
+
+    def test_same_callback_alias_does_not_create_false_duplicate(self):
+        duplicates = _duplicate_canonical_routes(
+            (
+                ("api/v1/hr/data/jobs/", "hr_data.api", "hr_data.api.jobs"),
+                ("api/v1/hr/data/jobs/", "hr_data.api", "hr_data.api.jobs"),
+            )
+        )
+        self.assertEqual(duplicates, {})
