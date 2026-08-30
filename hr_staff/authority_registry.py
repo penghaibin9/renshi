@@ -8,6 +8,8 @@ from hr_staff.constants import HR03_EVENT_TYPES, HR_STAFF_PERMISSIONS
 
 PERM_PERSONNEL_DECISION_VIEW = "hr.staff.personnel_decision.view"
 PERM_PERSONNEL_DECISION_MANAGE = "hr.staff.personnel_decision.manage"
+PERM_PERSONNEL_DECISION_CORRECT = "hr.staff.personnel_decision.correct"
+PERM_PERSONNEL_DECISION_REVOKE = "hr.staff.personnel_decision.revoke"
 PERM_REWARD_DISCIPLINARY_VIEW = "hr.staff.reward_disciplinary.view"
 PERM_REWARD_DISCIPLINARY_MANAGE = "hr.staff.reward_disciplinary.manage"
 

@@ -62,6 +62,19 @@ class PersonnelAuthorityService:
             )
         return decision
 
+    def _locked_decision(self, decision_id) -> HrPersonnelDecision:
+        decision = (
+            HrPersonnelDecision.objects.select_for_update()
+            .filter(id=decision_id, tenant_id=self.tenant_id)
+            .first()
+        )
+        if decision is None:
+            raise PersonnelAuthorityError(
+                "PERSONNEL_DECISION_NOT_FOUND",
+                "personnel decision not found inside tenant",
+            )
+        return decision
+
     @staticmethod
     def _validate_effective_range(
         effective_from: date, effective_to: Optional[date]
@@ -89,6 +102,8 @@ class PersonnelAuthorityService:
             decision.effective_from,
             decision.effective_to,
             str(decision.supersedes_decision_id or ""),
+            decision.correction_reason,
+            decision.correction_evidence_ref,
             decision.source_business_type,
             decision.source_business_id,
         )
@@ -108,6 +123,8 @@ class PersonnelAuthorityService:
         decision_action: str = HrPersonnelDecision.DecisionAction.ISSUE,
         basis_text: str = "",
         supersedes_decision_id=None,
+        correction_reason: str = "",
+        correction_evidence_ref: str = "",
         source_business_type: str = "",
         source_business_id: str = "",
     ) -> HrPersonnelDecision:
@@ -139,12 +156,14 @@ class PersonnelAuthorityService:
         self._validate_effective_range(effective_from, effective_to)
         staff = self._staff(staff_id)
 
+        correction_reason = (correction_reason or "").strip()
+        correction_evidence_ref = (correction_evidence_ref or "").strip()
         expected_supersedes = None
         if decision_action == HrPersonnelDecision.DecisionAction.ISSUE:
-            if supersedes_decision_id:
+            if supersedes_decision_id or correction_reason or correction_evidence_ref:
                 raise PersonnelAuthorityError(
                     "PERSONNEL_DECISION_SUPERSEDES_INVALID",
-                    "ISSUE cannot supersede an existing decision",
+                    "ISSUE cannot contain correction lineage",
                 )
         elif decision_action in (
             HrPersonnelDecision.DecisionAction.CORRECT,
@@ -155,11 +174,30 @@ class PersonnelAuthorityService:
                     "PERSONNEL_DECISION_SUPERSEDES_REQUIRED",
                     "CORRECT/REVOKE must supersede an existing decision",
                 )
-            prior = self._decision(supersedes_decision_id)
+            if not correction_reason or not correction_evidence_ref:
+                raise PersonnelAuthorityError(
+                    "PERSONNEL_DECISION_CORRECTION_EVIDENCE_REQUIRED",
+                    "CORRECT/REVOKE require reason and evidence reference",
+                )
+            prior = self._locked_decision(supersedes_decision_id)
             if prior.staff_id != staff.id:
                 raise PersonnelAuthorityError(
                     "PERSONNEL_DECISION_STAFF_MISMATCH",
                     "superseded decision belongs to another staff member",
+                )
+            if prior.decision_type != decision_type:
+                raise PersonnelAuthorityError(
+                    "PERSONNEL_DECISION_TYPE_MISMATCH",
+                    "successor must preserve the decision type",
+                )
+            successor = HrPersonnelDecision.objects.filter(
+                tenant_id=self.tenant_id,
+                supersedes_decision_id=prior.id,
+            ).first()
+            if successor is not None and successor.decision_no != decision_no:
+                raise PersonnelAuthorityError(
+                    "PERSONNEL_DECISION_ALREADY_SUPERSEDED",
+                    "the decision already has a successor",
                 )
             expected_supersedes = prior.id
         else:
@@ -184,6 +222,8 @@ class PersonnelAuthorityService:
             effective_from,
             effective_to,
             str(expected_supersedes or ""),
+            correction_reason,
+            correction_evidence_ref,
             source_business_type or "",
             source_business_id or "",
         )
@@ -209,6 +249,8 @@ class PersonnelAuthorityService:
                 effective_from=effective_from,
                 effective_to=effective_to,
                 supersedes_decision_id=expected_supersedes,
+                correction_reason=correction_reason,
+                correction_evidence_ref=correction_evidence_ref,
                 source_business_type=source_business_type or "",
                 source_business_id=source_business_id or "",
                 correlation_id=self.correlation_id,
@@ -231,6 +273,88 @@ class PersonnelAuthorityService:
             correlation_id=self.correlation_id,
         )
         return decision
+
+    @transaction.atomic
+    def correct_effective_decision(
+        self,
+        *,
+        prior_decision_id,
+        decision_no: str,
+        title: str,
+        content_snapshot: dict,
+        decided_at: datetime,
+        effective_from: date,
+        correction_reason: str,
+        correction_evidence_ref: str,
+        effective_to: Optional[date] = None,
+        basis_text: str = "",
+    ) -> HrPersonnelDecision:
+        """Append an idempotent correction to the current chain tip."""
+        prior = self._locked_decision(prior_decision_id)
+        return self.create_effective_decision(
+            decision_no=decision_no,
+            staff_id=prior.staff_id,
+            decision_type=prior.decision_type,
+            decision_action=HrPersonnelDecision.DecisionAction.CORRECT,
+            title=title,
+            basis_text=basis_text,
+            content_snapshot=content_snapshot,
+            decided_at=decided_at,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            supersedes_decision_id=prior.id,
+            correction_reason=correction_reason,
+            correction_evidence_ref=correction_evidence_ref,
+            source_business_type="HR03_PERSONNEL_DECISION_CORRECTION",
+            source_business_id=str(prior.id),
+        )
+
+    @transaction.atomic
+    def revoke_effective_decision(
+        self,
+        *,
+        prior_decision_id,
+        decision_no: str,
+        decided_at: datetime,
+        effective_from: date,
+        correction_reason: str,
+        correction_evidence_ref: str,
+        title: str = "",
+    ) -> HrPersonnelDecision:
+        """Append an idempotent revocation; the prior row remains untouched."""
+        prior = self._locked_decision(prior_decision_id)
+        return self.create_effective_decision(
+            decision_no=decision_no,
+            staff_id=prior.staff_id,
+            decision_type=prior.decision_type,
+            decision_action=HrPersonnelDecision.DecisionAction.REVOKE,
+            title=title or f"撤销：{prior.title}",
+            basis_text=correction_reason,
+            content_snapshot={
+                "revokedDecisionId": str(prior.id),
+                "priorContentHash": prior.content_hash,
+            },
+            decided_at=decided_at,
+            effective_from=effective_from,
+            supersedes_decision_id=prior.id,
+            correction_reason=correction_reason,
+            correction_evidence_ref=correction_evidence_ref,
+            source_business_type="HR03_PERSONNEL_DECISION_REVOCATION",
+            source_business_id=str(prior.id),
+        )
+
+    def effective_decisions(self, *, staff_id=None, as_of: Optional[date] = None):
+        """Return only current, non-revoked Authority chain tips in the tenant."""
+        queryset = HrPersonnelDecision.objects.filter(tenant_id=self.tenant_id)
+        queryset = (
+            queryset.effective_as_of(as_of)
+            if as_of is not None
+            else queryset.effective()
+        )
+        if staff_id is not None:
+            self._staff(staff_id)
+            queryset = queryset.filter(staff_id=staff_id)
+        return queryset.order_by("staff_id", "decision_type", "effective_from", "id")
 
     @staticmethod
     def _case_identity(case: HrRewardDisciplinaryCase):
@@ -384,6 +508,7 @@ class PersonnelAuthorityService:
             )
         case.status = HrRewardDisciplinaryCase.Status.REJECTED
         case.updated_by = self.actor_user_id
+        case._allow_terminal_transition = True
         case.save(update_fields=["status", "updated_by", "updated_at"])
         return case
 
@@ -450,6 +575,7 @@ class PersonnelAuthorityService:
         case.final_snapshot_json = frozen
         case.status = HrRewardDisciplinaryCase.Status.EFFECTIVE
         case.updated_by = self.actor_user_id
+        case._allow_terminal_transition = True
         case.save(
             update_fields=[
                 "decision",

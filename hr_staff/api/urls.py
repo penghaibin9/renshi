@@ -18,6 +18,7 @@ from hr_staff.api import assignments as assignments_api
 from hr_staff.api import backgrounds as backgrounds_api
 from hr_staff.api import corrections as corrections_api
 from hr_staff.api import data_quality as dq_api
+from hr_staff.api import decisions as decisions_api
 from hr_staff.api import export as export_api
 from hr_staff.api import imports as imports_api
 from hr_staff.api import materials as materials_api
@@ -61,6 +62,26 @@ urlpatterns = [
         "api/hr/v1/staff/<uuid:staff_id>/backgrounds",
         backgrounds_api.backgrounds,
         name="hr03-api-staff-backgrounds",
+    ),
+    path(
+        "api/hr/v1/staff/<uuid:staff_id>/personnel-decisions",
+        decisions_api.personnel_decisions,
+        name="hr03-api-personnel-decisions",
+    ),
+    path(
+        "api/hr/v1/staff/<uuid:staff_id>/personnel-decisions/create",
+        decisions_api.create_personnel_decision,
+        name="hr03-api-personnel-decision-create",
+    ),
+    path(
+        "api/hr/v1/personnel-decisions/<uuid:decision_id>/correct",
+        decisions_api.correct_personnel_decision,
+        name="hr03-api-personnel-decision-correct",
+    ),
+    path(
+        "api/hr/v1/personnel-decisions/<uuid:decision_id>/revoke",
+        decisions_api.revoke_personnel_decision,
+        name="hr03-api-personnel-decision-revoke",
     ),
     path(
         "api/hr/v1/staff/<uuid:staff_id>/backgrounds/<str:kind>",

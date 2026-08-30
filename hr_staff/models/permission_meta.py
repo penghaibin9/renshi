@@ -37,6 +37,8 @@ class HrStaffPermissionMeta(models.Model):
             ("hr.staff.data_quality.manage", "HR Staff: Manage Data Quality"),
             ("hr.staff.personnel_decision.view", "HR Staff: View Personnel Decision"),
             ("hr.staff.personnel_decision.manage", "HR Staff: Manage Personnel Decision"),
+            ("hr.staff.personnel_decision.correct", "HR Staff: Correct Personnel Decision"),
+            ("hr.staff.personnel_decision.revoke", "HR Staff: Revoke Personnel Decision"),
             ("hr.staff.reward_disciplinary.view", "HR Staff: View Reward / Disciplinary"),
             ("hr.staff.reward_disciplinary.manage", "HR Staff: Manage Reward / Disciplinary"),
         )

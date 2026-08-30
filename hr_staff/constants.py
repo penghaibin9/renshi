@@ -290,6 +290,28 @@ HR03_ERROR_CODES = frozenset(
         "SENSITIVE_FIELD_NOT_FOUND",
         "EVENT_CONSUMPTION_FAILED",
         "CORRECTION_APPLY_FAILED",
+        # ---- 正式人事决定 / 奖惩权威事实 ----
+        "PERSONNEL_DECISION_NOT_FOUND",
+        "PERSONNEL_DECISION_NO_REQUIRED",
+        "PERSONNEL_DECISION_TITLE_REQUIRED",
+        "PERSONNEL_DECISION_CONTENT_REQUIRED",
+        "PERSONNEL_DECISION_DATE_REQUIRED",
+        "PERSONNEL_DECISION_TYPE_INVALID",
+        "PERSONNEL_DECISION_ACTION_INVALID",
+        "PERSONNEL_DECISION_SUPERSEDES_INVALID",
+        "PERSONNEL_DECISION_SUPERSEDES_REQUIRED",
+        "PERSONNEL_DECISION_CORRECTION_EVIDENCE_REQUIRED",
+        "PERSONNEL_DECISION_STAFF_MISMATCH",
+        "PERSONNEL_DECISION_TYPE_MISMATCH",
+        "PERSONNEL_DECISION_ALREADY_SUPERSEDED",
+        "PERSONNEL_DECISION_IDEMPOTENCY_CONFLICT",
+        "PERSONNEL_DECISION_CONFLICT",
+        "REWARD_DISCIPLINARY_REQUIRED",
+        "REWARD_DISCIPLINARY_KIND_INVALID",
+        "REWARD_DISCIPLINARY_NOT_FOUND",
+        "REWARD_DISCIPLINARY_STATE_INVALID",
+        "REWARD_DISCIPLINARY_FACT_BROKEN",
+        "REWARD_DISCIPLINARY_IDEMPOTENCY_CONFLICT",
     }
 )
 
@@ -322,6 +344,8 @@ HR_STAFF_PERMISSIONS = (
     "hr.staff.data_quality.manage",
     "hr.staff.personnel_decision.view",
     "hr.staff.personnel_decision.manage",
+    "hr.staff.personnel_decision.correct",
+    "hr.staff.personnel_decision.revoke",
     "hr.staff.reward_disciplinary.view",
     "hr.staff.reward_disciplinary.manage",
 )

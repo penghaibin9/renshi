@@ -67,7 +67,7 @@ class PersonnelAuthorityTests(TestCase):
 
     def test_correction_must_append_and_supersede_same_staff_fact(self):
         original = self._decision()
-        correction = self._decision(decision_no="DEC-2026-002", decision_action=HrPersonnelDecision.DecisionAction.CORRECT, supersedes_decision_id=original.id, title="岗位任用更正决定", content_snapshot={"position": "讲师", "correction": True})
+        correction = self._decision(decision_no="DEC-2026-002", decision_action=HrPersonnelDecision.DecisionAction.CORRECT, supersedes_decision_id=original.id, title="岗位任用更正决定", content_snapshot={"position": "讲师", "correction": True}, correction_reason="原任用岗位录入错误", correction_evidence_ref="material://decision-correction-001")
         self.assertEqual(correction.supersedes_decision_id, original.id)
         original.refresh_from_db()
         self.assertEqual(original.title, "岗位任用决定")
