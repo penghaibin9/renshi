@@ -1,13 +1,12 @@
-"""HR12 Legacy PMS Write Freeze 管理命令 (S12)。
+"""Manage the durable HR12 seal for legacy PMS formal writes."""
 
-使用 Django cache 或文件标记控制旧 PMS 写操作拦截。
-"""
-
-from django.core.cache import cache
 from django.core.management.base import BaseCommand
 
-HR12_FREEZE_KEY = "hr12_legacy_pms_write_frozen"
-HR12_FREEZE_LOG_KEY = "hr12_freeze_log"
+from hr_assessment.legacy.write_seal import (
+    is_pms_write_frozen,
+    set_pms_write_frozen,
+)
+from hr_assessment.models.legacy import HrLegacyPmsWriterSealEvent
 
 
 class Command(BaseCommand):
@@ -29,34 +28,31 @@ class Command(BaseCommand):
             self._show_status()
 
     def _do_freeze(self, reason: str, operator: str):
-        cache.set(HR12_FREEZE_KEY, True, timeout=None)
-        logs = cache.get(HR12_FREEZE_LOG_KEY, [])
-        logs.insert(0, {"action": "freeze", "operator": operator, "reason": reason})
-        cache.set(HR12_FREEZE_LOG_KEY, logs[:50], timeout=None)
+        seal = set_pms_write_frozen(frozen=True, reason=reason, operator=operator)
         self.stdout.write(self.style.SUCCESS(
-            f"✅ Legacy PMS write endpoints FROZEN — operator={operator} reason={reason}"
+            f"Legacy PMS formal writer FROZEN revision={seal.revision} "
+            f"operator={seal.operator} reason={seal.reason}"
         ))
 
     def _do_unfreeze(self, reason: str, operator: str):
-        cache.delete(HR12_FREEZE_KEY)
-        logs = cache.get(HR12_FREEZE_LOG_KEY, [])
-        logs.insert(0, {"action": "unfreeze", "operator": operator, "reason": reason})
-        cache.set(HR12_FREEZE_LOG_KEY, logs[:50], timeout=None)
+        seal = set_pms_write_frozen(frozen=False, reason=reason, operator=operator)
         self.stdout.write(self.style.WARNING(
-            f"⚠️ Legacy PMS write endpoints UNFROZEN (rollback) — operator={operator}"
+            f"Legacy PMS formal writer UNFROZEN revision={seal.revision} "
+            f"operator={seal.operator}"
         ))
 
     def _show_status(self):
-        frozen = cache.get(HR12_FREEZE_KEY, False)
-        logs = cache.get(HR12_FREEZE_LOG_KEY, [])
+        frozen = is_pms_write_frozen()
+        latest = HrLegacyPmsWriterSealEvent.objects.order_by("-occurred_at").first()
         if frozen:
             self.stdout.write("Status: FROZEN — 旧 PMS 写操作已冻结")
         else:
             self.stdout.write("Status: ACTIVE — 旧 PMS 写操作仍可用")
-        if logs:
-            self.stdout.write(f"最近操作: {logs[0]}")
+        if latest:
+            self.stdout.write(
+                f"最近操作: action={latest.action} revision={latest.revision} "
+                f"operator={latest.operator} reason={latest.reason}"
+            )
 
 
-def is_pms_write_frozen() -> bool:
-    """在 PMS 视图中调用此函数判断是否应阻断写操作。"""
-    return bool(cache.get(HR12_FREEZE_KEY, False))
+__all__ = ["Command", "is_pms_write_frozen"]

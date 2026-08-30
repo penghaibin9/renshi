@@ -41,3 +41,8 @@ from hr_assessment.models.result import (  # noqa: F401
     HrAssessmentObjection, HrResultRevision, HrAssessmentArchivePackage,
     HrResultApplicationLedger,
 )
+# legacy cutover controls
+from hr_assessment.models.legacy import (  # noqa: F401
+    HrLegacyPmsWriterSeal,
+    HrLegacyPmsWriterSealEvent,
+)

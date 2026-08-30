@@ -11,3 +11,6 @@ class HrAssessmentConfig(AppConfig):
     def ready(self):
         # Signal hooks are startup lifecycle only. URL registration belongs to horilla.urls.
         from . import signals  # noqa: F401
+        from .legacy.write_seal import install_pms_write_seal
+
+        install_pms_write_seal()
