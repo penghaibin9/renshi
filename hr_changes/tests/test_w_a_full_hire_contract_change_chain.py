@@ -26,10 +26,7 @@ from hr_onboarding.models import HrOnboardingCase
 from hr_onboarding.services.activation_service import ActivationService
 from hr_recruitment.integrations.hr05 import Hr05OnboardingConsumer
 from hr_recruitment.services.handoff_service import HandoffService
-from hr_recruitment.tests.test_w_a_hire_to_staff_db_chain import (
-    TENANT,
-    WAHireToStaffDatabaseChainTests,
-)
+from hr_recruitment.tests import test_w_a_hire_to_staff_db_chain as hire_chain_contract
 from hr_staff.models import (
     HrEmploymentRelationship,
     HrPerson,
@@ -41,6 +38,8 @@ from hr_structure.models import HrPositionReservation
 from hr_structure.services.organization_change import OrganizationChangeService
 from hr_structure.services.post_catalog import PostCatalogService
 
+TENANT = hire_chain_contract.TENANT
+
 
 class WAFullHireContractChangeChainTests(TestCase):
     def test_same_hire_reaches_contract_and_change_without_shadow_identity(self):
@@ -48,25 +47,28 @@ class WAFullHireContractChangeChainTests(TestCase):
 
         # 1) Reuse the canonical HR02/HR04 accepted-hire fixture, but execute a
         # fresh uniquely keyed HR04 -> HR05 handoff for this full-chain proof.
-        upstream = WAHireToStaffDatabaseChainTests(
+        upstream = hire_chain_contract.WAHireToStaffDatabaseChainTests(
             methodName="test_real_handoff_activation_commits_capacity_after_hr03_facts"
         )
         upstream.setUp()
-        handoff = HandoffService(tenant_id=TENANT, actor="w-a-full-chain").handoff(
+        handoff = HandoffService(
+            tenant_id=hire_chain_contract.TENANT,
+            actor="w-a-full-chain",
+        ).handoff(
             proposed_hire_id=str(upstream.proposed.id),
             idempotency_key=f"wa-full-handoff-{uuid.uuid4().hex}",
             hr05_consumer=Hr05OnboardingConsumer(),
         )
         self.assertTrue(handoff.hr05_case_id)
         onboarding_case = HrOnboardingCase.objects.get(
-            tenant_id=TENANT,
+            tenant_id=hire_chain_contract.TENANT,
             id=handoff.hr05_case_id,
         )
 
         # 2) HR05 activates the exact hire into HR03 Authority facts. The source
         # HR02 reservation may become COMMITTED only after these facts exist.
         onboarding_case = upstream._ready_for_activation(onboarding_case)
-        activation = ActivationService(tenant_id=TENANT).activate(
+        activation = ActivationService(tenant_id=hire_chain_contract.TENANT).activate(
             onboarding_case,
             effective_at=today,
             idempotency_key=f"wa-full-activate-{uuid.uuid4().hex}",
@@ -74,18 +76,21 @@ class WAFullHireContractChangeChainTests(TestCase):
         self.assertTrue(activation["activated"], activation)
 
         staff = HrStaffMaster.objects.get(
-            tenant_id=TENANT,
+            tenant_id=hire_chain_contract.TENANT,
             id=activation["staff_master_id"],
         )
         relationship = HrEmploymentRelationship.objects.get(
-            tenant_id=TENANT,
+            tenant_id=hire_chain_contract.TENANT,
             id=activation["employment_id"],
         )
         source_assignment = HrStaffAssignment.objects.get(
-            tenant_id=TENANT,
+            tenant_id=hire_chain_contract.TENANT,
             id=activation["assignment_id"],
         )
-        person = HrPerson.objects.get(tenant_id=TENANT, id=activation["person_id"])
+        person = HrPerson.objects.get(
+            tenant_id=hire_chain_contract.TENANT,
+            id=activation["person_id"],
+        )
 
         self.assertEqual(staff.person_id_id, person.id)
         self.assertEqual(relationship.staff_id_id, staff.id)
@@ -104,7 +109,10 @@ class WAFullHireContractChangeChainTests(TestCase):
 
         # 3) HR07 signs a real contract against the exact HR03 staff and
         # relationship created above. The source id points back to this HR05 case.
-        agreement_service = AgreementService(TENANT, actor_user_id=1)
+        agreement_service = AgreementService(
+            hire_chain_contract.TENANT,
+            actor_user_id=1,
+        )
         agreement = agreement_service.create_agreement(
             agreement_no="WA-FULL-CONTRACT-001",
             staff_id=staff.id,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from pathlib import Path
 
 from django.conf import settings
@@ -19,7 +20,9 @@ MIN_DISCOVERED_TESTS = {
     "hr_staff": 217,
     "hr_recruitment": 163,
     "hr_onboarding": 198,
-    "hr_changes": 204,
+    # Two HR04 tests were once imported into HR06 and counted twice. The HR06
+    # floor is the reviewed unique count after removing that duplicate import.
+    "hr_changes": 202,
     "hr_contracts": 47,
     "hr_external": 193,
     "hr_qualification": 133,
@@ -60,6 +63,7 @@ class CanonicalHrTestDiscoveryContractTests(SimpleTestCase):
         base_dir = Path(settings.BASE_DIR)
         runner = DiscoverRunner(verbosity=0, interactive=False)
         failures = []
+        all_test_ids = []
 
         self.assertEqual(
             set(settings.CANONICAL_HR_APPS),
@@ -71,6 +75,7 @@ class CanonicalHrTestDiscoveryContractTests(SimpleTestCase):
             suite = runner.build_suite([f"{app_label}.tests"])
             tests = list(_flatten_suite(suite))
             test_ids = [test.id() for test in tests]
+            all_test_ids.extend(test_ids)
             minimum = MIN_DISCOVERED_TESTS[app_label]
 
             if len(test_ids) < minimum:
@@ -129,5 +134,16 @@ class CanonicalHrTestDiscoveryContractTests(SimpleTestCase):
                     f"{app_label}: test modules missing from package discovery: "
                     + ", ".join(missing_modules)
                 )
+
+        cross_module_duplicates = sorted(
+            test_id
+            for test_id, count in Counter(all_test_ids).items()
+            if count > 1
+        )
+        if cross_module_duplicates:
+            failures.append(
+                "cross-module duplicate discovered test IDs: "
+                + ", ".join(cross_module_duplicates)
+            )
 
         self.assertEqual(failures, [], "\n".join(failures))
