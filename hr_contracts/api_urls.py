@@ -28,6 +28,16 @@ urlpatterns = [
         name="hr07-agreement-activate",
     ),
     path(
+        "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/<uuid:version_id>/correct",
+        agreements.correct_version,
+        name="hr07-agreement-version-correct",
+    ),
+    path(
+        "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/<uuid:version_id>/void",
+        agreements.void_version,
+        name="hr07-agreement-version-void",
+    ),
+    path(
         "api/v1/hr/contracts/cases",
         lifecycle.case_collection,
         name="hr07-case-collection",

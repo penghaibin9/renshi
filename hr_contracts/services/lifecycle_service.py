@@ -283,6 +283,11 @@ class ContractLifecycleService:
             tenant_id=self.tenant_id,
             agreement=agreement,
             version_no=next_no,
+            version_type=(
+                HrContractVersion.VersionType.RENEWAL
+                if case.case_type == HrContractCase.CaseType.RENEW
+                else HrContractVersion.VersionType.AMENDMENT
+            ),
             effective_from=case.requested_effective_from,
             effective_to=case.requested_effective_to,
             signed_at=signed_at,

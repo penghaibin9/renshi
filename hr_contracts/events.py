@@ -6,6 +6,8 @@ EVENT_AGREEMENT_CREATED = "hr.contracts.agreement.created"
 EVENT_AGREEMENT_SIGNED = "hr.contracts.agreement.signed"
 EVENT_AGREEMENT_EFFECTIVE = "hr.contracts.agreement.effective"
 EVENT_AGREEMENT_TERMINATED = "hr.contracts.agreement.terminated"
+EVENT_AGREEMENT_CORRECTED = "hr.contracts.agreement.corrected"
+EVENT_AGREEMENT_VOIDED = "hr.contracts.agreement.voided"
 
 EVENT_DEFINITIONS = (
     BusinessEventDefinition(
@@ -19,6 +21,12 @@ EVENT_DEFINITIONS = (
     ),
     BusinessEventDefinition(
         EVENT_AGREEMENT_TERMINATED, "HR07", "agreement", 1, "正式合同版本终止"
+    ),
+    BusinessEventDefinition(
+        EVENT_AGREEMENT_CORRECTED, "HR07", "agreement", 1, "签署合同错误更正并形成后继版本"
+    ),
+    BusinessEventDefinition(
+        EVENT_AGREEMENT_VOIDED, "HR07", "agreement", 1, "错误或未成立的签署合同作废"
     ),
 )
 register_business_events(EVENT_DEFINITIONS)

@@ -312,6 +312,7 @@ class AgreementService:
             tenant_id=self.tenant_id,
             agreement=agreement,
             version_no=1,
+            version_type=HrContractVersion.VersionType.INITIAL,
             effective_from=effective_from,
             effective_to=effective_to,
             signed_at=signed_at,

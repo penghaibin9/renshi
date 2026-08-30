@@ -18,9 +18,12 @@ from hr_contracts.permissions import (
     PERM_AGREEMENT_CREATE,
     PERM_AGREEMENT_SIGN,
     PERM_AGREEMENT_VIEW,
+    PERM_VERSION_CORRECT,
+    PERM_VERSION_VOID,
     enforce_contract_permission,
 )
 from hr_contracts.services.agreement_service import AgreementService, ContractServiceError
+from hr_contracts.services.version_action_service import ContractVersionActionService
 
 
 def _authority_labels(tenant_id, agreements):
@@ -127,6 +130,23 @@ def _service_error(request, exc):
     elif exc.code.endswith("_REQUIRED") or exc.code.endswith("_INVALID"):
         status = 400
     return api_error(request, exc.code, str(exc), status=status)
+
+
+def _action_data(action):
+    return {
+        "id": str(action.id),
+        "agreementId": str(action.agreement_id),
+        "sourceVersionId": str(action.source_version_id),
+        "successorVersionId": (
+            str(action.successor_version_id) if action.successor_version_id else None
+        ),
+        "kind": action.kind,
+        "reason": action.reason,
+        "evidenceRef": action.evidence_ref,
+        "authorityRef": action.authority_ref,
+        "requestHash": action.request_hash,
+        "sealedAt": action.sealed_at.isoformat(),
+    }
 
 
 def _required(body, name):
@@ -292,6 +312,57 @@ def activate_initial_version(request, agreement_id, version_id):
                 "status": version.status,
             },
         )
+    except ContractServiceError as exc:
+        return _service_error(request, exc)
+    except (TypeError, ValueError) as exc:
+        return api_error(request, "INVALID_REQUEST", str(exc), status=400)
+
+
+@csrf_exempt
+@require_POST
+def correct_version(request, agreement_id, version_id):
+    enforce_contract_permission(request, PERM_VERSION_CORRECT)
+    tenant_id = resolve_contract_tenant(request)
+    try:
+        body = json_body(request)
+        action = ContractVersionActionService(
+            tenant_id, getattr(request.user, "id", None)
+        ).correct(
+            agreement_id=agreement_id,
+            source_version_id=version_id,
+            content_snapshot=_required(body, "contentSnapshot"),
+            signed_at=_datetime(_required(body, "signedAt"), "signedAt"),
+            signed_document_ref=_required(body, "signedDocumentRef"),
+            reason=_required(body, "reason"),
+            evidence_ref=_required(body, "evidenceRef"),
+            authority_ref=_required(body, "authorityRef"),
+            idempotency_key=request.headers.get("Idempotency-Key", ""),
+        )
+        return api_success(request, _action_data(action), status=201)
+    except ContractServiceError as exc:
+        return _service_error(request, exc)
+    except (TypeError, ValueError) as exc:
+        return api_error(request, "INVALID_REQUEST", str(exc), status=400)
+
+
+@csrf_exempt
+@require_POST
+def void_version(request, agreement_id, version_id):
+    enforce_contract_permission(request, PERM_VERSION_VOID)
+    tenant_id = resolve_contract_tenant(request)
+    try:
+        body = json_body(request)
+        action = ContractVersionActionService(
+            tenant_id, getattr(request.user, "id", None)
+        ).void(
+            agreement_id=agreement_id,
+            source_version_id=version_id,
+            reason=_required(body, "reason"),
+            evidence_ref=_required(body, "evidenceRef"),
+            authority_ref=_required(body, "authorityRef"),
+            idempotency_key=request.headers.get("Idempotency-Key", ""),
+        )
+        return api_success(request, _action_data(action), status=201)
     except ContractServiceError as exc:
         return _service_error(request, exc)
     except (TypeError, ValueError) as exc:
