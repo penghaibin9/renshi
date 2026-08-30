@@ -261,8 +261,28 @@
       })), '当前没有可展示的本人合同。');
       return;
     }
-    if (section === 'todos') return unavailable('我的待办', '跨业务模块的统一待办目前暂未开放，请从对应服务入口进入办理。');
-    if (section === 'progress') return unavailable('办理进度', '跨业务模块的统一进度目前暂未开放，请从对应服务入口查看真实进度。');
+    if (section === 'todos') {
+      title.textContent = '我的待办';
+      desc.textContent = '汇总各业务模块明确交给当前登录本人的待办；来源不可用时不会误报为零。';
+      renderRows((data.todos || []).map((item) => ({
+        name: item.title || '待办事项',
+        sub: `${businessSource(item.sourceDomain)} · ${item.dueAt ? `截止 ${String(item.dueAt).slice(0, 10)}` : '以来源模块为准'}`,
+        status: item.status,
+        meta: item.updatedAt ? `更新于 ${String(item.updatedAt).slice(0, 10)}` : '实时来源',
+      })), '当前没有来源明确返回的本人待办。');
+      return;
+    }
+    if (section === 'progress') {
+      title.textContent = '办理进度';
+      desc.textContent = '按来源模块汇总本人的真实业务状态，只读展示，不在本人服务中改写流程。';
+      renderRows((data.progress || []).map((item) => ({
+        name: item.name || item.category || '办理记录',
+        sub: `${businessSource(item.sourceDomain)} · ${item.category || '业务办理'}`,
+        status: item.status,
+        meta: item.updatedAt ? `更新于 ${String(item.updatedAt).slice(0, 10)}` : '来源时间待确认',
+      })), '当前没有可展示的本人办理记录。');
+      return;
+    }
     if (section === 'files') return unavailable('我的文件', '跨业务模块的本人文件汇总目前暂未开放，请从对应服务入口安全查看。');
   }
 

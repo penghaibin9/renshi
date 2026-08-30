@@ -12,6 +12,9 @@ from typing import Optional
 
 from hr_self.selectors import dashboard_snapshot
 from hr_self.services.identity_service import SelfIdentityContext
+from hr_self.services.experience_projection_service import (
+    SelfExperienceProjectionService,
+)
 from hr_self.services.provider_gateway import (
     ProviderStatus,
     SelfProviderRegistry,
@@ -82,6 +85,12 @@ class SelfBootstrapService:
         all_required_registered = len(registered) == len(self.registry.REQUIRED_DOMAINS)
 
         capabilities = dict(local.get("capabilities") or {})
+        experience = SelfExperienceProjectionService(
+            provider_results=results,
+            services=local.get("services") or (),
+        )
+        todos = experience.todos()
+        progress = experience.progress()
         capabilities.update(
             {
                 "providerGateway": True,
@@ -94,6 +103,8 @@ class SelfBootstrapService:
                 # This remains false until every required source has a real
                 # registered provider; partial integration is never labelled complete.
                 "hr03To16Providers": all_required_registered,
+                "todos": True,
+                "progress": True,
             }
         )
 
@@ -113,6 +124,8 @@ class SelfBootstrapService:
             },
             "summary": local.get("summary") or {},
             "services": local.get("services") or [],
+            "todos": todos,
+            "progress": progress,
             "capabilities": capabilities,
             "providerHealth": provider_health,
             "providerData": provider_data,
