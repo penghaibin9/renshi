@@ -10,9 +10,15 @@ S12 · Playwright E2E 骨架（总册 §43.12，待真实 server 运行）。
 """
 
 import re
+import unittest
 
-import pytest
-from playwright.sync_api import Page, expect
+try:
+    import pytest
+    from playwright.sync_api import Page, expect
+except ModuleNotFoundError as exc:
+    raise unittest.SkipTest(
+        "HR03 browser E2E dependencies are optional; install pytest and playwright"
+    ) from exc
 
 
 @pytest.fixture(autouse=True)

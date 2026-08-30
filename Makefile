@@ -48,8 +48,8 @@ check: ## Django system check
 test: ## 全仓 Django 测试（MySQL）
 	$(COMPOSE) run --rm web python manage.py test --noinput --verbosity 1
 
-test-hr: ## HR01~HR12 测试（MySQL）
-	$(COMPOSE) run --rm web python manage.py test base hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding hr_changes hr_external hr_qualification hr10_development hr_time hr_assessment --noinput --verbosity 1
+test-hr: ## HR01~HR18 全模块测试（MySQL）
+	$(COMPOSE) run --rm web python manage.py test base hr_control_center hr_structure hr_staff hr_recruitment hr_onboarding hr_changes hr_contracts hr_external hr_qualification hr10_development hr_time hr_assessment hr_title hr_appointment hr_payroll hr_exit hr_self hr_data --noinput --verbosity 1
 
 scheduler: ## 单独启动 legacy employee scheduler；禁止随 web worker 自动启动
 	$(COMPOSE) run --rm web python manage.py run_employee_scheduler
