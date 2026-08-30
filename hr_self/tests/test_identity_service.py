@@ -21,7 +21,7 @@ class SelfIdentityServiceTests(SimpleTestCase):
     ):
         employee = SimpleNamespace(id=55)
         employee_qs = MagicMock()
-        employee_qs.first.return_value = employee
+        employee_qs.__getitem__.return_value = [employee]
         employee_objects.filter.return_value.order_by.return_value = employee_qs
 
         staff = SimpleNamespace(
@@ -50,7 +50,7 @@ class SelfIdentityServiceTests(SimpleTestCase):
     @patch("employee.models.Employee.objects")
     def test_cross_tenant_or_missing_employee_fails_closed(self, employee_objects):
         employee_qs = MagicMock()
-        employee_qs.first.return_value = None
+        employee_qs.__getitem__.return_value = []
         employee_objects.filter.return_value.order_by.return_value = employee_qs
 
         with self.assertRaises(SelfIdentityError) as cm:
@@ -58,17 +58,51 @@ class SelfIdentityServiceTests(SimpleTestCase):
 
         self.assertEqual(cm.exception.code, "SELF_IDENTITY_NOT_RESOLVED")
 
+    @patch("employee.models.Employee.objects")
+    def test_duplicate_active_employee_bridge_fails_closed(self, employee_objects):
+        employee_qs = MagicMock()
+        employee_qs.__getitem__.return_value = [
+            SimpleNamespace(id=55),
+            SimpleNamespace(id=56),
+        ]
+        employee_objects.filter.return_value.order_by.return_value = employee_qs
+
+        with self.assertRaises(SelfIdentityError) as cm:
+            SelfIdentityService(77).resolve(self._user())
+
+        self.assertEqual(cm.exception.code, "SELF_IDENTITY_AMBIGUOUS")
+
     @patch("hr_staff.models.HrStaffMaster.objects")
     @patch("employee.models.Employee.objects")
     def test_duplicate_hr03_staff_mapping_fails_closed(
         self, employee_objects, staff_objects
     ):
         employee_qs = MagicMock()
-        employee_qs.first.return_value = SimpleNamespace(id=55)
+        employee_qs.__getitem__.return_value = [SimpleNamespace(id=55)]
         employee_objects.filter.return_value.order_by.return_value = employee_qs
 
         staff_qs = MagicMock()
         staff_qs.__getitem__.return_value = [MagicMock(), MagicMock()]
+        staff_objects.filter.return_value.order_by.return_value = staff_qs
+
+        with self.assertRaises(SelfIdentityError) as cm:
+            SelfIdentityService(77).resolve(self._user())
+
+        self.assertEqual(cm.exception.code, "SELF_IDENTITY_AMBIGUOUS")
+
+    @patch("hr_staff.models.HrStaffMaster.objects")
+    @patch("employee.models.Employee.objects")
+    def test_staff_without_canonical_person_fails_closed(
+        self, employee_objects, staff_objects
+    ):
+        employee_qs = MagicMock()
+        employee_qs.__getitem__.return_value = [SimpleNamespace(id=55)]
+        employee_objects.filter.return_value.order_by.return_value = employee_qs
+
+        staff_qs = MagicMock()
+        staff_qs.__getitem__.return_value = [
+            SimpleNamespace(id="staff-1", person_id_id=None)
+        ]
         staff_objects.filter.return_value.order_by.return_value = staff_qs
 
         with self.assertRaises(SelfIdentityError) as cm:

@@ -54,20 +54,29 @@ class SelfIdentityService:
 
         # Do not trust Employee.objects request/thread-local company scoping.
         # Explicit company filtering is mandatory for background/mobile/API use.
-        employee = (
+        employees = list(
             Employee.objects.filter(
                 employee_user_id=user,
                 employee_work_info__company_id_id=self.tenant_id,
                 is_active=True,
             )
             .order_by("id")
-            .first()
+            [:2]
         )
-        if employee is None:
+        if not employees:
             raise SelfIdentityError(
                 "SELF_IDENTITY_NOT_RESOLVED",
                 "no active employee identity exists for this user inside tenant",
             )
+        if len(employees) != 1:
+            # Picking the first legacy row would make the authenticated login
+            # non-deterministically inherit one employee's HR03 identity and
+            # could expose another person's cross-domain SELF records.
+            raise SelfIdentityError(
+                "SELF_IDENTITY_AMBIGUOUS",
+                "multiple active employee identities exist for this user inside tenant",
+            )
+        employee = employees[0]
 
         # legacy_employee_id is a bridge only; HR03 StaffMaster is the SELF
         # identity authority exposed to downstream HR17 services.
@@ -84,11 +93,16 @@ class SelfIdentityService:
             )
         if len(matches) != 1:
             raise SelfIdentityError(
-                "SELF_IDENTITY_NOT_RESOLVED",
+                "SELF_IDENTITY_AMBIGUOUS",
                 "multiple HR03 staff identities map to this login",
             )
 
         staff = matches[0]
+        if not getattr(staff, "person_id_id", None):
+            raise SelfIdentityError(
+                "SELF_IDENTITY_NOT_RESOLVED",
+                "HR03 staff identity is not linked to a canonical person",
+            )
         return SelfIdentityContext(
             tenant_id=self.tenant_id,
             user_id=getattr(user, "id", None),
