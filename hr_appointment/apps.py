@@ -34,6 +34,7 @@ class HrAppointmentConfig(AppConfig):
         # Importing here registers model classes and runtime immutability guards;
         # it performs no database queries or startup writes.
         from . import (  # noqa: F401
+            authority_registry,
             decision_models,
             freeze_guards,
             population_models,
