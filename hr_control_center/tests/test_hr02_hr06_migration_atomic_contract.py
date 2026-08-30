@@ -30,9 +30,11 @@ MYSQL_DDL = re.compile(
 
 EXPECTED_RAW_DDL_MIGRATIONS = {
     "hr_changes/migrations/0007_hrchangeauthorityreceipt_and_more.py",
+    "hr_changes/migrations/0008_trusted_effect_provider_boundary.py",
     "hr_onboarding/migrations/0013_alter_hronboardingpermissionmeta_options_and_more.py",
     "hr_recruitment/migrations/0010_mysql_active_application_unique.py",
     "hr_recruitment/migrations/0012_alter_hrrecruitmentpermissionmeta_options_and_more.py",
+    "hr_recruitment/migrations/0013_mysql_application_no_unique_backstop.py",
     "hr_staff/migrations/0013_mysql_conditional_unique_backstops.py",
     "hr_staff/migrations/0015_personnel_decision_authority_seal.py",
 }

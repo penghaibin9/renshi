@@ -92,6 +92,10 @@ def drop_mysql_seals(apps, schema_editor):
 def restore_legacy_result_seals(apps, schema_editor):
     if schema_editor.connection.vendor != "mysql":
         return
+    # Reverse migrations can be retried after MySQL's implicit DDL commits.
+    # Remove any partially restored legacy seals before recreating them.
+    schema_editor.execute("DROP TRIGGER IF EXISTS hr13_title_result_no_update")
+    schema_editor.execute("DROP TRIGGER IF EXISTS hr13_title_result_no_delete")
     schema_editor.execute(
         """
         CREATE TRIGGER hr13_title_result_no_update

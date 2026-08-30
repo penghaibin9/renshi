@@ -23,7 +23,9 @@ NON_ROLLBACKABLE_DDL = re.compile(
     r"(?:TRIGGER|TABLE|INDEX|VIEW|PROCEDURE|FUNCTION)\b",
     re.IGNORECASE,
 )
-CREATE_TRIGGER = re.compile(r"\bCREATE\s+TRIGGER\s+([a-zA-Z0-9_]+)", re.IGNORECASE)
+CREATE_TRIGGER = re.compile(
+    r"\bCREATE\s+TRIGGER\s+`?([a-zA-Z0-9_{}]+)`?", re.IGNORECASE
+)
 
 
 def _ddl_migration_files():
@@ -63,10 +65,14 @@ class MysqlTriggerMigrationAtomicityTests(SimpleTestCase):
             {
                 "hr_title/migrations/0008_title_result_integrity.py",
                 "hr_title/migrations/0009_review_assignment_replacement_lineage.py",
+                "hr_title/migrations/0010_title_result_authority_boundary.py",
                 "hr_appointment/migrations/0015_formal_appointment_fact_seal.py",
+                "hr_appointment/migrations/0016_ranking_fact_seal.py",
+                "hr_payroll/migrations/0010_trusted_input_snapshot_boundary.py",
                 "hr_exit/migrations/0010_exit_fact_integrity.py",
                 "hr_exit/migrations/0011_retirement_archive_integrity.py",
                 "hr_data/migrations/0014_evidence_database_seals.py",
+                "hr_data/migrations/0015_submissiondispatchjob_submissiondispatchevent_and_more.py",
             },
         )
 
@@ -85,11 +91,15 @@ class MysqlTriggerMigrationAtomicityTests(SimpleTestCase):
                 self.assertIn("migrations.RunPython", text)
                 for trigger_name in trigger_names:
                     explicit_drop = re.search(
-                        rf"DROP\s+TRIGGER\s+IF\s+EXISTS\s+{re.escape(trigger_name)}",
+                        rf"DROP\s+TRIGGER\s+IF\s+EXISTS\s+`?{re.escape(trigger_name)}`?",
                         text,
                         re.IGNORECASE,
                     )
-                    dynamic_drop = "DROP TRIGGER IF EXISTS {trigger}" in text
+                    dynamic_drop = re.search(
+                        r"DROP\s+TRIGGER\s+IF\s+EXISTS\s+`?\{(?:trigger|name)\}`?",
+                        text,
+                        re.IGNORECASE,
+                    )
                     self.assertTrue(
                         explicit_drop or dynamic_drop,
                         msg=f"{trigger_name} has no retry-safe DROP IF EXISTS path",
