@@ -239,8 +239,10 @@ class AppointmentEffectServiceTests(TestCase):
     @patch("hr_appointment.services.quota_service.AppointmentQuotaService")
     @patch("hr_structure.services.position.PositionService")
     @patch("hr_staff.services.assignment_service.AssignmentService")
+    @patch("hr_appointment.services.fact_authority_service.emit_fact_event")
     def test_success_consumes_hr02_and_hr14_capacity_in_same_effect_path(
         self,
+        emit_fact_event,
         assignment_service_cls,
         position_service_cls,
         quota_service_cls,
@@ -287,6 +289,7 @@ class AppointmentEffectServiceTests(TestCase):
         )
         position_service_cls.return_value.commit.assert_called_once_with(41)
         quota_service_cls.return_value.consume.assert_called_once_with(quota_reservation.id)
+        emit_fact_event.assert_called_once()
         self.assertEqual(fact.status, PositionAppointmentFact.Status.EFFECTIVE)
         self.assertEqual(case.status, AppointmentApplicationCase.Status.EFFECTIVE)
         self.assertEqual(fact.effect_receipt_json["hr14PublicityId"], str(publicity.id))

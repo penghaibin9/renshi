@@ -30,7 +30,7 @@ class Hr14ExitProviderReplayTests(TestCase):
             requested_date=date(2026, 8, 1),
             planned_employment_end_date=self.boundary,
         )
-        self.exit_fact = ExitFact.objects.create(
+        self.exit_fact = ExitFact(
             tenant_id=self.tenant_id,
             fact_no=f"EXIT-FACT-HR14-{uuid.uuid4().hex}",
             person_id=self.person_id,
@@ -39,7 +39,10 @@ class Hr14ExitProviderReplayTests(TestCase):
             exit_type=self.case.exit_type,
             employment_end_date=self.boundary,
             status=ExitFact.Status.EFFECTIVE,
+            sealed_at=timezone.now(),
         )
+        self.exit_fact.content_hash = self.exit_fact.calculate_content_hash()
+        self.exit_fact.save()
 
         # PositionAppointmentFact EFFECTIVE is a formal HR14 fact. Build the
         # same closed-publicity + approved collective-decision authority that

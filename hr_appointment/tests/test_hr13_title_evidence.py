@@ -15,6 +15,13 @@ from hr_title.public import PROVIDER_VERSION
 
 
 class Hr13ToHr14DecisionEvidenceTests(TestCase):
+    @staticmethod
+    def _sealed_title_result(**kwargs):
+        result = ProfessionalTitleResult(sealed_at=timezone.now(), **kwargs)
+        result.content_hash = result.calculate_content_hash()
+        result.save()
+        return result
+
     def setUp(self):
         self.person_id = uuid.uuid4()
         self.case = AppointmentApplicationCase.objects.create(
@@ -42,7 +49,7 @@ class Hr13ToHr14DecisionEvidenceTests(TestCase):
             status=AppointmentPublicityRecord.Status.CLOSED,
             closed_at=now - timedelta(days=1),
         )
-        self.title_result = ProfessionalTitleResult.objects.create(
+        self.title_result = self._sealed_title_result(
             tenant_id=77,
             result_no="TITLE-RESULT-001",
             person_id=self.person_id,
@@ -76,7 +83,7 @@ class Hr13ToHr14DecisionEvidenceTests(TestCase):
         self.assertEqual(decision.evidence_snapshot_json["rankingRef"], "RANK-001")
 
     def test_wrong_person_or_cross_tenant_title_result_fails_closed(self):
-        wrong_person_result = ProfessionalTitleResult.objects.create(
+        wrong_person_result = self._sealed_title_result(
             tenant_id=77,
             result_no="TITLE-RESULT-WRONG",
             person_id=uuid.uuid4(),
@@ -109,7 +116,7 @@ class Hr13ToHr14DecisionEvidenceTests(TestCase):
         self.assertEqual(cm.exception.code, "APPOINTMENT_CASE_NOT_FOUND")
 
     def test_superseded_or_revoked_title_result_is_not_valid_current_evidence(self):
-        revised = ProfessionalTitleResult.objects.create(
+        revised = self._sealed_title_result(
             tenant_id=77,
             result_no="TITLE-RESULT-REV-001",
             person_id=self.person_id,
@@ -134,7 +141,7 @@ class Hr13ToHr14DecisionEvidenceTests(TestCase):
             )
         self.assertEqual(cm.exception.code, "TITLE_RESULT_SUPERSEDED")
 
-        revoked = ProfessionalTitleResult.objects.create(
+        revoked = self._sealed_title_result(
             tenant_id=77,
             result_no="TITLE-RESULT-REVOKED",
             person_id=self.person_id,
@@ -157,7 +164,7 @@ class Hr13ToHr14DecisionEvidenceTests(TestCase):
         self.assertEqual(cm.exception.code, "TITLE_RESULT_REVOKED")
 
     def test_historical_as_of_accepts_old_result_before_revision_effective_date(self):
-        ProfessionalTitleResult.objects.create(
+        self._sealed_title_result(
             tenant_id=77,
             result_no="TITLE-RESULT-FUTURE-REV",
             person_id=self.person_id,
