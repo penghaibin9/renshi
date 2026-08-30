@@ -20,11 +20,11 @@ def create_default_themes(sender, **kwargs):
     if sender.name != "horilla_theme":
         return
 
-    # Check if horilla_theme already exist
+    # Check that the table exists. Do not return merely because one theme exists:
+    # a previous interrupted post_migrate run may have created only part of the
+    # default set, and get_or_create below is intentionally idempotent.
     try:
-        # Table may not exist yet in some migration orders
-        if HorillaColorTheme.objects.exists():
-            return
+        HorillaColorTheme.objects.exists()
     except (OperationalError, ProgrammingError):
         # Table not created yet — skip silently
         return
@@ -39,10 +39,10 @@ def create_default_themes(sender, **kwargs):
             )
             if created:
                 created_count += 1
-                print(f"✓ Created theme: {theme.name}")
+                print(f"[OK] Created theme: {theme.name}")
             else:
                 print(f"- Theme already exists: {theme.name}")
         except Exception as e:
-            print(f"✗ Error creating theme {theme_data['name']}: {str(e)}")
+            print(f"[ERROR] Error creating theme {theme_data['name']}: {str(e)}")
 
     print(f"\nSuccessfully created {created_count} themes.")

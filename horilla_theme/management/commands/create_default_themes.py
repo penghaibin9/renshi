@@ -7,13 +7,6 @@ class Command(BaseCommand):
     help = "Create default color themes for the CRM"
 
     def handle(self, *args, **options):
-        # Check if themes already exist
-        if HorillaColorTheme.objects.exists():
-            self.stdout.write(
-                self.style.WARNING("Themes already exist. Skipping creation.")
-            )
-            return
-
         created_count = 0
         self.stdout.write("Creating default color themes...")
 
@@ -25,7 +18,7 @@ class Command(BaseCommand):
                 if created:
                     created_count += 1
                     self.stdout.write(
-                        self.style.SUCCESS(f"✓ Created theme: {theme.name}")
+                        self.style.SUCCESS(f"[OK] Created theme: {theme.name}")
                     )
                 else:
                     self.stdout.write(
@@ -34,7 +27,7 @@ class Command(BaseCommand):
             except Exception as e:
                 self.stdout.write(
                     self.style.ERROR(
-                        f'✗ Error creating theme {theme_data["name"]}: {str(e)}'
+                        f'[ERROR] Error creating theme {theme_data["name"]}: {str(e)}'
                     )
                 )
 
