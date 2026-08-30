@@ -20,6 +20,7 @@ from .services.qualification_service import (
 READ_PERMISSION = "hr.title.view"
 REVIEW_PERMISSION = "hr.title.review"
 PANEL_PERMISSION = "hr.title.panel"
+PANEL_CORRECT_PERMISSION = "hr.title.panel.correct"
 
 
 class HrTitleAccessError(Exception):
@@ -82,6 +83,11 @@ def _panel_error(exc: TitlePanelError) -> JsonResponse:
         "TITLE_REVIEW_ASSIGNMENT_NOT_ELIGIBLE",
         "TITLE_REVIEW_BALLOT_ALREADY_SUBMITTED",
         "TITLE_REVIEW_QUORUM_NOT_MET",
+        "TITLE_REVIEW_REPLACEMENT_IDEMPOTENCY_CONFLICT",
+        "TITLE_REVIEW_ASSIGNMENT_SUPERSEDED",
+        "TITLE_REVIEW_REPLACEMENT_REVIEWER_UNCHANGED",
+        "TITLE_REVIEW_RESULT_SEALED",
+        "TITLE_REVIEW_PANEL_EVIDENCE_INCONSISTENT",
     }:
         status = 409
     else:
@@ -289,6 +295,60 @@ def respond_review_assignment(request, assignment_id):
             "apiVersion": "1.0",
             "schemaVersion": "hr13.review-assignment-response.1",
         }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def replace_review_assignment(request, assignment_id):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(
+            request, required_permission=PANEL_CORRECT_PERMISSION
+        )
+    except HrTitleAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    try:
+        payload = _json_payload(request)
+    except ValueError:
+        return _error("INVALID_JSON", "请求体必须是合法 JSON 对象", status=400)
+    try:
+        outcome = TitlePanelService(
+            tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+            correlation_id=str(payload.get("correlationId", "") or ""),
+        ).replace_assignment(
+            assignment_id,
+            replacement_no=payload.get("replacementNo", ""),
+            reviewer_staff_id=payload.get("reviewerStaffId"),
+            reviewer_role=payload.get("reviewerRole", "EXPERT"),
+            reason_code=payload.get("reasonCode", ""),
+            reason=payload.get("reason", ""),
+        )
+    except TitlePanelError as exc:
+        return _panel_error(exc)
+    assignment = outcome.assignment
+    response = JsonResponse(
+        {
+            "data": {
+                "id": str(assignment.id),
+                "assignmentNo": assignment.assignment_no,
+                "applicationCaseId": str(assignment.application_case_id),
+                "reviewRoundId": str(assignment.review_round_id),
+                "reviewerStaffId": str(assignment.reviewer_staff_id),
+                "reviewerRole": assignment.reviewer_role,
+                "status": assignment.status,
+                "supersedesAssignmentId": str(assignment.supersedes_assignment_id),
+                "reasonCode": assignment.replacement_reason_code,
+                "reason": assignment.replacement_reason,
+                "conflictRevalidationRequired": assignment.responded_at is None,
+                "created": outcome.created,
+            },
+            "apiVersion": "1.0",
+            "schemaVersion": "hr13.review-assignment-replacement.1",
+        },
+        status=201 if outcome.created else 200,
     )
     response["Cache-Control"] = "no-store"
     return response

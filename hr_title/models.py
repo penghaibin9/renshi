@@ -27,6 +27,7 @@ class TitlePolicyVersion(HrVersionedModel):
             ("hr.title.view", "查看 HR13 职称评审工作区"),
             ("hr.title.review", "执行 HR13 资格审查"),
             ("hr.title.panel", "维护 HR13 专家评议与表决"),
+            ("hr.title.panel.correct", "追加更正 HR13 已产生事实的评委分配"),
             ("hr.title.publicity", "维护 HR13 公示与异议复核"),
         ]
         constraints = [
@@ -323,6 +324,68 @@ class TitleReviewRound(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+class TitleReviewAssignmentQuerySet(models.QuerySet):
+    """Close ORM bulk paths that can rewrite panel evidence in place."""
+
+    _PROTECTED_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "assignment_no",
+            "application_case_id",
+            "review_round_id",
+            "reviewer_staff_id",
+            "reviewer_role",
+            "status",
+            "conflict_declared",
+            "conflict_note",
+            "assigned_by",
+            "assigned_at",
+            "responded_at",
+            "supersedes_assignment_id",
+            "replacement_reason_code",
+            "replacement_reason",
+            "replacement_authorized_by",
+            "replacement_at",
+        }
+    )
+
+    def update(self, **kwargs):
+        if self._PROTECTED_FIELDS.intersection(kwargs):
+            raise ValueError(
+                "TITLE_REVIEW_ASSIGNMENT_IMMUTABLE: panel evidence cannot be bulk-updated"
+            )
+        return super().update(**kwargs)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs and self._PROTECTED_FIELDS.intersection(fields):
+            raise ValueError(
+                "TITLE_REVIEW_ASSIGNMENT_IMMUTABLE: panel evidence cannot be bulk-updated"
+            )
+        return super().bulk_update(objs, fields, batch_size=batch_size)
+
+    def bulk_create(
+        self,
+        objs,
+        batch_size=None,
+        ignore_conflicts=False,
+        update_conflicts=False,
+        update_fields=None,
+        unique_fields=None,
+    ):
+        if objs:
+            raise ValueError(
+                "TITLE_REVIEW_ASSIGNMENT_SERVICE_REQUIRED: use TitlePanelService"
+            )
+        return []
+
+    def delete(self):
+        if self.exists():
+            raise ValueError(
+                "TITLE_REVIEW_ASSIGNMENT_APPEND_ONLY: panel evidence cannot be deleted"
+            )
+        return (0, {})
+
+
 class TitleReviewAssignment(HrTenantScopedModel):
     class Role(models.TextChoices):
         EXPERT = "EXPERT", "Expert"
@@ -335,6 +398,7 @@ class TitleReviewAssignment(HrTenantScopedModel):
         DECLINED = "DECLINED", "Declined"
 
     assignment_no = models.CharField(max_length=64)
+    application_case_id = models.UUIDField(db_index=True)
     review_round_id = models.UUIDField(db_index=True)
     reviewer_staff_id = models.UUIDField()
     reviewer_role = models.CharField(
@@ -353,6 +417,34 @@ class TitleReviewAssignment(HrTenantScopedModel):
     assigned_by = models.PositiveBigIntegerField(null=True, blank=True)
     assigned_at = models.DateTimeField(auto_now_add=True)
     responded_at = models.DateTimeField(null=True, blank=True)
+    supersedes_assignment_id = models.UUIDField(null=True, blank=True)
+    replacement_reason_code = models.CharField(max_length=64, blank=True, default="")
+    replacement_reason = models.TextField(blank=True, default="")
+    replacement_authorized_by = models.PositiveBigIntegerField(null=True, blank=True)
+    replacement_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TitleReviewAssignmentQuerySet.as_manager()
+
+    _IDENTITY_FIELDS = (
+        "tenant_id",
+        "assignment_no",
+        "application_case_id",
+        "review_round_id",
+        "reviewer_staff_id",
+        "reviewer_role",
+        "assigned_by",
+        "supersedes_assignment_id",
+        "replacement_reason_code",
+        "replacement_reason",
+        "replacement_authorized_by",
+        "replacement_at",
+    )
+    _RESPONSE_FIELDS = (
+        "status",
+        "conflict_declared",
+        "conflict_note",
+        "responded_at",
+    )
 
     class Meta:
         db_table = "hr13_title_review_assignment"
@@ -365,13 +457,96 @@ class TitleReviewAssignment(HrTenantScopedModel):
                 fields=("tenant_id", "review_round_id", "reviewer_staff_id"),
                 name="uq_hr13_review_round_reviewer",
             ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "supersedes_assignment_id"),
+                name="uq_hr13_assignment_supersedes",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        supersedes_assignment_id__isnull=True,
+                        replacement_reason_code="",
+                        replacement_reason="",
+                        replacement_authorized_by__isnull=True,
+                        replacement_at__isnull=True,
+                    )
+                    | (
+                        Q(supersedes_assignment_id__isnull=False)
+                        & ~Q(replacement_reason_code="")
+                        & ~Q(replacement_reason="")
+                        & Q(replacement_authorized_by__isnull=False)
+                        & Q(replacement_at__isnull=False)
+                    )
+                ),
+                name="ck_hr13_assignment_lineage",
+            ),
         ]
         indexes = [
             models.Index(
                 fields=("tenant_id", "review_round_id", "status"),
                 name="idx_hr13_assignment_round",
             ),
+            models.Index(
+                fields=("tenant_id", "application_case_id", "review_round_id"),
+                name="idx_hr13_assignment_case",
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *(self._IDENTITY_FIELDS + self._RESPONSE_FIELDS)
+            ).first()
+            if persisted:
+                identity_changed = [
+                    field
+                    for field in self._IDENTITY_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if identity_changed:
+                    raise ValueError(
+                        "TITLE_REVIEW_ASSIGNMENT_IDENTITY_IMMUTABLE: use append-only replacement"
+                    )
+
+                response_changed = [
+                    field
+                    for field in self._RESPONSE_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                has_fact = bool(persisted["responded_at"]) or TitleReviewBallot.objects.filter(
+                    tenant_id=persisted["tenant_id"], assignment_id=self.pk
+                ).exists()
+                has_successor = type(self)._base_manager.filter(
+                    tenant_id=persisted["tenant_id"],
+                    supersedes_assignment_id=self.pk,
+                ).exists()
+                if response_changed and (has_fact or has_successor):
+                    raise ValueError(
+                        "TITLE_REVIEW_ASSIGNMENT_FACT_IMMUTABLE: response/conflict evidence is frozen"
+                    )
+                if response_changed:
+                    valid_response = (
+                        persisted["status"] == self.Status.ASSIGNED
+                        and self.status in {self.Status.ACCEPTED, self.Status.DECLINED}
+                        and self.responded_at is not None
+                        and (
+                            not self.conflict_declared
+                            or (
+                                self.status == self.Status.DECLINED
+                                and bool(str(self.conflict_note or "").strip())
+                            )
+                        )
+                    )
+                    if not valid_response:
+                        raise ValueError(
+                            "TITLE_REVIEW_ASSIGNMENT_RESPONSE_INVALID: use respond_assignment"
+                        )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "TITLE_REVIEW_ASSIGNMENT_APPEND_ONLY: panel evidence cannot be deleted"
+        )
 
 
 class TitleReviewBallot(HrTenantScopedModel):

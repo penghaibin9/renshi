@@ -4,12 +4,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Optional
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_title.authority_registry import EVENT_REVIEW_ASSIGNMENT_REPLACED
 from hr_title.models import (
+    ProfessionalTitleResult,
     TitleApplicationCase,
     TitleReviewAssignment,
     TitleReviewBallot,
@@ -33,12 +37,25 @@ class ReviewRoundOutcome:
     abstentions: int
 
 
+@dataclass(frozen=True)
+class ReviewAssignmentReplacementOutcome:
+    assignment: TitleReviewAssignment
+    replaced_assignment: TitleReviewAssignment
+    created: bool
+
+
 class TitlePanelService:
-    def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
+    def __init__(
+        self,
+        tenant_id: int,
+        actor_user_id: Optional[int] = None,
+        correlation_id: str = "",
+    ):
         if not tenant_id:
             raise TitlePanelError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
         self.tenant_id = int(tenant_id)
         self.actor_user_id = actor_user_id
+        self.correlation_id = str(correlation_id or "")
 
     def _case(self, case_id, *, lock=False) -> TitleApplicationCase:
         qs = TitleApplicationCase.objects
@@ -66,6 +83,41 @@ class TitlePanelService:
         if assignment is None:
             raise TitlePanelError("TITLE_REVIEW_ASSIGNMENT_NOT_FOUND", "review assignment not found")
         return assignment
+
+    def _require_panel_consistency(
+        self,
+        assignment: TitleReviewAssignment,
+        *,
+        lock=False,
+    ) -> tuple[TitleReviewRound, TitleApplicationCase]:
+        review_round = self._round(assignment.review_round_id, lock=lock)
+        case = self._case(review_round.application_case_id, lock=lock)
+        if assignment.application_case_id != case.id:
+            raise TitlePanelError(
+                "TITLE_REVIEW_PANEL_EVIDENCE_INCONSISTENT",
+                "assignment case does not belong to its review round",
+            )
+        return review_round, case
+
+    def _require_active_assignment(self, assignment: TitleReviewAssignment) -> None:
+        if TitleReviewAssignment.objects.filter(
+            tenant_id=self.tenant_id,
+            supersedes_assignment_id=assignment.id,
+        ).exists():
+            raise TitlePanelError(
+                "TITLE_REVIEW_ASSIGNMENT_SUPERSEDED",
+                "assignment has been replaced and is no longer active",
+            )
+
+    def _require_result_unsealed(self, case: TitleApplicationCase) -> None:
+        if ProfessionalTitleResult.objects.filter(
+            tenant_id=self.tenant_id,
+            application_case_id=case.id,
+        ).exists():
+            raise TitlePanelError(
+                "TITLE_REVIEW_RESULT_SEALED",
+                "formal title result is sealed; panel evidence can no longer change",
+            )
 
     @transaction.atomic
     def open_round(
@@ -155,6 +207,8 @@ class TitlePanelService:
         reviewer_role: str = "EXPERT",
     ) -> TitleReviewAssignment:
         review_round = self._round(round_id, lock=True)
+        case = self._case(review_round.application_case_id, lock=True)
+        self._require_result_unsealed(case)
         if review_round.status != TitleReviewRound.Status.OPEN:
             raise TitlePanelError("TITLE_REVIEW_ROUND_NOT_OPEN", "review round is not open")
         assignment_no = str(assignment_no or "").strip()
@@ -188,6 +242,7 @@ class TitlePanelService:
         return TitleReviewAssignment.objects.create(
             tenant_id=self.tenant_id,
             assignment_no=assignment_no,
+            application_case_id=case.id,
             review_round_id=review_round.id,
             reviewer_staff_id=reviewer_staff_id,
             reviewer_role=reviewer_role,
@@ -206,7 +261,9 @@ class TitlePanelService:
         conflict_note: str = "",
     ) -> TitleReviewAssignment:
         assignment = self._assignment(assignment_id, lock=True)
-        review_round = self._round(assignment.review_round_id, lock=True)
+        review_round, case = self._require_panel_consistency(assignment, lock=True)
+        self._require_result_unsealed(case)
+        self._require_active_assignment(assignment)
         if review_round.status != TitleReviewRound.Status.OPEN:
             raise TitlePanelError("TITLE_REVIEW_ROUND_NOT_OPEN", "review round is not open")
         if assignment.status != TitleReviewAssignment.Status.ASSIGNED:
@@ -237,6 +294,134 @@ class TitlePanelService:
         return assignment
 
     @transaction.atomic
+    def replace_assignment(
+        self,
+        assignment_id,
+        *,
+        replacement_no: str,
+        reviewer_staff_id,
+        reviewer_role: str,
+        reason_code: str,
+        reason: str,
+    ) -> ReviewAssignmentReplacementOutcome:
+        """Append a replacement without rewriting the original panel evidence."""
+        if self.actor_user_id is None:
+            raise TitlePanelError(
+                "TITLE_REVIEW_REPLACEMENT_ACTOR_REQUIRED",
+                "an authenticated correction actor is required",
+            )
+        replacement_no = str(replacement_no or "").strip()
+        reviewer_role = str(reviewer_role or "EXPERT").strip().upper()
+        reason_code = str(reason_code or "").strip().upper()
+        reason = str(reason or "").strip()
+        if not replacement_no:
+            raise TitlePanelError(
+                "TITLE_REVIEW_REPLACEMENT_NO_REQUIRED", "replacement_no is required"
+            )
+        try:
+            reviewer_staff_id = UUID(str(reviewer_staff_id))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise TitlePanelError(
+                "TITLE_REVIEW_REVIEWER_REQUIRED",
+                "reviewer_staff_id must be a valid UUID",
+            ) from exc
+        if len(replacement_no) > 64 or len(reason_code) > 64:
+            raise TitlePanelError(
+                "TITLE_REVIEW_REPLACEMENT_FIELD_TOO_LONG",
+                "replacement_no and reason_code must not exceed 64 characters",
+            )
+        if reviewer_role not in TitleReviewAssignment.Role.values:
+            raise TitlePanelError(
+                "TITLE_REVIEW_ROLE_INVALID", f"unsupported reviewer role: {reviewer_role}"
+            )
+        if not reason_code or not reason:
+            raise TitlePanelError(
+                "TITLE_REVIEW_REPLACEMENT_REASON_REQUIRED",
+                "reason_code and reason are required for a reviewer replacement",
+            )
+
+        replaced = self._assignment(assignment_id, lock=True)
+        review_round, case = self._require_panel_consistency(replaced, lock=True)
+
+        existing = TitleReviewAssignment.objects.select_for_update().filter(
+            tenant_id=self.tenant_id,
+            assignment_no=replacement_no,
+        ).first()
+        if existing is not None:
+            exact = (
+                existing.application_case_id == case.id
+                and existing.review_round_id == review_round.id
+                and existing.supersedes_assignment_id == replaced.id
+                and str(existing.reviewer_staff_id) == str(reviewer_staff_id)
+                and existing.reviewer_role == reviewer_role
+                and existing.replacement_reason_code == reason_code
+                and existing.replacement_reason == reason
+                and existing.replacement_authorized_by == self.actor_user_id
+            )
+            if not exact:
+                raise TitlePanelError(
+                    "TITLE_REVIEW_REPLACEMENT_IDEMPOTENCY_CONFLICT",
+                    "replacement_no already exists with different correction evidence",
+                )
+            return ReviewAssignmentReplacementOutcome(existing, replaced, False)
+
+        self._require_result_unsealed(case)
+        if review_round.status != TitleReviewRound.Status.OPEN:
+            raise TitlePanelError("TITLE_REVIEW_ROUND_NOT_OPEN", "review round is not open")
+        self._require_active_assignment(replaced)
+        if str(reviewer_staff_id) == str(replaced.reviewer_staff_id):
+            raise TitlePanelError(
+                "TITLE_REVIEW_REPLACEMENT_REVIEWER_UNCHANGED",
+                "replacement reviewer must be different from the original reviewer",
+            )
+        if TitleReviewAssignment.objects.filter(
+            tenant_id=self.tenant_id,
+            review_round_id=review_round.id,
+            reviewer_staff_id=reviewer_staff_id,
+        ).exists():
+            raise TitlePanelError(
+                "TITLE_REVIEW_REVIEWER_DUPLICATE",
+                "replacement reviewer is already assigned to this round",
+            )
+
+        replacement = TitleReviewAssignment.objects.create(
+            tenant_id=self.tenant_id,
+            assignment_no=replacement_no,
+            application_case_id=case.id,
+            review_round_id=review_round.id,
+            reviewer_staff_id=reviewer_staff_id,
+            reviewer_role=reviewer_role,
+            status=TitleReviewAssignment.Status.ASSIGNED,
+            conflict_declared=False,
+            conflict_note="",
+            assigned_by=self.actor_user_id,
+            supersedes_assignment_id=replaced.id,
+            replacement_reason_code=reason_code,
+            replacement_reason=reason,
+            replacement_authorized_by=self.actor_user_id,
+            replacement_at=timezone.now(),
+            created_by=self.actor_user_id,
+            updated_by=self.actor_user_id,
+        )
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=EVENT_REVIEW_ASSIGNMENT_REPLACED,
+            payload={
+                "applicationCaseId": str(case.id),
+                "reviewRoundId": str(review_round.id),
+                "replacedAssignmentId": str(replaced.id),
+                "replacementAssignmentId": str(replacement.id),
+                "replacementNo": replacement.assignment_no,
+                "reasonCode": replacement.replacement_reason_code,
+                "reason": replacement.replacement_reason,
+                "authorizedBy": self.actor_user_id,
+                "conflictRevalidationRequired": True,
+            },
+            correlation_id=self.correlation_id,
+        )
+        return ReviewAssignmentReplacementOutcome(replacement, replaced, True)
+
+    @transaction.atomic
     def submit_ballot(
         self,
         *,
@@ -247,7 +432,9 @@ class TitlePanelService:
         rationale: str = "",
     ) -> TitleReviewBallot:
         assignment = self._assignment(assignment_id, lock=True)
-        review_round = self._round(assignment.review_round_id, lock=True)
+        review_round, case = self._require_panel_consistency(assignment, lock=True)
+        self._require_result_unsealed(case)
+        self._require_active_assignment(assignment)
         if review_round.status != TitleReviewRound.Status.OPEN:
             raise TitlePanelError("TITLE_REVIEW_ROUND_NOT_OPEN", "review round is not open")
         if assignment.status != TitleReviewAssignment.Status.ACCEPTED or assignment.conflict_declared:
@@ -312,14 +499,37 @@ class TitlePanelService:
         if review_round.status != TitleReviewRound.Status.OPEN:
             raise TitlePanelError("TITLE_REVIEW_ROUND_NOT_OPEN", "review round is not open")
         case = self._case(review_round.application_case_id, lock=True)
+        self._require_result_unsealed(case)
         if case.status != TitleApplicationCase.Status.UNDER_REVIEW:
             raise TitlePanelError(
                 "TITLE_REVIEW_INVALID_CASE_STATE",
                 f"closing review requires UNDER_REVIEW case, got {case.status}",
             )
-        ballots = TitleReviewBallot.objects.filter(
+        assignments = TitleReviewAssignment.objects.filter(
+            tenant_id=self.tenant_id,
+            review_round_id=review_round.id,
+        )
+        if assignments.exclude(application_case_id=case.id).exists():
+            raise TitlePanelError(
+                "TITLE_REVIEW_PANEL_EVIDENCE_INCONSISTENT",
+                "review round contains assignment evidence from another case",
+            )
+        assignment_ids = set(assignments.values_list("id", flat=True))
+        all_ballots = TitleReviewBallot.objects.filter(
             tenant_id=self.tenant_id, review_round_id=review_round.id
         )
+        if all_ballots.exclude(assignment_id__in=assignment_ids).exists():
+            raise TitlePanelError(
+                "TITLE_REVIEW_PANEL_EVIDENCE_INCONSISTENT",
+                "review round contains a ballot without a matching assignment",
+            )
+        superseded_ids = set(
+            assignments.exclude(supersedes_assignment_id__isnull=True).values_list(
+                "supersedes_assignment_id", flat=True
+            )
+        )
+        active_assignment_ids = assignment_ids - superseded_ids
+        ballots = all_ballots.filter(assignment_id__in=active_assignment_ids)
         ballot_count = ballots.count()
         if ballot_count < review_round.required_ballots:
             raise TitlePanelError(
@@ -342,6 +552,20 @@ class TitlePanelService:
             "abstentions": abstentions,
             "requiredBallots": review_round.required_ballots,
             "requiredPassVotes": review_round.required_pass_votes,
+            "supersededBallotsExcluded": all_ballots.exclude(
+                assignment_id__in=active_assignment_ids
+            ).count(),
+            "assignmentLineage": [
+                {
+                    "assignmentId": str(row.id),
+                    "supersedesAssignmentId": (
+                        str(row.supersedes_assignment_id)
+                        if row.supersedes_assignment_id
+                        else None
+                    ),
+                }
+                for row in assignments.order_by("assigned_at", "id")
+            ],
         }
         review_round.updated_by = self.actor_user_id
         review_round.save(

@@ -26,6 +26,11 @@ urlpatterns = [
         name="review-assignment-respond",
     ),
     path(
+        "review-assignments/<uuid:assignment_id>/replace/",
+        api.replace_review_assignment,
+        name="review-assignment-replace",
+    ),
+    path(
         "review-assignments/<uuid:assignment_id>/ballots/",
         api.submit_review_ballot,
         name="review-ballot-submit",

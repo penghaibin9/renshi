@@ -6,7 +6,9 @@ from hr_title.authority_registry import (
     EVENT_RESULT_PUBLISHED,
     EVENT_RESULT_REVISED,
     EVENT_RESULT_REVOKED,
+    EVENT_REVIEW_ASSIGNMENT_REPLACED,
     PERM_PANEL,
+    PERM_PANEL_CORRECT,
     PERM_PUBLICITY,
     PERM_RESULT,
     PERM_RESULT_CORRECT,
@@ -21,6 +23,7 @@ class Hr13AuthorityRegistryTests(SimpleTestCase):
             PERM_VIEW,
             PERM_REVIEW,
             PERM_PANEL,
+            PERM_PANEL_CORRECT,
             PERM_PUBLICITY,
             PERM_RESULT,
             PERM_RESULT_CORRECT,
@@ -34,3 +37,7 @@ class Hr13AuthorityRegistryTests(SimpleTestCase):
             definition = global_event_registry.get(name, 1)
             self.assertEqual(definition.module_code, "HR13")
             self.assertEqual(definition.aggregate, "result")
+
+        replacement = global_event_registry.get(EVENT_REVIEW_ASSIGNMENT_REPLACED, 1)
+        self.assertEqual(replacement.module_code, "HR13")
+        self.assertEqual(replacement.aggregate, "review_assignment")
