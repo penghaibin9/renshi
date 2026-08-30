@@ -63,5 +63,5 @@ class Hr14MigrationAbsorptionContractTests(TransactionTestCase):
         leaves = MigrationLoader(connection).graph.leaf_nodes("hr_appointment")
         self.assertEqual(
             leaves,
-            [("hr_appointment", "0014_collective_decision_authority")],
+            [("hr_appointment", "0016_ranking_fact_seal")],
         )

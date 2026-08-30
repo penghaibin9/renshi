@@ -276,6 +276,21 @@ class AppointmentQuotaReservation(HrTenantScopedModel):
         ]
 
 
+class AppointmentRankingQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("APPOINTMENT_RANKING_IMMUTABLE: append a new ranking fact")
+
+    def delete(self):
+        raise ValueError("APPOINTMENT_RANKING_IMMUTABLE: ranking facts cannot be deleted")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError("APPOINTMENT_RANKING_IMMUTABLE: append a new ranking fact")
+
+
+class AppointmentRankingManager(models.Manager.from_queryset(AppointmentRankingQuerySet)):
+    pass
+
+
 class AppointmentRankingResult(HrTenantScopedModel):
     """Append-only final aggregate ranking for one review attempt."""
 
@@ -295,6 +310,8 @@ class AppointmentRankingResult(HrTenantScopedModel):
     score_snapshot_json = models.JSONField(default=dict, blank=True)
     finalized_by = models.PositiveBigIntegerField(null=True, blank=True)
     finalized_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AppointmentRankingManager()
 
     _FACT_FIELDS = (
         "tenant_id",
@@ -346,6 +363,9 @@ class AppointmentRankingResult(HrTenantScopedModel):
                         "must be appended, not edited in place"
                     )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("APPOINTMENT_RANKING_IMMUTABLE: ranking facts cannot be deleted")
 
 
 class AppointmentPublicityRecord(HrTenantScopedModel):

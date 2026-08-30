@@ -1,4 +1,7 @@
 import uuid
+from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.test import TestCase
 
@@ -26,13 +29,20 @@ class AppointmentRankingBatchStateTests(TestCase):
             status=AppointmentApplicationCase.Status.UNDER_REVIEW,
         )
 
-        AppointmentRankingService(7, actor_user_id=88).finalize(
-            case_id=case.id,
-            ranking_no="RK-PROGRESS-1",
-            total_score="91.25",
-            rank_no=1,
-            outcome="SELECTED",
-        )
+        with patch.object(
+            AppointmentRankingService,
+            "_derive_authority",
+            return_value=SimpleNamespace(
+                total_score=Decimal("91.2500"),
+                rank_no=1,
+                outcome="SELECTED",
+                score_snapshot={"contentHash": "a" * 64},
+            ),
+        ), patch.object(AppointmentRankingService, "_emit_event"):
+            AppointmentRankingService(7, actor_user_id=88).finalize(
+                case_id=case.id,
+                ranking_no="RK-PROGRESS-1",
+            )
 
         batch.refresh_from_db()
         case.refresh_from_db()

@@ -10,20 +10,22 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from decimal import Decimal
-from typing import Optional
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from hr_assessment.models import (
     HrAssessmentCase,
     HrAssessmentDecisionSession,
     HrAssessmentEvidenceRef,
+    HrAssessmentPolicyVersion,
     HrAssessmentPublicityCase,
+    HrCycleSnapshot,
     HrFinalAssessmentResult,
     HrMetricSnapshot,
     HrProviderSnapshotSet,
+    HrResultRuleVersion,
     HrReviewerAssignment,
 )
 from hr_assessment.service.evidence import EvidenceSnapshotError, PolicyEvidenceResolver
@@ -38,11 +40,16 @@ class AssessmentFinalizationError(Exception):
 
 @dataclass(frozen=True)
 class FinalResultInput:
-    grade_code: str
-    display_grade_snapshot: dict
     decision_reason: str
     decision_session_id: object
-    calculated_score: Optional[Decimal] = None
+
+
+@dataclass(frozen=True)
+class CalculatedAssessmentResult:
+    grade_code: str
+    display_grade_snapshot: dict
+    calculated_score: Decimal
+    calculation_snapshot: dict
 
 
 class AssessmentFinalizationService:
@@ -55,6 +62,7 @@ class AssessmentFinalizationService:
         "CONFLICT",
     }
     METRIC_BLOCKING = {"STALE", "UNAVAILABLE", "CONFLICT"}
+    SCORE_AGGREGATIONS = {"AVERAGE", "WEIGHTED_AVERAGE"}
 
     def __init__(self, tenant_id: int, actor_staff_id=None):
         if not tenant_id:
@@ -182,6 +190,8 @@ class AssessmentFinalizationService:
             tenant_id=self.tenant_id,
             case_id=case.id,
         ).prefetch_related("evaluations")
+        if not assignments.exists():
+            blockers.append({"code": "ASSESSMENT_REVIEWER_ASSIGNMENT_REQUIRED"})
         reviewer_missing = 0
         for assignment in assignments:
             if not assignment.evaluations.filter(submitted_at__isnull=False).exists():
@@ -230,6 +240,232 @@ class AssessmentFinalizationService:
 
         return blockers
 
+    @staticmethod
+    def _decimal(value, *, code: str, message: str) -> Decimal:
+        try:
+            number = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise AssessmentFinalizationError(code, message) from exc
+        if not number.is_finite():
+            raise AssessmentFinalizationError(code, message)
+        return number
+
+    @staticmethod
+    def _grade_bands(mapping) -> list[dict]:
+        if isinstance(mapping, dict) and isinstance(mapping.get("bands"), list):
+            return list(mapping["bands"])
+        if isinstance(mapping, list):
+            return list(mapping)
+        if isinstance(mapping, dict):
+            bands = []
+            for grade_code, spec in mapping.items():
+                if not isinstance(spec, dict):
+                    continue
+                bands.append({"gradeCode": grade_code, **spec})
+            return bands
+        return []
+
+    def _calculate_result(self, *, case: HrAssessmentCase) -> CalculatedAssessmentResult:
+        """Derive the formal score and grade only from frozen, submitted facts."""
+
+        if case.cycle_id is None or case.policy_version_id is None:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_CALCULATION_AUTHORITY_REQUIRED",
+                "cycle and policy authority are required for server-side calculation",
+            )
+        cycle = case.cycle
+        as_of = cycle.end_at.date()
+        policy = HrAssessmentPolicyVersion.objects.filter(
+            id=case.policy_version_id,
+            tenant_id=self.tenant_id,
+            status="PUBLISHED",
+            effective_from__lte=as_of,
+        ).filter(
+            models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=as_of)
+        ).first()
+        if policy is None or not policy.result_rule_version_id:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_EFFECTIVE_RESULT_RULE_REQUIRED",
+                "a published effective assessment policy with a result rule is required",
+            )
+        result_rule = HrResultRuleVersion.objects.filter(
+            id=policy.result_rule_version_id,
+            tenant_id=self.tenant_id,
+            status="PUBLISHED",
+        ).first()
+        if result_rule is None:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_EFFECTIVE_RESULT_RULE_REQUIRED",
+                "the policy result rule is missing or not published",
+            )
+        snapshot = HrCycleSnapshot.objects.filter(
+            tenant_id=self.tenant_id,
+            cycle_id=case.cycle_id,
+        ).first()
+        if snapshot is None:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_CYCLE_SNAPSHOT_REQUIRED",
+                "the frozen cycle calculation snapshot is required",
+            )
+
+        reviewer_rule = snapshot.frozen_reviewer_rules_json or {}
+        aggregation = str(reviewer_rule.get("scoreAggregation") or "").upper()
+        score_field = str(reviewer_rule.get("scoreField") or "").strip()
+        if aggregation not in self.SCORE_AGGREGATIONS or not score_field:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_SCORE_RULE_INVALID",
+                "frozen reviewer rules must define scoreAggregation and scoreField",
+            )
+        role_weights = reviewer_rule.get("roleWeights") or {}
+        if aggregation == "WEIGHTED_AVERAGE" and not isinstance(role_weights, dict):
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_SCORE_RULE_INVALID", "roleWeights must be an object"
+            )
+
+        assignments = list(
+            HrReviewerAssignment.objects.filter(
+                tenant_id=self.tenant_id,
+                case_id=case.id,
+            ).order_by("id")
+        )
+        if not assignments:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_REVIEWER_ASSIGNMENT_REQUIRED",
+                "at least one reviewer assignment is required",
+            )
+        contributions = []
+        weighted_sum = Decimal("0")
+        total_weight = Decimal("0")
+        for assignment in assignments:
+            evaluation = assignment.evaluations.filter(
+                tenant_id=self.tenant_id,
+                submitted_at__isnull=False,
+            ).order_by("-revision_no", "-submitted_at", "-id").first()
+            if evaluation is None:
+                raise AssessmentFinalizationError(
+                    "ASSESSMENT_REVIEWER_SUBMISSION_MISSING",
+                    "every reviewer assignment must have a submitted evaluation",
+                )
+            rating = evaluation.rating_json or {}
+            if not isinstance(rating, dict) or score_field not in rating:
+                raise AssessmentFinalizationError(
+                    "ASSESSMENT_REVIEWER_SCORE_REQUIRED",
+                    f"submitted evaluation must contain {score_field}",
+                )
+            score = self._decimal(
+                rating[score_field],
+                code="ASSESSMENT_REVIEWER_SCORE_INVALID",
+                message="submitted reviewer score must be numeric",
+            )
+            weight = Decimal("1")
+            if aggregation == "WEIGHTED_AVERAGE":
+                if assignment.reviewer_role not in role_weights:
+                    raise AssessmentFinalizationError(
+                        "ASSESSMENT_REVIEWER_WEIGHT_REQUIRED",
+                        f"missing frozen weight for reviewer role {assignment.reviewer_role}",
+                    )
+                weight = self._decimal(
+                    role_weights[assignment.reviewer_role],
+                    code="ASSESSMENT_REVIEWER_WEIGHT_INVALID",
+                    message="reviewer role weight must be numeric",
+                )
+                if weight <= 0:
+                    raise AssessmentFinalizationError(
+                        "ASSESSMENT_REVIEWER_WEIGHT_INVALID",
+                        "reviewer role weight must be positive",
+                    )
+            weighted_sum += score * weight
+            total_weight += weight
+            contributions.append(
+                {
+                    "assignmentId": str(assignment.id),
+                    "evaluationId": str(evaluation.id),
+                    "revisionNo": evaluation.revision_no,
+                    "role": assignment.reviewer_role,
+                    "score": str(score),
+                    "weight": str(weight),
+                    "submittedAt": evaluation.submitted_at.isoformat(),
+                }
+            )
+        if total_weight <= 0:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_SCORE_RULE_INVALID", "total reviewer weight must be positive"
+            )
+        score = (weighted_sum / total_weight).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+        rating_scale = snapshot.frozen_rating_scale_json or {}
+        if not isinstance(rating_scale, dict):
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_RATING_SCALE_INVALID", "frozen rating scale must be an object"
+            )
+        minimum = self._decimal(
+            rating_scale.get("minValue"),
+            code="ASSESSMENT_RATING_SCALE_INVALID",
+            message="frozen rating scale minValue is required",
+        )
+        maximum = self._decimal(
+            rating_scale.get("maxValue"),
+            code="ASSESSMENT_RATING_SCALE_INVALID",
+            message="frozen rating scale maxValue is required",
+        )
+        if minimum > maximum or not minimum <= score <= maximum:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_SCORE_OUT_OF_RANGE",
+                "calculated score is outside the frozen rating scale",
+            )
+
+        matches = []
+        for band in self._grade_bands(result_rule.score_to_grade_mapping):
+            if not isinstance(band, dict):
+                continue
+            grade_code = str(band.get("gradeCode") or "").strip().upper()
+            if not grade_code or "minScore" not in band or "maxScore" not in band:
+                continue
+            lower = self._decimal(
+                band["minScore"],
+                code="ASSESSMENT_RESULT_RULE_INVALID",
+                message="grade band minScore must be numeric",
+            )
+            upper = self._decimal(
+                band["maxScore"],
+                code="ASSESSMENT_RESULT_RULE_INVALID",
+                message="grade band maxScore must be numeric",
+            )
+            if lower <= score <= upper:
+                matches.append((grade_code, band))
+        if len(matches) != 1:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_RESULT_RULE_NO_UNIQUE_MATCH",
+                "calculated score must match exactly one published grade band",
+            )
+        grade_code, band = matches[0]
+        display_grade = band.get("displayGrade")
+        if not isinstance(display_grade, dict) or not display_grade:
+            label = str(band.get("label") or "").strip()
+            display_grade = {"zh-CN": label} if label else {}
+        if not display_grade:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_RESULT_RULE_INVALID",
+                "matched grade band must define a display label",
+            )
+        calculation_snapshot = {
+            "source": "SUBMITTED_REVIEWER_EVALUATIONS",
+            "policyVersionId": str(policy.id),
+            "resultRuleVersionId": str(result_rule.id),
+            "cycleSnapshotId": str(snapshot.id),
+            "scoreAggregation": aggregation,
+            "scoreField": score_field,
+            "contributions": contributions,
+        }
+        return CalculatedAssessmentResult(
+            grade_code=grade_code,
+            display_grade_snapshot=display_grade,
+            calculated_score=score,
+            calculation_snapshot=calculation_snapshot,
+        )
+
     @transaction.atomic
     def finalize(self, *, case_id, payload: FinalResultInput) -> HrFinalAssessmentResult:
         case = HrAssessmentCase.objects.select_for_update().filter(
@@ -258,15 +494,6 @@ class AssessmentFinalizationService:
                 "ASSESSMENT_CASE_INVALID_STATE",
                 f"case status {case.status} cannot be finalized",
             )
-        if not payload.grade_code.strip():
-            raise AssessmentFinalizationError(
-                "ASSESSMENT_GRADE_REQUIRED", "formal grade_code is required"
-            )
-        if not payload.display_grade_snapshot:
-            raise AssessmentFinalizationError(
-                "ASSESSMENT_GRADE_SNAPSHOT_REQUIRED",
-                "display grade snapshot is required",
-            )
         if not str(payload.decision_session_id or "").strip():
             raise AssessmentFinalizationError(
                 "ASSESSMENT_DECISION_SESSION_REQUIRED",
@@ -294,19 +521,17 @@ class AssessmentFinalizationService:
                 "formal result already exists; use revision workflow",
             )
 
+        calculated = self._calculate_result(case=case)
+
         finalized_at = timezone.now()
         content = {
             "tenantId": int(self.tenant_id),
             "caseId": str(case.id),
             "assessmentType": case.assessment_type,
             "cycleId": str(case.cycle_id) if case.cycle_id else None,
-            "gradeCode": payload.grade_code,
-            "displayGrade": payload.display_grade_snapshot,
-            "calculatedScore": (
-                str(payload.calculated_score)
-                if payload.calculated_score is not None
-                else None
-            ),
+            "gradeCode": calculated.grade_code,
+            "displayGrade": calculated.display_grade_snapshot,
+            "calculatedScore": str(calculated.calculated_score),
             "decisionReason": payload.decision_reason,
             "policyVersionId": str(case.policy_version_id) if case.policy_version_id else None,
             "decisionSessionId": str(payload.decision_session_id),
@@ -322,9 +547,9 @@ class AssessmentFinalizationService:
             case_id=case.id,
             assessment_type=case.assessment_type,
             cycle_id=case.cycle_id,
-            grade_code=payload.grade_code,
-            display_grade_snapshot_json=payload.display_grade_snapshot,
-            calculated_score=payload.calculated_score,
+            grade_code=calculated.grade_code,
+            display_grade_snapshot_json=calculated.display_grade_snapshot,
+            calculated_score=calculated.calculated_score,
             decision_reason=payload.decision_reason,
             policy_version_id=case.policy_version_id,
             decision_session_id=payload.decision_session_id,

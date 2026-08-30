@@ -35,6 +35,7 @@ register_permissions(
 )
 
 EVENT_DECISION_APPROVED = "hr.appointment.decision.approved"
+EVENT_RANKING_PUBLISHED = "hr.appointment.ranking.published"
 EVENT_FACT_EFFECTIVE = "hr.appointment.fact.effective"
 EVENT_FACT_CORRECTED = "hr.appointment.fact.corrected"
 EVENT_FACT_REVOKED = "hr.appointment.fact.revoked"
@@ -43,6 +44,13 @@ EVENT_TERM_EFFECTIVE = "hr.appointment.term.effective"
 
 register_business_events(
     (
+        BusinessEventDefinition(
+            EVENT_RANKING_PUBLISHED,
+            "HR14",
+            "ranking",
+            1,
+            "服务端依据封板评价事实发布最终排名",
+        ),
         BusinessEventDefinition(
             EVENT_DECISION_APPROVED,
             "HR14",

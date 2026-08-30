@@ -6,6 +6,7 @@ from django.test import TestCase
 from hr_assessment.services.finalization_service import (
     AssessmentFinalizationError,
     AssessmentFinalizationService,
+    CalculatedAssessmentResult,
     FinalResultInput,
 )
 
@@ -24,11 +25,8 @@ class AssessmentFinalizationServiceTests(TestCase):
 
     def _payload(self):
         return FinalResultInput(
-            grade_code="QUALIFIED",
-            display_grade_snapshot={"zh-CN": "合格"},
             decision_reason="集体审定通过",
             decision_session_id="00000000-0000-0000-0000-000000000401",
-            calculated_score=Decimal("88.50"),
         )
 
     @patch("hr_assessment.services.finalization_service.HrFinalAssessmentResult.objects")
@@ -46,6 +44,14 @@ class AssessmentFinalizationServiceTests(TestCase):
         created = MagicMock()
         result_objects.create.return_value = created
         service._gate_blockers = MagicMock(return_value=[])
+        service._calculate_result = MagicMock(
+            return_value=CalculatedAssessmentResult(
+                grade_code="QUALIFIED",
+                display_grade_snapshot={"zh-CN": "合格"},
+                calculated_score=Decimal("88.50"),
+                calculation_snapshot={"source": "test"},
+            )
+        )
 
         result = service.finalize(case_id=case.id, payload=self._payload())
 
@@ -56,6 +62,7 @@ class AssessmentFinalizationServiceTests(TestCase):
         kwargs = result_objects.create.call_args.kwargs
         self.assertEqual(kwargs["status"], "FINALIZED")
         self.assertEqual(kwargs["result_version_no"], 1)
+        self.assertEqual(kwargs["calculated_score"], Decimal("88.50"))
         self.assertEqual(len(kwargs["content_hash"]), 64)
         self.assertEqual(case.status, "FINALIZED")
         case.save.assert_called_once_with(update_fields=["status", "updated_at"])

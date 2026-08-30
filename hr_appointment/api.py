@@ -173,6 +173,16 @@ def ranking_result(request, case_id):
     except ValueError:
         return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
 
+    forbidden = {"totalScore", "rankNo", "outcome", "scoreSnapshot", "snapshot"}.intersection(
+        payload
+    )
+    if forbidden:
+        return _error(
+            "APPOINTMENT_RANKING_CLIENT_AUTHORITY_FORBIDDEN",
+            "总分、名次、结论和权威快照只能由服务端计算",
+            status=400,
+        )
+
     try:
         outcome = AppointmentRankingService(
             tenant_id,
@@ -180,10 +190,6 @@ def ranking_result(request, case_id):
         ).finalize(
             case_id=case_id,
             ranking_no=payload.get("rankingNo", ""),
-            total_score=payload.get("totalScore"),
-            rank_no=payload.get("rankNo"),
-            outcome=payload.get("outcome", ""),
-            score_snapshot=payload.get("scoreSnapshot"),
         )
     except AppointmentRankingError as exc:
         if exc.code in {"APPOINTMENT_CASE_NOT_FOUND", "APPOINTMENT_BATCH_NOT_FOUND"}:
@@ -193,6 +199,7 @@ def ranking_result(request, case_id):
             "APPOINTMENT_RANKING_INVALID_CASE_STATE",
             "APPOINTMENT_RANKING_INVALID_BATCH_STATE",
             "APPOINTMENT_RANKING_QUOTA_ALREADY_CONSUMED",
+            "APPOINTMENT_RANKING_OUTBOX_CONFLICT",
         }:
             status = 409
         else:

@@ -121,7 +121,6 @@ class Hr12AnnualApiTests(TestCase):
             self._post(
                 f"/api/v1/hr/assessments/cases/{self.case.id}/finalize",
                 {
-                    "gradeCode": "QUALIFIED",
                     "decisionSessionId": decision_id,
                     "decisionReason": "年度考核工作台正式审定",
                 },
@@ -134,17 +133,23 @@ class Hr12AnnualApiTests(TestCase):
         self.assertEqual(payload["result"]["gradeCode"], "QUALIFIED")
         args = finalize.call_args.kwargs
         self.assertEqual(args["case_id"], self.case.id)
-        self.assertEqual(args["payload"].grade_code, "QUALIFIED")
         self.assertEqual(str(args["payload"].decision_session_id), decision_id)
 
-    def test_finalize_rejects_unknown_grade_before_formal_write(self):
+    def test_finalize_rejects_client_authoritative_result_fields(self):
         response = finalize_case(
             self._post(
                 f"/api/v1/hr/assessments/cases/{self.case.id}/finalize",
-                {"gradeCode": "FAKE_GREEN", "decisionSessionId": str(uuid.uuid4())},
+                {
+                    "gradeCode": "FAKE_GREEN",
+                    "calculatedScore": "100",
+                    "decisionSessionId": str(uuid.uuid4()),
+                },
             ),
             self.case.id,
         )
         self.assertEqual(response.status_code, 400)
         payload = json.loads(response.content)
-        self.assertEqual(payload["error"]["code"], "ASSESSMENT_GRADE_INVALID")
+        self.assertEqual(
+            payload["error"]["code"],
+            "ASSESSMENT_CLIENT_AUTHORITY_FIELDS_FORBIDDEN",
+        )

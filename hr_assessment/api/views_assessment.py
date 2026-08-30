@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal, InvalidOperation
 
 from django.db.models import Count
 from django.http import HttpRequest, JsonResponse
@@ -399,11 +398,22 @@ def finalize_case(request: HttpRequest, case_id) -> JsonResponse:
         return JsonResponse(api_error(
             "INVALID_REQUEST", "请求正文不是有效 JSON", request_id=request_id, http_status=400,
         ), status=400)
-    grade_code = str(payload.get("gradeCode") or "").strip().upper()
-    if grade_code not in ANNUAL_GRADE_LABELS:
+    forbidden_authority_fields = {
+        "gradeCode",
+        "displayGrade",
+        "calculatedScore",
+        "totalScore",
+        "rank",
+        "rankNo",
+        "outcome",
+        "scoreSnapshot",
+        "snapshot",
+    }.intersection(payload)
+    if forbidden_authority_fields:
         return JsonResponse(api_error(
-            "ASSESSMENT_GRADE_INVALID",
-            "年度考核档次必须为优秀、合格、基本合格或不合格",
+            "ASSESSMENT_CLIENT_AUTHORITY_FIELDS_FORBIDDEN",
+            "最终分数、档次、名次、结论和权威快照只能由服务端计算",
+            details={"fields": sorted(forbidden_authority_fields)},
             request_id=request_id,
             http_status=400,
         ), status=400)
@@ -415,15 +425,6 @@ def finalize_case(request: HttpRequest, case_id) -> JsonResponse:
             request_id=request_id,
             http_status=400,
         ), status=400)
-    score = None
-    raw_score = payload.get("calculatedScore")
-    if raw_score not in (None, ""):
-        try:
-            score = Decimal(str(raw_score))
-        except (InvalidOperation, ValueError):
-            return JsonResponse(api_error(
-                "ASSESSMENT_SCORE_INVALID", "计算分必须为有效数字", request_id=request_id, http_status=400,
-            ), status=400)
     try:
         result = AssessmentFinalizationService(
             tenant,
@@ -431,11 +432,8 @@ def finalize_case(request: HttpRequest, case_id) -> JsonResponse:
         ).finalize(
             case_id=case_id,
             payload=FinalResultInput(
-                grade_code=grade_code,
-                display_grade_snapshot={"zh-CN": ANNUAL_GRADE_LABELS[grade_code]},
                 decision_reason=str(payload.get("decisionReason") or "年度考核工作台正式审定").strip(),
                 decision_session_id=decision_session_id,
-                calculated_score=score,
             ),
         )
     except AssessmentFinalizationError as exc:

@@ -33,9 +33,6 @@ class Hr14RankingApiTests(SimpleTestCase):
             data=json.dumps(
                 {
                     "rankingNo": "RK-1",
-                    "totalScore": "90",
-                    "rankNo": 1,
-                    "outcome": "SELECTED",
                 }
             ),
             content_type="application/json",
@@ -75,10 +72,6 @@ class Hr14RankingApiTests(SimpleTestCase):
             data=json.dumps(
                 {
                     "rankingNo": "RK-2",
-                    "totalScore": "91.25",
-                    "rankNo": 1,
-                    "outcome": "SELECTED",
-                    "scoreSnapshot": {"panel": "P1"},
                 }
             ),
             content_type="application/json",
@@ -92,13 +85,32 @@ class Hr14RankingApiTests(SimpleTestCase):
         service_cls.return_value.finalize.assert_called_once_with(
             case_id=self.case_id,
             ranking_no="RK-2",
-            total_score="91.25",
-            rank_no=1,
-            outcome="SELECTED",
-            score_snapshot={"panel": "P1"},
         )
         self.assertIn(b'"caseStatus": "PROPOSED"', response.content)
         self.assertEqual(response["Cache-Control"], "no-store")
+
+    @patch("hr_appointment.api.resolve_tenant_from_request", return_value=7)
+    @patch("hr_appointment.api.get_allowed_company_ids", return_value={7})
+    def test_authoritative_ranking_fields_are_rejected(self, _allowed, _tenant):
+        request = self.factory.post(
+            f"/api/v1/hr/appointments/applications/{self.case_id}/ranking-result/",
+            data=json.dumps(
+                {
+                    "rankingNo": "RK-FAKE",
+                    "totalScore": "100",
+                    "rankNo": 1,
+                    "outcome": "SELECTED",
+                    "scoreSnapshot": {"forged": True},
+                }
+            ),
+            content_type="application/json",
+        )
+        request.user = UserStub({api.REVIEW_PERMISSION})
+
+        response = api.ranking_result(request, self.case_id)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"APPOINTMENT_RANKING_CLIENT_AUTHORITY_FORBIDDEN", response.content)
 
     def test_non_post_is_rejected(self):
         request = self.factory.get(

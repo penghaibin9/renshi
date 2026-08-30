@@ -16,7 +16,6 @@ from hr_appointment.services.publicity_service import (
     AppointmentPublicityError,
     AppointmentPublicityService,
 )
-from hr_appointment.services.ranking_service import AppointmentRankingService
 
 
 class Hr14PublicityServiceTests(TestCase):
@@ -162,29 +161,24 @@ class Hr14PublicityServiceTests(TestCase):
         selected = self._review_case(batch, suffix="SELECTED", position_id=101)
         waitlist = self._review_case(batch, suffix="WAITLIST", position_id=101)
         not_selected = self._review_case(batch, suffix="NO", position_id=101)
-        ranking_service = AppointmentRankingService(7, actor_user_id=88)
-
-        selected_ranking = ranking_service.finalize(
-            case_id=selected.id,
+        selected_ranking = AppointmentRankingResult.objects.create(
+            tenant_id=7,
             ranking_no="RK-MULTI-1",
+            application_case_id=selected.id,
+            batch_no=batch.batch_no,
+            position_instance_id=selected.position_instance_id,
+            attempt_no=1,
             total_score="92",
             rank_no=1,
             outcome="SELECTED",
-        ).ranking
-        ranking_service.finalize(
-            case_id=waitlist.id,
-            ranking_no="RK-MULTI-2",
-            total_score="88",
-            rank_no=2,
-            outcome="WAITLIST",
+            score_snapshot_json={"source": "sealed-assessment-test"},
         )
-        ranking_service.finalize(
-            case_id=not_selected.id,
-            ranking_no="RK-MULTI-3",
-            total_score="70",
-            rank_no=3,
-            outcome="NOT_SELECTED",
-        )
+        selected.status = AppointmentApplicationCase.Status.PROPOSED
+        selected.save(update_fields=["status", "updated_at"])
+        waitlist.status = AppointmentApplicationCase.Status.WAITLIST
+        waitlist.save(update_fields=["status", "updated_at"])
+        not_selected.status = AppointmentApplicationCase.Status.NOT_SELECTED
+        not_selected.save(update_fields=["status", "updated_at"])
 
         record = AppointmentPublicityService(7, actor_user_id=88).open_publicity(
             case_id=selected.id,
