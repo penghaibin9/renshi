@@ -45,6 +45,8 @@ from hr_recruitment.services.proposed_hire_service import (
 def _handle(request, exc):
     from django.core.exceptions import ObjectDoesNotExist
 
+    if isinstance(exc, json.JSONDecodeError):
+        return error(request, "INVALID_JSON", "请求体不是有效 JSON", 400)
     if isinstance(exc, ObjectDoesNotExist):
         return error(request, "NOT_FOUND", "资源不存在", 404)
     if isinstance(

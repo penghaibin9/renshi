@@ -11,6 +11,7 @@ from hr_recruitment.api import application as application_api
 from hr_recruitment.api import assessment as assessment_api
 from hr_recruitment.api import campaign as campaign_api
 from hr_recruitment.api import candidate as candidate_api
+from hr_recruitment.api import collection as collection_api
 from hr_recruitment.api import medical_background as medical_background_api
 from hr_recruitment.api import plan as plan_api
 from hr_recruitment.api import proposed_hire as proposed_hire_api
@@ -31,13 +32,8 @@ urlpatterns = [
     # HR04-06 录用与人才引进（总册 13）
     path(
         "api/hr/v1/recruitment/proposed-hires",
-        proposed_hire_api.proposed_hire_list,
-        name="hr04-api-proposed-hire-list",
-    ),
-    path(
-        "api/hr/v1/recruitment/proposed-hires",
-        proposed_hire_api.create_proposed_hire,
-        name="hr04-api-proposed-hire-create",
+        collection_api.proposed_hire_collection,
+        name="hr04-api-proposed-hire-collection",
     ),
     path(
         "api/hr/v1/recruitment/proposed-hires/<uuid:proposed_hire_id>/decide",
@@ -143,23 +139,13 @@ urlpatterns = [
     # 体检/考察（§12.8 敏感隔离）
     path(
         "api/hr/v1/recruitment/applications/<uuid:application_id>/medical",
-        medical_background_api.record_medical,
-        name="hr04-api-medical-record",
-    ),
-    path(
-        "api/hr/v1/recruitment/applications/<uuid:application_id>/medical",
-        medical_background_api.medical_summary,
-        name="hr04-api-medical-summary",
+        collection_api.medical_collection,
+        name="hr04-api-medical-collection",
     ),
     path(
         "api/hr/v1/recruitment/applications/<uuid:application_id>/background",
-        medical_background_api.record_background,
-        name="hr04-api-background-record",
-    ),
-    path(
-        "api/hr/v1/recruitment/applications/<uuid:application_id>/background",
-        medical_background_api.background_summary,
-        name="hr04-api-background-summary",
+        collection_api.background_collection,
+        name="hr04-api-background-collection",
     ),
     # HR04-04 资格审查（总册 11）
     path(
@@ -200,13 +186,8 @@ urlpatterns = [
     # HR04-03 人才库与应聘者（总册 10/23）
     path(
         "api/hr/v1/recruitment/candidates",
-        candidate_api.list_candidates,
-        name="hr04-api-candidate-list",
-    ),
-    path(
-        "api/hr/v1/recruitment/candidates",
-        candidate_api.create_candidate,
-        name="hr04-api-candidate-create",
+        collection_api.candidate_collection,
+        name="hr04-api-candidate-collection",
     ),
     path(
         "api/hr/v1/recruitment/candidates/identity-match",
@@ -261,13 +242,8 @@ urlpatterns = [
     ),
     path(
         "api/hr/v1/recruitment/campaigns",
-        campaign_api.list_campaigns,
-        name="hr04-api-campaign-list",
-    ),
-    path(
-        "api/hr/v1/recruitment/campaigns",
-        campaign_api.create_campaign,
-        name="hr04-api-campaign-create",
+        collection_api.campaign_collection,
+        name="hr04-api-campaign-collection",
     ),
     path(
         "api/hr/v1/recruitment/campaigns/from-plan",
@@ -317,13 +293,8 @@ urlpatterns = [
     # HR04-01 年度用人计划（总册 8.5）
     path(
         "api/hr/v1/recruitment/plans",
-        plan_api.list_plans,
-        name="hr04-api-plan-list",
-    ),
-    path(
-        "api/hr/v1/recruitment/plans",
-        plan_api.create_plan,
-        name="hr04-api-plan-create",
+        collection_api.plan_collection,
+        name="hr04-api-plan-collection",
     ),
     path(
         "api/hr/v1/recruitment/plans/<uuid:cycle_id>",
