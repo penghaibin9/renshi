@@ -26,7 +26,8 @@ class FormalFactProviderTests(TestCase):
             content_hash="a" * 64,
         )
 
-    def test_parallel_hr13_app_missing_is_unavailable_not_error(self):
+    @patch("hr_data.providers.formal_facts.apps.get_model", side_effect=LookupError)
+    def test_parallel_hr13_app_missing_is_unavailable_not_error(self, _get_model):
         population = self._population(
             code="TITLE_HOLDERS",
             root_domain="HR13",

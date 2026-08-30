@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import TransactionTestCase, override_settings
+from django.test import override_settings
 
 from hr_data.models import (
     LegacyReportAssetVersion,
@@ -12,6 +12,7 @@ from hr_data.services.legacy_report_asset_service import (
     LegacyReportTakeoverError,
     LegacyReportTakeoverService,
 )
+from hr_data.tests.mysql_trigger_transaction import MySQLTriggerSafeTransactionTestCase
 
 
 def matching_dual_read_provider(**_kwargs):
@@ -37,7 +38,7 @@ def mismatching_dual_read_provider(**_kwargs):
     return payload
 
 
-class Hr18LegacyReportTakeoverTests(TransactionTestCase):
+class Hr18LegacyReportTakeoverTests(MySQLTriggerSafeTransactionTestCase):
     def _snapshot(self, legacy_id=11):
         return {
             "status": "COMPLETE",

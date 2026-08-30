@@ -2,7 +2,7 @@ import uuid
 from datetime import timedelta
 
 from django.db import connection
-from django.test import TransactionTestCase, override_settings
+from django.test import override_settings
 from django.utils import timezone
 
 from hr_data.models import (
@@ -18,6 +18,7 @@ from hr_data.services.exchange_service import (
     ExchangeError,
     ExchangeJobService,
 )
+from hr_data.tests.mysql_trigger_transaction import MySQLTriggerSafeTransactionTestCase
 
 
 PROVIDER_CALLS = []
@@ -44,7 +45,7 @@ def failing_provider(**_kwargs):
     raise RuntimeError("https://secret-target.invalid?token=do-not-store")
 
 
-class ExchangeRuntimeTests(TransactionTestCase):
+class ExchangeRuntimeTests(MySQLTriggerSafeTransactionTestCase):
     tenant_id = 77
     payload_hash = "a" * 64
 

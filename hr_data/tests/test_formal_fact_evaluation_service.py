@@ -58,7 +58,14 @@ class FormalFactHistoricalEvaluationTests(TestCase):
         distinct.count.return_value = value
         return model, first, interval, predicate, values, distinct
 
-    def test_unmerged_hr13_authority_never_fakes_a_value(self):
+    @patch(
+        "hr_data.services.formal_fact_evaluation_service.apps.get_model",
+        side_effect=LookupError,
+    )
+    @patch("hr_data.providers.formal_facts.apps.get_model", side_effect=LookupError)
+    def test_unmerged_hr13_authority_never_fakes_a_value(
+        self, _provider_get_model, _evaluation_get_model
+    ):
         population = self._population(
             code="TITLE_HOLDERS_UNMERGED",
             domain="HR13",

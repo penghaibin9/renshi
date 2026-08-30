@@ -104,7 +104,7 @@ class QualityApiTests(SimpleTestCase):
         self.assertEqual(kwargs["parameters"], {"statuses": ["ACTIVE"]})
         self.assertEqual(response["Cache-Control"], "no-store")
 
-    @patch("hr_data.quality_api.DataQualityExecutionService")
+    @patch("hr_data.quality_api.RuntimeDataQualityExecutionService")
     @patch("hr_data.quality_api.resolve_request_tenant", return_value=77)
     def test_execute_parses_asof_date_and_returns_real_findings(self, tenant_resolver, service_cls):
         finding = self._finding()
@@ -135,7 +135,7 @@ class QualityApiTests(SimpleTestCase):
         self.assertIn(b'"findingCount": 1', response.content)
         self.assertIn(b'"sourceObjectRef": "employment:1001"', response.content)
 
-    @patch("hr_data.quality_api.DataQualityExecutionService")
+    @patch("hr_data.quality_api.RuntimeDataQualityExecutionService")
     @patch("hr_data.quality_api.resolve_request_tenant", return_value=77)
     def test_invalid_asof_date_does_not_call_provider_execution(self, _tenant, service_cls):
         request = self.factory.post(
@@ -155,7 +155,7 @@ class QualityApiTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         service_cls.assert_not_called()
 
-    @patch("hr_data.quality_api.DataQualityExecutionService")
+    @patch("hr_data.quality_api.RuntimeDataQualityExecutionService")
     @patch("hr_data.quality_api.resolve_request_tenant", return_value=77)
     def test_unavailable_run_is_not_presented_as_success(self, _tenant, service_cls):
         service_cls.return_value.execute.return_value = self._run(status="UNAVAILABLE")

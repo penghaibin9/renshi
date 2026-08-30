@@ -510,6 +510,8 @@ class AsOfEvidenceSnapshot(HrTenantScopedModel):
         )
 
     def save(self, *args, **kwargs):
+        if self.tenant_id is None:
+            raise ValueError("tenant_id is required (fail-closed)")
         self._validate_integrity()
         if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
             raise ValueError(
@@ -739,6 +741,8 @@ class SubmissionSnapshot(HrTenantScopedModel):
         )
 
     def save(self, *args, **kwargs):
+        if self.tenant_id is None:
+            raise ValueError("tenant_id is required (fail-closed)")
         self._validate_integrity()
         if self.pk:
             persisted = type(self)._base_manager.filter(pk=self.pk).values(
