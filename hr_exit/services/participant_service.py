@@ -55,7 +55,7 @@ class ExitParticipantService:
         {"HR07", "HR14", "IAM", "ASSET", "SETTLEMENT", "FINANCE", "ARCHIVE"}
     )
     BUILTIN_PROVIDERS = {
-        "HR07": "hr_contracts.exit_provider.exit_participant_provider",
+        "HR07": "hr_exit.services.contract_participant_provider.exit_contract_participant_provider",
         "HR14": "hr_appointment.exit_provider.exit_participant_provider",
         "IAM": "hr_exit.services.external_participant_providers.iam_participant_provider",
         "ASSET": "hr_exit.services.external_participant_providers.asset_participant_provider",
