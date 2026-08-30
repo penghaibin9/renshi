@@ -26,6 +26,21 @@ urlpatterns = [
         name="legacy-reconciliation",
     ),
     path(
+        "legacy-takeover/inventories/",
+        api.legacy_takeover_inventories,
+        name="legacy-takeover-inventories",
+    ),
+    path(
+        "legacy-takeover/activate/",
+        api.activate_legacy_takeover,
+        name="legacy-takeover-activate",
+    ),
+    path(
+        "legacy-takeover/write-block-audits/",
+        api.legacy_write_block_audits,
+        name="legacy-takeover-write-block-audits",
+    ),
+    path(
         "results/<uuid:source_result_id>/adjustments/",
         api.adjust_result,
         name="result-adjustments",

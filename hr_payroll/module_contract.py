@@ -11,6 +11,7 @@ UPSTREAM_AUTHORITIES = ("HR03", "HR05", "HR07", "HR11", "HR12", "HR14", "HR16")
 DOWNSTREAM_CONSUMERS = ("HR17", "HR18")
 LEGACY_TECH_SOURCES = ("payroll",)
 LEGACY_FORMAL_WRITER_ALLOWED = False
+LEGACY_TAKEOVER_CAPABILITY = True
 OWNS = (
     "薪酬档案、薪资项目与规则版本",
     "月度工资输入快照、计算结果、月结与追溯差额事实",

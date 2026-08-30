@@ -10,6 +10,7 @@ from .calculation_models import (
     SalaryRuleVersion,
 )
 from .models import PayrollPeriod, PayrollProfile, PayrollResultFact
+from .legacy_takeover_models import LegacyPayrollCutoverControl
 from .statutory_models import StatutoryContributionFact, StatutoryContributionRuleVersion
 
 
@@ -27,6 +28,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     reconciliations = PayrollFinanceReconciliationFact.objects.filter(tenant_id=tenant_id)
     statutory_rules = StatutoryContributionRuleVersion.objects.filter(tenant_id=tenant_id)
     statutory_facts = StatutoryContributionFact.objects.filter(tenant_id=tenant_id)
+    legacy_cutover = LegacyPayrollCutoverControl.objects.filter(tenant_id=tenant_id).first()
     latest = periods.order_by("-end_date", "-created_at").first()
     latest_results = results.none() if latest is None else results.filter(payroll_period_id=latest.id)
     net = None
@@ -59,6 +61,10 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "sealedStatutoryContributions": statutory_facts.filter(
                 status=StatutoryContributionFact.Status.SEALED
             ).count(),
+            "legacyTakeoverStatus": getattr(legacy_cutover, "status", None),
+            "legacyWriteBlockEnabled": bool(
+                getattr(legacy_cutover, "write_block_enabled", False)
+            ),
         },
         "recentPeriods": list(
             periods.order_by("-end_date")[:12].values(
@@ -175,6 +181,6 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "payment": True,
             "financeReconciliation": True,
             "legacyReadReconcile": True,
-            "legacyTakeover": False,
+            "legacyTakeover": True,
         },
     }

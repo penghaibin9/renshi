@@ -12,6 +12,8 @@ from .authority_registry import (
     PERM_CALCULATE,
     PERM_FINALIZE,
     PERM_INPUT_MANAGE,
+    PERM_LEGACY_TAKEOVER_MANAGE,
+    PERM_LEGACY_TAKEOVER_VIEW,
     PERM_PAYMENT,
     PERM_RECONCILE,
     PERM_REVIEW,
@@ -32,6 +34,15 @@ from .services.finalization_service import (
 from .services.payment_service import PayrollPaymentError, PayrollPaymentService
 from .services.adjustment_service import PayrollAdjustmentError, PayrollAdjustmentService
 from .services.legacy_reconciliation_service import LegacyPayrollReconciliationService
+from .legacy_takeover_models import (
+    LegacyPayrollAssetInventory,
+    LegacyPayrollCutoverControl,
+    LegacyPayrollWriteBlockAudit,
+)
+from .services.legacy_takeover_service import (
+    LegacyPayrollTakeoverError,
+    LegacyPayrollTakeoverService,
+)
 from .services.statutory_contribution_service import (
     StatutoryContributionError,
     StatutoryContributionRuleService,
@@ -312,6 +323,177 @@ def legacy_reconciliation(request):
         }
     )
     response = JsonResponse(data)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def _legacy_inventory_data(inventory):
+    if inventory is None:
+        return None
+    return {
+        "id": str(inventory.id),
+        "inventoryNo": inventory.inventory_no,
+        "status": inventory.status,
+        "legacyRowCount": inventory.legacy_row_count,
+        "matchedRowCount": inventory.matched_row_count,
+        "unavailableRowCount": inventory.unavailable_row_count,
+        "snapshotHash": inventory.snapshot_hash,
+        "reasonCodes": inventory.reason_codes_json,
+        "capturedAt": inventory.captured_at.isoformat(),
+    }
+
+
+def _legacy_control_data(control):
+    if control is None:
+        return None
+    return {
+        "id": str(control.id),
+        "status": control.status,
+        "latestInventoryId": (
+            str(control.latest_inventory_id) if control.latest_inventory_id else None
+        ),
+        "latestSnapshotHash": control.latest_snapshot_hash,
+        "writeBlockEnabled": control.write_block_enabled,
+        "activationEvidenceHash": control.activation_evidence_hash,
+        "activationEvidence": control.activation_evidence_json,
+        "verifiedAt": control.verified_at.isoformat() if control.verified_at else None,
+        "activatedAt": control.activated_at.isoformat() if control.activated_at else None,
+    }
+
+
+def _legacy_takeover_error(exc):
+    if exc.code.endswith("_NOT_FOUND"):
+        status = 404
+    elif "UNAVAILABLE" in exc.code or "STALE" in exc.code:
+        status = 422
+    elif "CONFLICT" in exc.code or "ALREADY_ACTIVE" in exc.code:
+        status = 409
+    else:
+        status = 400
+    return _error(exc.code, str(exc), status=status)
+
+
+def legacy_takeover_inventories(request):
+    if request.method not in {"GET", "POST"}:
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    permission = (
+        PERM_LEGACY_TAKEOVER_VIEW
+        if request.method == "GET"
+        else PERM_LEGACY_TAKEOVER_MANAGE
+    )
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=permission)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+
+    if request.method == "GET":
+        control = LegacyPayrollCutoverControl.objects.filter(tenant_id=tenant_id).first()
+        inventory = None
+        if control and control.latest_inventory_id:
+            inventory = LegacyPayrollAssetInventory.objects.filter(
+                tenant_id=tenant_id, id=control.latest_inventory_id
+            ).first()
+        response = JsonResponse(
+            {
+                "data": {
+                    "control": _legacy_control_data(control),
+                    "latestInventory": _legacy_inventory_data(inventory),
+                },
+                "apiVersion": "1.0",
+                "schemaVersion": "hr15.legacy-takeover.1",
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+
+    try:
+        payload = _json_body(request)
+        outcome = LegacyPayrollTakeoverService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).capture_inventory(inventory_no=payload.get("inventoryNo", ""))
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except LegacyPayrollTakeoverError as exc:
+        return _legacy_takeover_error(exc)
+    response = JsonResponse(
+        {
+            "data": {
+                "inventory": _legacy_inventory_data(outcome.inventory),
+                "created": outcome.created,
+            },
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.legacy-takeover.1",
+        },
+        status=201 if outcome.created else 200,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def activate_legacy_takeover(request):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(
+            request, required_permission=PERM_LEGACY_TAKEOVER_MANAGE
+        )
+        payload = _json_body(request)
+        control = LegacyPayrollTakeoverService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).activate(
+            inventory_id=payload.get("inventoryId"),
+            activation_key=payload.get("activationKey", ""),
+            evidence=payload.get("evidence"),
+        )
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except LegacyPayrollTakeoverError as exc:
+        return _legacy_takeover_error(exc)
+    response = JsonResponse(
+        {
+            "data": _legacy_control_data(control),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.legacy-takeover.1",
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def legacy_write_block_audits(request):
+    if request.method != "GET":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(
+            request, required_permission=PERM_LEGACY_TAKEOVER_VIEW
+        )
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    rows = LegacyPayrollWriteBlockAudit.objects.filter(tenant_id=tenant_id).order_by(
+        "-blocked_at"
+    )[:100]
+    response = JsonResponse(
+        {
+            "data": [
+                {
+                    "id": str(row.id),
+                    "operation": row.operation,
+                    "objectRefHash": row.object_ref_hash,
+                    "reasonCode": row.reason_code,
+                    "blockedAt": row.blocked_at.isoformat(),
+                }
+                for row in rows
+            ],
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.legacy-write-block-audit.1",
+        }
+    )
     response["Cache-Control"] = "no-store"
     return response
 

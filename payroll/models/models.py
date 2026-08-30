@@ -1896,6 +1896,99 @@ class Deduction(HorillaModel):
         super().save(*args, **kwargs)
 
 
+class LegacyPayslipQuerySet(models.QuerySet):
+    """Legacy payslip writes serialized with the HR15 cutover switch."""
+
+    def _tenant_ids(self):
+        return set(
+            self.values_list(
+                "employee_id__employee_work_info__company_id", flat=True
+            ).distinct()
+        )
+
+    def update(self, **kwargs):
+        from hr_payroll.services.legacy_takeover_service import (
+            execute_guarded_legacy_payslip_write,
+        )
+
+        refs = list(self.values_list("pk", flat=True))
+        if not refs:
+            return 0
+        return execute_guarded_legacy_payslip_write(
+            tenant_ids=self._tenant_ids(),
+            operation="BULK_UPDATE",
+            object_refs=refs,
+            write=lambda: super(LegacyPayslipQuerySet, self).update(**kwargs),
+        )
+
+    def delete(self):
+        from hr_payroll.services.legacy_takeover_service import (
+            execute_guarded_legacy_payslip_write,
+        )
+
+        refs = list(self.values_list("pk", flat=True))
+        if not refs:
+            return (0, {})
+        return execute_guarded_legacy_payslip_write(
+            tenant_ids=self._tenant_ids(),
+            operation="BULK_DELETE",
+            object_refs=refs,
+            write=lambda: super(LegacyPayslipQuerySet, self).delete(),
+        )
+
+    def bulk_create(self, objs, **kwargs):
+        from hr_payroll.services.legacy_takeover_service import (
+            execute_guarded_legacy_payslip_write,
+        )
+
+        objs = list(objs)
+        if not objs:
+            return []
+        tenant_ids = {
+            getattr(
+                getattr(getattr(obj, "employee_id", None), "employee_work_info", None),
+                "company_id_id",
+                None,
+            )
+            for obj in objs
+        }
+        return execute_guarded_legacy_payslip_write(
+            tenant_ids=tenant_ids,
+            operation="BULK_CREATE",
+            object_refs=[getattr(obj, "pk", None) or "new" for obj in objs],
+            write=lambda: super(LegacyPayslipQuerySet, self).bulk_create(objs, **kwargs),
+        )
+
+    def bulk_update(self, objs, fields, **kwargs):
+        from hr_payroll.services.legacy_takeover_service import (
+            execute_guarded_legacy_payslip_write,
+        )
+
+        objs = list(objs)
+        if not objs:
+            return 0
+        tenant_ids = {
+            getattr(
+                getattr(getattr(obj, "employee_id", None), "employee_work_info", None),
+                "company_id_id",
+                None,
+            )
+            for obj in objs
+        }
+        return execute_guarded_legacy_payslip_write(
+            tenant_ids=tenant_ids,
+            operation="BULK_UPDATE",
+            object_refs=[getattr(obj, "pk", None) for obj in objs],
+            write=lambda: super(LegacyPayslipQuerySet, self).bulk_update(
+                objs, fields, **kwargs
+            ),
+        )
+
+
+class LegacyPayslipManager(HorillaCompanyManager.from_queryset(LegacyPayslipQuerySet)):
+    pass
+
+
 class Payslip(HorillaModel):
     """
     Payslip model
@@ -1926,7 +2019,7 @@ class Payslip(HorillaModel):
         max_length=20, null=True, default="draft", choices=status_choices
     )
     sent_to_employee = models.BooleanField(null=True, default=False)
-    objects = HorillaCompanyManager("employee_id__employee_work_info__company_id")
+    objects = LegacyPayslipManager("employee_id__employee_work_info__company_id")
     installment_ids = models.ManyToManyField(Deduction, editable=False)
     history = HorillaAuditLog(
         related_name="history_set",
@@ -2031,20 +2124,53 @@ class Payslip(HorillaModel):
             raise ValidationError(_("The start date cannot be in the future."))
 
     def save(self, *args, **kwargs):
-        if (
-            Payslip.objects.filter(
-                employee_id=self.employee_id,
-                start_date=self.start_date,
-                end_date=self.end_date,
-            ).count()
-            > 1
-        ):
-            raise ValidationError(_("Employee ,start and end date must be unique"))
+        from hr_payroll.services.legacy_takeover_service import (
+            execute_guarded_legacy_payslip_write,
+        )
 
-        if not isinstance(self.pay_head_data, (QueryDict, dict)):
-            raise ValidationError(_("The data must be in dictionary or querydict type"))
+        tenant_id = getattr(
+            getattr(self.employee_id, "employee_work_info", None),
+            "company_id_id",
+            None,
+        )
 
-        super().save(*args, **kwargs)
+        def _write():
+            if (
+                Payslip.objects.filter(
+                    employee_id=self.employee_id,
+                    start_date=self.start_date,
+                    end_date=self.end_date,
+                ).count()
+                > 1
+            ):
+                raise ValidationError(_("Employee ,start and end date must be unique"))
+            if not isinstance(self.pay_head_data, (QueryDict, dict)):
+                raise ValidationError(_("The data must be in dictionary or querydict type"))
+            return super(Payslip, self).save(*args, **kwargs)
+
+        return execute_guarded_legacy_payslip_write(
+            tenant_ids={tenant_id},
+            operation="UPDATE" if self.pk else "CREATE",
+            object_refs=[self.pk or "new"],
+            write=_write,
+        )
+
+    def delete(self, *args, **kwargs):
+        from hr_payroll.services.legacy_takeover_service import (
+            execute_guarded_legacy_payslip_write,
+        )
+
+        tenant_id = getattr(
+            getattr(self.employee_id, "employee_work_info", None),
+            "company_id_id",
+            None,
+        )
+        return execute_guarded_legacy_payslip_write(
+            tenant_ids={tenant_id},
+            operation="DELETE",
+            object_refs=[self.pk],
+            write=lambda: super(Payslip, self).delete(*args, **kwargs),
+        )
 
     def get_name(self):
         """

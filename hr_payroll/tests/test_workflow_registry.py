@@ -18,6 +18,8 @@ class Hr15WorkflowRegistryTests(SimpleTestCase):
             registry.PERM_RECONCILE,
             registry.PERM_STATUTORY_VIEW,
             registry.PERM_STATUTORY_MANAGE,
+            registry.PERM_LEGACY_TAKEOVER_VIEW,
+            registry.PERM_LEGACY_TAKEOVER_MANAGE,
         ):
             definition = permission_registry.get(key)
             self.assertEqual(definition.module_code, "HR15")
@@ -35,6 +37,8 @@ class Hr15WorkflowRegistryTests(SimpleTestCase):
             registry.EVENT_STATUTORY_CONTRIBUTION_CALCULATED: "statutory_contribution",
             registry.EVENT_STATUTORY_CONTRIBUTION_REVIEWED: "statutory_contribution",
             registry.EVENT_STATUTORY_CONTRIBUTION_SEALED: "statutory_contribution",
+            registry.EVENT_LEGACY_INVENTORY_CAPTURED: "legacy_inventory",
+            registry.EVENT_LEGACY_CUTOVER_ACTIVATED: "legacy_cutover",
         }
         for name, aggregate in expected.items():
             definition = global_event_registry.get(name, 1)
