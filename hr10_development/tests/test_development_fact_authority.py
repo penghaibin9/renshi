@@ -92,6 +92,17 @@ class DevelopmentFactAuthorityTests(TestCase):
             1,
         )
 
+        with self.assertRaisesRegex(
+            DevelopmentFactAuthorityError, "idempotency key belongs"
+        ):
+            self.service().correct(
+                fact_id=self.fact.id,
+                reason_code="CREDIT_RECOUNT",
+                evidence_ref="doc://hr10/correction/001",
+                idempotency_key="hr10-correct-001",
+                changes={"verified_credits": "4.0"},
+            )
+
     def test_revocation_removes_chain_from_effective_projection(self):
         revoked = self.service().revoke(
             fact_id=self.fact.id,

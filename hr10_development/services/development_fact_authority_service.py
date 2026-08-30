@@ -72,7 +72,7 @@ class DevelopmentFactAuthorityService:
             raise DevelopmentFactAuthorityError(code, f"value exceeds {limit} characters")
         return value
 
-    def _lock_head(self, fact_id: int) -> HrDevelopmentFact:
+    def _lock_fact(self, fact_id: int) -> HrDevelopmentFact:
         fact = (
             HrDevelopmentFact.objects.select_for_update()
             .filter(pk=fact_id, tenant_id=self.tenant_id)
@@ -81,12 +81,6 @@ class DevelopmentFactAuthorityService:
         if fact is None:
             raise DevelopmentFactAuthorityError(
                 "DEVELOPMENT_FACT_NOT_FOUND", "fact not found inside tenant"
-            )
-        if HrDevelopmentFact.objects.filter(
-            tenant_id=self.tenant_id, supersedes_fact_id=fact.id
-        ).exists():
-            raise DevelopmentFactAuthorityError(
-                "DEVELOPMENT_FACT_ALREADY_SUPERSEDED", "only the chain head can change"
             )
         if fact.record_kind == HrDevelopmentFact.RecordKind.REVOCATION:
             raise DevelopmentFactAuthorityError(
@@ -97,6 +91,14 @@ class DevelopmentFactAuthorityService:
                 "DEVELOPMENT_FACT_INTEGRITY_FAILED", "stored fact hash is invalid"
             )
         return fact
+
+    def _assert_head(self, fact: HrDevelopmentFact) -> None:
+        if HrDevelopmentFact.objects.filter(
+            tenant_id=self.tenant_id, supersedes_fact_id=fact.id
+        ).exists():
+            raise DevelopmentFactAuthorityError(
+                "DEVELOPMENT_FACT_ALREADY_SUPERSEDED", "only the chain head can change"
+            )
 
     def _normalize_changes(self, changes: dict) -> dict:
         if not isinstance(changes, dict) or not changes:
@@ -152,13 +154,29 @@ class DevelopmentFactAuthorityService:
             payload_json=development_fact_event_payload(fact),
         )
 
-    def _replay(self, idempotency_key: str, *, expected_kind: str, parent_id: int):
+    def _replay(
+        self,
+        idempotency_key: str,
+        *,
+        expected_kind: str,
+        parent_id: int,
+        reason_code: str,
+        evidence_ref: str,
+        changes: dict,
+    ):
         existing = HrDevelopmentFact.objects.filter(
             tenant_id=self.tenant_id, idempotency_key=idempotency_key
         ).first()
         if existing is None:
             return None
-        if existing.record_kind != expected_kind or existing.supersedes_fact_id != parent_id:
+        request_matches = (
+            existing.record_kind == expected_kind
+            and existing.supersedes_fact_id == parent_id
+            and existing.correction_reason == reason_code
+            and existing.correction_evidence_ref == evidence_ref
+            and all(getattr(existing, field) == value for field, value in changes.items())
+        )
+        if not request_matches:
             raise DevelopmentFactAuthorityError(
                 "DEVELOPMENT_FACT_IDEMPOTENCY_CONFLICT",
                 "idempotency key belongs to another authority action",
@@ -170,7 +188,12 @@ class DevelopmentFactAuthorityService:
         evidence_ref: str, idempotency_key: str, changes: dict,
     ) -> HrDevelopmentFact:
         replay = self._replay(
-            idempotency_key, expected_kind=record_kind, parent_id=current.id
+            idempotency_key,
+            expected_kind=record_kind,
+            parent_id=current.id,
+            reason_code=reason_code,
+            evidence_ref=evidence_ref,
+            changes=changes,
         )
         if replay is not None:
             return replay
@@ -218,8 +241,31 @@ class DevelopmentFactAuthorityService:
         idempotency_key = self._required_text(
             idempotency_key, "IDEMPOTENCY_KEY_REQUIRED", 128
         )
-        current = self._lock_head(fact_id)
         changes = self._normalize_changes(changes)
+        replay = self._replay(
+            idempotency_key,
+            expected_kind=HrDevelopmentFact.RecordKind.CORRECTION,
+            parent_id=fact_id,
+            reason_code=reason_code,
+            evidence_ref=evidence_ref,
+            changes=changes,
+        )
+        if replay is not None:
+            return replay
+        current = self._lock_fact(fact_id)
+        # A concurrent request can finish while this transaction waits for the
+        # parent row lock, so check the key again before enforcing chain-head.
+        replay = self._replay(
+            idempotency_key,
+            expected_kind=HrDevelopmentFact.RecordKind.CORRECTION,
+            parent_id=fact_id,
+            reason_code=reason_code,
+            evidence_ref=evidence_ref,
+            changes=changes,
+        )
+        if replay is not None:
+            return replay
+        self._assert_head(current)
         if all(getattr(current, field) == value for field, value in changes.items()):
             raise DevelopmentFactAuthorityError(
                 "DEVELOPMENT_FACT_CORRECTION_NO_CHANGE", "correction changes nothing"
@@ -247,7 +293,28 @@ class DevelopmentFactAuthorityService:
         idempotency_key = self._required_text(
             idempotency_key, "IDEMPOTENCY_KEY_REQUIRED", 128
         )
-        current = self._lock_head(fact_id)
+        replay = self._replay(
+            idempotency_key,
+            expected_kind=HrDevelopmentFact.RecordKind.REVOCATION,
+            parent_id=fact_id,
+            reason_code=reason_code,
+            evidence_ref=evidence_ref,
+            changes={},
+        )
+        if replay is not None:
+            return replay
+        current = self._lock_fact(fact_id)
+        replay = self._replay(
+            idempotency_key,
+            expected_kind=HrDevelopmentFact.RecordKind.REVOCATION,
+            parent_id=fact_id,
+            reason_code=reason_code,
+            evidence_ref=evidence_ref,
+            changes={},
+        )
+        if replay is not None:
+            return replay
+        self._assert_head(current)
         return self._successor(
             current=current,
             record_kind=HrDevelopmentFact.RecordKind.REVOCATION,
