@@ -227,6 +227,10 @@ def remove_mysql_write_seals(apps, schema_editor):
 
 class Migration(migrations.Migration):
 
+    # Trigger installation/removal must not execute inside an atomic block on
+    # MySQL; DROP IF EXISTS keeps interrupted forward/reverse runs retryable.
+    atomic = False
+
     dependencies = [
         ('hr_exit', '0010_exit_fact_integrity'),
     ]

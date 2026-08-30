@@ -112,6 +112,10 @@ def remove_mysql_write_seal(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL 8.4 trigger DDL commits implicitly and cannot run in an atomic
+    # migration block. Data/schema operations remain ordered by Django.
+    atomic = False
+
     dependencies = [
         ("auth", "0012_alter_user_first_name_max_length"),
         ("contenttypes", "0002_remove_content_type_name"),

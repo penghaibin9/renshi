@@ -112,6 +112,9 @@ def remove_mysql_write_seal(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL 8.4 trigger DDL is not rollback-capable.
+    atomic = False
+
     dependencies = [("hr_exit", "0009_retirement_policy_precheck")]
 
     operations = [

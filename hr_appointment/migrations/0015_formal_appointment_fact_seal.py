@@ -83,6 +83,9 @@ def seal_legacy_facts(apps, schema_editor):
 def create_mysql_seal_triggers(apps, schema_editor):
     if schema_editor.connection.vendor != "mysql":
         return
+    with schema_editor.connection.cursor() as cursor:
+        cursor.execute("DROP TRIGGER IF EXISTS hr14_fact_reject_sealed_update")
+        cursor.execute("DROP TRIGGER IF EXISTS hr14_fact_reject_sealed_delete")
     statements = (
         """
         CREATE TRIGGER hr14_fact_reject_sealed_update
@@ -121,6 +124,10 @@ def drop_mysql_seal_triggers(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL trigger DDL performs implicit commits; keep this migration outside
+    # Django's atomic wrapper so forward and reverse execution are legal.
+    atomic = False
+
     dependencies = [("hr_appointment", "0014_collective_decision_authority")]
 
     operations = [

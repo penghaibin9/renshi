@@ -165,6 +165,9 @@ def remove_mysql_evidence_seals(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # MySQL trigger DDL commits implicitly and is intentionally non-atomic.
+    atomic = False
+
     dependencies = [("hr_data", "0013_legacy_report_takeover")]
 
     operations = [

@@ -89,6 +89,9 @@ def remove_mysql_assignment_seal(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # Trigger creation/drop is non-transactional on the signing MySQL backend.
+    atomic = False
+
     dependencies = [("hr_title", "0008_title_result_integrity")]
 
     operations = [
