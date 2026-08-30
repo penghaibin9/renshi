@@ -11,7 +11,7 @@ from hr10_development.providers.base import (
     ProviderResult, ProviderStatus,
     FinanceBudgetProvider, AcademicProvider, ResearchProvider,
     AgreementProvider, DocumentProvider, NotificationProvider,
-    EducationWritebackProvider, AssessmentFactsConsumer,
+    AssessmentFactsConsumer,
     ExternalTeacherProvider,
 )
 
@@ -52,11 +52,6 @@ class StubDocumentProvider(DocumentProvider):
 class StubNotificationProvider(NotificationProvider):
     def notify(self, tenant_id: int, recipient_ids: list[int], template_code: str, context: dict) -> ProviderResult:
         return ProviderResult(status=ProviderStatus.NOT_APPLICABLE, data={"queued": len(recipient_ids)})
-
-
-class StubEducationWritebackProvider(EducationWritebackProvider):
-    def submit_education_record(self, tenant_id: int, staff_master_id: str, education_data: dict) -> ProviderResult:
-        return ProviderResult(status=ProviderStatus.UNAVAILABLE, data=None, error_message="HR03 Education writeback contract 待实现")
 
 
 class StubAssessmentFactsConsumer(AssessmentFactsConsumer):

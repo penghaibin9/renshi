@@ -57,6 +57,11 @@ class FurtherStudyWritebackContractTests(SimpleTestCase):
         self.assertNotIn("StubEducationWritebackProvider", source)
         self.assertNotIn('staff_master_id=str(getattr(milestone, "case_id"', source)
 
+    def test_obsolete_writeback_stub_is_not_exported(self):
+        import hr10_development.providers as providers
+
+        self.assertFalse(hasattr(providers, "StubEducationWritebackProvider"))
+
     def test_unverified_or_incomplete_evidence_cannot_formalize(self):
         milestone = type(
             "Milestone",
