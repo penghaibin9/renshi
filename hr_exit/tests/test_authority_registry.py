@@ -23,6 +23,8 @@ class Hr16AuthorityRegistryTests(SimpleTestCase):
                 "hr.exit.archive_transfer.manage",
                 "hr.exit.retirement_policy.manage",
                 "hr.exit.retirement_precheck.execute",
+                "hr.exit.fact.correct",
+                "hr.exit.fact.revoke",
             },
         )
         self.assertGreaterEqual(len(events), 8)
