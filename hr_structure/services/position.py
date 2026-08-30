@@ -17,6 +17,15 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_structure.authority_registry import (
+    EVENT_POSITION_CREATED,
+    EVENT_POSITION_STATUS_CHANGED,
+    EVENT_RESERVATION_COMMITTED,
+    EVENT_RESERVATION_HELD,
+    EVENT_RESERVATION_RELEASED,
+)
+
 from hr_structure.models import HrPosition, HrPositionPool, HrPositionReservation
 from hr_structure.scope import Hr02Scope
 
@@ -56,6 +65,16 @@ class PositionService:
             lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,
             **kwargs,
         )
+        emit_registered_event(
+            tenant_id=self.scope.tenant_id,
+            event_name=EVENT_POSITION_CREATED,
+            payload={
+                "positionId": str(position.id),
+                "positionCode": position.position_code,
+                "organizationId": str(position.organization_id_id),
+                "effectiveDate": position.validity_from.isoformat(),
+            },
+        )
         return position
 
     @transaction.atomic
@@ -76,6 +95,16 @@ class PositionService:
             pos.freeze_reason = reason
             pos.version += 1
             pos.save(update_fields=["lifecycle_status", "freeze_reason", "version"])
+            emit_registered_event(
+                tenant_id=self.scope.tenant_id,
+                event_name=EVENT_POSITION_STATUS_CHANGED,
+                payload={
+                    "positionId": str(pos.id),
+                    "status": pos.lifecycle_status,
+                    "reason": reason,
+                    "version": pos.version,
+                },
+            )
             return pos
 
     @transaction.atomic
@@ -94,6 +123,16 @@ class PositionService:
             pos.close_reason = reason
             pos.version += 1
             pos.save(update_fields=["lifecycle_status", "close_reason", "version"])
+            emit_registered_event(
+                tenant_id=self.scope.tenant_id,
+                event_name=EVENT_POSITION_STATUS_CHANGED,
+                payload={
+                    "positionId": str(pos.id),
+                    "status": pos.lifecycle_status,
+                    "reason": reason,
+                    "version": pos.version,
+                },
+            )
             return pos
 
     # ---- Reservation（预占，防并发超卖）----
@@ -193,6 +232,10 @@ class PositionService:
                     "HR02_POSITION_NOT_AVAILABLE", "岗位池可用额度不足"
                 )
 
+        effective_expires_at = expires_at or (
+            timezone.now()
+            + __import__("datetime", fromlist=["timedelta"]).timedelta(days=7)
+        )
         reservation = HrPositionReservation.objects.create(
             tenant_id=self.scope.tenant_id,
             reservation_no=f"RESV-{timezone.now().strftime('%Y%m%d%H%M%S')}",
@@ -204,12 +247,24 @@ class PositionService:
             reserved_count=count,
             reserved_fte=fte,
             status=HrPositionReservation.Status.HELD,
-            expires_at=expires_at
-            or (
-                timezone.now()
-                + __import__("datetime", fromlist=["timedelta"]).timedelta(days=7)
-            ),
+            expires_at=effective_expires_at,
             idempotency_key=idempotency_key,
+        )
+        emit_registered_event(
+            tenant_id=self.scope.tenant_id,
+            event_name=EVENT_RESERVATION_HELD,
+            payload={
+                "reservationId": str(reservation.id),
+                "positionId": str(position_id or ""),
+                "positionPoolId": str(position_pool_id or ""),
+                "reservedCount": count,
+                "reservedFte": str(fte),
+                "expiresAt": effective_expires_at.isoformat(),
+                "sourceDomain": source_domain,
+                "sourceBusinessType": source_business_type,
+                "sourceBusinessId": source_business_id,
+            },
+            correlation_id=idempotency_key,
         )
         return reservation
 
@@ -235,6 +290,16 @@ class PositionService:
             r.status = HrPositionReservation.Status.COMMITTED
             r.committed_at = timezone.now()
             r.save(update_fields=["status", "committed_at"])
+            emit_registered_event(
+                tenant_id=self.scope.tenant_id,
+                event_name=EVENT_RESERVATION_COMMITTED,
+                payload={
+                    "reservationId": str(r.id),
+                    "positionId": str(r.position_id_id or ""),
+                    "positionPoolId": str(r.position_pool_id_id or ""),
+                    "committedAt": r.committed_at.isoformat(),
+                },
+            )
             return r
 
     @transaction.atomic
@@ -256,6 +321,16 @@ class PositionService:
             r.status = HrPositionReservation.Status.RELEASED
             r.released_at = timezone.now()
             r.save(update_fields=["status", "released_at"])
+            emit_registered_event(
+                tenant_id=self.scope.tenant_id,
+                event_name=EVENT_RESERVATION_RELEASED,
+                payload={
+                    "reservationId": str(r.id),
+                    "positionId": str(r.position_id_id or ""),
+                    "positionPoolId": str(r.position_pool_id_id or ""),
+                    "releasedAt": r.released_at.isoformat(),
+                },
+            )
             return r
 
     @transaction.atomic

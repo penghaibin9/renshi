@@ -31,6 +31,7 @@ from hr_structure.models.migration_link import (
     HrLegacyObjectLink,
     HrExternalIdentifier,
 )
+from hr_structure.models.permission_meta import HrStructurePermissionMeta
 
 __all__ = [
     "HrOrganization",
@@ -53,4 +54,5 @@ __all__ = [
     "Hr02AuthorityCutover",
     "HrLegacyObjectLink",
     "HrExternalIdentifier",
+    "HrStructurePermissionMeta",
 ]

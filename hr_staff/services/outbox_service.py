@@ -12,10 +12,19 @@ from hr_staff.models import HrOutboxEvent
 
 
 def _emit(tenant_id: int, event_type: str, payload: dict, correlation_id: str = ""):
+    from horilla.hr_event_registry import global_event_registry
+    from hr_staff.authority_registry import canonicalize_hr03_event_type
+
+    canonical_event_type = canonicalize_hr03_event_type(event_type)
+    global_event_registry.get(canonical_event_type, 1)
+    canonical_payload = dict(payload)
+    canonical_payload.setdefault("eventVersion", 1)
+    if canonical_event_type != event_type:
+        canonical_payload.setdefault("legacyEventType", event_type)
     return HrOutboxEvent.objects.create(
         tenant_id=tenant_id,
-        event_type=event_type,
-        payload_json=payload,
+        event_type=canonical_event_type,
+        payload_json=canonical_payload,
         correlation_id=correlation_id or uuid.uuid4().hex[:12],
     )
 

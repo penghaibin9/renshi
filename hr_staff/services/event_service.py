@@ -265,9 +265,11 @@ class BusinessEventService:
     # Outbox（向外发布）
     # ------------------------------------------------------------------
     def emit(self, *, event_type: str, payload: dict, correlation_id: str = "") -> HrOutboxEvent:
-        return HrOutboxEvent.objects.create(
-            tenant_id=self.tenant_id,
-            event_type=event_type,
-            payload_json=payload,
-            correlation_id=correlation_id or "",
+        from hr_staff.services.outbox_service import _emit
+
+        return _emit(
+            self.tenant_id,
+            event_type,
+            payload,
+            correlation_id,
         )

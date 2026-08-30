@@ -13,6 +13,9 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_structure.authority_registry import EVENT_ORGANIZATION_CREATED
+
 from hr_structure.models import HrOrganization, HrOrganizationVersion, HrStructureChangeCase
 from hr_structure.scope import Hr02Scope
 
@@ -121,6 +124,16 @@ class OrganizationChangeService:
                 status=HrOrganizationRelation.Status.ACTIVE,
                 created_by=self.actor,
             )
+        emit_registered_event(
+            tenant_id=self.scope.tenant_id,
+            event_name=EVENT_ORGANIZATION_CREATED,
+            payload={
+                "organizationId": str(org.id),
+                "stableCode": org.stable_code,
+                "versionId": str(version.id),
+                "effectiveDate": validity_from.isoformat(),
+            },
+        )
         return org
 
     @transaction.atomic

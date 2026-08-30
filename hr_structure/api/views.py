@@ -22,6 +22,7 @@ from hr_control_center.context import (
     resolve_tenant_from_request,
 )
 from hr_structure.scope import Hr02Scope, resolve_scope
+from hr_structure.permissions import has_hr02_permission
 from hr_structure.selectors.organization import OrganizationSelector
 from hr_structure.display_labels import (
     append_labels,
@@ -158,7 +159,7 @@ def _make_scope(request) -> Hr02Scope:
         raise HrContextError("HR02_TENANT_CONTEXT_REQUIRED", "请选择当前学校")
     # scope_type 白名单由 resolve_scope 校验；scope_id 仅当用户是 superuser 或拥有组织权限时接受
     scope_type = request.GET.get("scope_type", "SCHOOL")
-    if scope_type != "SCHOOL" and not (request.user.is_superuser or request.user.has_perm("hr.organization.view")):
+    if scope_type != "SCHOOL" and not has_hr02_permission(request.user, "hr.structure.organization.view"):
         raise HrContextError("HR02_SCOPE_DENIED", "无该数据范围权限")
     return resolve_scope(
         tenant_id,
@@ -290,7 +291,7 @@ def organization_changes(request):
 
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.organization.change.submit")):
+    if not has_hr02_permission(request.user, "hr.structure.organization.change.submit"):
         return _error(request, "HR02_SCOPE_DENIED", "无发起组织变更权限", status=403)
 
     try:
@@ -350,7 +351,7 @@ def position_reservations(request):
 
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.position.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.position.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无岗位管理权限", status=403)
 
     try:
@@ -414,7 +415,7 @@ def position_reservation_action(request, reservation_id, action):
     """POST /api/hr/v1/structure/position-reservations/{id}/commit|release"""
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.position.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.position.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无岗位管理权限", status=403)
 
     try:
@@ -504,7 +505,7 @@ def org_relations(request):
 
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.org_relation.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.org_relation.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无关系管理权限", status=403)
 
     try:
@@ -554,7 +555,7 @@ def org_relation_close(request, relation_id):
     """POST /api/hr/v1/structure/org-relations/{id}/close"""
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.org_relation.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.org_relation.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无关系管理权限", status=403)
 
     try:
@@ -621,7 +622,7 @@ def staffing_plans(request):
 
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.staffing_plan.create")):
+    if not has_hr02_permission(request.user, "hr.structure.staffing_plan.create"):
         return _error(request, "HR02_SCOPE_DENIED", "无创建编制方案权限", status=403)
 
     try:
@@ -691,7 +692,7 @@ def staffing_plan_action(request, plan_id, action):
             issues = [{"level": i.level, "code": i.code, "message": i.message} for i in result.issues]
             return _json(request, _root(request, scope.tenant_id, date.today(), issues=issues, hasBlocker=result.has_blocker))
         if action == "submit":
-            if not (request.user.is_superuser or request.user.has_perm("hr.staffing_plan.submit")):
+            if not has_hr02_permission(request.user, "hr.structure.staffing_plan.submit"):
                 return _error(request, "HR02_SCOPE_DENIED", "无提交权限", status=403)
             locked_plan = svc.submit(plan)
             return _json(
@@ -702,7 +703,7 @@ def staffing_plan_action(request, plan_id, action):
                 ),
             )
         if action == "approve":
-            if not (request.user.is_superuser or request.user.has_perm("hr.staffing_plan.approve")):
+            if not has_hr02_permission(request.user, "hr.structure.staffing_plan.approve"):
                 return _error(request, "HR02_SCOPE_DENIED", "无批准权限", status=403)
             plan = svc.approve(plan)
             return _json(request, _root(request, scope.tenant_id, date.today(), plan={"id": plan.id, "status": plan.status}))
@@ -746,7 +747,7 @@ def post_catalogs(request):
 
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.post_catalog.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.post_catalog.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无岗位目录管理权限", status=403)
 
     try:
@@ -894,19 +895,19 @@ def change_case_action(request, case_id, action):
             impact = svc.impact_analysis(case)
             return _json(request, _root(request, scope.tenant_id, date.today(), **impact))
         if action == "submit":
-            if not (request.user.is_superuser or request.user.has_perm("hr.reorg.submit")):
+            if not has_hr02_permission(request.user, "hr.structure.reorg.submit"):
                 return _error(request, "HR02_SCOPE_DENIED", "无提交权限", status=403)
             case = svc.submit(case)
         elif action == "approve":
-            if not (request.user.is_superuser or request.user.has_perm("hr.reorg.approve")):
+            if not has_hr02_permission(request.user, "hr.structure.reorg.approve"):
                 return _error(request, "HR02_SCOPE_DENIED", "无批准权限", status=403)
             case = svc.approve(case)
         elif action == "schedule":
-            if not (request.user.is_superuser or request.user.has_perm("hr.reorg.execute")):
+            if not has_hr02_permission(request.user, "hr.structure.reorg.execute"):
                 return _error(request, "HR02_SCOPE_DENIED", "无调度权限", status=403)
             case = svc.schedule(case)
         elif action == "execute":
-            if not (request.user.is_superuser or request.user.has_perm("hr.reorg.execute")):
+            if not has_hr02_permission(request.user, "hr.structure.reorg.execute"):
                 return _error(request, "HR02_SCOPE_DENIED", "无执行权限", status=403)
             body = json.loads(request.body or "{}") if request.body else {}
             case = svc.execute_effective(case, execution_key=body.get("executionKey", f"manual-{case.case_no}"))
@@ -939,7 +940,7 @@ def effective_runner_trigger(request):
         scope = _make_scope(request)
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
-    if not (request.user.is_superuser or request.user.has_perm("hr.reorg.execute")):
+    if not has_hr02_permission(request.user, "hr.structure.reorg.execute"):
         return _error(request, "HR02_SCOPE_DENIED", "无执行权限", status=403)
 
     from hr_structure.services.effective_runner import run_effective_runner
@@ -964,7 +965,7 @@ def projection_run(request):
         scope = _make_scope(request)
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
-    if not (request.user.is_superuser or request.user.has_perm("hr.organization.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.organization.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无组织管理权限", status=403)
 
     from hr_structure.services.cutover import Hr02CutoverService
@@ -1140,7 +1141,7 @@ def organization_import(request):
 
     if request.method != "POST":
         return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
-    if not (request.user.is_superuser or request.user.has_perm("hr.organization.manage")):
+    if not has_hr02_permission(request.user, "hr.structure.organization.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无组织管理权限", status=403)
 
     try:

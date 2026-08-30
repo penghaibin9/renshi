@@ -13,6 +13,9 @@ from typing import List
 
 from django.db import transaction
 
+from horilla.hr_event_service import emit_registered_event
+from hr_structure.authority_registry import EVENT_STAFFING_PLAN_APPROVED
+
 from hr_structure.models import HrStaffingPlan
 from hr_structure.scope import Hr02Scope
 
@@ -100,6 +103,17 @@ class StaffingPlanService:
         plan.status = HrStaffingPlan.Status.UNDER_REVIEW
         plan.version_no += 1
         plan.save(update_fields=["status", "version_no"])
+        emit_registered_event(
+            tenant_id=self.scope.tenant_id,
+            event_name=EVENT_STAFFING_PLAN_APPROVED,
+            payload={
+                "staffingPlanId": str(plan.id),
+                "code": plan.code,
+                "planYear": plan.plan_year,
+                "version": plan.version_no,
+                "effectiveDate": plan.validity_from.isoformat(),
+            },
+        )
         return plan
 
     @transaction.atomic

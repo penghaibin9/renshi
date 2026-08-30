@@ -141,8 +141,10 @@ class BusinessEventTests(TestCase):
             payload={"staffId": str(self.staff.id), "effectiveDate": "2026-08-01"},
             correlation_id="req-1",
         )
-        self.assertEqual(event.event_type, "PrimaryAssignmentChanged")
+        self.assertEqual(event.event_type, "hr.staff.assignment.primary_changed")
         self.assertEqual(event.status, "PENDING")
+        self.assertEqual(event.payload_json["eventVersion"], 1)
+        self.assertEqual(event.payload_json["legacyEventType"], "PrimaryAssignmentChanged")
         self.assertNotIn("identity", event.payload_json)
 
     def test_consume_canonical_event_names(self):

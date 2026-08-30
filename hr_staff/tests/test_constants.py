@@ -60,7 +60,11 @@ class ConstantsContractTests(SimpleTestCase):
         )
 
     def test_event_types(self):
-        for event in ("StaffCreated", "PrimaryAssignmentChanged", "StaffAuthorityModeChanged"):
+        for event in (
+            "hr.staff.staff.created",
+            "hr.staff.assignment.primary_changed",
+            "hr.staff.authority_mode.changed",
+        ):
             self.assertIn(event, C.HR03_EVENT_TYPES)
 
     def test_correction_status_machine_has_apply_failed_tracking(self):

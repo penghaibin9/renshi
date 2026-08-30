@@ -320,6 +320,10 @@ HR_STAFF_PERMISSIONS = (
     "hr.staff.correction.approve_high_risk",
     "hr.staff.audit.view",
     "hr.staff.data_quality.manage",
+    "hr.staff.personnel_decision.view",
+    "hr.staff.personnel_decision.manage",
+    "hr.staff.reward_disciplinary.view",
+    "hr.staff.reward_disciplinary.manage",
 )
 
 
@@ -328,16 +332,18 @@ HR_STAFF_PERMISSIONS = (
 # ---------------------------------------------------------------------------
 HR03_EVENT_TYPES = frozenset(
     {
-        "StaffCreated",
-        "StaffActivated",
-        "StaffStatusChanged",
-        "EmploymentRelationshipStarted",
-        "EmploymentRelationshipEnded",
-        "PrimaryAssignmentChanged",
-        "ConcurrentAssignmentChanged",
-        "StaffBasicInfoCorrected",
-        "StaffCredentialChanged",
-        "StaffMaterialVerified",
-        "StaffAuthorityModeChanged",
+        "hr.staff.staff.created",
+        "hr.staff.staff.activated",
+        "hr.staff.staff.status_changed",
+        "hr.staff.employment_relationship.started",
+        "hr.staff.employment_relationship.ended",
+        "hr.staff.assignment.primary_changed",
+        "hr.staff.assignment.concurrent_changed",
+        "hr.staff.staff.basic_info_corrected",
+        "hr.staff.credential.changed",
+        "hr.staff.material.verified",
+        "hr.staff.authority_mode.changed",
+        "hr.staff.personnel_decision.effective",
+        "hr.staff.reward_disciplinary.effective",
     }
 )

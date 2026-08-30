@@ -20,3 +20,6 @@ FORBIDDEN_DIRECT_WRITES = (
     "教职工主档权威事实",
     "招聘入职合同异动等其他域权威事实",
 )
+
+BUSINESS_EVENT_PRODUCER = False
+BUSINESS_EVENT_POLICY = "READ_MODEL_ONLY"

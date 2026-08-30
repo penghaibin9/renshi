@@ -15,6 +15,12 @@ from datetime import date
 from django.db import transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
+from hr_structure.authority_registry import (
+    EVENT_ORGANIZATION_CHANGED,
+    EVENT_REORGANIZATION_EFFECTIVE,
+)
+
 from hr_structure.models import HrStructureChangeCase, HrStructureChangeItem
 from hr_structure.scope import Hr02Scope
 
@@ -153,6 +159,32 @@ class ReorganizationService:
         case.executed_at = timezone.now()
         case.execution_result_json = {"executionKey": execution_key, "effectiveAt": case.requested_effective_date.isoformat()}
         case.save(update_fields=["status", "executed_at", "execution_result_json"])
+        for item in case.items.order_by("sequence"):
+            if item.entity_type == "org":
+                emit_registered_event(
+                    tenant_id=self.scope.tenant_id,
+                    event_name=EVENT_ORGANIZATION_CHANGED,
+                    payload={
+                        "organizationId": str(item.entity_id),
+                        "changeCaseId": str(case.id),
+                        "changeType": case.change_type,
+                        "actionType": item.action_type,
+                        "effectiveDate": case.requested_effective_date.isoformat(),
+                    },
+                    correlation_id=execution_key,
+                )
+        emit_registered_event(
+            tenant_id=self.scope.tenant_id,
+            event_name=EVENT_REORGANIZATION_EFFECTIVE,
+            payload={
+                "changeCaseId": str(case.id),
+                "caseNo": case.case_no,
+                "changeType": case.change_type,
+                "effectiveDate": case.requested_effective_date.isoformat(),
+                "executionKey": execution_key,
+            },
+            correlation_id=execution_key,
+        )
         return case
 
     @transaction.atomic
