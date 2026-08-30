@@ -4,7 +4,7 @@
 
 ## Checklist
 
-- [ ] **This PR targets `dev/v2.0`, not `2.0`.** GitHub defaults new PRs to `2.0` (the repo default) — change the base branch to `dev/v2.0` before submitting.
+- [ ] **This PR targets `main`.** The 18-module integration line has one canonical merge target.
 - [ ] I've followed the coding conventions in [CONTRIBUTING.md](../CONTRIBUTING.md) (Black + isort, Horilla decorators/`HorillaModel` patterns, etc.)
 - [ ] CI (Docker CI + Quality) passes
 - [ ] I've linked any related issues

@@ -2,7 +2,7 @@ name: Docker / MySQL Smoke
 
 on:
   push:
-    branches: [main, agent/renshi-takeover-cleanup-20260810]
+    branches: [main]
   pull_request:
     branches: [main]
 

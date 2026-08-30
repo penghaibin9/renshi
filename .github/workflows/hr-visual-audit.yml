@@ -1,10 +1,6 @@
 name: HR Visual Audit / Chromium
 
 on:
-  push:
-    branches:
-      - agent/renshi-takeover-cleanup-20260810
-      - agent/renshi-ui-v2-20260827
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -48,11 +44,6 @@ env:
 
 jobs:
   hr-visual-audit:
-    if: >-
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' &&
-       (github.ref == 'refs/heads/agent/renshi-takeover-cleanup-20260810' ||
-        github.ref == 'refs/heads/agent/renshi-ui-v2-20260827'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:

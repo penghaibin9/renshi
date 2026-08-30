@@ -2,7 +2,7 @@ name: W-B HR08 External Agreement Gate
 
 on:
   pull_request:
-    branches: [agent/w-a-hire-to-change-closure-20260822]
+    branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/hr-w-b-external-contract.yml"
