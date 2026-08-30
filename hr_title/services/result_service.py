@@ -17,6 +17,14 @@ from datetime import date
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
+
+from horilla.hr_event_service import emit_registered_event
+from hr_title.authority_registry import (
+    EVENT_RESULT_PUBLISHED,
+    EVENT_RESULT_REVISED,
+    EVENT_RESULT_REVOKED,
+)
 
 from hr_title.models import (
     ProfessionalTitleResult,
@@ -44,11 +52,17 @@ class TitleResultInput:
 
 
 class ProfessionalTitleResultService:
-    def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
+    def __init__(
+        self,
+        tenant_id: int,
+        actor_user_id: Optional[int] = None,
+        correlation_id: str = "",
+    ):
         if not tenant_id:
             raise TitleResultError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
         self.tenant_id = int(tenant_id)
         self.actor_user_id = actor_user_id
+        self.correlation_id = str(correlation_id or "")
 
     @staticmethod
     def _normalize_payload(payload: TitleResultInput) -> TitleResultInput:
@@ -163,7 +177,7 @@ class ProfessionalTitleResultService:
         status: str,
         supersedes_result_id=None,
     ) -> ProfessionalTitleResult:
-        return ProfessionalTitleResult.objects.create(
+        result = ProfessionalTitleResult(
             tenant_id=self.tenant_id,
             result_no=payload.result_no,
             person_id=case.person_id,
@@ -178,6 +192,32 @@ class ProfessionalTitleResultService:
             supersedes_result_id=supersedes_result_id,
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
+            sealed_at=timezone.now(),
+        )
+        result.content_hash = result.calculate_content_hash()
+        result.save(force_insert=True)
+        return result
+
+    def _emit_result_event(self, event_name: str, result: ProfessionalTitleResult) -> None:
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name=event_name,
+            payload={
+                "resultId": str(result.id),
+                "resultNo": result.result_no,
+                "personId": str(result.person_id),
+                "applicationCaseId": str(result.application_case_id),
+                "titleCode": result.title_code,
+                "status": result.status,
+                "supersedesResultId": (
+                    str(result.supersedes_result_id)
+                    if result.supersedes_result_id
+                    else None
+                ),
+                "contentHash": result.content_hash,
+                "sealedAt": result.sealed_at.isoformat(),
+            },
+            correlation_id=self.correlation_id,
         )
 
     def _require_closed_publicity(self, case: TitleApplicationCase) -> TitlePublicityRecord:
@@ -267,6 +307,7 @@ class ProfessionalTitleResultService:
         case.status = TitleApplicationCase.Status.EFFECTIVE
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
+        self._emit_result_event(EVENT_RESULT_PUBLISHED, result)
         return result
 
     def _lock_result(self, result_id) -> ProfessionalTitleResult:
@@ -336,12 +377,14 @@ class ProfessionalTitleResultService:
                 "TITLE_RESULT_REVISION_DATE_INVALID",
                 "revision cannot start before the superseded result",
             )
-        return self._create_fact(
+        result = self._create_fact(
             case=case,
             payload=payload,
             status=ProfessionalTitleResult.Status.REVISED,
             supersedes_result_id=current.id,
         )
+        self._emit_result_event(EVENT_RESULT_REVISED, result)
+        return result
 
     @transaction.atomic
     def revoke(
@@ -390,4 +433,5 @@ class ProfessionalTitleResultService:
         case.status = TitleApplicationCase.Status.REVOKED
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])
+        self._emit_result_event(EVENT_RESULT_REVOKED, revoked)
         return revoked

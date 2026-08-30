@@ -13,6 +13,7 @@ from .services.result_service import (
 )
 
 RESULT_PERMISSION = "hr.title.result"
+RESULT_CORRECT_PERMISSION = "hr.title.result.correct"
 
 
 def _date(value, field_name: str, *, required=True):
@@ -63,11 +64,13 @@ def _serialize(result):
         "supersedesResultId": (
             str(result.supersedes_result_id) if result.supersedes_result_id else None
         ),
+        "contentHash": result.content_hash,
+        "sealedAt": result.sealed_at.isoformat(),
     }
 
 
-def _service(request):
-    tenant_id = resolve_request_tenant(request, required_permission=RESULT_PERMISSION)
+def _service(request, *, permission=RESULT_PERMISSION):
+    tenant_id = resolve_request_tenant(request, required_permission=permission)
     return ProfessionalTitleResultService(
         tenant_id,
         actor_user_id=getattr(request.user, "id", None),
@@ -125,7 +128,7 @@ def revise_result(request, result_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, permission=RESULT_CORRECT_PERMISSION)
     except HrTitleAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:
@@ -152,7 +155,7 @@ def revoke_result(request, result_id):
     if request.method != "POST":
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
-        service = _service(request)
+        service = _service(request, permission=RESULT_CORRECT_PERMISSION)
     except HrTitleAccessError as exc:
         return _error(exc.code, exc.message, status=403)
     try:

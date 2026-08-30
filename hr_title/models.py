@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from django.db import models
 from django.db.models import Q
 
@@ -519,6 +522,46 @@ class TitleAppealRecord(HrTenantScopedModel):
         ]
 
 
+class ProfessionalTitleResultQuerySet(models.QuerySet):
+    """Block ORM bulk paths that would bypass the fact model's save guard."""
+
+    def update(self, **kwargs):
+        if self.exists():
+            raise ValueError(
+                "TITLE_RESULT_IMMUTABLE: formal title results cannot be updated in place"
+            )
+        return 0
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(
+                "TITLE_RESULT_IMMUTABLE: formal title results cannot be bulk-updated"
+            )
+        return 0
+
+    def bulk_create(
+        self,
+        objs,
+        batch_size=None,
+        ignore_conflicts=False,
+        update_conflicts=False,
+        update_fields=None,
+        unique_fields=None,
+    ):
+        if objs:
+            raise ValueError(
+                "TITLE_RESULT_SEAL_REQUIRED: use ProfessionalTitleResultService to seal facts"
+            )
+        return []
+
+    def delete(self):
+        if self.exists():
+            raise ValueError(
+                "TITLE_RESULT_IMMUTABLE: formal title results cannot be deleted"
+            )
+        return (0, {})
+
+
 class ProfessionalTitleResult(HrTenantScopedModel):
     class Status(models.TextChoices):
         EFFECTIVE = "EFFECTIVE", "Effective"
@@ -541,6 +584,29 @@ class ProfessionalTitleResult(HrTenantScopedModel):
         db_index=True,
     )
     supersedes_result_id = models.UUIDField(null=True, blank=True)
+    content_hash = models.CharField(max_length=64, blank=True, default="")
+    sealed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ProfessionalTitleResultQuerySet.as_manager()
+
+    _FACT_FIELDS = (
+        "tenant_id",
+        "result_no",
+        "person_id",
+        "application_case_id",
+        "title_code",
+        "title_name",
+        "title_series_code",
+        "title_level_code",
+        "effective_from",
+        "effective_to",
+        "status",
+        "supersedes_result_id",
+        "content_hash",
+        "sealed_at",
+        "created_by",
+        "updated_by",
+    )
 
     class Meta:
         db_table = "hr13_professional_title_result"
@@ -561,3 +627,65 @@ class ProfessionalTitleResult(HrTenantScopedModel):
                 name="idx_hr13_result_tenant_person",
             ),
         ]
+
+    def integrity_payload(self) -> dict:
+        return {
+            "tenantId": int(self.tenant_id),
+            "resultNo": self.result_no,
+            "personId": str(self.person_id),
+            "applicationCaseId": str(self.application_case_id),
+            "titleCode": self.title_code,
+            "titleName": self.title_name,
+            "titleSeriesCode": self.title_series_code,
+            "titleLevelCode": self.title_level_code,
+            "effectiveFrom": self.effective_from.isoformat(),
+            "effectiveTo": self.effective_to.isoformat() if self.effective_to else None,
+            "status": self.status,
+            "supersedesResultId": (
+                str(self.supersedes_result_id) if self.supersedes_result_id else None
+            ),
+            "sealedAt": self.sealed_at.isoformat() if self.sealed_at else None,
+            "createdBy": self.created_by,
+            "updatedBy": self.updated_by,
+        }
+
+    def calculate_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.integrity_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._FACT_FIELDS
+            ).first()
+            if persisted:
+                changed = [
+                    field
+                    for field in self._FACT_FIELDS
+                    if getattr(self, field) != persisted[field]
+                ]
+                if changed:
+                    raise ValueError(
+                        "TITLE_RESULT_IMMUTABLE: sealed formal title results must be "
+                        "superseded, not edited in place; changed="
+                        + ",".join(sorted(changed))
+                    )
+        if self._state.adding:
+            if self.sealed_at is None:
+                raise ValueError("TITLE_RESULT_SEAL_REQUIRED: sealed_at is required")
+            expected_hash = self.calculate_content_hash()
+            if self.content_hash != expected_hash:
+                raise ValueError(
+                    "TITLE_RESULT_HASH_INVALID: content_hash does not match the formal result"
+                )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("TITLE_RESULT_IMMUTABLE: formal title results cannot be deleted")
+        return super().delete(*args, **kwargs)

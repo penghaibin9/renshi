@@ -13,11 +13,15 @@ def _restore_result_permission(*, using, **_kwargs):
         TitleApplicationCase,
         for_concrete_model=False,
     )
-    Permission.objects.using(using).get_or_create(
-        content_type=content_type,
-        codename="hr.title.result",
-        defaults={"name": "发布、修订与撤销 HR13 正式职称结果"},
-    )
+    for codename, name in (
+        ("hr.title.result", "发布 HR13 正式职称结果"),
+        ("hr.title.result.correct", "修订与撤销 HR13 已封板正式职称结果"),
+    ):
+        Permission.objects.using(using).get_or_create(
+            content_type=content_type,
+            codename=codename,
+            defaults={"name": name},
+        )
 
 
 class HrTitleConfig(AppConfig):

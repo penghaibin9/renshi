@@ -9,6 +9,7 @@ from hr_title.authority_registry import (
     PERM_PANEL,
     PERM_PUBLICITY,
     PERM_RESULT,
+    PERM_RESULT_CORRECT,
     PERM_REVIEW,
     PERM_VIEW,
 )
@@ -16,7 +17,14 @@ from hr_title.authority_registry import (
 
 class Hr13AuthorityRegistryTests(SimpleTestCase):
     def test_canonical_permissions_belong_to_hr13_title_domain(self):
-        for key in (PERM_VIEW, PERM_REVIEW, PERM_PANEL, PERM_PUBLICITY, PERM_RESULT):
+        for key in (
+            PERM_VIEW,
+            PERM_REVIEW,
+            PERM_PANEL,
+            PERM_PUBLICITY,
+            PERM_RESULT,
+            PERM_RESULT_CORRECT,
+        ):
             definition = permission_registry.get(key)
             self.assertEqual(definition.module_code, "HR13")
             self.assertTrue(definition.key.startswith("hr.title."))

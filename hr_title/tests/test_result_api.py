@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase
+from django.utils import timezone
 
 from hr_title import result_api
 from hr_title.services.result_service import TitleResultError
@@ -37,6 +38,8 @@ class FormalTitleResultApiTests(SimpleTestCase):
             effective_to=None,
             status=status,
             supersedes_result_id=supersedes,
+            content_hash="a" * 64,
+            sealed_at=timezone.now(),
         )
 
     @patch("hr_title.result_api.ProfessionalTitleResultService")
@@ -77,7 +80,7 @@ class FormalTitleResultApiTests(SimpleTestCase):
     @patch("hr_title.result_api.ProfessionalTitleResultService")
     @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
     def test_revision_keeps_successor_payload_explicit(
-        self, _tenant, service_cls
+        self, tenant_resolver, service_cls
     ):
         successor_id = uuid.uuid4()
         service_cls.return_value.revise.return_value = self._result(
@@ -102,6 +105,9 @@ class FormalTitleResultApiTests(SimpleTestCase):
         response = result_api.revise_result(request, self.result_id)
 
         self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=result_api.RESULT_CORRECT_PERMISSION
+        )
         service_cls.return_value.revise.assert_called_once()
         kwargs = service_cls.return_value.revise.call_args.kwargs
         self.assertEqual(kwargs["result_id"], self.result_id)
@@ -112,7 +118,7 @@ class FormalTitleResultApiTests(SimpleTestCase):
     @patch("hr_title.result_api.ProfessionalTitleResultService")
     @patch("hr_title.result_api.resolve_request_tenant", return_value=77)
     def test_revoke_requires_explicit_successor_number_and_date(
-        self, _tenant, service_cls
+        self, tenant_resolver, service_cls
     ):
         revoked_id = uuid.uuid4()
         service_cls.return_value.revoke.return_value = self._result(
@@ -132,6 +138,9 @@ class FormalTitleResultApiTests(SimpleTestCase):
         response = result_api.revoke_result(request, self.result_id)
 
         self.assertEqual(response.status_code, 200)
+        tenant_resolver.assert_called_once_with(
+            request, required_permission=result_api.RESULT_CORRECT_PERMISSION
+        )
         service_cls.return_value.revoke.assert_called_once_with(
             result_id=self.result_id,
             result_no="RESULT-REVOKE-1",
