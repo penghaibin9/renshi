@@ -15,6 +15,7 @@ from hr_qualification.constants import ApplicationStatus
 from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherFinalDecision,
+    HrDoubleTeacherFinalDecisionAmendment,
     HrDoubleTeacherPanelDecision,
     HrDoubleTeacherRecheckCase,
     HrDoubleTeacherRecognition,
@@ -23,6 +24,14 @@ from hr_qualification.models import (
     HrQualificationRiskCase,
 )
 from hr_qualification.services.recheck_service import RecheckService
+from hr_qualification.services.final_decision_authority_service import (
+    FINAL_DECISION_CORRECT_PERMISSION,
+    FINAL_DECISION_REVOKE_PERMISSION,
+    FinalDecisionAuthorityError,
+    FinalDecisionAuthorityService,
+    amendment_evidence,
+    final_decision_evidence,
+)
 from hr_qualification.services.review_service import ReviewError, ReviewService
 from hr_qualification.services.risk_service import RiskService
 
@@ -193,9 +202,10 @@ def final_decision_create(request: HttpRequest) -> JsonResponse:
             effective_from=body.get("effective_from"),
             decision_authority=body.get("decision_authority", ""),
             meeting_ref=body.get("meeting_ref", ""),
+            actor_user_id=getattr(request.user, "id", None),
         )
         result = {
-            "final_decision": {"id": str(fd.id), "decision": fd.decision},
+            "final_decision": final_decision_evidence(fd),
         }
         if recognition:
             result["recognition"] = {
@@ -213,6 +223,121 @@ def final_decision_create(request: HttpRequest) -> JsonResponse:
         return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
     except Exception as e:
         return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+
+
+def _decision_authority_error(exc: FinalDecisionAuthorityError) -> JsonResponse:
+    status = 404 if exc.code == "FINAL_DECISION_NOT_FOUND" else 409
+    if exc.code.endswith("REQUIRED") or exc.code in {
+        "FINAL_DECISION_INVALID_DATE",
+        "FINAL_DECISION_INVALID",
+        "RECOGNIZED_LEVEL_INVALID",
+        "FINAL_DECISION_REPLACEMENT_INVALID",
+        "FINAL_DECISION_REPLACEMENT_FIELD_FORBIDDEN",
+        "FINAL_DECISION_EVIDENCE_INVALID",
+    }:
+        status = 400
+    return JsonResponse(error_envelope(exc.code, str(exc)), status=status)
+
+
+@require_http_methods(["GET", "HEAD"])
+@api_guard(RECOGNITION_VIEW)
+def final_decision_authority(request: HttpRequest, decision_id: str) -> JsonResponse:
+    decision = (
+        HrDoubleTeacherFinalDecision.objects.filter(
+            id=decision_id,
+            application_id__tenant_id=request.hr09_tenant_id,
+        )
+        .select_related("application_id")
+        .first()
+    )
+    if decision is None:
+        return JsonResponse(
+            error_envelope("FINAL_DECISION_NOT_FOUND", "Final decision not found"),
+            status=404,
+        )
+    amendments = list(
+        HrDoubleTeacherFinalDecisionAmendment.objects.filter(
+            tenant_id=request.hr09_tenant_id,
+            source_decision_id=decision,
+        ).order_by("created_at", "id")
+    )
+    return JsonResponse(
+        envelope(
+            {
+                "original": final_decision_evidence(decision),
+                "amendments": [amendment_evidence(row) for row in amendments],
+            }
+        )
+    )
+
+
+@require_http_methods(["POST"])
+@api_guard(FINAL_DECISION_CORRECT_PERMISSION)
+def final_decision_correct(request: HttpRequest, decision_id: str) -> JsonResponse:
+    try:
+        import json
+
+        body = json.loads(request.body) if request.body else {}
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        result = FinalDecisionAuthorityService(
+            request.hr09_tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).correct(
+            decision_id,
+            idempotency_key=request.headers.get("Idempotency-Key", ""),
+            reason=body.get("reason", ""),
+            authority_ref=body.get("authorityRef", ""),
+            replacement=body.get("replacement", {}),
+            evidence=body.get("evidence", {}),
+        )
+        return JsonResponse(
+            envelope(
+                {
+                    "amendment": amendment_evidence(result.amendment),
+                    "replayed": result.replayed,
+                }
+            ),
+            status=200 if result.replayed else 201,
+        )
+    except (ValueError, TypeError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except FinalDecisionAuthorityError as exc:
+        return _decision_authority_error(exc)
+
+
+@require_http_methods(["POST"])
+@api_guard(FINAL_DECISION_REVOKE_PERMISSION)
+def final_decision_revoke(request: HttpRequest, decision_id: str) -> JsonResponse:
+    try:
+        import json
+
+        body = json.loads(request.body) if request.body else {}
+        if not isinstance(body, dict):
+            raise ValueError("request body must be a JSON object")
+        result = FinalDecisionAuthorityService(
+            request.hr09_tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).revoke(
+            decision_id,
+            idempotency_key=request.headers.get("Idempotency-Key", ""),
+            reason=body.get("reason", ""),
+            authority_ref=body.get("authorityRef", ""),
+            evidence=body.get("evidence", {}),
+        )
+        return JsonResponse(
+            envelope(
+                {
+                    "amendment": amendment_evidence(result.amendment),
+                    "replayed": result.replayed,
+                }
+            ),
+            status=200 if result.replayed else 201,
+        )
+    except (ValueError, TypeError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except FinalDecisionAuthorityError as exc:
+        return _decision_authority_error(exc)
 
 
 @require_http_methods(["GET", "HEAD"])

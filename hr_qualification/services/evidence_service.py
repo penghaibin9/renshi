@@ -108,7 +108,7 @@ class EvidenceAggregationService:
                             message=str(exc)[:1000],
                         )
                     ],
-                    provider_version="",
+                    provider_version="hr09-provider-exception-envelope-v1",
                 )
             results[provider.provider_key] = result
         return results
@@ -322,7 +322,11 @@ class EvidenceAggregationService:
 
         package.status = EvidencePackageStatus.FROZEN
         package.frozen_at = timezone.now()
-        package.save(update_fields=["status", "frozen_at"])
+        package._allow_freeze = True
+        try:
+            package.save(update_fields=["status", "frozen_at"])
+        finally:
+            package._allow_freeze = False
 
         from hr_qualification.models import HrEvidenceUsage
 

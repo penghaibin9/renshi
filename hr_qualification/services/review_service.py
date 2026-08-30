@@ -334,6 +334,7 @@ class ReviewService:
         effective_from: str | None = None,
         decision_authority: str = "",
         meeting_ref: str = "",
+        actor_user_id: int | None = None,
     ) -> tuple[HrDoubleTeacherFinalDecision, HrDoubleTeacherRecognition | None]:
         """Create the immutable school decision from RESULT_PENDING evidence."""
         application = ReviewService._lock_application(application)
@@ -388,7 +389,7 @@ class ReviewService:
             ) from exc
 
         try:
-            final_decision = HrDoubleTeacherFinalDecision.objects.create(
+            final_decision = HrDoubleTeacherFinalDecision(
                 application_id=application,
                 decision=decision,
                 recognized_level=recognized_level,
@@ -398,6 +399,14 @@ class ReviewService:
                 decision_authority=decision_authority,
                 meeting_ref=meeting_ref,
                 published_at=timezone.now(),
+            )
+            from hr_qualification.services.final_decision_authority_service import (
+                FinalDecisionAuthorityService,
+            )
+
+            FinalDecisionAuthorityService.seal_initial(
+                final_decision,
+                actor_user_id=actor_user_id,
             )
         except IntegrityError as exc:
             raise ReviewError(

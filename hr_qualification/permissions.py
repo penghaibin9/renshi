@@ -20,6 +20,8 @@ _DESCRIPTIONS = {
     "review.score": "提交双师型评审评分",
     "review.panel_manage": "管理双师型评审组",
     "review.finalize": "作出双师型最终决定",
+    "review.final_decision.correct": "追加双师型最终决定更正事实",
+    "review.final_decision.revoke": "追加双师型最终决定撤销事实",
     "recognition.view": "查看双师型正式认定",
     "recognition.manage": "维护双师型认定有效期",
     "recognition.recheck": "发起和处理双师型复核",

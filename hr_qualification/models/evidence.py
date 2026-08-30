@@ -16,6 +16,65 @@ from django.utils.translation import gettext_lazy as _
 from hr_qualification.constants import EvidencePackageStatus
 
 
+class EvidencePackageQuerySet(models.QuerySet):
+    """Frozen evidence snapshots cannot be changed through bulk operations."""
+
+    _ERROR = "HR09_EVIDENCE_PACKAGE_FROZEN_APPEND_ONLY"
+
+    def _assert_mutable(self):
+        if self.filter(status=EvidencePackageStatus.FROZEN).exists():
+            raise ValueError(self._ERROR)
+
+    def update(self, **kwargs):
+        self._assert_mutable()
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._assert_mutable()
+        return super().delete()
+
+    def bulk_update(self, objs, fields, **kwargs):
+        if any(obj.status == EvidencePackageStatus.FROZEN for obj in objs):
+            raise ValueError(self._ERROR)
+        return super().bulk_update(objs, fields, **kwargs)
+
+
+class EvidenceItemQuerySet(models.QuerySet):
+    """Items inherit the append-only state of their frozen package."""
+
+    _ERROR = "HR09_EVIDENCE_ITEM_FROZEN_APPEND_ONLY"
+
+    def _assert_mutable(self):
+        if self.filter(package_id__status=EvidencePackageStatus.FROZEN).exists():
+            raise ValueError(self._ERROR)
+
+    def update(self, **kwargs):
+        self._assert_mutable()
+        return super().update(**kwargs)
+
+    def delete(self):
+        self._assert_mutable()
+        return super().delete()
+
+    def bulk_create(self, objs, **kwargs):
+        package_ids = {obj.package_id_id for obj in objs if obj.package_id_id}
+        if package_ids and HrDoubleTeacherEvidencePackage.objects.filter(
+            id__in=package_ids,
+            status=EvidencePackageStatus.FROZEN,
+        ).exists():
+            raise ValueError(self._ERROR)
+        return super().bulk_create(objs, **kwargs)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        package_ids = {obj.package_id_id for obj in objs if obj.package_id_id}
+        if package_ids and HrDoubleTeacherEvidencePackage.objects.filter(
+            id__in=package_ids,
+            status=EvidencePackageStatus.FROZEN,
+        ).exists():
+            raise ValueError(self._ERROR)
+        return super().bulk_update(objs, fields, **kwargs)
+
+
 class HrDoubleTeacherEvidencePackage(models.Model):
     """双师申报证据包（提交时冻结）。"""
 
@@ -41,6 +100,8 @@ class HrDoubleTeacherEvidencePackage(models.Model):
     frozen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = EvidencePackageQuerySet.as_manager()
+
     class Meta:
         verbose_name = _("HR Double Teacher Evidence Package")
         verbose_name_plural = _("HR Double Teacher Evidence Packages")
@@ -50,6 +111,29 @@ class HrDoubleTeacherEvidencePackage(models.Model):
 
     def __str__(self) -> str:
         return f"EvidencePkg for App#{self.application_id_id} [{self.status}]"
+
+    def save(self, *args, **kwargs):
+        previous_status = None
+        if not self._state.adding:
+            previous_status = (
+                type(self).objects.filter(pk=self.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+        if previous_status == EvidencePackageStatus.FROZEN:
+            raise ValueError("HR09_EVIDENCE_PACKAGE_FROZEN_APPEND_ONLY")
+        if (
+            self.status == EvidencePackageStatus.FROZEN
+            and previous_status != EvidencePackageStatus.FROZEN
+            and not getattr(self, "_allow_freeze", False)
+        ):
+            raise ValueError("HR09_EVIDENCE_PACKAGE_FREEZE_SERVICE_REQUIRED")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status == EvidencePackageStatus.FROZEN:
+            raise ValueError("HR09_EVIDENCE_PACKAGE_FROZEN_APPEND_ONLY")
+        return super().delete(*args, **kwargs)
 
 
 class HrDoubleTeacherEvidenceItem(models.Model):
@@ -80,6 +164,8 @@ class HrDoubleTeacherEvidenceItem(models.Model):
     snapshot_json = models.JSONField(null=True, blank=True)  # 证据快照
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = EvidenceItemQuerySet.as_manager()
+
     class Meta:
         verbose_name = _("HR Double Teacher Evidence Item")
         verbose_name_plural = _("HR Double Teacher Evidence Items")
@@ -89,3 +175,23 @@ class HrDoubleTeacherEvidenceItem(models.Model):
 
     def __str__(self) -> str:
         return f"{self.title} [{self.source_domain}]"
+
+    def _package_is_frozen(self) -> bool:
+        if hasattr(self, "package_id") and self.package_id_id:
+            cached = self._state.fields_cache.get("package_id")
+            if cached is not None:
+                return cached.status == EvidencePackageStatus.FROZEN
+        return HrDoubleTeacherEvidencePackage.objects.filter(
+            id=self.package_id_id,
+            status=EvidencePackageStatus.FROZEN,
+        ).exists()
+
+    def save(self, *args, **kwargs):
+        if self._package_is_frozen():
+            raise ValueError("HR09_EVIDENCE_ITEM_FROZEN_APPEND_ONLY")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self._package_is_frozen():
+            raise ValueError("HR09_EVIDENCE_ITEM_FROZEN_APPEND_ONLY")
+        return super().delete(*args, **kwargs)

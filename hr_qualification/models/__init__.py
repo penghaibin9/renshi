@@ -39,6 +39,7 @@ from hr_qualification.models.evidence import (
 # ---- S6: Review + Recognition + Recheck + Usage + Objection（9 models）----
 from hr_qualification.models.review import (
     HrDoubleTeacherFinalDecision,
+    HrDoubleTeacherFinalDecisionAmendment,
     HrDoubleTeacherPanelDecision,
     HrDoubleTeacherPanelMember,
     HrDoubleTeacherReviewPanel,
@@ -74,6 +75,7 @@ __all__ = [
     "HrDoubleTeacherRecognitionBatch",
     # S6
     "HrDoubleTeacherFinalDecision",
+    "HrDoubleTeacherFinalDecisionAmendment",
     "HrDoubleTeacherObjection",
     "HrDoubleTeacherPanelDecision",
     "HrDoubleTeacherPanelMember",

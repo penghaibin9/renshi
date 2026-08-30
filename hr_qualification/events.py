@@ -14,6 +14,8 @@ EVENT_RECOGNITION_RECHECK_DUE = "hr.qualification.recognition.recheck_due"
 EVENT_RECOGNITION_REVOKED = "hr.qualification.recognition.revoked"
 EVENT_RISK_OPENED = "hr.qualification.risk.opened"
 EVENT_RESULT_EFFECTIVE = "hr.qualification.result.effective"
+EVENT_FINAL_DECISION_CORRECTED = "hr.qualification.final_decision.corrected"
+EVENT_FINAL_DECISION_REVOKED = "hr.qualification.final_decision.revoked"
 
 EVENT_DEFINITIONS = (
     BusinessEventDefinition(EVENT_CREDENTIAL_SUBMITTED, "HR09", "credential", 1, "资格证据已提交核验"),
@@ -28,5 +30,7 @@ EVENT_DEFINITIONS = (
     BusinessEventDefinition(EVENT_RECOGNITION_REVOKED, "HR09", "recognition", 1, "双师型正式认定已撤销"),
     BusinessEventDefinition(EVENT_RISK_OPENED, "HR09", "risk", 1, "资格或双师型风险已开启"),
     BusinessEventDefinition(EVENT_RESULT_EFFECTIVE, "HR09", "result", 1, "资格认定结果已生效"),
+    BusinessEventDefinition(EVENT_FINAL_DECISION_CORRECTED, "HR09", "final_decision", 1, "双师型最终决定已追加更正"),
+    BusinessEventDefinition(EVENT_FINAL_DECISION_REVOKED, "HR09", "final_decision", 1, "双师型最终决定已追加撤销"),
 )
 register_business_events(EVENT_DEFINITIONS)

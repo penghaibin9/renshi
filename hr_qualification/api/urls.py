@@ -227,6 +227,21 @@ urlpatterns = [
         views_review.final_decision_create,
         name="api-qualification-final-decision-create",
     ),
+    path(
+        "api/v1/hr/qualifications/double-teacher/final-decisions/<str:decision_id>/authority",
+        views_review.final_decision_authority,
+        name="api-qualification-final-decision-authority",
+    ),
+    path(
+        "api/v1/hr/qualifications/double-teacher/final-decisions/<str:decision_id>/correct",
+        views_review.final_decision_correct,
+        name="api-qualification-final-decision-correct",
+    ),
+    path(
+        "api/v1/hr/qualifications/double-teacher/final-decisions/<str:decision_id>/revoke",
+        views_review.final_decision_revoke,
+        name="api-qualification-final-decision-revoke",
+    ),
 
     # ---- Recognition / Recheck / Risk（总册 §111）----
     path(

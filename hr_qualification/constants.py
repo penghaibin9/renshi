@@ -537,6 +537,8 @@ HR09_PERMISSIONS: tuple[str, ...] = (
     "hr.qualification.review.score",
     "hr.qualification.review.panel_manage",
     "hr.qualification.review.finalize",
+    "hr.qualification.review.final_decision.correct",
+    "hr.qualification.review.final_decision.revoke",
     "hr.qualification.recognition.view",
     "hr.qualification.recognition.manage",
     "hr.qualification.recognition.recheck",

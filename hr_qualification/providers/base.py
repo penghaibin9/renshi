@@ -16,6 +16,9 @@ from datetime import date, datetime
 from hr_qualification.constants import ProviderStatus
 
 
+DEFAULT_PROVIDER_VERSION = "hr09-evidence-provider-contract-v1"
+
+
 @dataclass
 class ProviderEvidenceItem:
     """单条证据项。"""
@@ -44,14 +47,14 @@ class ProviderEvidenceResult:
     items: list[ProviderEvidenceItem] = field(default_factory=list)
     errors: list[ProviderError] = field(default_factory=list)
     source_updated_at: datetime | None = None
-    provider_version: str = "0.1.0"
+    provider_version: str = DEFAULT_PROVIDER_VERSION
 
     @classmethod
     def unavailable(
         cls,
         reason_code: str,
         message: str = "",
-        provider_version: str = "0.1.0-placeholder",
+        provider_version: str = DEFAULT_PROVIDER_VERSION,
     ) -> "ProviderEvidenceResult":
         return cls(
             status=ProviderStatus.UNAVAILABLE,
@@ -65,7 +68,7 @@ class ProviderEvidenceResult:
         cls,
         items: list[ProviderEvidenceItem],
         source_updated_at: datetime | None = None,
-        provider_version: str = "0.1.0",
+        provider_version: str = DEFAULT_PROVIDER_VERSION,
     ) -> "ProviderEvidenceResult":
         return cls(
             status=ProviderStatus.OK,
@@ -77,7 +80,7 @@ class ProviderEvidenceResult:
     @classmethod
     def not_applicable(
         cls,
-        provider_version: str = "0.1.0",
+        provider_version: str = DEFAULT_PROVIDER_VERSION,
     ) -> "ProviderEvidenceResult":
         return cls(
             status=ProviderStatus.NOT_APPLICABLE,
