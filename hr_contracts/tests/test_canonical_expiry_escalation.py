@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from django.test import SimpleTestCase, TestCase
 
 from hr_contracts.models import (
@@ -136,7 +136,7 @@ class CanonicalContractExpiryServiceTests(TestCase):
         self.assertEqual(version.status, HrContractVersion.Status.EFFECTIVE)
         self.assertNotEqual(agreement.status, HrContractAgreement.Status.TERMINATED)
 
-    def test_missing_policy_and_incomplete_current_fact_fail_closed(self):
+    def test_missing_policy_fails_closed_and_signed_fact_rejects_tampering(self):
         agreement, version = self._agreement(end=date(2026, 9, 1))
         service = CanonicalContractExpiryService(self.tenant_id)
 
@@ -144,15 +144,49 @@ class CanonicalContractExpiryServiceTests(TestCase):
         self.assertEqual(missing_policy["blocked"], 1)
         self.assertEqual(missing_policy["blockers"][0]["code"], "EXPIRY_POLICY_REQUIRED")
 
+        # The database seal must reject direct SQL as well as ORM mutation.
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE hr07_contract_version SET content_hash = %s WHERE id = %s",
+                    ["f" * 64, version.id.hex],
+                )
+        version.refresh_from_db()
+        self.assertEqual(
+            version.content_hash,
+            AgreementService._content_hash(version.content_snapshot_json),
+        )
+        self.assertFalse(HrContractCase.objects.exists())
+        self.assertFalse(HrContractExpiryRiskFact.objects.exists())
+
+    def test_incomplete_current_fact_fails_closed(self):
+        agreement = HrContractAgreement.objects.create(
+            tenant_id=self.tenant_id,
+            agreement_no="AGR-77-INCOMPLETE",
+            subject_type=HrContractAgreement.SubjectType.STAFF_EMPLOYMENT,
+            staff_id=self.staff_id,
+            employment_relationship_id=self.relationship_id,
+            agreement_title="Incomplete agreement",
+            agreement_type="FIXED_TERM",
+            status=HrContractAgreement.Status.ACTIVE,
+            current_version_no=1,
+        )
+        HrContractVersion.objects.create(
+            tenant_id=self.tenant_id,
+            agreement=agreement,
+            version_no=1,
+            version_type=HrContractVersion.VersionType.INITIAL,
+            effective_from=date(2025, 10, 1),
+            effective_to=date(2026, 9, 1),
+            content_snapshot_json={"clauses": ["incomplete"]},
+            content_hash="f" * 64,
+            status=HrContractVersion.Status.DRAFT,
+        )
         self._policy()
-        # Simulate storage-level tampering. The production ORM correctly blocks
-        # this mutation, so the contract test bypasses the ORM intentionally.
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE hr07_contract_version SET content_hash = %s WHERE id = %s",
-                ["f" * 64, version.id.hex],
-            )
-        incomplete = service.scan(as_of=date(2026, 8, 30))
+
+        incomplete = CanonicalContractExpiryService(self.tenant_id).scan(
+            as_of=date(2026, 8, 30)
+        )
         self.assertEqual(incomplete["blocked"], 1)
         self.assertEqual(
             incomplete["blockers"][0]["code"], "CONTRACT_VERSION_EVIDENCE_INVALID"
