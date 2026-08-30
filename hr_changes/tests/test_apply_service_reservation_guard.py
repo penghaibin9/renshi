@@ -66,6 +66,7 @@ class ApplyServiceReservationGuardTests(SimpleTestCase):
         resolve_catalog,
         resolve_staff,
     ):
+        resolve_org.return_value = SimpleNamespace(id=3)
         assignment_service_cls.return_value.switch_primary.return_value = SimpleNamespace(id=100)
 
         service = object.__new__(ApplyService)

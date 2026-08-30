@@ -1,3 +1,6 @@
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parents[2]
 SECRET_KEY = "hr06-isolated-test-only"
 DEBUG = False
 USE_TZ = True

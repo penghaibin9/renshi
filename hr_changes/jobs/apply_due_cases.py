@@ -12,28 +12,59 @@ from __future__ import annotations
 
 from datetime import date
 
+from django.utils import timezone
+
 from hr_changes.constants import CaseStatus
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.services.apply_service import ApplyService
 
 
-def run_due_applications(*, tenant_id: int = None) -> dict:
-    """处理全部到期案件；返回 {total, applied, failed}。"""
+def run_due_applications(
+    *, tenant_id: int, as_of: date = None, actor_user_id=None, dry_run: bool = False
+) -> dict:
+    """Process one tenant only; callers may supply a frozen business date."""
+    if not tenant_id:
+        raise ValueError("TENANT_CONTEXT_REQUIRED")
+    as_of = as_of or timezone.localdate()
+    if type(as_of) is not date:
+        raise ValueError("CHANGE_EFFECTIVE_DATE_INVALID")
     due_qs = HrPersonnelChangeCase.objects.filter(
+        tenant_id=tenant_id,
         status=CaseStatus.APPROVED_WAITING_EFFECTIVE,
-        requested_effective_at__lte=date.today(),
+        requested_effective_at__lte=as_of,
     )
-    if tenant_id:
-        due_qs = due_qs.filter(tenant_id=tenant_id)
-    cases = list(due_qs.select_for_update().order_by("requested_effective_at"))
+    cases = list(due_qs.order_by("requested_effective_at", "id"))
 
     total = len(cases)
+    if dry_run:
+        return {
+            "tenantId": tenant_id,
+            "asOf": as_of.isoformat(),
+            "dryRun": True,
+            "total": total,
+            "applied": 0,
+            "failed": 0,
+        }
     applied = 0
     failed = 0
     for case in cases:
-        result = ApplyService(case.tenant_id).apply_case(case.id)
+        result = ApplyService(
+            tenant_id,
+            actor_user_id=actor_user_id,
+        ).apply_case(
+            case.id,
+            as_of=as_of,
+            request_id=f"hr06-due:{tenant_id}:{case.id}",
+        )
         if result.status == CaseStatus.EFFECTIVE:
             applied += 1
         else:
             failed += 1
-    return {"total": total, "applied": applied, "failed": failed}
+    return {
+        "tenantId": tenant_id,
+        "asOf": as_of.isoformat(),
+        "dryRun": False,
+        "total": total,
+        "applied": applied,
+        "failed": failed,
+    }

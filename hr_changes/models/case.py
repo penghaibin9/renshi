@@ -18,6 +18,13 @@ from django.utils.translation import gettext_lazy as _
 from hr_changes.constants import CaseStatus, ChangePriority
 
 
+class _PersonnelChangeCaseQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if kwargs.get("status") == CaseStatus.EFFECTIVE:
+            raise ValueError("HR06_EFFECTIVE_REQUIRES_TRUSTED_EXECUTION_RECEIPT")
+        return super().update(**kwargs)
+
+
 class HrPersonnelChangeCase(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
@@ -112,6 +119,8 @@ class HrPersonnelChangeCase(models.Model):
     approved_at = models.DateTimeField(null=True, blank=True)
     applied_at = models.DateTimeField(null=True, blank=True)
 
+    objects = models.Manager.from_queryset(_PersonnelChangeCaseQuerySet)()
+
     class Meta:
         verbose_name = _("HR Personnel Change Case")
         verbose_name_plural = _("HR Personnel Change Cases")
@@ -138,3 +147,25 @@ class HrPersonnelChangeCase(models.Model):
 
     def __str__(self):
         return f"{self.case_no} {self.action_id.code} [{self.status}]"
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding and self.status == CaseStatus.EFFECTIVE:
+            previous = type(self).objects.filter(pk=self.pk).values_list(
+                "status", flat=True
+            ).first()
+            if previous != CaseStatus.EFFECTIVE:
+                try:
+                    snapshot = self.effective_snapshot
+                except Exception:
+                    snapshot = None
+                if (
+                    previous != CaseStatus.APPLYING
+                    or snapshot is None
+                    or snapshot.case_version != self.version
+                    or snapshot.provider_code != "HR06_CANONICAL_HR02_HR03_V1"
+                    or len(snapshot.provider_receipt_hash or "") != 64
+                ):
+                    raise ValueError(
+                        "HR06_EFFECTIVE_REQUIRES_TRUSTED_EXECUTION_RECEIPT"
+                    )
+        return super().save(*args, **kwargs)

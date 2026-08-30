@@ -16,6 +16,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from django.utils import timezone
+
 from hr_changes.constants import ChangeActionCode
 from hr_structure.models import HrPositionReservation
 from hr_structure.scope import Hr02Scope
@@ -163,7 +165,7 @@ class PositionGate:
             EffectiveDatedQueryService,
         )
 
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         occupancy = EffectiveDatedQueryService(self.tenant_id).position_occupancy_as_of(
             position.id,
             as_of,

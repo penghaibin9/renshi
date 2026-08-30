@@ -29,6 +29,7 @@ from hr_changes.permissions import require_hr_change_permission
 from hr_changes.selectors.case_detail import CaseDetailSelector
 from hr_changes.selectors.case_list import CaseListSelector
 from hr_changes.services.change_service import ChangeService, ChangeServiceError
+from hr_changes.services.apply_service import ApplyService, ApplyServiceError
 from hr_changes.services.impact_service import ImpactService
 from hr_changes.services.state_machine import ChangeStateError
 from hr_changes.services.validation_service import ValidationService
@@ -36,6 +37,30 @@ from hr_changes.services.validation_service import ValidationService
 SCHEMA_LIST = "hr06.changes.list.1"
 SCHEMA_DETAIL = "hr06.changes.detail.1"
 SCHEMA_CREATE = "hr06.changes.create.1"
+
+_ACTION_PERMISSIONS = {
+    "submit": "hr.change.submit",
+    "start-approval": "hr.change.submit",
+    "withdraw": "hr.change.submit",
+    "resubmit": "hr.change.submit",
+    "cancel": "hr.change.cancel",
+    "return": "hr.change.approve",
+    "approve": "hr.change.approve",
+    "reject": "hr.change.approve",
+    "apply": "hr.change.apply",
+}
+_FORBIDDEN_EFFECT_FIELDS = frozenset(
+    {
+        "status",
+        "effectiveAt",
+        "providerCode",
+        "providerReceipt",
+        "providerReceiptHash",
+        "sourceFactIds",
+        "targetFactIds",
+        "forceEarly",
+    }
+)
 
 
 def _context(request):
@@ -166,7 +191,6 @@ def change_detail(request, case_id):
 
 
 @require_POST
-@require_hr_change_permission("hr.change.submit")
 def change_action(request, case_id, action: str):
     """统一动作入口：submit/withdraw/cancel/return/resubmit/approve/reject/start-approval。"""
     ctx, err = _context(request)
@@ -174,6 +198,13 @@ def change_action(request, case_id, action: str):
         return err
     if request.method != "POST":
         return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
+    permission = _ACTION_PERMISSIONS.get(action)
+    if permission is None:
+        return error_response(request, "CHANGE_INVALID_ACTION", f"未知动作 {action}", status=404)
+    if not request.user.is_authenticated or not (
+        request.user.is_superuser or request.user.has_perm(permission)
+    ):
+        return error_response(request, "PERMISSION_DENIED", "无权执行该异动动作", status=403)
     try:
         body = _json_body(request)
     except ChangeServiceError as exc:
@@ -196,9 +227,29 @@ def change_action(request, case_id, action: str):
             case = svc.approve(case_id, version=_version(request), comment=body.get("comment", ""))
         elif action == "reject":
             case = svc.reject(case_id, version=_version(request), comment=body.get("comment", ""))
-        else:
-            return error_response(request, "CHANGE_INVALID_ACTION", f"未知动作 {action}", status=404)
-    except (ChangeServiceError, ChangeStateError) as exc:
+        elif action == "apply":
+            forbidden = _FORBIDDEN_EFFECT_FIELDS.intersection(body)
+            unknown = set(body).difference({"requestId"})
+            if forbidden or unknown:
+                return error_response(
+                    request,
+                    "CHANGE_INVALID_PAYLOAD",
+                    "生效接口只接受 requestId；状态、日期和 Authority 回执由服务端生成",
+                    status=400,
+                )
+            case = ApplyService(
+                ctx.tenant_id,
+                actor_user_id=request.user.id,
+            ).apply_case(
+                case_id,
+                as_of=ctx.as_of,
+                expected_version=_version(request),
+                request_id=(
+                    request.headers.get("Idempotency-Key")
+                    or body.get("requestId", "")
+                ),
+            )
+    except (ChangeServiceError, ChangeStateError, ApplyServiceError) as exc:
         return _service_error(request, exc)
     data = CaseDetailSelector(ctx.tenant_id).get(case.id)
     payload = api_root(request)

@@ -44,12 +44,29 @@ class _AppendOnlyManager(models.Manager.from_queryset(_AppendOnlyQuerySet)):
         raise ValueError("HR06_EXECUTION_EVIDENCE_BULK_CREATE_FORBIDDEN: use the authority service")
 
 
+class _ApprovalSnapshotQuerySet(models.QuerySet):
+    def _frozen(self):
+        return self.exclude(change_case_id__status="UNDER_APPROVAL")
+
+    def update(self, **kwargs):
+        if self._frozen().exists():
+            raise ValueError("HR06_APPROVAL_SNAPSHOT_FROZEN")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self._frozen().exists():
+            raise ValueError("HR06_APPROVAL_SNAPSHOT_FROZEN")
+        return super().delete()
+
+
 class HrChangeApprovalSnapshot(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     change_case_id = models.ForeignKey("hr_changes.HrPersonnelChangeCase", on_delete=models.CASCADE, related_name="approval_snapshots")
     workflow_version = models.PositiveIntegerField(default=1)
     steps_json = models.JSONField(default=list, blank=True)
     generated_at = models.DateTimeField(auto_now_add=True)
+
+    objects = models.Manager.from_queryset(_ApprovalSnapshotQuerySet)()
 
     class Meta:
         verbose_name = _("HR Change Approval Snapshot")
@@ -58,6 +75,20 @@ class HrChangeApprovalSnapshot(models.Model):
 
     def __str__(self):
         return f"{self.change_case_id.case_no} approval v{self.workflow_version}"
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            status = type(self).objects.filter(pk=self.pk).values_list(
+                "change_case_id__status", flat=True
+            ).first()
+            if status != "UNDER_APPROVAL":
+                raise ValueError("HR06_APPROVAL_SNAPSHOT_FROZEN")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.change_case_id.status != "UNDER_APPROVAL":
+            raise ValueError("HR06_APPROVAL_SNAPSHOT_FROZEN")
+        return super().delete(*args, **kwargs)
 
 
 class HrChangeEffectiveSnapshot(models.Model):
@@ -77,6 +108,13 @@ class HrChangeEffectiveSnapshot(models.Model):
     checksum = models.CharField(max_length=64, blank=True, default="")
     authority_domain = models.CharField(max_length=16, default="HR03", editable=False)
     authority_contract_version = models.PositiveIntegerField(default=1, editable=False)
+    case_version = models.PositiveBigIntegerField(default=0, editable=False)
+    approval_snapshot_id = models.UUIDField(null=True, blank=True, editable=False)
+    approval_snapshot_hash = models.CharField(max_length=64, blank=True, default="", editable=False)
+    provider_code = models.CharField(max_length=40, blank=True, default="", editable=False)
+    provider_receipt_json = models.JSONField(default=dict, blank=True, editable=False)
+    provider_receipt_hash = models.CharField(max_length=64, blank=True, default="", editable=False)
+    execution_idempotency_key = models.CharField(max_length=128, blank=True, default="", editable=False)
     content_hash = models.CharField(max_length=64, editable=False, default="")
     sealed_at = models.DateTimeField(editable=False, default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -93,6 +131,13 @@ class HrChangeEffectiveSnapshot(models.Model):
             "positionChanges": self.position_changes_json or {}, "downstreamPlanVersion": int(self.downstream_plan_version),
             "legacyChecksum": self.checksum or "", "authorityDomain": self.authority_domain,
             "authorityContractVersion": int(self.authority_contract_version),
+            "caseVersion": int(self.case_version),
+            "approvalSnapshotId": str(self.approval_snapshot_id) if self.approval_snapshot_id else None,
+            "approvalSnapshotHash": self.approval_snapshot_hash or "",
+            "providerCode": self.provider_code or "",
+            "providerReceipt": self.provider_receipt_json or {},
+            "providerReceiptHash": self.provider_receipt_hash or "",
+            "executionIdempotencyKey": self.execution_idempotency_key or "",
         }
 
     def _prepare_seal(self) -> None:
@@ -107,6 +152,59 @@ class HrChangeEffectiveSnapshot(models.Model):
             raise ValueError("HR06_CANNOT_OWN_PERSONNEL_FACTS")
         if not self.applied_at or not self.effective_at:
             raise ValueError("HR06_EXECUTION_EFFECTIVE_TIME_REQUIRED")
+        if case.status != "APPLYING" and not self.execution_idempotency_key:
+            # Historical/test fixtures receive a deterministic non-authoritative
+            # key; new EFFECTIVE transitions require the trusted provider path.
+            self.execution_idempotency_key = f"legacy:{case.id}"
+        if case.status == "APPLYING":
+            receipt = self.provider_receipt_json or {}
+            try:
+                receipt_matches_parent = (
+                    receipt.get("providerCode") == self.provider_code
+                    and int(receipt.get("tenantId", 0)) == int(case.tenant_id)
+                    and str(receipt.get("caseId")) == str(case.id)
+                    and int(receipt.get("caseVersion", -1)) == int(self.case_version)
+                    and str(receipt.get("staffId")) == str(case.staff_master_id_id)
+                    and receipt.get("actionCode") == case.action_id.code
+                    and receipt.get("effectiveAt") == self.effective_at.isoformat()
+                    and str(receipt.get("approvalSnapshotId"))
+                    == str(self.approval_snapshot_id)
+                    and receipt.get("approvalSnapshotHash")
+                    == self.approval_snapshot_hash
+                    and receipt.get("idempotencyKey")
+                    == self.execution_idempotency_key
+                    and bool(receipt.get("sourceFactIds"))
+                    and bool(receipt.get("targetFactIds"))
+                )
+            except (TypeError, ValueError):
+                receipt_matches_parent = False
+            approval_parent_exists = HrChangeApprovalSnapshot.objects.filter(
+                id=self.approval_snapshot_id,
+                change_case_id=case,
+            ).exists()
+            from hr_changes.models.transition import HrChangeTransition
+
+            approval_is_frozen = HrChangeTransition.objects.filter(
+                tenant_id=case.tenant_id,
+                change_case_id=case,
+                action="approve",
+                to_status="APPROVED_WAITING_EFFECTIVE",
+                snapshot_hash=self.approval_snapshot_hash,
+            ).exists()
+            if (
+                self.provider_code != "HR06_CANONICAL_HR02_HR03_V1"
+                or not self.approval_snapshot_id
+                or len(self.approval_snapshot_hash or "") != 64
+                or not self.execution_idempotency_key
+                or not self.provider_receipt_json
+                or self.provider_receipt_hash
+                != _canonical_hash(self.provider_receipt_json)
+                or self.case_version != case.version + 1
+                or not receipt_matches_parent
+                or not approval_parent_exists
+                or not approval_is_frozen
+            ):
+                raise ValueError("HR06_TRUSTED_EXECUTION_RECEIPT_INVALID")
         if not self.sealed_at:
             self.sealed_at = self.applied_at or timezone.now()
         expected = _canonical_hash(self.canonical_payload())
@@ -126,6 +224,12 @@ class HrChangeEffectiveSnapshot(models.Model):
     class Meta:
         verbose_name = _("HR Change Effective Snapshot")
         verbose_name_plural = _("HR Change Effective Snapshots")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "execution_idempotency_key"),
+                name="uq_hr06_effect_idempotency",
+            ),
+        ]
         indexes = [models.Index(fields=("tenant_id", "effective_at"), name="idx_hr06_effective_tenant")]
 
     def __str__(self):

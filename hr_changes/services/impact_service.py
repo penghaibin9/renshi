@@ -12,6 +12,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+from django.utils import timezone
+
 from hr_changes.constants import ChangeActionCode, ImpactLevel
 from hr_changes.models import HrChangeImpactSnapshot, HrPersonnelChangeCase
 from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
@@ -285,7 +287,7 @@ class ImpactService:
 
     def compute(self, case: HrPersonnelChangeCase, as_of: Optional[date] = None) -> dict:
         """计算全部影响并保存快照。返回 {items, blockers, warnings}。"""
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         items: list[dict] = []
         for provider in IMPACT_PROVIDERS:
             items.extend(provider.compute(case, as_of))
@@ -311,5 +313,7 @@ class ImpactService:
 
         return {"items": items, "blockers": blockers, "warnings": warnings, "infos": infos}
 
-    def check_blockers(self, case: HrPersonnelChangeCase) -> list[dict]:
-        return self.compute(case)["blockers"]
+    def check_blockers(
+        self, case: HrPersonnelChangeCase, as_of: Optional[date] = None
+    ) -> list[dict]:
+        return self.compute(case, as_of=as_of)["blockers"]

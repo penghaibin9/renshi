@@ -15,6 +15,17 @@ from django.utils.translation import gettext_lazy as _
 from hr_changes.constants import CaseStatus
 
 
+class _TransitionQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR06_TRANSITION_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("HR06_TRANSITION_IMMUTABLE")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError("HR06_TRANSITION_IMMUTABLE")
+
+
 class HrChangeTransition(models.Model):
     class ActorType(models.TextChoices):
         USER = "USER", _("User")
@@ -40,6 +51,8 @@ class HrChangeTransition(models.Model):
     snapshot_hash = models.CharField(max_length=64, blank=True, default="")  # 关键节点冻结
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = models.Manager.from_queryset(_TransitionQuerySet)()
+
     class Meta:
         verbose_name = _("HR Change Transition")
         verbose_name_plural = _("HR Change Transitions")
@@ -50,3 +63,11 @@ class HrChangeTransition(models.Model):
 
     def __str__(self):
         return f"{self.change_case_id.case_no} {self.from_status}→{self.to_status} ({self.action})"
+
+    def save(self, *args, **kwargs):
+        if self.pk and not self._state.adding:
+            raise ValueError("HR06_TRANSITION_IMMUTABLE")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR06_TRANSITION_IMMUTABLE")

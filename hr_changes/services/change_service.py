@@ -83,6 +83,7 @@ class ChangeService:
         *,
         comment: str = "",
         request_id: str = "",
+        snapshot_hash: str = "",
     ) -> None:
         HrChangeTransition.objects.create(
             change_case_id=case,
@@ -93,6 +94,7 @@ class ChangeService:
             actor_id=self.actor_user_id,
             comment=comment,
             request_id=request_id,
+            snapshot_hash=snapshot_hash,
         )
 
     def _apply_transition(
@@ -104,6 +106,7 @@ class ChangeService:
         comment: str = "",
         request_id: str = "",
         version: Optional[int] = None,
+        snapshot_hash: str = "",
         **save_fields,
     ) -> HrPersonnelChangeCase:
         """原子应用状态转移：校验 → 更新 → 审计 transition → version++。"""
@@ -116,7 +119,13 @@ class ChangeService:
             setattr(case, k, v)
         case.save(update_fields=["status", "version", "updated_at", *save_fields.keys()])
         self._record_transition(
-            case, from_status, target, action, comment=comment, request_id=request_id
+            case,
+            from_status,
+            target,
+            action,
+            comment=comment,
+            request_id=request_id,
+            snapshot_hash=snapshot_hash,
         )
         return case
 
@@ -366,9 +375,14 @@ class ChangeService:
                 case, "approve_step", CaseStatus.UNDER_APPROVAL,
                 comment=comment or f"步骤{_current_step_no(approval, case)}已批准",
             )
+        approval_snapshot = approval.get_current_snapshot(case)
+        from hr_changes.services.effect_intent import effect_intent_hash
+
+        frozen_intent_hash = effect_intent_hash(case, approval_snapshot)
         return self._apply_transition(
             case, "approve", CaseStatus.APPROVED_WAITING_EFFECTIVE,
             comment=comment or "全部审批完成",
+            snapshot_hash=frozen_intent_hash,
             approved_at=timezone.now(),
             approved_effective_at=case.requested_effective_at,
         )

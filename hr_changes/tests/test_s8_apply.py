@@ -111,6 +111,20 @@ class ApplyTransferTests(TestCase):
         self.assertEqual(outbox.count(), 1)
         self.assertEqual(outbox.first().payload_json["caseNo"], case.case_no)
 
+        replay = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+        self.assertEqual(replay.status, CaseStatus.EFFECTIVE)
+        self.assertEqual(
+            HrChangeEffectiveSnapshot.objects.filter(change_case_id=case).count(),
+            1,
+        )
+        self.assertEqual(outbox.count(), 1)
+        with self.assertRaises(ApplyServiceError) as conflict:
+            ApplyService(TENANT, actor_user_id=1).apply_case(
+                case.id,
+                request_id="different-execution-key",
+            )
+        self.assertEqual(conflict.exception.code, "IDEMPOTENCY_KEY_CONFLICT")
+
         effects = HrChangeDownstreamEffect.objects.filter(change_case_id=case)
         domains = {e.target_domain for e in effects}
         self.assertIn("HR15", domains)
