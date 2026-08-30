@@ -231,8 +231,9 @@ class ApplyManagerChangeTests(TestCase):
         self.assertTrue(
             HrOutboxEvent.objects.filter(
                 tenant_id=TENANT,
-                event_type="PrimaryAssignmentChanged",
+                event_type="hr.staff.assignment.primary_changed",
                 payload_json__assignmentId=str(current.id),
+                payload_json__legacyEventType="PrimaryAssignmentChanged",
             ).exists()
         )
 
