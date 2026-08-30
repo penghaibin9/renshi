@@ -16,6 +16,8 @@ class Hr15WorkflowRegistryTests(SimpleTestCase):
             registry.PERM_PAYMENT,
             registry.PERM_PAYSLIP_SENSITIVE,
             registry.PERM_RECONCILE,
+            registry.PERM_STATUTORY_VIEW,
+            registry.PERM_STATUTORY_MANAGE,
         ):
             definition = permission_registry.get(key)
             self.assertEqual(definition.module_code, "HR15")
@@ -29,6 +31,10 @@ class Hr15WorkflowRegistryTests(SimpleTestCase):
             registry.EVENT_PAYMENT_ACCEPTED: "payment",
             registry.EVENT_PAYSLIP_PUBLISHED: "payslip",
             registry.EVENT_FINANCE_RECONCILED: "finance",
+            registry.EVENT_STATUTORY_RULE_PUBLISHED: "statutory_rule",
+            registry.EVENT_STATUTORY_CONTRIBUTION_CALCULATED: "statutory_contribution",
+            registry.EVENT_STATUTORY_CONTRIBUTION_REVIEWED: "statutory_contribution",
+            registry.EVENT_STATUTORY_CONTRIBUTION_SEALED: "statutory_contribution",
         }
         for name, aggregate in expected.items():
             definition = global_event_registry.get(name, 1)

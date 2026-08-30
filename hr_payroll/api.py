@@ -16,6 +16,8 @@ from .authority_registry import (
     PERM_RECONCILE,
     PERM_REVIEW,
     PERM_RULE_MANAGE,
+    PERM_STATUTORY_MANAGE,
+    PERM_STATUTORY_VIEW,
 )
 from .calculation_models import SalaryRuleVersion
 from .services.calculation_service import (
@@ -30,6 +32,11 @@ from .services.finalization_service import (
 from .services.payment_service import PayrollPaymentError, PayrollPaymentService
 from .services.adjustment_service import PayrollAdjustmentError, PayrollAdjustmentService
 from .services.legacy_reconciliation_service import LegacyPayrollReconciliationService
+from .services.statutory_contribution_service import (
+    StatutoryContributionError,
+    StatutoryContributionRuleService,
+)
+from .statutory_models import StatutoryContributionFact, StatutoryContributionRuleVersion
 
 READ_PERMISSION = "hr.payroll.view"
 ADJUST_PERMISSION = "hr.payroll.adjust"
@@ -92,6 +99,173 @@ def _workflow_error(exc) -> JsonResponse:
 
 def _actor_id(request):
     return getattr(request.user, "id", None)
+
+
+def _statutory_error(exc) -> JsonResponse:
+    if exc.code.endswith("_NOT_FOUND"):
+        status = 404
+    elif "CONFLICT" in exc.code or "OVERLAP" in exc.code or "INVALID_STATE" in exc.code:
+        status = 409
+    else:
+        status = 400
+    return _error(exc.code, str(exc), status=status)
+
+
+def _statutory_rule_data(rule):
+    return {
+        "id": str(rule.id),
+        "ruleCode": rule.rule_code,
+        "versionNo": rule.version_no,
+        "contributionGroup": rule.contribution_group,
+        "contributionCode": rule.contribution_code,
+        "name": rule.name,
+        "jurisdictionCode": rule.jurisdiction_code,
+        "baseVariableKey": rule.base_variable_key,
+        "baseFloor": str(rule.base_floor),
+        "baseCeiling": str(rule.base_ceiling),
+        "employeeRate": str(rule.employee_rate),
+        "employerRate": str(rule.employer_rate),
+        "employeeItemCode": rule.employee_item_code,
+        "employerItemCode": rule.employer_item_code,
+        "effectiveFrom": str(rule.effective_from),
+        "effectiveTo": str(rule.effective_to) if rule.effective_to else None,
+        "policyEvidence": rule.policy_evidence_json,
+        "contentHash": rule.content_hash,
+        "status": rule.status,
+    }
+
+
+def statutory_rules(request):
+    if request.method not in {"GET", "POST"}:
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    permission = PERM_STATUTORY_VIEW if request.method == "GET" else PERM_STATUTORY_MANAGE
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=permission)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    if request.method == "GET":
+        rows = StatutoryContributionRuleVersion.objects.filter(tenant_id=tenant_id).order_by(
+            "contribution_group", "contribution_code", "-version_no"
+        )
+        response = JsonResponse(
+            {
+                "data": [_statutory_rule_data(row) for row in rows],
+                "apiVersion": "1.0",
+                "schemaVersion": "hr15.statutory-rule.1",
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+    try:
+        payload = _json_body(request)
+        effective_from = parse_date(str(payload.get("effectiveFrom", "")))
+        effective_to_raw = payload.get("effectiveTo")
+        effective_to = parse_date(str(effective_to_raw)) if effective_to_raw else None
+        if effective_from is None or (effective_to_raw and effective_to is None):
+            raise StatutoryContributionError(
+                "STATUTORY_EFFECTIVE_DATE_INVALID", "effective dates must use YYYY-MM-DD"
+            )
+        rule = StatutoryContributionRuleService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).create_draft(
+            rule_code=payload.get("ruleCode"),
+            version_no=payload.get("versionNo"),
+            contribution_group=payload.get("contributionGroup"),
+            contribution_code=payload.get("contributionCode"),
+            name=payload.get("name"),
+            jurisdiction_code=payload.get("jurisdictionCode"),
+            base_variable_key=payload.get("baseVariableKey"),
+            base_floor=payload.get("baseFloor"),
+            base_ceiling=payload.get("baseCeiling"),
+            employee_rate=payload.get("employeeRate"),
+            employer_rate=payload.get("employerRate"),
+            employee_item_code=payload.get("employeeItemCode"),
+            employer_item_code=payload.get("employerItemCode"),
+            effective_from=effective_from,
+            effective_to=effective_to,
+            policy_evidence=payload.get("policyEvidence"),
+        )
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except StatutoryContributionError as exc:
+        return _statutory_error(exc)
+    response = JsonResponse(
+        {
+            "data": _statutory_rule_data(rule),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.statutory-rule.1",
+        },
+        status=201,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def publish_statutory_rule(request, rule_id):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=PERM_STATUTORY_MANAGE)
+        rule = StatutoryContributionRuleService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).publish(rule_id)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    except StatutoryContributionError as exc:
+        return _statutory_error(exc)
+    response = JsonResponse(
+        {
+            "data": _statutory_rule_data(rule),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.statutory-rule.1",
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def statutory_contributions(request, result_id):
+    if request.method != "GET":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=PERM_STATUTORY_VIEW)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    rows = StatutoryContributionFact.objects.filter(
+        tenant_id=tenant_id, payroll_result_id=result_id
+    ).order_by("contribution_group", "contribution_code")
+    data = [
+        {
+            "id": str(row.id),
+            "payrollResultId": str(row.payroll_result_id),
+            "staffId": str(row.staff_id),
+            "contributionGroup": row.contribution_group,
+            "contributionCode": row.contribution_code,
+            "requestedBase": str(row.requested_base),
+            "contributionBase": str(row.contribution_base),
+            "employeeRate": str(row.employee_rate),
+            "employerRate": str(row.employer_rate),
+            "employeeAmount": str(row.employee_amount),
+            "employerAmount": str(row.employer_amount),
+            "evidenceHash": row.evidence_hash,
+            "reviewEvidenceHash": row.review_evidence_hash,
+            "status": row.status,
+        }
+        for row in rows
+    ]
+    response = JsonResponse(
+        {
+            "data": data,
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.statutory-contribution.1",
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def dashboard(request):

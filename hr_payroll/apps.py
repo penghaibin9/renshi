@@ -11,4 +11,5 @@ class HrPayrollConfig(AppConfig):
             authority_models,
             authority_registry,
             calculation_models,
+            statutory_models,
         )

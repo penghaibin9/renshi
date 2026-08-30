@@ -24,6 +24,11 @@ from hr_payroll.calculation_models import (
     SalaryRuleVersion,
 )
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
+from hr_payroll.statutory_models import StatutoryContributionFact
+from hr_payroll.services.statutory_contribution_service import (
+    StatutoryContributionError,
+    StatutoryContributionService,
+)
 
 
 class PayrollCalculationError(Exception):
@@ -489,7 +494,34 @@ class PayrollCalculationService:
             )
 
         rules = self._effective_rules(period)
-        rule_set_hash = _hash([rule.content_hash for rule in rules])
+        statutory_service = StatutoryContributionService(
+            self.tenant_id,
+            actor_user_id=self.actor_user_id,
+            correlation_id=self.correlation_id,
+        )
+        try:
+            statutory_rules = statutory_service.effective_rules(period)
+        except StatutoryContributionError as exc:
+            raise PayrollCalculationError(exc.code, str(exc)) from exc
+        salary_item_codes = {rule.item_code for rule in rules}
+        statutory_item_codes = [
+            item_code
+            for rule in statutory_rules
+            for item_code in (rule.employee_item_code, rule.employer_item_code)
+        ]
+        if len(statutory_item_codes) != len(set(statutory_item_codes)) or salary_item_codes.intersection(
+            statutory_item_codes
+        ):
+            raise PayrollCalculationError(
+                "STATUTORY_ITEM_CODE_CONFLICT",
+                "statutory employee/employer item codes must be unique in the payroll rule set",
+            )
+        rule_set_hash = _hash(
+            {
+                "salary": [rule.content_hash for rule in rules],
+                "statutory": [rule.content_hash for rule in statutory_rules],
+            }
+        )
         snapshots = list(
             PayrollInputSnapshot.objects.select_for_update()
             .filter(tenant_id=self.tenant_id, payroll_period_id=period.id)
@@ -530,6 +562,13 @@ class PayrollCalculationService:
                 )
                 calculated[rule.item_code] = amount
                 evaluated.append((rule, amount, explanation))
+            try:
+                statutory_calculated = [
+                    statutory_service.calculate(rule, snapshot.variables_json)
+                    for rule in statutory_rules
+                ]
+            except StatutoryContributionError as exc:
+                raise PayrollCalculationError(exc.code, str(exc)) from exc
             gross = sum(
                 (amount for rule, amount, _ in evaluated if rule.item_type == rule.ItemType.EARNING),
                 Decimal("0.00"),
@@ -537,6 +576,9 @@ class PayrollCalculationService:
             deduction = sum(
                 (amount for rule, amount, _ in evaluated if rule.item_type == rule.ItemType.DEDUCTION),
                 Decimal("0.00"),
+            )
+            deduction += sum(
+                (item.employee_amount for item in statutory_calculated), Decimal("0.00")
             )
             net = (gross - deduction).quantize(MONEY_QUANTUM, rounding=ROUND_HALF_UP)
             if net < 0:
@@ -558,8 +600,7 @@ class PayrollCalculationService:
                 net_amount=net,
                 status=PayrollResultFact.Status.DRAFT,
             )
-            PayrollCalculationLine.objects.bulk_create(
-                [
+            salary_lines = [
                     PayrollCalculationLine(
                         tenant_id=self.tenant_id,
                         created_by=self.actor_user_id,
@@ -582,7 +623,74 @@ class PayrollCalculationService:
                     )
                     for sequence, (rule, amount, explanation) in enumerate(evaluated, 1)
                 ]
-            )
+            statutory_lines = []
+            next_sequence = len(salary_lines) + 1
+            for item in statutory_calculated:
+                fact = statutory_service.create_fact(
+                    calculated=item,
+                    period=period,
+                    result=result,
+                    batch=batch,
+                    snapshot=snapshot,
+                )
+                common_explanation = {
+                    "authority": "HR15_STATUTORY_CONTRIBUTION",
+                    "contributionFactId": str(fact.id),
+                    "contributionCode": fact.contribution_code,
+                    "contributionGroup": fact.contribution_group,
+                    "requestedBase": str(fact.requested_base),
+                    "contributionBase": str(fact.contribution_base),
+                    "ruleContentHash": fact.rule_content_hash,
+                    "inputSnapshotId": str(snapshot.id),
+                    "inputContentHash": snapshot.content_hash,
+                    "evidenceHash": fact.evidence_hash,
+                }
+                statutory_lines.extend(
+                    (
+                        PayrollCalculationLine(
+                            tenant_id=self.tenant_id,
+                            created_by=self.actor_user_id,
+                            updated_by=self.actor_user_id,
+                            calculation_batch_id=batch.id,
+                            payroll_result_id=result.id,
+                            staff_id=snapshot.staff_id,
+                            item_code=fact.employee_item_code,
+                            item_name=f"{item.rule.name}（个人）",
+                            item_type=SalaryRuleVersion.ItemType.DEDUCTION,
+                            sequence_no=next_sequence,
+                            amount=fact.employee_amount,
+                            currency_code=snapshot.currency_code,
+                            rule_version_id=item.rule.id,
+                            explanation_json={
+                                **common_explanation,
+                                "payer": "EMPLOYEE",
+                                "rate": str(fact.employee_rate),
+                            },
+                        ),
+                        PayrollCalculationLine(
+                            tenant_id=self.tenant_id,
+                            created_by=self.actor_user_id,
+                            updated_by=self.actor_user_id,
+                            calculation_batch_id=batch.id,
+                            payroll_result_id=result.id,
+                            staff_id=snapshot.staff_id,
+                            item_code=fact.employer_item_code,
+                            item_name=f"{item.rule.name}（单位）",
+                            item_type=SalaryRuleVersion.ItemType.EMPLOYER,
+                            sequence_no=next_sequence + 1,
+                            amount=fact.employer_amount,
+                            currency_code=snapshot.currency_code,
+                            rule_version_id=item.rule.id,
+                            explanation_json={
+                                **common_explanation,
+                                "payer": "EMPLOYER",
+                                "rate": str(fact.employer_rate),
+                            },
+                        ),
+                    )
+                )
+                next_sequence += 2
+            PayrollCalculationLine.objects.bulk_create(salary_lines + statutory_lines)
             gross_total += gross
             deduction_total += deduction
             net_total += net
@@ -663,18 +771,28 @@ class PayrollCalculationService:
                     "PAYROLL_REVIEW_IDEMPOTENCY_CONFLICT",
                     "result already has another immutable review",
                 )
-            return existing
-        return PayrollReviewFact.objects.create(
-            tenant_id=self.tenant_id,
-            created_by=self.actor_user_id,
-            updated_by=self.actor_user_id,
-            payroll_period_id=period.id,
-            payroll_result_id=result.id,
-            decision=decision,
-            note=note or "",
-            reviewed_by=self.actor_user_id,
-            reviewed_at=timezone.now(),
-        )
+            review = existing
+        else:
+            review = PayrollReviewFact.objects.create(
+                tenant_id=self.tenant_id,
+                created_by=self.actor_user_id,
+                updated_by=self.actor_user_id,
+                payroll_period_id=period.id,
+                payroll_result_id=result.id,
+                decision=decision,
+                note=note or "",
+                reviewed_by=self.actor_user_id,
+                reviewed_at=timezone.now(),
+            )
+        try:
+            StatutoryContributionService(
+                self.tenant_id,
+                actor_user_id=self.actor_user_id,
+                correlation_id=self.correlation_id,
+            ).review_for_result(result_id=result.id, review=review)
+        except StatutoryContributionError as exc:
+            raise PayrollCalculationError(exc.code, str(exc)) from exc
+        return review
 
     @transaction.atomic
     def complete_review(self, *, period_id) -> PayrollPeriod:
@@ -711,6 +829,14 @@ class PayrollCalculationService:
             raise PayrollCalculationError(
                 "PAYROLL_REVIEW_INCOMPLETE",
                 "every result requires one immutable approval before finalization",
+            )
+        if StatutoryContributionFact.objects.filter(
+            tenant_id=self.tenant_id,
+            payroll_period_id=period.id,
+        ).exclude(status=StatutoryContributionFact.Status.REVIEWED).exists():
+            raise PayrollCalculationError(
+                "STATUTORY_REVIEW_INCOMPLETE",
+                "every statutory contribution requires evidence-backed review",
             )
         period.status = PayrollPeriod.Status.REVIEWED
         period.updated_by = self.actor_user_id

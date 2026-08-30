@@ -18,6 +18,10 @@ from horilla.db_retry import retry_mysql_transaction
 from horilla.hr_event_service import emit_registered_event
 from hr_payroll.authority_registry import EVENT_PERIOD_FINALIZED
 from hr_payroll.models import PayrollPeriod, PayrollResultFact
+from hr_payroll.services.statutory_contribution_service import (
+    StatutoryContributionError,
+    StatutoryContributionService,
+)
 
 
 class PayrollFinalizationError(Exception):
@@ -145,6 +149,15 @@ class PayrollFinalizationService:
         for result in results:
             self._validate_result(result)
 
+        finalization_time = timezone.now()
+        try:
+            statutory_fact_ids = StatutoryContributionService(self.tenant_id).seal_period(
+                period_id=period.id,
+                sealed_at=finalization_time,
+            )
+        except StatutoryContributionError as exc:
+            raise PayrollFinalizationError(exc.code, str(exc)) from exc
+
         finalized_ids = []
         for result in results:
             result.status = PayrollResultFact.Status.FINALIZED
@@ -152,7 +165,7 @@ class PayrollFinalizationService:
             finalized_ids.append(str(result.id))
 
         period.status = PayrollPeriod.Status.FINALIZED
-        period.finalized_at = timezone.now()
+        period.finalized_at = finalization_time
         period.time_source_snapshot_json = time_source_snapshot
         period.save(
             update_fields=[
@@ -169,6 +182,7 @@ class PayrollFinalizationService:
                 "periodId": str(period.id),
                 "periodCode": period.period_code,
                 "resultIds": finalized_ids,
+                "statutoryContributionFactIds": list(statutory_fact_ids),
                 "timeSourceSnapshot": time_source_snapshot,
                 "finalizedAt": period.finalized_at.isoformat(),
             },

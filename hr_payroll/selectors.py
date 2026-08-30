@@ -10,6 +10,7 @@ from .calculation_models import (
     SalaryRuleVersion,
 )
 from .models import PayrollPeriod, PayrollProfile, PayrollResultFact
+from .statutory_models import StatutoryContributionFact, StatutoryContributionRuleVersion
 
 
 def dashboard_snapshot(tenant_id: int) -> dict:
@@ -24,6 +25,8 @@ def dashboard_snapshot(tenant_id: int) -> dict:
     payments = PayrollPaymentInstruction.objects.filter(tenant_id=tenant_id)
     payslips = PayrollPayslipFact.objects.filter(tenant_id=tenant_id)
     reconciliations = PayrollFinanceReconciliationFact.objects.filter(tenant_id=tenant_id)
+    statutory_rules = StatutoryContributionRuleVersion.objects.filter(tenant_id=tenant_id)
+    statutory_facts = StatutoryContributionFact.objects.filter(tenant_id=tenant_id)
     latest = periods.order_by("-end_date", "-created_at").first()
     latest_results = results.none() if latest is None else results.filter(payroll_period_id=latest.id)
     net = None
@@ -49,6 +52,12 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "publishedPayslips": payslips.count(),
             "reconciliationMismatches": reconciliations.filter(
                 status=PayrollFinanceReconciliationFact.Status.MISMATCH
+            ).count(),
+            "publishedStatutoryRules": statutory_rules.filter(
+                status=StatutoryContributionRuleVersion.Status.PUBLISHED
+            ).count(),
+            "sealedStatutoryContributions": statutory_facts.filter(
+                status=StatutoryContributionFact.Status.SEALED
             ).count(),
         },
         "recentPeriods": list(
@@ -136,6 +145,23 @@ def dashboard_snapshot(tenant_id: int) -> dict:
                 "reconciled_at",
             )
         ),
+        "recentStatutoryContributions": list(
+            statutory_facts.order_by("-created_at")[:50].values(
+                "id",
+                "payroll_period_id",
+                "payroll_result_id",
+                "staff_id",
+                "contribution_group",
+                "contribution_code",
+                "contribution_base",
+                "employee_amount",
+                "employer_amount",
+                "evidence_hash",
+                "review_evidence_hash",
+                "status",
+                "sealed_at",
+            )
+        ),
         "capabilities": {
             "profile": True,
             "period": True,
@@ -145,7 +171,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
             "fullCalculation": True,
             "allowanceBenefits": BenefitPlan.objects.filter(tenant_id=tenant_id).exists()
             or OccupationalPensionPlan.objects.filter(tenant_id=tenant_id).exists(),
-            "socialInsuranceHousingFund": False,
+            "socialInsuranceHousingFund": True,
             "payment": True,
             "financeReconciliation": True,
             "legacyReadReconcile": True,

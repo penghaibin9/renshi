@@ -16,6 +16,8 @@ PERM_FINALIZE = "hr.payroll.finalize"
 PERM_PAYMENT = "hr.payroll.payment"
 PERM_PAYSLIP_SENSITIVE = "hr.payroll.payslip.view_sensitive"
 PERM_RECONCILE = "hr.payroll.reconcile"
+PERM_STATUTORY_VIEW = "hr.payroll.statutory.view"
+PERM_STATUTORY_MANAGE = "hr.payroll.statutory.manage"
 register_permissions((
     PermissionDefinition(PERM_BENEFIT_VIEW, "HR15", "查看福利计划及个人福利事实"),
     PermissionDefinition(PERM_BENEFIT_MANAGE, "HR15", "管理福利制度与个人福利事实"),
@@ -30,6 +32,8 @@ register_permissions((
     PermissionDefinition(PERM_PAYMENT, "HR15", "签发支付指令并接收回执"),
     PermissionDefinition(PERM_PAYSLIP_SENSITIVE, "HR15", "查看高敏工资条"),
     PermissionDefinition(PERM_RECONCILE, "HR15", "执行银行及财务对账"),
+    PermissionDefinition(PERM_STATUTORY_VIEW, "HR15", "查看社保及住房公积金规则与缴费事实"),
+    PermissionDefinition(PERM_STATUTORY_MANAGE, "HR15", "管理社保及住房公积金版本化规则"),
 ))
 
 EVENT_BENEFIT_PLAN_PUBLISHED = "hr.payroll.benefit_plan.published"
@@ -43,6 +47,10 @@ EVENT_PERIOD_FINALIZED = "hr.payroll.period.finalized"
 EVENT_PAYMENT_ACCEPTED = "hr.payroll.payment.accepted"
 EVENT_PAYSLIP_PUBLISHED = "hr.payroll.payslip.published"
 EVENT_FINANCE_RECONCILED = "hr.payroll.finance.reconciled"
+EVENT_STATUTORY_RULE_PUBLISHED = "hr.payroll.statutory_rule.published"
+EVENT_STATUTORY_CONTRIBUTION_CALCULATED = "hr.payroll.statutory_contribution.calculated"
+EVENT_STATUTORY_CONTRIBUTION_REVIEWED = "hr.payroll.statutory_contribution.reviewed"
+EVENT_STATUTORY_CONTRIBUTION_SEALED = "hr.payroll.statutory_contribution.sealed"
 register_business_events((
     BusinessEventDefinition(EVENT_BENEFIT_PLAN_PUBLISHED, "HR15", "benefit_plan", 1),
     BusinessEventDefinition(EVENT_BENEFIT_ENROLLMENT_EFFECTIVE, "HR15", "benefit_enrollment", 1),
@@ -55,4 +63,8 @@ register_business_events((
     BusinessEventDefinition(EVENT_PAYMENT_ACCEPTED, "HR15", "payment", 1),
     BusinessEventDefinition(EVENT_PAYSLIP_PUBLISHED, "HR15", "payslip", 1),
     BusinessEventDefinition(EVENT_FINANCE_RECONCILED, "HR15", "finance", 1),
+    BusinessEventDefinition(EVENT_STATUTORY_RULE_PUBLISHED, "HR15", "statutory_rule", 1),
+    BusinessEventDefinition(EVENT_STATUTORY_CONTRIBUTION_CALCULATED, "HR15", "statutory_contribution", 1),
+    BusinessEventDefinition(EVENT_STATUTORY_CONTRIBUTION_REVIEWED, "HR15", "statutory_contribution", 1),
+    BusinessEventDefinition(EVENT_STATUTORY_CONTRIBUTION_SEALED, "HR15", "statutory_contribution", 1),
 ))
