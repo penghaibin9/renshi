@@ -79,7 +79,9 @@ COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
 WORKDIR /app
 COPY --chown=appuser:appuser . .
 COPY --chown=appuser:appuser docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Windows development checkouts may materialize shell files as CRLF. Normalize
+# inside the Linux image so the kernel can always resolve the shebang.
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 RUN mkdir -p staticfiles media \
     && chown -R appuser:appuser /app
