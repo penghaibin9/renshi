@@ -1,0 +1,544 @@
+:root {
+  --yk-blue: #2563eb;
+  --yk-blue-strong: #1d4ed8;
+  --yk-ink: #0f172a;
+  --yk-text: #334155;
+  --yk-muted: #64748b;
+  --yk-border: #d8e0eb;
+  --yk-canvas: #f6f8fc;
+  --yk-focus: rgba(37, 99, 235, 0.13);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+body.yk-login-page {
+  min-width: 320px;
+  background: #fff;
+  color: var(--yk-ink);
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.yk-login-page button,
+.yk-login-page input {
+  font: inherit;
+}
+
+.yk-login-shell {
+  display: grid;
+  grid-template-columns: minmax(520px, 44%) minmax(0, 56%);
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #fff;
+}
+
+.yk-login-panel {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  border-right: 1px solid var(--yk-border);
+  background: #fff;
+}
+
+.yk-login-panel__inner {
+  display: flex;
+  flex: 0 1 430px;
+  flex-direction: column;
+  width: calc(100% - 64px);
+  max-width: 430px;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: clamp(72px, 13vh, 132px) 0 42px;
+}
+
+.yk-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.yk-login-brand__seal {
+  display: block;
+  width: 92px;
+  height: 92px;
+  object-fit: contain;
+  border-radius: 50%;
+}
+
+.yk-login-brand__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.yk-login-brand__university {
+  color: #123a75;
+  font-size: clamp(27px, 2.2vw, 36px);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.yk-login-brand__platform {
+  color: var(--yk-blue);
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.yk-login-main {
+  margin-top: clamp(52px, 8vh, 84px);
+}
+
+.yk-login-title {
+  margin: 0;
+  color: var(--yk-ink);
+  font-size: clamp(32px, 3vw, 44px);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.yk-login-subtitle {
+  margin: 10px 0 30px;
+  color: var(--yk-muted);
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.yk-login-form {
+  display: grid;
+  gap: 20px;
+}
+
+.yk-login-field {
+  display: grid;
+  gap: 8px;
+}
+
+.yk-login-field > label {
+  color: var(--yk-ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.yk-login-control {
+  position: relative;
+}
+
+.yk-login-control > ion-icon {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  z-index: 1;
+  color: #8793a6;
+  font-size: 22px;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.yk-login-input {
+  width: 100%;
+  height: 60px;
+  padding: 0 52px;
+  border: 1px solid var(--yk-border);
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: var(--yk-ink);
+  font-size: 15px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.yk-login-input::placeholder {
+  color: #9aa5b5;
+}
+
+.yk-login-input:hover {
+  border-color: #b8c4d4;
+}
+
+.yk-login-input:focus {
+  border-color: var(--yk-blue);
+  box-shadow: 0 0 0 4px var(--yk-focus);
+}
+
+.yk-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #7c889b;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.yk-password-toggle:hover,
+.yk-password-toggle:focus-visible {
+  background: #f1f5f9;
+  color: var(--yk-blue-strong);
+  outline: none;
+}
+
+.yk-password-toggle ion-icon {
+  font-size: 22px;
+}
+
+.yk-password-toggle .is-hidden {
+  display: none;
+}
+
+.yk-login-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: -3px;
+}
+
+.yk-login-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--yk-text);
+  cursor: pointer;
+}
+
+.yk-login-remember input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--yk-blue);
+}
+
+.yk-login-link {
+  color: var(--yk-blue);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.yk-login-link:hover,
+.yk-login-link:focus-visible {
+  color: var(--yk-blue-strong);
+  text-decoration: underline;
+  outline: none;
+}
+
+.yk-login-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 58px;
+  margin-top: 4px;
+  padding: 0 24px;
+  border: 1px solid var(--yk-blue);
+  border-radius: 8px;
+  background: var(--yk-blue);
+  color: #fff;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.16);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.yk-login-submit:hover {
+  border-color: var(--yk-blue-strong);
+  background: var(--yk-blue-strong);
+}
+
+.yk-login-submit:active {
+  transform: translateY(1px);
+}
+
+.yk-login-submit:focus-visible {
+  outline: 4px solid var(--yk-focus);
+  outline-offset: 2px;
+}
+
+.yk-login-submit ion-icon {
+  font-size: 21px;
+}
+
+.yk-init-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.yk-init-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: var(--yk-blue-strong);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.yk-login-footer {
+  margin-top: auto;
+  padding-top: 28px;
+  text-align: center;
+}
+
+.yk-login-footer::before {
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin-bottom: 20px;
+  background: var(--yk-border);
+  content: "";
+}
+
+.yk-login-footer__links,
+.yk-login-footer__credit,
+.yk-login-footer__copyright {
+  margin: 0;
+}
+
+.yk-login-footer__links {
+  color: #7b8798;
+  font-size: 13px;
+}
+
+.yk-login-footer__credit {
+  margin-top: 8px;
+  color: #687589;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.yk-login-footer__copyright {
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.yk-login-hero {
+  position: relative;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  background: var(--yk-canvas);
+}
+
+.yk-login-hero__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.yk-login-hero__caption {
+  position: absolute;
+  right: clamp(36px, 5vw, 84px);
+  bottom: clamp(64px, 12vh, 128px);
+  left: clamp(36px, 4.5vw, 72px);
+  max-width: 590px;
+  padding: 30px 34px;
+  background: rgba(29, 78, 216, 0.96);
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(15, 42, 90, 0.18);
+}
+
+.yk-login-hero__caption strong,
+.yk-login-hero__caption span {
+  display: block;
+}
+
+.yk-login-hero__caption strong {
+  font-size: clamp(20px, 2vw, 27px);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.yk-login-hero__caption span {
+  margin-top: 8px;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.yk-login-page .oh-alert-container {
+  position: fixed;
+  z-index: 50;
+  top: 18px;
+  right: 18px;
+  width: min(420px, calc(100vw - 36px));
+}
+
+@media (max-width: 1080px) {
+  .yk-login-shell {
+    grid-template-columns: minmax(470px, 48%) minmax(0, 52%);
+  }
+
+  .yk-login-panel__inner {
+    flex-basis: 400px;
+    width: calc(100% - 52px);
+    max-width: 400px;
+  }
+
+  .yk-login-brand__seal {
+    width: 78px;
+    height: 78px;
+  }
+
+  .yk-login-brand__platform {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 820px) {
+  .yk-login-shell {
+    display: block;
+    min-height: 100vh;
+    background: var(--yk-canvas);
+  }
+
+  .yk-login-panel {
+    min-height: 100vh;
+    border-right: 0;
+  }
+
+  .yk-login-panel__inner {
+    flex-basis: 430px;
+    width: calc(100% - 48px);
+    max-width: 430px;
+    padding: 42px 0 32px;
+  }
+
+  .yk-login-hero {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .yk-login-panel__inner {
+    width: calc(100% - 40px);
+    max-width: 430px;
+    padding: 28px 0 24px;
+  }
+
+  .yk-login-brand {
+    gap: 12px;
+  }
+
+  .yk-login-brand__seal {
+    width: 64px;
+    height: 64px;
+  }
+
+  .yk-login-brand__university {
+    font-size: 25px;
+  }
+
+  .yk-login-brand__platform {
+    font-size: 16px;
+  }
+
+  .yk-login-main {
+    margin-top: 42px;
+  }
+
+  .yk-login-title {
+    font-size: 31px;
+  }
+
+  .yk-login-subtitle {
+    margin-bottom: 24px;
+    font-size: 16px;
+  }
+
+  .yk-login-input {
+    height: 54px;
+  }
+
+  .yk-login-submit {
+    min-height: 54px;
+  }
+
+  .yk-init-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 760px) and (min-width: 821px) {
+  .yk-login-panel__inner {
+    padding-top: 30px;
+    padding-bottom: 24px;
+  }
+
+  .yk-login-brand__seal {
+    width: 68px;
+    height: 68px;
+  }
+
+  .yk-login-main {
+    margin-top: 30px;
+  }
+
+  .yk-login-subtitle {
+    margin-bottom: 20px;
+  }
+
+  .yk-login-form {
+    gap: 14px;
+  }
+
+  .yk-login-input {
+    height: 52px;
+  }
+
+  .yk-login-submit {
+    min-height: 52px;
+  }
+
+  .yk-login-footer {
+    padding-top: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yk-login-input,
+  .yk-login-submit {
+    transition: none;
+  }
+}
