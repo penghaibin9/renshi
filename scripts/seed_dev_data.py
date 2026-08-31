@@ -8,6 +8,49 @@
 from base.models import Company, Department, EmployeeType, JobPosition
 from employee.models import Employee, EmployeeWorkInformation
 from horilla_auth.models import HorillaUser
+from hr_staff.constants import SourceCategory, StaffCategoryCode, StaffStatus
+from hr_staff.models import HrPerson, HrStaffMaster
+
+
+def ensure_hr03_identity(*, company, employee, category, staff_no=None):
+    """Create the canonical HR03 bridge required by HR17 SELF.
+
+    Development seeding runs without request middleware, so every lookup uses
+    the unscoped base manager and always supplies the tenant explicitly.
+    """
+
+    existing = HrStaffMaster._base_manager.filter(
+        tenant_id=company.pk,
+        legacy_employee_id=employee.pk,
+    ).first()
+    if existing:
+        return existing
+
+    status = StaffStatus.ACTIVE if employee.is_active else StaffStatus.DEPARTED
+    legal_name = (
+        f"{employee.employee_last_name or ''}{employee.employee_first_name or ''}".strip()
+        or employee.email
+    )
+    person = HrPerson._base_manager.create(
+        tenant_id=company.pk,
+        legal_name=legal_name,
+        status=status,
+    )
+    candidate_no = staff_no or employee.badge_id or f"DEV-{employee.pk:06d}"
+    if HrStaffMaster._base_manager.filter(
+        tenant_id=company.pk,
+        staff_no=candidate_no,
+    ).exists():
+        candidate_no = f"DEV-{employee.pk:06d}"
+    return HrStaffMaster._base_manager.create(
+        tenant_id=company.pk,
+        person_id=person,
+        staff_no=candidate_no,
+        staff_category_code=category,
+        current_employment_status=status,
+        legacy_employee_id=employee.pk,
+        source=SourceCategory.MIGRATED,
+    )
 
 # ---- 学校（Company = A0 School/Tenant Root）----
 company, _ = Company.objects.get_or_create(
@@ -43,9 +86,14 @@ pos_counselor, _ = JobPosition.objects.get_or_create(
 )
 pos_counselor.company_id.add(company)
 
+employee_types = {}
 for t in ("专任教师", "行政管理人员", "辅导员", "实验技术人员", "工勤人员", "外聘教师"):
     et, _ = EmployeeType.objects.get_or_create(employee_type=t)
     et.company_id.add(company)
+    # Reuse the instance returned above.  A second lookup through the
+    # tenant-aware default manager can fail closed when this bootstrap script
+    # is run outside request middleware (there is no current company context).
+    employee_types[t] = et
 
 # ---- 管理员账号（必须关联 Employee + company，否则 CompanyMiddleware 会登出）----
 admin, _ = HorillaUser.objects.get_or_create(
@@ -61,9 +109,9 @@ admin.is_superuser = True
 admin.is_staff = True
 admin.save()
 
-admin_emp = Employee.objects.filter(employee_user_id=admin).first()
+admin_emp = Employee._base_manager.filter(employee_user_id=admin).first()
 if not admin_emp:
-    admin_emp = Employee.objects.create(
+    admin_emp = Employee._base_manager.create(
         employee_user_id=admin,
         employee_first_name="管理员",
         employee_last_name="张",
@@ -71,10 +119,16 @@ if not admin_emp:
         phone="13800000000",
         is_active=True,
     )
-EmployeeWorkInformation.objects.filter(employee_id=admin_emp).update(
+EmployeeWorkInformation._base_manager.filter(employee_id=admin_emp).update(
     company_id_id=company.pk,
     department_id_id=dept_biz.pk,
     job_position_id_id=pos_admin.pk,
+)
+ensure_hr03_identity(
+    company=company,
+    employee=admin_emp,
+    category=StaffCategoryCode.ADMIN,
+    staff_no="DEV-ADMIN",
 )
 
 # ---- 教职工（覆盖各学院/类型/性别/年龄）----
@@ -94,7 +148,7 @@ ROWS = [
 ]
 
 for i, (first, last, email, phone, dept, pos, emp_type_name, gender, dob) in enumerate(ROWS, start=1):
-    emp, created = Employee.objects.get_or_create(
+    emp, created = Employee._base_manager.get_or_create(
         email=email,
         defaults={
             "employee_first_name": first,
@@ -106,19 +160,31 @@ for i, (first, last, email, phone, dept, pos, emp_type_name, gender, dob) in enu
             "dob": dob,
         },
     )
-    if created:
-        EmployeeWorkInformation.objects.filter(employee_id=emp).update(
-            company_id_id=company.pk,
-            department_id_id=dept.pk,
-            job_position_id_id=pos.pk,
-            employee_type_id_id=EmployeeType.objects.get(employee_type=emp_type_name).pk,
-            date_joining=f"2018-01-01",
-        )
+    # Always converge work information so rerunning the script repairs a
+    # previous partial seed instead of leaving the employee unbound.
+    EmployeeWorkInformation._base_manager.filter(employee_id=emp).update(
+        company_id_id=company.pk,
+        department_id_id=dept.pk,
+        job_position_id_id=pos.pk,
+        employee_type_id_id=employee_types[emp_type_name].pk,
+        date_joining="2018-01-01",
+    )
+    category = (
+        StaffCategoryCode.TEACHER
+        if emp_type_name in {"专任教师", "外聘教师"}
+        else StaffCategoryCode.ADMIN
+    )
+    ensure_hr03_identity(
+        company=company,
+        employee=emp,
+        category=category,
+        staff_no=f"T{i:04d}",
+    )
 
 # 两名已离职员工（is_active=False，供"在岗"口径区分）
 for i in (99, 98):
     email = f"left{i}@test.local"
-    emp, created = Employee.objects.get_or_create(
+    emp, created = Employee._base_manager.get_or_create(
         email=email,
         defaults={
             "employee_first_name": "离",
@@ -130,8 +196,15 @@ for i in (99, 98):
             "dob": "1980-01-01",
         },
     )
+    ensure_hr03_identity(
+        company=company,
+        employee=emp,
+        category=StaffCategoryCode.OTHER,
+        staff_no=f"T{i:04d}",
+    )
 
 print(f"school={company.id} {company.company}")
-print(f"employees_active={Employee.objects.filter(is_active=True).count()}")
-print(f"employees_total={Employee.objects.count()}")
+print(f"employees_active={Employee._base_manager.filter(is_active=True).count()}")
+print(f"employees_total={Employee._base_manager.count()}")
+print(f"hr03_staff_master={HrStaffMaster._base_manager.filter(tenant_id=company.pk).count()}")
 print(f"admin={admin.username} / Admin123!")

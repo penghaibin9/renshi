@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 
 from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.urls import resolve
 
 from hr10_development.api.programs import create_offering, create_program
 from hr10_development.api.workbench import choices
@@ -18,6 +19,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class Hr10WorkspaceStaticContractTests(SimpleTestCase):
+    def test_module_root_redirects_to_the_real_dashboard(self):
+        match = resolve("/hr/development/")
+        response = match.func(RequestFactory().get("/hr/development/"))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/hr/development/dashboard")
+
     def test_shared_workspace_uses_horilla_shell_and_six_sections(self):
         template = (ROOT / "templates/hr/development/base.html").read_text(encoding="utf-8")
         self.assertIn('{% extends "index.html" %}', template)
