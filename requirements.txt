@@ -38,7 +38,7 @@ Jinja2
 idna
 lxml
 mysqlclient>=2.2,<3
-msgpack==1.2.1
+msgpack==1.2.2
 numpy
 oauthlib
 openpyxl
