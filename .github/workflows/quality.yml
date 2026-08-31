@@ -127,7 +127,7 @@ jobs:
 
       - name: Upload migration drift candidates
         if: failure() && steps.migration-drift.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: migration-drift-candidates
           path: tests/artifacts/migration-drift/
@@ -246,7 +246,7 @@ jobs:
 
       - name: Upload registered HR test diagnostics
         if: failure() && steps.hr-tests.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: registered-hr-test-output
           path: hr-test-output.log
