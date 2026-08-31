@@ -6,9 +6,9 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/hr-w-b-external-contract.yml"
-      - "hr_contracts/**"
-      - "hr_external/**"
-      - "hr_staff/**"
+      - "backend/hr_contracts/**"
+      - "backend/hr_external/**"
+      - "backend/hr_staff/**"
   workflow_dispatch:
 
 permissions:
@@ -69,21 +69,21 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for W-B MySQL gate' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for W-B MySQL gate' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Syntax gate for W-B ownership
         run: |
           python -m py_compile \
-            hr_contracts/models.py \
-            hr_contracts/services/agreement_service.py \
-            hr_contracts/migrations/0002_external_workforce_agreement_subject.py \
-            hr_external/models/hiring.py \
-            hr_external/integrations/hr07.py \
-            hr_external/services/hiring_service.py \
-            hr_external/migrations/0016_external_hiring_agreement_id.py \
-            hr_external/tests/test_w_b_external_agreement_activation_chain.py
+            backend/hr_contracts/models.py \
+            backend/hr_contracts/services/agreement_service.py \
+            backend/hr_contracts/migrations/0002_external_workforce_agreement_subject.py \
+            backend/hr_external/models/hiring.py \
+            backend/hr_external/integrations/hr07.py \
+            backend/hr_external/services/hiring_service.py \
+            backend/hr_external/migrations/0016_external_hiring_agreement_id.py \
+            backend/hr_external/tests/test_w_b_external_agreement_activation_chain.py
 
       - name: Migration drift gate
         run: python manage.py makemigrations --check --dry-run --noinput --verbosity 2

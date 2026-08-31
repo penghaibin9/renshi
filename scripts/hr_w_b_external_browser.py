@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 BASE_URL = os.getenv("HR_BROWSER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 USERNAME = os.environ["HR_BROWSER_USERNAME"]
 PASSWORD = os.environ["HR_BROWSER_PASSWORD"]
-ARTIFACT_DIR = Path(os.getenv("HR_BROWSER_ARTIFACT_DIR", "artifacts/hr-w-b-browser"))
+ARTIFACT_DIR = Path(os.getenv("HR_BROWSER_ARTIFACT_DIR", "tests/artifacts/hr-w-b-browser"))
 SEED_PATH = ARTIFACT_DIR / "seed.json"
 
 

@@ -42,29 +42,30 @@ docs/00_文档总索引.md            需要深挖业务时再进去
 docs/00_高校人事系统全局架构与Horilla接管合同.md
                                 全系统最高规则
 
-horilla/settings/               Django 全局配置
+backend/horilla/settings/       Django 全局配置
 .github/workflows/              CI 门禁
 
-hr_structure/                   HR02
-hr_staff/                       HR03
-hr_recruitment/                 HR04
-hr_onboarding/                  HR05
-hr_changes/                     HR06
-hr_contracts/                   HR07
-hr_external/                    HR08
-hr_qualification/               HR09
-hr10_development/               HR10
-hr_time/                        HR11
-hr_assessment/                  HR12
+frontend/                       公共页面、V2 CSS 与 JavaScript
+backend/hr_structure/           HR02
+backend/hr_staff/               HR03
+backend/hr_recruitment/         HR04
+backend/hr_onboarding/          HR05
+backend/hr_changes/             HR06
+backend/hr_contracts/           HR07
+backend/hr_external/            HR08
+backend/hr_qualification/       HR09
+backend/hr10_development/       HR10
+backend/hr_time/                HR11
+backend/hr_assessment/          HR12
 ```
 
 ## 4. 目前哪些模块最值得当范本
 
 ### 第一梯队
 
-- HR03 `hr_staff/`
-- HR06 `hr_changes/`
-- HR11 `hr_time/`
+- HR03 `backend/hr_staff/`
+- HR06 `backend/hr_changes/`
+- HR11 `backend/hr_time/`
 
 以后新增模块优先参考它们的这些分层：
 

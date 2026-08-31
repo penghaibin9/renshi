@@ -7,12 +7,12 @@ on:
     paths:
       - ".github/workflows/hr-w-a-handoff-browser.yml"
       - "scripts/hr_w_a_handoff_browser.py"
-      - "static/hr/js/core/api-client.js"
-      - "static/hr/js/pages/recruitment-proposed.js"
-      - "hr_recruitment/**"
-      - "hr_onboarding/**"
-      - "hr_structure/**"
-      - "hr_staff/**"
+      - "frontend/static/hr/js/core/api-client.js"
+      - "frontend/static/hr/js/pages/recruitment-proposed.js"
+      - "backend/hr_recruitment/**"
+      - "backend/hr_onboarding/**"
+      - "backend/hr_structure/**"
+      - "backend/hr_staff/**"
   workflow_dispatch:
 
 permissions:
@@ -33,7 +33,7 @@ env:
   HR_BROWSER_USERNAME: hr-wa-browser-auditor
   HR_BROWSER_PASSWORD: hr-wa-browser-only-password
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
-  HR_WA_BROWSER_ARTIFACT_DIR: artifacts/hr-w-a-handoff-browser
+  HR_WA_BROWSER_ARTIFACT_DIR: tests/artifacts/hr-w-a-handoff-browser
 
 jobs:
   hr04-to-hr05-browser-first:
@@ -81,8 +81,8 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for W-A browser gate' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for W-A browser gate' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Migrate fresh MySQL
@@ -226,9 +226,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/hr-w-a-handoff-browser
+          mkdir -p tests/artifacts/hr-w-a-handoff-browser
           python manage.py runserver 127.0.0.1:8000 --noreload \
-            > artifacts/hr-w-a-handoff-browser/django-runserver.log 2>&1 &
+            > tests/artifacts/hr-w-a-handoff-browser/django-runserver.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
@@ -241,18 +241,18 @@ jobs:
             sleep 1
           done
           if [ "$ready" != "1" ]; then
-            cat artifacts/hr-w-a-handoff-browser/django-runserver.log
+            cat tests/artifacts/hr-w-a-handoff-browser/django-runserver.log
             exit 1
           fi
 
           curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
-            | tee artifacts/hr-w-a-handoff-browser/readiness.json
+            | tee tests/artifacts/hr-w-a-handoff-browser/readiness.json
           python - <<'PY'
           import json
           from pathlib import Path
 
           payload = json.loads(
-              Path("artifacts/hr-w-a-handoff-browser/readiness.json").read_text()
+              Path("tests/artifacts/hr-w-a-handoff-browser/readiness.json").read_text()
           )
           assert payload.get("status") == "ok", payload
           assert payload.get("database_vendor") == "mysql", payload
@@ -273,7 +273,7 @@ jobs:
           from hr_structure.models import HrPositionReservation
 
           evidence = json.loads(
-              Path("artifacts/hr-w-a-handoff-browser/evidence.json").read_text()
+              Path("tests/artifacts/hr-w-a-handoff-browser/evidence.json").read_text()
           )
           proposed_id = evidence["proposed_hire_id"]
           case_id = evidence["hr05_case_id"]
@@ -314,6 +314,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hr-w-a-handoff-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
-          path: artifacts/hr-w-a-handoff-browser/
+          path: tests/artifacts/hr-w-a-handoff-browser/
           if-no-files-found: error
           retention-days: 14

@@ -67,32 +67,32 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for CI' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Syntax gate
         shell: bash
         run: |
-          mapfile -t hr_dirs < <(find . -maxdepth 1 -type d \( -name 'hr_*' -o -name 'hr10_development' \) -printf '%f\n' | sort)
-          python -m compileall -q horilla base employee "${hr_dirs[@]}"
+          mapfile -t hr_dirs < <(find backend -maxdepth 1 -type d \( -name 'hr_*' -o -name 'hr10_development' \) -printf '%p\n' | sort)
+          python -m compileall -q backend/horilla backend/base backend/employee "${hr_dirs[@]}"
 
       - name: Format gate for takeover-owned bootstrap files
         run: |
           black --check --diff \
-            horilla/settings/__init__.py \
-            horilla/settings/ci_test.py \
-            horilla/settings/security.py \
-            horilla/hr_urls.py \
-            base/auth_backends.py \
-            employee/scheduler.py
+            backend/horilla/settings/__init__.py \
+            backend/horilla/settings/ci_test.py \
+            backend/horilla/settings/security.py \
+            backend/horilla/hr_urls.py \
+            backend/base/auth_backends.py \
+            backend/employee/scheduler.py
           isort --check-only --profile black \
-            horilla/settings/__init__.py \
-            horilla/settings/ci_test.py \
-            horilla/settings/security.py \
-            horilla/hr_urls.py \
-            base/auth_backends.py \
-            employee/scheduler.py
+            backend/horilla/settings/__init__.py \
+            backend/horilla/settings/ci_test.py \
+            backend/horilla/settings/security.py \
+            backend/horilla/hr_urls.py \
+            backend/base/auth_backends.py \
+            backend/employee/scheduler.py
 
       - name: Django system check
         run: python manage.py check
@@ -116,11 +116,11 @@ jobs:
             printf '%s' "$output" | python -c 'import sys; s=sys.stdin.read()[:8000]; e=s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"); print("::error file=.github/workflows/quality.yml,title=Migration drift detected::" + e)'
 
             python manage.py makemigrations --noinput --verbosity 1
-            mkdir -p migration-drift-artifacts
+            mkdir -p tests/artifacts/migration-drift
             while IFS= read -r file; do
               [ -n "$file" ] || continue
-              mkdir -p "migration-drift-artifacts/$(dirname "$file")"
-              cp "$file" "migration-drift-artifacts/$file"
+              mkdir -p "tests/artifacts/migration-drift/$(dirname "$file")"
+              cp "$file" "tests/artifacts/migration-drift/$file"
             done < <(git ls-files --others --exclude-standard '*migrations/*.py')
             exit "$status"
           fi
@@ -130,7 +130,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: migration-drift-candidates
-          path: migration-drift-artifacts/
+          path: tests/artifacts/migration-drift/
           if-no-files-found: error
           retention-days: 3
 

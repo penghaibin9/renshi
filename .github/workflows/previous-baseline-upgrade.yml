@@ -218,8 +218,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
+          settings_dir=backend/horilla/settings
+          if [ ! -d "$settings_dir" ]; then settings_dir=horilla/settings; fi
+          if [ ! -f "$settings_dir/local_settings.py" ]; then
+            printf '%s\n' '# Ephemeral for CI' > "$settings_dir/local_settings.py"
           fi
           python manage.py check
           python manage.py migrate --noinput
@@ -240,8 +242,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for CI' > backend/horilla/settings/local_settings.py
           fi
           python manage.py check
           python manage.py migrate --noinput

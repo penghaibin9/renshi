@@ -7,6 +7,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BACKEND_ROOT = ROOT / "backend"
+DOCS_ROOT = ROOT / "docs"
 MODULES = (
     ("01-HR01-人事工作台", "hr_control_center"),
     ("02-HR02-组织机构与编制岗位", "hr_structure"),
@@ -32,10 +34,10 @@ MODULES = (
 def main() -> int:
     errors: list[str] = []
     for hub, app in MODULES:
-        if not (ROOT / app).is_dir():
+        if not (BACKEND_ROOT / app).is_dir():
             errors.append(f"missing Django app: {app}")
-        if not (ROOT / "modules" / hub / "README.md").is_file():
-            errors.append(f"missing module entry: modules/{hub}/README.md")
+        if not (DOCS_ROOT / "modules" / hub / "README.md").is_file():
+            errors.append(f"missing module entry: docs/modules/{hub}/README.md")
 
     workspace_path = ROOT / "Renshi-18模块.code-workspace"
     try:
@@ -46,9 +48,8 @@ def main() -> int:
 
     folders = workspace.get("folders", [])
     paths = [row.get("path") for row in folders if isinstance(row, dict)]
-    expected_paths = [app for _, app in MODULES]
-    if paths != expected_paths:
-        errors.append("workspace must expose exactly HR01-HR18 in order")
+    if paths != ["."]:
+        errors.append("workspace must expose the organized repository root")
 
     if errors:
         print("HR18 structure check: FAILED")
@@ -59,7 +60,7 @@ def main() -> int:
     print("HR18 structure check: OK")
     print("- 18 Django apps found")
     print("- 18 beginner module entries found")
-    print("- workspace exposes exactly HR01-HR18")
+    print("- workspace exposes the organized frontend/backend repository")
     return 0
 
 

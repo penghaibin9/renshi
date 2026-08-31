@@ -50,10 +50,12 @@ local_settings.py
 media/
 staticfiles/
 static_root/
+.runtime/
 
 # Environments
 .env
 .venv
+.venv-ci/
 env/
 venv/
 ENV/
@@ -69,6 +71,7 @@ horillavenv/
 
 # Node
 node_modules/
+frontend/node_modules/
 
 # Git
 .git

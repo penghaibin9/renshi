@@ -7,13 +7,13 @@ on:
     paths:
       - ".github/workflows/hr-w-b-browser.yml"
       - "scripts/hr_w_b_external_browser.py"
-      - "horilla/hr_urls.py"
-      - "horilla_theme/templates/hr_external/hiring_detail.html"
-      - "static/hr/js/pages/hr08-wb-agreement.js"
-      - "hr_external/api/wb_agreement.py"
-      - "hr_external/services/hiring_service.py"
-      - "hr_external/integrations/hr07.py"
-      - "hr_contracts/**"
+      - "backend/horilla/hr_urls.py"
+      - "backend/horilla_theme/templates/hr_external/hiring_detail.html"
+      - "frontend/static/hr/js/pages/hr08-wb-agreement.js"
+      - "backend/hr_external/api/wb_agreement.py"
+      - "backend/hr_external/services/hiring_service.py"
+      - "backend/hr_external/integrations/hr07.py"
+      - "backend/hr_contracts/**"
 
 permissions:
   contents: read
@@ -33,7 +33,7 @@ env:
   HR_BROWSER_USERNAME: wb-browser-auditor
   HR_BROWSER_PASSWORD: wb-browser-only-password
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
-  HR_BROWSER_ARTIFACT_DIR: artifacts/hr-w-b-browser
+  HR_BROWSER_ARTIFACT_DIR: tests/artifacts/hr-w-b-browser
 
 jobs:
   real-agreement-activation:
@@ -67,7 +67,7 @@ jobs:
       - name: Syntax gate for W-B browser ownership
         run: |
           python -m py_compile \
-            hr_external/api/wb_agreement.py \
+            backend/hr_external/api/wb_agreement.py \
             scripts/hr_w_b_external_browser.py
 
       - name: Install application and Chromium
@@ -84,8 +84,8 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for W-B browser gate' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for W-B browser gate' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Migrate real ephemeral MySQL runtime
@@ -96,7 +96,7 @@ jobs:
       - name: Seed one real W-B tenant/person/agreement chain
         shell: bash
         run: |
-          mkdir -p artifacts/hr-w-b-browser
+          mkdir -p tests/artifacts/hr-w-b-browser
           python manage.py shell <<'PY'
           import json
           import os
@@ -245,7 +245,7 @@ jobs:
               as_of=today,
           )
 
-          Path("artifacts/hr-w-b-browser/seed.json").write_text(
+          Path("tests/artifacts/hr-w-b-browser/seed.json").write_text(
               json.dumps({
                   "tenant_id": company.pk,
                   "case_id": str(case.id),
@@ -262,7 +262,7 @@ jobs:
         run: |
           set -euo pipefail
           python manage.py runserver 127.0.0.1:8000 --noreload \
-            > artifacts/hr-w-b-browser/django-runserver.log 2>&1 &
+            > tests/artifacts/hr-w-b-browser/django-runserver.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
@@ -275,12 +275,12 @@ jobs:
             sleep 1
           done
           if [ "$ready" != "1" ]; then
-            cat artifacts/hr-w-b-browser/django-runserver.log
+            cat tests/artifacts/hr-w-b-browser/django-runserver.log
             exit 1
           fi
 
           curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
-            | tee artifacts/hr-w-b-browser/readiness.json
+            | tee tests/artifacts/hr-w-b-browser/readiness.json
           python scripts/hr_w_b_external_browser.py
 
       - name: Direct MySQL W-B browser seal
@@ -294,7 +294,7 @@ jobs:
           from hr_external.models import HrExternalAuditEvent, HrExternalEngagement, HrExternalHiringCase
           from hr_staff.models import HrEmploymentRelationship, HrStaffMaster
 
-          seed = json.loads(Path("artifacts/hr-w-b-browser/seed.json").read_text())
+          seed = json.loads(Path("tests/artifacts/hr-w-b-browser/seed.json").read_text())
           tenant_id = seed["tenant_id"]
           case_id = seed["case_id"]
           person_id = seed["candidate_person_id"]
@@ -337,6 +337,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hr-w-b-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
-          path: artifacts/hr-w-b-browser/
+          path: tests/artifacts/hr-w-b-browser/
           if-no-files-found: error
           retention-days: 14

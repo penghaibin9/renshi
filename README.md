@@ -3,16 +3,15 @@
 > 仓库：`penghaibin9/renshi`  
 > 底座：Horilla HRMS 2.0（正在逐步接管，不再按 Horilla 上游开发分支规则施工）  
 > 当前本地集成分支：`main`
-> 本轮施工来源分支：`agent/renshi-ui-v2-20260827`
-> 稳定分支规则：**没有全绿验收，不合并 `main`**
+> 稳定分支规则：**没有全绿验收，不推送远端**
 
-## 本地开发只认这三个入口
+## 新手只认这三个入口
 
-1. 打开 [`Renshi-18模块.code-workspace`](Renshi-18模块.code-workspace)，文件树只显示 HR01～HR18。
+1. 打开 [`Renshi-18模块.code-workspace`](Renshi-18模块.code-workspace)，它只打开这一份正式主程序。
 2. 阅读 [`docs/新手本地开发总控.md`](docs/新手本地开发总控.md)，按固定步骤施工。
-3. 进入 [`modules/README.md`](modules/README.md)，一次只选择一个模块。
+3. 进入 [`docs/modules/README.md`](docs/modules/README.md)，一次只选择一个模块。
 
-`modules/` 是给人看的 18 模块控制面；现有 `hr_*` Django app 暂不移动，避免破坏 Python 导入、migration 历史和测试。前端文件按模块逐步迁回各自 app，不做一次性大搬家。
+正式源码已经整理为国内团队常见的前后端结构。Django app 的内部名称保持不变，因此数据库迁移、Python 导入和已有 V2 页面不会丢失。
 
 ## 先看这一段
 
@@ -70,40 +69,43 @@ Cross-domain write: Provider / Command API / durable Event
 
 ## 目录怎么认
 
-### 先认识 6 类目录
+### 先认识这些目录
 
 ```text
-horilla/                 Django 全局设置、URL、启动配置
-base/                    Horilla 基础能力与多学校/权限底座
-employee/                Horilla 旧员工域（Legacy，逐步被 HR03 等接管）
-hr_* / hr10_development/ 新高校人事模块代码
-
-docs/                    系统设计、总控、模块施工册、验收资料
-.github/workflows/        GitHub Actions 门禁（当前需要重建为 main + MySQL）
+backend/                  后端：Django 配置、基础能力、HR01～HR18 业务代码
+frontend/                 前端：V2 模板、CSS、JavaScript、图片和本地前端依赖
+deploy/                   部署：Docker 启动脚本、Nginx、Gunicorn
+docs/                     文档：新手说明、模块施工册、验收报告
+tests/                    测试：视觉测试、基线和测试产物
+scripts/                  工具：数据准备、检查和浏览器验收脚本
+.runtime/                 本机运行数据（数据库、上传文件、静态收集文件，不提交 Git）
+.github/workflows/        GitHub Actions 自动验收
 ```
+
+日常启动仍在仓库根目录运行 `python manage.py ...` 或 Docker 命令，不需要进入 `backend/`。
 
 ### HR01~HR18 对应代码目录
 
 | 模块 | 业务 | 代码目录 |
 |---|---|---|
-| HR01 | 人事工作台 | `hr_control_center/` |
-| HR02 | 组织机构与编制岗位 | `hr_structure/` |
-| HR03 | 教职工主档 | `hr_staff/` |
-| HR04 | 招聘与人才引进 | `hr_recruitment/` |
-| HR05 | 入职管理 | `hr_onboarding/` |
-| HR06 | 人事异动 | `hr_changes/` |
-| HR07 | 合同与聘用 | `hr_contracts/` |
-| HR08 | 兼职外聘教师 | `hr_external/` |
-| HR09 | 教师资格与双师型 | `hr_qualification/` |
-| HR10 | 培训进修与企业实践 | `hr10_development/` |
-| HR11 | 考勤与请假 | `hr_time/` |
-| HR12 | 年度与聘期考核 | `hr_assessment/` |
-| HR13 | 职称评审 | `hr_title/` |
-| HR14 | 岗位聘任 | `hr_appointment/` |
-| HR15 | 薪酬福利 | `hr_payroll/` |
-| HR16 | 退休与离校 | `hr_exit/` |
-| HR17 | 教职工服务 | `hr_self/` |
-| HR18 | 人事数据中心 | `hr_data/` |
+| HR01 | 人事工作台 | `backend/hr_control_center/` |
+| HR02 | 组织机构与编制岗位 | `backend/hr_structure/` |
+| HR03 | 教职工主档 | `backend/hr_staff/` |
+| HR04 | 招聘与人才引进 | `backend/hr_recruitment/` |
+| HR05 | 入职管理 | `backend/hr_onboarding/` |
+| HR06 | 人事异动 | `backend/hr_changes/` |
+| HR07 | 合同与聘用 | `backend/hr_contracts/` |
+| HR08 | 兼职外聘教师 | `backend/hr_external/` |
+| HR09 | 教师资格与双师型 | `backend/hr_qualification/` |
+| HR10 | 培训进修与企业实践 | `backend/hr10_development/` |
+| HR11 | 考勤与请假 | `backend/hr_time/` |
+| HR12 | 年度与聘期考核 | `backend/hr_assessment/` |
+| HR13 | 职称评审 | `backend/hr_title/` |
+| HR14 | 岗位聘任 | `backend/hr_appointment/` |
+| HR15 | 薪酬福利 | `backend/hr_payroll/` |
+| HR16 | 退休与离校 | `backend/hr_exit/` |
+| HR17 | 教职工服务 | `backend/hr_self/` |
+| HR18 | 人事数据中心 | `backend/hr_data/` |
 
 ## 新手每天只做这 5 步
 

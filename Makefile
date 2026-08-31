@@ -2,7 +2,7 @@
 
 COMPOSE ?= docker compose
 COMPOSE_PROD ?= $(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml
-I18N_EXCLUDES ?= --ignore=static/build/* --ignore=static/images/ionicons/*
+I18N_EXCLUDES ?= --ignore=frontend/static/build/* --ignore=frontend/static/images/ionicons/*
 
 help: ## 查看新手常用命令
 	@echo '跃科高校人事系统常用命令:'

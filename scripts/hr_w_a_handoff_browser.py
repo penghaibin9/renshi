@@ -21,7 +21,7 @@ BASE_URL = os.getenv("HR_BROWSER_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 USERNAME = os.environ["HR_BROWSER_USERNAME"]
 PASSWORD = os.environ["HR_BROWSER_PASSWORD"]
 ARTIFACT_DIR = Path(
-    os.getenv("HR_WA_BROWSER_ARTIFACT_DIR", "artifacts/hr-w-a-handoff-browser")
+    os.getenv("HR_WA_BROWSER_ARTIFACT_DIR", "tests/artifacts/hr-w-a-handoff-browser")
 )
 
 

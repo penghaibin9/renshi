@@ -2,6 +2,13 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent
+BACKEND_DIR = REPO_ROOT / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 
 def main():

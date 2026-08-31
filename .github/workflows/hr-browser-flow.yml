@@ -23,7 +23,7 @@ env:
   HR_BROWSER_USERNAME: hr-runtime-browser-auditor
   HR_BROWSER_PASSWORD: runtime-browser-flow-only-password
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
-  HR_BROWSER_ARTIFACT_DIR: artifacts/hr-browser-flow
+  HR_BROWSER_ARTIFACT_DIR: tests/artifacts/hr-browser-flow
 
 jobs:
   real-browser-click-flow:
@@ -71,8 +71,8 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI browser flow' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for CI browser flow' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Migrate real ephemeral MySQL runtime
@@ -150,9 +150,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts/hr-browser-flow
+          mkdir -p tests/artifacts/hr-browser-flow
           python manage.py runserver 127.0.0.1:8000 --noreload \
-            > artifacts/hr-browser-flow/django-runserver.log 2>&1 &
+            > tests/artifacts/hr-browser-flow/django-runserver.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
 
@@ -165,17 +165,17 @@ jobs:
             sleep 1
           done
           if [ "$ready" != "1" ]; then
-            cat artifacts/hr-browser-flow/django-runserver.log
+            cat tests/artifacts/hr-browser-flow/django-runserver.log
             exit 1
           fi
 
           curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
-            | tee artifacts/hr-browser-flow/readiness.json
+            | tee tests/artifacts/hr-browser-flow/readiness.json
           python - <<'PY'
           import json
           from pathlib import Path
 
-          payload = json.loads(Path("artifacts/hr-browser-flow/readiness.json").read_text())
+          payload = json.loads(Path("tests/artifacts/hr-browser-flow/readiness.json").read_text())
           assert payload.get("status") == "ok", payload
           assert payload.get("database_vendor") == "mysql", payload
           PY
@@ -187,6 +187,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hr-real-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
-          path: artifacts/hr-browser-flow/
+          path: tests/artifacts/hr-browser-flow/
           if-no-files-found: error
           retention-days: 14

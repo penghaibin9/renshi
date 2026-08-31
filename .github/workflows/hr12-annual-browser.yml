@@ -7,19 +7,19 @@ on:
     paths:
       - ".github/workflows/hr12-annual-browser.yml"
       - "scripts/hr12_annual_browser.py"
-      - "hr_assessment/api/urls.py"
-      - "hr_assessment/api/views_assessment.py"
-      - "hr_assessment/api/views_policy.py"
-      - "hr_assessment/models/**"
-      - "hr_assessment/service/**"
-      - "hr_assessment/services/**"
-      - "hr_assessment/providers/**"
-      - "hr_assessment/templates/hr_assessment/workspace.html"
-      - "hr_assessment/tests/test_hr12_v2_workspace.py"
-      - "static/hr/css/hr12-assessment.css"
-      - "static/hr/css/hr12-actions.css"
-      - "static/hr/js/pages/hr12-assessment.js"
-      - "static/hr/js/pages/hr12-actions.js"
+      - "backend/hr_assessment/api/urls.py"
+      - "backend/hr_assessment/api/views_assessment.py"
+      - "backend/hr_assessment/api/views_policy.py"
+      - "backend/hr_assessment/models/**"
+      - "backend/hr_assessment/service/**"
+      - "backend/hr_assessment/services/**"
+      - "backend/hr_assessment/providers/**"
+      - "backend/hr_assessment/templates/hr_assessment/workspace.html"
+      - "backend/hr_assessment/tests/test_hr12_v2_workspace.py"
+      - "frontend/static/hr/css/hr12-assessment.css"
+      - "frontend/static/hr/css/hr12-actions.css"
+      - "frontend/static/hr/js/pages/hr12-assessment.js"
+      - "frontend/static/hr/js/pages/hr12-actions.js"
 
 permissions:
   contents: read
@@ -40,7 +40,7 @@ env:
   HR_BROWSER_USERNAME: hr12-annual-auditor
   HR_BROWSER_PASSWORD: hr12-annual-only-password
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
-  HR_BROWSER_ARTIFACT_DIR: artifacts/hr12-annual-browser
+  HR_BROWSER_ARTIFACT_DIR: tests/artifacts/hr12-annual-browser
 
 jobs:
   annual-formal-result:
@@ -74,10 +74,10 @@ jobs:
       - name: Syntax gate for HR12 Annual ownership
         run: |
           python -m py_compile \
-            hr_assessment/api/views_assessment.py \
-            hr_assessment/api/views_policy.py \
-            hr_assessment/tests/test_annual_api.py \
-            hr_assessment/tests/test_hr12_v2_workspace.py \
+            backend/hr_assessment/api/views_assessment.py \
+            backend/hr_assessment/api/views_policy.py \
+            backend/hr_assessment/tests/test_annual_api.py \
+            backend/hr_assessment/tests/test_hr12_v2_workspace.py \
             scripts/hr12_annual_browser.py
 
       - name: Install application and Chromium
@@ -94,8 +94,8 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for HR12 Annual browser gate' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for HR12 Annual browser gate' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Migrate real ephemeral MySQL runtime
@@ -158,7 +158,7 @@ jobs:
       - name: Seed one real HR12 Annual authority chain
         shell: bash
         run: |
-          mkdir -p artifacts/hr12-annual-browser
+          mkdir -p tests/artifacts/hr12-annual-browser
           python manage.py shell <<'PY'
           import json
           import os
@@ -339,7 +339,7 @@ jobs:
               status="COMPLETED",
           )
 
-          Path("artifacts/hr12-annual-browser/seed.json").write_text(
+          Path("tests/artifacts/hr12-annual-browser/seed.json").write_text(
               json.dumps({
                   "tenant_id": company.pk,
                   "case_id": str(case.id),
@@ -354,8 +354,8 @@ jobs:
       - name: Boot Django and click evidence then formal finalization
         shell: bash
         run: |
-          python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/hr12-annual-browser/server.log 2>&1 &
-          echo $! > artifacts/hr12-annual-browser/server.pid
+          python manage.py runserver 127.0.0.1:8000 --noreload > tests/artifacts/hr12-annual-browser/server.log 2>&1 &
+          echo $! > tests/artifacts/hr12-annual-browser/server.pid
           for i in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/login/ >/dev/null; then
               break
@@ -373,7 +373,7 @@ jobs:
 
           from hr_assessment.models import HrAssessmentCase, HrFinalAssessmentResult, HrProviderSnapshotSet
 
-          seed = json.loads(Path("artifacts/hr12-annual-browser/seed.json").read_text(encoding="utf-8"))
+          seed = json.loads(Path("tests/artifacts/hr12-annual-browser/seed.json").read_text(encoding="utf-8"))
           tenant_id = seed["tenant_id"]
           case_id = seed["case_id"]
           decision_id = seed["decision_session_id"]
@@ -404,5 +404,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hr12-annual-browser-${{ github.run_id }}
-          path: artifacts/hr12-annual-browser/
+          path: tests/artifacts/hr12-annual-browser/
           if-no-files-found: warn

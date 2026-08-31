@@ -5,24 +5,11 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - "templates/hr/**"
-      - "static/hr/**"
-      - "hr_*/templates/**"
-      - "horilla_theme/templates/hr/**"
-      - "hr_visual_audit_tests.py"
-      - "hr_v2_visual_audit_tests.py"
-      - "hr_v2_shell_regression_tests.py"
-      - "hr05_visual_audit_tests.py"
-      - "hr06_visual_audit_tests.py"
-      - "hr09_visual_audit_tests.py"
-      - "hr10_visual_audit_tests.py"
-      - "hr11_visual_audit_tests.py"
-      - "hr13_visual_audit_tests.py"
-      - "hr14_visual_audit_tests.py"
-      - "hr15_visual_audit_tests.py"
-      - "hr16_visual_audit_tests.py"
-      - "hr17_visual_audit_tests.py"
-      - "hr18_visual_audit_tests.py"
+      - "frontend/templates/hr/**"
+      - "frontend/static/hr/**"
+      - "backend/hr_*/templates/**"
+      - "backend/horilla_theme/templates/hr/**"
+      - "tests/visual/**"
       - ".github/workflows/hr-visual-audit.yml"
 
 permissions:
@@ -82,8 +69,8 @@ jobs:
 
       - name: Ensure local settings stub
         run: |
-          if [ ! -f horilla/settings/local_settings.py ]; then
-            printf '%s\n' '# Ephemeral for CI visual audit' > horilla/settings/local_settings.py
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for CI visual audit' > backend/horilla/settings/local_settings.py
           fi
 
       - name: Restore migrated MySQL snapshot
@@ -91,7 +78,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .ci-cache/hr-visual-mysql.sql
-          key: hr-visual-mysql-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('**/migrations/*.py', 'requirements.txt', 'horilla/settings/__init__.py') }}
+          key: hr-visual-mysql-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('**/migrations/*.py', 'requirements.txt', 'backend/horilla/settings/__init__.py') }}
 
       - name: Prepare visual audit MySQL schemas
         shell: bash
@@ -153,24 +140,24 @@ jobs:
       - name: Capture real Chromium screenshots
         env:
           HR_VISUAL_AUDIT: "1"
-          HR_VISUAL_ARTIFACT_DIR: artifacts/hr-visual
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
         run: |
           python manage.py test \
-            hr_v2_visual_audit_tests.HrV2VisualAuditTests \
-            hr_v2_shell_regression_tests.HrV2ShellRegressionTests \
-            hr05_visual_audit_tests.Hr05VisualAuditTests \
-            hr06_visual_audit_tests.Hr06VisualAuditTests \
-            hr08_visual_audit_tests.Hr08VisualAuditTests \
-            hr09_visual_audit_tests.Hr09VisualAuditTests \
-            hr10_visual_audit_tests.Hr10VisualAuditTests \
-            hr11_visual_audit_tests.Hr11VisualAuditTests \
-            hr13_visual_audit_tests.Hr13VisualAuditTests \
-            hr14_visual_audit_tests.Hr14VisualAuditTests \
-            hr15_visual_audit_tests.Hr15VisualAuditTests \
-            hr16_visual_audit_tests.Hr16VisualAuditTests \
-            hr17_visual_audit_tests.Hr17VisualAuditTests \
-            hr18_visual_audit_tests.Hr18VisualAuditTests \
-            hr_visual_audit_tests.HrVisualAuditTests \
+            tests.visual.hr_v2_visual_audit_tests.HrV2VisualAuditTests \
+            tests.visual.hr_v2_shell_regression_tests.HrV2ShellRegressionTests \
+            tests.visual.hr05_visual_audit_tests.Hr05VisualAuditTests \
+            tests.visual.hr06_visual_audit_tests.Hr06VisualAuditTests \
+            tests.visual.hr08_visual_audit_tests.Hr08VisualAuditTests \
+            tests.visual.hr09_visual_audit_tests.Hr09VisualAuditTests \
+            tests.visual.hr10_visual_audit_tests.Hr10VisualAuditTests \
+            tests.visual.hr11_visual_audit_tests.Hr11VisualAuditTests \
+            tests.visual.hr13_visual_audit_tests.Hr13VisualAuditTests \
+            tests.visual.hr14_visual_audit_tests.Hr14VisualAuditTests \
+            tests.visual.hr15_visual_audit_tests.Hr15VisualAuditTests \
+            tests.visual.hr16_visual_audit_tests.Hr16VisualAuditTests \
+            tests.visual.hr17_visual_audit_tests.Hr17VisualAuditTests \
+            tests.visual.hr18_visual_audit_tests.Hr18VisualAuditTests \
+            tests.visual.hr_visual_audit_tests.HrVisualAuditTests \
             --keepdb --noinput --verbosity 2
 
       - name: Upload visual audit screenshots
@@ -178,6 +165,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hr-visual-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
-          path: artifacts/hr-visual/
+          path: tests/artifacts/hr-visual/
           if-no-files-found: error
           retention-days: 14
