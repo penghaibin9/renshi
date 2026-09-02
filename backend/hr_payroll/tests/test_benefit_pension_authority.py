@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 from hr_payroll.authority_models import BenefitPlan, OccupationalPensionPeriod
 from hr_payroll.services.benefit_pension_service import BenefitPensionAuthorityService, PayrollAuthorityError
+from hr_payroll.selectors import dashboard_snapshot
 from hr_staff.models import HrOutboxEvent
 from hr_staff.tests.factories import make_person, make_staff
 
@@ -27,6 +28,92 @@ class BenefitPensionAuthorityTests(TestCase):
         fact.employer_amount = Decimal("1.00")
         with self.assertRaises(ValueError): fact.save()
         self.assertTrue(HrOutboxEvent.objects.filter(event_type="hr.payroll.benefit_enrollment.effective").exists())
+
+    def test_workspace_reports_benefit_capability_even_before_first_plan(self):
+        snapshot = dashboard_snapshot(TENANT)
+
+        self.assertTrue(snapshot["capabilities"]["allowanceBenefits"])
+        self.assertEqual(snapshot["recentBenefitPlans"], [])
+        self.assertEqual(snapshot["recentBenefitEnrollments"], [])
+
+    def test_benefit_plan_same_version_rejects_different_content(self):
+        values = {
+            "plan_code": "TRAFFIC",
+            "version_no": 1,
+            "name": "交通补贴",
+            "benefit_type": "TRANSPORT_ALLOWANCE",
+            "effective_from": date(2026, 1, 1),
+            "rule_snapshot": {"scope": "active_staff"},
+            "fixed_amount": 300,
+        }
+        first = self.service.create_benefit_plan(**values)
+        self.assertEqual(self.service.create_benefit_plan(**values).id, first.id)
+
+        with self.assertRaises(PayrollAuthorityError) as ctx:
+            self.service.create_benefit_plan(**{**values, "fixed_amount": 500})
+
+        self.assertEqual(ctx.exception.code, "BENEFIT_PLAN_IDEMPOTENCY_CONFLICT")
+
+    def test_benefit_enrollment_number_rejects_different_content(self):
+        plan = self.service.create_benefit_plan(
+            plan_code="MEAL",
+            version_no=1,
+            name="餐费补贴",
+            benefit_type="MEAL_ALLOWANCE",
+            effective_from=date(2026, 1, 1),
+            rule_snapshot={},
+        )
+        plan = self.service.publish_benefit_plan(plan.id)
+        values = {
+            "enrollment_no": "BEN-IDEMPOTENT",
+            "plan_id": plan.id,
+            "staff_id": self.staff.id,
+            "effective_from": date(2026, 1, 1),
+            "employer_amount": 200,
+        }
+        first = self.service.enroll_benefit(**values)
+        self.assertEqual(self.service.enroll_benefit(**values).id, first.id)
+
+        with self.assertRaises(PayrollAuthorityError) as ctx:
+            self.service.enroll_benefit(
+                **{**values, "employer_amount": 201}
+            )
+
+        self.assertEqual(
+            ctx.exception.code, "BENEFIT_ENROLLMENT_IDEMPOTENCY_CONFLICT"
+        )
+
+    def test_benefit_enrollment_invalid_identifiers_are_domain_errors(self):
+        with self.assertRaises(PayrollAuthorityError) as ctx:
+            self.service.enroll_benefit(
+                enrollment_no="BEN-BAD-ID",
+                plan_id="not-a-uuid",
+                staff_id=self.staff.id,
+                effective_from=date(2026, 1, 1),
+            )
+
+        self.assertEqual(ctx.exception.code, "BENEFIT_PLAN_NOT_FOUND")
+
+    def test_benefit_plan_rejects_non_finite_and_oversized_values(self):
+        common = {
+            "plan_code": "SAFE-AMOUNT",
+            "version_no": 1,
+            "name": "金额边界",
+            "benefit_type": "ALLOWANCE",
+            "effective_from": date(2026, 1, 1),
+            "rule_snapshot": {},
+        }
+        with self.assertRaises(PayrollAuthorityError) as ctx:
+            self.service.create_benefit_plan(
+                **common, fixed_amount="NaN"
+            )
+        self.assertEqual(ctx.exception.code, "BENEFIT_PLAN_AMOUNT_INVALID")
+
+        with self.assertRaises(PayrollAuthorityError) as ctx:
+            self.service.create_benefit_plan(
+                **{**common, "plan_code": "X" * 65}
+            )
+        self.assertEqual(ctx.exception.code, "BENEFIT_PLAN_INPUT_INVALID")
 
     def _period(self):
         plan = self.service.create_pension_plan(plan_code="OCC-PENSION",version_no=1,name="职业年金",employer_rate=Decimal("0.08"),employee_rate=Decimal("0.04"),basis_rule={"basis":"approved_monthly"},effective_from=date(2026,1,1))

@@ -2,6 +2,13 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .api import HrPayrollAccessError, resolve_request_tenant
+from .authority_registry import (
+    PERM_BENEFIT_MANAGE,
+    PERM_CALCULATE,
+    PERM_CHANGE_APPROVE,
+    PERM_CHANGE_MANAGE,
+    PERM_INPUT_MANAGE,
+)
 
 SECTIONS = {
     "overview": "薪酬总览",
@@ -33,6 +40,17 @@ def workspace(request, section="overview"):
         )
     user = request.user
     can_adjust = bool(user.is_superuser or user.has_perm("hr.payroll.adjust"))
+    can_input = bool(user.is_superuser or user.has_perm(PERM_INPUT_MANAGE))
+    can_calculate = bool(user.is_superuser or user.has_perm(PERM_CALCULATE))
+    can_benefit_manage = bool(
+        user.is_superuser or user.has_perm(PERM_BENEFIT_MANAGE)
+    )
+    can_change_manage = bool(
+        user.is_superuser or user.has_perm(PERM_CHANGE_MANAGE)
+    )
+    can_change_approve = bool(
+        user.is_superuser or user.has_perm(PERM_CHANGE_APPROVE)
+    )
     return render(
         request,
         template_name,
@@ -41,5 +59,10 @@ def workspace(request, section="overview"):
             "section": section,
             "section_title": title,
             "can_adjust": can_adjust,
+            "can_input": can_input,
+            "can_calculate": can_calculate,
+            "can_benefit_manage": can_benefit_manage,
+            "can_change_manage": can_change_manage,
+            "can_change_approve": can_change_approve,
         },
     )

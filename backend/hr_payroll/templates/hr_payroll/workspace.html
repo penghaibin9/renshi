@@ -11,7 +11,12 @@
 
 {% block content %}
 <div class="hr-v2-page hr15" data-module="HR15" data-section="{{ section }}"
-     data-can-adjust="{{ can_adjust|yesno:'true,false' }}">
+     data-can-adjust="{{ can_adjust|yesno:'true,false' }}"
+     data-can-input="{{ can_input|yesno:'true,false' }}"
+     data-can-calculate="{{ can_calculate|yesno:'true,false' }}"
+     data-can-benefit-manage="{{ can_benefit_manage|yesno:'true,false' }}"
+     data-can-change-manage="{{ can_change_manage|yesno:'true,false' }}"
+     data-can-change-approve="{{ can_change_approve|yesno:'true,false' }}">
   {% if access_error %}
     <div class="hr15-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -48,11 +53,11 @@
 
     {% if section == 'overview' %}
       <section class="hr-v2-section" aria-labelledby="hr15-chain-title">
-        <div class="hr-v2-section__head"><div><h2 id="hr15-chain-title">月度薪酬业务链</h2><p>当前已接通部分以正式业务记录为准；未接通环节不会用示例金额补齐。</p></div></div>
+        <div class="hr-v2-section__head"><div><h2 id="hr15-chain-title">月度薪酬业务链</h2><p>各环节均以正式业务记录和受信上游输入为准；缺少依据时会明确阻断。</p></div></div>
         <div class="hr15-process" aria-label="薪酬六段业务链">
           <a class="hr15-process__step" href="{% url 'hr_payroll:profiles' %}"><span class="hr15-process__no">01</span><b>薪酬档案</b><small>确认工资组、币种和生效区间</small></a>
           <a class="hr15-process__step" href="{% url 'hr_payroll:periods' %}"><span class="hr15-process__no">02</span><b>工资期间</b><small>建立期间并冻结结算边界</small></a>
-          <a class="hr15-process__step" href="{% url 'hr_payroll:calculations' %}"><span class="hr15-process__no">03</span><b>工资核算</b><small>完整核算能力尚未接通时明确阻断</small></a>
+          <a class="hr15-process__step" href="{% url 'hr_payroll:calculations' %}"><span class="hr15-process__no">03</span><b>工资核算</b><small>冻结输入后执行可解释的正式核算</small></a>
           <a class="hr15-process__step" href="{% url 'hr_payroll:results' %}"><span class="hr15-process__no">04</span><b>正式结果</b><small>封板后形成不可随意覆盖的工资记录</small></a>
           <a class="hr15-process__step" href="{% url 'hr_payroll:payments' %}"><span class="hr15-process__no">05</span><b>支付工资条</b><small>支付事实与工资结果必须分离</small></a>
           <a class="hr15-process__step" href="{% url 'hr_payroll:reconciliation' %}"><span class="hr15-process__no">06</span><b>财务对账</b><small>银行/财务回执接通后才确认一致</small></a>

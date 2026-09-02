@@ -16,6 +16,8 @@
     <script>
         window.CURRENT_LANGUAGE = "{{ LANGUAGE_CODE }}";
         var at_work_seconds = {{ request.user.employee_get.get_forecasted_at_work.forecasted_at_work_seconds|default:"0" }};
+        at_work_seconds = Number(at_work_seconds);
+        if (!Number.isFinite(at_work_seconds)) at_work_seconds = 0;
         var run = 0;
     </script>
     <title class="time-runner stop-runner">高校人事一体化平台</title>
@@ -23,11 +25,11 @@
     <meta name="theme-color" content="orangered">
     <link rel="manifest" href="{% static 'build/manifest.json' %}">
     <link rel="apple-touch-icon" sizes="180x180"
-        href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}">
-    <link rel="icon" type="image/png" sizes="32x32"
-        href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}">
-    <link rel="icon" type="image/png" sizes="16x16"
-        href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}">
+        href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}">
+    <link rel="icon" type="image/jpeg" sizes="32x32"
+        href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}">
+    <link rel="icon" type="image/jpeg" sizes="16x16"
+        href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}">
 
     <meta name="msapplication-TileColor" content="#da532c">
     <meta name="theme-color" content="#ffffff">
@@ -156,8 +158,8 @@
 
                         {% if show_section %}
                             <!-- Start of settings button in nav bar -->
-                            <div class="oh-navbar__action-icons" title="{% trans 'Settings' %}">
-                                <a href="{% url 'general-settings' %}" id="settingsMenu" class="oh-navbar__action-icons-link">
+                            <div class="oh-navbar__action-icons" title="{% trans 'System Settings' %}">
+                                <a href="{% url 'settings' %}" id="settingsMenu" class="oh-navbar__action-icons-link" aria-label="{% trans 'System Settings' %}">
                                     <ion-icon name="settings-outline" class="oh-navbar__icon"></ion-icon>
                                 </a>
                             </div>
@@ -279,6 +281,8 @@
         <script>
             // time-runner
             function secondsToDuration(seconds) {
+                seconds = Number(seconds);
+                if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
                 var hours = Math.floor(seconds / 3600);
                 var minutes = Math.floor((seconds % 3600) / 60);
                 var remainingSeconds = Math.floor(seconds % 60);

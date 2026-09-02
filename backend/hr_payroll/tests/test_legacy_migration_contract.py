@@ -1,15 +1,45 @@
-from django.db import connection
-from django.db.migrations.loader import MigrationLoader
-from django.test import TestCase
+import ast
+from pathlib import Path
+
+from django.test import SimpleTestCase
 
 
-class LegacyPayrollMigrationContractTests(TestCase):
+class LegacyPayrollMigrationContractTests(SimpleTestCase):
     """Guard the legacy payroll migration state while MySQL omits impossible DDL."""
 
     def test_allowance_unique_together_remains_in_migration_state(self):
-        loader = MigrationLoader(connection)
-        state = loader.project_state(("payroll", "0001_initial"))
-        allowance = state.models["payroll", "allowance"]
+        migration_path = (
+            Path(__file__).resolve().parents[2]
+            / "payroll"
+            / "migrations"
+            / "0001_initial.py"
+        )
+        tree = ast.parse(migration_path.read_text(encoding="utf-8"))
+        allowance_options = None
+        allowance_unique_together = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            keywords = {item.arg: item.value for item in node.keywords if item.arg}
+            name_node = keywords.get("name")
+            if name_node is None:
+                continue
+            operation_name = ast.literal_eval(name_node)
+            if node.func.attr == "CreateModel" and operation_name == "Allowance":
+                allowance_options = ast.literal_eval(keywords["options"])
+                allowance_unique_together.update(
+                    tuple(fields)
+                    for fields in allowance_options.get("unique_together", set())
+                )
+            if node.func.attr == "AlterUniqueTogether" and operation_name == "allowance":
+                allowance_unique_together.update(
+                    tuple(fields)
+                    for fields in ast.literal_eval(keywords["unique_together"])
+                )
+
+        self.assertIsNotNone(allowance_options, "Allowance migration model is missing")
 
         expected = (
             "title",
@@ -30,7 +60,4 @@ class LegacyPayrollMigrationContractTests(TestCase):
             "work_type_per_attendance_amount",
         )
 
-        unique_together = {
-            tuple(fields) for fields in allowance.options.get("unique_together", set())
-        }
-        self.assertIn(expected, unique_together)
+        self.assertIn(expected, allowance_unique_together)

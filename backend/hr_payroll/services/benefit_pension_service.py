@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Sum
 from django.utils import timezone
@@ -40,26 +41,105 @@ class BenefitPensionAuthorityService:
         self.correlation_id = correlation_id
 
     def _staff(self, staff_id):
-        staff = HrStaffMaster.objects.filter(id=staff_id, tenant_id=self.tenant_id).first()
+        try:
+            staff = HrStaffMaster.objects.filter(
+                id=staff_id, tenant_id=self.tenant_id
+            ).first()
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise PayrollAuthorityError(
+                "STAFF_NOT_FOUND", "staff not found inside tenant"
+            ) from exc
         if staff is None:
             raise PayrollAuthorityError("STAFF_NOT_FOUND", "staff not found inside tenant")
         return staff
 
     def _benefit_plan(self, plan_id, lock=False):
         qs = BenefitPlan.objects.select_for_update() if lock else BenefitPlan.objects
-        plan = qs.filter(id=plan_id, tenant_id=self.tenant_id).first()
+        try:
+            plan = qs.filter(id=plan_id, tenant_id=self.tenant_id).first()
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_NOT_FOUND", "benefit plan not found"
+            ) from exc
         if plan is None:
             raise PayrollAuthorityError("BENEFIT_PLAN_NOT_FOUND", "benefit plan not found")
         return plan
 
     @transaction.atomic
     def create_benefit_plan(self, *, plan_code, version_no, name, benefit_type, effective_from, rule_snapshot, provider_name="", employer_rate=0, employee_rate=0, fixed_amount=0, effective_to=None):
+        plan_code = str(plan_code or "").strip().upper()
+        name = str(name or "").strip()
+        benefit_type = str(benefit_type or "").strip().upper()
+        try:
+            version_no = int(version_no)
+            employer_rate = Decimal(str(employer_rate or 0))
+            employee_rate = Decimal(str(employee_rate or 0))
+            fixed_amount = _money(fixed_amount)
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_INPUT_INVALID", "invalid benefit plan number"
+            ) from exc
+        if not plan_code or not name or not benefit_type or version_no < 1:
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_INPUT_INVALID", "benefit plan fields are required"
+            )
+        if (
+            not employer_rate.is_finite()
+            or not employee_rate.is_finite()
+            or not fixed_amount.is_finite()
+            or employer_rate < 0
+            or employee_rate < 0
+            or fixed_amount < 0
+        ):
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_AMOUNT_INVALID", "benefit amounts cannot be negative"
+            )
+        if effective_from is None:
+            raise PayrollAuthorityError(
+                "EFFECTIVE_DATE_INVALID", "effective_from is required"
+            )
         if effective_to is not None and effective_to <= effective_from:
             raise PayrollAuthorityError("EFFECTIVE_DATE_INVALID", "invalid benefit plan range")
+        provider_name = str(provider_name or "").strip()
+        rule_snapshot = rule_snapshot or {}
+        if not isinstance(rule_snapshot, dict):
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_INPUT_INVALID", "benefit plan rules must be an object"
+            )
+        try:
+            json.dumps(rule_snapshot, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_INPUT_INVALID", "benefit plan rules are not serializable"
+            ) from exc
         existing = BenefitPlan.objects.select_for_update().filter(tenant_id=self.tenant_id, plan_code=plan_code, version_no=version_no).first()
         if existing:
-            return existing
-        return BenefitPlan.objects.create(tenant_id=self.tenant_id, created_by=self.actor_user_id, updated_by=self.actor_user_id, plan_code=plan_code, version_no=version_no, name=name, benefit_type=benefit_type, provider_name=provider_name or "", employer_rate=Decimal(str(employer_rate or 0)), employee_rate=Decimal(str(employee_rate or 0)), fixed_amount=_money(fixed_amount), effective_from=effective_from, effective_to=effective_to, rule_snapshot_json=rule_snapshot or {}, status=BenefitPlan.Status.DRAFT)
+            same_request = (
+                existing.name == name
+                and existing.benefit_type == benefit_type
+                and existing.provider_name == provider_name
+                and existing.employer_rate == employer_rate
+                and existing.employee_rate == employee_rate
+                and existing.fixed_amount == fixed_amount
+                and existing.effective_from == effective_from
+                and existing.effective_to == effective_to
+                and existing.rule_snapshot_json == rule_snapshot
+            )
+            if same_request:
+                return existing
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_IDEMPOTENCY_CONFLICT",
+                "plan code and version already exist with different content",
+            )
+        plan = BenefitPlan(tenant_id=self.tenant_id, created_by=self.actor_user_id, updated_by=self.actor_user_id, plan_code=plan_code, version_no=version_no, name=name, benefit_type=benefit_type, provider_name=provider_name, employer_rate=employer_rate, employee_rate=employee_rate, fixed_amount=fixed_amount, effective_from=effective_from, effective_to=effective_to, rule_snapshot_json=rule_snapshot, status=BenefitPlan.Status.DRAFT)
+        try:
+            plan.full_clean(exclude=("rule_snapshot_json",))
+        except ValidationError as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_INPUT_INVALID", "invalid benefit plan fields"
+            ) from exc
+        plan.save()
+        return plan
 
     @transaction.atomic
     def publish_benefit_plan(self, plan_id):
@@ -77,12 +157,70 @@ class BenefitPensionAuthorityService:
 
     @transaction.atomic
     def enroll_benefit(self, *, enrollment_no, plan_id, staff_id, effective_from, employer_amount=0, employee_amount=0, effective_to=None, snapshot=None, supersedes_enrollment_id=None):
+        enrollment_no = str(enrollment_no or "").strip().upper()
+        try:
+            employer_amount = _money(employer_amount)
+            employee_amount = _money(employee_amount)
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_INPUT_INVALID", "invalid benefit amount"
+            ) from exc
+        if not enrollment_no or effective_from is None:
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_INPUT_INVALID",
+                "enrollment number and effective date are required",
+            )
+        if (
+            not employer_amount.is_finite()
+            or not employee_amount.is_finite()
+            or employer_amount < 0
+            or employee_amount < 0
+        ):
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_AMOUNT_INVALID",
+                "benefit amounts cannot be negative",
+            )
+        if effective_to is not None and effective_to <= effective_from:
+            raise PayrollAuthorityError("EFFECTIVE_DATE_INVALID", "invalid enrollment range")
+        snapshot = snapshot or {}
+        if not isinstance(snapshot, dict):
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_INPUT_INVALID",
+                "benefit enrollment snapshot must be an object",
+            )
+        try:
+            json.dumps(snapshot, ensure_ascii=False)
+        except (TypeError, ValueError) as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_INPUT_INVALID",
+                "benefit enrollment snapshot is not serializable",
+            ) from exc
+        existing = BenefitEnrollmentFact.objects.select_for_update().filter(
+            tenant_id=self.tenant_id,
+            enrollment_no=enrollment_no,
+        ).first()
+        if existing:
+            same_request = (
+                str(existing.benefit_plan_id) == str(plan_id)
+                and str(existing.staff_id) == str(staff_id)
+                and existing.effective_from == effective_from
+                and existing.effective_to == effective_to
+                and existing.employer_amount == employer_amount
+                and existing.employee_amount == employee_amount
+                and existing.snapshot_json == snapshot
+                and str(existing.supersedes_enrollment_id or "")
+                == str(supersedes_enrollment_id or "")
+            )
+            if same_request:
+                return existing
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_IDEMPOTENCY_CONFLICT",
+                "enrollment number already exists with different content",
+            )
         plan = self._benefit_plan(plan_id, lock=True)
         if plan.status != BenefitPlan.Status.PUBLISHED:
             raise PayrollAuthorityError("BENEFIT_PLAN_NOT_PUBLISHED", "benefit plan must be published")
         staff = self._staff(staff_id)
-        if effective_to is not None and effective_to <= effective_from:
-            raise PayrollAuthorityError("EFFECTIVE_DATE_INVALID", "invalid enrollment range")
         prior = None
         if supersedes_enrollment_id:
             prior = BenefitEnrollmentFact.objects.filter(id=supersedes_enrollment_id, tenant_id=self.tenant_id, benefit_plan_id=plan.id, staff_id=staff.id).first()
@@ -92,10 +230,15 @@ class BenefitPensionAuthorityService:
             superseded = BenefitEnrollmentFact.objects.filter(tenant_id=self.tenant_id, supersedes_enrollment_id__isnull=False).values_list("supersedes_enrollment_id", flat=True)
             if BenefitEnrollmentFact.objects.filter(tenant_id=self.tenant_id, benefit_plan_id=plan.id, staff_id=staff.id, effective_to__isnull=True).exclude(id__in=superseded).exists():
                 raise PayrollAuthorityError("BENEFIT_ENROLLMENT_ACTIVE_CONFLICT", "active enrollment already exists")
-        existing = BenefitEnrollmentFact.objects.filter(tenant_id=self.tenant_id, enrollment_no=enrollment_no).first()
-        if existing:
-            return existing
-        fact = BenefitEnrollmentFact.objects.create(tenant_id=self.tenant_id, created_by=self.actor_user_id, updated_by=self.actor_user_id, enrollment_no=enrollment_no, benefit_plan_id=plan.id, staff_id=staff.id, effective_from=effective_from, effective_to=effective_to, employer_amount=_money(employer_amount), employee_amount=_money(employee_amount), snapshot_json=snapshot or {}, supersedes_enrollment_id=prior.id if prior else None)
+        fact = BenefitEnrollmentFact(tenant_id=self.tenant_id, created_by=self.actor_user_id, updated_by=self.actor_user_id, enrollment_no=enrollment_no, benefit_plan_id=plan.id, staff_id=staff.id, effective_from=effective_from, effective_to=effective_to, employer_amount=employer_amount, employee_amount=employee_amount, snapshot_json=snapshot, supersedes_enrollment_id=prior.id if prior else None)
+        try:
+            fact.full_clean(exclude=("snapshot_json",))
+        except ValidationError as exc:
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_INPUT_INVALID",
+                "invalid benefit enrollment fields",
+            ) from exc
+        fact.save()
         emit_registered_event(tenant_id=self.tenant_id, event_name=EVENT_BENEFIT_ENROLLMENT_EFFECTIVE, payload={"enrollmentId": str(fact.id), "planId": str(plan.id), "staffId": str(staff.id), "effectiveDate": str(effective_from)}, correlation_id=self.correlation_id)
         return fact
 

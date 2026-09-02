@@ -1,5 +1,7 @@
 import json
+import logging
 
+from django.db import DatabaseError
 from django.http import JsonResponse
 from django.utils.dateparse import parse_date
 from django.utils import timezone
@@ -9,7 +11,12 @@ from hr_control_center.context import resolve_tenant_from_request
 
 from .selectors import dashboard_snapshot
 from .authority_registry import (
+    PERM_BENEFIT_MANAGE,
+    PERM_BENEFIT_VIEW,
     PERM_CALCULATE,
+    PERM_CHANGE_APPROVE,
+    PERM_CHANGE_MANAGE,
+    PERM_CHANGE_VIEW,
     PERM_FINALIZE,
     PERM_INPUT_MANAGE,
     PERM_LEGACY_TAKEOVER_MANAGE,
@@ -21,7 +28,9 @@ from .authority_registry import (
     PERM_STATUTORY_MANAGE,
     PERM_STATUTORY_VIEW,
 )
+from .authority_models import BenefitEnrollmentFact, BenefitPlan
 from .calculation_models import SalaryRuleVersion
+from .compensation_models import CompensationChangeCase
 from .services.calculation_service import (
     PayrollCalculationError,
     PayrollCalculationService,
@@ -47,10 +56,19 @@ from .services.statutory_contribution_service import (
     StatutoryContributionError,
     StatutoryContributionRuleService,
 )
+from .services.compensation_change_service import (
+    CompensationChangeError,
+    CompensationChangeService,
+)
+from .services.benefit_pension_service import (
+    BenefitPensionAuthorityService,
+    PayrollAuthorityError,
+)
 from .statutory_models import StatutoryContributionFact, StatutoryContributionRuleVersion
 
 READ_PERMISSION = "hr.payroll.view"
 ADJUST_PERMISSION = "hr.payroll.adjust"
+logger = logging.getLogger(__name__)
 
 
 class HrPayrollAccessError(Exception):
@@ -148,6 +166,423 @@ def _statutory_rule_data(rule):
         "contentHash": rule.content_hash,
         "status": rule.status,
     }
+
+
+def _benefit_error(exc) -> JsonResponse:
+    if exc.code.endswith("_NOT_FOUND"):
+        status = 404
+    elif "CONFLICT" in exc.code or "STATE_INVALID" in exc.code:
+        status = 409
+    else:
+        status = 400
+    return _error(exc.code, str(exc), status=status)
+
+
+def _compensation_change_error(exc) -> JsonResponse:
+    if exc.code.endswith("_NOT_FOUND"):
+        status = 404
+    elif any(
+        marker in exc.code
+        for marker in (
+            "_CONFLICT",
+            "_STATE_INVALID",
+            "_SUPERSEDES_REQUIRED",
+            "_MAKER_CHECKER_REQUIRED",
+        )
+    ):
+        status = 409
+    else:
+        status = 400
+    return _error(exc.code, str(exc), status=status)
+
+
+def _compensation_change_data(case):
+    return {
+        "id": str(case.id),
+        "caseNo": case.case_no,
+        "staffId": str(case.staff_id),
+        "changeType": case.change_type,
+        "changeTypeLabel": case.get_change_type_display(),
+        "payrollVariableKey": case.payroll_variable_key,
+        "itemName": case.item_name,
+        "amountMode": case.amount_mode,
+        "amountModeLabel": case.get_amount_mode_display(),
+        "amount": str(case.amount),
+        "currencyCode": case.currency_code,
+        "prorationMode": case.proration_mode,
+        "prorationModeLabel": case.get_proration_mode_display(),
+        "effectiveFrom": str(case.effective_from),
+        "effectiveTo": str(case.effective_to) if case.effective_to else None,
+        "reviewDate": str(case.review_date) if case.review_date else None,
+        "reasonCode": case.reason_code,
+        "note": case.note,
+        "sourceDomain": case.source_domain,
+        "sourceRef": case.source_ref,
+        "sourceVersion": case.source_version,
+        "sourceSnapshot": case.source_snapshot_json,
+        "evidenceRefs": case.evidence_refs_json,
+        "supersedesCaseId": (
+            str(case.supersedes_case_id) if case.supersedes_case_id else None
+        ),
+        "status": case.status,
+        "statusLabel": case.get_status_display(),
+        "contentHash": case.content_hash,
+        "submittedBy": case.submitted_by,
+        "submittedAt": case.submitted_at.isoformat() if case.submitted_at else None,
+        "decidedBy": case.decided_by,
+        "decidedAt": case.decided_at.isoformat() if case.decided_at else None,
+        "decisionNote": case.decision_note,
+    }
+
+
+def compensation_changes(request):
+    if request.method not in {"GET", "POST"}:
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    permission = PERM_CHANGE_VIEW if request.method == "GET" else PERM_CHANGE_MANAGE
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=permission)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    if request.method == "GET":
+        try:
+            rows = list(
+                CompensationChangeCase.objects.filter(tenant_id=tenant_id).order_by(
+                    "-effective_from", "-created_at"
+                )[:500]
+            )
+        except DatabaseError:
+            return _error(
+                "COMPENSATION_CHANGE_STORAGE_UNAVAILABLE",
+                "调资与津补贴数据表尚未完成升级，请稍后重试",
+                status=503,
+            )
+        response = JsonResponse(
+            {
+                "data": [_compensation_change_data(row) for row in rows],
+                "apiVersion": "1.0",
+                "schemaVersion": "hr15.compensation-change.1",
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+    try:
+        payload = _json_body(request)
+        effective_from = parse_date(str(payload.get("effectiveFrom") or ""))
+        effective_to_raw = payload.get("effectiveTo")
+        review_date_raw = payload.get("reviewDate")
+        effective_to = parse_date(str(effective_to_raw)) if effective_to_raw else None
+        review_date = parse_date(str(review_date_raw)) if review_date_raw else None
+        if (
+            effective_from is None
+            or (effective_to_raw and effective_to is None)
+            or (review_date_raw and review_date is None)
+        ):
+            raise CompensationChangeError(
+                "COMPENSATION_CHANGE_DATE_INVALID", "日期必须使用 YYYY-MM-DD"
+            )
+        case = CompensationChangeService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).create_draft(
+            case_no=payload.get("caseNo"),
+            staff_id=payload.get("staffId"),
+            change_type=payload.get("changeType"),
+            payroll_variable_key=payload.get("payrollVariableKey"),
+            item_name=payload.get("itemName"),
+            amount_mode=payload.get("amountMode", "SET"),
+            amount=payload.get("amount"),
+            currency_code=payload.get("currencyCode", "CNY"),
+            proration_mode=payload.get("prorationMode", "NONE"),
+            effective_from=effective_from,
+            effective_to=effective_to,
+            review_date=review_date,
+            reason_code=payload.get("reasonCode"),
+            note=payload.get("note", ""),
+            source_domain=payload.get("sourceDomain", ""),
+            source_ref=payload.get("sourceRef", ""),
+            source_version=payload.get("sourceVersion", ""),
+            source_snapshot=payload.get("sourceSnapshot"),
+            evidence_refs=payload.get("evidenceRefs"),
+            supersedes_case_id=payload.get("supersedesCaseId"),
+        )
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except CompensationChangeError as exc:
+        return _compensation_change_error(exc)
+    response = JsonResponse(
+        {
+            "data": _compensation_change_data(case),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.compensation-change.1",
+        },
+        status=201,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def _decide_compensation_change(request, case_id, action):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    permission = (
+        PERM_CHANGE_MANAGE if action == "submit" else PERM_CHANGE_APPROVE
+    )
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=permission)
+        payload = _json_body(request)
+        service = CompensationChangeService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        )
+        if action == "submit":
+            case = service.submit(case_id)
+        elif action == "approve":
+            case = service.approve(
+                case_id, decision_note=payload.get("decisionNote", "")
+            )
+        else:
+            case = service.reject(
+                case_id, decision_note=payload.get("decisionNote", "")
+            )
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except CompensationChangeError as exc:
+        return _compensation_change_error(exc)
+    response = JsonResponse(
+        {
+            "data": _compensation_change_data(case),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.compensation-change.1",
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def submit_compensation_change(request, case_id):
+    return _decide_compensation_change(request, case_id, "submit")
+
+
+def approve_compensation_change(request, case_id):
+    return _decide_compensation_change(request, case_id, "approve")
+
+
+def reject_compensation_change(request, case_id):
+    return _decide_compensation_change(request, case_id, "reject")
+
+
+def _benefit_plan_data(plan):
+    return {
+        "id": str(plan.id),
+        "planCode": plan.plan_code,
+        "versionNo": plan.version_no,
+        "name": plan.name,
+        "benefitType": plan.benefit_type,
+        "providerName": plan.provider_name,
+        "currencyCode": plan.currency_code,
+        "employerRate": str(plan.employer_rate),
+        "employeeRate": str(plan.employee_rate),
+        "fixedAmount": str(plan.fixed_amount),
+        "effectiveFrom": str(plan.effective_from),
+        "effectiveTo": str(plan.effective_to) if plan.effective_to else None,
+        "ruleSnapshot": plan.rule_snapshot_json,
+        "contentHash": plan.content_hash,
+        "status": plan.status,
+    }
+
+
+def _benefit_enrollment_data(enrollment):
+    return {
+        "id": str(enrollment.id),
+        "enrollmentNo": enrollment.enrollment_no,
+        "benefitPlanId": str(enrollment.benefit_plan_id),
+        "staffId": str(enrollment.staff_id),
+        "effectiveFrom": str(enrollment.effective_from),
+        "effectiveTo": (
+            str(enrollment.effective_to) if enrollment.effective_to else None
+        ),
+        "employerAmount": str(enrollment.employer_amount),
+        "employeeAmount": str(enrollment.employee_amount),
+        "snapshot": enrollment.snapshot_json,
+        "supersedesEnrollmentId": (
+            str(enrollment.supersedes_enrollment_id)
+            if enrollment.supersedes_enrollment_id
+            else None
+        ),
+    }
+
+
+def benefit_plans(request):
+    if request.method not in {"GET", "POST"}:
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    permission = (
+        PERM_BENEFIT_VIEW if request.method == "GET" else PERM_BENEFIT_MANAGE
+    )
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=permission)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    if request.method == "GET":
+        plans = BenefitPlan.objects.filter(tenant_id=tenant_id).order_by(
+            "plan_code", "-version_no"
+        )
+        response = JsonResponse(
+            {
+                "data": [_benefit_plan_data(plan) for plan in plans],
+                "apiVersion": "1.0",
+                "schemaVersion": "hr15.benefit-plan.1",
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+    try:
+        payload = _json_body(request)
+        effective_from = parse_date(str(payload.get("effectiveFrom") or ""))
+        effective_to_raw = payload.get("effectiveTo")
+        effective_to = (
+            parse_date(str(effective_to_raw)) if effective_to_raw else None
+        )
+        if effective_from is None or (effective_to_raw and effective_to is None):
+            raise PayrollAuthorityError(
+                "EFFECTIVE_DATE_INVALID", "生效日期必须使用 YYYY-MM-DD"
+            )
+        rule_snapshot = payload.get("ruleSnapshot") or {}
+        if not isinstance(rule_snapshot, dict):
+            raise PayrollAuthorityError(
+                "BENEFIT_PLAN_INPUT_INVALID", "规则快照必须是 JSON 对象"
+            )
+        plan = BenefitPensionAuthorityService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).create_benefit_plan(
+            plan_code=payload.get("planCode"),
+            version_no=payload.get("versionNo", 1),
+            name=payload.get("name"),
+            benefit_type=payload.get("benefitType"),
+            provider_name=payload.get("providerName", ""),
+            employer_rate=payload.get("employerRate", 0),
+            employee_rate=payload.get("employeeRate", 0),
+            fixed_amount=payload.get("fixedAmount", 0),
+            effective_from=effective_from,
+            effective_to=effective_to,
+            rule_snapshot=rule_snapshot,
+        )
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except PayrollAuthorityError as exc:
+        return _benefit_error(exc)
+    response = JsonResponse(
+        {
+            "data": _benefit_plan_data(plan),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.benefit-plan.1",
+        },
+        status=201,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def publish_benefit_plan(request, plan_id):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(
+            request, required_permission=PERM_BENEFIT_MANAGE
+        )
+        plan = BenefitPensionAuthorityService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).publish_benefit_plan(plan_id)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    except PayrollAuthorityError as exc:
+        return _benefit_error(exc)
+    response = JsonResponse(
+        {
+            "data": _benefit_plan_data(plan),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.benefit-plan.1",
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def benefit_enrollments(request):
+    if request.method not in {"GET", "POST"}:
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    permission = (
+        PERM_BENEFIT_VIEW if request.method == "GET" else PERM_BENEFIT_MANAGE
+    )
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=permission)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    if request.method == "GET":
+        rows = BenefitEnrollmentFact.objects.filter(tenant_id=tenant_id).order_by(
+            "-effective_from", "-created_at"
+        )[:500]
+        response = JsonResponse(
+            {
+                "data": [_benefit_enrollment_data(row) for row in rows],
+                "apiVersion": "1.0",
+                "schemaVersion": "hr15.benefit-enrollment.1",
+            }
+        )
+        response["Cache-Control"] = "no-store"
+        return response
+    try:
+        payload = _json_body(request)
+        effective_from = parse_date(str(payload.get("effectiveFrom") or ""))
+        effective_to_raw = payload.get("effectiveTo")
+        effective_to = (
+            parse_date(str(effective_to_raw)) if effective_to_raw else None
+        )
+        if effective_from is None or (effective_to_raw and effective_to is None):
+            raise PayrollAuthorityError(
+                "EFFECTIVE_DATE_INVALID", "生效日期必须使用 YYYY-MM-DD"
+            )
+        snapshot = payload.get("snapshot") or {}
+        if not isinstance(snapshot, dict):
+            raise PayrollAuthorityError(
+                "BENEFIT_ENROLLMENT_INPUT_INVALID", "办理依据必须是 JSON 对象"
+            )
+        enrollment = BenefitPensionAuthorityService(
+            tenant_id,
+            actor_user_id=_actor_id(request),
+            correlation_id=request.headers.get("X-Correlation-ID", ""),
+        ).enroll_benefit(
+            enrollment_no=payload.get("enrollmentNo"),
+            plan_id=payload.get("benefitPlanId"),
+            staff_id=payload.get("staffId"),
+            effective_from=effective_from,
+            effective_to=effective_to,
+            employer_amount=payload.get("employerAmount", 0),
+            employee_amount=payload.get("employeeAmount", 0),
+            snapshot=snapshot,
+            supersedes_enrollment_id=payload.get("supersedesEnrollmentId"),
+        )
+    except PayrollCalculationError as exc:
+        return _workflow_error(exc)
+    except PayrollAuthorityError as exc:
+        return _benefit_error(exc)
+    response = JsonResponse(
+        {
+            "data": _benefit_enrollment_data(enrollment),
+            "apiVersion": "1.0",
+            "schemaVersion": "hr15.benefit-enrollment.1",
+        },
+        status=201,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def statutory_rules(request):
@@ -290,7 +725,15 @@ def dashboard(request):
         tenant_id = resolve_request_tenant(request)
     except HrPayrollAccessError as exc:
         return _error(exc.code, exc.message, status=403)
-    data = dashboard_snapshot(tenant_id)
+    try:
+        data = dashboard_snapshot(tenant_id)
+    except DatabaseError:
+        logger.exception("hr15_dashboard_storage_unavailable tenant_id=%s", tenant_id)
+        return _error(
+            "PAYROLL_STORAGE_UNAVAILABLE",
+            "薪酬数据存储暂不可用，请确认数据库升级状态后重试",
+            status=503,
+        )
     data.update(
         {
             "apiVersion": "1.0",

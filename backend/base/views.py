@@ -6,9 +6,9 @@ This module is used to map url pattens with django views or methods
 
 import csv
 import json
+import logging
 import mimetypes
 import os
-import threading
 import uuid
 from datetime import datetime, timedelta
 from email.mime.image import MIMEImage
@@ -25,24 +25,27 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Group, Permission
 from django.contrib.auth.views import PasswordResetConfirmView, PasswordResetView
-from django.core.exceptions import ValidationError
+from django.core.cache import cache
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
-from django.core.mail import EmailMessage, EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives
 from django.core.management import call_command
 from django.core.validators import validate_ipv46_address
+from django.db import transaction
 from django.db.models import Count, ProtectedError, Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils._os import safe_join
 from django.utils.decorators import method_decorator
 from django.utils.html import format_html, strip_tags
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.views import View
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 from django.views.generic import RedirectView, TemplateView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -50,7 +53,7 @@ from rest_framework_simplejwt.tokens import UntypedToken
 
 from accessibility.accessibility import ACCESSBILITY_FEATURE
 from accessibility.models import DefaultAccessibility
-from base.backends import ConfiguredEmailBackend
+from base.backends import ConfiguredEmailBackend, send_deployment_email
 from base.decorators import (
     shift_request_change_permission,
     work_type_request_change_permission,
@@ -78,7 +81,6 @@ from base.forms import (
     CompanyForm,
     CompanyLeaveForm,
     DepartmentForm,
-    DriverForm,
     DynamicMailConfForm,
     DynamicMailTestForm,
     DynamicPaginationForm,
@@ -145,6 +147,7 @@ from base.models import (
     Department,
     DynamicEmailConfiguration,
     DynamicPagination,
+    DriverViewed,
     EmployeeShift,
     EmployeeShiftSchedule,
     EmployeeType,
@@ -197,6 +200,8 @@ from horilla_auth.models import HorillaUser
 from notifications.models import Notification
 from notifications.signals import notify
 
+logger = logging.getLogger(__name__)
+
 CHARTS = [
     ("employee_work_info", _("Employee Work Info")),
     ("offline_employees", _("Offline Employees")),
@@ -243,8 +248,29 @@ def is_reportingmanger(request, instance):
             instance.employee_id.employee_work_info.reporting_manager_id
         )
     except Exception:
-        return HttpResponse("This Employee Dont Have any work information")
+        # A missing work-information row must never become a truthy permission result.
+        return False
     return manager == employee_work_info_manager
+
+
+def _posted_json_ids(request):
+    """Return unique positive integer IDs from a JSON POST field."""
+    try:
+        values = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list) or not values or len(values) > 500:
+        return []
+    ids = []
+    for value in values:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return []
+        if value <= 0 or value in ids:
+            return []
+        ids.append(value)
+    return ids
 
 
 def initialize_database_condition():
@@ -499,7 +525,7 @@ def initialize_database(request):
                     _("The password you entered is incorrect. Please try again."),
                 )
                 return HorillaRedirect(request)
-        return render(request, "initialize_database/horilla_user.html")
+        return render(request, "initialize_database/renshi_user.html")
     else:
         return redirect("/")
 
@@ -521,7 +547,7 @@ def initialize_database_user(request):
         password = form_data.get("password")
         confirm_password = form_data.get("confirm_password")
         if password != confirm_password:
-            return render(request, "initialize_database/horilla_user_signup.html")
+            return render(request, "initialize_database/renshi_user_signup.html")
         first_name = form_data.get("firstname")
         last_name = form_data.get("lastname")
         badge_id = form_data.get("badge_id")
@@ -548,7 +574,7 @@ def initialize_database_user(request):
             "initialize_database/horilla_company.html",
             {"form": CompanyForm(initial={"hq": True})},
         )
-    return render(request, "initialize_database/horilla_user_signup.html")
+    return render(request, "initialize_database/renshi_user_signup.html")
 
 
 @hx_request_required
@@ -764,6 +790,16 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
+def _configure_login_session(request, remember_me):
+    """Apply the login page's explicit session-lifetime choice."""
+    if remember_me:
+        request.session.set_expiry(
+            int(getattr(settings, "LOGIN_REMEMBER_ME_SECONDS", 14 * 24 * 60 * 60))
+        )
+    else:
+        request.session.set_expiry(0)
+
+
 def login_user(request):
     """
     Handles user login and authentication.
@@ -803,6 +839,7 @@ def login_user(request):
             return redirect("login")
 
         login(request, user)
+        _configure_login_session(request, request.POST.get("remember_me") == "on")
 
         messages.success(request, _("Login successful."))
 
@@ -1000,64 +1037,90 @@ def change_username(request):
     return render(request, "base/auth/username_change.html", {"form": form})
 
 
+@login_required
+@require_http_methods(["GET", "POST"])
 def two_factor_auth(request):
     """
     function to handle two-factor authentication for users.
     """
-    # request.session["otp_code"] = None
-    try:
-        otp = get_otp(request)
-    except:
-        otp = None
-
-    if request.method == "POST":
-        user_otp = request.POST.get("otp")
-        if user_otp == otp:
-            request.session["otp_code"] = None
-            request.session["otp_code_timestamp"] = None
-            request.session["otp_code_verified"] = True
-            request.session.save()
-            messages.success(request, _("OTP verified successfully."))
-            return redirect("/")
-        elif otp is None:
-            messages.error(request, _("OTP expired. Please request a new one."))
-            return render(request, "base/auth/two_factor_auth.html")
-        else:
-            messages.error(request, _("Invalid OTP."))
-            return render(request, "base/auth/two_factor_auth.html")
-
     if not settings.TWO_FACTORS_AUTHENTICATION:
         return redirect("/")
 
-    if otp is None:
-        send_otp(request)
+    if request.method == "POST":
+        result = verify_otp(request, request.POST.get("otp", ""))
+        if result == "verified":
+            _clear_pending_otp(request)
+            request.session["otp_code_verified"] = True
+            request.session["mfa_verified_user_id"] = str(request.user.pk)
+            request.session.save()
+            messages.success(request, _("OTP verified successfully."))
+            return redirect("/")
+        if result in {"expired", "missing"}:
+            messages.error(request, _("OTP expired. Please request a new one."))
+            return render(request, "base/auth/two_factor_auth.html")
+        if result == "locked":
+            messages.error(
+                request,
+                _("Too many invalid attempts. Please request a new OTP."),
+            )
+            return render(request, "base/auth/two_factor_auth.html", status=429)
+        messages.error(request, _("Invalid OTP."))
+        return render(request, "base/auth/two_factor_auth.html")
+
     return render(request, "base/auth/two_factor_auth.html")
 
 
+@login_required
+@require_POST
 def send_otp(request):
     """
     Function to send OTP to the user's email address.
     It generates a new OTP code, stores it in the session, and sends it via email.
     """
+    if not settings.TWO_FACTORS_AUTHENTICATION:
+        return redirect("/")
+
     employee = getattr(getattr(request, "user", None), "employee_get", None)
     if not employee:
         return redirect("/login/")
 
-    email = employee.get_mail()
-    email_backend = ConfiguredEmailBackend()
-    display_email_name = email_backend.dynamic_from_email_with_display_name
+    cooldown_key = f"mfa_otp_cooldown:{request.user.pk}"
+    cooldown = int(settings.MFA_OTP_RESEND_COOLDOWN_SECONDS)
+    if not cache.add(cooldown_key, "1", timeout=cooldown):
+        messages.warning(
+            request,
+            _("Please wait before requesting another OTP."),
+        )
+        return render(request, "base/auth/two_factor_auth.html", status=429)
+
+    email_address = str(employee.get_mail() or "").strip()
+    if not email_address:
+        cache.delete(cooldown_key)
+        messages.error(request, _("Your account does not have a valid email address."))
+        return render(request, "base/auth/two_factor_auth.html", status=503)
 
     otp_code = set_otp(request)
-    email = EmailMessage(
-        subject="Your OTP Code",
-        body=f"Your OTP code is {otp_code}",
-        from_email=display_email_name,
-        to=[email],
-    )
-    thread = threading.Thread(target=email.send)
-    thread.start()
+    try:
+        sent = send_deployment_email(
+            subject=_("Your OTP Code"),
+            body=_("Your OTP code is %(otp)s") % {"otp": otp_code},
+            to=[email_address],
+        )
+        if sent != 1:
+            raise RuntimeError("SMTP backend did not accept the OTP message")
+    except Exception:
+        _clear_pending_otp(request)
+        cache.delete(cooldown_key)
+        logger.exception("MFA OTP delivery failed user_id=%s", request.user.pk)
+        messages.error(
+            request,
+            _("OTP delivery is temporarily unavailable. Please contact support."),
+        )
+        return render(request, "base/auth/two_factor_auth.html", status=503)
 
-    return redirect("two-factor")
+    messages.success(request, _("A new OTP has been sent to your email address."))
+
+    return render(request, "base/auth/two_factor_auth.html")
 
 
 def set_otp(request):
@@ -1067,28 +1130,78 @@ def set_otp(request):
     """
 
     otp_code = generate_otp()
-    request.session["otp_code"] = otp_code
+    request.session["otp_code_hash"] = _otp_hash(request.user.pk, otp_code)
     request.session["otp_code_timestamp"] = timezone.now().timestamp()
+    request.session["otp_code_attempts"] = 0
+    request.session["otp_code_user_id"] = str(request.user.pk)
     request.session["otp_code_verified"] = False
+    request.session.pop("mfa_verified_user_id", None)
     request.session.save()
     return otp_code
 
 
-def get_otp(request):
-    """
-    Function to retrieve the OTP code from the session.
-    Checks if the OTP code has expired (10 minutes) and clears it if so.
-    """
+def _otp_hash(user_id, otp_code):
+    return salted_hmac(
+        "renshi.mfa.email_otp",
+        f"{user_id}:{otp_code}",
+        secret=settings.SECRET_KEY,
+        algorithm="sha256",
+    ).hexdigest()
+
+
+def _clear_pending_otp(request):
+    for key in (
+        "otp_code_hash",
+        "otp_code_timestamp",
+        "otp_code_attempts",
+        "otp_code_user_id",
+        # Remove legacy plaintext OTPs during the security upgrade.
+        "otp_code",
+    ):
+        request.session.pop(key, None)
+
+
+def verify_otp(request, supplied_otp):
+    """Return a stable verdict without exposing or storing the OTP plaintext."""
+
+    stored_hash = request.session.get("otp_code_hash")
+    if not stored_hash:
+        _clear_pending_otp(request)
+        request.session.save()
+        return "missing"
+    if str(request.session.get("otp_code_user_id", "")) != str(request.user.pk):
+        _clear_pending_otp(request)
+        request.session.save()
+        return "missing"
+
     created_at = request.session.get("otp_code_timestamp", 0)
     current_time = timezone.now().timestamp()
-
-    if current_time - created_at > 600:
-        request.session["otp_code"] = None
-        request.session["otp_code_timestamp"] = None
+    if current_time - created_at > int(settings.MFA_OTP_TTL_SECONDS):
+        _clear_pending_otp(request)
         request.session.save()
-        return None
-    else:
-        return request.session.get("otp_code")
+        return "expired"
+
+    attempts = int(request.session.get("otp_code_attempts", 0))
+    max_attempts = int(settings.MFA_OTP_MAX_ATTEMPTS)
+    if attempts >= max_attempts:
+        _clear_pending_otp(request)
+        request.session.save()
+        return "locked"
+
+    candidate = str(supplied_otp or "").strip()
+    if candidate.isdigit() and len(candidate) == 6 and constant_time_compare(
+        stored_hash, _otp_hash(request.user.pk, candidate)
+    ):
+        return "verified"
+
+    attempts += 1
+    request.session["otp_code_attempts"] = attempts
+    if attempts >= max_attempts:
+        _clear_pending_otp(request)
+        request.session.save()
+        return "locked"
+    request.session.save()
+    return "invalid"
 
 
 def logout_user(request):
@@ -1223,11 +1336,21 @@ def common_settings(request):
 
 class SettingsView(LoginRequiredMixin, RedirectView):
     """
-    Settings page — has no content of its own ({% block settings %} is
-    always empty), so redirect to System Preferences by default.
+    Redirect to the first settings page the current user can actually open.
+
+    A hard-coded System Preferences redirect stranded users whose only
+    settings responsibility belongs to another section (for example,
+    recruitment or attendance).  The registry is already permission-aware,
+    so it is the authority for the landing destination as well as the menu.
     """
 
-    pattern_name = "system-preferences-view"
+    def get_redirect_url(self, *args, **kwargs):
+        for section in get_settings_menu(self.request):
+            for item in section.get("items", []):
+                url = str(item.get("url") or "").strip()
+                if url:
+                    return url
+        raise PermissionDenied(_("You do not have access to system settings."))
 
 
 def _permission_app_label(app_name):
@@ -1459,6 +1582,7 @@ def user_group_detail(request, obj_id):
 @login_required
 @require_http_methods(["POST"])
 @superuser_required
+@transaction.atomic
 def update_group_permission(
     request,
 ):
@@ -1466,7 +1590,7 @@ def update_group_permission(
     This method is used to remove user permission.
     """
     group_id = request.POST.get("id")
-    instance = Group.objects.filter(id=group_id).first()
+    instance = Group.objects.select_for_update().filter(id=group_id).first()
     if not instance:
         messages.error(request, _("Group not found"))
         return JsonResponse({"message": "Group not found", "type": "danger"})
@@ -1624,6 +1748,7 @@ def user_group_permission_remove(request, pid, gid):
 @login_required
 @superuser_required
 @require_http_methods(["POST"])
+@transaction.atomic
 def group_remove_user(request, uid, gid):
     """
     Remove a user from a group — entirely, or (with a ``company_id``
@@ -1633,13 +1758,15 @@ def group_remove_user(request, uid, gid):
         uid: user instance id
         gid: group instance id
     """
-    group = Group.objects.filter(id=gid).first()
-    user = HorillaUser.objects.filter(id=uid).first()
-    company_id = request.POST.get("company_id") or request.GET.get("company_id")
+    group = Group.objects.select_for_update().filter(id=gid).first()
+    user = HorillaUser.objects.select_for_update().filter(id=uid).first()
+    company_id = request.POST.get("company_id")
+    if company_id and not company_id.isdigit():
+        return JsonResponse({"error": "Invalid company."}, status=400)
     fully_removed = True
     if group and user:
         if company_id:
-            CompanyGroupAssignment.objects.filter(
+            CompanyGroupAssignment.objects.select_for_update().filter(
                 user=user, group=group, company_id=company_id
             ).delete()
             CompanyGroupAssignment.sync_user_group_membership(user, group)
@@ -1652,7 +1779,9 @@ def group_remove_user(request, uid, gid):
                 )
         else:
             group.user_set.remove(user)
-            CompanyGroupAssignment.objects.filter(user=user, group=group).delete()
+            CompanyGroupAssignment.objects.select_for_update().filter(
+                user=user, group=group
+            ).delete()
             messages.success(request, _("Employee removed from the group."))
     else:
         messages.error(request, _("Unable to remove employee from the group."))
@@ -1681,6 +1810,7 @@ def group_remove_user(request, uid, gid):
 @login_required
 @delete_permission()
 @require_http_methods(["POST", "DELETE"])
+@transaction.atomic
 def object_delete(request, obj_id, **kwargs):
     """
     Handles the deletion of an object instance from the database.
@@ -1707,7 +1837,7 @@ def object_delete(request, obj_id, **kwargs):
     redirect_path = kwargs.get("redirect_path")
     delete_error = False
     try:
-        instance = model.objects.get(id=obj_id)
+        instance = model.objects.select_for_update().get(id=obj_id)
         instance.delete()
         messages.success(
             request, _("The {} has been deleted successfully.").format(instance)
@@ -1949,7 +2079,7 @@ def mail_server_conf(request):
 def mail_server_test_email(request):
     instance_id = request.GET.get("instance_id")
     white_labelling = getattr(settings, "WHITE_LABELLING", False)
-    image_path = path.join(settings.STATIC_ROOT, "images/ui/horilla-logo.png")
+    image_path = path.join(settings.STATIC_ROOT, "images/ui/university-seal.jpg")
     company_name = "Horilla"
 
     if white_labelling:
@@ -2042,24 +2172,28 @@ def mail_server_test_email(request):
 
 @login_required
 @permission_required("base.delete_dynamicemailconfiguration")
+@require_POST
+@transaction.atomic
 def mail_server_delete(request):
     """
     This method is used to delete mail server
     """
-    id = request.GET.get("ids")
+    config_id = request.POST.get("ids")
 
-    if not id:
+    if not config_id:
         return HorillaRedirect(request, message=_("Missing required parameter"))
 
-    emailconfig = DynamicEmailConfiguration.objects.filter(id=id).first()
+    configs = list(DynamicEmailConfiguration.objects.select_for_update().all())
+    emailconfig = next(
+        (config for config in configs if str(config.id) == str(config_id)), None
+    )
     if not emailconfig:
         return HorillaRedirect(
             request, message=_("Mail server configuration not found")
         )
 
     # Prevent deleting last remaining config
-    total_count = DynamicEmailConfiguration.objects.count()
-    if total_count <= 1:
+    if len(configs) <= 1:
         messages.warning(
             request,
             _("You have only 1 Mail server configuration that can't be deleted"),
@@ -2085,19 +2219,37 @@ def mail_server_delete(request):
 
 
 @login_required
+@permission_required("base.delete_dynamicemailconfiguration")
+@require_POST
+@transaction.atomic
 def replace_primary_mail(request):
     """
     This method is used to replace primary mail server
     """
     emailconfig_id = request.POST.get("replace_mail")
-    email_config = DynamicEmailConfiguration.find(emailconfig_id)
+    configs = list(DynamicEmailConfiguration.objects.select_for_update().all())
+    email_config = next(
+        (config for config in configs if str(config.id) == str(emailconfig_id)), None
+    )
     if not email_config:
         messages.error(request, _("Mail server configuration not found"))
         return redirect("mail-server-conf")
 
+    previous_primary = next(
+        (
+            config
+            for config in configs
+            if config.is_primary and config.id != email_config.id
+        ),
+        None,
+    )
+    if previous_primary is None:
+        messages.error(request, _("Primary mail server configuration not found"))
+        return redirect("mail-server-conf")
+
     email_config.is_primary = True
-    email_config.save()
-    DynamicEmailConfiguration.objects.filter(is_primary=True).first().delete()
+    email_config.save(update_fields=["is_primary"])
+    previous_primary.delete()
     messages.success(request, _("Primary Mail server configuration replaced"))
     return redirect("mail-server-conf")
 
@@ -2199,10 +2351,19 @@ def create_mail_templates(request):
 
 @login_required
 @permission_required("base.delete_horillamailtemplate")
+@require_POST
+@transaction.atomic
 def delete_mail_templates(request):
-    ids = request.GET.getlist("ids")
-    result = HorillaMailTemplate.objects.filter(id__in=ids).delete()
-    messages.success(request, _("Template deleted"))
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    if not ids or len(ids) > 500:
+        return JsonResponse({"error": "Invalid mail template IDs."}, status=400)
+    deleted_count, _ = (
+        HorillaMailTemplate.objects.select_for_update().filter(id__in=ids).delete()
+    )
+    if deleted_count:
+        messages.success(request, _("Template deleted"))
+    else:
+        messages.error(request, _("Template not found"))
     return redirect(view_mail_templates)
 
 
@@ -2919,54 +3080,65 @@ def rotating_work_type_assign_redirect(request, obj_id=None, employee_id=None):
 @login_required
 @hx_request_required
 @manager_can_enter("base.change_rotatingworktypeassign")
+@require_POST
+@transaction.atomic
 def rotating_work_type_assign_archive(request, obj_id):
     """
     Archive or un-archive rotating work type assigns
     """
     try:
-        rwork_type = get_object_or_404(RotatingWorkTypeAssign, id=obj_id)
-        employee_id = rwork_type.employee_id.id
-        employees_rwork_types = RotatingWorkTypeAssign.objects.filter(
-            is_active=True, employee_id=rwork_type.employee_id
-        )
-        rwork_type.is_active = not rwork_type.is_active
-        if rwork_type.is_active and employees_rwork_types:
-            messages.error(request, _("Already on record is active"))
-        else:
-            rwork_type.save()
-            message = _("un-archived") if rwork_type.is_active else _("archived")
-            messages.success(
-                request, _("Rotating work type assign is {}").format(message)
-            )
-        return rotating_work_type_assign_redirect(request, obj_id, employee_id)
-    except Http404:
+        rwork_type = RotatingWorkTypeAssign.objects.select_for_update().get(id=obj_id)
+    except RotatingWorkTypeAssign.DoesNotExist:
         messages.error(request, _("Rotating work type assign not found."))
+        return HorillaRedirect(request)
+
+    employee_id = rwork_type.employee_id_id
+    next_active = not rwork_type.is_active
+    employees_rwork_types = RotatingWorkTypeAssign.objects.select_for_update().filter(
+        is_active=True, employee_id_id=employee_id
+    ).exclude(pk=rwork_type.pk)
+    if next_active and employees_rwork_types.exists():
+        messages.error(request, _("Already on record is active"))
+    else:
+        rwork_type.is_active = next_active
+        rwork_type.save(update_fields=["is_active"])
+        message = _("un-archived") if rwork_type.is_active else _("archived")
+        messages.success(
+            request, _("Rotating work type assign is {}").format(message)
+        )
     return rotating_work_type_assign_redirect(request, obj_id, employee_id)
 
 
 @login_required
 @manager_can_enter("base.change_rotatingworktypeassign")
+@require_POST
+@transaction.atomic
 def rotating_work_type_assign_bulk_archive(request):
     """
     This method is used to archive/un-archive bulk rotating work type assigns.
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
         return HorillaRedirect(
             request, message=_("No rotatingworktype found matching the query.")
         )
-    ids = json.loads(ids)
-    is_active = True
-    message = _("un-archived")
-    if request.GET.get("is_active") == "False":
-        is_active = False
-        message = _("archived")
+    active_value = request.POST.get("is_active")
+    if active_value not in {"True", "False"}:
+        return JsonResponse({"message": "Invalid active state"}, status=400)
+    is_active = active_value == "True"
+    message = _("un-archived") if is_active else _("archived")
     count = 0
 
-    for id in ids:
-        rwork_type_assign = RotatingWorkTypeAssign.objects.get(id=id)
-        employees_rwork_type_assign = RotatingWorkTypeAssign.objects.filter(
-            is_active=True, employee_id=rwork_type_assign.employee_id
+    assignments = list(
+        RotatingWorkTypeAssign.objects.select_for_update()
+        .select_related("employee_id")
+        .filter(id__in=ids)
+    )
+    for rwork_type_assign in assignments:
+        employees_rwork_type_assign = (
+            RotatingWorkTypeAssign.objects.select_for_update()
+            .filter(is_active=True, employee_id=rwork_type_assign.employee_id)
+            .exclude(pk=rwork_type_assign.pk)
         )
 
         if is_active and employees_rwork_type_assign.exists():
@@ -2978,7 +3150,7 @@ def rotating_work_type_assign_bulk_archive(request):
             )
         else:
             rwork_type_assign.is_active = is_active
-            rwork_type_assign.save()
+            rwork_type_assign.save(update_fields=["is_active"])
             count += 1
 
     if count > 0:
@@ -2996,46 +3168,56 @@ def rotating_work_type_assign_bulk_archive(request):
 
 @login_required
 @permission_required("base.delete_rotatingworktypeassign")
+@require_POST
+@transaction.atomic
 def rotating_work_type_assign_bulk_delete(request):
     """
     This method is used to archive/un-archive bulk rotating work type assigns
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
         return HorillaRedirect(
             request, message=_("No rotatingworktype found matching the query.")
         )
-    ids = json.loads(ids)
-    for id in ids:
-        try:
-            rwork_type_assign = RotatingWorkTypeAssign.objects.get(id=id)
-            rwork_type_assign.delete()
-            messages.success(
-                request,
-                _("{employee} deleted.").format(employee=rwork_type_assign.employee_id),
-            )
-        except RotatingWorkTypeAssign.DoesNotExist:
-            messages.error(request, _("{rwork_type_assign} not found."))
-        except ProtectedError:
-            messages.error(
-                request,
-                _("You cannot delete {rwork_type_assign}").format(
-                    rwork_type_assign=rwork_type_assign
-                ),
-            )
-    return JsonResponse({"message": "Success"})
+    assignments = list(
+        RotatingWorkTypeAssign.objects.select_for_update()
+        .select_related("employee_id")
+        .filter(id__in=ids)
+    )
+    if len(assignments) != len(ids):
+        return JsonResponse(
+            {"message": _("Rotating work type assignment not found.")}, status=404
+        )
+    try:
+        RotatingWorkTypeAssign.objects.filter(id__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more rotating work type assignments are in use.")},
+            status=409,
+        )
+    messages.success(
+        request,
+        _("{count} rotating work type assignments deleted.").format(
+            count=len(assignments)
+        ),
+    )
+    return JsonResponse({"message": "Success", "deleted": len(assignments)})
 
 
 @login_required
 @hx_request_required
 @permission_required("base.delete_rotatingworktypeassign")
 @require_http_methods(["POST"])
+@transaction.atomic
 def rotating_work_type_assign_delete(request, obj_id):
     """
     This method is used to delete rotating work type
     """
     try:
-        rotating_work_type_assign_obj = RotatingWorkTypeAssign.objects.get(id=obj_id)
+        rotating_work_type_assign_obj = RotatingWorkTypeAssign.objects.select_for_update().get(
+            id=obj_id
+        )
         employee_id = rotating_work_type_assign_obj.employee_id.id
         rotating_work_type_assign_obj.delete()
         messages.success(request, _("Rotating work type assign deleted."))
@@ -3790,62 +3972,67 @@ def rotating_shift_assign_redirect(request, obj_id, employee_id):
 @login_required
 @hx_request_required
 @manager_can_enter("base.change_rotatingshiftassign")
+@require_POST
+@transaction.atomic
 def rotating_shift_assign_archive(request, obj_id):
     """
     This method is used to archive and unarchive rotating shift assign records
     """
     try:
-        rshift = get_object_or_404(RotatingShiftAssign, id=obj_id)
-        employee_id = rshift.employee_id.id
-        employees_rshift_assigns = RotatingShiftAssign.objects.filter(
-            is_active=True, employee_id=rshift.employee_id
-        )
-        rshift.is_active = not rshift.is_active
-        if rshift.is_active and employees_rshift_assigns:
-            messages.error(request, _("Already on record is active"))
-        else:
-            rshift.save()
-            message = _("un-archived") if rshift.is_active else _("archived")
-            messages.success(request, _("Rotating shift assign is {}").format(message))
-    except Http404:
+        rshift = RotatingShiftAssign.objects.select_for_update().get(id=obj_id)
+    except RotatingShiftAssign.DoesNotExist:
         messages.error(request, _("Rotating shift assign not found."))
+        return HorillaRedirect(request)
+
+    employee_id = rshift.employee_id_id
+    next_active = not rshift.is_active
+    employees_rshift_assigns = RotatingShiftAssign.objects.select_for_update().filter(
+        is_active=True, employee_id_id=employee_id
+    ).exclude(pk=rshift.pk)
+    if next_active and employees_rshift_assigns.exists():
+        messages.error(request, _("Already on record is active"))
+    else:
+        rshift.is_active = next_active
+        rshift.save(update_fields=["is_active"])
+        message = _("un-archived") if rshift.is_active else _("archived")
+        messages.success(request, _("Rotating shift assign is {}").format(message))
 
     return rotating_shift_assign_redirect(request, obj_id, employee_id)
 
 
 @login_required
 @manager_can_enter("base.change_rotatingshiftassign")
+@require_POST
+@transaction.atomic
 def rotating_shift_assign_bulk_archive(request):
     """
     This method is used to archive/un-archive bulk rotating shift assigns
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
         return HorillaRedirect(
             request, message=_("No rotatingshift found matching the query.")
         )
-    ids = json.loads(ids)
-    is_active = True
-    message = _("un-archived")
-    if request.GET.get("is_active") == "False":
-        is_active = False
-        message = _("archived")
-    for id in ids:
-        # check permission right here...
-        rshift_assign = RotatingShiftAssign.objects.get(id=id)
-        employees_rshift_assign = RotatingShiftAssign.objects.filter(
-            is_active=True, employee_id=rshift_assign.employee_id
+    active_value = request.POST.get("is_active")
+    if active_value not in {"True", "False"}:
+        return JsonResponse({"message": "Invalid active state"}, status=400)
+    is_active = active_value == "True"
+    message = _("un-archived") if is_active else _("archived")
+    assignments = list(
+        RotatingShiftAssign.objects.select_for_update()
+        .select_related("employee_id")
+        .filter(id__in=ids)
+    )
+    for rshift_assign in assignments:
+        active_assignment_exists = (
+            RotatingShiftAssign.objects.select_for_update()
+            .filter(is_active=True, employee_id=rshift_assign.employee_id)
+            .exclude(pk=rshift_assign.pk)
+            .exists()
         )
-        flag = True
-        if is_active:
-            if len(employees_rshift_assign) < 1:
-                flag = False
-                rshift_assign.is_active = is_active
-        else:
-            flag = False
+        if not is_active or not active_assignment_exists:
             rshift_assign.is_active = is_active
-        rshift_assign.save()
-        if not flag:
+            rshift_assign.save(update_fields=["is_active"])
             messages.success(
                 request,
                 _("Rotating shift for {employee} is {message}").format(
@@ -3864,42 +4051,52 @@ def rotating_shift_assign_bulk_archive(request):
 
 @login_required
 @manager_can_enter("base.delete_rotatingshiftassign")
+@require_POST
+@transaction.atomic
 def rotating_shift_assign_bulk_delete(request):
     """
     This method is used to bulk delete for rotating shift assign
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
         return HorillaRedirect(
             request, message=_("No rotatingshift found matching the query.")
         )
-    ids = json.loads(ids)
-    for id in ids:
-        try:
-            rshift_assign = RotatingShiftAssign.objects.get(id=id)
-            rshift_assign.delete()
-            messages.success(
-                request,
-                _("{employee} assign deleted.").format(
-                    employee=rshift_assign.employee_id
-                ),
-            )
-        except RotatingShiftAssign.DoesNotExist:
-            messages.error(request, _("{rshift_assign} not found."))
-        except ProtectedError:
-            messages.error(
-                request,
-                _("You cannot delete {rshift_assign}").format(
-                    rshift_assign=rshift_assign
-                ),
-            )
-    return JsonResponse({"message": "Success"})
+    assignments = list(
+        RotatingShiftAssign.objects.select_for_update()
+        .select_related("employee_id")
+        .filter(id__in=ids)
+    )
+    if len(assignments) != len(ids):
+        return JsonResponse(
+            {"message": _("Rotating shift assignment not found.")}, status=404
+        )
+    if not request.user.has_perm("base.delete_rotatingshiftassign") and any(
+        not is_reportingmanger(request, assignment) for assignment in assignments
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
+    try:
+        RotatingShiftAssign.objects.filter(id__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more rotating shift assignments are in use.")},
+            status=409,
+        )
+    messages.success(
+        request,
+        _("{count} rotating shift assignments deleted.").format(
+            count=len(assignments)
+        ),
+    )
+    return JsonResponse({"message": "Success", "deleted": len(assignments)})
 
 
 @login_required
 @hx_request_required
 @manager_can_enter("base.delete_rotatingshiftassign")
 @require_http_methods(["POST"])
+@transaction.atomic
 def rotating_shift_assign_delete(request, obj_id):
     """
     This method is used to delete rotating shift assign instance
@@ -3907,7 +4104,16 @@ def rotating_shift_assign_delete(request, obj_id):
         id : rotating shift assign instance id
     """
     try:
-        rotating_shift_assign_obj = RotatingShiftAssign.objects.get(id=obj_id)
+        rotating_shift_assign_obj = RotatingShiftAssign.objects.select_for_update().get(
+            id=obj_id
+        )
+        if not (
+            request.user.has_perm("base.delete_rotatingshiftassign")
+            or is_reportingmanger(request, rotating_shift_assign_obj)
+        ):
+            return JsonResponse(
+                {"message": _("You do not have permission.")}, status=403
+            )
         employee_id = rotating_shift_assign_obj.employee_id.id
         rotating_shift_assign_obj.delete()
         messages.success(request, _("Rotating shift assign deleted."))
@@ -4425,6 +4631,8 @@ def handle_wtr_redirect(request, work_type_request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def work_type_request_cancel(request, id):
     """
     This method is used to cancel work type request
@@ -4433,9 +4641,18 @@ def work_type_request_cancel(request, id):
 
     """
     is_ajax = request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest"
-    work_type_request = WorkTypeRequest.find(id)
-    if not work_type_request:
+    work_type_request = (
+        WorkTypeRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(pk=id)
+        .first()
+    )
+    if work_type_request is None:
         messages.error(request, _("Work type request not found."))
+        return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
+
+    if work_type_request.canceled:
+        messages.error(request, _("Work type request is already canceled."))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
 
     if not (
@@ -4448,15 +4665,16 @@ def work_type_request_cancel(request, id):
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
     work_type_request.canceled = True
     work_type_request.approved = False
-    work_info = EmployeeWorkInformation.objects.filter(
+    work_info = EmployeeWorkInformation.objects.select_for_update().filter(
         employee_id=work_type_request.employee_id
+    ).first()
+    if work_info and work_type_request.work_type_changed:
+        work_info.work_type_id = work_type_request.previous_work_type_id
+        work_info.save(update_fields=["work_type_id"])
+        work_type_request.work_type_changed = False
+    work_type_request.save(
+        update_fields=["canceled", "approved", "work_type_changed"]
     )
-    if work_info.exists():
-        work_type_request.employee_id.employee_work_info.work_type_id = (
-            work_type_request.previous_work_type_id
-        )
-        work_type_request.employee_id.employee_work_info.save()
-    work_type_request.save()
     messages.success(request, _("Work type request has been rejected."))
     notify.send(
         request.user.employee_get,
@@ -4476,32 +4694,42 @@ def work_type_request_cancel(request, id):
 
 @login_required
 @manager_can_enter("base.change_worktyperequest")
+@require_POST
+@transaction.atomic
 def work_type_request_bulk_cancel(request):
     """
     This method is used to cancel a bunch work type request
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
         return HorillaRedirect(
             request, message=_("No worktype request found matching the query.")
         )
-    ids = json.loads(ids)
     result = False
-    for id in ids:
-        work_type_request = WorkTypeRequest.objects.get(id=id)
+    requests = list(
+        WorkTypeRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids)
+    )
+    for work_type_request in requests:
         if (
             is_reportingmanger(request, work_type_request)
             or request.user.has_perm("base.cancel_worktyperequest")
             or work_type_request.employee_id == request.user.employee_get
             and work_type_request.approved == False
-        ):
+        ) and not work_type_request.canceled:
             work_type_request.canceled = True
             work_type_request.approved = False
-            work_type_request.employee_id.employee_work_info.work_type_id = (
-                work_type_request.previous_work_type_id
+            work_info = EmployeeWorkInformation.objects.select_for_update().filter(
+                employee_id=work_type_request.employee_id
+            ).first()
+            if work_info and work_type_request.work_type_changed:
+                work_info.work_type_id = work_type_request.previous_work_type_id
+                work_info.save(update_fields=["work_type_id"])
+                work_type_request.work_type_changed = False
+            work_type_request.save(
+                update_fields=["canceled", "approved", "work_type_changed"]
             )
-            work_type_request.employee_id.employee_work_info.save()
-            work_type_request.save()
             messages.success(request, _("Work type request has been canceled."))
             notify.send(
                 request.user.employee_get,
@@ -4520,14 +4748,21 @@ def work_type_request_bulk_cancel(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def work_type_request_approve(request, id):
     """
     This method is used to approve requested work type
     """
 
     is_ajax = request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest"
-    work_type_request = WorkTypeRequest.find(id)
-    if not work_type_request:
+    work_type_request = (
+        WorkTypeRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(pk=id)
+        .first()
+    )
+    if work_type_request is None:
         messages.error(request, _("Work type request not found."))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
     if not (
@@ -4537,16 +4772,32 @@ def work_type_request_approve(request, id):
             or request.user.has_perm("base.change_worktyperequest")
         )
         and not work_type_request.approved
+        and not work_type_request.canceled
     ):
         messages.error(request, _("You don't have permission"))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
     """
     Here the request will be approved, can send mail right here
     """
+    work_info = EmployeeWorkInformation.objects.select_for_update().filter(
+        employee_id=work_type_request.employee_id
+    ).first()
     if not work_type_request.is_any_work_type_request_exists():
         work_type_request.approved = True
         work_type_request.canceled = False
-        work_type_request.save()
+        today = timezone.now().date()
+        is_current = work_type_request.requested_date <= today and (
+            work_type_request.is_permanent_work_type
+            or work_type_request.requested_till is None
+            or today <= work_type_request.requested_till
+        )
+        if work_info and is_current:
+            work_info.work_type_id = work_type_request.work_type_id
+            work_info.save(update_fields=["work_type_id"])
+            work_type_request.work_type_changed = True
+        work_type_request.save(
+            update_fields=["approved", "canceled", "work_type_changed"]
+        )
         messages.success(request, _("Work type request has been approved."))
         notify.send(
             request.user.employee_get,
@@ -4572,33 +4823,57 @@ def work_type_request_approve(request, id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def work_type_request_bulk_approve(request):
     """
     This method is used to approve bulk of requested work type
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
         return HorillaRedirect(
             request, message=_("No worktype request found matching the query.")
         )
-    ids = json.loads(ids)
     result = False
-    for id in ids:
-        work_type_request = WorkTypeRequest.objects.get(id=id)
+    requests = list(
+        WorkTypeRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids)
+    )
+    for work_type_request in requests:
         if (
             is_reportingmanger(request, work_type_request)
             or request.user.has_perm("base.approve_worktyperequest")
             or request.user.has_perm("base.change_worktyperequest")
-        ) and not work_type_request.approved:
-            # """
-            # Here the request will be approved, can send mail right here
-            # """
+        ) and not work_type_request.approved and not work_type_request.canceled:
+            if work_type_request.is_any_work_type_request_exists():
+                messages.error(
+                    request,
+                    _(
+                        "An approved work type request already exists during this time period."
+                    ),
+                )
+                continue
             work_type_request.approved = True
             work_type_request.canceled = False
-            employee_work_info = work_type_request.employee_id.employee_work_info
-            employee_work_info.work_type_id = work_type_request.work_type_id
-            employee_work_info.save()
-            work_type_request.save()
+            employee_work_info = (
+                EmployeeWorkInformation.objects.select_for_update()
+                .filter(employee_id=work_type_request.employee_id)
+                .first()
+            )
+            today = timezone.now().date()
+            is_current = work_type_request.requested_date <= today and (
+                work_type_request.is_permanent_work_type
+                or work_type_request.requested_till is None
+                or today <= work_type_request.requested_till
+            )
+            if employee_work_info and is_current:
+                employee_work_info.work_type_id = work_type_request.work_type_id
+                employee_work_info.save(update_fields=["work_type_id"])
+                work_type_request.work_type_changed = True
+            work_type_request.save(
+                update_fields=["approved", "canceled", "work_type_changed"]
+            )
             messages.success(request, _("Work type request has been approved."))
             notify.send(
                 request.user.employee_get,
@@ -4644,7 +4919,8 @@ def work_type_request_update(request, work_type_request_id):
 
 @login_required
 @hx_request_required
-@require_http_methods(["POST"])
+@require_POST
+@transaction.atomic
 def work_type_request_delete(request, obj_id):
     """
     This method is used to delete work type request
@@ -4653,27 +4929,42 @@ def work_type_request_delete(request, obj_id):
 
     """
 
-    try:
-        work_type_request = WorkTypeRequest.objects.get(id=obj_id)
-        employee = work_type_request.employee_id
-        messages.success(request, _("Work type request deleted."))
-        work_type_request.delete()
-        notify.send(
-            request.user.employee_get,
-            recipient=employee.employee_user_id,
-            verb="Your work type request has been deleted.",
-            verb_ar="تم حذف طلب نوع وظيفتك.",
-            verb_de="Ihre Arbeitstypanfrage wurde gelöscht.",
-            verb_es="Su solicitud de tipo de trabajo ha sido eliminada.",
-            verb_fr="Votre demande de type de travail a été supprimée.",
-            redirect="#",
-            icon="trash",
-        )
-    except WorkTypeRequest.DoesNotExist:
-        employee = None
+    work_type_request = (
+        WorkTypeRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id=obj_id)
+        .first()
+    )
+    employee = work_type_request.employee_id if work_type_request else None
+    if work_type_request is None:
         messages.error(request, _("Work type request not found."))
-    except ProtectedError:
-        messages.error(request, _("You cannot delete this work type request."))
+        return HorillaRedirect(request)
+    elif not (
+        request.user.has_perm("base.delete_worktyperequest")
+        or request.user.has_perm("base.change_worktyperequest")
+        or is_reportingmanger(request, work_type_request)
+        or employee == request.user.employee_get and not work_type_request.approved
+    ):
+        messages.error(request, _("You don't have permission"))
+        return HttpResponse(status=403)
+    else:
+        try:
+            recipient = employee.employee_user_id
+            work_type_request.delete()
+            messages.success(request, _("Work type request deleted."))
+            notify.send(
+                request.user.employee_get,
+                recipient=recipient,
+                verb="Your work type request has been deleted.",
+                verb_ar="تم حذف طلب نوع وظيفتك.",
+                verb_de="Ihre Arbeitstypanfrage wurde gelöscht.",
+                verb_es="Su solicitud de tipo de trabajo ha sido eliminada.",
+                verb_fr="Votre demande de type de travail a été supprimée.",
+                redirect="#",
+                icon="trash",
+            )
+        except ProtectedError:
+            messages.error(request, _("You cannot delete this work type request."))
 
     hx_target = request.META.get("HTTP_HX_TARGET", None)
     hx_current_url = request.META.get("HTTP_HX_CURRENT_URL", None)
@@ -4750,7 +5041,8 @@ def work_type_request_single_view(request, obj_id):
 
 @login_required
 @permission_required("base.delete_worktyperequest")
-@require_http_methods(["POST"])
+@require_POST
+@transaction.atomic
 def work_type_request_bulk_delete(request):
     """
     This method is used to delete work type request
@@ -4758,15 +5050,22 @@ def work_type_request_bulk_delete(request):
         id : work type request instance id
 
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
+    ids = _posted_json_ids(request)
+    if not ids:
+        return JsonResponse({"result": False}, status=400)
     del_ids = []
+    requests = {
+        item.id: item
+        for item in WorkTypeRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids)
+    }
     for id in ids:
         try:
-            work_type_request = WorkTypeRequest.objects.get(id=id)
+            work_type_request = requests[id]
             user = work_type_request.employee_id.employee_user_id
             work_type_request.delete()
-            del_ids.append(work_type_request)
+            del_ids.append(id)
             notify.send(
                 request.user.employee_get,
                 recipient=user,
@@ -4778,7 +5077,7 @@ def work_type_request_bulk_delete(request):
                 redirect="#",
                 icon="trash",
             )
-        except WorkTypeRequest.DoesNotExist:
+        except KeyError:
             messages.error(request, _("Work type request not found."))
         except ProtectedError:
             messages.error(
@@ -4790,9 +5089,8 @@ def work_type_request_bulk_delete(request):
                     date=work_type_request.requested_date,
                 ),
             )
-        result = True
     messages.success(request, _("{} work type requests deleted.".format(len(del_ids))))
-    return JsonResponse({"result": result})
+    return JsonResponse({"result": bool(del_ids)})
 
 
 @login_required
@@ -5299,6 +5597,8 @@ def shift_allocation_request_update(request, shift_request_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def shift_request_cancel(request, id):
     """
     This method is used to update or cancel shift request
@@ -5308,9 +5608,22 @@ def shift_request_cancel(request, id):
     """
 
     is_ajax = request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest"
-    shift_request = ShiftRequest.find(id)
-    if not shift_request:
+    shift_request = (
+        ShiftRequest.objects.select_for_update()
+        .select_related(
+            "employee_id",
+            "employee_id__employee_user_id",
+            "reallocate_to",
+            "reallocate_to__employee_user_id",
+        )
+        .filter(pk=id)
+        .first()
+    )
+    if shift_request is None:
         messages.error(request, _("Shift request not found."))
+        return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
+    if shift_request.canceled:
+        messages.error(request, _("Shift request is already canceled."))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
     if not (
         is_reportingmanger(request, shift_request)
@@ -5320,31 +5633,28 @@ def shift_request_cancel(request, id):
     ):
         messages.error(request, _("You don't have permission"))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
-    today_date = datetime.today().date()
-    if (
-        shift_request.approved
-        and shift_request.requested_date <= today_date <= shift_request.requested_till
-        and not shift_request.is_permanent_shift
-    ):
-        shift_request.employee_id.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
-        )
-        shift_request.employee_id.employee_work_info.save()
+    employee_ids = [shift_request.employee_id_id]
+    if shift_request.reallocate_to_id:
+        employee_ids.append(shift_request.reallocate_to_id)
+    work_infos = {
+        item.employee_id_id: item
+        for item in EmployeeWorkInformation.objects.select_for_update()
+        .filter(employee_id_id__in=employee_ids)
+        .order_by("employee_id_id")
+    }
+    if shift_request.shift_changed:
+        employee_work_info = work_infos.get(shift_request.employee_id_id)
+        if employee_work_info:
+            employee_work_info.shift_id = shift_request.previous_shift_id
+            employee_work_info.save(update_fields=["shift_id"])
+        reallocated_work_info = work_infos.get(shift_request.reallocate_to_id)
+        if reallocated_work_info:
+            reallocated_work_info.shift_id = shift_request.shift_id
+            reallocated_work_info.save(update_fields=["shift_id"])
+        shift_request.shift_changed = False
     shift_request.canceled = True
     shift_request.approved = False
-    work_info = EmployeeWorkInformation.objects.filter(
-        employee_id=shift_request.employee_id
-    )
-    if work_info.exists():
-        shift_request.employee_id.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
-        )
-    if shift_request.reallocate_to and work_info.exists():
-        shift_request.reallocate_to.employee_work_info.shift_id = shift_request.shift_id
-        shift_request.reallocate_to.employee_work_info.save()
-    if work_info.exists():
-        shift_request.employee_id.employee_work_info.save()
-    shift_request.save()
+    shift_request.save(update_fields=["canceled", "approved", "shift_changed"])
     messages.success(request, _("Shift request rejected"))
     notify.send(
         request.user.employee_get,
@@ -5373,6 +5683,8 @@ def shift_request_cancel(request, id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def shift_allocation_request_cancel(request, id):
     """
     This method is used to update or cancel shift request
@@ -5381,23 +5693,39 @@ def shift_allocation_request_cancel(request, id):
 
     """
 
-    shift_request = ShiftRequest.find(id)
-    if not shift_request:
+    shift_request = (
+        ShiftRequest.objects.select_for_update()
+        .select_related("employee_id", "reallocate_to")
+        .filter(pk=id)
+        .first()
+    )
+    if shift_request is None:
         return HorillaRedirect(
             request, message=_("No shift request found matching the query.")
         )
 
+    actor = request.user.employee_get
+    can_manage = (
+        is_reportingmanger(request, shift_request)
+        or request.user.has_perm("base.approve_shiftrequest")
+        or request.user.has_perm("base.change_shiftrequest")
+    )
+    if actor != shift_request.reallocate_to and not can_manage:
+        messages.error(request, _("You don't have permission"))
+        return HorillaRedirect(request)
+    if (
+        shift_request.approved
+        or shift_request.reallocate_approved
+        or shift_request.reallocate_canceled
+    ):
+        messages.error(request, _("Shift reallocation request is already processed."))
+        return HorillaRedirect(request)
+
     shift_request.reallocate_canceled = True
     shift_request.reallocate_approved = False
-    work_info = EmployeeWorkInformation.objects.filter(
-        employee_id=shift_request.employee_id
+    shift_request.save(
+        update_fields=["reallocate_canceled", "reallocate_approved"]
     )
-    if work_info.exists():
-        shift_request.employee_id.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
-        )
-        shift_request.employee_id.employee_work_info.save()
-    shift_request.save()
     messages.success(request, _("Shift request canceled"))
     notify.send(
         request.user.employee_get,
@@ -5416,36 +5744,57 @@ def shift_allocation_request_cancel(request, id):
 
 @login_required
 @manager_can_enter("base.change_shiftrequest")
-@require_http_methods(["POST"])
+@require_POST
+@transaction.atomic
 def shift_request_bulk_cancel(request):
     """
     This method is used to cancel a bunch of shift request.
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
+    ids = _posted_json_ids(request)
+    if not ids:
+        return JsonResponse({"result": False}, status=400)
     result = False
-    for id in ids:
-        shift_request = ShiftRequest.objects.get(id=id)
+    requests = list(
+        ShiftRequest.objects.select_for_update()
+        .select_related(
+            "employee_id",
+            "employee_id__employee_user_id",
+            "reallocate_to",
+            "reallocate_to__employee_user_id",
+        )
+        .filter(id__in=ids)
+    )
+    for shift_request in requests:
         if (
             is_reportingmanger(request, shift_request)
             or request.user.has_perm("base.cancel_shiftrequest")
             or shift_request.employee_id == request.user.employee_get
             and shift_request.approved == False
-        ):
+        ) and not shift_request.canceled:
+            employee_ids = [shift_request.employee_id_id]
+            if shift_request.reallocate_to_id:
+                employee_ids.append(shift_request.reallocate_to_id)
+            work_infos = {
+                item.employee_id_id: item
+                for item in EmployeeWorkInformation.objects.select_for_update()
+                .filter(employee_id_id__in=employee_ids)
+                .order_by("employee_id_id")
+            }
+            if shift_request.shift_changed:
+                employee_work_info = work_infos.get(shift_request.employee_id_id)
+                if employee_work_info:
+                    employee_work_info.shift_id = shift_request.previous_shift_id
+                    employee_work_info.save(update_fields=["shift_id"])
+                reallocated_work_info = work_infos.get(shift_request.reallocate_to_id)
+                if reallocated_work_info:
+                    reallocated_work_info.shift_id = shift_request.shift_id
+                    reallocated_work_info.save(update_fields=["shift_id"])
+                shift_request.shift_changed = False
             shift_request.canceled = True
             shift_request.approved = False
-            shift_request.employee_id.employee_work_info.shift_id = (
-                shift_request.previous_shift_id
+            shift_request.save(
+                update_fields=["canceled", "approved", "shift_changed"]
             )
-
-            if shift_request.reallocate_to:
-                shift_request.reallocate_to.employee_work_info.shift_id = (
-                    shift_request.shift_id
-                )
-                shift_request.reallocate_to.employee_work_info.save()
-
-            shift_request.employee_id.employee_work_info.save()
-            shift_request.save()
             messages.success(request, _("Shift request canceled"))
             notify.send(
                 request.user.employee_get,
@@ -5461,7 +5810,7 @@ def shift_request_bulk_cancel(request):
             if shift_request.reallocate_to:
                 notify.send(
                     request.user.employee_get,
-                    recipient=shift_request.employee_id.employee_user_id,
+                    recipient=shift_request.reallocate_to.employee_user_id,
                     verb="Your shift request has been canceled.",
                     verb_ar="تم إلغاء طلبك للوردية.",
                     verb_de="Ihr Schichtantrag wurde storniert.",
@@ -5476,6 +5825,8 @@ def shift_request_bulk_cancel(request):
 
 @login_required
 @manager_can_enter("base.change_shiftrequest")
+@require_POST
+@transaction.atomic
 def shift_request_approve(request, id):
     """
     Approve shift request
@@ -5484,8 +5835,18 @@ def shift_request_approve(request, id):
     """
 
     is_ajax = request.META.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest"
-    shift_request = ShiftRequest.find(id)
-    if not shift_request:
+    shift_request = (
+        ShiftRequest.objects.select_for_update()
+        .select_related(
+            "employee_id",
+            "employee_id__employee_user_id",
+            "reallocate_to",
+            "reallocate_to__employee_user_id",
+        )
+        .filter(pk=id)
+        .first()
+    )
+    if shift_request is None:
         messages.error(request, _("Shift request not found."))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
 
@@ -5497,6 +5858,7 @@ def shift_request_approve(request, id):
             or user.has_perm("base.change_shiftrequest")
         )
         and not shift_request.approved
+        and not shift_request.canceled
     ):
         messages.error(request, _("You don't have permission"))
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
@@ -5508,23 +5870,50 @@ def shift_request_approve(request, id):
         )
         return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
 
-    today_date = datetime.today().date()
-    if not shift_request.is_permanent_shift:
-        if shift_request.requested_date <= today_date <= shift_request.requested_till:
-            shift_request.employee_id.employee_work_info.shift_id = (
-                shift_request.shift_id
-            )
-            shift_request.employee_id.employee_work_info.save()
+    if shift_request.reallocate_to_id and not shift_request.reallocate_approved:
+        messages.error(
+            request,
+            _("The reallocation employee must confirm availability first."),
+        )
+        return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
+
+    employee_ids = [shift_request.employee_id_id]
+    if shift_request.reallocate_to_id:
+        employee_ids.append(shift_request.reallocate_to_id)
+    work_infos = {
+        item.employee_id_id: item
+        for item in EmployeeWorkInformation.objects.select_for_update()
+        .filter(employee_id_id__in=employee_ids)
+        .order_by("employee_id_id")
+    }
+    if shift_request.employee_id_id not in work_infos:
+        messages.error(request, _("Employee work information is missing."))
+        return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
+    if (
+        shift_request.reallocate_to_id
+        and shift_request.reallocate_to_id not in work_infos
+    ):
+        messages.error(request, _("Reallocation employee work information is missing."))
+        return JsonResponse({"result": False}) if is_ajax else HorillaRedirect(request)
+
+    today_date = timezone.now().date()
+    is_current = shift_request.requested_date <= today_date and (
+        shift_request.is_permanent_shift
+        or shift_request.requested_till is None
+        or today_date <= shift_request.requested_till
+    )
+    if is_current:
+        employee_work_info = work_infos[shift_request.employee_id_id]
+        employee_work_info.shift_id = shift_request.shift_id
+        employee_work_info.save(update_fields=["shift_id"])
+        if shift_request.reallocate_to_id:
+            reallocated_work_info = work_infos[shift_request.reallocate_to_id]
+            reallocated_work_info.shift_id = shift_request.previous_shift_id
+            reallocated_work_info.save(update_fields=["shift_id"])
+        shift_request.shift_changed = True
     shift_request.approved = True
     shift_request.canceled = False
-
-    if shift_request.reallocate_to:
-        shift_request.reallocate_to.employee_work_info.shift_id = (
-            shift_request.previous_shift_id
-        )
-        shift_request.reallocate_to.employee_work_info.save()
-
-    shift_request.save()
+    shift_request.save(update_fields=["approved", "canceled", "shift_changed"])
     messages.success(request, _("Shift has been approved."))
 
     recipients = [shift_request.employee_id.employee_user_id]
@@ -5548,6 +5937,8 @@ def shift_request_approve(request, id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def shift_allocation_request_approve(request, id):
     """
     This method is used to approve shift request
@@ -5555,16 +5946,43 @@ def shift_allocation_request_approve(request, id):
         id : shift request instance id
     """
 
-    shift_request = ShiftRequest.find(id)
-    if not shift_request:
+    shift_request = (
+        ShiftRequest.objects.select_for_update()
+        .select_related("employee_id", "reallocate_to")
+        .filter(pk=id)
+        .first()
+    )
+    if shift_request is None:
         return HorillaRedirect(
             request, message=_("No shift request found matching the query.")
         )
 
+    actor = request.user.employee_get
+    can_manage = (
+        is_reportingmanger(request, shift_request)
+        or request.user.has_perm("base.approve_shiftrequest")
+        or request.user.has_perm("base.change_shiftrequest")
+    )
+    if actor != shift_request.reallocate_to and not can_manage:
+        messages.error(request, _("You don't have permission"))
+        return HorillaRedirect(request)
+    if (
+        shift_request.approved
+        or shift_request.reallocate_approved
+        or shift_request.reallocate_canceled
+    ):
+        messages.error(request, _("Shift reallocation request is already processed."))
+        return HorillaRedirect(request)
+
+    EmployeeWorkInformation.objects.select_for_update().filter(
+        employee_id=shift_request.employee_id
+    ).first()
     if not shift_request.is_any_request_exists():
         shift_request.reallocate_approved = True
         shift_request.reallocate_canceled = False
-        shift_request.save()
+        shift_request.save(
+            update_fields=["reallocate_approved", "reallocate_canceled"]
+        )
         messages.success(request, _("You are available for shift reallocation."))
         notify.send(
             request.user.employee_get,
@@ -5587,38 +6005,82 @@ def shift_allocation_request_approve(request, id):
 
 
 @login_required
-@require_http_methods(["POST"])
 @manager_can_enter("base.change_shiftrequest")
+@require_POST
+@transaction.atomic
 def shift_request_bulk_approve(request):
     """
     This method is used to approve a bunch of shift request
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
+    ids = _posted_json_ids(request)
+    if not ids:
+        return JsonResponse({"result": False}, status=400)
     result = False
-    for id in ids:
-        shift_request = ShiftRequest.objects.get(id=id)
+    requests = list(
+        ShiftRequest.objects.select_for_update()
+        .select_related(
+            "employee_id",
+            "employee_id__employee_user_id",
+            "reallocate_to",
+            "reallocate_to__employee_user_id",
+        )
+        .filter(id__in=ids)
+    )
+    for shift_request in requests:
         if (
             is_reportingmanger(request, shift_request)
             or request.user.has_perm("base.approve_shiftrequest")
             or request.user.has_perm("base.change_shiftrequest")
-        ) and not shift_request.approved:
-            """
-            here the request will be approved, can send mail right here
-            """
+        ) and not shift_request.approved and not shift_request.canceled:
+            if shift_request.is_any_request_exists():
+                messages.error(
+                    request,
+                    _(
+                        "An approved shift request already exists during this time period."
+                    ),
+                )
+                continue
+            if shift_request.reallocate_to_id and not shift_request.reallocate_approved:
+                messages.error(
+                    request,
+                    _("The reallocation employee must confirm availability first."),
+                )
+                continue
+            employee_ids = [shift_request.employee_id_id]
+            if shift_request.reallocate_to_id:
+                employee_ids.append(shift_request.reallocate_to_id)
+            work_infos = {
+                item.employee_id_id: item
+                for item in EmployeeWorkInformation.objects.select_for_update()
+                .filter(employee_id_id__in=employee_ids)
+                .order_by("employee_id_id")
+            }
+            if shift_request.employee_id_id not in work_infos or (
+                shift_request.reallocate_to_id
+                and shift_request.reallocate_to_id not in work_infos
+            ):
+                messages.error(request, _("Employee work information is missing."))
+                continue
             shift_request.approved = True
             shift_request.canceled = False
-
-            if shift_request.reallocate_to:
-                shift_request.reallocate_to.employee_work_info.shift_id = (
-                    shift_request.previous_shift_id
-                )
-                shift_request.reallocate_to.employee_work_info.save()
-
-            employee_work_info = shift_request.employee_id.employee_work_info
-            employee_work_info.shift_id = shift_request.shift_id
-            employee_work_info.save()
-            shift_request.save()
+            today_date = timezone.now().date()
+            is_current = shift_request.requested_date <= today_date and (
+                shift_request.is_permanent_shift
+                or shift_request.requested_till is None
+                or today_date <= shift_request.requested_till
+            )
+            if is_current:
+                employee_work_info = work_infos[shift_request.employee_id_id]
+                employee_work_info.shift_id = shift_request.shift_id
+                employee_work_info.save(update_fields=["shift_id"])
+                if shift_request.reallocate_to_id:
+                    reallocated_work_info = work_infos[shift_request.reallocate_to_id]
+                    reallocated_work_info.shift_id = shift_request.previous_shift_id
+                    reallocated_work_info.save(update_fields=["shift_id"])
+                shift_request.shift_changed = True
+            shift_request.save(
+                update_fields=["approved", "canceled", "shift_changed"]
+            )
             messages.success(request, _("Shifts have been approved."))
             notify.send(
                 request.user.employee_get,
@@ -5631,12 +6093,21 @@ def shift_request_bulk_approve(request):
                 redirect=reverse("shift-request-view") + f"?id={shift_request.id}",
                 icon="checkmark",
             )
-        result = True
+            if shift_request.reallocate_to:
+                notify.send(
+                    request.user.employee_get,
+                    recipient=shift_request.reallocate_to.employee_user_id,
+                    verb="Your shift request has been approved.",
+                    redirect=reverse("shift-request-view") + f"?id={shift_request.id}",
+                    icon="checkmark",
+                )
+            result = True
     return JsonResponse({"result": result})
 
 
 @login_required
-@require_http_methods(["POST"])
+@require_POST
+@transaction.atomic
 def shift_request_delete(request, id):
     """
     This method is used to delete shift request instance
@@ -5645,14 +6116,33 @@ def shift_request_delete(request, id):
 
     """
 
+    shift_request = (
+        ShiftRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id=id)
+        .first()
+    )
+    if shift_request is None:
+        messages.error(request, _("Shift request not found."))
+        return HorillaRedirect(request)
+    if not (
+        request.user.has_perm("base.delete_shiftrequest")
+        or request.user.has_perm("base.change_shiftrequest")
+        or is_reportingmanger(request, shift_request)
+        or shift_request.employee_id == request.user.employee_get
+        and not shift_request.approved
+    ):
+        messages.error(request, _("You don't have permission"))
+        return HttpResponse(status=403)
+
     try:
-        shift_request = ShiftRequest.find(id)
-        user = shift_request.employee_id.employee_user_id
-        messages.success(request, _("Shift request deleted"))
+        employee = shift_request.employee_id
+        recipient = employee.employee_user_id
         shift_request.delete()
+        messages.success(request, _("Shift request deleted"))
         notify.send(
             request.user.employee_get,
-            recipient=user,
+            recipient=recipient,
             verb="Your shift request has been deleted.",
             verb_ar="تم حذف طلب الوردية الخاص بك.",
             verb_de="Ihr Schichtantrag wurde gelöscht.",
@@ -5661,9 +6151,6 @@ def shift_request_delete(request, id):
             redirect="#",
             icon="trash",
         )
-
-    except ShiftRequest.DoesNotExist:
-        messages.error(request, _("Shift request not found."))
     except ProtectedError:
         messages.error(request, _("You cannot delete this shift request."))
 
@@ -5680,7 +6167,7 @@ def shift_request_delete(request, id):
             return redirect(f"/list-shift-request/?deleted=true")
         else:
             return redirect(
-                f"/shift-request-individual-tab-view/{shift_request.employee_id.id}?deleted=true"
+                f"/shift-request-individual-tab-view/{employee.id}?deleted=true"
             )
     if hx_target and hx_target == "genericModalBody":
         previous_data = request.GET.urlencode()
@@ -5700,7 +6187,8 @@ def shift_request_delete(request, id):
 
 @login_required
 @permission_required("base.delete_shiftrequest")
-@require_http_methods(["POST"])
+@require_POST
+@transaction.atomic
 def shift_request_bulk_delete(request):
     """
     This method is used to delete shift request instance
@@ -5708,16 +6196,22 @@ def shift_request_bulk_delete(request):
         id : shift request instance id
 
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
+    ids = _posted_json_ids(request)
+    if not ids:
+        return JsonResponse({"result": False}, status=400)
     del_ids = []
-    result = False
+    requests = {
+        item.id: item
+        for item in ShiftRequest.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids)
+    }
     for id in ids:
         try:
-            shift_request = ShiftRequest.objects.get(id=id)
+            shift_request = requests[id]
             user = shift_request.employee_id.employee_user_id
             shift_request.delete()
-            del_ids.append(shift_request)
+            del_ids.append(id)
             notify.send(
                 request.user.employee_get,
                 recipient=user,
@@ -5729,7 +6223,7 @@ def shift_request_bulk_delete(request):
                 redirect="#",
                 icon="trash",
             )
-        except ShiftRequest.DoesNotExist:
+        except KeyError:
             messages.error(request, _("Shift request not found."))
         except ProtectedError:
             messages.error(
@@ -5741,10 +6235,8 @@ def shift_request_bulk_delete(request):
                     date=shift_request.requested_date,
                 ),
             )
-        result = True
-
     messages.success(request, _("{} shift requests deleted.".format(len(del_ids))))
-    return JsonResponse({"result": result})
+    return JsonResponse({"result": bool(del_ids)})
 
 
 @login_required
@@ -5761,12 +6253,19 @@ def notifications(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def clear_notification(request):
     """
     This method is used to clear notification
     """
     try:
-        request.user.notifications.unread().delete()
+        notification_ids = list(
+            request.user.notifications.unread()
+            .select_for_update()
+            .values_list("id", flat=True)
+        )
+        request.user.notifications.filter(id__in=notification_ids).delete()
         messages.success(request, _("Unread notifications removed."))
     except Exception as e:
         messages.error(request, e)
@@ -5779,10 +6278,16 @@ def clear_notification(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def delete_all_notifications(request):
     try:
-        request.user.notifications.read().delete()
-        request.user.notifications.unread().delete()
+        notification_ids = list(
+            request.user.notifications.select_for_update().values_list(
+                "id", flat=True
+            )
+        )
+        request.user.notifications.filter(id__in=notification_ids).delete()
         messages.success(request, _("All notifications removed."))
     except Exception as e:
         messages.error(request, e)
@@ -5793,12 +6298,15 @@ def delete_all_notifications(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def delete_notification(request, id):
     """
     This method is used to delete notification
     """
     try:
-        request.user.notifications.get(id=id).delete()
+        notification = request.user.notifications.select_for_update().get(id=id)
+        notification.delete()
         messages.success(request, _("Notification deleted."))
     except request.user.notifications.model.DoesNotExist:
         messages.error(request, _("Notification not found."))
@@ -5816,14 +6324,15 @@ def delete_notification(request, id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def mark_as_read_notification(request, notification_id):
     script = ""
-    notification_id = request.GET.get("notification_id")
-    if not notification_id:
-        return HorillaRedirect(
-            request, message=_("No notification found matching the query.")
-        )
-    notification = Notification.objects.get(id=notification_id)
+    notification = request.user.notifications.select_for_update().filter(
+        id=notification_id
+    ).first()
+    if notification is None:
+        return JsonResponse({"success": False, "error": "Not found"}, status=404)
     notification.mark_as_read()
     if not request.user.notifications.unread():
         script = """<span hx-get='/notifications' hx-target='#notificationContainer' hx-trigger='load'></span>"""
@@ -5831,24 +6340,35 @@ def mark_as_read_notification(request, notification_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def mark_as_read_notification_json(request):
     try:
         notification_id = request.POST["notification_id"]
         notification_id = int(notification_id)
-        notification = Notification.objects.get(id=notification_id)
+        notification = request.user.notifications.select_for_update().get(
+            id=notification_id
+        )
         notification.mark_as_read()
         return JsonResponse({"success": True})
-    except:
+    except (KeyError, TypeError, ValueError, Notification.DoesNotExist):
         return JsonResponse({"success": False, "error": "Invalid request"})
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def read_notifications(request):
     """
     This method is to mark as read the notification
     """
     try:
-        request.user.notifications.all().mark_all_as_read()
+        notification_ids = list(
+            request.user.notifications.select_for_update().values_list(
+                "id", flat=True
+            )
+        )
+        request.user.notifications.filter(id__in=notification_ids).mark_all_as_read()
         messages.info(request, _("Notifications marked as read"))
     except Exception as e:
         messages.error(request, e)
@@ -5874,12 +6394,20 @@ def all_notifications(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def notification_sound(request):
     employee = request.user.employee_get
-    sound, created = NotificationSound.objects.get_or_create(employee=employee)
-    if not created:
+    sound = NotificationSound.objects.select_for_update().filter(
+        employee=employee
+    ).first()
+    if sound is None:
+        sound = NotificationSound.objects.create(
+            employee=employee, sound_enabled=True
+        )
+    else:
         sound.sound_enabled = not sound.sound_enabled
-        sound.save()
+        sound.save(update_fields=["sound_enabled"])
 
     return HttpResponse("")
 
@@ -5889,16 +6417,13 @@ def _system_preferences_context(request):
     """
     Build template context shared by the System Preferences settings page.
     """
-    if apps.is_installed("payroll"):
-        PayrollSettings = get_horilla_model_class(
-            app_label="payroll", model="payrollsettings"
-        )
-        from payroll.forms.component_forms import PayrollSettingsForm
-
-        currency_instance = PayrollSettings.objects.first()
-        currency_form = PayrollSettingsForm(instance=currency_instance)
-    else:
-        currency_form = None
+    # The retired ``payroll`` app is a read-only migration source.  Its URL
+    # configuration is deliberately not mounted after the HR15 cutover, so
+    # rendering its old PayrollSettings form made the entire settings centre
+    # fail with NoReverseMatch.  Currency is now an ISO code owned by each
+    # canonical HR15 payroll profile; it is not a mutable legacy display
+    # preference.
+    currency_form = None
 
     selected_company_id = request.session.get("selected_company")
 
@@ -6134,7 +6659,7 @@ def save_date_format(request):
                 return JsonResponse({"success": True})
 
     # Return a JSON response for unsupported methods
-    return JsonResponse({"error": False, "error": "Unsupported method"}, status=405)
+    return JsonResponse({"error": "Unsupported method"}, status=405)
 
 
 @login_required
@@ -6228,7 +6753,7 @@ def save_time_format(request):
                 return JsonResponse({"success": True})
 
     # Return a JSON response for unsupported methods
-    return JsonResponse({"error": False, "error": "Unsupported method"}, status=405)
+    return JsonResponse({"error": "Unsupported method"}, status=405)
 
 
 @login_required
@@ -7006,30 +7531,38 @@ def multiple_level_approval_edit(request, condition_id):
 
 @login_required
 @permission_required("base.delete_multipleapprovalcondition")
+@require_POST
+@transaction.atomic
 def multiple_level_approval_delete(request, condition_id):
 
     request_copy = request.GET.copy()
     request_copy.pop("instances_ids", None)
     previous_data = request_copy.urlencode()
 
-    if not MultipleApprovalCondition.objects.filter(id=condition_id).exists():
+    condition = MultipleApprovalCondition.objects.select_for_update().filter(
+        id=condition_id
+    ).first()
+    if not condition:
         return HorillaRedirect(
             request,
             message=_("No MultipleApprovalCondition matching query does not exist."),
         )
 
-    condition = MultipleApprovalCondition.objects.get(id=condition_id)
     condition.delete()
     messages.success(request, _("Multiple approval condition deleted successfully"))
     hx_target = request.META.get("HTTP_HX_TARGET")
     if hx_target and hx_target == "genericModalBody":
-        instances_ids = request.GET.get("instances_ids")
-        instances_list = json.loads(instances_ids)
+        try:
+            instances_list = json.loads(request.GET.get("instances_ids", "[]"))
+        except (TypeError, json.JSONDecodeError):
+            instances_list = []
         if condition_id in instances_list:
             instances_list.remove(condition_id)
-            previous_instance, next_instance = closest_numbers(
-                json.loads(instances_ids), condition_id
-            )
+        if not instances_list:
+            return redirect(reverse("hx-multiple-approval-condition"))
+        _previous_instance, next_instance = closest_numbers(
+            instances_list, condition_id
+        )
         return redirect(
             f"/detail-view-multiple-approval-condition/{next_instance}/?{previous_data}&instance_ids={instances_list}&deleted=true"
         )
@@ -7037,13 +7570,54 @@ def multiple_level_approval_delete(request, condition_id):
     return redirect(reverse("hx-multiple-approval-condition"))
 
 
+def _can_participate_in_schedule_request(request, schedule_request):
+    """Limit request comments to the employee, their manager, or HR approvers."""
+    actor = request.user.employee_get
+    if actor.pk == schedule_request.employee_id_id:
+        return True
+    if isinstance(schedule_request, ShiftRequest):
+        permission_names = (
+            "base.change_shiftrequest",
+            "base.approve_shiftrequest",
+        )
+    else:
+        permission_names = (
+            "base.change_worktyperequest",
+            "base.approve_worktyperequest",
+        )
+    if any(request.user.has_perm(name) for name in permission_names):
+        return True
+    return EmployeeWorkInformation.objects.filter(
+        employee_id_id=schedule_request.employee_id_id,
+        reporting_manager_id=actor,
+    ).exists()
+
+
+def _can_delete_schedule_comment(request, comment):
+    if request.user.employee_get == comment.employee_id:
+        return True
+    if request.user.has_perm("base.delete_baserequestfile"):
+        return True
+    return _can_participate_in_schedule_request(request, comment.request_id) and (
+        request.user.has_perm("base.change_shiftrequest")
+        or request.user.has_perm("base.change_worktyperequest")
+        or EmployeeWorkInformation.objects.filter(
+            employee_id_id=comment.request_id.employee_id_id,
+            reporting_manager_id=request.user.employee_get,
+        ).exists()
+    )
+
+
 @login_required
 @hx_request_required
+@require_http_methods(["GET", "POST"])
 def create_shiftrequest_comment(request, shift_id):
     """
     This method renders form and template to create shift request comments
     """
     shift = ShiftRequest.find(shift_id)
+    if shift is None or not _can_participate_in_schedule_request(request, shift):
+        return HorillaRedirect(request, message=_("Shift request not found or access denied."))
     emp = request.user.employee_get
     form = ShiftRequestCommentForm(
         initial={"employee_id": emp.id, "request_id": shift_id}
@@ -7152,28 +7726,37 @@ def create_shiftrequest_comment(request, shift_id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["GET", "POST"])
 def view_shift_comment(request, shift_id):
     """
     This method is used to render all the notes of the employee
     """
     shift_request = ShiftRequest.find(shift_id)
+    if shift_request is None or not _can_participate_in_schedule_request(
+        request, shift_request
+    ):
+        return HorillaRedirect(request, message=_("Shift request not found or access denied."))
     comments = ShiftRequestComment.objects.filter(request_id=shift_id).order_by(
         "-created_at"
     )
     no_comments = False
     if not comments.exists():
         no_comments = True
-    if request.FILES:
+    if request.method == "POST" and request.FILES:
         files = request.FILES.getlist("files")
-        comment_id = request.GET["comment_id"]
-        comment = ShiftRequestComment.objects.get(id=comment_id)
-        attachments = []
-        for file in files:
-            file_instance = BaserequestFile()
-            file_instance.file = file
-            file_instance.save()
-            attachments.append(file_instance)
-        comment.files.add(*attachments)
+        comment_id = request.POST.get("comment_id") or request.GET.get("comment_id")
+        with transaction.atomic():
+            comment = get_object_or_404(
+                ShiftRequestComment.objects.select_for_update(),
+                id=comment_id,
+                request_id_id=shift_id,
+            )
+            if not _can_delete_schedule_comment(request, comment):
+                return HttpResponse(status=403)
+            attachments = [
+                BaserequestFile.objects.create(file=file) for file in files
+            ]
+            comment.files.add(*attachments)
     return render(
         request,
         "shift_request/htmx/shift_comment.html",
@@ -7188,30 +7771,35 @@ def view_shift_comment(request, shift_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def delete_shift_comment_file(request):
     """
     Used to delete attachment
     """
 
     try:
-        ids = [int(i) for i in request.GET.getlist("ids") if i.isdigit()]
-        shift_id = int(request.GET["shift_id"])
-        comment_id = int(request.GET["comment_id"])
+        ids = [int(i) for i in request.POST.getlist("ids") if i.isdigit()]
+        shift_id = int(request.POST["shift_id"])
+        comment_id = int(request.POST["comment_id"])
     except (KeyError, ValueError):
         return HorillaRedirect(
             request,
             message=_("Invalid Request"),
         )
 
-    comment = ShiftRequestComment.find(comment_id)
+    comment = (
+        ShiftRequestComment.objects.select_for_update()
+        .select_related("employee_id", "request_id")
+        .filter(id=comment_id, request_id_id=shift_id)
+        .first()
+    )
+    if comment is None:
+        return HttpResponse(status=404)
     script = ""
 
-    if (
-        request.user.employee_get == comment.employee_id
-        or request.user.has_perm("base.delete_baserequestfile")
-        or is_reportingmanager(request)
-    ):
-        BaserequestFile.objects.filter(id__in=ids).delete()
+    if _can_delete_schedule_comment(request, comment):
+        comment.files.select_for_update().filter(id__in=ids).delete()
         messages.success(request, _("File deleted successfully"))
     else:
         messages.warning(request, _("You don't have permission"))
@@ -7228,28 +7816,39 @@ def delete_shift_comment_file(request):
 
 @login_required
 @hx_request_required
+@require_http_methods(["GET", "POST"])
 def view_work_type_comment(request, work_type_id):
     """
     This method is used to render all the notes of the employee
     """
     work_type_request = WorkTypeRequest.find(work_type_id)
+    if work_type_request is None or not _can_participate_in_schedule_request(
+        request, work_type_request
+    ):
+        return HorillaRedirect(
+            request, message=_("Work type request not found or access denied.")
+        )
     comments = WorkTypeRequestComment.objects.filter(request_id=work_type_id).order_by(
         "-created_at"
     )
     no_comments = False
     if not comments.exists():
         no_comments = True
-    if request.FILES:
+    if request.method == "POST" and request.FILES:
         files = request.FILES.getlist("files")
-        comment_id = request.GET["comment_id"]
-        comment = WorkTypeRequestComment.objects.get(id=comment_id)
-        attachments = []
-        for file in files:
-            file_instance = BaserequestFile()
-            file_instance.file = file
-            file_instance.save()
-            attachments.append(file_instance)
-        comment.files.add(*attachments)
+        comment_id = request.POST.get("comment_id") or request.GET.get("comment_id")
+        with transaction.atomic():
+            comment = get_object_or_404(
+                WorkTypeRequestComment.objects.select_for_update(),
+                id=comment_id,
+                request_id_id=work_type_id,
+            )
+            if not _can_delete_schedule_comment(request, comment):
+                return HttpResponse(status=403)
+            attachments = [
+                BaserequestFile.objects.create(file=file) for file in files
+            ]
+            comment.files.add(*attachments)
     return render(
         request,
         "work_type_request/htmx/work_type_comment.html",
@@ -7264,29 +7863,34 @@ def view_work_type_comment(request, work_type_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def delete_work_type_comment_file(request):
     """
     Used to delete attachment
     """
 
     try:
-        ids = [int(i) for i in request.GET.getlist("ids") if i.isdigit()]
-        request_id = int(request.GET["request_id"])
-        comment_id = int(request.GET["comment_id"])
+        ids = [int(i) for i in request.POST.getlist("ids") if i.isdigit()]
+        request_id = int(request.POST["request_id"])
+        comment_id = int(request.POST["comment_id"])
     except (KeyError, ValueError):
         return HorillaRedirect(
             request, message=_("Invalid Request"), redirect_to="work-type-request-view"
         )
 
-    comment = WorkTypeRequestComment.find(comment_id)
+    comment = (
+        WorkTypeRequestComment.objects.select_for_update()
+        .select_related("employee_id", "request_id")
+        .filter(id=comment_id, request_id_id=request_id)
+        .first()
+    )
+    if comment is None:
+        return HttpResponse(status=404)
     script = ""
 
-    if (
-        request.user.employee_get == comment.employee_id
-        or request.user.has_perm("base.delete_baserequestfile")
-        or is_reportingmanager(request)
-    ):
-        BaserequestFile.objects.filter(id__in=ids).delete()
+    if _can_delete_schedule_comment(request, comment):
+        comment.files.select_for_update().filter(id__in=ids).delete()
         messages.success(request, _("File deleted successfully"))
     else:
         messages.warning(request, _("You don't have permission"))
@@ -7303,18 +7907,23 @@ def delete_work_type_comment_file(request):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def delete_shiftrequest_comment(request, comment_id):
     """
     This method is used to delete shift request comments
     """
-    comment = ShiftRequestComment.find(comment_id)
+    comment = (
+        ShiftRequestComment.objects.select_for_update()
+        .select_related("employee_id", "request_id")
+        .filter(id=comment_id)
+        .first()
+    )
+    if comment is None:
+        return HttpResponse(status=404)
     request_id = comment.request_id.id
     script = ""
-    if (
-        request.user.employee_get == comment.employee_id
-        or request.user.has_perm("base.delete_baserequestfile")
-        or is_reportingmanager(request)
-    ):
+    if _can_delete_schedule_comment(request, comment):
         comment.delete()
         messages.success(request, _("Comment deleted successfully!"))
     else:
@@ -7325,11 +7934,18 @@ def delete_shiftrequest_comment(request, comment_id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["GET", "POST"])
 def create_worktyperequest_comment(request, worktype_id):
     """
     This method renders form and template to create Work type request comments
     """
     work_type = WorkTypeRequest.objects.filter(id=worktype_id).first()
+    if work_type is None or not _can_participate_in_schedule_request(
+        request, work_type
+    ):
+        return HorillaRedirect(
+            request, message=_("Work type request not found or access denied.")
+        )
     emp = request.user.employee_get
     form = WorkTypeRequestCommentForm(
         initial={"employee_id": emp.id, "request_id": worktype_id}
@@ -7443,18 +8059,23 @@ def create_worktyperequest_comment(request, worktype_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def delete_worktyperequest_comment(request, comment_id):
     """
     This method is used to delete Work type request comments
     """
     script = ""
-    comment = WorkTypeRequestComment.find(comment_id)
+    comment = (
+        WorkTypeRequestComment.objects.select_for_update()
+        .select_related("employee_id", "request_id")
+        .filter(id=comment_id)
+        .first()
+    )
+    if comment is None:
+        return HttpResponse(status=404)
     request_id = comment.request_id.id
-    if (
-        request.user.employee_get == comment.employee_id
-        or request.user.has_perm("base.delete_baserequestfile")
-        or is_reportingmanager(request)
-    ):
+    if _can_delete_schedule_comment(request, comment):
         comment.delete()
         messages.success(request, _("Comment deleted successfully!"))
     else:
@@ -7464,21 +8085,16 @@ def delete_worktyperequest_comment(request, comment_id):
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
 def pagination_settings_view(request):
-    if DynamicPagination.objects.filter(user_id=request.user).exists():
-        pagination = DynamicPagination.objects.filter(user_id=request.user).first()
-        pagination_form = DynamicPaginationForm(instance=pagination)
-        if request.method == "POST":
+    pagination = DynamicPagination.objects.filter(user_id=request.user).first()
+    pagination_form = DynamicPaginationForm(instance=pagination)
+    if request.method == "POST":
+        with transaction.atomic():
+            pagination = DynamicPagination.objects.select_for_update().filter(
+                user_id=request.user
+            ).first()
             pagination_form = DynamicPaginationForm(request.POST, instance=pagination)
-            if pagination_form.is_valid():
-                pagination_form.save()
-                messages.success(request, _("Default pagination updated."))
-    else:
-        pagination_form = DynamicPaginationForm()
-        if request.method == "POST":
-            pagination_form = DynamicPaginationForm(
-                request.POST,
-            )
             if pagination_form.is_valid():
                 pagination_form.save()
                 messages.success(request, _("Default pagination updated."))
@@ -7568,11 +8184,16 @@ def action_type_update(request, act_id):
 @login_required
 @hx_request_required
 @permission_required("employee.delete_actiontype")
+@require_POST
+@transaction.atomic
 def action_type_delete(request, act_id):
     """
     This method is used to delete the action type.
     """
-    if DisciplinaryAction.objects.filter(action=act_id).exists():
+    action = Actiontype.objects.select_for_update().filter(id=act_id).first()
+    if not action:
+        return HorillaRedirect(request, message=_("Action type not found."))
+    if DisciplinaryAction.objects.filter(action=action).exists():
 
         messages.error(
             request,
@@ -7583,92 +8204,127 @@ def action_type_delete(request, act_id):
         return HorillaRedirect(request)
 
     else:
-        Actiontype.objects.filter(id=act_id).delete()
+        action.delete()
         messages.success(request, _("Action has been deleted successfully!"))
         return HttpResponse()
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def driver_viewed_status(request):
     """
     This method is used to update driver viewed status
     """
-    form = DriverForm(request.GET)
-    if form.is_valid():
-        form.save()
+    viewed = request.POST.get("viewed")
+    allowed = {value for value, _label in DriverViewed.choices}
+    if viewed not in allowed:
+        return JsonResponse({"message": "Invalid driver"}, status=400)
+    DriverViewed.objects.select_for_update().get_or_create(
+        user=request.user, viewed=viewed
+    )
     return HttpResponse("")
 
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def dashboard_components_toggle(request):
     """
     This function is used to create personalized dashboard charts for employees
     """
-    employee_charts, created = DashboardEmployeeCharts.objects.get_or_create(
+    employee_charts = DashboardEmployeeCharts.objects.select_for_update().filter(
         employee=request.user.employee_get
-    )
-    charts = employee_charts.charts or []
-    chart_id = request.GET.get("chart_id")
+    ).first()
+    if employee_charts is None:
+        employee_charts = DashboardEmployeeCharts.objects.create(
+            employee=request.user.employee_get
+        )
+    charts = list(employee_charts.charts or [])
+    chart_id = request.POST.get("chart_id")
+    allowed_charts = {key for key, _label in check_chart_permission(request, CHARTS)}
+    if chart_id not in allowed_charts:
+        return JsonResponse({"message": "Invalid chart"}, status=400)
     if chart_id and chart_id in charts:
         charts.remove(chart_id)
         employee_charts.charts = charts
-        employee_charts.save()
+        employee_charts.save(update_fields=["charts"])
     return HttpResponse("")
 
 
 @login_required
 @hx_request_required
+@require_http_methods(["GET", "POST"])
 def employee_chart_show(request):
     """
     This function is used to choose which chart to show in the dashboard
     """
-    employee_charts, created = DashboardEmployeeCharts.objects.get_or_create(
-        employee=request.user.employee_get
-    )
-
     charts = check_chart_permission(request, CHARTS)
+    allowed_chart_ids = [key for key, _label in charts]
 
     if request.method == "POST":
-        data = set(request.POST.keys())
-        current_order = employee_charts.charts or []
-
-        new_order = [c for c in current_order if c in data]
-
-        for char in data:
-            if char not in new_order:
-                new_order.append(char)
-
-        employee_charts.charts = new_order
-        employee_charts.save()
+        selected = {key for key in request.POST if key in allowed_chart_ids}
+        with transaction.atomic():
+            employee_charts = DashboardEmployeeCharts.objects.select_for_update().filter(
+                employee=request.user.employee_get
+            ).first()
+            if employee_charts is None:
+                employee_charts = DashboardEmployeeCharts.objects.create(
+                    employee=request.user.employee_get
+                )
+            current_order = list(employee_charts.charts or [])
+            new_order = [chart for chart in current_order if chart in selected]
+            new_order.extend(
+                chart
+                for chart in allowed_chart_ids
+                if chart in selected and chart not in new_order
+            )
+            employee_charts.charts = new_order
+            employee_charts.save(update_fields=["charts"])
         messages.success(request, _("Dashboard charts updated successfully"))
 
         return HttpResponse("<script>window.location.reload();</script>")
 
-    context = {"dashboard_charts": charts, "employee_chart": employee_charts.charts}
+    employee_charts = DashboardEmployeeCharts.objects.filter(
+        employee=request.user.employee_get
+    ).first()
+    context = {
+        "dashboard_charts": charts,
+        "employee_chart": employee_charts.charts if employee_charts else [],
+    }
     return render(request, "dashboard_chart_form.html", context)
 
 
 @login_required
 @hx_request_required
+@require_http_methods(["GET", "POST"])
 def reorder_dashboard_charts(request):
     """
     This function is used to reorder the dashboard charts
     """
-    employee_charts, created = DashboardEmployeeCharts.objects.get_or_create(
-        employee=request.user.employee_get
-    )
-    charts = [(chart, chart.replace("_", " ")) for chart in employee_charts.charts]
-
     if request.method == "POST":
-        chart_keys = list(request.POST.keys())
-        filtered_chart_keys = [
-            item for item in chart_keys if item in employee_charts.charts
-        ]
-        employee_charts.charts = filtered_chart_keys
-        employee_charts.save()
+        with transaction.atomic():
+            employee_charts = DashboardEmployeeCharts.objects.select_for_update().filter(
+                employee=request.user.employee_get
+            ).first()
+            if employee_charts is None:
+                return JsonResponse({"message": "No dashboard charts"}, status=400)
+            chart_keys = list(request.POST.keys())
+            filtered_chart_keys = [
+                item for item in chart_keys if item in (employee_charts.charts or [])
+            ]
+            employee_charts.charts = filtered_chart_keys
+            employee_charts.save(update_fields=["charts"])
         return HttpResponse(headers={"HX-Refresh": "true"})
 
+    employee_charts = DashboardEmployeeCharts.objects.filter(
+        employee=request.user.employee_get
+    ).first()
+    charts = [
+        (chart, chart.replace("_", " "))
+        for chart in (employee_charts.charts if employee_charts else [])
+    ]
     return render(
         request,
         "horilla_theme/components/reorder_dashboard_charts.html",
@@ -7678,32 +8334,34 @@ def reorder_dashboard_charts(request):
 
 @login_required
 @permission_required("base.add_biometricattendance")
+@require_POST
+@transaction.atomic
 def activate_biometric_attendance(request):
-    if request.method == "GET":
-        is_installed = request.GET.get("is_installed")
-        selected_company = request.session.get("selected_company")
-        if selected_company == "all":
-            company = None
-        else:
-            company = Company.objects.filter(id=selected_company).first()
-        instance, created = BiometricAttendance.objects.get_or_create(
-            company_id=company
+    is_installed = request.POST.get("is_installed") == "true"
+    selected_company = request.session.get("selected_company")
+    if selected_company == "all":
+        company = None
+    else:
+        company = Company.objects.filter(id=selected_company).first()
+    instance = (
+        BiometricAttendance.objects.select_for_update()
+        .filter(company_id=company)
+        .first()
+    )
+    if instance is None:
+        instance = BiometricAttendance(company_id=company)
+    instance.is_installed = is_installed
+    instance.save()
+    if is_installed:
+        messages.success(
+            request,
+            _("The biometric attendance feature has been activated successfully."),
         )
-        if is_installed == "true":
-            instance.is_installed = True
-            messages.success(
-                request,
-                _("The biometric attendance feature has been activated successfully."),
-            )
-        else:
-            instance.is_installed = False
-            messages.info(
-                request,
-                _(
-                    "The biometric attendance feature has been deactivated successfully."
-                ),
-            )
-        instance.save()
+    else:
+        messages.info(
+            request,
+            _("The biometric attendance feature has been deactivated successfully."),
+        )
     return JsonResponse({"message": "Success"})
 
 
@@ -8150,6 +8808,8 @@ def holiday_update(request, obj_id):
 @login_required
 @hx_request_required
 @permission_required("base.delete_holidays")
+@require_POST
+@transaction.atomic
 def holiday_delete(request, obj_id):
     """
     function used to delete holiday.
@@ -8163,7 +8823,7 @@ def holiday_delete(request, obj_id):
     """
     query_string = request.GET.urlencode()
     try:
-        Holidays.objects.get(id=obj_id).delete()
+        Holidays.objects.select_for_update().get(id=obj_id).delete()
         messages.success(request, _("Holidays deleted successfully.."))
     except Holidays.DoesNotExist:
         messages.error(request, _("Holidays not found."))
@@ -8175,14 +8835,15 @@ def holiday_delete(request, obj_id):
 
 
 @login_required
-@require_http_methods(["POST"])
 @permission_required("base.delete_holidays")
+@require_POST
+@transaction.atomic
 def bulk_holiday_delete(request):
     """
     Deletes multiple holidays based on IDs passed in the POST request.
     """
     ids = request.POST.getlist("ids")
-    deleted_count = Holidays.objects.filter(id__in=ids).delete()[0]
+    deleted_count = Holidays.objects.select_for_update().filter(id__in=ids).delete()[0]
     messages.success(
         request, _("{} Holidays have been successfully deleted.".format(deleted_count))
     )
@@ -8358,6 +9019,8 @@ def company_leave_update(request, id):
 @login_required
 @hx_request_required
 @permission_required("base.delete_companyleaves")
+@require_POST
+@transaction.atomic
 def company_leave_delete(request, id):
     """
     function used to create company leave.
@@ -8371,7 +9034,7 @@ def company_leave_delete(request, id):
     """
     query_string = request.GET.urlencode()
     try:
-        CompanyLeaves.objects.get(id=id).delete()
+        CompanyLeaves.objects.select_for_update().get(id=id).delete()
         messages.success(request, _("Company leave deleted successfully.."))
     except CompanyLeaves.DoesNotExist:
         messages.error(request, _("Company leave not found."))
@@ -8394,8 +9057,10 @@ def view_penalties(request):
 
 @login_required
 @permission_required("base.delete_penaltyaccounts")
+@require_POST
+@transaction.atomic
 def delete_penalities(request, penalty_id):
-    penalty = PenaltyAccounts.objects.filter(id=penalty_id).first()
+    penalty = PenaltyAccounts.objects.select_for_update().filter(id=penalty_id).first()
     if not penalty:
         return HorillaRedirect(
             request, message=_("No penalty account found matching the query.")
@@ -8487,6 +9152,24 @@ def protected_media(request, path):
     except Exception:
         # safe_join raises ValueError if traversal detected
         raise Http404("Invalid file path")
+
+    # Canonical HR modules store sensitive evidence below these private
+    # namespaces and expose it only through tenant-scoped, audited download
+    # endpoints.  A generic "any authenticated user" media check is never
+    # sufficient.  HR08 defaults to ``MEDIA_ROOT/external-materials`` unless
+    # operators configure a separate storage root, so it must be denied here
+    # as well.
+    normalized_path = str(path or "").replace("\\", "/").lstrip("/")
+    private_media_prefixes = (
+        "protected/",
+        "hr_contracts_private/",
+        "external-materials/",
+        "hr05/",
+        "hr10/imports/",
+        "hr-export/",
+    )
+    if normalized_path.startswith(private_media_prefixes):
+        raise Http404("File not found")
 
     if not os.path.exists(media_path) or not os.path.isfile(media_path):
         raise Http404("File not found")

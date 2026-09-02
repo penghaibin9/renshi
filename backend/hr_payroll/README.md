@@ -32,6 +32,11 @@ HR15 是高校薪酬福利 Authority：薪酬档案、薪资项目与规则版�
 - 业务 HTTP API 只能发起发送，不能自行提交 `SENT/ACCEPTED`。回执由受信 worker
   调用 `PayrollPaymentService.ingest_provider_receipt`，并再次执行归属、金额、币种、
   幂等和终态校验。
+- 生产部署可直接使用
+  `hr_payroll.providers.payment_http.HttpsPaymentProvider`；通过
+  `HR15_PAYMENT_HTTP_*` 配置 HTTPS 网关，并以独立 HMAC 密钥验证异步终态回执。
+  将 `HR15_PAYMENT` 加入 `REQUIRED_EXTERNAL_INTEGRATIONS` 后，缺少地址、令牌、
+  回执密钥、密钥编号或 Provider Code 都会阻止生产启动。
 
 ## 工资输入事实 Provider 边界
 

@@ -4218,10 +4218,10 @@ msgid "Penalty Accounts"
 msgstr "罚款账户"
 
 msgid "General"
-msgstr "通用"
+msgstr "基础设置"
 
 msgid "System Preferences"
-msgstr "系统偏好设置"
+msgstr "系统参数"
 
 msgid "Default Expire Days"
 msgstr "默认到期天数"
@@ -4362,7 +4362,7 @@ msgid "Microsoft Exchange or Outlook SMTP integration"
 msgstr "Microsoft Exchange 或 Outlook SMTP 集成"
 
 msgid "Organization"
-msgstr "组织"
+msgstr "学校与组织"
 
 msgid "Company Name"
 msgstr "公司名称"
@@ -4524,7 +4524,7 @@ msgid "Customise the UI appearance with preset color palettes"
 msgstr "使用预设调色板自定义 UI 外观"
 
 msgid "Integrations"
-msgstr "间隔时长"
+msgstr "集成服务"
 
 msgid "Google Drive Backup"
 msgstr "Google Drive 备份"
@@ -8464,7 +8464,7 @@ msgid "Employee ID"
 msgstr "员工编号"
 
 msgid "Email"
-msgstr "电子邮件"
+msgstr "邮件服务"
 
 msgid "Date of Joining"
 msgstr "入职日期"
@@ -12878,6 +12878,9 @@ msgstr "此候选人尚未添加备注。"
 msgid "Settings"
 msgstr "设置"
 
+msgid "System Settings"
+msgstr "系统设置"
+
 #, fuzzy
 #| msgid "Encashment Settings"
 msgid "Account Settings"
@@ -13403,7 +13406,7 @@ msgstr ""
 msgid "Please login to access the dashboard."
 msgstr "请登录以访问仪表板。"
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"
@@ -22621,7 +22624,7 @@ msgstr "所得税"
 
 #: terminology-rename:1
 msgid "Appearance"
-msgstr "外观"
+msgstr "界面外观"
 
 #: terminology-rename:1
 msgid "Email Servers"

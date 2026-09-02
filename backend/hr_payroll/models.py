@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from horilla.hr_domain_models import HrTenantScopedModel
 
@@ -74,6 +75,85 @@ class PayrollPeriod(HrTenantScopedModel):
         indexes = [
             models.Index(fields=("tenant_id", "status", "start_date"), name="idx_hr15_period_tenant_status"),
         ]
+
+
+class ExternalSettlementBasisInputQuerySet(models.QuerySet):
+    _ERROR = "PAYROLL_EXTERNAL_SETTLEMENT_IMMUTABLE: input facts are append-only"
+
+    def update(self, **kwargs):
+        raise ValueError(self._ERROR)
+
+    def delete(self):
+        raise ValueError(self._ERROR)
+
+    def bulk_update(self, objs, fields, **kwargs):
+        raise ValueError(self._ERROR)
+
+    def bulk_create(self, objs, **kwargs):
+        raise ValueError(self._ERROR)
+
+
+class ExternalSettlementBasisInputManager(
+    models.Manager.from_queryset(ExternalSettlementBasisInputQuerySet)
+):
+    pass
+
+
+class ExternalSettlementBasisInput(HrTenantScopedModel):
+    """Immutable HR08 workload basis received by the HR15 authority.
+
+    This is an input fact, not a calculated salary result.  Each revised HR08
+    basis appends another source version, while retries reuse the same
+    idempotency key and fact.
+    """
+
+    source_domain = models.CharField(max_length=16, default="HR08")
+    source_engagement_id = models.UUIDField()
+    source_version = models.PositiveIntegerField()
+    period_code = models.CharField(max_length=32)
+    verified_workload = models.DecimalField(max_digits=14, decimal_places=2)
+    eligible_items_json = models.JSONField(default=list)
+    policy_ref = models.CharField(max_length=64, blank=True, default="")
+    content_hash = models.CharField(max_length=64)
+    idempotency_key = models.CharField(max_length=128)
+    received_at = models.DateTimeField(default=timezone.now)
+
+    objects = ExternalSettlementBasisInputManager()
+
+    class Meta:
+        db_table = "hr15_external_settlement_input"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "idempotency_key"),
+                name="uq_hr15_ext_settle_idem",
+            ),
+            models.UniqueConstraint(
+                fields=(
+                    "tenant_id",
+                    "source_domain",
+                    "source_engagement_id",
+                    "period_code",
+                    "source_version",
+                ),
+                name="uq_hr15_ext_settle_ver",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "period_code", "source_engagement_id"),
+                name="idx_hr15_ext_settle_period",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError(
+                "PAYROLL_EXTERNAL_SETTLEMENT_IMMUTABLE: append a new source version"
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("PAYROLL_EXTERNAL_SETTLEMENT_IMMUTABLE: input facts cannot be deleted")
 
 
 class PayrollResultFact(HrTenantScopedModel):
@@ -144,3 +224,8 @@ class PayrollResultFact(HrTenantScopedModel):
                         "must be corrected with an appended adjustment fact"
                     )
         return super().save(*args, **kwargs)
+
+
+# Import the separately grouped authority model so Django registers it under
+# the hr_payroll app without folding the compensation workflow into result facts.
+from .compensation_models import CompensationChangeCase as CompensationChangeCase

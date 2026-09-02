@@ -20,6 +20,9 @@ PERM_STATUTORY_VIEW = "hr.payroll.statutory.view"
 PERM_STATUTORY_MANAGE = "hr.payroll.statutory.manage"
 PERM_LEGACY_TAKEOVER_VIEW = "hr.payroll.legacy_takeover.view"
 PERM_LEGACY_TAKEOVER_MANAGE = "hr.payroll.legacy_takeover.manage"
+PERM_CHANGE_VIEW = "hr.payroll.change.view"
+PERM_CHANGE_MANAGE = "hr.payroll.change.manage"
+PERM_CHANGE_APPROVE = "hr.payroll.change.approve"
 register_permissions((
     PermissionDefinition(PERM_BENEFIT_VIEW, "HR15", "查看福利计划及个人福利事实"),
     PermissionDefinition(PERM_BENEFIT_MANAGE, "HR15", "管理福利制度与个人福利事实"),
@@ -38,6 +41,9 @@ register_permissions((
     PermissionDefinition(PERM_STATUTORY_MANAGE, "HR15", "管理社保及住房公积金版本化规则"),
     PermissionDefinition(PERM_LEGACY_TAKEOVER_VIEW, "HR15", "查看旧薪资接管清单、映射与切换证据"),
     PermissionDefinition(PERM_LEGACY_TAKEOVER_MANAGE, "HR15", "盘点、核验并激活旧薪资只读接管"),
+    PermissionDefinition(PERM_CHANGE_VIEW, "HR15", "查看调资与津补贴变更单"),
+    PermissionDefinition(PERM_CHANGE_MANAGE, "HR15", "建立并提交调资与津补贴变更单"),
+    PermissionDefinition(PERM_CHANGE_APPROVE, "HR15", "独立审批调资与津补贴变更单"),
 ))
 
 EVENT_BENEFIT_PLAN_PUBLISHED = "hr.payroll.benefit_plan.published"
@@ -57,6 +63,9 @@ EVENT_STATUTORY_CONTRIBUTION_REVIEWED = "hr.payroll.statutory_contribution.revie
 EVENT_STATUTORY_CONTRIBUTION_SEALED = "hr.payroll.statutory_contribution.sealed"
 EVENT_LEGACY_INVENTORY_CAPTURED = "hr.payroll.legacy_inventory.captured"
 EVENT_LEGACY_CUTOVER_ACTIVATED = "hr.payroll.legacy_cutover.activated"
+EVENT_COMPENSATION_CHANGE_SUBMITTED = "hr.payroll.compensation_change.submitted"
+EVENT_COMPENSATION_CHANGE_APPROVED = "hr.payroll.compensation_change.approved"
+EVENT_COMPENSATION_CHANGE_REJECTED = "hr.payroll.compensation_change.rejected"
 register_business_events((
     BusinessEventDefinition(EVENT_BENEFIT_PLAN_PUBLISHED, "HR15", "benefit_plan", 1),
     BusinessEventDefinition(EVENT_BENEFIT_ENROLLMENT_EFFECTIVE, "HR15", "benefit_enrollment", 1),
@@ -75,4 +84,7 @@ register_business_events((
     BusinessEventDefinition(EVENT_STATUTORY_CONTRIBUTION_SEALED, "HR15", "statutory_contribution", 1),
     BusinessEventDefinition(EVENT_LEGACY_INVENTORY_CAPTURED, "HR15", "legacy_inventory", 1),
     BusinessEventDefinition(EVENT_LEGACY_CUTOVER_ACTIVATED, "HR15", "legacy_cutover", 1),
+    BusinessEventDefinition(EVENT_COMPENSATION_CHANGE_SUBMITTED, "HR15", "compensation_change", 1),
+    BusinessEventDefinition(EVENT_COMPENSATION_CHANGE_APPROVED, "HR15", "compensation_change", 1),
+    BusinessEventDefinition(EVENT_COMPENSATION_CHANGE_REJECTED, "HR15", "compensation_change", 1),
 ))

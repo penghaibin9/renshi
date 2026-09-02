@@ -32,6 +32,10 @@ from hr_payroll.services.input_fact_provider_registry import (
     PayrollInputProviderRegistry,
     PayrollInputProviderRegistryError,
 )
+from hr_payroll.services.compensation_change_service import (
+    CompensationChangeError,
+    CompensationChangeService,
+)
 from hr_payroll.statutory_models import StatutoryContributionFact
 from hr_payroll.services.statutory_contribution_service import (
     StatutoryContributionError,
@@ -114,6 +118,7 @@ def verify_payroll_input_snapshot(snapshot: PayrollInputSnapshot) -> None:
             "payroll input source evidence is incomplete",
         )
     merged_variables = {}
+    change_overrides = {}
     for authority, source in sources.items():
         if not isinstance(source, Mapping):
             raise PayrollCalculationError(
@@ -145,13 +150,18 @@ def verify_payroll_input_snapshot(snapshot: PayrollInputSnapshot) -> None:
             raise PayrollCalculationError(
                 "PAYROLL_INPUT_SNAPSHOT_TAMPERED", "payroll input source hash is invalid"
             )
+        target_variables = (
+            change_overrides if authority == "HR15_CHANGE" else merged_variables
+        )
         for key, value in source_variables.items():
             if key in merged_variables and merged_variables[key] != value:
-                raise PayrollCalculationError(
-                    "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
-                    "payroll input sources contain conflicting variables",
-                )
-            merged_variables[key] = value
+                if authority != "HR15_CHANGE":
+                    raise PayrollCalculationError(
+                        "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
+                        "payroll input sources contain conflicting variables",
+                    )
+            target_variables[key] = value
+    merged_variables.update(change_overrides)
     if merged_variables != dict(variables):
         raise PayrollCalculationError(
             "PAYROLL_INPUT_SNAPSHOT_TAMPERED",
@@ -460,6 +470,29 @@ class PayrollCalculationService:
                         f"trusted providers disagree on payroll variable {key}",
                     )
                 variables[key] = value
+
+        try:
+            change_raw = CompensationChangeService(
+                self.tenant_id,
+                actor_user_id=self.actor_user_id,
+                correlation_id=self.correlation_id,
+            ).payroll_input_source(
+                staff_id=staff_id,
+                period_id=period.id,
+                period_start=period.start_date,
+                period_end=period.end_date,
+                base_variables=variables,
+            )
+        except CompensationChangeError as exc:
+            raise PayrollCalculationError(exc.code, str(exc)) from exc
+        if change_raw is not None:
+            change_source, change_variables = self._normalize_provider_result(
+                authority="HR15_CHANGE",
+                request={**request, "authority": "HR15_CHANGE"},
+                raw=change_raw,
+            )
+            source_versions["HR15_CHANGE"] = change_source
+            variables.update(change_variables)
 
         missing_variables = sorted(required_variables - set(variables))
         if missing_variables:
