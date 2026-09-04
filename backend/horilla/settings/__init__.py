@@ -14,7 +14,6 @@ import os
 from importlib.util import find_spec
 
 from django.core.exceptions import ImproperlyConfigured
-
 from horilla.settings.runtime_seals import install_legacy_runtime_seals
 
 from .base import *  # noqa: F401,F403

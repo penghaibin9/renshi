@@ -4,7 +4,6 @@ from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
 from django.db.models import Count
-
 from horilla.horilla_middlewares import _thread_locals, get_selected_company
 from horilla.hr_permissions import (
     is_semantic_hr_permission,

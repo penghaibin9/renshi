@@ -3,7 +3,6 @@
 from importlib.util import find_spec
 
 from django.urls import include, path, re_path
-
 from horilla.legacy_cutover_policy import LEGACY_HR_UI_SUCCESSORS
 from horilla.legacy_hr_api import legacy_hr_api_redirect
 from horilla.legacy_hr_ui import legacy_hr_ui_redirect

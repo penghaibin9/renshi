@@ -80,10 +80,10 @@ jobs:
 
 
           TARGETS = {
-              "base/migrations/0002_initial.py": {
+              "backend/base/migrations/0002_initial.py": {
                   ("company", ("company", "address")),
               },
-              "payroll/migrations/0001_initial.py": {
+              "backend/payroll/migrations/0001_initial.py": {
                   (
                       "allowance",
                       (
@@ -210,8 +210,8 @@ jobs:
               print(f"Applied targeted MySQL state-only shim: {path_text} {sorted(transformer.seen)!r}")
           PY
           python -m py_compile \
-            base/migrations/0002_initial.py \
-            payroll/migrations/0001_initial.py
+            backend/base/migrations/0002_initial.py \
+            backend/payroll/migrations/0001_initial.py
 
       - name: Materialize previous production baseline schema
         shell: bash
