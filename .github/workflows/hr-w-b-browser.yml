@@ -1,4 +1,4 @@
-name: W-B HR08 Real Browser Gate
+name: W-B HR08 Multi-Role Real Browser Gate
 
 on:
   pull_request:
@@ -8,12 +8,19 @@ on:
       - ".github/workflows/hr-w-b-browser.yml"
       - "scripts/hr_w_b_external_browser.py"
       - "backend/horilla/hr_urls.py"
-      - "backend/horilla_theme/templates/hr_external/hiring_detail.html"
+      - "backend/base/auth_backends.py"
+      - "backend/base/middleware.py"
+      - "backend/base/models.py"
+      - "backend/hr_external/templates/hr_external/hiring_detail.html"
       - "frontend/static/hr/js/pages/hr08-wb-agreement.js"
+      - "frontend/static/hr/js/pages/hr08-workspace.js"
+      - "backend/hr_external/api/hiring.py"
       - "backend/hr_external/api/wb_agreement.py"
+      - "backend/hr_external/permissions.py"
       - "backend/hr_external/services/hiring_service.py"
       - "backend/hr_external/integrations/hr07.py"
       - "backend/hr_contracts/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -30,10 +37,16 @@ env:
   CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  HR_BROWSER_USERNAME: wb-browser-auditor
-  HR_BROWSER_PASSWORD: "browser-${{ github.run_id }}"
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
   HR_BROWSER_ARTIFACT_DIR: tests/artifacts/hr-w-b-browser
+  HR_WB_APPROVER_USERNAME: wb-agreement-approver
+  HR_WB_APPROVER_PASSWORD: "approver-${{ github.run_id }}-${{ github.run_attempt }}"
+  HR_WB_ACTIVATOR_USERNAME: wb-activation-operator
+  HR_WB_ACTIVATOR_PASSWORD: "activator-${{ github.run_id }}-${{ github.run_attempt }}"
+  HR_WB_AUDITOR_USERNAME: wb-read-only-auditor
+  HR_WB_AUDITOR_PASSWORD: "auditor-${{ github.run_id }}-${{ github.run_attempt }}"
+  HR_WB_CROSS_TENANT_USERNAME: wb-cross-tenant-operator
+  HR_WB_CROSS_TENANT_PASSWORD: "cross-${{ github.run_id }}-${{ github.run_attempt }}"
 
 jobs:
   real-agreement-activation:
@@ -64,11 +77,14 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Syntax gate for W-B browser ownership
+      - name: Syntax gate for W-B multi-role browser ownership
         run: |
           python -m py_compile \
+            backend/hr_external/api/hiring.py \
             backend/hr_external/api/wb_agreement.py \
             scripts/hr_w_b_external_browser.py
+          node --check frontend/static/hr/js/pages/hr08-wb-agreement.js
+          node --check frontend/static/hr/js/pages/hr08-workspace.js
 
       - name: Install application and Chromium
         run: |
@@ -90,21 +106,21 @@ jobs:
           test -n "$mysql_container"
           docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
 
-      - name: Ensure local settings stub
+      - name: Ensure local settings and evidence directory
         run: |
           if [ ! -f backend/horilla/settings/local_settings.py ]; then
             printf '%s\n' '# Ephemeral for W-B browser gate' > backend/horilla/settings/local_settings.py
           fi
+          mkdir -p tests/artifacts/hr-w-b-browser
 
       - name: Migrate real ephemeral MySQL runtime
         run: |
           python manage.py migrate --noinput
           python manage.py migrate --check
 
-      - name: Seed one real W-B tenant/person/agreement chain
+      - name: Seed tenant-scoped roles and one real W-B authority chain
         shell: bash
         run: |
-          mkdir -p tests/artifacts/hr-w-b-browser
           python manage.py shell <<'PY'
           import json
           import os
@@ -112,11 +128,13 @@ jobs:
           from pathlib import Path
 
           from django.contrib.auth import get_user_model
+          from django.contrib.auth.models import Group, Permission
           from django.core.files.uploadedfile import SimpleUploadedFile
           from django.utils import timezone
 
-          from base.models import Company
+          from base.models import Company, CompanyGroupAssignment
           from employee.models import Employee, EmployeeWorkInformation
+          from horilla.horilla_middlewares import tenant_context
           from hr_contracts.services.agreement_service import AgreementService
           from hr_external.constants import EthicsReviewStatus, ExternalHiringStatus
           from hr_external.models import HrExternalEthicsReview, HrExternalHiringCase
@@ -125,11 +143,10 @@ jobs:
           from hr_external.services.profile_service import ProfileService
           from hr_staff.models import HrPerson, HrStaffMaster
 
-          username = os.environ["HR_BROWSER_USERNAME"]
-          password = os.environ["HR_BROWSER_PASSWORD"]
           today = date.today()
+          User = get_user_model()
 
-          company = Company.objects.create(
+          school = Company.objects.create(
               company="跃科 W-B 外聘协议验收学校",
               hq=True,
               address="长沙市 W-B 验收路 1 号",
@@ -137,94 +154,242 @@ jobs:
               state="Hunan",
               city="Changsha",
               zip="410000",
-              icon=SimpleUploadedFile("wb.png", b"wb", content_type="image/png"),
+              icon=SimpleUploadedFile(
+                  "wb-main.png",
+                  b"wb-main",
+                  content_type="image/png",
+              ),
           )
-          User = get_user_model()
-          user = User.objects.create_superuser(
-              username=username,
-              email="wb-browser@example.invalid",
-              password=password,
-          )
-          user.is_new_employee = False
-          user.save(update_fields=["is_new_employee"])
-          employee = Employee.objects.create(
-              employee_user_id=user,
-              employee_first_name="W-B",
-              employee_last_name="浏览器验收员",
-              email="wb-browser-employee@example.invalid",
-              phone="13800000008",
-              is_active=True,
-          )
-          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(employee_id=employee)
-          work_info.company_id = company
-          work_info.save(update_fields=["company_id"])
-
-          technical_person = HrPerson.objects.create(
-              tenant_id=company.pk,
-              legal_name="W-B 浏览器验收员",
-              status="ACTIVE",
-          )
-          HrStaffMaster.objects.create(
-              tenant_id=company.pk,
-              person_id=technical_person,
-              staff_no="WB-BROWSER-AUDITOR",
-              current_employment_status="ACTIVE",
-              legacy_employee_id=employee.pk,
+          foreign_school = Company.objects.create(
+              company="跃科 W-B 跨租户隔离学校",
+              hq=False,
+              address="长沙市 W-B 隔离路 2 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410001",
+              icon=SimpleUploadedFile(
+                  "wb-foreign.png",
+                  b"wb-foreign",
+                  content_type="image/png",
+              ),
           )
 
-          CategoryService().ensure_default_categories(company.pk)
+          canonical_permissions = {
+              permission.codename: permission
+              for permission in Permission.objects.filter(
+                  content_type__app_label="hr_external",
+                  content_type__model="hrexternalpermissionmeta",
+                  codename__in={
+                      "hr.external.hiring.review",
+                      "hr.external.hiring.approve",
+                      "hr.external.hiring.activate",
+                  },
+              )
+          }
+          required_permission_codes = {
+              "hr.external.hiring.review",
+              "hr.external.hiring.approve",
+              "hr.external.hiring.activate",
+          }
+          assert set(canonical_permissions) == required_permission_codes, (
+              "HR08 canonical permissions were not materialized",
+              sorted(canonical_permissions),
+          )
+
+          def create_role(
+              *,
+              role,
+              company,
+              username,
+              password,
+              permission_codes,
+              phone,
+              staff_no,
+          ):
+              user = User.objects.create_user(
+                  username=username,
+                  email=f"{role}@example.invalid",
+                  password=password,
+              )
+              user.is_new_employee = False
+              user.save(update_fields=["is_new_employee"])
+              employee = Employee.objects.create(
+                  employee_user_id=user,
+                  employee_first_name="W-B",
+                  employee_last_name=role,
+                  email=f"{role}-employee@example.invalid",
+                  phone=phone,
+                  is_active=True,
+              )
+              work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
+                  employee_id=employee
+              )
+              work_info.company_id = company
+              work_info.save(update_fields=["company_id"])
+
+              person = HrPerson.objects.create(
+                  tenant_id=company.pk,
+                  legal_name=f"W-B {role}",
+                  status="ACTIVE",
+              )
+              HrStaffMaster.objects.create(
+                  tenant_id=company.pk,
+                  person_id=person,
+                  staff_no=staff_no,
+                  current_employment_status="ACTIVE",
+                  legacy_employee_id=employee.pk,
+              )
+
+              group = Group.objects.create(
+                  name=f"W-B {role} @ {company.pk}"
+              )
+              group.permissions.set(
+                  [canonical_permissions[code] for code in permission_codes]
+              )
+              CompanyGroupAssignment.objects.create(
+                  user=user,
+                  company=company,
+                  group=group,
+              )
+              CompanyGroupAssignment.sync_user_group_membership(user, group)
+
+              with tenant_context(company.pk):
+                  for code in permission_codes:
+                      legacy = code.replace("hr.external.", "hr08.", 1)
+                      assert user.has_perm(legacy), (
+                          role,
+                          company.pk,
+                          legacy,
+                      )
+              return user
+
+          approver = create_role(
+              role="agreement-approver",
+              company=school,
+              username=os.environ["HR_WB_APPROVER_USERNAME"],
+              password=os.environ["HR_WB_APPROVER_PASSWORD"],
+              permission_codes={
+                  "hr.external.hiring.review",
+                  "hr.external.hiring.approve",
+              },
+              phone="13800008001",
+              staff_no="WB-APPROVER-001",
+          )
+          activator = create_role(
+              role="activation-operator",
+              company=school,
+              username=os.environ["HR_WB_ACTIVATOR_USERNAME"],
+              password=os.environ["HR_WB_ACTIVATOR_PASSWORD"],
+              permission_codes={
+                  "hr.external.hiring.review",
+                  "hr.external.hiring.activate",
+              },
+              phone="13800008002",
+              staff_no="WB-ACTIVATOR-001",
+          )
+          auditor = create_role(
+              role="read-only-auditor",
+              company=school,
+              username=os.environ["HR_WB_AUDITOR_USERNAME"],
+              password=os.environ["HR_WB_AUDITOR_PASSWORD"],
+              permission_codes={"hr.external.hiring.review"},
+              phone="13800008003",
+              staff_no="WB-AUDITOR-001",
+          )
+          cross_tenant = create_role(
+              role="cross-tenant-operator",
+              company=foreign_school,
+              username=os.environ["HR_WB_CROSS_TENANT_USERNAME"],
+              password=os.environ["HR_WB_CROSS_TENANT_PASSWORD"],
+              permission_codes={
+                  "hr.external.hiring.review",
+                  "hr.external.hiring.approve",
+                  "hr.external.hiring.activate",
+              },
+              phone="13800008004",
+              staff_no="WB-CROSS-001",
+          )
+
+          with tenant_context(school.pk):
+              assert not activator.has_perm("hr08.hiring.approve")
+              assert not approver.has_perm("hr08.hiring.activate")
+              assert not auditor.has_perm("hr08.hiring.approve")
+              assert not auditor.has_perm("hr08.hiring.activate")
+              assert not cross_tenant.has_perm("hr08.hiring.review")
+          with tenant_context(foreign_school.pk):
+              assert cross_tenant.has_perm("hr08.hiring.review")
+              assert cross_tenant.has_perm("hr08.hiring.approve")
+              assert cross_tenant.has_perm("hr08.hiring.activate")
+
+          CategoryService().ensure_default_categories(school.pk)
           candidate = HrPerson.objects.create(
-              tenant_id=company.pk,
+              tenant_id=school.pk,
               legal_name="W-B 外聘教师",
               status="ACTIVE",
           )
           profile = ProfileService().create_profile(
-              tenant_id=company.pk,
+              tenant_id=school.pk,
               person_id=candidate.id,
               primary_category_code="INDUSTRY_PROFESSOR",
               source_organization_name="W-B 产业合作单位",
           )
           profile.identity_verification_status = "VERIFIED"
           profile.ethics_status = "PASS"
-          profile.save(update_fields=["identity_verification_status", "ethics_status", "updated_at"])
+          profile.save(
+              update_fields=[
+                  "identity_verification_status",
+                  "ethics_status",
+                  "updated_at",
+              ]
+          )
           category = profile.primary_category
           category.agreement_type_code = "EXTERNAL_WORKFORCE"
-          category.save(update_fields=["agreement_type_code", "updated_at"])
+          category.save(
+              update_fields=["agreement_type_code", "updated_at"]
+          )
 
           case = HrExternalHiringCase.objects.create(
-              tenant_id=company.pk,
+              tenant_id=school.pk,
               case_no="WB-BROWSER-001",
               request_org_id=880801,
-              requester_id=user.pk,
+              requester_id=approver.pk,
               category_id=category,
               purpose="W-B 外聘教学与产业指导浏览器闭环",
               proposed_person_id=candidate,
               requested_start=today,
               requested_end=today + timedelta(days=365),
-              planned_assignments_json=[{
-                  "assignmentType": "TEACHING",
-                  "roleTitle": "产业兼职教师",
-                  "organizationId": 880801,
-              }],
+              planned_assignments_json=[
+                  {
+                      "assignmentType": "TEACHING",
+                      "roleTitle": "产业兼职教师",
+                      "organizationId": 880801,
+                  }
+              ],
               status=ExternalHiringStatus.DRAFT,
           )
           HrExternalEthicsReview.objects.create(
-              tenant_id=company.pk,
+              tenant_id=school.pk,
               person_id=candidate,
               case_id=case,
               review_type="HIRING",
               status=EthicsReviewStatus.PASS,
-              reviewer=user.pk,
+              reviewer=approver.pk,
               reviewed_at=timezone.now(),
           )
-          hiring = HiringService()
-          hiring.submit(case)
-          hiring.college_approve(case)
-          hiring.hr_approve(case)
-          hiring.school_approve(case)
-          hiring.wait_agreement(case)
 
-          contracts = AgreementService(company.pk, actor_user_id=user.pk)
+          hiring = HiringService()
+          case = hiring.submit(case, tenant_id=school.pk)
+          case = hiring.college_approve(case, tenant_id=school.pk)
+          case = hiring.hr_approve(case, tenant_id=school.pk)
+          case = hiring.school_approve(case, tenant_id=school.pk)
+          case = hiring.wait_agreement(case, tenant_id=school.pk)
+          assert case.status == ExternalHiringStatus.WAITING_AGREEMENT
+
+          contracts = AgreementService(
+              school.pk,
+              actor_user_id=approver.pk,
+          )
           agreement = contracts.create_external_agreement(
               agreement_no="WB-BROWSER-CONTRACT-001",
               person_id=candidate.id,
@@ -254,18 +419,31 @@ jobs:
           )
 
           Path("tests/artifacts/hr-w-b-browser/seed.json").write_text(
-              json.dumps({
-                  "tenant_id": company.pk,
-                  "case_id": str(case.id),
-                  "candidate_person_id": str(candidate.id),
-                  "agreement_id": str(agreement.id),
-              }),
+              json.dumps(
+                  {
+                      "tenant_id": school.pk,
+                      "foreign_tenant_id": foreign_school.pk,
+                      "case_id": str(case.id),
+                      "candidate_person_id": str(candidate.id),
+                      "agreement_id": str(agreement.id),
+                      "approver_user_id": approver.pk,
+                      "activator_user_id": activator.pk,
+                      "auditor_user_id": auditor.pk,
+                      "cross_tenant_user_id": cross_tenant.pk,
+                  }
+              ),
               encoding="utf-8",
           )
-          print(f"W-B browser seed case={case.id} agreement={agreement.id}")
+          print(
+              "W-B multi-role seed",
+              f"tenant={school.pk}",
+              f"foreign_tenant={foreign_school.pk}",
+              f"case={case.id}",
+              f"agreement={agreement.id}",
+          )
           PY
 
-      - name: Boot Django and click agreement then activation
+      - name: Boot Django and execute four independent Chromium roles
         shell: bash
         run: |
           set -euo pipefail
@@ -291,60 +469,142 @@ jobs:
             | tee tests/artifacts/hr-w-b-browser/readiness.json
           python scripts/hr_w_b_external_browser.py
 
-      - name: Direct MySQL W-B browser seal
+      - name: Direct MySQL W-B role and authority seal
         run: |
           python manage.py shell <<'PY'
           import json
           from pathlib import Path
 
+          from base.models import CompanyGroupAssignment
           from hr_contracts.models import HrContractAgreement
-          from hr_external.constants import ExternalEngagementStatus, ExternalHiringStatus
-          from hr_external.models import HrExternalAuditEvent, HrExternalEngagement, HrExternalHiringCase
+          from hr_external.constants import (
+              ExternalEngagementStatus,
+              ExternalHiringStatus,
+          )
+          from hr_external.models import (
+              HrExternalAuditEvent,
+              HrExternalEngagement,
+              HrExternalHiringCase,
+          )
           from hr_staff.models import HrEmploymentRelationship, HrStaffMaster
 
-          seed = json.loads(Path("tests/artifacts/hr-w-b-browser/seed.json").read_text())
+          seed = json.loads(
+              Path("tests/artifacts/hr-w-b-browser/seed.json").read_text()
+          )
+          evidence = json.loads(
+              Path("tests/artifacts/hr-w-b-browser/evidence.json").read_text()
+          )
           tenant_id = seed["tenant_id"]
+          foreign_tenant_id = seed["foreign_tenant_id"]
           case_id = seed["case_id"]
           person_id = seed["candidate_person_id"]
           agreement_id = seed["agreement_id"]
 
-          case = HrExternalHiringCase.objects.get(id=case_id, tenant_id=tenant_id)
+          expected_browser_matrix = {
+              ("read_only_auditor", "agreement-options-denied"): 403,
+              ("read_only_auditor", "agreement-confirm-denied"): 403,
+              ("read_only_auditor", "activation-denied"): 403,
+              ("cross_tenant_operator", "detail-concealed"): 404,
+              ("cross_tenant_operator", "agreement-options-concealed"): 404,
+              ("cross_tenant_operator", "agreement-confirm-concealed"): 404,
+              ("cross_tenant_operator", "activation-concealed"): 404,
+              ("agreement_approver", "agreement-confirmed"): 200,
+              ("agreement_approver", "activation-denied"): 403,
+              ("activation_operator", "agreement-confirm-denied"): 403,
+              ("activation_operator", "engagement-activated"): 200,
+          }
+          actual_browser_matrix = {
+              (row["role"], row["assertion"]): row["http_status"]
+              for row in evidence
+          }
+          assert actual_browser_matrix == expected_browser_matrix, (
+              "W-B browser role matrix is incomplete or unexpected",
+              actual_browser_matrix,
+          )
+
+          case = HrExternalHiringCase.objects.get(
+              id=case_id,
+              tenant_id=tenant_id,
+          )
           assert case.status == ExternalHiringStatus.ACTIVATED, case.status
           assert case.agreement_id == agreement_id, case.agreement_id
 
-          agreement = HrContractAgreement.objects.get(id=agreement_id, tenant_id=tenant_id)
-          assert agreement.status == HrContractAgreement.Status.ACTIVE, agreement.status
-          assert str(agreement.subject_person_id) == person_id, agreement.subject_person_id
+          agreement = HrContractAgreement.objects.get(
+              id=agreement_id,
+              tenant_id=tenant_id,
+          )
+          assert agreement.status == HrContractAgreement.Status.ACTIVE
+          assert str(agreement.subject_person_id) == person_id
           assert agreement.subject_reference_type == "HR08_HIRING_CASE"
           assert agreement.subject_reference_id == case_id
 
-          engagement = HrExternalEngagement.objects.get(tenant_id=tenant_id, person_id_id=person_id)
-          assert engagement.status == ExternalEngagementStatus.ACTIVE, engagement.status
-          assert engagement.agreement_id == agreement_id, engagement.agreement_id
+          engagement = HrExternalEngagement.objects.get(
+              tenant_id=tenant_id,
+              person_id_id=person_id,
+          )
+          assert engagement.status == ExternalEngagementStatus.ACTIVE
+          assert engagement.agreement_id == agreement_id
 
-          assert not HrStaffMaster.objects.filter(tenant_id=tenant_id, person_id_id=person_id).exists()
+          assert not HrStaffMaster.objects.filter(
+              tenant_id=tenant_id,
+              person_id_id=person_id,
+          ).exists()
           assert not HrEmploymentRelationship.objects.filter(
               tenant_id=tenant_id,
               staff_id__person_id_id=person_id,
           ).exists()
-          assert HrExternalAuditEvent.objects.filter(
+          assert not HrExternalHiringCase.objects.filter(
+              tenant_id=foreign_tenant_id,
+              id=case_id,
+          ).exists()
+
+          confirm_events = HrExternalAuditEvent.objects.filter(
               tenant_id=tenant_id,
               action="ExternalHiringAgreementConfirmed",
               business_id=case_id,
-          ).exists()
-          assert HrExternalAuditEvent.objects.filter(
+          )
+          assert confirm_events.count() == 1
+          assert (
+              confirm_events.get().actor_user_id
+              == seed["approver_user_id"]
+          )
+          activation_events = HrExternalAuditEvent.objects.filter(
               tenant_id=tenant_id,
               action="ExternalEngagementActivated",
               business_id=str(engagement.id),
-          ).exists()
-          print("W-B browser MySQL seal PASS")
+          )
+          assert activation_events.count() == 1
+          assert (
+              activation_events.get().actor_user_id
+              == seed["activator_user_id"]
+          )
+
+          role_user_ids = {
+              seed["approver_user_id"],
+              seed["activator_user_id"],
+              seed["auditor_user_id"],
+              seed["cross_tenant_user_id"],
+          }
+          assignments = CompanyGroupAssignment.objects.filter(
+              user_id__in=role_user_ids
+          )
+          assert assignments.count() == 4
+          assert assignments.filter(company_id=tenant_id).count() == 3
+          assert assignments.filter(company_id=foreign_tenant_id).count() == 1
+
+          print(
+              "W-B multi-role browser and MySQL seal PASS",
+              f"assertions={len(actual_browser_matrix)}",
+              f"case={case_id}",
+              f"engagement={engagement.id}",
+          )
           PY
 
-      - name: Upload W-B browser evidence
+      - name: Upload W-B multi-role browser evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hr-w-b-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          name: hr-w-b-multi-role-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
           path: tests/artifacts/hr-w-b-browser/
           if-no-files-found: error
           retention-days: 14
