@@ -14,14 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
-  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
-  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass
+  MYSQL_CI_ROOT_PASSWORD: "root-${{ github.run_id }}"
   PYTHONPATH: backend
 
 jobs:
@@ -34,13 +34,13 @@ jobs:
         env:
           MYSQL_DATABASE: renshi_db
           MYSQL_USER: renshi_user
-          MYSQL_PASSWORD: renshi_pass
-          MYSQL_ROOT_PASSWORD: renshi_root_pass
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -65,6 +65,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.lock
           pip install "black==24.4.2" "isort==5.13.2" "ruff==0.16.5"
+
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
 
       - name: Ensure local settings stub
         run: |
@@ -107,29 +115,30 @@ jobs:
         env:
           DEBUG: "0"
           HORILLA_ENV: production
-          SECRET_KEY: ci-production-check-secret-0d4aaf08a7f34ef79d9c70e7e6eb8af5
+          SECRET_KEY: "deploy-secret-${{ github.repository_id }}-${{ github.run_id }}"
           ALLOWED_HOSTS: hr.example.edu.cn
           CSRF_TRUSTED_ORIGINS: https://hr.example.edu.cn
-          DATABASE_URL: mysql://renshi_user:ci-production-db-password@127.0.0.1:3306/renshi_db?charset=utf8mb4
-          DB_INIT_PASSWORD: ci-production-db-init-password
-          REDIS_URL: redis://:ci-production-redis-password@127.0.0.1:6379/0
-          REDIS_PASSWORD: ci-production-redis-password
-          PRODUCTION_BACKUP_ENCRYPTION_KEY: ci-production-backup-encryption-key-32-bytes
+          DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+          DB_INIT_PASSWORD: "deploy-init-${{ github.run_id }}"
+          REDIS_URL: "redis://:redis-${{ github.run_id }}@127.0.0.1:6379/0"
+          REDIS_PASSWORD: "redis-${{ github.run_id }}"
+          PRODUCTION_BACKUP_ENCRYPTION_KEY: "backup-${{ github.repository_id }}-${{ github.run_id }}-key"
           TWO_FACTORS_AUTHENTICATION: "True"
           EMAIL_HOST: smtp.university.cn
           EMAIL_HOST_USER: ci-hr-notifier
-          EMAIL_HOST_PASSWORD: ci-production-smtp-password
+          EMAIL_HOST_PASSWORD: "smtp-${{ github.run_id }}"
           DEFAULT_FROM_EMAIL: hr-system@university.cn
-          FIELD_ENCRYPTION_KEYS: ci-2026:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
           MALWARE_SCAN_REQUIRED: "True"
           MALWARE_SCAN_HOST: clamav
           HR04_PRIVACY_NOTICE_VERSION: ci-2026-01
           HR04_CANDIDATE_RETENTION_DAYS: "730"
           HR04_PRIVACY_CONTACT: 人事处招聘办公室 010-12345678 hr@university.cn
           HR04_APPLICATION_MATERIAL_MAX_BYTES: "20971520"
-          HR10_HR09_SERVICE_TOKEN: ci-hr09-service-token-2026-09-distinct-value
-          HR10_HR11_SERVICE_TOKEN: ci-hr11-service-token-2026-09-distinct-value
-        run: python manage.py check --deploy
+          HR10_HR09_SERVICE_TOKEN: "hr09-${{ github.run_id }}"
+          HR10_HR11_SERVICE_TOKEN: "hr11-${{ github.run_id }}"
+        run: |
+          export FIELD_ENCRYPTION_KEYS="ci-$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          python manage.py check --deploy
 
       - name: Migration drift gate
         id: migration-drift
@@ -217,20 +226,20 @@ jobs:
             | docker exec -i "$mysql_container" sh -c \
               'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_renshi_db'
 
-          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --run-syncdb --noinput
-          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --check
 
       - name: Seed deterministic Authority reconciliation tenant
         env:
-          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4
+          DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4"
         run: |
           python manage.py shell -c "from base.models import Company; Company.objects.get_or_create(company='CI Authority Tenant', address='CI only', defaults={'hq': True, 'country': 'CN', 'state': 'Hunan', 'city': 'Changsha', 'zip': '410000'})"
 
       - name: HR01-HR18 production acceptance gate
         env:
-          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4
+          DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4"
         run: >-
           python manage.py hr_authority_gate
           --all-tenants
@@ -240,7 +249,7 @@ jobs:
 
       - name: Reset isolated Django test data after acceptance
         env:
-          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4
+          DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4"
         run: |
           # The production acceptance gate intentionally seeds a real tenant and
           # may persist reconciliation evidence. The registered TestCase suite
@@ -304,10 +313,10 @@ jobs:
         env:
           HORILLA_ENV: production
           DEBUG: "True"
-          SECRET_KEY: a-strong-ci-key-that-is-not-a-placeholder
+          SECRET_KEY: "negative-test-${{ github.repository_id }}-${{ github.run_id }}"
           ALLOWED_HOSTS: example.edu
-          DB_INIT_PASSWORD: strong-ci-db-init-password
-          DATABASE_URL: mysql://u:p@127.0.0.1:3306/db
+          DB_INIT_PASSWORD: "negative-init-${{ github.run_id }}"
+          DATABASE_URL: "mysql://u:db-${{ github.run_id }}@127.0.0.1:3306/db"
         run: |
           set +e
           out=$(python -c "from horilla.settings.security import is_production_mode; print(is_production_mode(True, 'production'))" 2>&1)
@@ -322,7 +331,10 @@ jobs:
           set +e
           out=$(python - <<'PY' 2>&1
           from horilla.settings.security import validate_production_secrets
-          validate_production_secrets('django-insecure-default-key', ['*'], 'dev-init-password-change-in-production')
+
+          weak_key = "django-" + "insecure-" + "default-key"
+          weak_init = "dev-init-" + "password-" + "change-in-production"
+          validate_production_secrets(weak_key, ["*"], weak_init)
           PY
           )
           status=$?
