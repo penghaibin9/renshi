@@ -1,0 +1,100 @@
+name: Branch production gate autofix
+
+on:
+  push:
+    branches:
+      - fix/production-readiness-20260904
+
+permissions:
+  contents: write
+
+concurrency:
+  group: branch-production-gate-autofix
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/production-readiness-20260904
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned formatter
+        run: pip install "black==24.4.2"
+
+      - name: Apply deterministic CI fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          quality_path = Path(".github/workflows/quality.yml")
+          quality = quality_path.read_text(encoding="utf-8")
+          if "  PYTHONPATH: backend\n" not in quality:
+              marker = "  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass\n"
+              if marker not in quality:
+                  raise SystemExit("quality.yml env marker not found")
+              quality = quality.replace(
+                  marker,
+                  marker + "  PYTHONPATH: backend\n",
+                  1,
+              )
+              quality_path.write_text(quality, encoding="utf-8")
+
+          docker_path = Path(".github/workflows/docker-ci.yml")
+          docker_workflow = docker_path.read_text(encoding="utf-8")
+          old = '''      - name: Build web image
+        run: docker compose -f "$COMPOSE_FILE" build web
+'''
+          new = '''      - name: Build web image with bounded registry retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            if docker compose -f "$COMPOSE_FILE" build web; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "Docker image build failed after $attempt attempts"
+              exit 1
+            fi
+            delay=$((attempt * 15))
+            echo "Docker registry/build attempt $attempt failed; retrying in ${delay}s"
+            sleep "$delay"
+          done
+'''
+          if old in docker_workflow:
+              docker_workflow = docker_workflow.replace(old, new, 1)
+              docker_path.write_text(docker_workflow, encoding="utf-8")
+          elif "Build web image with bounded registry retry" not in docker_workflow:
+              raise SystemExit("docker-ci.yml build marker not found")
+          PY
+
+          black \
+            backend/horilla/settings/__init__.py \
+            backend/horilla/settings/security.py
+          git diff --check
+
+      - name: Commit deterministic fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No changes required"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            .github/workflows/quality.yml \
+            .github/workflows/docker-ci.yml \
+            backend/horilla/settings/__init__.py \
+            backend/horilla/settings/security.py
+          git commit -m "ci: unblock production quality gates"
+          git push origin HEAD:fix/production-readiness-20260904
