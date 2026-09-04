@@ -19,14 +19,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
-  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
-  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass
+  MYSQL_CI_ROOT_PASSWORD: "root-${{ github.run_id }}"
 
 jobs:
   external-agreement-db-first:
@@ -38,13 +38,13 @@ jobs:
         env:
           MYSQL_DATABASE: renshi_db
           MYSQL_USER: renshi_user
-          MYSQL_PASSWORD: renshi_pass
-          MYSQL_ROOT_PASSWORD: renshi_root_pass
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -66,6 +66,14 @@ jobs:
             libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
           python -m pip install --upgrade pip
           pip install -r requirements.lock
+
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
 
       - name: Ensure local settings stub
         run: |
@@ -169,14 +177,14 @@ jobs:
             | docker exec -i "$mysql_container" sh -c \
               'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_renshi_db'
 
-          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --run-syncdb --noinput
-          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --check
 
       - name: Exact HR07 HR08 W-B regression
         env:
-          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
+          DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
         run: >-
           python manage.py test
           hr_contracts.tests.test_agreement_service
