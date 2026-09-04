@@ -41,35 +41,33 @@ jobs:
               marker = "  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass\n"
               if marker not in quality:
                   raise SystemExit("quality.yml env marker not found")
-              quality = quality.replace(
-                  marker,
-                  marker + "  PYTHONPATH: backend\n",
-                  1,
-              )
+              quality = quality.replace(marker, marker + "  PYTHONPATH: backend\n", 1)
               quality_path.write_text(quality, encoding="utf-8")
 
           docker_path = Path(".github/workflows/docker-ci.yml")
           docker_workflow = docker_path.read_text(encoding="utf-8")
-          old = '''      - name: Build web image
-        run: docker compose -f "$COMPOSE_FILE" build web
-'''
-          new = '''      - name: Build web image with bounded registry retry
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4; do
-            if docker compose -f "$COMPOSE_FILE" build web; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 4 ]; then
-              echo "Docker image build failed after $attempt attempts"
-              exit 1
-            fi
-            delay=$((attempt * 15))
-            echo "Docker registry/build attempt $attempt failed; retrying in ${delay}s"
-            sleep "$delay"
-          done
-'''
+          old = (
+              "      - name: Build web image\n"
+              "        run: docker compose -f \"$COMPOSE_FILE\" build web\n"
+          )
+          new = (
+              "      - name: Build web image with bounded registry retry\n"
+              "        shell: bash\n"
+              "        run: |\n"
+              "          set -euo pipefail\n"
+              "          for attempt in 1 2 3 4; do\n"
+              "            if docker compose -f \"$COMPOSE_FILE\" build web; then\n"
+              "              exit 0\n"
+              "            fi\n"
+              "            if [ \"$attempt\" -eq 4 ]; then\n"
+              "              echo \"Docker image build failed after $attempt attempts\"\n"
+              "              exit 1\n"
+              "            fi\n"
+              "            delay=$((attempt * 15))\n"
+              "            echo \"Docker registry/build attempt $attempt failed; retrying in ${delay}s\"\n"
+              "            sleep \"$delay\"\n"
+              "          done\n"
+          )
           if old in docker_workflow:
               docker_workflow = docker_workflow.replace(old, new, 1)
               docker_path.write_text(docker_workflow, encoding="utf-8")
