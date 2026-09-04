@@ -55,20 +55,18 @@ class ProviderSnapshotTriggerMigrationContractTests(TestCase):
             migration.install_collation_safe_snapshot_item_seals
         )
 
+        self.assertEqual(
+            migration.ITEM_TABLE,
+            "hr_assessment_provider_snapshot_item",
+        )
         self.assertIn(
             "CAST(parent_case AS BINARY) <> CAST(NEW.case_id AS BINARY)",
             source,
         )
         self.assertNotIn("OR parent_case <> NEW.case_id", source)
         self.assertIn("parent_status <> 'CAPTURING'", source)
-        self.assertIn(
-            "hr_assessment_provider_snapshot_item_no_update",
-            source,
-        )
-        self.assertIn(
-            "hr_assessment_provider_snapshot_item_no_delete",
-            source,
-        )
+        self.assertIn("{ITEM_TABLE}_no_update", source)
+        self.assertIn("{ITEM_TABLE}_no_delete", source)
         self.assertIn(
             "hr_assessment_provider_snapshot_item_seal_insert",
             source,
