@@ -115,14 +115,12 @@ jobs:
         env:
           DEBUG: "0"
           HORILLA_ENV: production
-          SECRET_KEY: "deploy-secret-${{ github.repository_id }}-${{ github.run_id }}"
           ALLOWED_HOSTS: hr.example.edu.cn
           CSRF_TRUSTED_ORIGINS: https://hr.example.edu.cn
           DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
           DB_INIT_PASSWORD: "deploy-init-${{ github.run_id }}"
           REDIS_URL: "redis://:redis-${{ github.run_id }}@127.0.0.1:6379/0"
           REDIS_PASSWORD: "redis-${{ github.run_id }}"
-          PRODUCTION_BACKUP_ENCRYPTION_KEY: "backup-${{ github.repository_id }}-${{ github.run_id }}-key"
           TWO_FACTORS_AUTHENTICATION: "True"
           EMAIL_HOST: smtp.university.cn
           EMAIL_HOST_USER: ci-hr-notifier
@@ -134,10 +132,12 @@ jobs:
           HR04_CANDIDATE_RETENTION_DAYS: "730"
           HR04_PRIVACY_CONTACT: 人事处招聘办公室 010-12345678 hr@university.cn
           HR04_APPLICATION_MATERIAL_MAX_BYTES: "20971520"
-          HR10_HR09_SERVICE_TOKEN: "hr09-${{ github.run_id }}"
-          HR10_HR11_SERVICE_TOKEN: "hr11-${{ github.run_id }}"
         run: |
-          export FIELD_ENCRYPTION_KEYS="ci-$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
+          export PRODUCTION_BACKUP_ENCRYPTION_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          export FIELD_ENCRYPTION_KEYS="ci-${GITHUB_RUN_ID}:$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+          export HR10_HR09_SERVICE_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(40))')"
+          export HR10_HR11_SERVICE_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(40))')"
           python manage.py check --deploy
 
       - name: Migration drift gate
