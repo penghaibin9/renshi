@@ -153,7 +153,8 @@
                                 <img
                                     src="{% static 'images/ui/minus-icon.png' %}"
                                     style="display: block; width: 50%; height: 50%"
-                                    hx-get="{% url 'delete-reimbursement-comment-file' %}?ids={{ file.id }}&payroll_id={{ request_id }}&comment_id={{comment.id}}"
+                                    hx-post="{% url 'delete-reimbursement-comment-file' %}"
+                                    hx-vals='{"ids":"{{ file.id }}","payroll_id":"{{ request_id }}","comment_id":"{{ comment.id }}"}'
                                     hx-target="#commentFileItem{{file.id}}"
                                     hx-swap="delete"
                                     onclick="event.stopPropagation();event.preventDefault()"

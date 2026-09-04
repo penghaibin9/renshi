@@ -15,9 +15,10 @@
     decide: root.dataset.canDecide === 'true',
     effect: root.dataset.canEffect === 'true',
     term: root.dataset.canTerm === 'true',
+    factCorrect: root.dataset.canFactCorrect === 'true',
   };
   const stateLabels = {
-    DRAFT: '草稿', PUBLISHED: '已发布', APPLICATION_OPEN: '申报开放',
+    DRAFT: '草稿', CONFIGURING: '配置中', PUBLISHED: '已发布', APPLICATION_OPEN: '申报开放',
     APPLICATION_CLOSED: '申报已截止', ELIGIBILITY_REVIEW: '资格审查中',
     REVIEW: '评议中', SUBMITTED: '已提交', RETURNED: '退回补正',
     ELIGIBLE: '资格通过', REJECTED: '未通过', UNDER_REVIEW: '评议中',
@@ -41,6 +42,7 @@
   };
 
   let snapshot = null;
+  let setupSnapshot = {policies: [], positions: [], openTargets: [], applicants: []};
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[char]);
@@ -52,7 +54,7 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   };
 
-  async function request(url, body = {}, method = 'POST') {
+  async function request(url, body = {}, method = 'POST', extraHeaders = {}) {
     const response = await fetch(url, {
       method,
       credentials: 'same-origin',
@@ -60,6 +62,7 @@
         'Content-Type': 'application/json',
         'X-CSRFToken': csrf(),
         'X-Requested-With': 'XMLHttpRequest',
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
     });
@@ -75,12 +78,14 @@
   }
 
   async function reload() {
-    const response = await fetch('/api/v1/hr/appointments/dashboard/', {
-      credentials: 'same-origin',
-      headers: {'X-Requested-With': 'XMLHttpRequest'},
-    });
+    const options = {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}};
+    const [response, setupResponse] = await Promise.all([
+      fetch('/api/v1/hr/appointments/dashboard/', options),
+      fetch('/api/v1/hr/appointments/setup-options/', options),
+    ]);
     if (!response.ok) throw new Error(`数据刷新失败（状态码 ${response.status}）`);
     snapshot = await response.json();
+    if (setupResponse.ok) setupSnapshot = (await setupResponse.json()).data || setupSnapshot;
     renderSection();
   }
 
@@ -132,18 +137,79 @@
     const target = host();
     if (!target) return;
     const rows = snapshot.recentBatches || [];
+    const policies = setupSnapshot.policies || [];
+    const positions = setupSnapshot.positions || [];
+    const drafts = rows.filter((item) => ['DRAFT', 'CONFIGURING'].includes(item.status));
+    const now = new Date();
     target.innerHTML = `
-      <div class="hr14-workflow__head"><div><h2>批次状态推进</h2><p>每一步调用真实批次服务；冻结候选范围、发布、开放申报和评议不会在浏览器里伪造完成。</p></div></div>
+      <div class="hr14-workflow__head"><div><h2>制度、额度与竞聘批次启动</h2><p>从已生效 HR02 岗位和当前 HR03 人群形成冻结快照；发布门槛不会在浏览器里跳过。</p></div></div>
       ${permissions.manage ? '' : permissionNotice('当前账号只有查看权限，不能推进竞聘批次。')}
+      ${permissions.manage ? `<div class="hr14-workflow-grid">
+        <form id="hr14-policy-create" class="hr14-workflow-form compact">
+          <h3>新建聘任制度版本</h3>
+          <label><span>制度代码</span><input name="policyCode" required placeholder="APPOINT_2026"></label>
+          <label><span>制度名称</span><input name="name" required placeholder="2026 岗位聘任办法"></label>
+          <label><span>岗位类别</span><input name="positionCategory" placeholder="可留空"></label>
+          <label><span>岗位等级</span><input name="levelCode" placeholder="可留空"></label>
+          <label><span>生效日期</span><input name="effectiveFrom" type="date" required></label>
+          <label><span>失效日期</span><input name="effectiveTo" type="date"></label>
+          <button type="submit">发布制度版本</button>
+        </form>
+        <form id="hr14-batch-create" class="hr14-workflow-form compact">
+          <h3>新建竞聘批次</h3>
+          <label><span>批次编号</span><input name="batchNo" required placeholder="BATCH_2026_01"></label>
+          <label><span>批次名称</span><input name="name" required></label>
+          <label class="wide"><span>聘任制度</span><select name="policyVersionId" required>${policies.length ? policies.map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('') : '<option value="">请先建立制度</option>'}</select></label>
+          <label><span>申报开始</span><input name="applicationFrom" type="datetime-local" value="${localInput(now)}" required></label>
+          <label><span>申报结束</span><input name="applicationTo" type="datetime-local" value="${localInput(new Date(now.getTime() + 7 * 86400000))}" required></label>
+          <label><span>公示开始</span><input name="publicityFrom" type="datetime-local" value="${localInput(new Date(now.getTime() + 10 * 86400000))}" required></label>
+          <label><span>公示结束</span><input name="publicityTo" type="datetime-local" value="${localInput(new Date(now.getTime() + 15 * 86400000))}" required></label>
+          <button type="submit">保存草稿批次</button>
+        </form>
+        <form id="hr14-supply-quota" class="hr14-workflow-form compact">
+          <h3>冻结岗位供给与额度</h3>
+          <label class="wide"><span>草稿批次</span><select name="batchId" required>${drafts.length ? drafts.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${esc(item.batch_no)}</option>`).join('') : '<option value="">暂无草稿批次</option>'}</select></label>
+          <label class="wide"><span>HR02 可用岗位</span><select name="positionId" required>${positions.length ? positions.map((item) => `<option value="${esc(item.value)}" data-max="${esc(item.availableCount)}">${esc(item.label)}</option>`).join('') : '<option value="">暂无可用岗位</option>'}</select></label>
+          <label><span>本批次额度</span><input name="authorized" type="number" min="1" value="1" required></label>
+          <div class="hr14-workflow__notice wide">额度不能超过 HR02 当前可用量；保存后会形成不可随意改写的岗位供给快照和额度池。</div>
+          <button type="submit">保存供给与额度</button>
+        </form>
+      </div>` : ''}
+      <h3 class="hr14-workflow-subtitle">批次状态推进</h3>
       <div class="hr14-workflow-list">${rows.length ? rows.map((item) => {
         const actions = [];
-        if (item.status === 'DRAFT') actions.push(['freeze', '冻结候选范围'], ['publish', '发布批次']);
+        if (['DRAFT', 'CONFIGURING'].includes(item.status)) actions.push(['freeze', '冻结候选范围'], ['publish', '发布批次']);
         if (item.status === 'PUBLISHED') actions.push(['open', '开放申报']);
         if (item.status === 'APPLICATION_OPEN') actions.push(['close', '截止申报']);
         if (item.status === 'APPLICATION_CLOSED') actions.push(['eligibility', '开始资格审查']);
         if (item.status === 'ELIGIBILITY_REVIEW') actions.push(['review', '开始评议']);
         return `<div class="hr14-workflow-row"><div><b>${esc(item.name || item.batch_no)}</b><small>${esc(item.batch_no)} · ${dateTime(item.application_from)} 至 ${dateTime(item.application_to)}</small></div><span class="hr14-badge">${esc(label(item.status))}</span>${actions.length && permissions.manage ? `<div class="hr14-workflow-actions">${actions.map(([action, text]) => `<button type="button" data-batch-action="${action}" data-record="${esc(item.id)}">${text}</button>`).join('')}</div>` : '<small class="hr14-workflow-row__hint">当前状态没有可执行动作</small>'}</div>`;
       }).join('') : '<div class="hr14-empty">当前学校尚无竞聘批次。批次创建需要从受控制度与岗位范围发起，本页面不提供内部编号输入。</div>'}</div>`;
+
+    const bind = (id, build) => {
+      const form = document.getElementById(id);
+      form?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const values = new FormData(form);
+        run(form.querySelector('button'), form, () => build(values));
+      });
+    };
+    bind('hr14-policy-create', (values) => request('/api/v1/hr/appointments/policies/', Object.fromEntries(values.entries())));
+    bind('hr14-batch-create', (values) => {
+      if (!values.get('policyVersionId')) throw new Error('请先建立聘任制度版本');
+      return request('/api/v1/hr/appointments/batches/', {
+        batchNo: values.get('batchNo'), name: values.get('name'), policyVersionId: values.get('policyVersionId'),
+        applicationFrom: new Date(values.get('applicationFrom')).toISOString(), applicationTo: new Date(values.get('applicationTo')).toISOString(),
+        publicityFrom: new Date(values.get('publicityFrom')).toISOString(), publicityTo: new Date(values.get('publicityTo')).toISOString(),
+        targetCategories: [], targetLevels: [],
+      });
+    });
+    bind('hr14-supply-quota', (values) => {
+      if (!values.get('batchId') || !values.get('positionId')) throw new Error('请选择草稿批次和可用岗位');
+      return request(`/api/v1/hr/appointments/batches/${encodeURIComponent(values.get('batchId'))}/supply-quota/`, {
+        positionInstanceId: Number(values.get('positionId')), authorized: Number(values.get('authorized')),
+      });
+    });
 
     target.querySelectorAll('[data-batch-action]').forEach((button) => button.addEventListener('click', () => {
       const routes = {
@@ -159,8 +225,16 @@
     const target = host();
     if (!target) return;
     const rows = snapshot.recentApplications || [];
+    const targets = setupSnapshot.openTargets || [];
+    const applicants = setupSnapshot.applicants || [];
     target.innerHTML = `
       <div class="hr14-workflow__head"><div><h2>申报案件办理</h2><p>提交、退回、资格结论、进入评议和撤回均保留真实案件状态，不把草稿当成已提交。</p></div></div>
+      ${permissions.apply ? `<form id="hr14-application-create" class="hr14-workflow-form">
+        <label><span>申报编号</span><input name="caseNo" required placeholder="APP_2026_001"></label>
+        <label><span>申报人</span><select name="personId" required>${applicants.length ? applicants.map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('') : '<option value="">开放批次中没有可申报人员</option>'}</select></label>
+        <label class="wide"><span>开放批次与岗位</span><select name="target" required>${targets.length ? targets.map((item, index) => `<option value="${index}">${esc(item.label)}</option>`).join('') : '<option value="">当前没有开放申报的岗位</option>'}</select></label>
+        <button type="submit">创建申报草稿</button>
+      </form>` : permissionNotice('当前账号没有岗位竞聘申报权限。')}
       <div class="hr14-workflow-list">${rows.length ? rows.map((item) => {
         const actions = [];
         if (['DRAFT', 'RETURNED'].includes(item.status) && permissions.apply) actions.push(['submit', '提交申报']);
@@ -169,6 +243,18 @@
         if (item.status === 'ELIGIBLE' && permissions.review) actions.push(['review/start', '进入评议']);
         return `<div class="hr14-workflow-row"><div><b>${esc(item.case_no)}</b><small>${esc(item.batch_no)} · 申报等级 ${esc(item.requested_level_code || '未填写')}</small></div><span class="hr14-badge">${esc(label(item.status))}</span>${actions.length ? `<div class="hr14-workflow-actions">${actions.map(([action, text]) => `<button type="button" data-case-action="${action}" data-record="${esc(item.id)}">${text}</button>`).join('')}</div>` : '<small class="hr14-workflow-row__hint">当前账号或案件状态没有可执行动作</small>'}</div>`;
       }).join('') : '<div class="hr14-empty">当前学校尚无竞聘申报。</div>'}</div>`;
+    const createForm = document.getElementById('hr14-application-create');
+    createForm?.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const values = new FormData(createForm);
+      const selected = targets[Number(values.get('target'))];
+      if (!selected || !values.get('personId')) return setMessage(createForm, '请选择开放岗位和申报人', true);
+      run(createForm.querySelector('button'), createForm, () => request('/api/v1/hr/appointments/applications/', {
+        caseNo: values.get('caseNo'), personId: values.get('personId'),
+        policyVersionId: selected.policyVersionId, positionInstanceId: selected.positionInstanceId,
+        batchNo: selected.batchNo, requestedLevelCode: selected.levelCode || '',
+      }));
+    });
     target.querySelectorAll('[data-case-action]').forEach((button) => button.addEventListener('click', () => {
       const scope = button.closest('.hr14-workflow-row');
       run(button, scope, () => request(`/api/v1/hr/appointments/applications/${encodeURIComponent(button.dataset.record)}/${button.dataset.caseAction}/`));
@@ -324,6 +410,7 @@
     const changes = snapshot.recentTermChanges || [];
     const facts = snapshot.recentAppointments || [];
     const availableFacts = facts.filter((fact) => fact.status === 'EFFECTIVE' && !terms.some((term) => String(term.appointment_fact_id) === String(fact.id)));
+    const correctableFacts = facts.filter((fact) => ['EFFECTIVE', 'REVISED'].includes(fact.status));
     const activeTerms = terms.filter((term) => ['ACTIVE', 'EXPIRING'].includes(term.status));
     const pendingRenewals = renewals.filter((item) => item.status === 'APPROVED');
     const pendingChanges = changes.filter((item) => item.status === 'APPROVED');
@@ -358,14 +445,29 @@
           <h3>发起聘期变更</h3>
           <label class="wide"><span>当前聘期</span><select name="termId" required>${activeTerms.length ? activeTerms.map((item) => `<option value="${esc(item.id)}">${esc(item.term_no)} · ${esc(item.level_code || '未分级')}</option>`).join('') : '<option value="">暂无可变更的聘期</option>'}</select></label>
           <label><span>变更案件号</span><input name="changeNo" required></label>
-          <label><span>变更类型</span><select name="type"><option value="PROMOTION">高聘 / 晋升</option><option value="DOWNGRADE">低聘</option><option value="TERMINATION">解聘 / 终止</option><option value="TRANSFER" disabled>转岗（等待可信岗位选择器）</option><option value="CORRECTION" disabled>正式纠错（需专门纠错入口）</option></select></label>
+          <label><span>变更类型</span><select name="type"><option value="PROMOTION">高聘 / 晋升</option><option value="DOWNGRADE">低聘</option><option value="TERMINATION">解聘 / 终止</option><option value="TRANSFER">转岗</option><option value="CORRECTION" disabled>正式纠错（使用下方专门入口）</option></select></label>
           <label><span>计划生效日期</span><input name="date" type="date" required></label>
           <label><span>目标等级</span><input name="level" placeholder="高聘或低聘时填写"></label>
+          <label class="wide"><span>目标岗位（转岗时必选）</span><select name="targetPosition"><option value="">非转岗无需选择</option>${(setupSnapshot.positions || []).map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('')}</select></label>
           <label class="wide"><span>变更依据</span><textarea name="reason" required></textarea></label>
-          <div class="hr14-workflow__notice wide">转岗需要从 HR02 可信岗位和容量预占中选择；正式纠错需要专门授权材料。当前页面不会让用户填写内部编号绕过这些门禁。</div>
+          <div class="hr14-workflow__notice wide">转岗目标来自 HR02 在用且有余量的岗位，批准后执行生效时自动建立并核验岗位容量预占；正式纠错使用专门授权入口。</div>
           <button type="submit">创建变更案件</button>
         </form>
       </div>` : permissionNotice('当前账号没有聘期治理权限。')}
+      ${permissions.factCorrect ? `<form id="hr14-fact-correct" class="hr14-workflow-form compact hr14-authority-form">
+        <h3>正式聘任事实纠错</h3>
+        <label class="wide"><span>待纠错正式聘任</span><select name="factId" required><option value="">请选择</option>${correctableFacts.map((item) => `<option value="${esc(item.id)}">${esc(item.appointment_no)} · ${esc(item.level_code || '未分级')}</option>`).join('')}</select></label>
+        <label><span>后继聘任编号</span><input name="appointmentNo" required></label>
+        <label><span>更正后岗位（可选）</span><select name="positionId"><option value="">保持原岗位</option>${(setupSnapshot.positions || []).map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('')}</select></label>
+        <label><span>更正后等级（可选）</span><input name="levelCode"></label>
+        <label><span>更正后开始日（可选）</span><input name="effectiveFrom" type="date"></label>
+        <label><span>更正后结束日（可选）</span><input name="effectiveTo" type="date"></label>
+        <label><span>授权决定编号</span><input name="authorityRef" required></label>
+        <label><span>防重复办理号</span><input name="idempotencyKey" required></label>
+        <label class="wide"><span>纠错原因</span><textarea name="reason" required></textarea></label>
+        <label class="wide"><span>依据材料引用</span><input name="documentRef" required placeholder="HR03 受控文件编号或档案引用"></label>
+        <button type="submit">追加纠错后继事实</button>
+      </form>` : ''}
       <div class="hr14-term-ledgers">
         <section><h3>聘期台账</h3><div class="hr14-workflow-list">${renderTermRows(terms, 'term')}</div></section>
         <section><h3>续聘案件</h3><div class="hr14-workflow-list">${renderTermRows(renewals, 'renewal')}</div></section>
@@ -387,12 +489,12 @@
     ];
     if (!rows.length) return '<div class="hr14-empty">当前没有已批准、待正式生效的续聘或变更。</div>';
     return `<div class="hr14-workflow-list">${rows.map((item) => {
-      if (['TRANSFER', 'CORRECTION'].includes(item.changeType)) {
-        const reason = item.changeType === 'TRANSFER' ? '转岗尚未接入可信岗位与容量预占选择器' : '正式纠错必须使用专门纠错授权入口';
+      if (item.changeType === 'CORRECTION') {
+        const reason = '正式纠错必须使用专门纠错授权入口';
         return `<div class="hr14-workflow-row"><div><b>${esc(item.number)}</b><small>${esc(item.source)} · ${esc(reason)}</small></div><span class="hr14-badge">暂不可生效</span></div>`;
       }
       const termination = item.changeType === 'TERMINATION';
-      return `<div class="hr14-workflow-row hr14-effect-row"><div><b>${esc(item.number)}</b><small>${esc(item.source)} · ${esc(item.detail)}</small></div><span class="hr14-badge">已批准，待生效</span><form class="hr14-effect-form" data-effect-kind="${item.kind}" data-record="${esc(item.id)}"><label><span>后继聘任编号</span><input name="appointmentNo" required></label>${termination ? '' : '<label><span>后继聘期编号</span><input name="termNo" required></label>'}${termination ? '' : '<label><span>下次续聘提醒</span><input name="renewalDueAt" type="date"></label>'}<button type="submit">执行正式生效</button></form></div>`;
+      return `<div class="hr14-workflow-row hr14-effect-row"><div><b>${esc(item.number)}</b><small>${esc(item.source)} · ${esc(item.detail)}</small></div><span class="hr14-badge">已批准，待生效</span><form class="hr14-effect-form" data-effect-kind="${item.kind}" data-change-type="${esc(item.changeType || '')}" data-record="${esc(item.id)}"><label><span>后继聘任编号</span><input name="appointmentNo" required></label>${termination ? '' : '<label><span>后继聘期编号</span><input name="termNo" required></label>'}${termination ? '' : '<label><span>下次续聘提醒</span><input name="renewalDueAt" type="date"></label>'}<button type="submit">${item.changeType === 'TRANSFER' ? '预占岗位并正式生效' : '执行正式生效'}</button></form></div>`;
     }).join('')}</div>`;
   }
 
@@ -415,7 +517,22 @@
     });
     bind('hr14-change-open', (values) => {
       if (!values.get('termId')) throw new Error('当前没有可变更的聘期');
-      return request(`/api/v1/hr/appointments/terms/${encodeURIComponent(values.get('termId'))}/changes/`, {changeNo: values.get('changeNo'), changeType: values.get('type'), effectiveDate: values.get('date'), targetPositionInstanceId: null, targetLevelCode: values.get('level'), reason: values.get('reason')});
+      if (values.get('type') === 'TRANSFER' && !values.get('targetPosition')) throw new Error('转岗必须选择 HR02 目标岗位');
+      return request(`/api/v1/hr/appointments/terms/${encodeURIComponent(values.get('termId'))}/changes/`, {changeNo: values.get('changeNo'), changeType: values.get('type'), effectiveDate: values.get('date'), targetPositionInstanceId: values.get('type') === 'TRANSFER' ? Number(values.get('targetPosition')) : null, targetLevelCode: values.get('level'), reason: values.get('reason')});
+    });
+    bind('hr14-fact-correct', (values) => {
+      if (!values.get('factId')) throw new Error('请选择待纠错的正式聘任事实');
+      const payload = {
+        appointmentNo: values.get('appointmentNo'),
+        reason: values.get('reason'),
+        authorityRef: values.get('authorityRef'),
+        evidence: {documentRef: values.get('documentRef')},
+      };
+      if (values.get('positionId')) payload.positionInstanceId = Number(values.get('positionId'));
+      if (values.get('levelCode')) payload.levelCode = values.get('levelCode');
+      if (values.get('effectiveFrom')) payload.effectiveFrom = values.get('effectiveFrom');
+      if (values.get('effectiveTo')) payload.effectiveTo = values.get('effectiveTo');
+      return request(`/api/v1/hr/appointments/appointment-facts/${encodeURIComponent(values.get('factId'))}/corrections/`, payload, 'POST', {'Idempotency-Key': values.get('idempotencyKey')});
     });
 
     document.querySelectorAll('[data-term-expiring]').forEach((button) => button.addEventListener('click', () => run(button, button.closest('.hr14-workflow-row'), () => request(`/api/v1/hr/appointments/terms/${encodeURIComponent(button.dataset.termExpiring)}/expiring/`))));
@@ -430,20 +547,28 @@
       event.preventDefault();
       const values = new FormData(form);
       const base = form.dataset.effectKind === 'renewal' ? 'renewals' : 'term-changes';
-      run(form.querySelector('button'), form.closest('.hr14-effect-row'), () => request(`/api/v1/hr/appointments/${base}/${encodeURIComponent(form.dataset.record)}/apply-effect/`, {appointmentNo: values.get('appointmentNo'), successorTermNo: values.get('termNo') || '', renewalDueAt: values.get('renewalDueAt') || null}));
+      run(form.querySelector('button'), form.closest('.hr14-effect-row'), async () => {
+        let reservationId = null;
+        if (form.dataset.changeType === 'TRANSFER') {
+          const held = await request(`/api/v1/hr/appointments/term-changes/${encodeURIComponent(form.dataset.record)}/capacity-reservation/`);
+          reservationId = held.data && held.data.reservationId;
+          if (!reservationId) throw new Error('HR02 岗位预占未返回有效凭证');
+        }
+        return request(`/api/v1/hr/appointments/${base}/${encodeURIComponent(form.dataset.record)}/apply-effect/`, {appointmentNo: values.get('appointmentNo'), successorTermNo: values.get('termNo') || '', renewalDueAt: values.get('renewalDueAt') || null, reservationId});
+      });
     }));
   }
 
   function renderSection() {
     if (!snapshot) return;
-    if (section === 'competitions') return renderCompetition();
+    if (['policies', 'quota', 'competitions'].includes(section)) return renderCompetition();
     if (section === 'applications') return renderApplications();
     if (section === 'ranking') return renderRanking();
     if (section === 'publicity') return renderPublicity();
     if (section === 'term_changes') return renderTerm();
   }
 
-  if (['competitions', 'applications', 'ranking', 'publicity', 'term_changes'].includes(section)) {
+  if (['policies', 'quota', 'competitions', 'applications', 'ranking', 'publicity', 'term_changes'].includes(section)) {
     const target = host();
     if (target) target.innerHTML = '<div class="hr14-empty">正在读取真实办理数据…</div>';
     reload().catch((error) => {

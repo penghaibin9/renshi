@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from django.utils.dateparse import parse_date, parse_datetime
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from hr_contracts.api.base import (
@@ -124,7 +123,6 @@ def _service(request):
     )
 
 
-@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def case_collection(request):
     enforce_contract_permission(
@@ -194,7 +192,6 @@ def case_detail(request, case_id):
     return api_success(request, _case_data(item))
 
 
-@csrf_exempt
 @require_POST
 def case_submit(request, case_id):
     enforce_contract_permission(request, PERM_CASE_SUBMIT)
@@ -207,7 +204,6 @@ def case_submit(request, case_id):
         return _service_error(request, exc)
 
 
-@csrf_exempt
 @require_POST
 def case_approve(request, case_id):
     enforce_contract_permission(request, PERM_CASE_APPROVE)
@@ -220,7 +216,6 @@ def case_approve(request, case_id):
         return _service_error(request, exc)
 
 
-@csrf_exempt
 @require_POST
 def case_sign_successor(request, case_id):
     enforce_contract_permission(request, PERM_CASE_SIGN)
@@ -239,7 +234,6 @@ def case_sign_successor(request, case_id):
         return api_error(request, "INVALID_REQUEST", str(exc), status=400)
 
 
-@csrf_exempt
 @require_POST
 def case_activate_successor(request, case_id, version_id):
     enforce_contract_permission(request, PERM_CASE_ACTIVATE)
@@ -257,7 +251,6 @@ def case_activate_successor(request, case_id, version_id):
         return api_error(request, "INVALID_REQUEST", str(exc), status=400)
 
 
-@csrf_exempt
 @require_POST
 def case_effect_termination(request, case_id):
     enforce_contract_permission(request, PERM_CASE_TERMINATE)

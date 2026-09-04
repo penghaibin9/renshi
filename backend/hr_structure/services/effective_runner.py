@@ -15,6 +15,7 @@ import logging
 from datetime import date
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_structure.models import HrStructureChangeCase
 from hr_structure.scope import Hr02Scope
@@ -29,7 +30,7 @@ def run_effective_runner(tenant_id, as_of=None):
 
     if not tenant_id:
         raise ValueError("effective runner 必须显式指定 tenant_id")
-    as_of = as_of or date.today()
+    as_of = as_of or timezone.localdate()
     cases = find_scheduled_cases(tenant_id, as_of=as_of)
     results = {"processed": 0, "effective": 0, "failed": 0}
     for case in cases:

@@ -14,13 +14,13 @@
         {% if can_change or can_manage %}
             {% if instance.is_active %}
                 <a hx-confirm="{% trans 'Do you want to archive this rotating shift assign?' %}"
-                    hx-get="{% url 'rotating-shift-assign-archive' instance.id %}" hx-target="#rotating-shift-container"
+                    hx-post="{% url 'rotating-shift-assign-archive' instance.id %}" hx-target="#rotating-shift-container"
                     title="{% trans 'Archive' %}" class="oh-btn oh-btn--danger oh-btn--sq-sm">
                     {% comment %} <input type="hidden" name="is_active" value="{% trans 'False' %}" id=""> {% endcomment %}
                     <ion-icon name="archive-outline"></ion-icon>
                 </a>
             {% else %}
-                <a class="oh-btn oh-btn--danger oh-btn--sq-sm" hx-confirm="{% trans 'Do you Want to un-archive this rotating shift assign?' %}" hx-get="{% url 'rotating-shift-assign-archive' instance.id %}?{{pd}}"
+                <a class="oh-btn oh-btn--danger oh-btn--sq-sm" hx-confirm="{% trans 'Do you Want to un-archive this rotating shift assign?' %}" hx-post="{% url 'rotating-shift-assign-archive' instance.id %}?{{pd}}"
                     hx-target="#rotating-shift-container" title="{% trans 'Un-Archive' %}">
                     <ion-icon name="archive-outline"></ion-icon>
                 </a>

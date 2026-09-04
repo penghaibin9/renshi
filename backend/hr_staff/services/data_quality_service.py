@@ -9,8 +9,10 @@ CREDENTIAL_EXPIRED / MATERIAL_MISSING / UNVERIFIED_HIGH_VALUE_FACT / LEGACY_AUTH
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
+
+from django.utils import timezone
 
 from hr_staff.models import (
     HrCredential,
@@ -20,6 +22,15 @@ from hr_staff.models import (
     HrStaffMaster,
 )
 from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+
+
+RECONCILIATION_LABELS = {
+    "STAFF_NO_MISMATCH": "工号",
+    "DATE_JOINING_MISMATCH": "首次入职日期",
+    "DEPARTMENT_MISMATCH": "当前部门",
+    "POSITION_MISMATCH": "当前岗位",
+    "STATUS_MISMATCH": "在职状态",
+}
 
 
 @dataclass
@@ -47,7 +58,7 @@ class DataQualityService:
 
     def __init__(self, tenant_id: int, as_of: date | None = None):
         self.tenant_id = tenant_id
-        self.as_of = as_of or date.today()
+        self.as_of = as_of or timezone.localdate()
         self.qs = EffectiveDatedQueryService(tenant_id)
 
     def scan(self) -> dict:
@@ -190,19 +201,34 @@ class DataQualityService:
         if has_edu and not has_edu_mat:
             issues.append(DataQualityIssue(staff_id, staff_no, "MATERIAL_MISSING", "LOW", "有教育经历但无学历材料"))
 
-        # ORPHAN_LEGACY_REFERENCE：legacy_employee_id 指向不存在的 Employee
+        # 旧系统映射与权威数据对账：只报告真实差异，不以“建议核对”冒充异常。
         if staff.legacy_employee_id:
-            try:
-                from employee.models import Employee
+            from hr_staff.legacy.reconciliation import ReconciliationService
 
-                if not Employee.objects.filter(id=staff.legacy_employee_id).exists():
-                    issues.append(DataQualityIssue(staff_id, staff_no, "ORPHAN_LEGACY_REFERENCE", "LOW",
-                                                   f"legacy_employee_id={staff.legacy_employee_id} 指向不存在"))
-            except Exception:
-                pass  # employee app 不可用时不检查
-
-        # LEGACY_AUTHORITY_MISMATCH：有 legacy 映射但 staff_no/状态与实际 legacy 不一致（占位，留钩子）
-        if staff.legacy_employee_id and staff.current_employment_status:
-            issues.append(DataQualityIssue(staff_id, staff_no, "LEGACY_AUTHORITY_MISMATCH", "LOW",
-                                           "建议执行 reconciliation 确认 legacy 一致性"))
+            result = ReconciliationService(
+                self.tenant_id,
+                as_of=self.as_of,
+            ).reconcile_staff(staff)
+            if "LEGACY_LINK_MISSING" in result.mismatches:
+                issues.append(DataQualityIssue(
+                    staff_id,
+                    staff_no,
+                    "ORPHAN_LEGACY_REFERENCE",
+                    "LOW",
+                    "旧系统人员映射已失效或不属于当前学校",
+                ))
+            else:
+                mismatch_labels = [
+                    RECONCILIATION_LABELS[code]
+                    for code in result.mismatches
+                    if code in RECONCILIATION_LABELS
+                ]
+                if mismatch_labels:
+                    issues.append(DataQualityIssue(
+                        staff_id,
+                        staff_no,
+                        "LEGACY_AUTHORITY_MISMATCH",
+                        "LOW",
+                        "新旧数据不一致：" + "、".join(mismatch_labels),
+                    ))
         return issues

@@ -4,11 +4,13 @@ actions.py
 This module is used to register methods to delete/archive/un-archive instances
 """
 
+import contextlib
 import json
 
 from django import template
 from django.contrib import messages
 from django.contrib.auth.models import Permission
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -38,11 +40,22 @@ from recruitment.forms import StageCreationForm
 from recruitment.models import Candidate, Recruitment, Stage, StageNote
 from recruitment.views.linkedin import delete_post
 from recruitment.views.paginator_qry import paginator_qry
+from recruitment.views.views import (
+    _can_manage_recruitment,
+    _parse_posted_ids,
+    _permission_denied_json,
+)
+
+
+def _notify_safely(sender, **kwargs):
+    with contextlib.suppress(Exception):
+        notify.send(sender, **kwargs)
 
 
 @login_required
 @permission_required(perm="recruitment.delete_recruitment")
 @require_http_methods(["POST"])
+@transaction.atomic
 def recruitment_delete(request, rec_id):
     """
     This method is used to permanently delete the recruitment
@@ -51,7 +64,11 @@ def recruitment_delete(request, rec_id):
     """
     try:
         try:
-            recruitment_obj = Recruitment.objects.get(id=rec_id)
+            recruitment_obj = (
+                Recruitment.objects.select_for_update()
+                .select_related("linkedin_account_id")
+                .get(id=rec_id)
+            )
         except Recruitment.DoesNotExist:
             messages.error(request, _("Recruitment not found."))
             return HorillaRedirect(request)
@@ -74,15 +91,14 @@ def recruitment_delete(request, rec_id):
                         candidate_permission.id
                     )
         try:
-            if delete_post(recruitment_obj):
-                messages.success(request, _("Recruitment deleted successfully."))
-            else:
-                messages.info(
-                    request, _("Couldn’t delete the recruitment post from LinkedIn.")
-                )
             recruitment_obj.delete()
+            transaction.on_commit(
+                lambda: delete_post(recruitment_obj, persist=False)
+            )
+            messages.success(request, _("Recruitment deleted successfully."))
 
         except ProtectedError as e:
+            transaction.set_rollback(True)
             model_verbose_name_sets = set()
             for obj in e.protected_objects:
                 model_verbose_name_sets.add(__(obj._meta.verbose_name.capitalize()))
@@ -111,6 +127,7 @@ def recruitment_delete(request, rec_id):
 @login_required
 @permission_required(perm="recruitment.delete_recruitment")
 @require_http_methods(["POST"])
+@transaction.atomic
 def recruitment_delete_pipeline(request, rec_id):
     """This method is used to delete the recruitment instance
 
@@ -120,12 +137,13 @@ def recruitment_delete_pipeline(request, rec_id):
         HorillaRedirect: Used to refresh the page
     """
     try:
-        recruitment_obj = Recruitment.objects.get(id=rec_id)
+        recruitment_obj = Recruitment.objects.select_for_update().get(id=rec_id)
         recruitment_obj.delete()
         messages.success(request, _("Recruitment deleted."))
     except Recruitment.DoesNotExist:
         messages.error(request, _("Recruitment not found."))
     except ProtectedError as e:
+        transaction.set_rollback(True)
         models_verbose_name_sets = set()
         for obj in e.protected_objects:
             models_verbose_name_sets.add(__(obj._meta.verbose_name.capitalize()))
@@ -139,12 +157,25 @@ def recruitment_delete_pipeline(request, rec_id):
 
 @login_required
 @manager_can_enter(perm="recruitment.delete_stagenote")
+@require_http_methods(["POST"])
+@transaction.atomic
 def note_delete(request, note_id):
     """
     This method is used to delete the stage note
     """
     try:
-        note = StageNote.objects.get(id=note_id)
+        note = (
+            StageNote.objects.select_for_update()
+            .select_related("candidate_id__recruitment_id")
+            .get(id=note_id)
+        )
+        if not _can_manage_recruitment(
+            request,
+            note.candidate_id.recruitment_id,
+            "recruitment.delete_stagenote",
+            include_stage_managers=True,
+        ):
+            return _permission_denied_json()
         candidate_id = note.candidate_id.id
         note.delete()
         messages.success(request, _("Note deleted"))
@@ -152,6 +183,7 @@ def note_delete(request, note_id):
     except StageNote.DoesNotExist:
         return HorillaRedirect(request, message=_("Note not found."))
     except ProtectedError:
+        transaction.set_rollback(True)
         messages.error(request, _("You cannot delete this note."))
         script = f"""
             <span hx-trigger='load' hx-get='/recruitment/view-note/{candidate_id}/' hx-target='#activitySidebar'></span>
@@ -161,24 +193,40 @@ def note_delete(request, note_id):
 
 @candidate_login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 # @manager_can_enter(perm="recruitment.delete_stagenote")
 def note_delete_individual(request, note_id):
     """
     This method is used to delete the stage note
     """
-    note = StageNote.find(note_id)
-    note.delete() if note else None
-    (
-        messages.success(request, _("Note deleted."))
-        if note
-        else messages.error(request, _("No Stage Note found matching the query."))
+    note = (
+        StageNote.objects.select_for_update()
+        .select_related("candidate_id__recruitment_id")
+        .filter(id=note_id)
+        .first()
     )
+    session_candidate_id = request.session.get("candidate_id")
+    if note is None:
+        return JsonResponse({"message": _("Note not found.")}, status=404)
+    if session_candidate_id and str(note.candidate_id_id) != str(session_candidate_id):
+        return JsonResponse({"message": _("Note not found.")}, status=404)
+    if not session_candidate_id and not _can_manage_recruitment(
+        request,
+        note.candidate_id.recruitment_id,
+        "recruitment.delete_stagenote",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    note.delete()
+    messages.success(request, _("Note deleted."))
     return HttpResponse("")
 
 
 @login_required
 @manager_can_enter(perm="recruitment.delete_stage")
 @require_http_methods(["POST", "DELETE"])
+@transaction.atomic
 def stage_delete(request, stage_id):
     """
     This method is used to delete stage permanently
@@ -187,7 +235,18 @@ def stage_delete(request, stage_id):
     """
     try:
         try:
-            stage_obj = Stage.objects.get(id=stage_id)
+            stage_obj = (
+                Stage.objects.select_for_update()
+                .select_related("recruitment_id")
+                .get(id=stage_id)
+            )
+            if not _can_manage_recruitment(
+                request,
+                stage_obj.recruitment_id,
+                "recruitment.delete_stage",
+                include_stage_managers=True,
+            ):
+                return _permission_denied_json()
             recruitment_id = stage_obj.recruitment_id.id
         except Stage.DoesNotExist:
             messages.error(request, _("Stage not found."))
@@ -212,6 +271,7 @@ def stage_delete(request, stage_id):
             stage_obj.delete()
             messages.success(request, _("Stage deleted successfully."))
         except ProtectedError as e:
+            transaction.set_rollback(True)
             models_verbose_name_sets = set()
             for obj in e.protected_objects:
                 models_verbose_name_sets.add(__(obj._meta.verbose_name.capitalize()))
@@ -245,6 +305,7 @@ def stage_delete(request, stage_id):
 @login_required
 @permission_required(perm="recruitment.delete_candidate")
 @require_http_methods(["DELETE", "POST"])
+@transaction.atomic
 def candidate_delete(request, cand_id):
     """
     This method is used to delete candidate permanently
@@ -253,11 +314,12 @@ def candidate_delete(request, cand_id):
     """
     try:
         try:
-            Candidate.objects.get(id=cand_id).delete()
+            Candidate.objects.select_for_update().get(id=cand_id).delete()
             messages.success(request, _("Candidate deleted successfully."))
         except Candidate.DoesNotExist:
             messages.error(request, _("Candidate not found."))
         except ProtectedError as e:
+            transaction.set_rollback(True)
             models_verbose_name_set = set()
             for obj in e.protected_objects:
                 models_verbose_name_set.add(__(obj._meta.verbose_name.capitalize()))
@@ -282,37 +344,39 @@ def candidate_delete(request, cand_id):
 @login_required
 @permission_required(perm="recruitment.delete_candidate")
 @require_http_methods(["POST"])
+@transaction.atomic
 def candidate_bulk_delete(request):
     """
     This method is used to bulk delete candidates
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    for cand_id in ids:
-        try:
-            candidate_obj = Candidate.objects.get(id=cand_id)
-            candidate_obj.delete()
-            messages.success(
-                request, _("%(candidate)s deleted.") % {"candidate": candidate_obj}
-            )
-        except Candidate.DoesNotExist:
-            messages.error(request, _("Candidate not found."))
-        except ProtectedError:
-            messages.error(
-                request,
-                _("You cannot delete %(candidate)s") % {"candidate": candidate_obj},
-            )
-    return JsonResponse({"message": "Success"})
+    try:
+        ids = _parse_posted_ids(request.POST.get("ids"))
+    except ValueError:
+        return JsonResponse({"message": _("Invalid candidate selection.")}, status=400)
+    candidates = Candidate.objects.select_for_update().filter(id__in=ids)
+    if candidates.count() != len(ids):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
+    try:
+        candidates.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more selected candidates are in use.")}, status=409
+        )
+    messages.success(request, _("Selected candidates deleted successfully."))
+    return JsonResponse({"message": "Success", "deleted": len(ids)})
 
 
 @login_required
 @permission_required(perm="recruitment.delete_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def candidate_archive(request, cand_id):
     """
     This method is used to archive or un-archive candidates
     """
     try:
-        candidate_obj = Candidate.objects.get(id=cand_id)
+        candidate_obj = Candidate.objects.select_for_update().get(id=cand_id)
         new_state = not candidate_obj.is_active
         # Use queryset .update() to bypass Candidate.save() validation
         # (job_position_id checks against recruitment.open_positions), since
@@ -333,35 +397,30 @@ def candidate_archive(request, cand_id):
 @login_required
 @permission_required(perm="recruitment.delete_candidate")
 @require_http_methods(["POST"])
+@transaction.atomic
 def candidate_bulk_archive(request):
     """
     This method is used to archive/un-archive bulk candidates
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    is_active = True
-    message = _("un-archived")
-    if request.GET.get("is_active") == "False":
-        is_active = False
-        message = _("archived")
-    for cand_id in ids:
-        candidate_obj = Candidate.objects.filter(id=cand_id).first()
-        if not candidate_obj:
-            messages.error(request, _("Candidate not found."))
-            continue
-        # Archive actions only need status flip; bypass model-level full save validation.
-        Candidate.objects.filter(id=cand_id).update(is_active=is_active)
-        messages.success(
-            request,
-            _("{candidate} is {message}").format(
-                candidate=candidate_obj, message=message
-            ),
-        )
-    return JsonResponse({"message": "Success"})
+    try:
+        ids = _parse_posted_ids(request.POST.get("ids"))
+    except ValueError:
+        return JsonResponse({"error": "Invalid candidate IDs."}, status=400)
+    state_value = request.POST.get("is_active", "").lower()
+    if not ids or state_value not in {"true", "false"}:
+        return JsonResponse({"error": "Invalid archive request."}, status=400)
+    candidates = Candidate.objects.select_for_update().filter(id__in=ids)
+    if candidates.count() != len(ids):
+        return JsonResponse({"error": "Candidate not found."}, status=404)
+    candidates.update(is_active=state_value == "true")
+    messages.success(request, _("Selected candidates updated successfully."))
+    return JsonResponse({"message": "Success", "updated": len(ids)})
 
 
 @login_required
 @manager_can_enter(perm="recruitment.change_stage")
+@require_http_methods(["POST"])
+@transaction.atomic
 def remove_stage_manager(request, mid, sid):
     """
     This method is used to remove selected stage manager and also removing the  given
@@ -370,7 +429,12 @@ def remove_stage_manager(request, mid, sid):
         mid : manager_id in the stage
         sid : stage_id
     """
-    stage_obj = Stage.find(sid)
+    stage_obj = (
+        Stage.objects.select_for_update()
+        .select_related("recruitment_id")
+        .filter(id=sid)
+        .first()
+    )
     manager = Employee.objects.filter(id=mid).first()
     if not stage_obj or not manager:
         return HorillaRedirect(
@@ -379,18 +443,29 @@ def remove_stage_manager(request, mid, sid):
             % {"model_name": "Stage" if not stage_obj else "Employee"},
         )
 
-    notify.send(
-        request.user.employee_get,
-        recipient=manager.employee_user_id,
-        verb=f"You are removed from stage managers from stage {stage_obj}",
-        verb_ar=f"تمت إزالتك من مديري المرحلة من المرحلة {stage_obj}",
-        verb_de=f"Sie wurden als Bühnenmanager von der Stufe {stage_obj} entfernt",
-        verb_es=f"Has sido eliminado/a de los gerentes de etapa de la etapa {stage_obj}",
-        verb_fr=f"Vous avez été supprimé(e) en tant que responsable de l'étape {stage_obj}",
-        icon="person-remove",
-        redirect="",
-    )
+    if not _can_manage_recruitment(
+        request,
+        stage_obj.recruitment_id,
+        "recruitment.change_stage",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    if not stage_obj.stage_managers.filter(pk=manager.pk).exists():
+        return JsonResponse({"message": _("Stage manager not found.")}, status=404)
     stage_obj.stage_managers.remove(manager)
+    transaction.on_commit(
+        lambda: _notify_safely(
+            request.user.employee_get,
+            recipient=manager.employee_user_id,
+            verb=f"You are removed from stage managers from stage {stage_obj}",
+            verb_ar=f"تمت إزالتك من مديري المرحلة من المرحلة {stage_obj}",
+            verb_de=f"Sie wurden als Bühnenmanager von der Stufe {stage_obj} entfernt",
+            verb_es=f"Has sido eliminado/a de los gerentes de etapa de la etapa {stage_obj}",
+            verb_fr=f"Vous avez été supprimé(e) en tant que responsable de l'étape {stage_obj}",
+            icon="person-remove",
+            redirect="",
+        )
+    )
     messages.success(request, _("Stage manager removed successfully."))
     stages = Stage.objects.all()
     stages = stages.filter(recruitment_id__is_active=True)
@@ -418,6 +493,7 @@ def remove_stage_manager(request, mid, sid):
 @login_required
 @manager_can_enter(perm="recruitment.change_recruitment")
 @require_http_methods(["POST"])
+@transaction.atomic
 def remove_recruitment_manager(request, mid, rid):
     """
     This method is used to remove selected manager from the recruitment,
@@ -428,21 +504,30 @@ def remove_recruitment_manager(request, mid, rid):
         mid : employee manager_id in the recruitment
         rid : recruitment_id
     """
-    recruitment_obj = Recruitment.objects.get(id=rid)
-    manager = Employee.objects.get(id=mid)
+    recruitment_obj = Recruitment.objects.select_for_update().filter(id=rid).first()
+    manager = Employee.objects.filter(id=mid).first()
+    if recruitment_obj is None or manager is None:
+        return JsonResponse({"message": _("Manager not found.")}, status=404)
+    if not _can_manage_recruitment(
+        request, recruitment_obj, "recruitment.change_recruitment"
+    ):
+        return _permission_denied_json()
+    if not recruitment_obj.recruitment_managers.filter(pk=manager.pk).exists():
+        return JsonResponse({"message": _("Recruitment manager not found.")}, status=404)
     recruitment_obj.recruitment_managers.remove(manager)
     messages.success(request, _("Recruitment manager removed successfully."))
-    notify.send(
-        request.user.employee_get,
-        recipient=manager.employee_user_id,
-        verb=f"You are removed from recruitment manager from {recruitment_obj}",
-        verb_ar=f"تمت إزالتك من وظيفة مدير التوظيف في {recruitment_obj}",
-        verb_de=f"Sie wurden als Personalvermittler von {recruitment_obj} entfernt",
-        verb_es=f"Has sido eliminado/a como gerente de contratación de {recruitment_obj}",
-        verb_fr=f"Vous avez été supprimé(e) en tant que responsable\
-                du recrutement de {recruitment_obj}",
-        icon="person-remove",
-        redirect="",
+    transaction.on_commit(
+        lambda: _notify_safely(
+            request.user.employee_get,
+            recipient=manager.employee_user_id,
+            verb=f"You are removed from recruitment manager from {recruitment_obj}",
+            verb_ar=f"تمت إزالتك من وظيفة مدير التوظيف في {recruitment_obj}",
+            verb_de=f"Sie wurden als Personalvermittler von {recruitment_obj} entfernt",
+            verb_es=f"Has sido eliminado/a como gerente de contratación de {recruitment_obj}",
+            verb_fr=f"Vous avez été supprimé(e) en tant que responsable du recrutement de {recruitment_obj}",
+            icon="person-remove",
+            redirect="",
+        )
     )
     recruitment_queryset = Recruitment.objects.all()
     previous_data = request.GET.urlencode()

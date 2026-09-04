@@ -20,10 +20,19 @@ class PracticeProcessService:
     """企业实践过程管理。"""
 
     @staticmethod
+    def _lock_assignment(assignment):
+        return type(assignment).objects.select_for_update().get(
+            pk=assignment.pk,
+            tenant_id=assignment.tenant_id,
+        )
+
+    @staticmethod
     @transaction.atomic
     def start_assignment(assignment) -> dict:
         """开始实践——前置条件检查通过才能 START。"""
         from hr10_development.services.practice_prerequisite_service import PracticePrerequisiteService
+
+        assignment = PracticeProcessService._lock_assignment(assignment)
 
         plan = getattr(assignment, "practice_plan", None)
         if plan and not PracticePrerequisiteService.is_ready_to_start(plan):
@@ -31,6 +40,8 @@ class PracticeProcessService:
 
         if assignment.assignment_status == AssignmentStatus.IN_PROGRESS:
             return {"status": "PRACTICE_ALREADY_STARTED"}
+        if assignment.assignment_status != AssignmentStatus.APPROVED:
+            return {"status": "PRACTICE_STATE_CONFLICT"}
 
         assignment.assignment_status = AssignmentStatus.IN_PROGRESS
         assignment.started_at = datetime.now(timezone.utc)
@@ -41,6 +52,11 @@ class PracticeProcessService:
     @transaction.atomic
     def suspend_assignment(assignment, reason: str, responsible_party: str) -> dict:
         """暂停实践。"""
+        assignment = PracticeProcessService._lock_assignment(assignment)
+        if assignment.assignment_status != AssignmentStatus.IN_PROGRESS:
+            return {"status": "PRACTICE_STATE_CONFLICT"}
+        if not str(reason or "").strip():
+            return {"status": "SUSPEND_REASON_REQUIRED"}
         assignment.assignment_status = AssignmentStatus.SUSPENDED
         assignment.save(update_fields=["assignment_status", "updated_at"])
         return {"status": "SUSPENDED", "reason": reason, "responsibleParty": responsible_party}
@@ -49,6 +65,9 @@ class PracticeProcessService:
     @transaction.atomic
     def resume_assignment(assignment) -> dict:
         """恢复实践。"""
+        assignment = PracticeProcessService._lock_assignment(assignment)
+        if assignment.assignment_status != AssignmentStatus.SUSPENDED:
+            return {"status": "PRACTICE_STATE_CONFLICT"}
         assignment.assignment_status = AssignmentStatus.IN_PROGRESS
         assignment.save(update_fields=["assignment_status", "updated_at"])
         return {"status": "RESUMED"}

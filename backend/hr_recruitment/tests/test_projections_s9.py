@@ -8,11 +8,17 @@ HR04 S9 Legacy Projection 测试：
 """
 
 from datetime import date
+from unittest import skipUnless
 
+from django.apps import apps
 from django.test import TestCase
 
-from base.models import Company, Department, JobPosition
-from horilla.horilla_middlewares import tenant_context
+LEGACY_RECRUITMENT_AVAILABLE = apps.is_installed("base") and apps.is_installed(
+    "recruitment"
+)
+if LEGACY_RECRUITMENT_AVAILABLE:
+    from base.models import Company, Department, JobPosition
+    from horilla.horilla_middlewares import tenant_context
 
 from hr_recruitment.projections.horilla_candidate import project_candidate
 from hr_recruitment.projections.horilla_recruitment import project_recruitment_to_campaign
@@ -21,6 +27,7 @@ from hr_recruitment.projections.horilla_stage import project_stage, stage_type_t
 TENANT = 8001
 
 
+@skipUnless(LEGACY_RECRUITMENT_AVAILABLE, "requires installed legacy recruitment apps")
 class HorillaRecruitmentProjectionTests(TestCase):
     def setUp(self):
         from recruitment.models import Recruitment

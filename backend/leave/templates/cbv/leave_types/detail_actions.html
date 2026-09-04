@@ -27,7 +27,7 @@
                             {% trans "Assign" %}
                         </a>
                     {% endif %}
-                        <a href="{% url 'type-delete' instance.id %}" hx-confirm="{% trans 'Are you sure you want to delete this leave type?' %}"
+                        <a href="#" hx-post="{% url 'type-delete' instance.id %}" hx-confirm="{% trans 'Are you sure you want to delete this leave type?' %}"
                         hx-post="true" hx-target="#listContainer" class="oh-btn oh-btn--danger w-50">
                             <ion-icon class="me-1" name="close-circle-outline"></ion-icon>
                             {% trans "Delete" %}

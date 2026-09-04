@@ -49,7 +49,10 @@
                 </button>
             {% else %}
                 <a
-                    href=" {% url 'shift-allocation-request-approve' instance.id %}"
+                    href="#"
+                    hx-post="{% url 'shift-allocation-request-approve' instance.id %}"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
                     onclick="return confirm(`{% trans 'Are you available for this shift reallocation?' %}`)"
                     class="oh-btn oh-btn--info oh-btn--sq-sm"
                     title="{% trans 'Available' %}"
@@ -66,7 +69,10 @@
                 </button>
             {% else %}
                 <a
-                    href="{% url 'shift-allocation-request-approve' instance.id %}"
+                    href="#"
+                    hx-post="{% url 'shift-allocation-request-approve' instance.id %}"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
                     onclick="return confirm(`{% trans 'Are you available for this shift reallocation?' %}`)"
                     class="oh-btn oh-btn--success oh-btn--sq-sm"
                     title="{% trans 'Approve' %}"
@@ -83,7 +89,10 @@
                 </button>
             {% else %}
                 <a
-                    href=" {% url 'shift-allocation-request-cancel' instance.id %}"
+                    href="#"
+                    hx-post="{% url 'shift-allocation-request-cancel' instance.id %}"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
                     onclick="return confirm(`{% trans 'Are you not available for this shift reallocation?' %}`)"
                     class="oh-btn oh-btn--danger oh-btn--sq-sm"
                     title="{% trans 'Not available' %}"

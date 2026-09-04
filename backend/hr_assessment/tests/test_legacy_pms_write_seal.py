@@ -1,5 +1,7 @@
 from datetime import date
+from unittest import skipUnless
 
+from django.apps import apps
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.test import TestCase
@@ -9,9 +11,16 @@ from hr_assessment.legacy.write_seal import (
     set_pms_write_frozen,
 )
 from hr_assessment.models.legacy import HrLegacyPmsWriterSealEvent
-from pms.models import Period
+
+LEGACY_PMS_AVAILABLE = apps.is_installed("pms")
+if LEGACY_PMS_AVAILABLE:
+    from pms.models import Period
 
 
+@skipUnless(
+    LEGACY_PMS_AVAILABLE,
+    "requires the complete MySQL Horilla PMS integration runtime",
+)
 class LegacyPmsWriteSealTests(TestCase):
     def tearDown(self):
         set_pms_write_frozen(frozen=False, reason="test cleanup", operator="TEST")

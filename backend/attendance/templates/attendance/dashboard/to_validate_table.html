@@ -89,7 +89,7 @@
                                     </a>
                                 {% else %}
                                     <a
-                                        hx-get="{% url 'validate-this-attendance' attendance.id %}"
+                                        hx-post="{% url 'validate-this-attendance' attendance.id %}"
                                         hx-swap="none"
                                         hx-on-htmx-after-request="reloadMessage(); if(event.detail.successful){var w=document.getElementById('attendanceValidateCardBody');if(w)htmx.trigger(w,'reload');}"
                                         onclick="event.stopPropagation()"

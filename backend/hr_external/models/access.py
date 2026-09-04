@@ -93,7 +93,9 @@ class HrExternalProvisioningRequest(models.Model):
         default=ProvisioningStatus.PENDING,
     )
     external_ref = models.CharField(max_length=128, blank=True, default="")
+    provider_receipt_json = models.JSONField(default=dict, blank=True)
     retry_count = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
     idempotency_key = models.CharField(max_length=128)
     error_message = models.CharField(max_length=512, blank=True, default="")
     version = models.BigIntegerField(default=1)

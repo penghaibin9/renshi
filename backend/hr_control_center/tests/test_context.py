@@ -4,7 +4,7 @@ hr_control_center/tests/test_context.py
 学校时区 / as_of / period 边界（总册 33.1 timezone period boundary）。
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from django.test import SimpleTestCase
 
@@ -55,6 +55,17 @@ class HrRequestContextTests(SimpleTestCase):
     def test_scope_fingerprint(self):
         ctx = HrRequestContext(tenant_id=1)
         self.assertEqual(ctx.scope_fingerprint(), "SCHOOL:")
+
+    def test_now_is_frozen_to_the_request_snapshot(self):
+        snapshot = datetime(2026, 9, 2, 23, 30, tzinfo=timezone.utc)
+        ctx = HrRequestContext(
+            tenant_id=1,
+            school_timezone="Asia/Shanghai",
+            request_snapshot_at=snapshot,
+        )
+
+        self.assertEqual(ctx.now().date(), date(2026, 9, 3))
+        self.assertEqual(ctx.now().astimezone(timezone.utc), snapshot)
 
     def test_build_hr_context_requires_tenant(self):
         with self.assertRaises(HrContextError) as cm:

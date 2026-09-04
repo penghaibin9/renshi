@@ -4,8 +4,7 @@ Hard rules:
 - tenant always comes from the server-selected school, never query/body/header input;
 - every endpoint authenticates and checks semantic HR09 permission codes;
 - SELF endpoints derive the current person from the authenticated user's HR03 mapping;
-- session-authenticated unsafe requests always pass Django CSRF validation, even when
-  a legacy view still carries ``csrf_exempt`` on its outer wrapper.
+- session-authenticated unsafe requests use Django's global CSRF middleware.
 """
 
 from __future__ import annotations
@@ -13,8 +12,6 @@ from __future__ import annotations
 from functools import wraps
 
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_protect
-
 from hr_staff.context import resolve_tenant_from_request
 
 
@@ -34,7 +31,18 @@ def resolve_tenant_or_raise(request) -> int:
             "请选择当前学校后再执行资格与双师业务。",
             403,
         )
-    return int(tenant_id)
+    tenant_id = int(tenant_id)
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        raise QualificationAccessError("UNAUTHENTICATED", "请先登录。", 401)
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        if tenant_id not in (get_allowed_company_ids(user) or ()):
+            raise QualificationAccessError(
+                "TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校。", 403
+            )
+    return tenant_id
 
 
 def require_any_permission(request, *permission_codes: str) -> None:
@@ -48,19 +56,14 @@ def require_any_permission(request, *permission_codes: str) -> None:
 
 
 def api_guard(*permission_codes: str):
-    """Resolve tenant + permission and enforce CSRF for every unsafe request.
+    """Resolve the server-side tenant and enforce semantic HR09 permissions.
 
-    Several early HR09 function views were decorated ``csrf_exempt`` so JSON POSTs
-    would work during construction.  Those endpoints authenticate with the Django
-    session, therefore leaving the exemption at middleware level would permit
-    cross-site state changes.  The guard wraps the *original* view in
-    ``csrf_protect`` internally; an outer legacy ``csrf_exempt`` may skip the
-    global middleware, but it cannot skip this source-owned enforcement point.
+    CSRF remains a single global HTTP concern. Public HR09 views must not carry
+    ``csrf_exempt``; this guard deliberately owns only identity, tenant and
+    permission checks.
     """
 
     def decorator(view_func):
-        csrf_checked_view = csrf_protect(view_func)
-
         @wraps(view_func)
         def wrapped(request, *args, **kwargs):
             try:
@@ -74,7 +77,7 @@ def api_guard(*permission_codes: str):
                     status=exc.status,
                 )
             request.hr09_tenant_id = tenant_id
-            return csrf_checked_view(request, *args, **kwargs)
+            return view_func(request, *args, **kwargs)
 
         return wrapped
 

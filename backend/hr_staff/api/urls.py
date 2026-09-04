@@ -94,6 +94,11 @@ urlpatterns = [
         name="hr03-api-staff-materials",
     ),
     path(
+        "api/hr/v1/staff/<uuid:staff_id>/materials/upload",
+        materials_api.material_upload,
+        name="hr03-api-staff-material-upload",
+    ),
+    path(
         "api/hr/v1/staff/<uuid:staff_id>/materials/<uuid:material_id>/versions",
         materials_api.material_versions,
         name="hr03-api-staff-material-versions",
@@ -104,7 +109,7 @@ urlpatterns = [
         name="hr03-api-staff-material-download-ticket",
     ),
     path(
-        "api/hr/v1/staff/<uuid:staff_id>/materials/<uuid:material_id>/download/<str:ticket>",
+        "api/hr/v1/staff/<uuid:staff_id>/materials/<uuid:material_id>/download",
         materials_api.material_download,
         name="hr03-api-staff-material-download",
     ),

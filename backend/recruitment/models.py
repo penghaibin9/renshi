@@ -31,6 +31,7 @@ from django.utils.html import format_html
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
+from base.encrypted_fields import EncryptedTextField
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import Company, JobPosition
 from employee.models import Employee
@@ -111,9 +112,6 @@ class SurveyTemplate(HorillaModel):
 
 class Skill(HorillaModel):
     title = models.CharField(max_length=100)
-
-    def __str__(self):
-        return self.title
 
     def save(self, *args, **kwargs):
         title = self.title
@@ -1160,10 +1158,14 @@ class Candidate(HorillaModel):
         """
         This method is used to get last send mail
         """
+        from base.email_logging import email_log_recipient_q
         from base.models import EmailLog
 
         return (
-            EmailLog.objects.filter(to__icontains=self.email)
+            EmailLog.objects.filter(
+                email_log_recipient_q(self.email),
+                company_id=self.recruitment_id.company_id,
+            )
             .order_by("-created_at")
             .first()
         )
@@ -1990,6 +1992,9 @@ class CandidateDocument(HorillaModel):
     reject_reason = models.TextField(
         blank=True, null=True, max_length=255, verbose_name=_("Rejection Reason")
     )
+    objects = HorillaCompanyManager(
+        related_company_field="candidate_id__recruitment_id__company_id"
+    )
 
     def __str__(self):
         return f"{self.candidate_id} - {self.title}"
@@ -2025,7 +2030,7 @@ class CandidateDocument(HorillaModel):
 class LinkedInAccount(HorillaModel):
     username = models.CharField(max_length=250, verbose_name=_("App Name"))
     email = models.EmailField(max_length=254, verbose_name=_("Email"))
-    api_token = models.CharField(max_length=500, verbose_name=_("API Token"))
+    api_token = EncryptedTextField(verbose_name=_("API Token"))
     sub_id = models.CharField(max_length=250, unique=True)
     company_id = models.ForeignKey(
         Company, on_delete=models.CASCADE, null=True, verbose_name=_("Company")
@@ -2043,7 +2048,10 @@ class LinkedInAccount(HorillaModel):
         url = "https://api.linkedin.com/v2/userinfo"
         headers = {"Authorization": f"Bearer {self.api_token}"}
 
-        response = requests.get(url, headers=headers)
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+        except requests.RequestException as exc:
+            raise ValidationError(_("LinkedIn credential validation is unavailable.")) from exc
 
         if response.status_code == 200:
             data = response.json()

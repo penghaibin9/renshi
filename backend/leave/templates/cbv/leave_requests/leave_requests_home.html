@@ -256,13 +256,13 @@
                             cancelButtonText: "Close"
                           }).then((result) => {
                             if (result.isConfirmed) {
-                              if (event.target.tagName.toLowerCase() === "form") {
-                                event.target.submit();
-                              } else if (event.target.tagName.toLowerCase() === "a") {
-                                window.location.href = event.target.href;
-                              }
-                              else{
-                                console.log(event.target.href)
+                              const target = event.currentTarget;
+                              if (target.tagName.toLowerCase() === "form") {
+                                target.submit();
+                              } else if (target.getAttribute("hx-post")) {
+                                htmx.ajax("POST", target.getAttribute("hx-post"), {source: target, swap: "none"});
+                              } else if (target.href) {
+                                window.location.href = target.href;
                               }
                             } else {
                             }

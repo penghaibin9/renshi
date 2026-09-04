@@ -2,6 +2,7 @@
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import DatabaseError
 from django.db.models import Count, Q
 from django.shortcuts import render
 
@@ -69,7 +70,8 @@ def _serialize_day_fact(item, labels):
     }
 
 
-def _serialize_leave(item, labels):
+def _serialize_leave(item, labels, *, evidence_available=True, writes_available=True):
+    evidences = list(item.evidences.all()) if evidence_available else []
     return {
         "id": item.id,
         "staff": _staff_label(labels, item.staff_master_id),
@@ -78,7 +80,57 @@ def _serialize_leave(item, labels):
         "status_code": item.status,
         "amount": f"{item.requested_amount} {item.get_unit_display()}",
         "type": getattr(item.leave_type, "name", "请假"),
+        "requires_evidence": bool(getattr(item.leave_type, "requires_evidence", False)),
+        "evidence_available": evidence_available,
+        "evidence_count": len(evidences) if evidence_available else None,
+        "writes_available": writes_available,
+        "evidences": [
+            {"id": evidence.id, "name": evidence.original_name}
+            for evidence in evidences
+        ],
     }
+
+
+def _leave_workspace_rows(leaves, labels):
+    """Load leave cards without turning a rolling schema upgrade into a page 500.
+
+    Migration 0015 adds the immutable calculation snapshot and 0016 replaces the
+    legacy document reference with private-file metadata.  During a rolling
+    deployment an old database can therefore still serve the core leave columns,
+    but selecting the current model or its evidences fails.  The fallback is
+    deliberately read-only and never claims that an unavailable evidence set is
+    empty.
+    """
+
+    try:
+        items = (
+            leaves.select_related("leave_type")
+            .prefetch_related("evidences")
+            .order_by("-created_at")[:12]
+        )
+        return [
+            _serialize_leave(item, labels)
+            for item in items
+        ], None, True
+    except DatabaseError:
+        legacy_items = (
+            leaves.select_related("leave_type")
+            .defer("calculation_snapshot")
+            .order_by("-created_at")[:12]
+        )
+        warning = (
+            "请假计算快照或私有证明字段尚未完成数据库升级；"
+            "当前仅展示基础申请，证明状态与请假办理暂不可用。"
+        )
+        return [
+            _serialize_leave(
+                item,
+                labels,
+                evidence_available=False,
+                writes_available=False,
+            )
+            for item in legacy_items
+        ], warning, False
 
 
 def _serialize_overtime(item, labels):
@@ -182,6 +234,8 @@ def workspace(request, section="overview"):
     labels = _staff_labels(tenant_id, staff_ids)
 
     recent = []
+    section_warning = None
+    leave_features_available = True
     if section == "overview":
         recent = [_serialize_day_fact(x, labels) for x in day_facts.order_by("-business_date", "-id")[:12]]
     elif section == "attendance":
@@ -190,10 +244,10 @@ def workspace(request, section="overview"):
             for x in exceptions.order_by("-business_date", "-id")[:12]
         ]
     elif section == "leave":
-        recent = [
-            _serialize_leave(x, labels)
-            for x in leaves.select_related("leave_type").order_by("-created_at")[:12]
-        ]
+        recent, section_warning, leave_features_available = _leave_workspace_rows(
+            leaves,
+            labels,
+        )
     elif section == "overtime":
         recent = [_serialize_overtime(x, labels) for x in overtime_requests.order_by("-created_at")[:12]]
     elif section == "schedule":
@@ -246,5 +300,7 @@ def workspace(request, section="overview"):
             "summary": summary,
             "recent": recent,
             "today": today,
+            "section_warning": section_warning,
+            "leave_features_available": leave_features_available,
         },
     )

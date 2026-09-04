@@ -9,12 +9,12 @@ from horilla_api.schema import OrderedTagSchemaGenerator
 # Create schema view for Swagger and ReDoc
 schema_view = get_schema_view(
     openapi.Info(
-        title="Horilla API",
+        title="高校人事一体化平台 API",
         default_version="v1",
-        description="API documentation for Horilla HRMS. Click the 'Authorize' button at the top to authenticate.",
-        terms_of_service="https://www.horilla.com/terms/",
-        contact=openapi.Contact(email="support@horilla.com"),
-        license=openapi.License(name="BSD License"),
+        description="高校人事一体化平台接口文档。请使用页面顶部的 Authorize 完成身份验证。",
+        terms_of_service="https://github.com/penghaibin9/renshi",
+        contact=openapi.Contact(email="support@university.example"),
+        license=openapi.License(name="LGPL-2.1"),
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),

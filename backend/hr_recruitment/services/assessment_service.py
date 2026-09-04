@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from django.db import transaction
 from django.db.models import Max
@@ -44,6 +45,9 @@ from hr_recruitment.models import (
     HrSelectionResultSnapshot,
     HrSelectionSchemeVersion,
 )
+
+if TYPE_CHECKING:
+    from hr_recruitment.models import HrAssessmentParticipant
 
 
 class AssessmentServiceError(Exception):

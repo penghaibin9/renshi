@@ -71,9 +71,11 @@ class ProviderContractTest(TestCase):
         result = ResearchProvider().fetch(ProviderContext(tenant_id=self.tenant_id))
         self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
 
-    def test_ethics_fact_provider_unavailable(self):
+    def test_ethics_fact_provider_empty_request_is_complete(self):
         result = EthicsFactProvider().fetch(ProviderContext(tenant_id=self.tenant_id))
-        self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
+        self.assertEqual(result.status, ProviderStatus.OK)
+        self.assertEqual(result.data, [])
+        self.assertEqual(result.source_version, "hr03-formal-discipline-evidence-v1")
 
     def test_unavailable_is_not_zero_or_ok(self):
         self.assertNotEqual(ProviderStatus.UNAVAILABLE, ProviderStatus.OK)

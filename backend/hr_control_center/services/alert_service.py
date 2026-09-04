@@ -30,6 +30,7 @@ from hr_control_center.context import HrContextError, HrRequestContext
 from hr_control_center.models import HrAlertInstance
 from hr_control_center.providers.base import (
     AUTHORITY_ONLY,
+    DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT,
     DATA_BASIS_LEGACY_CURRENT_SNAPSHOT,
     HrProviderError,
     LEGACY_ONLY,
@@ -50,6 +51,7 @@ MAX_SNOOZE_DAYS = 30
 ALERT_RULE_CONFIG = {
     "contract.expire_90d": {
         "enabled": True,
+        "authority_source": True,
         "source_domain": "contract",
         "lookahead_days": 90,
         # 剩余天数 <= 30 且无续签事实 → HIGH；<= 90 → MEDIUM
@@ -60,6 +62,7 @@ ALERT_RULE_CONFIG = {
     },
     "retirement.within_180d": {
         "enabled": True,
+        "authority_source": True,
         "source_domain": "retirement",
         "lookahead_days": 180,
         # Legacy 无“接替安排”事实：30 天内无法确认无接替，不冒领 HIGH（避免假预警），
@@ -89,8 +92,13 @@ ALERT_RULE_CONFIG = {
         "reason": "审批流程状态在 Legacy 阶段无法确认，避免假预警",
     },
     "hr09.certificate_expiry": {
-        "enabled": False,
-        "reason": "HR09 双师/资格模块未建设，无真实数据源",
+        "enabled": True,
+        "source_domain": "qualification",
+        "authority_source": True,
+        "lookahead_days": 90,
+        "overdue_window_days": 90,
+        "severity_cutoffs": [(30, "HIGH"), (90, "MEDIUM")],
+        "overdue_severity": "CRITICAL",
     },
 }
 
@@ -206,7 +214,7 @@ def _severity_for_days(days_left: int, cutoffs) -> str:
 # ---- V1 规则（只做能确认真实数据源的） ------------------------------------
 
 
-def _rule_contract_expire_90d(context: HrRequestContext, config: dict) -> RuleResult:
+def _rule_legacy_contract_expire_90d(context: HrRequestContext, config: dict) -> RuleResult:
     """
     contract.expire_90d —— EmployeeWorkInformation.contract_end_date 在未来 90 天内到期。
 
@@ -298,7 +306,7 @@ def _rule_contract_expire_90d(context: HrRequestContext, config: dict) -> RuleRe
         ) from exc
 
 
-def _rule_retirement_within_180d(context: HrRequestContext, config: dict) -> RuleResult:
+def _rule_legacy_retirement_within_180d(context: HrRequestContext, config: dict) -> RuleResult:
     """
     retirement.within_180d —— 由 dob 推算退休年龄（男 60 / 女 55）在未来 180 天内。
 
@@ -498,16 +506,286 @@ def _rule_staff_required_field_missing(
         ) from exc
 
 
+def _rule_hr09_certificate_expiry(
+    context: HrRequestContext, config: dict
+) -> RuleResult:
+    """Use HR09 authoritative credential facts for expiry and recent overdue risks."""
+    from hr_qualification.constants import CredentialStatus
+    from hr_qualification.models import HrPersonCredential
+
+    lookahead_days = int(config.get("lookahead_days", 90))
+    overdue_window_days = int(config.get("overdue_window_days", 90))
+    overdue_severity = config.get("overdue_severity", "CRITICAL")
+    cutoffs = config.get("severity_cutoffs", [(30, "HIGH"), (90, "MEDIUM")])
+    today = context.today()
+    horizon = today + timedelta(days=lookahead_days)
+    past = today - timedelta(days=overdue_window_days)
+    try:
+        credentials = (
+            HrPersonCredential.objects.filter(
+                tenant_id=context.tenant_id,
+                status__in=(CredentialStatus.ACTIVE, CredentialStatus.EXPIRED),
+                valid_to__isnull=False,
+                valid_to__gte=past,
+                valid_to__lte=horizon,
+            )
+            .select_related("person_id", "staff_master_id", "catalog_item_id")
+            .order_by("valid_to", "id")
+        )
+        items = []
+        for credential in credentials.iterator():
+            days_left = (credential.valid_to - today).days
+            person_name = credential.person_id.legal_name
+            credential_name = credential.credential_name_snapshot
+            if days_left >= 0 and credential.status == CredentialStatus.ACTIVE:
+                severity = _severity_for_days(days_left, cutoffs)
+                title = f"{credential_name} 将于 {credential.valid_to.isoformat()} 到期"
+                summary = (
+                    f"{person_name} 的{credential_name}剩余 {days_left} 天到期，"
+                    "请及时办理续证或复核。"
+                )
+            else:
+                severity = overdue_severity
+                overdue_days = max(0, -days_left)
+                title = f"{credential_name} 已于 {credential.valid_to.isoformat()} 到期"
+                summary = (
+                    f"{person_name} 的{credential_name}已到期 {overdue_days} 天，"
+                    "请立即核实任职资格影响。"
+                )
+            items.append(
+                AlertCandidate(
+                    source_object_type="hr09_person_credential",
+                    source_object_id=str(credential.id),
+                    title=title,
+                    summary=summary,
+                    severity=severity,
+                    due_at=_end_of_day(context, credential.valid_to),
+                    payload={
+                        "credentialId": str(credential.id),
+                        "credentialName": credential_name,
+                        "personId": str(credential.person_id_id),
+                        "personName": person_name,
+                        "staffNo": (
+                            credential.staff_master_id.staff_no
+                            if credential.staff_master_id_id
+                            else ""
+                        ),
+                        "validTo": credential.valid_to.isoformat(),
+                        "daysLeft": days_left,
+                        "credentialStatus": credential.status,
+                        "dataBasis": DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT,
+                    },
+                )
+            )
+        return RuleResult(
+            alert_key="hr09.certificate_expiry",
+            source_domain=config.get("source_domain", "qualification"),
+            status=OK,
+            items=items,
+        )
+    except HrProviderError:
+        raise
+    except Exception as exc:
+        raise HrProviderError(
+            "hr09_alert",
+            "hr09.certificate_expiry",
+            "CERTIFICATE_EXPIRY_SCAN_FAILED",
+            str(exc),
+            tenant_id=context.tenant_id,
+            scope_fingerprint=context.scope_fingerprint(),
+        ) from exc
+
+
+def _rule_authority_contract_expire_90d(
+    context: HrRequestContext, config: dict
+) -> RuleResult:
+    """Preview HR07 sealed contracts and versioned expiry policies without writes."""
+    from hr_contracts.services.alert_escalation import CanonicalContractExpiryService
+
+    try:
+        result = CanonicalContractExpiryService(context.tenant_id).scan(
+            as_of=context.today(), dry_run=True, limit=5000
+        )
+        if result["blocked"]:
+            return RuleResult(
+                alert_key="contract.expire_90d",
+                source_domain="contract",
+                status=UNAVAILABLE,
+                reason_code="HR07_EXPIRY_DECISION_BLOCKED",
+                message=f"{result['blocked']} 份合同因政策或证据不完整无法判断",
+            )
+        items = []
+        for action in result["actions"]:
+            days_left = (parse_date(action["dueDate"]) - context.today()).days
+            agreement_no = action["agreementNo"]
+            overdue = action["stage"] == "OVERDUE"
+            items.append(
+                AlertCandidate(
+                    source_object_type="hr07_contract_agreement",
+                    source_object_id=action["agreementId"],
+                    title=(
+                        f"合同 {agreement_no} 已到期"
+                        if overdue
+                        else f"合同 {agreement_no} 即将到期"
+                    ),
+                    summary=(
+                        f"合同已逾期 {-days_left} 天，HR07 已按政策形成办理建议。"
+                        if overdue
+                        else f"合同剩余 {days_left} 天到期，HR07 已按政策形成办理建议。"
+                    ),
+                    severity=action["severity"],
+                    due_at=_end_of_day(context, parse_date(action["dueDate"])),
+                    payload={
+                        **action,
+                        "daysLeft": days_left,
+                        "dataBasis": DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT,
+                    },
+                )
+            )
+        return RuleResult(
+            alert_key="contract.expire_90d",
+            source_domain="contract",
+            status=OK,
+            items=items,
+            definition_version="hr07-expiry-policy-v1",
+        )
+    except Exception as exc:
+        raise HrProviderError(
+            "hr07_alert",
+            "contract.expire_90d",
+            "HR07_EXPIRY_SCAN_FAILED",
+            str(exc),
+            tenant_id=context.tenant_id,
+            scope_fingerprint=context.scope_fingerprint(),
+        ) from exc
+
+
+def _rule_authority_retirement_within_180d(
+    context: HrRequestContext, config: dict
+) -> RuleResult:
+    """Aggregate today's HR16 prechecks; incomplete daily coverage is unavailable."""
+    from hr_exit.models import RetirementPrecheck
+    from hr_staff.constants import RelationshipStatus
+    from hr_staff.models import HrEmploymentRelationship
+
+    today = context.today()
+    active_relationships = (
+        HrEmploymentRelationship.objects.filter(
+            tenant_id=context.tenant_id,
+            status=RelationshipStatus.ACTIVE,
+            effective_from__lte=today,
+        )
+        .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=today))
+        .select_related("staff_id__person_id")
+    )
+    active_count = active_relationships.count()
+    prechecks = RetirementPrecheck.objects.filter(
+        tenant_id=context.tenant_id,
+        as_of=today,
+        idempotency_key__startswith=f"scheduled:{today.isoformat()}:",
+        employment_relationship_id__in=active_relationships.values("id"),
+    )
+    covered = prechecks.values("employment_relationship_id").distinct().count()
+    if covered != active_count:
+        return RuleResult(
+            alert_key="retirement.within_180d",
+            source_domain="retirement",
+            status=UNAVAILABLE,
+            reason_code="HR16_RETIREMENT_PRECHECK_INCOMPLETE",
+            message=f"今日退休预审覆盖 {covered}/{active_count} 条有效聘用关系",
+        )
+
+    lookahead = int(config.get("lookahead_days", 180))
+    overdue_window = int(config.get("overdue_window_days", 180))
+    horizon = today + timedelta(days=lookahead)
+    past = today - timedelta(days=overdue_window)
+    relationship_map = {
+        str(row.id): row for row in active_relationships
+    }
+    items = []
+    for precheck in prechecks.filter(
+        statutory_date__isnull=False,
+        statutory_date__gte=past,
+        statutory_date__lte=horizon,
+    ).order_by("statutory_date", "id"):
+        relationship = relationship_map.get(str(precheck.employment_relationship_id))
+        staff_no = relationship.staff_id.staff_no if relationship else ""
+        person_name = relationship.staff_id.person_id.legal_name if relationship else ""
+        subject = f"{person_name}（{staff_no}）" if staff_no else person_name or "相关教职工"
+        days_left = (precheck.statutory_date - today).days
+        overdue = days_left < 0
+        items.append(
+            AlertCandidate(
+                source_object_type="hr16_retirement_precheck",
+                source_object_id=str(precheck.id),
+                title=(
+                    f"{subject} 已达到法定退休日期"
+                    if overdue
+                    else f"{subject} 将达到法定退休日期"
+                ),
+                summary=(
+                    f"HR16 权威预审显示已逾法定日期 {-days_left} 天，请核实弹性退休约定和办理状态。"
+                    if overdue
+                    else f"HR16 权威预审显示剩余 {days_left} 天，请提前办理退休协商与交接。"
+                ),
+                severity=(
+                    config.get("overdue_severity", "HIGH")
+                    if overdue
+                    else _severity_for_days(days_left, config.get("severity_cutoffs", []))
+                ),
+                due_at=_end_of_day(context, precheck.statutory_date),
+                payload={
+                    "precheckId": str(precheck.id),
+                    "personId": str(precheck.person_id),
+                    "employmentRelationshipId": str(precheck.employment_relationship_id),
+                    "staffNo": staff_no,
+                    "statutoryDate": precheck.statutory_date.isoformat(),
+                    "daysLeft": days_left,
+                    "decision": precheck.decision,
+                    "policyId": (
+                        str(precheck.matched_policy_id)
+                        if precheck.matched_policy_id
+                        else None
+                    ),
+                    "policyVersion": precheck.matched_policy_version,
+                    "dataBasis": DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT,
+                },
+            )
+        )
+    return RuleResult(
+        alert_key="retirement.within_180d",
+        source_domain="retirement",
+        status=OK,
+        items=items,
+        definition_version="hr16-retirement-policy-v1",
+    )
+
+
+def _rule_contract_expire_90d(context: HrRequestContext, config: dict) -> RuleResult:
+    if context.authority_mode == LEGACY_ONLY:
+        return _rule_legacy_contract_expire_90d(context, config)
+    return _rule_authority_contract_expire_90d(context, config)
+
+
+def _rule_retirement_within_180d(context: HrRequestContext, config: dict) -> RuleResult:
+    if context.authority_mode == LEGACY_ONLY:
+        return _rule_legacy_retirement_within_180d(context, config)
+    return _rule_authority_retirement_within_180d(context, config)
+
+
 ALERT_RULES = {
     "contract.expire_90d": _rule_contract_expire_90d,
     "retirement.within_180d": _rule_retirement_within_180d,
     "staff.required_field_missing": _rule_staff_required_field_missing,
+    "hr09.certificate_expiry": _rule_hr09_certificate_expiry,
 }
 
 
 def _validate_rule_config():
-    """配置自检：severity 必须属于合法集合，避免脏数据写库。"""
+    """Fail startup when an enabled rule has no executor or invalid severity."""
     for key, cfg in ALERT_RULE_CONFIG.items():
+        if cfg.get("enabled", True) and key not in ALERT_RULES:
+            raise ValueError(f"{key}: 已启用的预警规则缺少执行器")
         for _, severity in cfg.get("severity_cutoffs", []):
             if severity not in SEVERITY_ORDER:
                 raise ValueError(f"{key}: 非法 severity {severity}")
@@ -584,7 +862,7 @@ class AlertService:
                 totals["skipped"] += 1
                 continue
 
-            if authority_mode == AUTHORITY_ONLY:
+            if authority_mode == AUTHORITY_ONLY and not config.get("authority_source"):
                 errors.append(
                     {
                         "alertKey": key,

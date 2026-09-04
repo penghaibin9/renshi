@@ -11,7 +11,7 @@ style="display: flex;">
 </form>
 
 
-<form hidden action="{% url 'employee-account-block-unblock' instance.id %}" id="block-form">
+<form hidden action="{% url 'employee-account-block-unblock' instance.id %}" method="post" id="block-form">
 {% csrf_token %}
 <button  id="block-button" type="submit" style=" border: none; background: transparent;">
 </button>

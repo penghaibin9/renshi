@@ -119,8 +119,10 @@ style="cursor: pointer; display: none"
                                         <div class="oh-sticky-table__td oh-sticky-table__right">
                                             <form
                                                 action="{% url 'update-letter-status' %}"
+                                                method="post"
                                                 onclick="event.stopPropagation()"
                                             >
+                                                {% csrf_token %}
                                                 {% if perms.offboarding.change_resignationletter %}
                                                     <div class="oh-btn-group">
                                                         {% if letter.status != "approved" %}

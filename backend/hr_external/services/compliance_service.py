@@ -194,7 +194,7 @@ class ComplianceService:
                 ComplianceCheck(
                     "AGREEMENT_REQUIRED",
                     "WARNING",
-                    "协议须在激活前签署（HR07 Agreement gate，Provider 占位）",
+                    "协议须在激活前签署（由 HR07 正式合同状态闸门核验）",
                 )
             )
         else:

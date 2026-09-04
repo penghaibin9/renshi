@@ -1,7 +1,9 @@
 import json
+import logging
 import uuid
 
-from django.http import JsonResponse
+from django.db import DatabaseError
+from django.http import FileResponse, JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
@@ -9,6 +11,14 @@ from base.auth_backends import get_allowed_company_ids
 from hr_control_center.context import resolve_tenant_from_request
 
 from .selectors import dashboard_snapshot
+from .archive_models import HrExitEvidenceAccessAudit
+from .evidence_upload import (
+    EvidenceUploadError,
+    delete_evidence,
+    open_evidence,
+    save_evidence,
+)
+from .models import ExitHandoverItem
 from .services.case_service import ExitCaseError, ExitCaseInput, ExitCaseService
 from .services.effect_service import ExitEffectError, ExitEffectService
 from .services.handover_service import ExitHandoverError, ExitHandoverService
@@ -18,6 +28,7 @@ READ_PERMISSION = "hr.exit.view"
 MANAGE_PERMISSION = "hr.exit.manage"
 HANDOVER_PERMISSION = "hr.exit.handover"
 EFFECT_PERMISSION = "hr.exit.effect"
+logger = logging.getLogger(__name__)
 
 
 class HrExitAccessError(Exception):
@@ -146,7 +157,15 @@ def dashboard(request):
         tenant_id = resolve_request_tenant(request)
     except HrExitAccessError as exc:
         return _error(exc.code, exc.message, status=403)
-    data = dashboard_snapshot(tenant_id)
+    try:
+        data = dashboard_snapshot(tenant_id)
+    except DatabaseError:
+        logger.exception("hr16_dashboard_storage_unavailable tenant_id=%s", tenant_id)
+        return _error(
+            "EXIT_STORAGE_UNAVAILABLE",
+            "离退数据存储暂不可用，请确认数据库升级状态后重试",
+            status=503,
+        )
     data.update(
         {
             "apiVersion": "1.0",
@@ -451,6 +470,111 @@ def complete_handover_item(request, item_id):
         }
     )
     response["Cache-Control"] = "no-store"
+    return response
+
+
+def complete_handover_item_upload(request, item_id):
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(
+            request, required_permission=HANDOVER_PERMISSION
+        )
+        evidence_ref, storage_name = save_evidence(
+            request.FILES.get("file"), tenant_id=tenant_id, category="handover"
+        )
+    except HrExitAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    except EvidenceUploadError as exc:
+        return _error(exc.code, str(exc), status=exc.status)
+    try:
+        item = ExitHandoverService(
+            tenant_id,
+            actor_user_id=getattr(request.user, "id", None),
+        ).complete(item_id, evidence_ref=evidence_ref)
+    except ExitHandoverError as exc:
+        delete_evidence(storage_name)
+        status = 404 if exc.code == "EXIT_HANDOVER_ITEM_NOT_FOUND" else 409
+        return _error(exc.code, str(exc), status=status)
+    response = JsonResponse(
+        {
+            "data": {"id": str(item.id), "status": item.status},
+            "apiVersion": "1.0",
+            "schemaVersion": "hr16.handover-item.1",
+        }
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def download_handover_evidence(request, item_id):
+    """Download one exact handover proof after fresh authorization and audit."""
+
+    if request.method != "GET":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(
+            request, required_permission=HANDOVER_PERMISSION
+        )
+    except HrExitAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+
+    purpose = str(request.headers.get("X-HR-Access-Reason", "") or "").strip()
+    if not purpose:
+        return _error(
+            "EVIDENCE_ACCESS_REASON_REQUIRED",
+            "下载离校凭证前请填写查阅事由",
+            status=400,
+        )
+    if len(purpose) > 500:
+        return _error(
+            "EVIDENCE_ACCESS_REASON_INVALID", "查阅事由不能超过 500 个字符", status=400
+        )
+
+    item = ExitHandoverItem.objects.filter(
+        tenant_id=tenant_id,
+        id=item_id,
+        case_id__isnull=False,
+    ).first()
+    if item is None:
+        return _error("EXIT_HANDOVER_ITEM_NOT_FOUND", "未找到当前学校的交接项", status=404)
+    try:
+        stream, filename, content_type, storage_hash = open_evidence(
+            item.evidence_ref,
+            tenant_id=tenant_id,
+            allowed_categories={"handover"},
+        )
+    except EvidenceUploadError as exc:
+        return _error(exc.code, str(exc), status=exc.status)
+
+    try:
+        HrExitEvidenceAccessAudit.objects.create(
+            tenant_id=tenant_id,
+            subject_type="HANDOVER_ITEM",
+            subject_id=item.id,
+            evidence_role="HANDOVER_PROOF",
+            storage_key_hash=storage_hash,
+            purpose=purpose,
+            actor_user_id=request.user.id,
+            request_id=str(request.headers.get("X-Request-ID", "") or "")[:128],
+            created_by=request.user.id,
+            updated_by=request.user.id,
+        )
+    except Exception:
+        stream.close()
+        return _error(
+            "EVIDENCE_AUDIT_UNAVAILABLE",
+            "凭证访问审计暂时不可用，请稍后重试",
+            status=503,
+        )
+    response = FileResponse(
+        stream,
+        as_attachment=True,
+        filename=filename,
+        content_type=content_type,
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
     return response
 
 

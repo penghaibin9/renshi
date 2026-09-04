@@ -10,10 +10,13 @@ from datetime import timedelta
 from urllib.parse import parse_qs
 
 from django.contrib import messages
+from django.db import transaction
+from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_POST
 
 from base.methods import (
     closest_numbers,
@@ -22,7 +25,6 @@ from base.methods import (
     get_key_instances,
     paginator_qry,
 )
-from base.views import paginator_qry
 from employee.filters import DisciplinaryActionFilter, PolicyFilter
 from employee.forms import DisciplinaryActionForm, PolicyForm
 from employee.models import (
@@ -38,14 +40,25 @@ from horilla_auth.models import HorillaUser
 from notifications.signals import notify
 
 
+def _policies_visible_to_request(request, queryset=None):
+    """Return only policies the current user is allowed to read."""
+    policies = queryset if queryset is not None else Policy.objects.all()
+    if request.user.has_perm("employee.view_policy"):
+        return policies
+
+    employee = Employee.objects.filter(employee_user_id=request.user).first()
+    visible = Q(is_visible_to_all=True)
+    if employee:
+        visible |= Q(specific_employees=employee)
+    return policies.filter(visible).distinct()
+
+
 @login_required
 def view_policies(request):
     """
     Method is used render template to view all the policy records
     """
-    policies = Policy.objects.all()
-    if not request.user.has_perm("employee.view_policy"):
-        policies = policies.filter(is_visible_to_all=True)
+    policies = _policies_visible_to_request(request)
     return render(
         request,
         "policies/view_policies.html",
@@ -113,9 +126,7 @@ def search_policies(request):
     """
     This method is used to search in policies
     """
-    policies = PolicyFilter(request.GET).qs
-    if not request.user.has_perm("employee.view_policy"):
-        policies = policies.filter(is_visible_to_all=True)
+    policies = _policies_visible_to_request(request, PolicyFilter(request.GET).qs)
     return render(
         request,
         "policies/records.html",
@@ -132,8 +143,9 @@ def view_policy(request):
     """
     This method is used to view the policy
     """
-    instance_id = request.GET["instance_id"]
-    policy = Policy.objects.filter(id=instance_id).first()
+    policy = get_object_or_404(
+        _policies_visible_to_request(request), id=request.GET.get("instance_id")
+    )
     return render(
         request,
         "policies/view_policy.html",
@@ -145,13 +157,27 @@ def view_policy(request):
 
 @login_required
 @permission_required("employee.delete_policy")
+@require_POST
 def delete_policies(request):
     """
     This method is to delete policy
     """
     try:
-        ids = request.GET.getlist("ids")
-        count, dict = Policy.objects.filter(id__in=ids).delete()
+        ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+        if not ids or len(ids) > 500:
+            return JsonResponse({"error": "Invalid policy IDs."}, status=400)
+        with transaction.atomic():
+            policies = Policy.objects.select_for_update().filter(id__in=ids)
+            attachment_ids = list(
+                PolicyMultipleFile.objects.filter(policy__in=policies)
+                .select_for_update()
+                .values_list("id", flat=True)
+                .distinct()
+            )
+            count, _deleted = policies.delete()
+            PolicyMultipleFile.objects.filter(
+                id__in=attachment_ids, policy__isnull=True
+            ).delete()
         if count == 0:
             messages.error(request, _("Policies Not Found"))
         else:
@@ -159,9 +185,7 @@ def delete_policies(request):
     except ValueError:
         messages.error(request, _("Policies Not Found"))
     if request.META.get("HTTP_HX_REQUEST"):
-        policies_qs = Policy.objects.all()
-        if not request.user.has_perm("employee.view_policy"):
-            policies_qs = policies_qs.filter(is_visible_to_all=True)
+        policies_qs = _policies_visible_to_request(request)
         return render(
             request,
             "policies/records.html",
@@ -175,42 +199,72 @@ def delete_policies(request):
 
 @login_required
 @permission_required("employee.add_policymultiplefile")
+@require_POST
 def add_attachment(request):
     """
     This method is used to add attachment to policy
     """
-    policy = Policy.find(request.GET.get("policy_id"))
-    if not policy:
-        return HorillaRedirect(
-            request, message=_("No Policy found matching the query.")
-        )
-
+    policy_id = request.POST.get("policy_id")
     files = request.FILES.getlist("files")
-    attachments = []
-    for file in files:
-        attachment = PolicyMultipleFile()
-        attachment.attachment = file
-        attachment.save()
-        attachments.append(attachment)
-    policy.attachments.add(*attachments)
+    if not str(policy_id or "").isdigit() or not files or len(files) > 20:
+        return JsonResponse({"error": "Invalid attachment request."}, status=400)
+    with transaction.atomic():
+        policy = (
+            Policy.objects.select_for_update()
+            .filter(id=policy_id)
+            .first()
+        )
+        if not policy:
+            return HorillaRedirect(
+                request, message=_("No Policy found matching the query.")
+            )
+
+        attachments = [
+            PolicyMultipleFile.objects.create(attachment=file)
+            for file in files
+        ]
+        policy.attachments.add(*attachments)
     messages.success(request, _("Attachments added"))
     return render(request, "policies/attachments.html", {"policy": policy})
 
 
 @login_required
 @permission_required("employee.delete_policymultiplefile")
+@require_POST
 def remove_attachment(request):
     """
     This method is used to remove the attachments
     """
-    policy = Policy.find(request.GET.get("policy_id"))
-    if not policy:
-        return HorillaRedirect(
-            request, message=_("No Policy found matching the query.")
+    policy_id = request.POST.get("policy_id")
+    requested_ids = [
+        value for value in request.POST.getlist("ids") if value.isdigit()
+    ]
+    if (
+        not str(policy_id or "").isdigit()
+        or not requested_ids
+        or len(requested_ids) > 500
+    ):
+        return JsonResponse({"error": "Invalid attachment request."}, status=400)
+    with transaction.atomic():
+        policy = (
+            Policy.objects.select_for_update()
+            .filter(id=policy_id)
+            .first()
         )
+        if not policy:
+            return HorillaRedirect(
+                request, message=_("No Policy found matching the query.")
+            )
 
-    ids = request.GET.getlist("ids")
-    PolicyMultipleFile.objects.filter(id__in=ids).delete()
+        attachment_ids = list(
+            policy.attachments.select_for_update()
+            .filter(id__in=requested_ids)
+            .values_list("id", flat=True)
+        )
+        policy.attachments.remove(*attachment_ids)
+        PolicyMultipleFile.objects.filter(
+            id__in=attachment_ids, policy__isnull=True
+        ).delete()
     return render(request, "policies/attachments.html", {"policy": policy})
 
 
@@ -219,7 +273,9 @@ def get_attachments(request):
     """
     This method is used to view all the attachments inside the policy
     """
-    policy = Policy.find(request.GET.get("policy_id"))
+    policy = _policies_visible_to_request(request).filter(
+        id=request.GET.get("policy_id")
+    ).first()
     if not policy:
         return HorillaRedirect(
             request, message=_("No Policy found matching the query.")
@@ -259,22 +315,6 @@ def disciplinary_actions(request):
             "f": form,
         },
     )
-
-
-def get_action_type(action_id):
-    """
-    This function is used to get the action type by the selection of title in the form.
-    """
-    action = Actiontype.objects.get(title=action_id["action"])
-    return action.action_type
-
-
-def get_action_type_delete(action_id):
-    """
-    This function is used to get the action type by the selection of title in the form.
-    """
-    action = Actiontype.objects.get(title=action_id)
-    return action.action_type
 
 
 def get_action_type(action_id):

@@ -96,6 +96,16 @@ urlpatterns = [
         name="handover-item-complete",
     ),
     path(
+        "handover-items/<uuid:item_id>/complete-upload/",
+        api.complete_handover_item_upload,
+        name="handover-item-complete-upload",
+    ),
+    path(
+        "handover-items/<uuid:item_id>/evidence/download/",
+        api.download_handover_evidence,
+        name="handover-item-evidence-download",
+    ),
+    path(
         "handover-items/<uuid:item_id>/waive/",
         api.waive_handover_item,
         name="handover-item-waive",
@@ -119,5 +129,10 @@ urlpatterns = [
         "archive-transfers/<uuid:receipt_id>/return/",
         archive_api.return_archive_transfer,
         name="archive-transfer-return",
+    ),
+    path(
+        "archive-transfers/<uuid:receipt_id>/attachments/<str:attachment_role>/download/",
+        archive_api.download_archive_attachment,
+        name="archive-transfer-attachment-download",
     ),
 ]

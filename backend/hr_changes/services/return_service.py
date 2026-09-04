@@ -55,33 +55,43 @@ class ReturnService:
         return True, None
 
     # ------------------------------------------------------------------
-    @transaction.atomic
     def plan_return(self, link_id, *, requested_effective_at: Optional[date] = None) -> HrPersonnelChangeCase:
         """生成 RETURN_FROM_TEMPORARY Case（返岗仍需审批；原岗无效时进入 exception flow）。"""
-        link = self._get_link_or_deny(link_id)
-        if link.status not in ("ACTIVE", "EXTENDED"):
-            raise ReturnServiceError("CHANGE_INVALID_STATE", "仅生效中的临时异动可计划返岗")
-        ok, error = self.check_source_position_valid(link)
-        if not ok:
-            link.status = HrTemporaryAssignmentLink.Status.RETURN_TARGET_INVALID
-            link.version += 1
-            link.save(update_fields=["status", "version", "updated_at"])
+        invalid_target = False
+        case = None
+        with transaction.atomic():
+            link = self._get_link_or_deny(link_id)
+            if link.status not in ("ACTIVE", "EXTENDED"):
+                raise ReturnServiceError("CHANGE_INVALID_STATE", "仅生效中的临时异动可计划返岗")
+            ok, _error = self.check_source_position_valid(link)
+            if not ok:
+                link.status = HrTemporaryAssignmentLink.Status.RETURN_TARGET_INVALID
+                link.version += 1
+                link.save(update_fields=["status", "version", "updated_at"])
+                invalid_target = True
+            else:
+                action = _return_action(self.tenant_id)
+                reason = _return_reason(self.tenant_id)
+                case = ChangeService(
+                    self.tenant_id,
+                    actor_user_id=self.actor_user_id,
+                ).create_case(
+                    staff_master_id=link.change_case_id.staff_master_id,
+                    action_id=action,
+                    reason_id=reason,
+                    requested_effective_at=requested_effective_at
+                    or timezone.localdate(),
+                    proposals=[],
+                )
+                link.return_case_id = case
+                link.version += 1
+                link.save(update_fields=["return_case_id", "version", "updated_at"])
+
+        if invalid_target:
             raise ReturnServiceError(
                 "RETURN_TARGET_INVALID",
                 "原岗位已撤销/关闭，不能自动返岗；需人工指定新返岗目标后再审批",
             )
-        action = _return_action(self.tenant_id)
-        reason = _return_reason(self.tenant_id)
-        case = ChangeService(self.tenant_id, actor_user_id=self.actor_user_id).create_case(
-            staff_master_id=link.change_case_id.staff_master_id,
-            action_id=action,
-            reason_id=reason,
-            requested_effective_at=requested_effective_at or date.today(),
-            proposals=[],
-        )
-        link.return_case_id = case
-        link.version += 1
-        link.save(update_fields=["return_case_id", "version", "updated_at"])
         return case
 
     # ------------------------------------------------------------------

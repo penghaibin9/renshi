@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, timedelta
 
+from django.db import transaction
 from django.utils import timezone
 
 from hr_qualification.constants import CredentialStatus, RiskSeverity, RiskStatus, RiskType
@@ -18,6 +19,13 @@ from hr_qualification.models import (
     HrPersonCredential,
     HrQualificationRiskCase,
 )
+from hr_staff.models import HrPerson
+
+
+class RiskError(Exception):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
 
 
 class RiskService:
@@ -31,13 +39,14 @@ class RiskService:
         days_threshold: int = 90,
     ) -> list[HrQualificationRiskCase]:
         """检测即将到期的证书，自动开 RiskCase。"""
-        threshold_date = date.today() + timedelta(days=days_threshold)
+        today = timezone.localdate()
+        threshold_date = today + timedelta(days=days_threshold)
         credentials = HrPersonCredential.objects.filter(
             tenant_id=tenant_id,
             status=CredentialStatus.ACTIVE,
             valid_to__isnull=False,
             valid_to__lte=threshold_date,
-            valid_to__gte=date.today(),
+            valid_to__gte=today,
         )
 
         cases: list[HrQualificationRiskCase] = []
@@ -59,11 +68,12 @@ class RiskService:
         tenant_id: int,
     ) -> list[HrQualificationRiskCase]:
         """检测已到期证书。"""
+        today = timezone.localdate()
         credentials = HrPersonCredential.objects.filter(
             tenant_id=tenant_id,
             status=CredentialStatus.ACTIVE,
             valid_to__isnull=False,
-            valid_to__lt=date.today(),
+            valid_to__lt=today,
         )
 
         cases: list[HrQualificationRiskCase] = []
@@ -105,35 +115,103 @@ class RiskService:
     # ---- 风险管理 ----
 
     @staticmethod
+    @transaction.atomic
     def acknowledge(risk_id: uuid.UUID) -> HrQualificationRiskCase:
-        case = HrQualificationRiskCase.objects.get(id=risk_id)
+        case = HrQualificationRiskCase.objects.select_for_update().get(id=risk_id)
+        if case.status == RiskStatus.ACKNOWLEDGED:
+            return case
+        if case.status != RiskStatus.OPEN:
+            raise RiskError(
+                "RISK_INVALID_STATE",
+                f"risk is {case.status}, cannot acknowledge",
+            )
         case.status = RiskStatus.ACKNOWLEDGED
-        case.save()
+        case.version += 1
+        case.save(update_fields=["status", "version", "updated_at"])
         return case
 
     @staticmethod
+    @transaction.atomic
     def resolve(
         risk_id: uuid.UUID,
         resolution: str = "",
+        resolved_by: int | None = None,
     ) -> HrQualificationRiskCase:
-        case = HrQualificationRiskCase.objects.get(id=risk_id)
+        resolution = str(resolution or "").strip()
+        if not resolution:
+            raise RiskError("RISK_RESOLUTION_REQUIRED", "resolution is required")
+        case = HrQualificationRiskCase.objects.select_for_update().get(id=risk_id)
+        if case.status == RiskStatus.RESOLVED:
+            if case.resolution == resolution:
+                return case
+            raise RiskError(
+                "RISK_RESOLUTION_CONFLICT",
+                "risk has already been resolved with a different resolution",
+            )
+        if case.status not in {
+            RiskStatus.OPEN,
+            RiskStatus.ACKNOWLEDGED,
+            RiskStatus.IN_PROGRESS,
+        }:
+            raise RiskError(
+                "RISK_INVALID_STATE",
+                f"risk is {case.status}, cannot resolve",
+            )
         case.status = RiskStatus.RESOLVED
         case.resolution = resolution
         case.resolved_at = timezone.now()
-        case.save()
+        case.resolved_by = resolved_by
+        case.version += 1
+        case.save(
+            update_fields=[
+                "status",
+                "resolution",
+                "resolved_at",
+                "resolved_by",
+                "version",
+                "updated_at",
+            ]
+        )
         return case
 
     @staticmethod
+    @transaction.atomic
     def dismiss(risk_id: uuid.UUID, reason: str = "False alarm") -> HrQualificationRiskCase:
-        case = HrQualificationRiskCase.objects.get(id=risk_id)
+        reason = str(reason or "").strip()
+        if not reason:
+            raise RiskError("RISK_DISMISSAL_REASON_REQUIRED", "dismissal reason is required")
+        case = HrQualificationRiskCase.objects.select_for_update().get(id=risk_id)
+        if case.status == RiskStatus.DISMISSED:
+            if case.resolution == reason:
+                return case
+            raise RiskError(
+                "RISK_DISMISSAL_CONFLICT",
+                "risk has already been dismissed with a different reason",
+            )
+        if case.status not in {RiskStatus.OPEN, RiskStatus.ACKNOWLEDGED}:
+            raise RiskError(
+                "RISK_INVALID_STATE",
+                f"risk is {case.status}, cannot dismiss",
+            )
         case.status = RiskStatus.DISMISSED
         case.resolution = reason
-        case.save()
+        case.resolved_at = timezone.now()
+        case.version += 1
+        case.save(
+            update_fields=[
+                "status",
+                "resolution",
+                "resolved_at",
+                "version",
+                "updated_at",
+            ]
+        )
         return case
 
     # ---- 内部 ----
 
     @staticmethod
+    @transaction.atomic
     def _upsert_risk(
         tenant_id: int,
         person_id,
@@ -143,6 +221,7 @@ class RiskService:
         due_at: date | None = None,
     ) -> HrQualificationRiskCase | None:
         """去重创建 RiskCase。"""
+        HrPerson.objects.select_for_update().get(id=person_id.pk)
         existing = HrQualificationRiskCase.objects.filter(
             tenant_id=tenant_id,
             person_id=person_id,

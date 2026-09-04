@@ -5,13 +5,14 @@ applicant from the authenticated HR03 mapping and never trust person_id from
 query/body input. Precheck/submission always use the guarded lifecycle service.
 """
 
+import json
 import uuid
 
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from hr_qualification.api.access import (
@@ -21,7 +22,13 @@ from hr_qualification.api.access import (
     current_person_id_or_raise,
 )
 from hr_qualification.api.serializers import envelope, error_envelope
-from hr_qualification.constants import ApplicationStatus, BatchStatus, RulePackVersionStatus
+from hr_qualification.constants import (
+    ApplicationRoute,
+    ApplicationStatus,
+    BatchStatus,
+    RecognitionLevel,
+    RulePackVersionStatus,
+)
 from hr_qualification.models import (
     HrDoubleTeacherApplication,
     HrDoubleTeacherEvidencePackage,
@@ -42,6 +49,22 @@ RULE_MANAGE = "hr.qualification.rule.manage"
 
 def _has_perm(request, code):
     return request.user.is_superuser or request.user.has_perm(code)
+
+
+def _json_object(request):
+    body = json.loads(request.body or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("request body must be a JSON object")
+    return body
+
+
+def _validation_message(exc):
+    if hasattr(exc, "message_dict"):
+        return "; ".join(
+            f"{field}: {', '.join(messages)}"
+            for field, messages in exc.message_dict.items()
+        )
+    return "; ".join(exc.messages)
 
 
 def _batch_or_none(batch_id, tenant_id):
@@ -90,7 +113,6 @@ def _batch_accepts_application(batch, target_level):
     return None
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(APP_VIEW, RULE_MANAGE)
 def batch_list(request: HttpRequest) -> JsonResponse:
@@ -128,55 +150,80 @@ def batch_list(request: HttpRequest) -> JsonResponse:
     return JsonResponse(envelope({"items": items}))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(FORMAL_REVIEW, RULE_MANAGE)
 def batch_create(request: HttpRequest) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body)
+        body = _json_object(request)
         tenant_id = request.hr09_tenant_id
-        rule_version = (
-            HrDoubleTeacherRulePackVersion.objects.select_related("rule_pack_id")
-            .filter(
-                id=body["rule_pack_version_id"],
-                status=RulePackVersionStatus.ACTIVE,
+        target_levels = body.get("target_levels")
+        if target_levels is not None:
+            if not isinstance(target_levels, list) or any(
+                value not in RecognitionLevel.values for value in target_levels
+            ):
+                raise ValueError("target_levels contains an invalid recognition level")
+        with transaction.atomic():
+            rule_version = (
+                HrDoubleTeacherRulePackVersion.objects.select_for_update()
+                .select_related("rule_pack_id")
+                .filter(
+                    id=body["rule_pack_version_id"],
+                    status=RulePackVersionStatus.ACTIVE,
+                )
+                .filter(
+                    Q(rule_pack_id__tenant_id=tenant_id)
+                    | Q(rule_pack_id__tenant_id__isnull=True)
+                )
+                .first()
             )
-            .filter(
-                Q(rule_pack_id__tenant_id=tenant_id)
-                | Q(rule_pack_id__tenant_id__isnull=True)
+            if rule_version is None:
+                return JsonResponse(
+                    error_envelope(
+                        "RULE_VERSION_NOT_AVAILABLE",
+                        "请选择当前学校可用的已生效规则版本。",
+                    ),
+                    status=400,
+                )
+            batch = HrDoubleTeacherRecognitionBatch(
+                tenant_id=tenant_id,
+                batch_no=body["batch_no"],
+                name=body["name"],
+                school_year=body.get("school_year", ""),
+                application_start=body.get("application_start"),
+                application_end=body.get("application_end"),
+                rule_pack_version_id=rule_version,
+                eligible_scope=body.get("eligible_scope"),
+                target_levels=target_levels,
+                status=BatchStatus.DRAFT,
             )
-            .first()
-        )
-        if rule_version is None:
-            return JsonResponse(
-                error_envelope(
-                    "RULE_VERSION_NOT_AVAILABLE",
-                    "请选择当前学校可用的已生效规则版本。",
-                ),
-                status=400,
-            )
-        batch = HrDoubleTeacherRecognitionBatch.objects.create(
-            tenant_id=tenant_id,
-            batch_no=body["batch_no"],
-            name=body["name"],
-            school_year=body.get("school_year", ""),
-            application_start=body.get("application_start"),
-            application_end=body.get("application_end"),
-            rule_pack_version_id=rule_version,
-            eligible_scope=body.get("eligible_scope"),
-            target_levels=body.get("target_levels"),
-            status=BatchStatus.DRAFT,
-        )
+            batch.full_clean()
+            if (
+                batch.application_start
+                and batch.application_end
+                and batch.application_start > batch.application_end
+            ):
+                raise ValueError("application_start must not be after application_end")
+            batch.save()
         return JsonResponse(
             envelope({"id": str(batch.id), "batch_no": batch.batch_no}),
             status=201,
         )
-    except (KeyError, ValueError) as exc:
+    except ValidationError as exc:
+        return JsonResponse(
+            error_envelope("INVALID_REQUEST", _validation_message(exc)), status=400
+        )
+    except (KeyError, TypeError, ValueError) as exc:
         return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
-    except Exception as exc:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(exc)), status=500)
+    except IntegrityError:
+        return JsonResponse(
+            error_envelope("BATCH_ALREADY_EXISTS", "同一学校内批次编号不能重复。"),
+            status=409,
+        )
+    except Exception:
+        return JsonResponse(
+            error_envelope("INTERNAL_ERROR", "创建认定批次失败，请稍后重试。"),
+            status=500,
+        )
 
 
 _BATCH_TRANSITIONS = {
@@ -240,7 +287,6 @@ def batch_advance(request: HttpRequest, batch_id: str) -> JsonResponse:
     return JsonResponse(envelope({"id": str(batch.id), "status": batch.status}))
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(APP_VIEW, RULE_MANAGE)
 def batch_detail(request: HttpRequest, batch_id: str) -> JsonResponse:
@@ -279,16 +325,18 @@ def batch_detail(request: HttpRequest, batch_id: str) -> JsonResponse:
     )
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(APP_SELF, FORMAL_REVIEW)
 def application_create(request: HttpRequest) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body)
+        body = _json_object(request)
         tenant_id = request.hr09_tenant_id
         target_level = body["target_level"]
+        route = body.get("route", ApplicationRoute.NORMAL)
+        if target_level not in RecognitionLevel.values:
+            raise ValueError("target_level is invalid")
+        if route not in ApplicationRoute.values:
+            raise ValueError("route is invalid")
         with transaction.atomic():
             batch = (
                 HrDoubleTeacherRecognitionBatch.objects.select_for_update()
@@ -313,7 +361,7 @@ def application_create(request: HttpRequest) -> JsonResponse:
                         error_envelope("INVALID_REQUEST", "person_id is required"),
                         status=400,
                     )
-                person = HrPerson.objects.filter(
+                person = HrPerson.objects.select_for_update().filter(
                     id=person_id, tenant_id=tenant_id
                 ).first()
                 if person is None:
@@ -322,7 +370,7 @@ def application_create(request: HttpRequest) -> JsonResponse:
                         status=404,
                     )
                 if staff_master_id:
-                    staff = HrStaffMaster.objects.filter(
+                    staff = HrStaffMaster.objects.select_for_update().filter(
                         id=staff_master_id,
                         tenant_id=tenant_id,
                         person_id=person,
@@ -365,17 +413,19 @@ def application_create(request: HttpRequest) -> JsonResponse:
                 )
 
             app_no = f"APP-{tenant_id}-{uuid.uuid4().hex[:10].upper()}"
-            app = HrDoubleTeacherApplication.objects.create(
+            app = HrDoubleTeacherApplication(
                 tenant_id=tenant_id,
                 application_no=app_no,
                 batch_id=batch,
                 person_id_id=person_id,
                 staff_master_id_id=staff_master_id,
                 target_level=target_level,
-                route=body.get("route", "NORMAL"),
+                route=route,
                 applicant_statement=body.get("applicant_statement", ""),
                 status=ApplicationStatus.DRAFT,
             )
+            app.full_clean()
+            app.save()
         return JsonResponse(
             envelope(
                 {
@@ -388,13 +438,27 @@ def application_create(request: HttpRequest) -> JsonResponse:
         )
     except QualificationAccessError as exc:
         return access_error_response(exc)
-    except (KeyError, ValueError) as exc:
+    except ValidationError as exc:
+        return JsonResponse(
+            error_envelope("INVALID_REQUEST", _validation_message(exc)), status=400
+        )
+    except (KeyError, TypeError, ValueError) as exc:
         return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
-    except Exception as exc:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(exc)), status=500)
+    except IntegrityError:
+        return JsonResponse(
+            error_envelope(
+                "APPLICATION_ALREADY_EXISTS",
+                "当前人员在本批次已有冲突的有效申报，请刷新后重试。",
+            ),
+            status=409,
+        )
+    except Exception:
+        return JsonResponse(
+            error_envelope("INTERNAL_ERROR", "创建双师申报失败，请稍后重试。"),
+            status=500,
+        )
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(APP_VIEW, APP_SELF)
 def application_detail(request: HttpRequest, app_id: str) -> JsonResponse:
@@ -434,7 +498,6 @@ def application_detail(request: HttpRequest, app_id: str) -> JsonResponse:
     )
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(APP_VIEW, APP_SELF)
 def application_precheck(request: HttpRequest, app_id: str) -> JsonResponse:
@@ -516,7 +579,6 @@ def application_precheck(request: HttpRequest, app_id: str) -> JsonResponse:
         )
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(APP_SELF)
 def application_submit(request: HttpRequest, app_id: str) -> JsonResponse:
@@ -543,7 +605,6 @@ def application_submit(request: HttpRequest, app_id: str) -> JsonResponse:
         return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(APP_SELF)
 def application_withdraw(request: HttpRequest, app_id: str) -> JsonResponse:
@@ -576,7 +637,6 @@ def application_resubmit(request: HttpRequest, app_id: str) -> JsonResponse:
         return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(APP_SELF)
 def my_applications(request: HttpRequest) -> JsonResponse:

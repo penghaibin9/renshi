@@ -7,9 +7,13 @@ from types import SimpleNamespace
 
 from django.test import RequestFactory, TestCase
 
-from hr_assessment.api.views_assessment import workbench_rows
+from hr_assessment.api.views_assessment import result_lifecycle_list, workbench_rows
 from hr_assessment.api.views_policy import policy_detail, policy_list
-from hr_assessment.models.goal import HrAssessmentGoal, HrAssessmentGoalPlan, HrGoalVersion
+from hr_assessment.models.goal import (
+    HrAssessmentGoal,
+    HrAssessmentGoalPlan,
+    HrGoalVersion,
+)
 from hr_assessment.models.policy import HrAssessmentPolicyPack
 
 
@@ -80,6 +84,13 @@ class Hr12V2WorkbenchApiTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(json.loads(response.content)["error"]["code"], "ASSESSMENT_WORKBENCH_UNKNOWN")
 
+    def test_empty_result_lifecycle_list_is_available(self):
+        response = result_lifecycle_list(self._request("results/lifecycle"))
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)["data"]
+        self.assertEqual(payload, [])
+
     def test_policy_create_and_rename_are_validated_and_tenant_scoped(self):
         create = self.factory.post(
             "/api/v1/hr/assessments/policies",
@@ -133,23 +144,25 @@ class Hr12V2WorkbenchApiTests(TestCase):
 
 class Hr12V2StaticContractTests(TestCase):
     def test_v2_workspace_has_no_placeholder_or_browser_prompt(self):
-        project = Path(__file__).resolve().parents[2]
-        assessment_js = (project / "static/hr/js/pages/hr12-assessment.js").read_text(encoding="utf-8")
-        actions_js = (project / "static/hr/js/pages/hr12-actions.js").read_text(encoding="utf-8")
-        template = (project / "hr_assessment/templates/hr_assessment/workspace.html").read_text(encoding="utf-8")
+        repository = Path(__file__).resolve().parents[3]
+        backend = repository / "backend"
+        frontend = repository / "frontend"
+        assessment_js = (frontend / "static/hr/js/pages/hr12-assessment.js").read_text(encoding="utf-8")
+        actions_js = (frontend / "static/hr/js/pages/hr12-actions.js").read_text(encoding="utf-8")
+        template = (backend / "hr_assessment/templates/hr_assessment/workspace.html").read_text(encoding="utf-8")
 
         self.assertNotIn("正在接入", assessment_js)
         self.assertNotIn("window.prompt", actions_js)
         self.assertNotIn("window.alert", assessment_js)
         self.assertNotIn("Policy Pack ${esc(pack.id)}", actions_js)
         self.assertNotIn("人员 ${item.staffId}", assessment_js)
-        self.assertIn("hr12-api-workbench", (project / "hr_assessment/api/urls.py").read_text(encoding="utf-8"))
+        self.assertIn("hr12-api-workbench", (backend / "hr_assessment/api/urls.py").read_text(encoding="utf-8"))
         self.assertIn("{% url 'hr_assessment:hr12-index' %}", template)
 
     def test_hr12_css_uses_no_gradient(self):
-        project = Path(__file__).resolve().parents[2]
+        frontend = Path(__file__).resolve().parents[3] / "frontend"
         css = "\n".join(
-            (project / path).read_text(encoding="utf-8")
+            (frontend / path).read_text(encoding="utf-8")
             for path in ("static/hr/css/hr12-assessment.css", "static/hr/css/hr12-actions.css")
         ).lower()
         self.assertNotIn("linear-gradient", css)

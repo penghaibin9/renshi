@@ -26,7 +26,7 @@
         <div class="oh-profile ms-4">
           <div>
             <span class="oh-timeoff-modal__stat-title fw-bold">{% trans "Comment" %}
-            <a hx-get="{% url "leave-request-delete-comment" comment.id %}"
+            <a hx-post="{% url "leave-request-delete-comment" comment.id %}"
                data-target="#shiftRequestDetailModal"
                hx-swap="innerHTML"
                hx-target="#shiftRequestDetailTarget"

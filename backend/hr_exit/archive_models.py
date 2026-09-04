@@ -212,3 +212,59 @@ class HrExitArchivePermissionMeta(models.Model):
             ("hr.exit.archive_transfer.view", "HR16: View archive transfer receipts"),
             ("hr.exit.archive_transfer.manage", "HR16: Manage archive transfer receipts"),
         )
+
+
+class AppendOnlyEvidenceAccessAuditQuerySet(models.QuerySet):
+    """Evidence access history is append-only, including through bulk ORM APIs."""
+
+    def update(self, **kwargs):
+        raise ValueError("HR16_EVIDENCE_ACCESS_AUDIT_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("HR16_EVIDENCE_ACCESS_AUDIT_IMMUTABLE")
+
+
+class HrExitEvidenceAccessAudit(HrTenantScopedModel):
+    """Durable audit receipt for every successful private evidence download."""
+
+    subject_type = models.CharField(max_length=32)
+    subject_id = models.UUIDField(db_index=True)
+    evidence_role = models.CharField(max_length=32)
+    storage_key_hash = models.CharField(max_length=64)
+    purpose = models.CharField(max_length=500)
+    actor_user_id = models.PositiveBigIntegerField()
+    request_id = models.CharField(max_length=128, blank=True, default="")
+
+    objects = AppendOnlyEvidenceAccessAuditQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr16_evidence_access_audit"
+        base_manager_name = "objects"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "subject_type", "subject_id", "created_at"),
+                name="idx_hr16_evid_audit_subject",
+            ),
+            models.Index(
+                fields=("tenant_id", "actor_user_id", "created_at"),
+                name="idx_hr16_evid_audit_actor",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(storage_key_hash__regex=r"^[0-9a-f]{64}$"),
+                name="ck_hr16_evid_audit_hash",
+            ),
+            models.CheckConstraint(
+                condition=Q(purpose__gt=""),
+                name="ck_hr16_evid_audit_purpose",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValueError("HR16_EVIDENCE_ACCESS_AUDIT_IMMUTABLE")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR16_EVIDENCE_ACCESS_AUDIT_IMMUTABLE")

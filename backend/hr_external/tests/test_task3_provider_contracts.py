@@ -102,7 +102,7 @@ class SettlementProviderContractTests(SimpleTestCase):
             idempotency_key="idem-settle-1",
         )
         self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
-        self.assertEqual(result.error_code, "PROVIDER_UNAVAILABLE")
+        self.assertEqual(result.error_code, "EXTERNAL_SETTLEMENT_ENGAGEMENT_INVALID")
 
 
 class AcademicProviderContractTests(SimpleTestCase):
@@ -130,7 +130,10 @@ class AcademicProviderContractTests(SimpleTestCase):
 
     def test_deactivate_unavailable(self):
         result = AcademicProvider().deactivate_teacher_identity(
-            tenant_id=1, academic_teacher_id="T20260001", idempotency_key="idem-deac-1"
+            tenant_id=1,
+            academic_teacher_id="T20260001",
+            external_teacher_no="EXT2026000001",
+            idempotency_key="idem-deac-1",
         )
         self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
 
@@ -183,15 +186,37 @@ class AcademicProviderContractTests(SimpleTestCase):
 
         result = provider.deactivate_teacher_identity(
             tenant_id=7,
-            academic_teacher_id="T-7",
+            academic_teacher_id="",
+            external_teacher_no="EXT-7",
             idempotency_key="academic:deactivate:7",
         )
 
         self.assertEqual(result.status, ProviderStatus.ERROR)
         self.assertEqual(result.error_code, "PROVIDER_RECEIPT_INVALID")
+        self.assertEqual(
+            session.request.call_args.kwargs["json"]["externalTeacherNo"], "EXT-7"
+        )
 
 
 class IamProviderContractTests(SimpleTestCase):
+    def test_non_https_provider_url_is_rejected_before_transport(self):
+        session = Mock()
+        provider = IamProvisioningProvider(
+            config={"BASE_URL": "http://iam.example.invalid/v1", "TOKEN": "x"},
+            session=session,
+        )
+        result = provider.provision_grant(
+            tenant_id=8,
+            target_system="ACADEMIC",
+            role_code="ACADEMIC_TEACHER",
+            scope_json={"engagementId": "eng-8"},
+            expires_at=None,
+            idempotency_key="iam:grant:eng-8",
+        )
+        self.assertEqual(result.status, ProviderStatus.ERROR)
+        self.assertEqual(result.error_code, "PROVIDER_CONFIG_INVALID")
+        session.request.assert_not_called()
+
     def test_configured_grant_carries_scope_and_idempotency(self):
         session = Mock()
         session.request.return_value = _JsonResponse(

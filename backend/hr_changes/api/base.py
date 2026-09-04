@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 
 from hr_changes.context import (
@@ -75,6 +76,9 @@ def make_hr_change_context(request, *, tenant_membership_check=True):
             "TENANT_CONTEXT_REQUIRED", "请选择当前学校（多学校账号需明确学校上下文）"
         )
 
+    if not getattr(request.user, "is_authenticated", False):
+        raise HrChangeContextError("UNAUTHENTICATED", "请先登录")
+
     if tenant_membership_check and not request.user.is_superuser:
         from base.auth_backends import get_allowed_company_ids
 
@@ -86,7 +90,7 @@ def make_hr_change_context(request, *, tenant_membership_check=True):
                 "TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校数据"
             )
 
-    school_timezone = request.GET.get("school_timezone") or "Asia/Shanghai"
+    school_timezone = settings.TIME_ZONE
     request.hr06_school_timezone = school_timezone
 
     scope_type = request.GET.get("scope_type", "SCHOOL")

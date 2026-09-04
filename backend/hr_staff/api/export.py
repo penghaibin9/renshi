@@ -85,7 +85,7 @@ def create_export(request):
         "fields": job.fields_json,
         "totalRows": job.total_rows,
         "status": job.status,
-        "downloadToken": job.download_token,
+        "downloadToken": job.issued_download_token,
         "expiresAt": job.expires_at.isoformat(),
     }
     return json_response(request, payload, status=201)

@@ -75,7 +75,13 @@ def start_automation():
                     type = relation_type
                     break
 
-            def create_signal_handler(name, bonus_point_setting, type=None, field=None):
+            def create_signal_handler(
+                name,
+                bonus_point_setting,
+                model_class,
+                type=None,
+                field=None,
+            ):
                 def signal_handler(sender, instance, *args, **kwargs):
                     """
                     Signal handler for post-save events of the model instances.
@@ -146,7 +152,11 @@ def start_automation():
             # Create and connect the signal handler
             handler_name = f"{bonus_point_setting.id}_signal_handler"
             dynamic_signal_handler = create_signal_handler(
-                handler_name, bonus_point_setting, type=type, field=field
+                handler_name,
+                bonus_point_setting,
+                model_class,
+                type=type,
+                field=field,
             )
             SIGNAL_HANDLERS.append(dynamic_signal_handler)
             post_save.connect(
@@ -169,30 +179,31 @@ def start_automation():
 
         clear_instance_signal_connection()
         bonus_point_settings = BonusPointSetting.objects.filter(is_active=True)
-        for bonus_setting in bonus_point_settings:
-            model_class = get_model_class(bonus_setting.model)
 
-            @receiver(pre_save, sender=model_class)
+        def create_instance_handler(bonus_setting, model_class):
             def instance_handler(sender, instance, **kwargs):
-                """
-                Signal handler for pres-save events of the model instances.
-                """
-                # prevented storing the scheduled activities
+                """Store the pre-save instance for this bonus rule."""
                 request = getattr(_thread_locals, "request", None)
+                previous_instance = instance
                 if instance.pk:
-                    # to get the previous instance
-                    instance = model_class.objects.filter(id=instance.pk).first()
+                    previous_instance = model_class.objects.filter(
+                        id=instance.pk
+                    ).first()
                 if request:
                     _thread_locals.previous_record = {
                         "bonus_setting": bonus_setting,
-                        "instance": instance,
+                        "instance": previous_instance,
                     }
-                instance_handler.__name__ = f"{bonus_setting.id}_instance_handler"
-                return instance_handler
 
+            instance_handler.__name__ = f"{bonus_setting.id}_instance_handler"
             instance_handler.model_class = model_class
             instance_handler.bonus_setting = bonus_setting
+            return instance_handler
 
+        for bonus_setting in bonus_point_settings:
+            model_class = get_model_class(bonus_setting.model)
+            instance_handler = create_instance_handler(bonus_setting, model_class)
+            pre_save.connect(instance_handler, sender=model_class)
             INSTANCE_HANDLERS.append(instance_handler)
 
     track_previous_instance()

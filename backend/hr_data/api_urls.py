@@ -92,6 +92,7 @@ urlpatterns = [
         quality_finding_api.verify_fixed,
         name="quality-finding-verify-fixed",
     ),
+    path("exchange/workbench/", exchange_api.workbench, name="exchange-workbench"),
     path("exchange/datasets/", exchange_api.create_dataset, name="exchange-dataset-create"),
     path(
         "exchange/targets/",

@@ -28,7 +28,7 @@
         {% else %}
             <a
                 href="#"
-                hx-get="{% url 'validate-this-attendance' instance.id %}"
+                hx-post="{% url 'validate-this-attendance' instance.id %}"
                 hx-swap="none"
                 onclick="event.preventDefault(); event.stopPropagation()"
                 class="w-24 h-8 px-4 py-2 bg-success text-white rounded-md text-xs flex items-center justify-center gap-2 hover:bg-success-dark transition duration-300"

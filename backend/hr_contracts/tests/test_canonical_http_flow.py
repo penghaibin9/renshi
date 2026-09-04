@@ -1,14 +1,20 @@
 from datetime import date, timedelta
+from unittest import skipUnless
 from unittest.mock import patch
 
+from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from base.models import Company
-from employee.models import Employee, EmployeeWorkInformation
-from hr_contracts.models import HrContractAgreement, HrContractCase, HrContractVersion
+from hr_contracts.models import (
+    HrContractAgreement,
+    HrContractCase,
+    HrContractExpiryPolicy,
+    HrContractTemplateVersion,
+    HrContractVersion,
+)
 from hr_contracts.events import (
     EVENT_AGREEMENT_CREATED,
     EVENT_AGREEMENT_EFFECTIVE,
@@ -19,6 +25,18 @@ from hr_staff.models import HrOutboxEvent
 from hr_staff.models import HrEmploymentRelationship, HrPerson, HrStaffMaster
 
 
+LEGACY_HTTP_CONTEXT_AVAILABLE = apps.is_installed("base") and apps.is_installed(
+    "employee"
+)
+if LEGACY_HTTP_CONTEXT_AVAILABLE:
+    from base.models import Company
+    from employee.models import Employee, EmployeeWorkInformation
+
+
+@skipUnless(
+    LEGACY_HTTP_CONTEXT_AVAILABLE,
+    "requires the complete MySQL Horilla CompanyMiddleware integration runtime",
+)
 class Hr07CanonicalHttpFlowTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(company="HR07 权威测试学校", hq=True)
@@ -299,3 +317,66 @@ class Hr07CanonicalHttpFlowTests(TestCase):
         self.assertEqual(agreement.status, "DRAFT")
         self.assertEqual(agreement.current_version_no, 0)
         self.assertFalse(HrContractVersion.objects.filter(agreement=agreement).exists())
+
+    def test_setup_api_publishes_immutable_template_versions_and_one_active_policy(self):
+        today = timezone.localdate()
+        first = self.post_json(
+            "/api/v1/hr/contracts/setup/templates/publish",
+            {
+                "templateCode": "TEACHER_FIXED",
+                "templateName": "专任教师合同",
+                "agreementType": "FIXED_TERM",
+                "numberingPrefix": "HT-JS",
+                "defaultTermMonths": 36,
+                "effectiveFrom": today.isoformat(),
+                "bodyTemplate": "〔姓名〕与学校签订本合同。",
+            },
+        )
+        second = self.post_json(
+            "/api/v1/hr/contracts/setup/templates/publish",
+            {
+                "templateCode": "TEACHER_FIXED",
+                "templateName": "专任教师合同（修订）",
+                "agreementType": "FIXED_TERM",
+                "numberingPrefix": "HT-JS",
+                "defaultTermMonths": 48,
+                "effectiveFrom": today.isoformat(),
+                "bodyTemplate": "〔姓名〕与学校签订修订版合同。",
+            },
+        )
+        self.assertEqual(first.status_code, 201, first.content)
+        self.assertEqual(second.status_code, 201, second.content)
+        versions = list(
+            HrContractTemplateVersion.objects.filter(
+                tenant_id=self.company.pk, template_code="TEACHER_FIXED"
+            ).order_by("version_no")
+        )
+        self.assertEqual([row.version_no for row in versions], [1, 2])
+        self.assertEqual([row.status for row in versions], ["RETIRED", "PUBLISHED"])
+        self.assertEqual(len(versions[1].content_hash), 64)
+
+        for version, warning in (("EXP-V1", 60), ("EXP-V2", 90)):
+            response = self.post_json(
+                "/api/v1/hr/contracts/setup/expiry-policies/publish",
+                {
+                    "policyVersion": version,
+                    "agreementType": "FIXED_TERM",
+                    "warningDays": warning,
+                    "criticalAfterDays": 30,
+                    "actionType": "CREATE_RENEWAL_CASE",
+                },
+            )
+            self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(
+            HrContractExpiryPolicy.objects.filter(
+                tenant_id=self.company.pk,
+                agreement_type="FIXED_TERM",
+                active=True,
+            ).count(),
+            1,
+        )
+
+        workbench = self.client.get("/api/v1/hr/contracts/setup/workbench")
+        self.assertEqual(workbench.status_code, 200, workbench.content)
+        self.assertEqual(len(workbench.json()["data"]["templates"]), 2)
+        self.assertEqual(len(workbench.json()["data"]["expiryPolicies"]), 2)

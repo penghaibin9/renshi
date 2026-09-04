@@ -55,6 +55,8 @@ def json_response(request, payload: dict, status: int = 200) -> JsonResponse:
 
 
 def error_response(request, code: str, message: str, status: int, details=None) -> JsonResponse:
+    if code == "AUTHORITY_UNAVAILABLE":
+        status = 503
     body = api_root(request)
     body["error"] = {
         "code": code,
@@ -91,9 +93,19 @@ def make_staff_context(request, *, authority_mode=None):
             )
 
     if authority_mode is None:
-        from hr_staff.services.authority_mode_service import AuthorityModeService
+        from hr_staff.services.authority_mode_service import (
+            AuthorityModeError,
+            AuthorityModeService,
+        )
 
-        authority_mode = AuthorityModeService().get_mode(tenant_id)
+        try:
+            authority_mode = AuthorityModeService().get_mode(tenant_id)
+        except AuthorityModeError as exc:
+            raise HrStaffContextError(
+                "AUTHORITY_UNAVAILABLE",
+                "人事权威状态暂时无法确认，请稍后重试",
+                status=503,
+            ) from exc
 
     scope_type = request.GET.get("scope_type", "SCHOOL")
     scope_org_id = request.GET.get("scope_id")

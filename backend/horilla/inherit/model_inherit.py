@@ -97,11 +97,15 @@ class HorillaModelBase(ModelBase):
                 }
             )
 
+            fields_snapshot = dict(contributed_fields)
+            methods_snapshot = dict(contributed_methods)
+            extension_app = namespace.get("__module__", "").split(".")[0]
+
             def _apply(
                 target_model,
-                _fields=dict(contributed_fields),
-                _methods=dict(contributed_methods),
-                _extension_app=namespace.get("__module__", "").split(".")[0],
+                _fields=fields_snapshot,
+                _methods=methods_snapshot,
+                _extension_app=extension_app,
             ):
                 for field_name, field in _fields.items():
                     if not hasattr(target_model, field_name):

@@ -13,25 +13,90 @@ x-production-env: &production-env
   DATABASE_URL: ${DATABASE_URL:?Set MySQL DATABASE_URL in .env}
   DB_INIT_PASSWORD: ${DB_INIT_PASSWORD:?Set DB_INIT_PASSWORD in .env}
   REDIS_URL: ${REDIS_URL:?Set REDIS_URL in .env}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+  LOG_FORMAT: json
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  PRODUCTION_BACKUP_ROOT: /app/backups
+  PRODUCTION_BACKUP_ENCRYPTION_KEY: ${PRODUCTION_BACKUP_ENCRYPTION_KEY:?Set PRODUCTION_BACKUP_ENCRYPTION_KEY in .env}
+  PRODUCTION_BACKUP_RETENTION_COUNT: ${PRODUCTION_BACKUP_RETENTION_COUNT:-30}
+  PRODUCTION_BACKUP_INTERVAL_HOURS: ${PRODUCTION_BACKUP_INTERVAL_HOURS:-24}
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
   SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-1}
   SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-31536000}
   PLATFORM_TENANT_ELEVATION_MAX_MINUTES: ${PLATFORM_TENANT_ELEVATION_MAX_MINUTES:-60}
+  FAIL2BAN_MAX_RETRY: ${FAIL2BAN_MAX_RETRY:-5}
+  FAIL2BAN_ATTEMPT_WINDOW: ${FAIL2BAN_ATTEMPT_WINDOW:-900}
+  FAIL2BAN_BAN_TIME: ${FAIL2BAN_BAN_TIME:-900}
+  FAIL2BAN_TRUST_X_REAL_IP: "True"
+  # Production login is fail-closed: every authenticated session must complete
+  # a short-lived email OTP challenge delivered by the institution SMTP relay.
+  TWO_FACTORS_AUTHENTICATION: "True"
+  MFA_OTP_TTL_SECONDS: ${MFA_OTP_TTL_SECONDS:-300}
+  MFA_OTP_MAX_ATTEMPTS: ${MFA_OTP_MAX_ATTEMPTS:-5}
+  MFA_OTP_RESEND_COOLDOWN_SECONDS: ${MFA_OTP_RESEND_COOLDOWN_SECONDS:-60}
+  EMAIL_HOST: ${EMAIL_HOST:?Set EMAIL_HOST in .env}
+  EMAIL_PORT: ${EMAIL_PORT:-587}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-False}
+  EMAIL_TIMEOUT: ${EMAIL_TIMEOUT:-10}
+  EMAIL_FAIL_SILENTLY: "False"
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:?Set DEFAULT_FROM_EMAIL in .env}
+  HR04_PRIVACY_NOTICE_VERSION: ${HR04_PRIVACY_NOTICE_VERSION:?Set HR04_PRIVACY_NOTICE_VERSION in .env}
+  HR04_CANDIDATE_RETENTION_DAYS: ${HR04_CANDIDATE_RETENTION_DAYS:?Set HR04_CANDIDATE_RETENTION_DAYS in .env}
+  HR04_PRIVACY_CONTACT: ${HR04_PRIVACY_CONTACT:?Set HR04_PRIVACY_CONTACT in .env}
+  HR04_APPLICATION_MATERIAL_MAX_BYTES: ${HR04_APPLICATION_MATERIAL_MAX_BYTES:-20971520}
+  FIELD_ENCRYPTION_KEYS: ${FIELD_ENCRYPTION_KEYS:?Set FIELD_ENCRYPTION_KEYS in .env}
+  MALWARE_SCAN_REQUIRED: "True"
+  MALWARE_SCAN_HOST: clamav
+  MALWARE_SCAN_PORT: "3310"
+  MALWARE_SCAN_TIMEOUT_SECONDS: ${MALWARE_SCAN_TIMEOUT_SECONDS:-10}
+  MALWARE_SCAN_MAX_BYTES: ${MALWARE_SCAN_MAX_BYTES:-52428800}
+  REQUIRED_EXTERNAL_INTEGRATIONS: ${REQUIRED_EXTERNAL_INTEGRATIONS:-}
+  HR18_SUBMISSION_HTTP_ENDPOINT: ${HR18_SUBMISSION_HTTP_ENDPOINT:-}
+  HR18_SUBMISSION_HTTP_TOKEN: ${HR18_SUBMISSION_HTTP_TOKEN:-}
+  HR18_SUBMISSION_HTTP_TIMEOUT_SECONDS: ${HR18_SUBMISSION_HTTP_TIMEOUT_SECONDS:-15}
+  HR18_SUBMISSION_HTTP_PROVIDER_VERSION: ${HR18_SUBMISSION_HTTP_PROVIDER_VERSION:-https-v1}
+  HR18_SUBMISSION_DISPATCH_PROVIDER_KEY: ${HR18_SUBMISSION_DISPATCH_PROVIDER_KEY:-EDU_PLATFORM}
+  HR18_SUBMISSION_RECEIPT_HMAC_SECRET: ${HR18_SUBMISSION_RECEIPT_HMAC_SECRET:-}
+  HR18_SUBMISSION_RECEIPT_KEY_ID: ${HR18_SUBMISSION_RECEIPT_KEY_ID:-}
+  HR18_EXCHANGE_HTTP_ENDPOINT: ${HR18_EXCHANGE_HTTP_ENDPOINT:-}
+  HR18_EXCHANGE_HTTP_TOKEN: ${HR18_EXCHANGE_HTTP_TOKEN:-}
+  HR18_EXCHANGE_HTTP_TIMEOUT_SECONDS: ${HR18_EXCHANGE_HTTP_TIMEOUT_SECONDS:-15}
+  HR18_EXCHANGE_HTTP_PROVIDER_VERSION: ${HR18_EXCHANGE_HTTP_PROVIDER_VERSION:-https-v1}
+  HR18_EXCHANGE_HTTP_PROVIDER_KEY: ${HR18_EXCHANGE_HTTP_PROVIDER_KEY:-EDU_PLATFORM}
+  HR15_PAYMENT_HTTP_ENDPOINT: ${HR15_PAYMENT_HTTP_ENDPOINT:-}
+  HR15_PAYMENT_HTTP_TOKEN: ${HR15_PAYMENT_HTTP_TOKEN:-}
+  HR15_PAYMENT_HTTP_TIMEOUT_SECONDS: ${HR15_PAYMENT_HTTP_TIMEOUT_SECONDS:-15}
+  HR15_PAYMENT_PROVIDER_CODE: ${HR15_PAYMENT_PROVIDER_CODE:-}
+  HR15_PAYMENT_RECEIPT_HMAC_SECRET: ${HR15_PAYMENT_RECEIPT_HMAC_SECRET:-}
+  HR15_PAYMENT_RECEIPT_KEY_ID: ${HR15_PAYMENT_RECEIPT_KEY_ID:-}
+
+# Application containers do not need to mutate their image or acquire Linux
+# capabilities. Writable state is limited to the declared media/static/backup
+# volumes and an ephemeral, non-executable /tmp filesystem.
+x-app-hardening: &app-hardening
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=256m
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
 
 services:
   # One release job owns schema migration and static collection. Web replicas
   # start only after it succeeds, avoiding concurrent migrate/collectstatic races.
   release:
+    <<: *app-hardening
     build: .
     env_file:
       - .env
     environment: *production-env
     entrypoint: ["/bin/bash", "-lc"]
-    command: >-
-      python manage.py migrate --noinput &&
-      python manage.py collectstatic --noinput &&
-      python manage.py check
+    command: python manage.py prepare_runtime --migrate --collectstatic
     volumes:
       - staticfiles:/app/.runtime/staticfiles
       - media:/app/.runtime/media
@@ -41,14 +106,20 @@ services:
     restart: "no"
 
   web:
+    <<: *app-hardening
     env_file:
       - .env
     environment: !override
       <<: *production-env
       MIGRATE_ON_START: "0"
       COLLECTSTATIC_ON_START: "0"
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-}
+      CHECK_ON_START: "0"
+      # This Django graph is memory-heavy. Three gthread workers provide 12
+      # concurrent request threads without letting CPU-count auto-detection
+      # exhaust an 8 GiB host once ClamAV and background workers are included.
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_LOG_LEVEL: ${GUNICORN_LOG_LEVEL:-info}
+      GUNICORN_PRELOAD: "true"
     volumes: !override
       - staticfiles:/app/.runtime/staticfiles
       - media:/app/.runtime/media
@@ -62,15 +133,138 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      clamav:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hr18-submission-worker:
+    <<: *app-hardening
+    env_file:
+      - .env
+    environment: !override
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes: !override
+      - staticfiles:/app/.runtime/staticfiles
+      - media:/app/.runtime/media
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  hr18-exchange-worker:
+    <<: *app-hardening
+    env_file:
+      - .env
+    environment: !override
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes: !override
+      - staticfiles:/app/.runtime/staticfiles
+      - media:/app/.runtime/media
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  legacy-scheduler:
+    <<: *app-hardening
+    env_file:
+      - .env
+    environment: !override
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes: !override
+      - staticfiles:/app/.runtime/staticfiles
+      - media:/app/.runtime/media
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  employee-scheduler:
+    <<: *app-hardening
+    env_file:
+      - .env
+    environment: !override
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes: !override
+      - staticfiles:/app/.runtime/staticfiles
+      - media:/app/.runtime/media
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  backup-scheduler:
+    <<: *app-hardening
+    image: renshi-web:latest
+    build: .
+    command: ["python", "manage.py", "run_production_backup_scheduler"]
+    env_file:
+      - .env
+    environment:
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes:
+      - media:/app/.runtime/media:ro
+      - ${BACKUP_STORAGE_PATH:?Set BACKUP_STORAGE_PATH in .env}:/app/backups
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "scripts/check_worker_heartbeat.py", "backup-scheduler", "180"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 3
 
   db:
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-horilla_db}
-      MYSQL_USER: ${MYSQL_USER:-horilla_user}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-renshi_db}
+      MYSQL_USER: ${MYSQL_USER:-renshi_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    restart: unless-stopped
 
   redis:
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
+    # The image's /data directory is owned by the built-in redis user. Running
+    # directly as that user avoids the root entrypoint chown path and permits a
+    # read-only root filesystem with no Linux capabilities.
+    user: redis
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     healthcheck:
       test:
@@ -81,6 +275,30 @@ services:
           "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}",
           "ping",
         ]
+    restart: unless-stopped
+
+  clamav:
+    image: clamav/clamav:stable@sha256:f0954d679017eb6d48221e2b2be3ac5457bf278a844f39b672376f55a085f591
+    environment:
+      # Match the application/Nginx 50 MiB ceiling. Clamd's image default is
+      # 25 MiB and would otherwise reject a valid large onboarding document.
+      CLAMD_CONF_StreamMaxLength: 50M
+    expose:
+      - "3310"
+    volumes:
+      - clamav_data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 5
+    restart: unless-stopped
 
   nginx:
+    image: nginx:alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
     profiles: !reset []
+    restart: unless-stopped
+
+volumes:
+  clamav_data:

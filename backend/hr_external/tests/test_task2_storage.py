@@ -117,7 +117,12 @@ class PrivateStorageTests(TestCase):
         token = self.service.sign_token(
             tenant_id=self.tenant, material_id=str(self.material.id)
         )
-        self.service.issue_ticket(tenant_id=self.tenant, material=self.material, token=token)
+        self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="下载材料",
+            token=token,
+        )
         self.service.redeem_ticket(token=token, actor_user_id=1)
         with self.assertRaises(TicketInvalid):
             self.service.redeem_ticket(token=token, actor_user_id=1)
@@ -135,7 +140,12 @@ class PrivateStorageTests(TestCase):
         token = self.service.sign_token(
             tenant_id=self.tenant, material_id=str(self.material.id)
         )
-        self.service.issue_ticket(tenant_id=self.tenant, material=self.material, token=token)
+        self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="下载材料",
+            token=token,
+        )
         with self.assertRaises(TicketInvalid):
             self.service.redeem_ticket(token=token, actor_user_id=1, tenant_id=999)
 

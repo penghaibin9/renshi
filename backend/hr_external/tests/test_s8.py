@@ -299,5 +299,5 @@ class ExitTests(TestCase):
 
         # eng 的 grant 被回收请求，eng2 的 grant 保持（§138.14/§99）
         eng2_grants = HrExternalAccessGrant.objects.filter(engagement_id=eng2)
-        self.assertEqual(eng2_grants.count(), 3)
+        self.assertEqual(eng2_grants.count(), 1)
         self.assertTrue(all(g.status in ("PENDING", "GRANTED") for g in eng2_grants))

@@ -1,100 +1,131 @@
-"""
-hr_contracts/services/document_ticket.py
-
-合同文档下载票据（HR07 §20 / 00 §34）：
-- 短时效一次性 ticket（10 分钟）；
-- 下载前权限校验 + 审计；
-- 私有目录 hr_contracts_private/ 文件经 ticket 获取，不走公开 /media/。
-"""
+"""Short-lived, durable, single-use download tickets for HR07 documents."""
 
 from __future__ import annotations
 
 import hashlib
-import os
-import time
+import secrets
+from datetime import timedelta
 
-from django.conf import settings
-from django.http import FileResponse, Http404
-from django.utils import timezone as dj_timezone
+from django.db import transaction
+from django.http import FileResponse
+from django.utils import timezone
 
-from hr_contracts.api.exceptions import NotFoundError, PermissionDeniedError
 from hr_contracts.services import audit_service
+from hr_contracts.services.document_storage import open_contract_document
 
 
-class TicketExpiredError(PermissionDeniedError):
-    def __init__(self, message: str = "下载票据已过期或已使用"):
+class ContractDocumentTicketError(ValueError):
+    def __init__(self, code: str, message: str, *, status: int = 400):
+        self.code = code
+        self.message = message
+        self.status = status
         super().__init__(message)
 
 
 class DownloadTicketService:
-    TICKET_TTL_SECONDS = 600  # 10 分钟
+    TICKET_TTL_SECONDS = 600
 
     def __init__(self, tenant_id: int):
-        self.tenant_id = tenant_id
+        self.tenant_id = int(tenant_id)
 
-    def generate_ticket(self, document_id, actor_id=None) -> str:
-        """生成一次性下载票据（HMAC 签名 + 时间戳）。"""
-        from hr_contracts.models import HrAgreementDocument
+    @staticmethod
+    def _hash(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-        doc = HrAgreementDocument.objects.filter(tenant_id=self.tenant_id, id=document_id).first()
-        if doc is None:
-            raise NotFoundError("文件不存在")
+    @transaction.atomic
+    def generate_ticket(
+        self, document_id, *, actor_id: int, purpose: str, request_id: str = ""
+    ) -> tuple[str, object]:
+        from hr_contracts.models import HrAgreementDocument, HrContractDownloadTicket
 
-        secret = getattr(settings, "SECRET_KEY", "hr07-ticket-secret")
-        now = int(time.time())
-        payload = f"{self.tenant_id}:{str(document_id)}:{now}"
-        sig = hashlib.sha256((payload + secret).encode()).hexdigest()[:16]
-        ticket = f"{now}:{sig}:{str(document_id)}"
+        purpose = str(purpose or "").strip()
+        if not purpose:
+            raise ContractDocumentTicketError(
+                "CONTRACT_DOCUMENT_PURPOSE_REQUIRED", "请填写下载合同文档的用途"
+            )
+        document = (
+            HrAgreementDocument.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, id=document_id)
+            .first()
+        )
+        if document is None:
+            raise ContractDocumentTicketError(
+                "CONTRACT_DOCUMENT_NOT_FOUND", "合同文档不存在", status=404
+            )
 
+        token = secrets.token_urlsafe(32)
+        ticket = HrContractDownloadTicket.objects.create(
+            tenant_id=self.tenant_id,
+            document=document,
+            token_hash=self._hash(token),
+            purpose=purpose[:300],
+            expires_at=timezone.now() + timedelta(seconds=self.TICKET_TTL_SECONDS),
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
         audit_service.record_sensitive_access(
             tenant_id=self.tenant_id,
-            agreement_id=doc.agreement_id_id,
-            document_id=str(document_id),
+            agreement_id=document.agreement_id,
+            document_id=str(document.id),
             actor_id=actor_id,
             action="TICKET_GENERATED",
-            purpose="下载票据",
+            purpose=purpose,
+            request_id=request_id,
         )
-        return ticket
+        return token, ticket
 
-    def serve(self, ticket: str, request):
-        """校验票据 → 返回 FileResponse（一次性消费）。"""
-        try:
-            parts = ticket.split(":")
-            ts = int(parts[0])
-            doc_id = parts[2]
-            sig = parts[1]
-        except (IndexError, ValueError):
-            raise PermissionDeniedError("无效票据格式")
+    @transaction.atomic
+    def serve(self, token: str, *, actor_id: int, request_id: str = ""):
+        from hr_contracts.models import HrContractDownloadTicket
 
-        now = int(time.time())
-        if now - ts > self.TICKET_TTL_SECONDS:
-            raise TicketExpiredError()
+        ticket = (
+            HrContractDownloadTicket.objects.select_for_update()
+            .select_related("document")
+            .filter(
+                tenant_id=self.tenant_id,
+                token_hash=self._hash(str(token or "")),
+                created_by=actor_id,
+            )
+            .first()
+        )
+        now = timezone.now()
+        if ticket is None or ticket.consumed_at is not None or ticket.expires_at <= now:
+            raise ContractDocumentTicketError(
+                "CONTRACT_DOCUMENT_TICKET_INVALID",
+                "下载凭证无效、已过期或已使用",
+                status=403,
+            )
 
-        secret = getattr(settings, "SECRET_KEY", "hr07-ticket-secret")
-        expected = hashlib.sha256((f"{self.tenant_id}:{doc_id}:{ts}" + secret).encode()).hexdigest()[:16]
-        if sig != expected:
-            raise PermissionDeniedError("票据签名无效")
-
-        from hr_contracts.models import HrAgreementDocument
-
-        doc = HrAgreementDocument.objects.filter(tenant_id=self.tenant_id, id=doc_id).first()
-        if doc is None:
-            raise NotFoundError("文件不存在")
-
-        file_path = os.path.join(settings.MEDIA_ROOT, doc.file_path) if doc.file_path else ""
-        if not file_path or not os.path.exists(file_path):
-            raise NotFoundError("文件存储路径不存在")
-
-        audit_service.record_sensitive_access(
+        document = ticket.document
+        stream = open_contract_document(
+            document.file_path,
             tenant_id=self.tenant_id,
-            agreement_id=doc.agreement_id_id,
-            document_id=str(doc_id),
-            actor_id=request.user.id if request.user.is_authenticated else None,
-            action="DOWNLOAD",
-            purpose="票据下载",
+            agreement_id=document.agreement_id,
         )
+        try:
+            ticket.consumed_at = now
+            ticket.updated_by = actor_id
+            ticket.save(update_fields=("consumed_at", "updated_by", "updated_at"))
+            audit_service.record_sensitive_access(
+                tenant_id=self.tenant_id,
+                agreement_id=document.agreement_id,
+                document_id=str(document.id),
+                actor_id=actor_id,
+                action="DOWNLOAD",
+                purpose=ticket.purpose,
+                request_id=request_id,
+            )
+        except Exception:
+            stream.close()
+            raise
 
-        response = FileResponse(open(file_path, "rb"), content_type=doc.mime_type or "application/octet-stream")
-        response["Content-Disposition"] = f'attachment; filename="{doc.file_name or "document"}"'
-        response["Cache-Control"] = "no-store"
+        response = FileResponse(
+            stream,
+            as_attachment=True,
+            filename=document.file_name or f"contract-{document.id}.pdf",
+            content_type=document.mime_type or "application/pdf",
+        )
+        response["Cache-Control"] = "private, no-store, max-age=0"
+        response["Pragma"] = "no-cache"
+        response["X-Content-Type-Options"] = "nosniff"
         return response

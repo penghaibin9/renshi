@@ -14,11 +14,13 @@ class SelfIdentityServiceTests(SimpleTestCase):
     def _user(self):
         return SimpleNamespace(id=9, is_authenticated=True)
 
-    @patch("hr_staff.models.HrStaffMaster.objects")
-    @patch("employee.models.Employee.objects")
+    @patch("hr_self.services.identity_service._staff_master_model")
+    @patch("hr_self.services.identity_service._legacy_employee_model")
     def test_resolve_scopes_legacy_user_bridge_to_explicit_tenant(
-        self, employee_objects, staff_objects
+        self, employee_model, staff_model
     ):
+        employee_objects = employee_model.return_value.objects
+        staff_objects = staff_model.return_value.objects
         employee = SimpleNamespace(id=55)
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [employee]
@@ -47,8 +49,9 @@ class SelfIdentityServiceTests(SimpleTestCase):
         self.assertEqual(context.staff_id, staff.id)
         self.assertEqual(context.person_id, staff.person_id_id)
 
-    @patch("employee.models.Employee.objects")
-    def test_cross_tenant_or_missing_employee_fails_closed(self, employee_objects):
+    @patch("hr_self.services.identity_service._legacy_employee_model")
+    def test_cross_tenant_or_missing_employee_fails_closed(self, employee_model):
+        employee_objects = employee_model.return_value.objects
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = []
         employee_objects.filter.return_value.order_by.return_value = employee_qs
@@ -58,8 +61,9 @@ class SelfIdentityServiceTests(SimpleTestCase):
 
         self.assertEqual(cm.exception.code, "SELF_IDENTITY_NOT_RESOLVED")
 
-    @patch("employee.models.Employee.objects")
-    def test_duplicate_active_employee_bridge_fails_closed(self, employee_objects):
+    @patch("hr_self.services.identity_service._legacy_employee_model")
+    def test_duplicate_active_employee_bridge_fails_closed(self, employee_model):
+        employee_objects = employee_model.return_value.objects
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [
             SimpleNamespace(id=55),
@@ -72,11 +76,13 @@ class SelfIdentityServiceTests(SimpleTestCase):
 
         self.assertEqual(cm.exception.code, "SELF_IDENTITY_AMBIGUOUS")
 
-    @patch("hr_staff.models.HrStaffMaster.objects")
-    @patch("employee.models.Employee.objects")
+    @patch("hr_self.services.identity_service._staff_master_model")
+    @patch("hr_self.services.identity_service._legacy_employee_model")
     def test_duplicate_hr03_staff_mapping_fails_closed(
-        self, employee_objects, staff_objects
+        self, employee_model, staff_model
     ):
+        employee_objects = employee_model.return_value.objects
+        staff_objects = staff_model.return_value.objects
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [SimpleNamespace(id=55)]
         employee_objects.filter.return_value.order_by.return_value = employee_qs
@@ -90,11 +96,13 @@ class SelfIdentityServiceTests(SimpleTestCase):
 
         self.assertEqual(cm.exception.code, "SELF_IDENTITY_AMBIGUOUS")
 
-    @patch("hr_staff.models.HrStaffMaster.objects")
-    @patch("employee.models.Employee.objects")
+    @patch("hr_self.services.identity_service._staff_master_model")
+    @patch("hr_self.services.identity_service._legacy_employee_model")
     def test_staff_without_canonical_person_fails_closed(
-        self, employee_objects, staff_objects
+        self, employee_model, staff_model
     ):
+        employee_objects = employee_model.return_value.objects
+        staff_objects = staff_model.return_value.objects
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [SimpleNamespace(id=55)]
         employee_objects.filter.return_value.order_by.return_value = employee_qs

@@ -7,9 +7,10 @@ DRAFT authority; ACTIVE/RETIRED versions are immutable business facts.
 
 import uuid
 
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpRequest, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from hr_qualification.api.access import api_guard
@@ -26,6 +27,19 @@ from hr_qualification.services.rule_service import RulePackError, RuleService
 READ_PERM = "hr.qualification.rule.view"
 MANAGE_PERM = "hr.qualification.rule.manage"
 PUBLISH_PERM = "hr.qualification.rule.publish"
+
+
+def _json_object(request: HttpRequest) -> dict:
+    import json
+
+    body = json.loads(request.body or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("请求内容必须是对象")
+    return body
+
+
+def _validation_message(exc: ValidationError) -> str:
+    return "; ".join(exc.messages)
 
 
 def _visible_packs(tenant_id):
@@ -74,7 +88,6 @@ def _rule_pack_to_dict(pack: HrDoubleTeacherRulePack) -> dict:
     }
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(READ_PERM)
 def rule_pack_list(request: HttpRequest) -> JsonResponse:
@@ -87,14 +100,11 @@ def rule_pack_list(request: HttpRequest) -> JsonResponse:
     return JsonResponse(envelope({"items": [_rule_pack_to_dict(p) for p in packs]}))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(MANAGE_PERM)
 def rule_pack_create(request: HttpRequest) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body)
+        body = _json_object(request)
         tenant_id = request.hr09_tenant_id
         jurisdiction_level = body.get("jurisdiction_level", "SCHOOL")
         if jurisdiction_level not in {"SCHOOL", "BATCH_OVERRIDE"}:
@@ -108,22 +118,27 @@ def rule_pack_create(request: HttpRequest) -> JsonResponse:
         parent_id = body.get("parent_rule_pack_id")
         if parent_id and _visible_pack_or_none(parent_id, tenant_id) is None:
             return JsonResponse(error_envelope("NOT_FOUND", "Parent Rule Pack not found"), status=404)
-        pack = HrDoubleTeacherRulePack.objects.create(
-            tenant_id=tenant_id,
-            jurisdiction_level=jurisdiction_level,
-            jurisdiction_code=body.get("jurisdiction_code", ""),
-            code=body["code"],
-            name=body["name"],
-            parent_rule_pack_id_id=parent_id,
-        )
+        with transaction.atomic():
+            pack = HrDoubleTeacherRulePack(
+                tenant_id=tenant_id,
+                jurisdiction_level=jurisdiction_level,
+                jurisdiction_code=str(body.get("jurisdiction_code") or "").strip(),
+                code=str(body["code"]).strip(),
+                name=str(body["name"]).strip(),
+                parent_rule_pack_id_id=parent_id,
+            )
+            pack.full_clean()
+            pack.save()
         return JsonResponse(envelope(_rule_pack_to_dict(pack)), status=201)
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+    except (KeyError, ValueError, ValidationError) as e:
+        message = _validation_message(e) if isinstance(e, ValidationError) else str(e)
+        return JsonResponse(error_envelope("INVALID_REQUEST", message), status=400)
+    except IntegrityError:
+        return JsonResponse(error_envelope("VERSION_CONFLICT", "规则包代码已存在"), status=409)
+    except Exception:
+        return JsonResponse(error_envelope("INTERNAL_ERROR", "规则包创建失败"), status=500)
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(READ_PERM)
 def rule_pack_detail(request: HttpRequest, pack_id: str) -> JsonResponse:
@@ -146,37 +161,42 @@ def rule_pack_detail(request: HttpRequest, pack_id: str) -> JsonResponse:
     }))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(MANAGE_PERM)
 def rule_version_create(request: HttpRequest, pack_id: str) -> JsonResponse:
     try:
-        import json
-
-        pack = _owned_pack_or_none(pack_id, request.hr09_tenant_id)
-        if pack is None:
-            return JsonResponse(error_envelope("NOT_FOUND", "School Rule Pack not found"), status=404)
-        body = json.loads(request.body)
-        version = HrDoubleTeacherRulePackVersion.objects.create(
-            rule_pack_id=pack,
-            version_no=body["version_no"],
-            effective_from=body["effective_from"],
-            effective_to=body.get("effective_to"),
-            policy_document_ids=body.get("policy_document_ids"),
-            status=RulePackVersionStatus.DRAFT,
-        )
+        body = _json_object(request)
+        with transaction.atomic():
+            pack = HrDoubleTeacherRulePack.objects.select_for_update().filter(
+                id=pack_id,
+                tenant_id=request.hr09_tenant_id,
+            ).first()
+            if pack is None:
+                return JsonResponse(error_envelope("NOT_FOUND", "School Rule Pack not found"), status=404)
+            version = HrDoubleTeacherRulePackVersion(
+                rule_pack_id=pack,
+                version_no=body["version_no"],
+                effective_from=body["effective_from"],
+                effective_to=body.get("effective_to"),
+                policy_document_ids=body.get("policy_document_ids"),
+                status=RulePackVersionStatus.DRAFT,
+            )
+            version.full_clean()
+            version.save()
         return JsonResponse(envelope({
             "id": str(version.id),
             "version_no": version.version_no,
             "status": version.status,
         }), status=201)
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+    except (KeyError, ValueError, ValidationError) as e:
+        message = _validation_message(e) if isinstance(e, ValidationError) else str(e)
+        return JsonResponse(error_envelope("INVALID_REQUEST", message), status=400)
+    except IntegrityError:
+        return JsonResponse(error_envelope("VERSION_CONFLICT", "该规则版本号已存在"), status=409)
+    except Exception:
+        return JsonResponse(error_envelope("INTERNAL_ERROR", "规则版本创建失败"), status=500)
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(READ_PERM)
 def rule_version_detail(request: HttpRequest, version_id: str) -> JsonResponse:
@@ -207,7 +227,6 @@ def rule_version_detail(request: HttpRequest, version_id: str) -> JsonResponse:
     }))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(MANAGE_PERM)
 def rule_version_validate(request: HttpRequest, version_id: str) -> JsonResponse:
@@ -218,7 +237,6 @@ def rule_version_validate(request: HttpRequest, version_id: str) -> JsonResponse
     return JsonResponse(envelope({"valid": len(violations) == 0, "violations": violations}))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(PUBLISH_PERM)
 def rule_version_publish(request: HttpRequest, version_id: str) -> JsonResponse:
@@ -236,7 +254,6 @@ def rule_version_publish(request: HttpRequest, version_id: str) -> JsonResponse:
         return JsonResponse(error_envelope(e.code, str(e)), status=400)
 
 
-@csrf_exempt
 @require_http_methods(["GET", "HEAD"])
 @api_guard(READ_PERM)
 def rule_version_diff(request: HttpRequest, version_id: str) -> JsonResponse:
@@ -253,41 +270,52 @@ def rule_version_diff(request: HttpRequest, version_id: str) -> JsonResponse:
     return JsonResponse(envelope(diff))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @api_guard(MANAGE_PERM)
 def rule_create(request: HttpRequest, version_id: str) -> JsonResponse:
     try:
-        import json
-
-        version = _owned_version_or_none(version_id, request.hr09_tenant_id)
-        if version is None:
-            return JsonResponse(error_envelope("NOT_FOUND", "School Version not found"), status=404)
-        if version.status != RulePackVersionStatus.DRAFT:
-            return JsonResponse(
-                error_envelope(
-                    "RULE_VERSION_IMMUTABLE",
-                    f"规则版本 {version.status} 已进入正式/审核态，禁止继续新增规则；请创建新版本。",
-                ),
-                status=409,
+        body = _json_object(request)
+        with transaction.atomic():
+            version = (
+                HrDoubleTeacherRulePackVersion.objects.select_for_update()
+                .select_related("rule_pack_id")
+                .filter(id=version_id, rule_pack_id__tenant_id=request.hr09_tenant_id)
+                .first()
             )
-        body = json.loads(request.body)
-        rule = HrDoubleTeacherRule.objects.create(
-            version_id=version,
-            level=body["level"],
-            dimension_code=body["dimension_code"],
-            rule_code=body["rule_code"],
-            rule_type=body["rule_type"],
-            operator=body.get("operator", ">="),
-            expected_value_json=body.get("expected_value_json"),
-            hard_or_soft=body.get("hard_or_soft", "HARD"),
-            evidence_type=body.get("evidence_type", ""),
-            source_provider=body.get("source_provider", ""),
-            manual_review_required=body.get("manual_review_required", False),
-            sequence=body.get("sequence", 0),
-        )
+            if version is None:
+                return JsonResponse(error_envelope("NOT_FOUND", "School Version not found"), status=404)
+            if version.status != RulePackVersionStatus.DRAFT:
+                return JsonResponse(
+                    error_envelope(
+                        "RULE_VERSION_IMMUTABLE",
+                        f"规则版本 {version.status} 已进入正式/审核态，禁止继续新增规则；请创建新版本。",
+                    ),
+                    status=409,
+                )
+            rule_code = str(body["rule_code"]).strip()
+            if HrDoubleTeacherRule.objects.filter(version_id=version, rule_code=rule_code).exists():
+                return JsonResponse(error_envelope("RULE_CODE_DUPLICATE", "同一版本规则代码不能重复"), status=409)
+            rule = HrDoubleTeacherRule(
+                version_id=version,
+                level=body["level"],
+                dimension_code=body["dimension_code"],
+                rule_code=rule_code,
+                rule_type=body["rule_type"],
+                operator=body.get("operator", ">="),
+                expected_value_json=body.get("expected_value_json"),
+                hard_or_soft=body.get("hard_or_soft", "HARD"),
+                evidence_type=str(body.get("evidence_type") or "").strip(),
+                source_provider=str(body.get("source_provider") or "").strip(),
+                manual_review_required=body.get("manual_review_required", False),
+                sequence=body.get("sequence", 0),
+            )
+            rule.full_clean()
+            rule.save()
         return JsonResponse(envelope({"id": str(rule.id), "rule_code": rule.rule_code}), status=201)
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+    except (KeyError, ValueError, ValidationError) as e:
+        message = _validation_message(e) if isinstance(e, ValidationError) else str(e)
+        return JsonResponse(error_envelope("INVALID_REQUEST", message), status=400)
+    except IntegrityError:
+        return JsonResponse(error_envelope("VERSION_CONFLICT", "规则保存冲突，请刷新后重试"), status=409)
+    except Exception:
+        return JsonResponse(error_envelope("INTERNAL_ERROR", "规则创建失败"), status=500)

@@ -1,3 +1,4 @@
+from django.contrib.auth.views import redirect_to_login
 from django.http import JsonResponse
 
 from base.auth_backends import company_scoped_active, get_allowed_company_ids
@@ -129,6 +130,13 @@ class PlatformTenantElevationMiddleware:
         user = getattr(request, "user", None)
         if not user or not getattr(user, "is_authenticated", False):
             request.write_company_id = None
+            # HR workspaces render the shared authenticated shell.  Letting an
+            # anonymous request reach those views used to produce a large 403
+            # page whose shell scripts repeatedly reloaded the same URL.  UI
+            # entries should follow Django's normal sign-in flow; APIs retain
+            # their existing JSON fail-closed responses.
+            if request.path_info.startswith("/hr/"):
+                return redirect_to_login(request.get_full_path())
             return self.get_response(request)
 
         selected = get_selected_company()

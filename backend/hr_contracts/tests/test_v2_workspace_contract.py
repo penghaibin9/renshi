@@ -3,12 +3,14 @@ from pathlib import Path
 from django.test import SimpleTestCase
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_ROOT = BACKEND_ROOT.parent / "frontend"
 
 
 class Hr07V2WorkspaceContractTests(SimpleTestCase):
     def source(self, relative):
-        return (ROOT / relative).read_text(encoding="utf-8")
+        root = FRONTEND_ROOT if relative.startswith("static/") else BACKEND_ROOT
+        return (root / relative).read_text(encoding="utf-8")
 
     def test_workspace_uses_shared_v2_shell_and_has_all_five_business_routes(self):
         source = self.source("hr_contracts/templates/hr_contracts/workspace.html")
@@ -34,12 +36,19 @@ class Hr07V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("选择业务单", visible)
         self.assertIn('name="versionId" type="hidden"', visible)
 
-    def test_unrecovered_rule_and_risk_authorities_are_explicit(self):
+    def test_rule_and_risk_authorities_have_real_operational_workspaces(self):
         source = self.source("hr_contracts/templates/hr_contracts/workspace.html")
-        self.assertIn("模板与规则 Authority 尚未恢复", source)
-        self.assertIn("到期预警 Authority 尚未恢复", source)
-        self.assertIn("不展示假模板", source)
-        self.assertIn("不会用浏览器日期推算风险", source)
+        self.assertIn('id="hr07-template-form"', source)
+        self.assertIn('id="hr07-policy-form"', source)
+        self.assertIn('id="hr07-scan-form"', source)
+        self.assertIn('id="hr07-risk-body"', source)
+        self.assertNotIn("合同模板与规则暂未开放维护", source)
+        self.assertNotIn("到期预警处置暂未开放", source)
+
+        script = self.source("static/hr/js/pages/hr07-setup.js")
+        self.assertIn("/api/v1/hr/contracts/setup/templates/publish", script)
+        self.assertIn("/api/v1/hr/contracts/setup/expiry-policies/publish", script)
+        self.assertIn("/api/v1/hr/contracts/setup/expiry-scan", script)
 
     def test_workspace_script_uses_authority_pickers_and_state_driven_actions(self):
         source = self.source("static/hr/js/pages/contracts-workspace.js")

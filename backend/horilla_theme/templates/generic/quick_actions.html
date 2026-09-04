@@ -111,7 +111,7 @@
         <div class="oh-hover-btn-drawer" onclick="event.stopPropagation()">
           <button class="oh-hover-btn__small" onclick="$('#savedFilterModal').addClass('oh-modal--show')" hx-get="{% url 'saved-filter-update' filter.id %}" hx-target="#SavedFilterFormTarget" hx-swap="innerHTML"><ion-icon name="create-outline"></ion-icon></button>
           <button class="oh-hover-btn__small" onclick="$(this).parent().find('button:hidden').click();$(this).closest('.oh-hover-btn-container').remove()"><ion-icon name="trash-outline"></ion-icon></button>
-          <button hidden hx-get="{% url 'delete-saved-filter' filter.id %}" hx-swap="none"></button>
+          <button hidden hx-post="{% url 'delete-saved-filter' filter.id %}" hx-swap="none"></button>
         </div>
       </div>
     {% endfor %} {% endcomment %}

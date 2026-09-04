@@ -72,6 +72,7 @@ def require_hr05_permission(perm_code):
                 raise PermissionDenied("PERMISSION_DENIED")
             return view_func(request, *args, **kwargs)
 
+        _wrapped.hr05_permission_code = perm_code
         return _wrapped
 
     return decorator

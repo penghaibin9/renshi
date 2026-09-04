@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n email_log_filters %}
 {% if tracked_mails %}
     <div class="oh-sticky-table">
         <div class="oh-sticky-table__table oh-table--sortable">
@@ -55,7 +55,13 @@
                                 </button>
                             </div>
                             <div class="oh-modal__dialog-body" id="mailBodymodal{{log.id}}Target">
-                                {{ log.body|safe }}
+                                <iframe
+                                    title="{% trans 'Mail content' %}"
+                                    sandbox
+                                    referrerpolicy="no-referrer"
+                                    srcdoc="{{ log|safe_email_log_body|force_escape }}"
+                                    style="border: 0; min-height: 420px; width: 100%"
+                                ></iframe>
                             </div>
                         </div>
                     </div>

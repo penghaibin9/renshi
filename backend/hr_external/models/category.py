@@ -6,7 +6,7 @@ hr_external/models/category.py —— HrExternalCategory 外聘类别配置（S1
   category_service.ensure_default_categories(tenant_id) 按 tenant 注入，不写跨校共享数据。
 - Title ≠ Engagement ≠ Assignment：类别字段决定"该类别的可选项与策略"，不承载单次聘用状态。
 - agreement_type_code / access_policy_code / settlement_policy_code 均为 HR07/权限/结算
-  策略的引用编码（Provider 占位）；HR07 交付后由 integrations 层映射真实对象。
+  策略的引用编码；由 integrations 层映射 HR07 等正式领域对象。
 - 不可配置掉：tenant 隔离、Engagement effective dates、Agreement gate、audit、
   access expiry、version、exit/revoke、历史不可变（§136）。
 """
@@ -41,7 +41,7 @@ class HrExternalCategory(models.Model):
         choices=AgreementRequirement.choices,
         default=AgreementRequirement.REQUIRED_BEFORE_ACTIVATION,
     )
-    # ---- Provider 占位引用（HR07/权限/结算）----
+    # ---- 跨域 Provider 引用（HR07/权限/结算）----
     agreement_type_code = models.CharField(max_length=64, blank=True, default="")
     access_policy_code = models.CharField(max_length=64, blank=True, default="")
     settlement_policy_code = models.CharField(max_length=64, blank=True, default="")

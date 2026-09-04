@@ -15,6 +15,9 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 
 from hr_control_center.context import HrRequestContext
+from hr_control_center.providers.canonical_workforce import (
+    CanonicalWorkforceMetricProvider,
+)
 from hr_control_center.providers.workforce import LegacyWorkforceProvider
 from hr_control_center.services.metric_registry import (
     ERROR,
@@ -47,30 +50,13 @@ _DISTRIBUTION_METHODS = {
     "age_group": "distribution_by_age_group",
 }
 
-# Legacy 阶段无权威事实的维度 → UNAVAILABLE（reasonCode, message）
-_UNAVAILABLE_DIMENSIONS = {
-    "education": (
-        "EDUCATION_FACT_MISSING",
-        "学历学位需结构化权威事实（HR05/06），Employee.qualification 为单一自由文本，"
-        "禁止用于结构化学历分布。",
-    ),
-    "title": (
-        "TITLE_FACT_MISSING",
-        "职称需要 HR07 正式聘任记录，当前系统快照没有职称字段。",
-    ),
-    "doubleTeacher": (
-        "MODULE_NOT_AVAILABLE",
-        "双师型教师模块（HR09）尚未建设。",
-    ),
-}
-
-
 class WorkforceSelector:
     """队伍结构只读查询，返回 domain DTO。"""
 
     def __init__(self, context: HrRequestContext, provider=None):
         self.context = context
         self.provider = provider or LegacyWorkforceProvider()
+        self.canonical_provider = CanonicalWorkforceMetricProvider()
 
     # ---- 小样本隐私 -------------------------------------------------------
 
@@ -112,10 +98,15 @@ class WorkforceSelector:
         updated = max(
             (r.source_updated_at for r in results if r.source_updated_at), default=None
         )
+        bases = {
+            r.data_basis for r in results if getattr(r, "data_basis", None)
+        }
         return {
             "computedAt": computed.isoformat() if computed else None,
             "sourceUpdatedAt": updated.isoformat() if updated else None,
-            "dataBasis": next((r.data_basis for r in results if getattr(r, "data_basis", None)), None),
+            "dataBasis": (
+                next(iter(bases)) if len(bases) == 1 else "MIXED_AUTHORITY_AND_LEGACY"
+            ) if bases else None,
         }
 
     @staticmethod
@@ -135,6 +126,16 @@ class WorkforceSelector:
         if note:
             section["note"] = note
         return section
+
+    @staticmethod
+    def _metric_section(result):
+        if result.status != OK:
+            return {
+                "status": result.status,
+                "reasonCode": result.reason_code,
+                "message": result.message,
+            }
+        return {"status": OK, "value": result.data["value"]}
 
     @staticmethod
     def _aggregate_status(sections) -> str:
@@ -164,6 +165,7 @@ class WorkforceSelector:
         position_result = self.provider.distribution_by_job_position(ctx)
         gender_result = self.provider.distribution_by_gender(ctx)
         age_result = self.provider.distribution_by_age_group(ctx)
+        canonical_sections = self.canonical_provider.get_workforce_sections(ctx)
 
         results = [
             headcount_result,
@@ -172,6 +174,7 @@ class WorkforceSelector:
             position_result,
             gender_result,
             age_result,
+            *canonical_sections.values(),
         ]
 
         headcount_section = (
@@ -184,25 +187,35 @@ class WorkforceSelector:
             }
         )
 
+        personnel_interpretation = (
+            personnel_result.data.get("interpretation")
+            if personnel_result.status == OK
+            else None
+        )
+        personnel_note = (
+            "employee_type 为 Horilla 自由文本字典，不等同高校人员类别权威字典"
+            "（专任教师等口径需 HR03）。"
+            if personnel_interpretation == "RAW_EMPLOYEE_TYPE"
+            else None
+        )
         sections = {
             "headcount": headcount_section,
             "personnelCategory": self._distribution_section(
                 personnel_result,
-                interpretation="RAW_EMPLOYEE_TYPE",
-                note="employee_type 为 Horilla 自由文本字典，不等同高校人员类别权威字典"
-                "（专任教师等口径需 HR03）。",
+                interpretation=personnel_interpretation,
+                note=personnel_note,
             ),
-            "fullTimeTeacher": self._unavailable_section(
-                "PERSONNEL_CATEGORY_DICT_MISSING",
-                "专任教师口径依赖 HR03 人员类别正式字典，当前系统快照无法可靠判定。",
+            "fullTimeTeacher": self._metric_section(
+                canonical_sections["fullTimeTeacher"]
             ),
             "department": self._distribution_section(dept_result),
             "jobPosition": self._distribution_section(position_result),
             "gender": self._distribution_section(gender_result),
             "ageGroup": self._distribution_section(age_result),
+            "education": self._distribution_section(canonical_sections["education"]),
+            "title": self._distribution_section(canonical_sections["title"]),
+            "doubleTeacher": self._metric_section(canonical_sections["doubleTeacher"]),
         }
-        for key, (reason_code, message) in _UNAVAILABLE_DIMENSIONS.items():
-            sections[key] = self._unavailable_section(reason_code, message)
 
         conclusions = [
             {
@@ -216,12 +229,17 @@ class WorkforceSelector:
                 "key": "fullTimeTeacher",
                 "label": "专任教师",
                 "status": sections["fullTimeTeacher"]["status"],
-                "reasonCode": sections["fullTimeTeacher"]["reasonCode"],
-                "message": sections["fullTimeTeacher"]["message"],
+                "value": sections["fullTimeTeacher"].get("value"),
+                "reasonCode": sections["fullTimeTeacher"].get("reasonCode"),
+                "message": sections["fullTimeTeacher"].get("message"),
             },
             {
                 "key": "personnelCategory",
-                "label": "人员类别（employee_type 原始口径）",
+                "label": (
+                    "人员类别（旧系统原始口径）"
+                    if personnel_interpretation == "RAW_EMPLOYEE_TYPE"
+                    else "人员类别"
+                ),
                 "status": sections["personnelCategory"]["status"],
                 "note": sections["personnelCategory"].get("note"),
             },
@@ -245,22 +263,23 @@ class WorkforceSelector:
                 "key": "education",
                 "label": "学历学位",
                 "status": sections["education"]["status"],
-                "reasonCode": sections["education"]["reasonCode"],
-                "message": sections["education"]["message"],
+                "reasonCode": sections["education"].get("reasonCode"),
+                "message": sections["education"].get("message"),
             },
             {
                 "key": "title",
                 "label": "职称",
                 "status": sections["title"]["status"],
-                "reasonCode": sections["title"]["reasonCode"],
-                "message": sections["title"]["message"],
+                "reasonCode": sections["title"].get("reasonCode"),
+                "message": sections["title"].get("message"),
             },
             {
                 "key": "doubleTeacher",
                 "label": "双师型",
                 "status": sections["doubleTeacher"]["status"],
-                "reasonCode": sections["doubleTeacher"]["reasonCode"],
-                "message": sections["doubleTeacher"]["message"],
+                "value": sections["doubleTeacher"].get("value"),
+                "reasonCode": sections["doubleTeacher"].get("reasonCode"),
+                "message": sections["doubleTeacher"].get("message"),
             },
         ]
 
@@ -307,7 +326,10 @@ class WorkforceSelector:
         }
         if data.get("interpretation"):
             dto["interpretation"] = data["interpretation"]
-        if dimension == "personnel_category":
+        if (
+            dimension == "personnel_category"
+            and data.get("interpretation") == "RAW_EMPLOYEE_TYPE"
+        ):
             dto["note"] = (
                 "employee_type 为 Horilla 自由文本字典，不等同高校人员类别权威字典"
                 "（专任教师等口径需 HR03）。"

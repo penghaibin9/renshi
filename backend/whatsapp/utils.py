@@ -1,8 +1,14 @@
 import inspect
 import json
+import logging
+import mimetypes
+import re
 from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests
+from django.conf import settings
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.contrib.sessions.backends.db import SessionStore
 from django.contrib.sessions.middleware import SessionMiddleware
@@ -18,6 +24,54 @@ from base.models import Company, EmployeeShift, WorkType
 from employee.models import Employee
 from horilla.horilla_middlewares import _thread_locals
 from whatsapp.models import WhatsappCredientials, WhatsappFlowDetails
+
+logger = logging.getLogger(__name__)
+
+
+def whatsapp_http_timeout():
+    """Return the bounded timeout used by every Meta Graph API request."""
+
+    try:
+        timeout = float(getattr(settings, "WHATSAPP_HTTP_TIMEOUT_SECONDS", 10))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("WHATSAPP_HTTP_TIMEOUT_SECONDS must be numeric") from exc
+    if not 1 <= timeout <= 30:
+        raise ValueError("WHATSAPP_HTTP_TIMEOUT_SECONDS must be between 1 and 30")
+    return timeout
+
+
+def whatsapp_media_max_bytes():
+    """Return the maximum in-memory size accepted for inbound Meta media."""
+
+    try:
+        limit = int(getattr(settings, "WHATSAPP_MEDIA_MAX_BYTES", 50 * 1024 * 1024))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("WHATSAPP_MEDIA_MAX_BYTES must be an integer") from exc
+    if not 1024 * 1024 <= limit <= 50 * 1024 * 1024:
+        raise ValueError("WHATSAPP_MEDIA_MAX_BYTES must be between 1 MiB and 50 MiB")
+    return limit
+
+
+def _allowed_meta_media_url(media_url):
+    """Allow only documented Meta delivery hosts; reject credentials and custom ports."""
+
+    try:
+        parsed = urlsplit(str(media_url or ""))
+        host = (parsed.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    allowed_host = (
+        host == "lookaside.fbsbx.com"
+        or host == "graph.facebook.com"
+        or host.endswith(".fbcdn.net")
+    )
+    return bool(
+        parsed.scheme == "https"
+        and allowed_host
+        and not parsed.username
+        and not parsed.password
+        and parsed.port in (None, 443)
+    )
 
 
 class CustomRequestFactory(RequestFactory):
@@ -54,15 +108,16 @@ def get_meta_url(id, service):
 
 
 def get_meta_details_from_number(number):
-    emp_company = Employee.objects.filter(phone=number).first().get_company()
+    employee = Employee.objects.filter(phone=number).first()
+    if employee is None:
+        raise ValueError("WhatsApp number is not linked to an employee in this school")
+    emp_company = employee.get_company()
     company = emp_company if emp_company else Company.objects.filter(hq=True).first()
 
     credentials = WhatsappCredientials.objects.filter(company_id=company)
-    credentials = (
-        credentials.get(is_primary=True)
-        if credentials.get(is_primary=True)
-        else credentials.first()
-    )
+    credentials = credentials.filter(is_primary=True).first() or credentials.first()
+    if credentials is None:
+        raise ValueError("WhatsApp credentials are not configured for this school")
     url = get_meta_url(credentials.meta_phone_number_id, "messages")
     data = {
         "token": credentials.meta_token,
@@ -127,7 +182,9 @@ def create_template_buttons(cred_id):
             {"type": "BUTTONS", "buttons": quick_reply_buttons},
         ],
     }
-    response = requests.post(api_url, headers=headers, json=payload)
+    response = requests.post(
+        api_url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
     if "error" in data:
         raise Exception(f"error: {data['error'].get('message')}")
@@ -163,7 +220,9 @@ def create_welcome_message(cred_id):
         ],
     }
 
-    response = requests.post(api_url, headers=headers, json=payload)
+    response = requests.post(
+        api_url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -210,7 +269,9 @@ def create_help_message(cred_id):
         ],
     }
 
-    response = requests.post(api_url, headers=headers, json=payload)
+    response = requests.post(
+        api_url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -247,7 +308,9 @@ def send_image_message(number, link):
     }
 
     api_url = data.get("url", "")
-    response = requests.post(api_url, headers=headers, json=payload)
+    response = requests.post(
+        api_url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -285,7 +348,9 @@ def send_document_message(number, link):
         },
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(
+        url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -325,7 +390,9 @@ def send_text_message(number, message, header=None):
         },
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(
+        url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -366,7 +433,9 @@ def send_template_message(number, template_name, ln_code="en_US"):
             "components": [],
         },
     }
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(
+        url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -433,7 +502,9 @@ def send_flow_message(to, template_name):
         },
     }
 
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(
+        url, headers=headers, json=payload, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if "error" in data:
@@ -872,18 +943,21 @@ def get_whatsapp_media_file(media_id, file_name, token):
         ContentFile: A Django ContentFile object containing the media data, or None if the fetch fails.
     """
 
+    media_id = str(media_id or "")
+    if not re.fullmatch(r"[0-9]{1,64}", media_id):
+        logger.warning("Rejected invalid WhatsApp media identifier")
+        return None
     url = f"https://graph.facebook.com/v24.0/{media_id}"
     headers = {"Authorization": f"Bearer {token}"}
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=whatsapp_http_timeout())
     if response.status_code == 200:
         media_data = response.json()
         media_url = media_data.get("url")
         file = download_whatsapp_media(media_url, file_name, token)
         return file
-    else:
-        print(f"Failed to fetch media: {response.text}")
-        return None
+    logger.warning("Failed to fetch WhatsApp media metadata status=%s", response.status_code)
+    return None
 
 
 def download_whatsapp_media(media_url, file_name, token):
@@ -898,18 +972,49 @@ def download_whatsapp_media(media_url, file_name, token):
         ContentFile: A Django ContentFile object containing the media data, or None if the download fails.
     """
 
-    headers = {"Authorization": f"Bearer {token}"}
-    response = requests.get(media_url, headers=headers)
-    if response.status_code == 200:
-        content_type = response.headers.get("Content-Type")
-        extension = content_type.split("/")[-1]
-        file_name = f"{file_name[:50]}.{extension}"
-        file_content = ContentFile(response.content)
-        file_content.name = file_name
-        return file_content
-    else:
-        print(f"Failed to download media: {response.status_code}")
+    if not _allowed_meta_media_url(media_url):
+        logger.warning("Rejected WhatsApp media URL outside Meta delivery hosts")
         return None
+
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(
+        media_url,
+        headers=headers,
+        timeout=whatsapp_http_timeout(),
+        stream=True,
+    )
+    if response.status_code == 200:
+        limit = whatsapp_media_max_bytes()
+        try:
+            declared_size = int(response.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            declared_size = 0
+        if declared_size > limit:
+            logger.warning("Rejected oversized WhatsApp media declared_bytes=%s", declared_size)
+            response.close()
+            return None
+
+        content = bytearray()
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            content.extend(chunk)
+            if len(content) > limit:
+                logger.warning("Rejected oversized streamed WhatsApp media")
+                response.close()
+                return None
+
+        content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0]
+        extension = mimetypes.guess_extension(content_type.strip().lower()) or ""
+        safe_stem = re.sub(r"[^0-9A-Za-z._-]+", "_", Path(str(file_name)).stem)[:50]
+        safe_name = f"{safe_stem or 'whatsapp-media'}{extension}"
+        file_content = ContentFile(bytes(content))
+        file_content.name = safe_name
+        response.close()
+        return file_content
+    logger.warning("Failed to download WhatsApp media status=%s", response.status_code)
+    response.close()
+    return None
 
 
 def create_flow(flow_name, template_name, cred_id):
@@ -932,7 +1037,9 @@ def create_flow(flow_name, template_name, cred_id):
     data = {"name": flow_name, "categories": "OTHER"}
     api_url = get_meta_url(credential.meta_business_id, "flows")
 
-    response = requests.post(api_url, json=data, headers=headers)
+    response = requests.post(
+        api_url, json=data, headers=headers, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if response.status_code not in (200, 201):
@@ -977,7 +1084,9 @@ def update_flow(flow_id, flow_json, token):
             "name": (None, "flow.json"),
             "asset_type": (None, "FLOW_JSON"),
         }
-        response = requests.post(url, headers=headers, files=files)
+        response = requests.post(
+            url, headers=headers, files=files, timeout=whatsapp_http_timeout()
+        )
 
     data = response.json()
 
@@ -1004,7 +1113,9 @@ def publish_flow(flow_id, token):
     headers = {"Authorization": f"Bearer {token}"}
     api_url = get_meta_url(flow_id, "publish")
 
-    response = requests.post(api_url, headers=headers)
+    response = requests.post(
+        api_url, headers=headers, timeout=whatsapp_http_timeout()
+    )
     data = response.json()
 
     if response.status_code not in (200, 201):

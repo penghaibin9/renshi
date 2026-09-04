@@ -24,6 +24,7 @@ from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils import timezone
 
+from base.token_security import bearer_token_digest
 from hr_staff.models import HrExportJob
 from hr_staff.services.audit_service import write_audit_event
 
@@ -174,6 +175,7 @@ class ExportService:
         writer.writerows(rows)
         csv_content = buffer.getvalue()
 
+        raw_download_token = secrets.token_urlsafe(32)
         job = HrExportJob.objects.create(
             tenant_id=self.tenant_id,
             requested_by=self.actor_user_id,
@@ -185,7 +187,9 @@ class ExportService:
             },
             total_rows=len(rows),
             status=HrExportJob.Status.PENDING,
-            download_token=secrets.token_urlsafe(32),
+            download_token=bearer_token_digest(
+                raw_download_token, namespace="hr03-export-download"
+            ),
             expires_at=timezone.now() + timedelta(seconds=expires_in_seconds),
         )
         try:
@@ -212,6 +216,9 @@ class ExportService:
             business_id=str(job.id),
             reason=f"purpose={purpose[:200]} fields={','.join(allowed_fields)[:200]}",
         )
+        # The raw bearer token exists only in this response path; the database
+        # retains its one-way digest so a database leak cannot redeem exports.
+        job.issued_download_token = raw_download_token
         return job
 
     def consume_download(self, job_id, token: str) -> dict:
@@ -228,7 +235,12 @@ class ExportService:
                 raise ExportJobNotFound("EXPORT_NOT_FOUND")
             if job.requested_by is not None and job.requested_by != self.actor_user_id:
                 raise ExportPolicyDenied("导出任务只允许申请人下载")
-            if not token or not secrets.compare_digest(job.download_token or "", token):
+            supplied_digest = bearer_token_digest(
+                token, namespace="hr03-export-download"
+            )
+            if not token or not secrets.compare_digest(
+                job.download_token or "", supplied_digest
+            ):
                 raise ExportPolicyDenied("下载票据无效")
             if job.expires_at is None or timezone.now() > job.expires_at:
                 job.status = HrExportJob.Status.EXPIRED

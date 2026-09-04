@@ -279,7 +279,7 @@ class ProbationService:
     # ------------------------------------------------------------------
     def due_in_days(self, *, as_of: Optional[date] = None, within_days: int = 30):
         """planned_end_date 在 within_days 内到期的进行中试用（REVIEW_DUE 候选）。"""
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return HrProbationCase.objects.filter(
             tenant_id=self.tenant_id,
             status__in=(

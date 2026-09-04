@@ -98,6 +98,7 @@
 
 .hr02-toolbar input,
 .hr02-form input,
+.hr02-form select,
 .hr02-page .hr-search-input {
   width: 100%;
   min-height: 38px;
@@ -111,9 +112,65 @@
 
 .hr02-toolbar input:focus,
 .hr02-form input:focus,
+.hr02-form select:focus,
 .hr02-page .hr-search-input:focus {
   border-color: var(--hr02-accent);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, .08);
+}
+
+.hr02-editor {
+  margin-bottom: var(--hr-space-4);
+  border: 1px solid var(--hr-v2-line);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+}
+
+.hr02-editor > summary {
+  padding: 12px 14px;
+  color: var(--hr-v2-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hr02-editor[open] > summary {
+  border-bottom: 1px solid var(--hr-v2-line);
+}
+
+.hr02-editor > .hr02-form {
+  padding: var(--hr-space-4);
+}
+
+.hr02-check {
+  display: flex !important;
+  min-height: 38px;
+  align-items: center;
+  grid-auto-flow: column;
+  justify-content: start;
+}
+
+.hr02-check input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.hr02-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hr02-pager {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hr-space-3);
+  margin-top: var(--hr-space-3);
+  color: var(--hr-v2-muted);
+  font-size: 12px;
+}
+
+.hr02-pager:not([hidden]) {
+  display: flex;
 }
 
 .hr02-form {

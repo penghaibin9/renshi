@@ -390,6 +390,13 @@ class HiringService:
             status="PUBLISHED",
         )
 
+        from hr_external.services.access_service import AccessService
+
+        AccessService().provision_engagement_access(
+            tenant_id=case.tenant_id,
+            engagement=eng,
+        )
+
         self._transition(case, ExternalHiringStatus.ACTIVATED)
         return eng
 

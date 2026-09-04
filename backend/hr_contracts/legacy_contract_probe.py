@@ -22,6 +22,13 @@ LEGACY_CONTRACT_FIELD_MAP = {
 }
 
 
+def _legacy_contract_model():
+    """Resolve the retired payroll model only when a recovery probe is used."""
+    from payroll.models.models import Contract
+
+    return Contract
+
+
 class LegacyContractProbe:
     """只读盘点 payroll.Contract，所有查询显式 tenant scope。"""
 
@@ -31,8 +38,7 @@ class LegacyContractProbe:
         self.tenant_id = tenant_id
 
     def inventory(self) -> dict:
-        from payroll.models.models import Contract
-
+        Contract = _legacy_contract_model()
         scoped = Contract.objects.filter(
             employee_id__employee_work_info__company_id_id=self.tenant_id
         )
@@ -49,8 +55,7 @@ class LegacyContractProbe:
 
     def list_snapshots(self, *, limit: int = 200) -> list[dict]:
         """返回恢复核验需要的最小字段，不包含 wage/pay-frequency 等薪酬 Authority。"""
-        from payroll.models.models import Contract
-
+        Contract = _legacy_contract_model()
         safe_limit = max(1, min(int(limit), 1000))
         rows = Contract.objects.filter(
             employee_id__employee_work_info__company_id_id=self.tenant_id

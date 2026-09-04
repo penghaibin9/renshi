@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from django.utils import timezone
+
 from hr_changes.api.labels import action_label, source_assignment_policy_label
 from hr_changes.models import HrTemporaryAssignmentLink
 
@@ -17,7 +19,7 @@ class TemporarySelector:
         self.tenant_id = tenant_id
 
     def stats(self, as_of: date | None = None) -> dict:
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         horizon = as_of + timedelta(days=30)
         qs = HrTemporaryAssignmentLink.objects.filter(tenant_id=self.tenant_id)
         return {
@@ -35,7 +37,7 @@ class TemporarySelector:
         }
 
     def list(self, *, status: str = "", as_of: date | None = None) -> dict:
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         qs = (
             HrTemporaryAssignmentLink.objects.filter(tenant_id=self.tenant_id)
             .select_related(

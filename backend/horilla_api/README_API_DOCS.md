@@ -1,6 +1,6 @@
-# Horilla API Documentation
+# 高校人事系统 API 文档
 
-This document provides information on how to use and maintain the API documentation for Horilla HRMS.
+本文说明如何使用和维护高校人事系统的 API 文档。
 
 ## Accessing API Documentation
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_GET, require_POST
 
 from hr_external.api.base import (
     api_root,
@@ -75,7 +76,7 @@ _WORKLOAD_SOURCE_LABELS = {
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
@@ -124,6 +125,7 @@ def task_collection(request):
     return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET 或 POST", 405)
 
 
+@require_GET
 @require_hr_external_permission("hr08.task.view")
 def task_list(request):
     ctx, err = _ctx(request)
@@ -141,6 +143,7 @@ def task_list(request):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.task.manage")
 def task_create(request):
     ctx, err = _ctx(request)
@@ -184,6 +187,7 @@ def task_create(request):
     return json_response(request, body, status=201)
 
 
+@require_GET
 @require_hr_external_permission("hr08.task.view")
 def task_detail(request, task_id):
     ctx, err = _ctx(request)
@@ -207,7 +211,8 @@ def _get_task(request, task_id):
     return ctx, t, None
 
 
-@require_hr_external_permission("hr08.task.view")
+@require_POST
+@require_hr_external_permission("hr08.task.manage")
 def task_accept(request, task_id):
     """POST /tasks/{id}/accept  body: {action: ACCEPT|REQUEST_CLARIFICATION|DECLINE_WITH_REASON, reason?}"""
     ctx, t, err = _get_task(request, task_id)
@@ -230,7 +235,8 @@ def task_accept(request, task_id):
     return json_response(request, body)
 
 
-@require_hr_external_permission("hr08.task.view")
+@require_POST
+@require_hr_external_permission("hr08.task.manage")
 def task_start(request, task_id):
     ctx, t, err = _get_task(request, task_id)
     if err:
@@ -244,7 +250,8 @@ def task_start(request, task_id):
     return json_response(request, body)
 
 
-@require_hr_external_permission("hr08.task.view")
+@require_POST
+@require_hr_external_permission("hr08.task.manage")
 def task_submit(request, task_id):
     ctx, t, err = _get_task(request, task_id)
     if err:
@@ -258,6 +265,7 @@ def task_submit(request, task_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.task.verify")
 def task_verify(request, task_id):
     """POST /tasks/{id}/verify  body: {action: COMPLETE|REJECT}"""
@@ -289,6 +297,7 @@ def task_verify(request, task_id):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.task.view")
 def workload_list(request):
     ctx, err = _ctx(request)
@@ -320,6 +329,7 @@ def workload_list(request):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.workload.verify")
 def workload_verify(request):
     """POST /api/hr/v1/external-teachers/workload/verify
@@ -361,6 +371,7 @@ def workload_verify(request):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.workload.verify")
 def settlement_create(request, engagement_id):
     """POST /api/hr/v1/external-teachers/engagements/{id}/settlement
@@ -375,18 +386,23 @@ def settlement_create(request, engagement_id):
         return error_response(request, "EXTERNAL_ENGAGEMENT_NOT_FOUND", "聘期不存在", 404)
     try:
         payload = json.loads(request.body or b"{}")
+        if not isinstance(payload, dict):
+            raise ValueError("请求体必须是 JSON 对象")
         period = payload.get("period") or ""
-    except json.JSONDecodeError:
-        return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON", 400)
+    except (json.JSONDecodeError, ValueError):
+        return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON 对象", 400)
     if not period:
         return error_response(request, "INVALID_REQUEST", "period 必填", 400)
 
-    basis = TaskService().build_settlement_basis(
-        tenant_id=ctx.tenant_id,
-        engagement_id=eng.id,
-        period=period,
-        policy_ref=payload.get("policyRef") or "",
-    )
+    try:
+        basis = TaskService().build_settlement_basis(
+            tenant_id=ctx.tenant_id,
+            engagement_id=eng.id,
+            period=period,
+            policy_ref=payload.get("policyRef") or "",
+        )
+    except ValueError as exc:
+        return error_response(request, "INVALID_REQUEST", str(exc), 400)
     body = api_root(request)
     body["data"] = {
         "id": str(basis.id),
@@ -395,6 +411,10 @@ def settlement_create(request, engagement_id):
         "eligibleItems": basis.eligible_items,
         "status": basis.status,
         "statusLabel": settlement_status_label(basis.status),
-        "note": "HR15/财务负责实际金额（§138.9）",
+        "note": (
+            "结算依据已由 HR15 锁定接收，实际金额由薪酬规则计算"
+            if basis.status == "LOCKED"
+            else "结算依据待 HR15 接收，尚未进入金额计算"
+        ),
     }
     return json_response(request, body)

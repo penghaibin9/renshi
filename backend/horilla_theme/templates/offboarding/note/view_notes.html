@@ -81,7 +81,8 @@
 	{% if request.user.employee_get == shift_request.employee_id or perms.base.add_shiftrequestcomment or request.user|is_reportingmanager %}
 		<form
 			hx-target="#commentContainer"
-			hx-post="{% url 'add-offboarding-note' %}?employee_id={{ employee.id }}"
+			hx-post="{% url 'add-offboarding-note' %}"
+			hx-vals='{"employee_id":"{{ employee.id }}"}'
 			id="commentForm"
 		>
 			{% csrf_token %}
@@ -158,7 +159,8 @@
 									<img
 										src="{% static 'images/ui/minus-icon.png' %}"
 										style="display: block; width: 50%; height: 50%"
-										hx-get="{% url 'delete-note-attachment' %}?ids={{ file.id }}&employee_id={{ employee.id }}"
+										hx-post="{% url 'delete-note-attachment' %}"
+										hx-vals='{"ids":"{{ file.id }}","employee_id":"{{ employee.id }}","note_id":"{{ comment.id }}"}'
 										hx-target="#noteFileItem{{file.id}}"
 										hx-swap="delete"
 										onclick="event.stopPropagation();event.preventDefault()"
@@ -169,7 +171,8 @@
 					{% endfor %}
 
                     <form
-                        hx-post="{% url 'view-offboarding-note' employee.id %}?note_id={{ comment.id }}"
+                        hx-post="{% url 'view-offboarding-note' employee.id %}"
+                        hx-vals='{"note_id":"{{ comment.id }}"}'
                         class="add-files-form"
                         hx-encoding="multipart/form-data"
                         hx-swap="innerHTML"

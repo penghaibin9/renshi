@@ -61,7 +61,9 @@
                         </div>
                         <div class="oh-sticky-table__td">
                             <a
-                                href="{% url 'approve-overtime' attendance.id %}"
+                                href="#"
+                                hx-post="{% url 'approve-overtime' attendance.id %}"
+                                hx-swap="none"
                                 onclick="event.stopPropagation()"
                                 class="oh-btn oh-btn oh-btn--success w-100"
                                 title="{% trans 'Approve Overtime' %}"

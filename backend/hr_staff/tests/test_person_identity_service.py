@@ -101,6 +101,4 @@ class PersonIdentityServiceTests(TestCase):
 
 
 def document_fingerprint_of(tenant_id):
-    from hr_staff.services.crypto import document_fingerprint
-
     return document_fingerprint(tenant_id, normalize_document_number(ID_NO))

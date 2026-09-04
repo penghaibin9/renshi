@@ -18,7 +18,9 @@ import json
 import uuid
 from datetime import date
 
+from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_GET, require_POST
 
 from hr_external.api.base import (
     api_root,
@@ -63,7 +65,7 @@ from hr_external.services.hiring_service import (
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
@@ -100,6 +102,7 @@ def hiring_collection(request):
     return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET 或 POST", 405)
 
 
+@require_GET
 @require_hr_external_permission("hr08.hiring.review")
 def hiring_list(request):
     ctx, err = _ctx(request)
@@ -117,6 +120,7 @@ def hiring_list(request):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.hiring.create")
 def hiring_create(request):
     ctx, err = _ctx(request)
@@ -165,7 +169,7 @@ def hiring_create(request):
         organization_evidence = get_organization_evidence(
             tenant_id=ctx.tenant_id,
             organization_ids=[request_org_id],
-            as_of=requested_start or date.today(),
+            as_of=requested_start or timezone.localdate(),
         )
     except OrganizationEvidenceUnavailable as exc:
         return error_response(request, exc.code, str(exc), 409)
@@ -205,6 +209,7 @@ def hiring_create(request):
     return json_response(request, body, status=201)
 
 
+@require_GET
 @require_hr_external_permission("hr08.hiring.review")
 def hiring_detail(request, case_id):
     ctx, err = _ctx(request)
@@ -249,7 +254,8 @@ def _get_case(request, case_id):
     return ctx, case, None
 
 
-@require_hr_external_permission("hr08.hiring.review")
+@require_POST
+@require_hr_external_permission("hr08.hiring.create")
 def hiring_validate(request, case_id):
     ctx, case, err = _get_case(request, case_id)
     if err:
@@ -271,7 +277,8 @@ def hiring_validate(request, case_id):
     return json_response(request, body)
 
 
-@require_hr_external_permission("hr08.hiring.review")
+@require_POST
+@require_hr_external_permission("hr08.hiring.create")
 def hiring_submit(request, case_id):
     ctx, case, err = _get_case(request, case_id)
     if err:
@@ -289,6 +296,7 @@ def hiring_submit(request, case_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.hiring.review")
 def hiring_return(request, case_id):
     ctx, case, err = _get_case(request, case_id)
@@ -303,6 +311,7 @@ def hiring_return(request, case_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.hiring.approve")
 def hiring_approve(request, case_id):
     """按当前状态推进审批层级：学院→HR→学校。学校批准执行审批前检查（§35）。"""
@@ -334,6 +343,7 @@ def hiring_approve(request, case_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.hiring.activate")
 def hiring_activate(request, case_id):
     ctx, case, err = _get_case(request, case_id)

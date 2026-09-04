@@ -186,6 +186,7 @@ def task_delete_permission(function=None, *args, **kwargs):
 
         if (
             request.user.is_superuser
+            or request.user.has_perm("project.delete_task")
             or request.user.employee_get in task.task_managers.all()
             or request.user.employee_get in project.managers.all()
         ):

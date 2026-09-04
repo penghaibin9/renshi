@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 
 from hr_external.context import (
@@ -63,7 +64,7 @@ def error_response(request, code: str, message: str, status: int, details=None) 
     return json_response(request, body, status=status)
 
 
-def make_external_context(request, *, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"):
+def make_external_context(request, *, authority_mode=None):
     """
     从请求构造 HrExternalRequestContext（服务端重新验证 tenant/scope，不信任前端参数）。
     tenant 缺失 → HrExternalContextError(TENANT_CONTEXT_REQUIRED)。
@@ -76,6 +77,17 @@ def make_external_context(request, *, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY")
         raise HrExternalContextError(
             "TENANT_CONTEXT_REQUIRED", "请选择当前学校（多学校账号需明确学校上下文）"
         )
+
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        raise HrExternalContextError("UNAUTHENTICATED", "请先登录")
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        if tenant_id not in (get_allowed_company_ids(user) or ()):
+            raise HrExternalContextError(
+                "TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校数据"
+            )
 
     scope_type = request.GET.get("scope_type", "SCHOOL")
     scope_org_id = request.GET.get("scope_id")
@@ -96,10 +108,15 @@ def make_external_context(request, *, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY")
 
     scope_engagement_ids = request.GET.getlist("engagement_ids")
 
+    if authority_mode is None:
+        from hr_external.services.authority_service import AuthorityService
+
+        authority_mode = AuthorityService.get_mode(tenant_id)
+
     return build_external_context(
         tenant_id=tenant_id,
-        school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
-        user_id=request.user.id,
+        school_timezone=settings.TIME_ZONE,
+        user_id=user.id,
         as_of=request.GET.get("as_of"),
         scope_type=scope_type,
         scope_org_id=scope_org_id,

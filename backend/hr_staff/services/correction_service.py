@@ -135,7 +135,7 @@ class CorrectionService:
         # COR-YYYYMMDD-NNNN；幂等：事务内用 max 前缀
         import datetime
 
-        prefix = f"COR-{datetime.date.today().strftime('%Y%m%d')}"
+        prefix = f"COR-{timezone.localdate().strftime('%Y%m%d')}"
         last = (
             HrCorrectionCase.objects.filter(tenant_id=self.tenant_id, case_no__startswith=prefix)
             .order_by("-case_no")

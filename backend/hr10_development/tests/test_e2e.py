@@ -28,6 +28,7 @@ from hr10_development.models.plan import HrDevelopmentPlan
 from hr10_development.models.learning_program import HrLearningProgram
 from hr10_development.models.offering import HrLearningOffering
 from hr10_development.models.enrollment import HrLearningEnrollment
+from hr_staff.models import HrPerson, HrStaffMaster
 from hr10_development.services.plan_service import PlanService
 from hr10_development.services.offering_service import OfferingService
 from hr10_development.services.budget_service import BudgetService
@@ -87,8 +88,20 @@ class EnrollmentE2ETest(TestCase):
         self.offering = HrLearningOffering.objects.create(
             tenant_id=self.TENANT_ID, program_version_id=1, offering_no="E2E-OFF-001",
             delivery_mode="ONSITE", capacity=2, waitlist_capacity=1,
+            lifecycle_status=OfferingStatus.OPEN,
             start_at=starts_at, end_at=starts_at + timedelta(hours=2),
         )
+        for legacy_employee_id in (100, 200, 300):
+            person = HrPerson.objects.create(
+                tenant_id=self.TENANT_ID,
+                legal_name=f"报名测试教师 {legacy_employee_id}",
+            )
+            HrStaffMaster.objects.create(
+                tenant_id=self.TENANT_ID,
+                person_id=person,
+                staff_no=f"E2E-{legacy_employee_id}",
+                legacy_employee_id=legacy_employee_id,
+            )
 
     def test_enroll_then_cancel_promotes_waitlist(self):
         """报名 → 取消 → 候补转正。"""
@@ -113,6 +126,13 @@ class EnrollmentE2ETest(TestCase):
         EnrollmentService.cancel_enrollment(e1, self.offering)
         e3.refresh_from_db()
         self.assertEqual(e3.enrollment_status, EnrollmentStatus.CONFIRMED)
+
+        # 网络重试不得再次释放正式名额或重复转正。
+        self.offering.refresh_from_db()
+        capacity_after_cancel = self.offering.capacity
+        EnrollmentService.cancel_enrollment(e1, self.offering)
+        self.offering.refresh_from_db()
+        self.assertEqual(self.offering.capacity, capacity_after_cancel)
 
 
 class BudgetE2ETest(TestCase):

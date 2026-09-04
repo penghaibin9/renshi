@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -121,6 +122,49 @@ class _AppendOnlyQuerySet(models.QuerySet):
         raise ValidationError("Contract correction/void receipts are append-only.")
 
 
+class _ContractDocumentQuerySet(models.QuerySet):
+    _IMMUTABLE_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "agreement",
+            "agreement_id",
+            "document_type",
+            "file_path",
+            "file_name",
+            "mime_type",
+            "size_bytes",
+            "sha256",
+        }
+    )
+
+    def update(self, **kwargs):
+        if self._IMMUTABLE_FIELDS.intersection(kwargs):
+            raise ValidationError("Stored contract document evidence is immutable.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        raise ValidationError("Stored contract document evidence cannot be deleted.")
+
+
+class _DownloadTicketQuerySet(models.QuerySet):
+    _IMMUTABLE_FIELDS = frozenset(
+        {
+            "tenant_id",
+            "document",
+            "document_id",
+            "token_hash",
+            "purpose",
+            "expires_at",
+            "created_by",
+        }
+    )
+
+    def update(self, **kwargs):
+        if self._IMMUTABLE_FIELDS.intersection(kwargs):
+            raise ValidationError("Contract download ticket authority is immutable.")
+        return super().update(**kwargs)
+
+
 class _ImmutablePolicyQuerySet(models.QuerySet):
     def update(self, **kwargs):
         if set(kwargs) != {"active"}:
@@ -137,6 +181,104 @@ class _ImmutablePolicyQuerySet(models.QuerySet):
 
     def bulk_create(self, objs, *args, **kwargs):
         raise ValidationError("Expiry policies must be published individually.")
+
+
+class HrContractTemplateVersion(HrTenantScopedModel):
+    """Immutable, tenant-scoped contract template and rule snapshot.
+
+    HR07 agreements keep their own signed content snapshot.  A template is an
+    authority used while preparing the document; publishing a new version
+    never rewrites an agreement that has already been signed.
+    """
+
+    class Status(models.TextChoices):
+        PUBLISHED = "PUBLISHED", "Published"
+        RETIRED = "RETIRED", "Retired"
+
+    template_code = models.CharField(max_length=64)
+    template_name = models.CharField(max_length=160)
+    agreement_type = models.CharField(max_length=50)
+    version_no = models.PositiveIntegerField()
+    body_template = models.TextField()
+    numbering_rule_json = models.JSONField(default=dict)
+    term_rule_json = models.JSONField(default=dict)
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=Status.choices,
+        default=Status.PUBLISHED,
+        db_index=True,
+    )
+    content_hash = models.CharField(max_length=64, editable=False)
+    published_at = models.DateTimeField(default=timezone.now)
+    published_by = models.PositiveBigIntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "hr07_contract_template_version"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "template_code", "version_no"),
+                name="uq_hr07_tpl_code_version",
+            ),
+            models.CheckConstraint(
+                condition=Q(effective_to__isnull=True)
+                | Q(effective_to__gt=models.F("effective_from")),
+                name="ck_hr07_tpl_date_range",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "template_code", "status"),
+                name="idx_hr07_tpl_current",
+            ),
+            models.Index(
+                fields=("tenant_id", "agreement_type", "effective_from"),
+                name="idx_hr07_tpl_type_date",
+            ),
+        ]
+
+    def authority_payload(self) -> dict:
+        return {
+            "tenantId": self.tenant_id,
+            "templateCode": self.template_code,
+            "templateName": self.template_name,
+            "agreementType": self.agreement_type,
+            "versionNo": self.version_no,
+            "bodyTemplate": self.body_template,
+            "numberingRule": self.numbering_rule_json,
+            "termRule": self.term_rule_json,
+            "effectiveFrom": self.effective_from.isoformat(),
+            "effectiveTo": self.effective_to.isoformat() if self.effective_to else None,
+        }
+
+    def expected_content_hash(self) -> str:
+        encoded = json.dumps(
+            self.authority_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self).objects.filter(pk=self.pk).values(
+                "status", "content_hash"
+            ).first()
+            if persisted:
+                update_fields = set(kwargs.get("update_fields") or ())
+                allowed = {"status", "effective_to", "updated_by", "updated_at"}
+                if not update_fields or not update_fields.issubset(allowed):
+                    raise ValidationError(
+                        "Published contract templates are immutable; publish a new version."
+                    )
+                return super().save(*args, **kwargs)
+        self.content_hash = self.expected_content_hash()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Published contract templates cannot be deleted.")
 
 
 class HrContractAgreement(HrTenantScopedModel):
@@ -397,6 +539,180 @@ class HrContractVersion(HrTenantScopedModel):
         if self.status != self.Status.DRAFT:
             raise ValidationError("Signed contract versions cannot be deleted.")
         return super().delete(*args, **kwargs)
+
+
+class HrAgreementDocument(HrTenantScopedModel):
+    """Tenant-private contract evidence served only by one-time tickets."""
+
+    class DocumentType(models.TextChoices):
+        SIGNED_CONTRACT = "SIGNED_CONTRACT", "Signed contract"
+        SIGNATURE_RECEIPT = "SIGNATURE_RECEIPT", "Signature receipt"
+        ATTACHMENT = "ATTACHMENT", "Attachment"
+
+    class SignatureStatus(models.TextChoices):
+        NOT_APPLICABLE = "NOT_APPLICABLE", "Not applicable"
+        PENDING = "PENDING", "Pending"
+        SIGNED = "SIGNED", "Signed"
+
+    agreement = models.ForeignKey(
+        HrContractAgreement,
+        on_delete=models.PROTECT,
+        related_name="documents",
+    )
+    version = models.ForeignKey(
+        HrContractVersion,
+        on_delete=models.PROTECT,
+        related_name="documents",
+        null=True,
+        blank=True,
+    )
+    document_type = models.CharField(max_length=32, choices=DocumentType.choices)
+    signature_status = models.CharField(
+        max_length=24,
+        choices=SignatureStatus.choices,
+        default=SignatureStatus.NOT_APPLICABLE,
+    )
+    file_path = models.CharField(max_length=255, unique=True)
+    file_name = models.CharField(max_length=255)
+    mime_type = models.CharField(max_length=100, default="application/pdf")
+    size_bytes = models.PositiveBigIntegerField()
+    sha256 = models.CharField(max_length=64)
+
+    objects = models.Manager.from_queryset(_ContractDocumentQuerySet)()
+
+    _IMMUTABLE_FIELDS = _ContractDocumentQuerySet._IMMUTABLE_FIELDS - {"agreement"}
+
+    class Meta:
+        db_table = "hr07_agreement_document"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "agreement", "created_at"),
+                name="idx_hr07_doc_agree",
+            ),
+            models.Index(
+                fields=("tenant_id", "version"),
+                name="idx_hr07_doc_version",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.agreement_id and self.agreement.tenant_id != self.tenant_id:
+            raise ValidationError("Document and agreement tenants must match.")
+        if self.version_id:
+            if self.version.tenant_id != self.tenant_id:
+                raise ValidationError("Document and version tenants must match.")
+            if self.version.agreement_id != self.agreement_id:
+                raise ValidationError("Document version must belong to its agreement.")
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        fields_to_check = self._IMMUTABLE_FIELDS
+        if update_fields is not None:
+            fields_to_check = fields_to_check.intersection(update_fields)
+        if not self._state.adding and fields_to_check:
+            persisted = type(self).objects.filter(pk=self.pk).values(
+                *sorted(fields_to_check)
+            ).first()
+            changed = [
+                field
+                for field in sorted(fields_to_check)
+                if persisted and persisted[field] != getattr(self, field)
+            ]
+            if changed:
+                raise ValidationError(
+                    {field: "Stored contract document evidence is immutable." for field in changed}
+                )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Stored contract document evidence cannot be deleted.")
+
+
+class HrContractDownloadTicket(HrTenantScopedModel):
+    """Durable single-use contract download authorization."""
+
+    document = models.ForeignKey(
+        HrAgreementDocument,
+        on_delete=models.PROTECT,
+        related_name="download_tickets",
+    )
+    token_hash = models.CharField(max_length=64, unique=True)
+    purpose = models.CharField(max_length=300)
+    expires_at = models.DateTimeField(db_index=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    objects = models.Manager.from_queryset(_DownloadTicketQuerySet)()
+
+    _IMMUTABLE_FIELDS = _DownloadTicketQuerySet._IMMUTABLE_FIELDS - {"document"}
+
+    class Meta:
+        db_table = "hr07_contract_download_ticket"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "document", "expires_at"),
+                name="idx_hr07_ticket_doc",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        fields_to_check = self._IMMUTABLE_FIELDS
+        if update_fields is not None:
+            fields_to_check = fields_to_check.intersection(update_fields)
+        if not self._state.adding and fields_to_check:
+            persisted = type(self).objects.filter(pk=self.pk).values(
+                *sorted(fields_to_check)
+            ).first()
+            changed = [
+                field
+                for field in sorted(fields_to_check)
+                if persisted and persisted[field] != getattr(self, field)
+            ]
+            if changed:
+                raise ValidationError(
+                    {field: "Contract download ticket authority is immutable." for field in changed}
+                )
+        return super().save(*args, **kwargs)
+
+
+class HrContractAuditEvent(models.Model):
+    """Append-only HR07 business and sensitive-access audit event."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.PositiveBigIntegerField(db_index=True)
+    action = models.CharField(max_length=64, db_index=True)
+    object_type = models.CharField(max_length=64)
+    object_id = models.CharField(max_length=128)
+    actor_id = models.PositiveBigIntegerField(null=True, blank=True)
+    purpose = models.CharField(max_length=300, blank=True, default="")
+    before_json = models.JSONField(default=dict, blank=True)
+    after_json = models.JSONField(default=dict, blank=True)
+    request_id = models.CharField(max_length=128, blank=True, default="")
+    occurred_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    objects = models.Manager.from_queryset(_AppendOnlyQuerySet)()
+
+    class Meta:
+        db_table = "hr07_contract_audit_event"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "object_type", "object_id"),
+                name="idx_hr07_audit_object",
+            ),
+            models.Index(
+                fields=("tenant_id", "occurred_at"),
+                name="idx_hr07_audit_time",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Contract audit events are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Contract audit events are append-only.")
 
 
 class HrContractVersionAction(HrTenantScopedModel):

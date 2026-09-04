@@ -11,9 +11,10 @@
 <div class="oh-modal__dialog-body">
     <form
         class="oh-profile-section"
-        hx-post="{% url 'edit-allowed-ip' %}?id={{id}}"
+        hx-post="{% url 'edit-allowed-ip' %}"
         hx-target="#objectDetailsModalW25Target"
     >
+        <input type="hidden" name="id" value="{{id}}">
         {{ form.as_p }}
         <div class="oh-modal__dialog-footer p-0 mt-3">
             <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">

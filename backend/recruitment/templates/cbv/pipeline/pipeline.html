@@ -104,11 +104,19 @@
         		confirmButtonColor: "#d33",
         		cancelButtonColor: "#6c757d",
         		confirmButtonText: i18nMessages.confirm,
-        	}).then((result) => {
-        		if (result.isConfirmed) {
-        			window.location.href = url;
-        		}
-        	});
+		}).then((result) => {
+			if (result.isConfirmed) {
+				$.ajax({
+					type: "POST",
+					url: url,
+					data: {csrfmiddlewaretoken: getCSRFToken()},
+					success: function () {
+						$("#applyFilter").click();
+						$("#reloadMessagesButton").click();
+					},
+				});
+			}
+		});
         }
 
         function getCSRFToken() {

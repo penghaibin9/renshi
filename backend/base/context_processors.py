@@ -29,11 +29,11 @@ class AllCompany:
     """
 
     class Urls:
-        url = "https://ui-avatars.com/api/?name=All+Company&background=random"
+        url = f"{settings.STATIC_URL.rstrip('/')}/images/ui/university-seal.jpg"
 
-    company = "All Company"
+    company = "所有学校"
     icon = Urls()
-    text = "All companies"
+    text = "所有学校"
     id = None
 
 
@@ -41,11 +41,11 @@ class AllMyCompanies(AllCompany):
     """Non-superuser combined view over assignment companies only."""
 
     class Urls:
-        url = "https://ui-avatars.com/api/?name=All+My+Companies&background=random"
+        url = f"{settings.STATIC_URL.rstrip('/')}/images/ui/university-seal.jpg"
 
-    company = "All my companies"
+    company = "我管理的学校"
     icon = Urls()
-    text = "All my companies"
+    text = "我管理的学校"
 
 
 def get_companies(request):
@@ -79,7 +79,7 @@ def get_companies(request):
         companies = [
             [
                 "all",
-                "All my companies",
+                "我管理的学校",
                 "https://ui-avatars.com/api/?name=All+My+Companies&background=random",
                 False,
             ],
@@ -88,7 +88,7 @@ def get_companies(request):
         companies = [
             [
                 "all",
-                "All Company",
+                "所有学校",
                 "https://ui-avatars.com/api/?name=All+Company&background=random",
                 False,
             ],
@@ -175,11 +175,11 @@ def update_selected_company(request):
     )
 
     if company_id == "all":
-        text = "All my companies" if scoped_all else "All companies"
+        text = "我管理的学校" if scoped_all else "所有学校"
     elif company_id == user_company:
-        text = "My Company"
+        text = "当前学校"
     else:
-        text = "Other Company"
+        text = "其他学校"
 
     company = {
         "company": company.company,
@@ -214,12 +214,14 @@ def white_labelling_company(request):
             company = hq
 
         return {
-            "white_label_company_name": company.company if company else "Horilla",
+            "white_label_company_name": (
+                company.company if company else "高校人事一体化平台"
+            ),
             "white_label_company": company,
         }
     else:
         return {
-            "white_label_company_name": "Horilla",
+            "white_label_company_name": "高校人事一体化平台",
             "white_label_company": None,
         }
 
@@ -231,7 +233,11 @@ def doc_base_url(request):
     white-labelled deployments.
     """
     return {
-        "DOC_BASE_URL": getattr(settings, "DOC_BASE_URL", "https://www.horilla.com")
+        "DOC_BASE_URL": getattr(
+            settings,
+            "DOC_BASE_URL",
+            "https://github.com/penghaibin9/renshi/tree/main/docs",
+        )
     }
 
 

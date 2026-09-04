@@ -4,6 +4,7 @@ Every object is resolved inside the server-selected school before a domain
 service is called. State-changing endpoints keep Django CSRF protection.
 """
 
+import json
 import uuid
 
 from django.http import HttpRequest, JsonResponse
@@ -23,7 +24,7 @@ from hr_qualification.models import (
     HrDoubleTeacherScoreSheet,
     HrQualificationRiskCase,
 )
-from hr_qualification.services.recheck_service import RecheckService
+from hr_qualification.services.recheck_service import RecheckError, RecheckService
 from hr_qualification.services.final_decision_authority_service import (
     FINAL_DECISION_CORRECT_PERMISSION,
     FINAL_DECISION_REVOKE_PERMISSION,
@@ -33,7 +34,7 @@ from hr_qualification.services.final_decision_authority_service import (
     final_decision_evidence,
 )
 from hr_qualification.services.review_service import ReviewError, ReviewService
-from hr_qualification.services.risk_service import RiskService
+from hr_qualification.services.risk_service import RiskError, RiskService
 
 
 FORMAL_REVIEW = "hr.qualification.application.formal_review"
@@ -44,6 +45,13 @@ RECOGNITION_VIEW = "hr.qualification.recognition.view"
 RECOGNITION_RECHECK = "hr.qualification.recognition.recheck"
 RISK_VIEW = "hr.qualification.risk.view"
 RISK_MANAGE = "hr.qualification.risk.manage"
+
+
+def _json_object(request):
+    body = json.loads(request.body or b"{}")
+    if not isinstance(body, dict):
+        raise ValueError("request body must be a JSON object")
+    return body
 
 
 def _application_or_none(app_id, tenant_id):
@@ -85,14 +93,14 @@ def application_formal_review(request: HttpRequest, app_id: str) -> JsonResponse
     if app is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Application not found"), status=404)
     try:
-        import json
-
-        body = json.loads(request.body) if request.body else {}
+        body = _json_object(request)
         decision = body.get("decision", "ELIGIBLE")
         app = ReviewService.formal_review(app, decision, body.get("remarks", ""))
         return JsonResponse(envelope({"id": str(app.id), "status": app.status}))
-    except ReviewError as e:
-        return JsonResponse(error_envelope("REVIEW_ERROR", str(e)), status=400)
+    except (TypeError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except ReviewError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @require_http_methods(["POST"])
@@ -104,8 +112,8 @@ def application_return(request: HttpRequest, app_id: str) -> JsonResponse:
     try:
         app = ReviewService.formal_review(app, ApplicationStatus.RETURNED)
         return JsonResponse(envelope({"id": str(app.id), "status": app.status}))
-    except ReviewError as e:
-        return JsonResponse(error_envelope("REVIEW_ERROR", str(e)), status=400)
+    except ReviewError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @require_http_methods(["POST"])
@@ -117,8 +125,8 @@ def application_mark_eligible(request: HttpRequest, app_id: str) -> JsonResponse
     try:
         app = ReviewService.formal_review(app, ApplicationStatus.ELIGIBLE)
         return JsonResponse(envelope({"id": str(app.id), "status": app.status}))
-    except ReviewError as e:
-        return JsonResponse(error_envelope("REVIEW_ERROR", str(e)), status=400)
+    except ReviewError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @require_http_methods(["POST"])
@@ -135,14 +143,16 @@ def score_sheet_submit(request: HttpRequest, sheet_id: str) -> JsonResponse:
     if sheet is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Score sheet not found"), status=404)
     try:
-        import json
-
-        body = json.loads(request.body) if request.body else {}
+        body = _json_object(request)
+        if not isinstance(body.get("scores_json", {}), dict):
+            raise ValueError("scores_json must be a JSON object")
         sheet = ReviewService.submit_score(sheet.id, body.get("scores_json", {}))
         return JsonResponse(envelope({"id": str(sheet.id), "status": sheet.status}))
-    except ReviewError as e:
+    except (TypeError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except ReviewError as exc:
         return JsonResponse(
-            error_envelope("SCORE_SHEET_ALREADY_LOCKED", str(e)), status=409
+            error_envelope(exc.code, str(exc)), status=409
         )
 
 
@@ -150,9 +160,7 @@ def score_sheet_submit(request: HttpRequest, sheet_id: str) -> JsonResponse:
 @api_guard(PANEL_MANAGE)
 def panel_decision_create(request: HttpRequest) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body)
+        body = _json_object(request)
         application = _application_or_none(
             body["application_id"], request.hr09_tenant_id
         )
@@ -179,19 +187,22 @@ def panel_decision_create(request: HttpRequest) -> JsonResponse:
         return JsonResponse(
             envelope({"id": str(pd.id), "decision": pd.decision}), status=201
         )
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+    except ReviewError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
+    except (KeyError, TypeError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except Exception:
+        return JsonResponse(
+            error_envelope("INTERNAL_ERROR", "生成评审组结论失败，请稍后重试。"),
+            status=500,
+        )
 
 
 @require_http_methods(["POST"])
 @api_guard(FINALIZE)
 def final_decision_create(request: HttpRequest) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body)
+        body = _json_object(request)
         app = _application_or_none(body["application_id"], request.hr09_tenant_id)
         if app is None:
             return JsonResponse(error_envelope("NOT_FOUND", "Application not found"), status=404)
@@ -215,14 +226,17 @@ def final_decision_create(request: HttpRequest) -> JsonResponse:
                 "status": recognition.status,
             }
         return JsonResponse(envelope(result), status=201)
-    except ReviewError as e:
+    except ReviewError as exc:
         return JsonResponse(
-            error_envelope("FINAL_DECISION_ALREADY_EXISTS", str(e)), status=409
+            error_envelope(exc.code, str(exc)), status=409
         )
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
-    except Exception as e:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(e)), status=500)
+    except (KeyError, TypeError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except Exception:
+        return JsonResponse(
+            error_envelope("INTERNAL_ERROR", "生成最终认定结论失败，请稍后重试。"),
+            status=500,
+        )
 
 
 def _decision_authority_error(exc: FinalDecisionAuthorityError) -> JsonResponse:
@@ -275,11 +289,7 @@ def final_decision_authority(request: HttpRequest, decision_id: str) -> JsonResp
 @api_guard(FINAL_DECISION_CORRECT_PERMISSION)
 def final_decision_correct(request: HttpRequest, decision_id: str) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body) if request.body else {}
-        if not isinstance(body, dict):
-            raise ValueError("request body must be a JSON object")
+        body = _json_object(request)
         result = FinalDecisionAuthorityService(
             request.hr09_tenant_id,
             actor_user_id=getattr(request.user, "id", None),
@@ -310,11 +320,7 @@ def final_decision_correct(request: HttpRequest, decision_id: str) -> JsonRespon
 @api_guard(FINAL_DECISION_REVOKE_PERMISSION)
 def final_decision_revoke(request: HttpRequest, decision_id: str) -> JsonResponse:
     try:
-        import json
-
-        body = json.loads(request.body) if request.body else {}
-        if not isinstance(body, dict):
-            raise ValueError("request body must be a JSON object")
+        body = _json_object(request)
         result = FinalDecisionAuthorityService(
             request.hr09_tenant_id,
             actor_user_id=getattr(request.user, "id", None),
@@ -409,9 +415,7 @@ def recognition_recheck(request: HttpRequest, recognition_id: str) -> JsonRespon
     if recognition is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Recognition not found"), status=404)
     try:
-        import json
-
-        body = json.loads(request.body) if request.body else {}
+        body = _json_object(request)
         case = RecheckService.open_recheck(
             recognition_id=recognition.id,
             trigger=body.get("trigger", "SCHEDULED_REVIEW"),
@@ -422,8 +426,10 @@ def recognition_recheck(request: HttpRequest, recognition_id: str) -> JsonRespon
             "trigger": case.trigger,
             "status": case.status,
         }), status=201)
-    except (ValueError, TypeError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
+    except (ValueError, TypeError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except RecheckError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @require_http_methods(["POST"])
@@ -440,9 +446,7 @@ def recheck_decide(request: HttpRequest, recheck_id: str) -> JsonResponse:
     if case is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Recheck case not found"), status=404)
     try:
-        import json
-
-        body = json.loads(request.body)
+        body = _json_object(request)
         case = RecheckService.decide(
             recheck_id=case.id,
             decision=body["decision"],
@@ -453,8 +457,10 @@ def recheck_decide(request: HttpRequest, recheck_id: str) -> JsonResponse:
             "decision": case.decision,
             "status": case.status,
         }))
-    except (KeyError, ValueError) as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
+    except (KeyError, TypeError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except RecheckError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @require_http_methods(["GET", "HEAD"])
@@ -493,8 +499,11 @@ def risk_acknowledge(request: HttpRequest, risk_id: str) -> JsonResponse:
     risk = _risk_or_none(risk_id, request.hr09_tenant_id)
     if risk is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Risk case not found"), status=404)
-    case = RiskService.acknowledge(risk.id)
-    return JsonResponse(envelope({"id": str(case.id), "status": case.status}))
+    try:
+        case = RiskService.acknowledge(risk.id)
+        return JsonResponse(envelope({"id": str(case.id), "status": case.status}))
+    except RiskError as exc:
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=409)
 
 
 @require_http_methods(["POST"])
@@ -504,10 +513,15 @@ def risk_resolve(request: HttpRequest, risk_id: str) -> JsonResponse:
     if risk is None:
         return JsonResponse(error_envelope("NOT_FOUND", "Risk case not found"), status=404)
     try:
-        import json
-
-        body = json.loads(request.body) if request.body else {}
-        case = RiskService.resolve(risk.id, body.get("resolution", ""))
+        body = _json_object(request)
+        case = RiskService.resolve(
+            risk.id,
+            body.get("resolution", ""),
+            resolved_by=getattr(request.user, "id", None),
+        )
         return JsonResponse(envelope({"id": str(case.id), "status": case.status}))
-    except ValueError as e:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(e)), status=400)
+    except (TypeError, ValueError) as exc:
+        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except RiskError as exc:
+        status = 400 if exc.code == "RISK_RESOLUTION_REQUIRED" else 409
+        return JsonResponse(error_envelope(exc.code, str(exc)), status=status)

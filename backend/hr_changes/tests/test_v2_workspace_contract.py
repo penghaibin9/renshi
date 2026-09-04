@@ -31,7 +31,18 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.script = (frontend_root / "static/hr/js/pages/hr06-change-new.js").read_text(encoding="utf-8")
         self.identity_script = (frontend_root / "static/hr/js/pages/hr06-identity.js").read_text(encoding="utf-8")
         self.temporary_script = (frontend_root / "static/hr/js/pages/hr06-temporary.js").read_text(encoding="utf-8")
+        self.detail_script = (frontend_root / "static/hr/js/pages/hr06-change-detail.js").read_text(encoding="utf-8")
+        self.change_api = (root / "hr_changes/api/changes.py").read_text(encoding="utf-8")
         self.css = (frontend_root / "static/hr/css/hr06-changes-v2.css").read_text(encoding="utf-8")
+
+    def test_detail_actions_send_optimistic_lock_in_if_match_header(self):
+        self.assertIn('headers: {"If-Match": String(item.version)}', self.detail_script)
+        self.assertNotIn("?version=", self.detail_script)
+        version_helper = self.change_api[
+            self.change_api.index("def _version") : self.change_api.index("def _svc")
+        ]
+        self.assertIn('request.headers.get("If-Match")', version_helper)
+        self.assertNotIn("request.GET", version_helper)
 
     def test_all_hr06_surfaces_use_shared_v2_shell(self):
         for name, content in self.templates.items():
@@ -82,7 +93,7 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn('id="hr06-identity-target-fields"', self.identity)
         self.assertIn('id="hr06-identity-create"', self.identity)
         self.assertIn("人员类别、用工性质、直属上级、主岗切换、新增/结束兼岗", self.identity)
-        self.assertIn("岗位类别变更、工作地点变更", self.identity)
+        self.assertIn("岗位类别、工作地点", self.identity)
         self.assertIn("Hr06ApplySupportProvider", self.identity)
         self.assertIn('"EMPLOYEE_CATEGORY_CHANGE"', self.identity_script)
         self.assertIn('"EMPLOYMENT_TYPE_CHANGE"', self.identity_script)
@@ -113,6 +124,7 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
             "hr06-temporary-action",
             "hr06-temporary-reason",
             "hr06-temporary-target-org",
+            "hr06-temporary-target-position",
             "hr06-temporary-effective-at",
             "hr06-temporary-return-at",
             "hr06-temporary-create",
@@ -129,6 +141,7 @@ class Hr06V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("staffMasterId: state.selectedStaff.staff_id", self.temporary_script)
         self.assertIn('sourcePolicy: "KEEP_ACTIVE"', self.temporary_script)
         self.assertIn("expectedReturnAt: returnAt.value", self.temporary_script)
+        self.assertIn("targetPositionId: targetPosition.value", self.temporary_script)
         self.assertNotIn("/api/hr/v1/", self.temporary_script)
         self.assertNotIn('name="staffMasterId"', secondments)
         self.assertNotIn('name="targetOrgId"', secondments)

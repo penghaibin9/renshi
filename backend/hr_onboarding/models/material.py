@@ -120,6 +120,85 @@ class HrOnboardingMaterial(models.Model):
         return f"{self.requirement.label}:{self.status}"
 
 
+class _DownloadTicketQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR05_DOWNLOAD_TICKET_CONTROLLED_TRANSITION_REQUIRED")
+
+    def delete(self):
+        raise ValueError("HR05_DOWNLOAD_TICKET_IMMUTABLE")
+
+
+class HrOnboardingMaterialDownloadTicket(models.Model):
+    """Durable, actor-bound, one-time capability for one material version."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    material = models.ForeignKey(
+        HrOnboardingMaterial,
+        on_delete=models.PROTECT,
+        related_name="download_tickets",
+    )
+    file_version_id = models.UUIDField()
+    token_hash = models.CharField(max_length=64, unique=True)
+    actor_user_id = models.PositiveBigIntegerField(db_index=True)
+    purpose = models.CharField(max_length=500)
+    request_id = models.CharField(max_length=64, blank=True, default="")
+    expires_at = models.DateTimeField(db_index=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = _DownloadTicketQuerySet.as_manager()
+
+    _IMMUTABLE_FIELDS = (
+        "tenant_id",
+        "material_id",
+        "file_version_id",
+        "token_hash",
+        "actor_user_id",
+        "purpose",
+        "request_id",
+        "expires_at",
+        "created_at",
+    )
+
+    class Meta:
+        db_table = "hr05_material_download_ticket"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "material", "created_at"),
+                name="idx_hr05_mat_ticket_subject",
+            ),
+            models.Index(
+                fields=("tenant_id", "actor_user_id", "expires_at"),
+                name="idx_hr05_mat_ticket_actor",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(purpose__gt=""),
+                name="ck_hr05_mat_ticket_purpose",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            persisted = type(self)._base_manager.filter(pk=self.pk).values(
+                *self._IMMUTABLE_FIELDS,
+                "consumed_at",
+            ).first()
+            if persisted:
+                if any(getattr(self, field) != persisted[field] for field in self._IMMUTABLE_FIELDS):
+                    raise ValueError("HR05_DOWNLOAD_TICKET_IMMUTABLE")
+                if persisted["consumed_at"] is not None or self.consumed_at is None:
+                    raise ValueError("HR05_DOWNLOAD_TICKET_ALREADY_CONSUMED")
+        if not str(self.purpose or "").strip():
+            raise ValueError("HR05_DOWNLOAD_TICKET_PURPOSE_REQUIRED")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR05_DOWNLOAD_TICKET_IMMUTABLE")
+
+
 class HrMaterialVerification(models.Model):
     """核验记录（总册 §12.4）：谁/何时/依据/证据。"""
 

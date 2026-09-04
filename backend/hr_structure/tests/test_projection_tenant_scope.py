@@ -6,17 +6,20 @@ from hr_structure.projections.horilla import HorillaStructureProjectionService
 
 
 class HorillaStructureProjectionTenantScopeTests(SimpleTestCase):
-    @patch("employee.models.EmployeeWorkInformation.objects")
-    @patch("base.models.JobPosition.objects")
-    @patch("base.models.Department.objects")
+    @patch("hr_structure.projections.horilla._legacy_work_info_model")
+    @patch("hr_structure.projections.horilla._legacy_job_position_model")
+    @patch("hr_structure.projections.horilla._legacy_department_model")
     @patch("hr_structure.projections.horilla.HrLegacyObjectLink.objects")
     def test_reconcile_report_scopes_every_legacy_query_to_tenant(
         self,
         legacy_link_objects,
-        department_objects,
-        job_position_objects,
-        work_info_objects,
+        department_model,
+        job_position_model,
+        work_info_model,
     ):
+        department_objects = department_model.return_value.objects
+        job_position_objects = job_position_model.return_value.objects
+        work_info_objects = work_info_model.return_value.objects
         department_qs = MagicMock()
         department_qs.count.return_value = 2
         department_objects.filter.return_value = department_qs

@@ -3,11 +3,29 @@ App configuration for the Horilla Automations app.
 Initializes model choices and starts automation when the server runs.
 """
 
-import os
 import sys
+import threading
 
 from django.apps import AppConfig
 from django.utils.translation import gettext_lazy as _
+
+
+_automation_lock = threading.Lock()
+_automation_initialized = False
+
+
+def initialize_mail_automation_once(**_kwargs):
+    """Load active mail rules after startup, once per Web process."""
+    global _automation_initialized
+    if _automation_initialized:
+        return
+    with _automation_lock:
+        if _automation_initialized:
+            return
+        from horilla_automations.signals import start_automation
+
+        start_automation()
+        _automation_initialized = True
 
 
 class HorillaAutomationConfig(AppConfig):
@@ -60,15 +78,6 @@ class HorillaAutomationConfig(AppConfig):
             )
 
             MODEL_CHOICES = list(set(MODEL_CHOICES))
-            try:
-                from horilla_automations.signals import start_automation
-
-                start_automation()
-            except Exception as e:
-                print(e)
-                """
-                Migrations are not affected yet
-                """
         except:
             """
             Models not ready yet

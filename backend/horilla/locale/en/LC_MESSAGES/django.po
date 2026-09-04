@@ -14439,7 +14439,7 @@ msgstr ""
 msgid "Please login to access the dashboard."
 msgstr ""
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

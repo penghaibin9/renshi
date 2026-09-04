@@ -12,7 +12,7 @@
     </a>
     <form class="oh-btn  oh-btn-group oh-btn--primary" style="width: 50%;"
         hx-confirm="{% if instance.is_active %} {% trans 'Do you want to archive this rotating shift assign?' %} {% else %} {% trans 'Do you want to un-archive this rotating shift assign?' %} {% endif %}"
-        hx-get="{% url 'rotating-shift-assign-archive' instance.id %}?instances_ids={{ request.GET.instance_ids }}"
+        hx-post="{% url 'rotating-shift-assign-archive' instance.id %}?instances_ids={{ request.GET.instance_ids }}"
         hx-target="#genericModalBody">
         <button
             style="background: none; color: inherit; border: none; padding: 0; font: inherit; cursor: pointer; outline: inherit;">

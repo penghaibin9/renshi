@@ -22,7 +22,7 @@ from datetime import date, datetime
 from itertools import chain
 from urllib.parse import parse_qs
 
-import fitz  # type: ignore
+import pymupdf as fitz  # type: ignore
 from django import template
 from django.conf import settings
 from django.contrib import messages
@@ -53,7 +53,6 @@ from base.methods import (
 from base.models import EmailLog, HorillaMailTemplate, JobPosition, clear_messages
 from employee.models import Employee, EmployeeWorkInformation
 from employee.views import get_content_type
-from horilla import settings
 from horilla.decorators import (
     any_permission_required,
     hx_request_required,
@@ -66,7 +65,6 @@ from horilla.http import HorillaRedirect
 from horilla_auth.models import HorillaUser
 from horilla_documents.models import Document
 from notifications.signals import notify
-from recruitment.auth import CandidateAuthenticationBackend
 from recruitment.decorators import (
     all_manager_can_enter,
     candidate_login_required,
@@ -125,6 +123,83 @@ from recruitment.models import (
 )
 from recruitment.views.linkedin import delete_post, post_recruitment_in_linkedin
 from recruitment.views.paginator_qry import paginator_qry
+
+_MAX_SEQUENCE_ITEMS = 500
+
+
+def _parse_sequence_map(raw_value):
+    try:
+        values = json.loads(raw_value or "")
+    except (TypeError, ValueError):
+        raise ValueError("invalid sequence") from None
+    if not isinstance(values, dict) or not values or len(values) > _MAX_SEQUENCE_ITEMS:
+        raise ValueError("invalid sequence")
+
+    sequence_map = {}
+    for object_id, sequence in values.items():
+        try:
+            object_id = int(object_id)
+            sequence = int(sequence)
+        except (TypeError, ValueError):
+            raise ValueError("invalid sequence") from None
+        if object_id <= 0 or sequence < 0:
+            raise ValueError("invalid sequence")
+        sequence_map[object_id] = sequence
+    if len(set(sequence_map.values())) != len(sequence_map):
+        raise ValueError("invalid sequence")
+    return sequence_map
+
+
+def _parse_posted_ids(raw_value, *, single=False):
+    """Return a bounded, unique list of positive ids from a mutation payload."""
+    try:
+        values = [raw_value] if single else json.loads(raw_value or "")
+    except (TypeError, ValueError):
+        raise ValueError("invalid ids") from None
+    if (
+        not isinstance(values, list)
+        or not values
+        or len(values) > _MAX_SEQUENCE_ITEMS
+    ):
+        raise ValueError("invalid ids")
+    ids = []
+    for value in values:
+        try:
+            object_id = int(value)
+        except (TypeError, ValueError):
+            raise ValueError("invalid ids") from None
+        if object_id <= 0:
+            raise ValueError("invalid ids")
+        ids.append(object_id)
+    if len(set(ids)) != len(ids):
+        raise ValueError("invalid ids")
+    return ids
+
+
+def _can_manage_recruitment(
+    request, recruitment, permission, *, include_stage_managers=False
+):
+    """Check authorization against the exact recruitment being mutated."""
+    user = request.user
+    if user.is_superuser or user.has_perm(permission):
+        return True
+    employee = Employee.objects.filter(employee_user_id=user).first()
+    if employee is None:
+        return False
+    if recruitment.recruitment_managers.filter(pk=employee.pk).exists():
+        return True
+    return include_stage_managers and Stage.objects.filter(
+        recruitment_id=recruitment, stage_managers=employee
+    ).exists()
+
+
+def _permission_denied_json():
+    return JsonResponse({"message": _("You do not have permission.")}, status=403)
+
+
+def _delete_storage_file(storage, name):
+    with contextlib.suppress(Exception):
+        storage.delete(name)
 
 
 def is_stagemanager(request, stage_id=False):
@@ -575,24 +650,49 @@ def stage_component(request, view: str = "list"):
 
 @login_required
 @manager_can_enter(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def update_candidate_stage_and_sequence(request):
     """Update candidate sequence"""
 
-    order_list = request.GET.getlist("order")
-    stage_id = request.GET.get("stage_id")
+    order_list = request.POST.getlist("order")
+    stage_id = request.POST.get("stage_id")
+    if (
+        not order_list
+        or len(order_list) > _MAX_SEQUENCE_ITEMS
+        or len(set(order_list)) != len(order_list)
+        or any(not value.isdigit() or int(value) <= 0 for value in order_list)
+    ):
+        return JsonResponse({"message": _("Invalid candidate order.")}, status=400)
 
     pipeline_cache = CACHE.get(request.session.session_key + "pipeline")
     if not pipeline_cache:
         return JsonResponse({"message": _("Pipeline cache expired.")})
 
-    stage = pipeline_cache["stages"].filter(id=stage_id).first()
+    stage = Stage.objects.select_for_update().filter(
+        id=stage_id,
+        id__in=pipeline_cache["stages"].values("id"),
+    ).first()
     if not stage:
-        return JsonResponse({"message": _("Stage not found.")})
+        return JsonResponse({"message": _("Stage not found.")}, status=404)
+    if not _can_manage_recruitment(
+        request,
+        stage.recruitment_id,
+        "recruitment.change_candidate",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+
+    candidates = pipeline_cache["candidates"].select_for_update().filter(
+        id__in=order_list, recruitment_id=stage.recruitment_id
+    )
+    if candidates.count() != len(order_list):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
 
     context = {}
 
     for index, cand_id in enumerate(order_list):
-        pipeline_cache["candidates"].filter(id=cand_id).update(
+        candidates.filter(id=cand_id).update(
             sequence=index, stage_id=stage
         )
 
@@ -605,22 +705,47 @@ def update_candidate_stage_and_sequence(request):
 
 @login_required
 @manager_can_enter(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def update_candidate_sequence(request):
     """Update candidate sequence"""
 
-    order_list = request.GET.getlist("order")
-    stage_id = request.GET.get("stage_id")
+    order_list = request.POST.getlist("order")
+    stage_id = request.POST.get("stage_id")
+    if (
+        not order_list
+        or len(order_list) > _MAX_SEQUENCE_ITEMS
+        or len(set(order_list)) != len(order_list)
+        or any(not value.isdigit() or int(value) <= 0 for value in order_list)
+    ):
+        return JsonResponse({"message": _("Invalid candidate order.")}, status=400)
 
     pipeline_cache = CACHE.get(request.session.session_key + "pipeline")
     if not pipeline_cache:
         return JsonResponse({"message": _("Pipeline cache expired.")})
 
-    stage = pipeline_cache["stages"].filter(id=stage_id).first()
+    stage = Stage.objects.select_for_update().filter(
+        id=stage_id,
+        id__in=pipeline_cache["stages"].values("id"),
+    ).first()
     if not stage:
-        return JsonResponse({"message": _("Stage not found.")})
+        return JsonResponse({"message": _("Stage not found.")}, status=404)
+    if not _can_manage_recruitment(
+        request,
+        stage.recruitment_id,
+        "recruitment.change_candidate",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+
+    candidates = pipeline_cache["candidates"].select_for_update().filter(
+        id__in=order_list, recruitment_id=stage.recruitment_id
+    )
+    if candidates.count() != len(order_list):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
 
     for index, cand_id in enumerate(order_list):
-        pipeline_cache["candidates"].filter(id=cand_id).update(
+        candidates.filter(id=cand_id).update(
             sequence=index,
             stage_id=stage,
             hired=(stage.stage_type == "hired"),
@@ -681,67 +806,64 @@ def candidate_component(request):
 
 @login_required
 @manager_can_enter("recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def change_candidate_stage(request):
     """
     This method is used to update candidates stage
     """
-    if request.method == "POST":
-        canIds = request.POST["canIds"]
-        stage_id = request.POST["stageId"]
-        context = {}
-        if request.GET.get("bulk") == "True":
-            canIds = json.loads(canIds)
-            for cand_id in canIds:
-                try:
-                    candidate = Candidate.objects.get(id=cand_id)
-                    stage = Stage.objects.filter(
-                        recruitment_id=candidate.recruitment_id, id=stage_id
-                    ).first()
-                    if stage:
-                        candidate.stage_id = stage
-                        candidate.save()
-                        if stage.stage_type == "hired":
-                            if stage.recruitment_id.is_vacancy_filled():
-                                context["message"] = _("Vaccancy is filled")
-                                context["vacancy"] = stage.recruitment_id.vacancy
-                        messages.success(request, _("Candidate stage updated"))
-                except Candidate.DoesNotExist:
-                    messages.error(request, _("Candidate not found."))
-        else:
-            try:
-                candidate = Candidate.objects.get(id=canIds)
-                stage = Stage.objects.filter(
-                    recruitment_id=candidate.recruitment_id, id=stage_id
-                ).first()
-                if stage:
-                    candidate.stage_id = stage
-                    candidate.save()
-                    if stage.stage_type == "hired":
-                        if stage.recruitment_id.is_vacancy_filled():
-                            context["message"] = _("Vaccancy is filled")
-                            context["vacancy"] = stage.recruitment_id.vacancy
-                    candidate.stage_id = stage
-                    candidate.save()
-                    messages.success(request, _("Candidate stage updated"))
-            except Candidate.DoesNotExist:
-                messages.error(request, _("Candidate not found."))
-        return JsonResponse(context)
-    stage_id = request.GET.get("stage_id")
-    candidate_id = request.GET.get("candidate_id")
-    candidate = Candidate.find(candidate_id)
-    if not candidate:
-        return HorillaRedirect(
-            request, message=_("No Candidate found matching the query.")
+    is_bulk = request.POST.get("bulk") == "True"
+    try:
+        candidate_ids = _parse_posted_ids(
+            request.POST.get("canIds"), single=not is_bulk
+        )
+        stage_id = int(request.POST.get("stageId", ""))
+        if stage_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid candidate selection.")}, status=400)
+
+    candidates = list(
+        Candidate.objects.select_for_update()
+        .select_related("recruitment_id")
+        .filter(id__in=candidate_ids)
+    )
+    if len(candidates) != len(candidate_ids):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
+    recruitment_ids = {candidate.recruitment_id_id for candidate in candidates}
+    if len(recruitment_ids) != 1:
+        return JsonResponse(
+            {"message": _("Candidates must belong to one recruitment.")}, status=400
         )
 
-    stage = Stage.objects.filter(
-        recruitment_id=candidate.recruitment_id, id=stage_id
+    recruitment = candidates[0].recruitment_id
+    if not _can_manage_recruitment(
+        request,
+        recruitment,
+        "recruitment.change_candidate",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    stage = Stage.objects.select_for_update().filter(
+        id=stage_id, recruitment_id=recruitment
     ).first()
-    if stage:
+    if stage is None:
+        return JsonResponse(
+            {"message": _("Stage not found for this recruitment.")}, status=404
+        )
+
+    for candidate in candidates:
         candidate.stage_id = stage
-        candidate.save()
-        messages.success(request, _("Candidate stage updated"))
-    return stage_component(request)
+        candidate.hired = stage.stage_type == "hired"
+        candidate.canceled = stage.stage_type == "cancelled"
+    Candidate.objects.bulk_update(candidates, ["stage_id", "hired", "canceled"])
+
+    context = {}
+    if stage.stage_type == "hired" and recruitment.is_vacancy_filled():
+        context["message"] = _("Vacancy is filled")
+        context["vacancy"] = recruitment.vacancy
+    messages.success(request, _("Candidate stage updated"))
+    return JsonResponse(context)
 
 
 @login_required
@@ -764,6 +886,8 @@ def recruitment_pipeline_card(request):
 
 @login_required
 @permission_required(perm="recruitment.delete_recruitment")
+@require_http_methods(["POST"])
+@transaction.atomic
 def recruitment_archive(request, rec_id):
     """
     This method is used to archive and unarchive the recruitment
@@ -771,7 +895,7 @@ def recruitment_archive(request, rec_id):
         rec_id: The id of the Recruitment
     """
     try:
-        recruitment = Recruitment.objects.get(id=rec_id)
+        recruitment = Recruitment.objects.select_for_update().get(id=rec_id)
         if recruitment.is_active:
             recruitment.is_active = False
             messages.success(request, _("Recruitment archived successfully."))
@@ -870,14 +994,20 @@ def recruitment_update_pipeline(request, rec_id):
 
 @login_required
 @recruitment_manager_can_enter(perm="recruitment.change_recruitment")
+@require_http_methods(["POST"])
+@transaction.atomic
 def recruitment_close_pipeline(request, rec_id):
     """
     This method is used to close recruitment from pipeline view
     """
     try:
-        recruitment_obj = Recruitment.objects.get(id=rec_id)
+        recruitment_obj = Recruitment.objects.select_for_update().get(id=rec_id)
+        if not _can_manage_recruitment(
+            request, recruitment_obj, "recruitment.change_recruitment"
+        ):
+            return _permission_denied_json()
         recruitment_obj.closed = True
-        recruitment_obj.save()
+        recruitment_obj.save(update_fields=["closed"])
         messages.success(request, _("Recruitment closed successfully"))
     except (Recruitment.DoesNotExist, OverflowError):
         messages.error(request, _("Recruitment Does not exists.."))
@@ -886,24 +1016,32 @@ def recruitment_close_pipeline(request, rec_id):
 
 @login_required
 @recruitment_manager_can_enter(perm="recruitment.change_recruitment")
+@require_http_methods(["POST"])
+@transaction.atomic
 def recruitment_reopen_pipeline(request, rec_id):
     """
     This method is used to reopen recruitment from pipeline view
     """
-    recruitment_obj = Recruitment.find(rec_id)
+    recruitment_obj = Recruitment.objects.select_for_update().filter(id=rec_id).first()
     if not recruitment_obj:
         return HorillaRedirect(
             request, message=_("No Recruitment found matching the query.")
         )
 
+    if not _can_manage_recruitment(
+        request, recruitment_obj, "recruitment.change_recruitment"
+    ):
+        return _permission_denied_json()
     recruitment_obj.closed = False
-    recruitment_obj.save()
+    recruitment_obj.save(update_fields=["closed"])
     messages.success(request, _("Recruitment reopend successfully"))
     return HorillaRedirect(request)
 
 
 @login_required
 @manager_can_enter(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def candidate_stage_update(request, cand_id):
     """
     This method is a ajax method used to update candidate stage when drag and drop
@@ -912,14 +1050,20 @@ def candidate_stage_update(request, cand_id):
         id : candidate_id
     """
     stage_id = request.POST.get("stageId")
-    candidate_obj = Candidate.find(cand_id)
+    candidate_obj = Candidate.objects.select_for_update().filter(pk=cand_id).first()
     if not candidate_obj:
         return JsonResponse(
             {"type": "error", "message": _("No Candidate found matching the query.")}
         )
 
-    history_queryset = candidate_obj.history_set.all().first()
-    stage_obj = Stage.objects.get(id=stage_id)
+    stage_obj = Stage.objects.select_for_update().filter(
+        id=stage_id, recruitment_id=candidate_obj.recruitment_id
+    ).first()
+    if stage_obj is None:
+        return JsonResponse(
+            {"type": "error", "message": _("Stage not found for this recruitment.")},
+            status=404,
+        )
     if candidate_obj.stage_id == stage_obj:
         return JsonResponse({"type": "noChange", "message": _("No change detected.")})
     # Here set the last updated schedule date on this stage if schedule exists in history
@@ -929,15 +1073,11 @@ def candidate_stage_update(request, cand_id):
         # this condition is executed when a candidate dropped back to any previous
         # stage, if there any scheduled date then set it back
         schedule_date = history_queryset.first().schedule_date
-    stage_manager_on_this_recruitment = (
-        is_stagemanager(request)[1]
-        .filter(recruitment_id=stage_obj.recruitment_id)
-        .exists()
-    )
-    if (
-        stage_manager_on_this_recruitment
-        or request.user.is_superuser
-        or is_recruitmentmanager(rec_id=stage_obj.recruitment_id.id)[0]
+    if _can_manage_recruitment(
+        request,
+        stage_obj.recruitment_id,
+        "recruitment.change_candidate",
+        include_stage_managers=True,
     ):
         candidate_obj.stage_id = stage_obj
         candidate_obj.hired = stage_obj.stage_type == "hired"
@@ -964,7 +1104,8 @@ def candidate_stage_update(request, cand_id):
             {"type": "success", "message": _("Candidate stage updated")}
         )
     return JsonResponse(
-        {"type": "danger", "message": _("Something went wrong, Try agian.")}
+        {"type": "danger", "message": _("You do not have permission.")},
+        status=403,
     )
 
 
@@ -1148,23 +1289,43 @@ def add_more_individual_files(request, id):
 
 @login_required
 @hx_request_required
+@manager_can_enter(perm="recruitment.delete_stagenote")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_stage_note_file(request, id):
     """
     This method is used to delete the stage note file
     Args:
         id : stage file instance id
     """
-    if stage_file := StageFiles.find(id):
-        stage_file.delete()
-        messages.success(request, _("File deleted successfully"))
-    else:
-        messages.error(request, _("No Stage Files found matching the query."))
+    stage_file = StageFiles.objects.select_for_update().filter(id=id).first()
+    if stage_file is None:
+        return JsonResponse({"message": _("File not found.")}, status=404)
+    notes = list(
+        stage_file.stagenote_set.select_related(
+            "candidate_id__recruitment_id"
+        ).all()
+    )
+    if not notes or any(
+        not _can_manage_recruitment(
+            request,
+            note.candidate_id.recruitment_id,
+            "recruitment.delete_stagenote",
+            include_stage_managers=True,
+        )
+        for note in notes
+    ):
+        return _permission_denied_json()
+    stage_file.delete()
+    messages.success(request, _("File deleted successfully"))
 
     return HttpResponse("")
 
 
-@login_required
+@candidate_login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_individual_note_file(request, id):
     """
     This method is used to delete the stage note file
@@ -1172,8 +1333,30 @@ def delete_individual_note_file(request, id):
         id : stage file instance id
     """
     script = ""
-    file = StageFiles.objects.get(id=id)
-    cand_id = file.stagenote_set.all().first().candidate_id.id
+    file = StageFiles.objects.select_for_update().filter(id=id).first()
+    if file is None:
+        return JsonResponse({"message": _("File not found.")}, status=404)
+    notes = list(
+        file.stagenote_set.select_related("candidate_id__recruitment_id").all()
+    )
+    if not notes:
+        return JsonResponse({"message": _("File not found.")}, status=404)
+    session_candidate_id = request.session.get("candidate_id")
+    if session_candidate_id:
+        if any(
+            str(note.candidate_id_id) != str(session_candidate_id) for note in notes
+        ):
+            return JsonResponse({"message": _("File not found.")}, status=404)
+    elif any(
+        not _can_manage_recruitment(
+            request,
+            note.candidate_id.recruitment_id,
+            "recruitment.delete_stagenote",
+            include_stage_managers=True,
+        )
+        for note in notes
+    ):
+        return _permission_denied_json()
     file.delete()
     messages.success(request, _("File deleted successfully"))
     return HttpResponse(script)
@@ -1182,29 +1365,51 @@ def delete_individual_note_file(request, id):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="recruitment.add_stagenote")
+@require_http_methods(["POST"])
+@transaction.atomic
 def candidate_can_view_note(request, id):
-    note = StageNote.objects.filter(id=id)
-    note.update(candidate_can_view=not note.first().candidate_can_view)
+    note = (
+        StageNote.objects.select_for_update()
+        .select_related("candidate_id__recruitment_id")
+        .filter(id=id)
+        .first()
+    )
+    if note is None:
+        return JsonResponse({"message": _("Note not found.")}, status=404)
+    if not _can_manage_recruitment(
+        request,
+        note.candidate_id.recruitment_id,
+        "recruitment.add_stagenote",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    note.candidate_can_view = not note.candidate_can_view
+    note.save(update_fields=["candidate_can_view"])
 
     messages.success(request, _("Candidate view status updated"))
-    return redirect("view-note", cand_id=note.first().candidate_id.id)
+    return redirect("view-note", cand_id=note.candidate_id_id)
 
 
 @login_required
 @permission_required(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def candidate_schedule_date_update(request):
     """
     This is a an ajax method to update schedule date for a candidate
     """
     candidate_id = request.POST.get("candidateId")
-    schedule_date = request.POST.get("date")
-    candidate_obj = Candidate.find(candidate_id)
-    message = "Error"
-    if candidate_obj:
-        candidate_obj.schedule_date = schedule_date
-        candidate_obj.save()
-        message = "Congratulations"
-    return JsonResponse({"message": message})
+    raw_schedule_date = request.POST.get("date", "").strip()
+    try:
+        schedule_date = date.fromisoformat(raw_schedule_date) if raw_schedule_date else None
+    except ValueError:
+        return JsonResponse({"message": _("Invalid schedule date.")}, status=400)
+    candidate_obj = Candidate.objects.select_for_update().filter(id=candidate_id).first()
+    if candidate_obj is None:
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
+    candidate_obj.schedule_date = schedule_date
+    candidate_obj.save(update_fields=["schedule_date"])
+    return JsonResponse({"message": _("Schedule date updated.")})
 
 
 @login_required
@@ -1349,19 +1554,45 @@ def update_stage_order(request, pk):
         return HorillaRedirect(
             request, message=_("No Recruitment found matching the query.")
         )
+    if not _can_manage_recruitment(
+        request, recruitment, "recruitment.change_stage"
+    ):
+        return _permission_denied_json()
 
     if request.method == "POST":
         try:
             order = json.loads(request.POST.get("order", "[]"))
-            for index, stage_id in enumerate(order):
-                stage = recruitment.stage_set.get(id=stage_id)
-                stage.sequence = index + 1
-                stage.save()
+            if (
+                not isinstance(order, list)
+                or not order
+                or len(order) > _MAX_SEQUENCE_ITEMS
+            ):
+                raise ValueError
+            stage_ids = _parse_posted_ids(json.dumps(order))
+            with transaction.atomic():
+                stages = list(
+                    Stage.objects.select_for_update().filter(
+                        recruitment_id=recruitment, id__in=stage_ids
+                    )
+                )
+                if len(stages) != len(stage_ids):
+                    return JsonResponse(
+                        {"status": "error", "message": _("Stage not found.")},
+                        status=404,
+                    )
+                stages_by_id = {stage.pk: stage for stage in stages}
+                for index, stage_id in enumerate(stage_ids):
+                    stage = stages_by_id[stage_id]
+                    stage.sequence = index + 1
+                Stage.objects.bulk_update(stages, ["sequence"])
             messages.success(request, _("Sequence Updated Successfully"))
             return JsonResponse({"status": "success"})
-        except Exception as e:
+        except (TypeError, ValueError):
             messages.error(request, _("Error Updating Sequence.."))
-            return JsonResponse({"status": "error", "message": str(e)}, status=400)
+            return JsonResponse(
+                {"status": "error", "message": _("Invalid stage order.")},
+                status=400,
+            )
 
     stages = recruitment.stage_set.order_by("sequence")
 
@@ -1399,13 +1630,34 @@ def add_candidate(request):
 @login_required
 @require_http_methods(["POST"])
 @hx_request_required
+@manager_can_enter(perm="recruitment.change_stage")
+@transaction.atomic
 def stage_title_update(request, stage_id):
     """
     This method is used to update the name of recruitment stage
     """
-    stage_obj = Stage.objects.get(id=stage_id)
-    stage_obj.stage = request.POST["stage"]
-    stage_obj.save()
+    stage_obj = (
+        Stage.objects.select_for_update()
+        .select_related("recruitment_id")
+        .filter(id=stage_id)
+        .first()
+    )
+    if stage_obj is None:
+        return JsonResponse({"message": _("Stage not found.")}, status=404)
+    if not _can_manage_recruitment(
+        request, stage_obj.recruitment_id, "recruitment.change_stage"
+    ):
+        return _permission_denied_json()
+    title = request.POST.get("stage", "").strip()
+    if not title or len(title) > 50:
+        return JsonResponse({"message": _("Invalid stage title.")}, status=400)
+    stage_obj.stage = title
+    try:
+        stage_obj.save(update_fields=["stage"])
+    except IntegrityError:
+        return JsonResponse(
+            {"message": _("A stage with this title already exists.")}, status=400
+        )
     message = _("The stage title has been updated successfully")
     return HttpResponse(
         f'<div class="oh-alert-container"><div class="oh-alert oh-alert--animated oh-alert--success">{message}</div></div>'
@@ -1624,6 +1876,8 @@ def interview_view(request):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="recruitment.change_interviewschedule")
+@require_http_methods(["POST"])
+@transaction.atomic
 def interview_employee_remove(request, interview_id, employee_id):
     """
     This view is used to remove the employees from the meeting ,
@@ -1631,15 +1885,28 @@ def interview_employee_remove(request, interview_id, employee_id):
         interview_id(int) : primarykey of the interview.
         employee_id(int) : primarykey of the employee
     """
-    interview = InterviewSchedule.find(interview_id)
+    interview = (
+        InterviewSchedule.objects.select_for_update()
+        .select_related("candidate_id__recruitment_id")
+        .filter(id=interview_id)
+        .first()
+    )
     if not interview:
         return HorillaRedirect(
             request, message=_("No Meeting found matching the query")
         )
 
+    if not _can_manage_recruitment(
+        request,
+        interview.candidate_id.recruitment_id,
+        "recruitment.change_interviewschedule",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    if not interview.employee_id.filter(id=employee_id).exists():
+        return JsonResponse({"message": _("Interviewer not found.")}, status=404)
     interview.employee_id.remove(employee_id)
     messages.success(request, _("Interviewer removed succesfully."))
-    interview.save()
     # return redirect(interview_filter_view)
     return HttpResponse("<script> $('#applyFilter').click();</script>")
 
@@ -2092,6 +2359,7 @@ def candidate_update(request, cand_id, **kwargs):
 @transaction.atomic
 @login_required
 @manager_can_enter(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
 def candidate_conversion(request, cand_id, **kwargs):
     container_request = request.GET.get("container") == "true"
     candidate_obj = Candidate.find(cand_id)
@@ -2170,28 +2438,41 @@ def candidate_conversion(request, cand_id, **kwargs):
 
 @login_required
 @manager_can_enter(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_profile_image(request, obj_id):
     """
     This method is used to delete the profile image of the candidate
     Args:
         obj_id : candidate instance id
     """
-    candidate_obj = Candidate.find(obj_id)
+    candidate_obj = (
+        Candidate.objects.select_for_update()
+        .select_related("recruitment_id")
+        .filter(id=obj_id)
+        .first()
+    )
     if not candidate_obj:
         return HorillaRedirect(
             request, message=_("No Candidate found matching the query.")
         )
 
-    try:
-        if candidate_obj.profile:
-            file_path = candidate_obj.profile.path
-            absolute_path = os.path.join(settings.MEDIA_ROOT, file_path)
-            os.remove(absolute_path)
-            candidate_obj.profile = None
-            candidate_obj.save()
-            messages.success(request, _("Profile image removed."))
-    except Exception as e:
-        pass
+    if not _can_manage_recruitment(
+        request,
+        candidate_obj.recruitment_id,
+        "recruitment.change_candidate",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    if candidate_obj.profile:
+        storage = candidate_obj.profile.storage
+        file_name = candidate_obj.profile.name
+        candidate_obj.profile = None
+        candidate_obj.save(update_fields=["profile"])
+        transaction.on_commit(
+            lambda: _delete_storage_file(storage, file_name)
+        )
+        messages.success(request, _("Profile image removed."))
     return redirect("rec-candidate-update", cand_id=obj_id)
 
 
@@ -2362,6 +2643,8 @@ def create_interview_schedule(request):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="recruitment.delete_interviewschedule")
+@require_http_methods(["POST"])
+@transaction.atomic
 def interview_delete(request, interview_id):
     """
     Deletes an interview schedule.
@@ -2369,9 +2652,21 @@ def interview_delete(request, interview_id):
         interview_id: InterviewSchedule instance ID
     """
     try:
-        InterviewSchedule.objects.get(id=interview_id).delete()
+        interview = (
+            InterviewSchedule.objects.select_for_update()
+            .select_related("candidate_id__recruitment_id")
+            .get(id=interview_id)
+        )
+        if not _can_manage_recruitment(
+            request,
+            interview.candidate_id.recruitment_id,
+            "recruitment.delete_interviewschedule",
+            include_stage_managers=True,
+        ):
+            return _permission_denied_json()
+        interview.delete()
         messages.success(request, _("Interview deleted successfully."))
-    except:
+    except InterviewSchedule.DoesNotExist:
         messages.error(request, _("Scheduled Interview not found"))
     if request.META.get("HTTP_HX_REQUEST") == "true":
         return HttpResponse(
@@ -2569,33 +2864,78 @@ def send_acknowledgement(request):
 
 @login_required
 @manager_can_enter(perm="recruitment.change_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def candidate_sequence_update(request):
     """
     This method is used to update the sequence of candidate
     """
-    sequence_data = json.loads(request.POST.get("sequenceData", "{}"))
-    for cand_id, seq in sequence_data.items():
-        cand = Candidate.objects.get(id=cand_id)
-        cand.sequence = seq
-        cand.save()
+    try:
+        sequence_data = _parse_sequence_map(request.POST.get("sequenceData"))
+    except ValueError:
+        return JsonResponse({"message": _("Invalid candidate sequence.")}, status=400)
+    candidates = list(
+        Candidate.objects.select_for_update().filter(id__in=sequence_data)
+    )
+    if len(candidates) != len(sequence_data):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
+    if len({candidate.recruitment_id_id for candidate in candidates}) != 1:
+        return JsonResponse(
+            {"message": _("Candidates must belong to one recruitment.")}, status=400
+        )
+    recruitment = candidates[0].recruitment_id
+    if not _can_manage_recruitment(
+        request,
+        recruitment,
+        "recruitment.change_candidate",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    for candidate in candidates:
+        candidate.sequence = sequence_data[candidate.pk]
+    Candidate.objects.bulk_update(candidates, ["sequence"])
 
     return JsonResponse({"message": "Sequence updated", "type": "info"})
 
 
 @login_required
 @recruitment_manager_can_enter(perm="recruitment.change_stage")
+@require_http_methods(["POST"])
+@transaction.atomic
 def stage_sequence_update(request):
     """
     This method is used to update the sequence of the stages
     """
-    sequence_data = json.loads(request.POST.get("sequence", "{}"))
-    if not sequence_data:
-        return JsonResponse({"type": "error", "message": _("Missing Sequence")})
+    raw_sequence = request.POST.get("sequence")
+    if not raw_sequence and request.POST.get("stages") and request.POST.get("newSequences"):
+        try:
+            stage_ids = json.loads(request.POST["stages"])
+            sequences = json.loads(request.POST["newSequences"])
+            if len(stage_ids) != len(sequences):
+                raise ValueError
+            raw_sequence = json.dumps(dict(zip(stage_ids, sequences)))
+        except (TypeError, ValueError):
+            raw_sequence = None
+    try:
+        sequence_data = _parse_sequence_map(raw_sequence)
+    except ValueError:
+        return JsonResponse({"type": "error", "message": _("Invalid sequence.")}, status=400)
 
-    for stage_id, seq in sequence_data.items():
-        stage = Stage.objects.get(id=stage_id)
-        stage.sequence = seq
-        stage.save()
+    stages = list(Stage.objects.select_for_update().filter(id__in=sequence_data))
+    if len(stages) != len(sequence_data):
+        return JsonResponse({"message": _("Stage not found.")}, status=404)
+    if len({stage.recruitment_id_id for stage in stages}) != 1:
+        return JsonResponse(
+            {"message": _("Stages must belong to one recruitment.")}, status=400
+        )
+    recruitment = stages[0].recruitment_id
+    if not _can_manage_recruitment(
+        request, recruitment, "recruitment.change_stage"
+    ):
+        return _permission_denied_json()
+    for stage in stages:
+        stage.sequence = sequence_data[stage.pk]
+    Stage.objects.bulk_update(stages, ["sequence"])
     return JsonResponse({"type": "success", "message": "Stage sequence updated"})
 
 
@@ -2765,6 +3105,8 @@ def skill_zone_update(request, sz_id):
 
 @login_required
 @manager_can_enter(perm="recruitment.delete_skillzone")
+@require_http_methods(["POST"])
+@transaction.atomic
 def skill_zone_delete(request, sz_id):
     """
     function used to delete Talent pool.
@@ -2777,7 +3119,7 @@ def skill_zone_delete(request, sz_id):
     GET : return Talent pool view template
     """
     try:
-        skill_zone = SkillZone.find(sz_id)
+        skill_zone = SkillZone.objects.select_for_update().filter(id=sz_id).first()
         if skill_zone:
             skill_zone.delete()
             messages.success(request, _("Talent pool deleted successfully."))
@@ -2796,6 +3138,8 @@ def skill_zone_delete(request, sz_id):
 
 @login_required
 @manager_can_enter(perm="recruitment.change_skillzone")
+@require_http_methods(["POST"])
+@transaction.atomic
 def skill_zone_archive(request, sz_id):
     """
     function used to archive or un-archive Talent pool.
@@ -2807,28 +3151,18 @@ def skill_zone_archive(request, sz_id):
     Returns:
     GET : return Talent pool view template
     """
-    skill_zone = SkillZone.find(sz_id)
+    skill_zone = SkillZone.objects.select_for_update().filter(id=sz_id).first()
     if skill_zone:
-        is_active = skill_zone.is_active
-        if is_active == True:
-            skill_zone.is_active = False
-            skill_zone_candidates = SkillZoneCandidate.objects.filter(
-                skill_zone_id=sz_id
-            )
-            for i in skill_zone_candidates:
-                i.is_active = False
-                i.save()
+        new_state = not skill_zone.is_active
+        skill_zone.is_active = new_state
+        SkillZoneCandidate.objects.select_for_update().filter(
+            skill_zone_id=skill_zone
+        ).update(is_active=new_state)
+        if not new_state:
             messages.success(request, _("Talent pool archived successfully."))
         else:
-            skill_zone.is_active = True
-            skill_zone_candidates = SkillZoneCandidate.objects.filter(
-                skill_zone_id=sz_id
-            )
-            for i in skill_zone_candidates:
-                i.is_active = True
-                i.save()
             messages.success(request, _("Talent pool unarchived successfully."))
-        skill_zone.save()
+        skill_zone.save(update_fields=["is_active"])
     else:
         messages.error(request, _("Talent pool not found."))
     if request.META.get("HTTP_HX_REQUEST") == "true":
@@ -2977,34 +3311,6 @@ def skill_zone_cand_edit(request, sz_cand_id):
 
 
 @login_required
-@manager_can_enter(perm="recruitment.delete_skillzonecandidate")
-def skill_zone_cand_delete(request, sz_cand_id):
-    """
-    function used to delete Talent pool candidate.
-
-    Parameters:
-    request (HttpRequest): The HTTP request object.
-    sz_cand_id : Talent pool candidate id
-
-    Returns:
-    GET : return Talent pool view template
-    """
-
-    try:
-        SkillZoneCandidate.objects.get(id=sz_cand_id).delete()
-        messages.success(request, _("Talent pool deleted successfully."))
-    except SkillZoneCandidate.DoesNotExist:
-        messages.error(request, _("Talent pool not found."))
-    except ProtectedError:
-        messages.error(request, _("Related entries exists"))
-    if request.META.get("HTTP_HX_REQUEST") == "true":
-        response = HttpResponse(status=204)
-        response["HX-Trigger"] = "skillZoneContainerReload"
-        return response
-    return redirect(skill_zone_view)
-
-
-@login_required
 @hx_request_required
 @manager_can_enter(perm="recruitment.view_skillzonecandidate")
 def skill_zone_cand_filter(request):
@@ -3035,6 +3341,8 @@ def skill_zone_cand_filter(request):
 
 @login_required
 @manager_can_enter(perm="recruitment.delete_skillzonecandidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def skill_zone_cand_archive(request, sz_cand_id):
     """
     function used to archive or un-archive Talent pool candidate.
@@ -3047,17 +3355,15 @@ def skill_zone_cand_archive(request, sz_cand_id):
     GET : return Talent pool candidate view template
     """
     try:
-        skill_zone_cand = SkillZoneCandidate.objects.get(id=sz_cand_id)
-        is_active = skill_zone_cand.is_active
-        if is_active == True:
-            skill_zone_cand.is_active = False
+        skill_zone_cand = SkillZoneCandidate.objects.select_for_update().get(
+            id=sz_cand_id
+        )
+        skill_zone_cand.is_active = not skill_zone_cand.is_active
+        if not skill_zone_cand.is_active:
             messages.success(request, _("Candidate archived successfully.."))
-
         else:
-            skill_zone_cand.is_active = True
             messages.success(request, _("Candidate unarchived successfully.."))
-
-        skill_zone_cand.save()
+        skill_zone_cand.save(update_fields=["is_active"])
     except SkillZoneCandidate.DoesNotExist:
         messages.error(request, _("No Candidate found matching the query."))
     return redirect(skill_zone_view)
@@ -3065,6 +3371,8 @@ def skill_zone_cand_archive(request, sz_cand_id):
 
 @login_required
 @manager_can_enter(perm="recruitment.delete_skillzonecandidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def skill_zone_cand_delete(request, sz_cand_id):
     """
     function used to delete Talent pool candidate.
@@ -3077,7 +3385,7 @@ def skill_zone_cand_delete(request, sz_cand_id):
     GET : return Talent pool view template
     """
     try:
-        SkillZoneCandidate.objects.get(id=sz_cand_id).delete()
+        SkillZoneCandidate.objects.select_for_update().get(id=sz_cand_id).delete()
         messages.success(request, _("Candidate deleted successfully.."))
     except SkillZoneCandidate.DoesNotExist:
         messages.error(request, _("Candidate not found."))
@@ -3134,23 +3442,27 @@ def to_skill_zone(request, cand_id):
 
 
 @login_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def update_candidate_rating(request, cand_id):
     """
     This method is used to update the candidate rating
     Args:
         id : candidate rating instance id
     """
-    candidate = Candidate.find(cand_id)
-    if candidate:
-        employee_id = request.user.employee_get
-        rating = request.POST.get("rating")
-        rate = CandidateRating.objects.get(
-            candidate_id=candidate, employee_id=employee_id
-        )
-        rate.rating = int(rating)
-        rate.save()
-    else:
-        messages.error(request, _("No Candidate found matching the query"))
+    try:
+        rating = int(request.POST.get("rating", ""))
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid rating.")}, status=400)
+    if rating < 0 or rating > 5:
+        return JsonResponse({"message": _("Invalid rating.")}, status=400)
+    rate = CandidateRating.objects.select_for_update().filter(
+        candidate_id_id=cand_id, employee_id=request.user.employee_get
+    ).first()
+    if rate is None:
+        return JsonResponse({"message": _("Candidate rating not found.")}, status=404)
+    rate.rating = rating
+    rate.save(update_fields=["rating"])
 
     return redirect(recruitment_pipeline)
 
@@ -3192,9 +3504,12 @@ def get_mail_log(request, pk):
     """
 
     candidate_obj = Candidate.find(pk)
-    tracked_mails = EmailLog.objects.filter(to__icontains=candidate_obj.email).order_by(
-        "-created_at"
-    )
+    from base.email_logging import email_log_recipient_q
+
+    tracked_mails = EmailLog.objects.filter(
+        email_log_recipient_q(candidate_obj.email),
+        company_id=candidate_obj.recruitment_id.company_id,
+    ).order_by("-created_at")
     return render(
         request,
         "candidate/mail_log.html",
@@ -3208,6 +3523,7 @@ def get_mail_log(request, pk):
 @login_required
 @hx_request_required
 @permission_required("recruitment.add_recruitmentgeneralsetting")
+@require_http_methods(["POST"])
 def candidate_self_tracking(request):
     """
     This method is used to update the recruitment general setting
@@ -3216,16 +3532,16 @@ def candidate_self_tracking(request):
     company_id = (
         None if not selected_company or selected_company == "all" else selected_company
     )
-    settings, created = RecruitmentGeneralSetting.objects.get_or_create(
+    general_settings, created = RecruitmentGeneralSetting.objects.get_or_create(
         company_id_id=company_id
     )
-    if request.GET.get("candidate_self_tracking") == "true":
-        settings.candidate_self_tracking = True
+    if request.POST.get("candidate_self_tracking") == "true":
+        general_settings.candidate_self_tracking = True
         message = _("Application Tracking is enabled ")
     else:
-        settings.candidate_self_tracking = False
+        general_settings.candidate_self_tracking = False
         message = _("Application Tracking is disabled ")
-    settings.save()
+    general_settings.save()
     messages.success(request, message)
     return HttpResponse("<script>$('#reloadMessagesButton').click()</script>")
 
@@ -3233,6 +3549,7 @@ def candidate_self_tracking(request):
 @login_required
 @hx_request_required
 @permission_required("recruitment.add_recruitmentgeneralsetting")
+@require_http_methods(["POST"])
 def candidate_self_tracking_rating_option(request):
     """
     This method is used to enable/disable the selt tracking rating field
@@ -3241,38 +3558,25 @@ def candidate_self_tracking_rating_option(request):
     company_id = (
         None if not selected_company or selected_company == "all" else selected_company
     )
-    settings, created = RecruitmentGeneralSetting.objects.get_or_create(
+    general_settings, created = RecruitmentGeneralSetting.objects.get_or_create(
         company_id_id=company_id
     )
-    if request.GET.get("candidate_self_tracking") == "true":
-        settings.show_overall_rating = True
+    if request.POST.get("candidate_self_tracking") == "true":
+        general_settings.show_overall_rating = True
         message = _("Rating visibility is enabled ")
     else:
-        settings.show_overall_rating = False
+        general_settings.show_overall_rating = False
         message = _("Rating visibility is disabled ")
-    settings.save()
+    general_settings.save()
     messages.success(request, message)
     return HttpResponse("<script>$('#reloadMessagesButton').click()</script>")
 
 
 def candidate_login(request):
-    if request.method == "POST":
-        email = request.POST.get("email", "").strip()
-        mobile = request.POST.get("phone", "").strip()
-
-        backend = CandidateAuthenticationBackend()
-        candidate = backend.authenticate(request, username=email, password=mobile)
-
-        if candidate is not None:
-            request.session["candidate_id"] = candidate.id
-            request.session["candidate_email"] = candidate.email
-            return redirect("candidate-self-status-tracking")
-        else:
-            return render(
-                request, "candidate/self_login.html", {"error": "Invalid credentials"}
-            )
-
-    return render(request, "candidate/self_login.html")
+    # This view is retained only so old imports and reverse() calls do not
+    # break. Runtime routing seals /recruitment/* to the canonical HR04 entry;
+    # direct invocation must not revive phone-as-password authentication.
+    return render(request, "candidate/self_login.html", status=410)
 
 
 def candidate_logout(request):
@@ -3280,8 +3584,8 @@ def candidate_logout(request):
 
     request.session.pop("candidate_id", None)
     request.session.pop("candidate_email", None)
-    messages.success(request, _("You have been logged out."))
-    return redirect("candidate_login")
+    messages.success(request, "您已安全退出申请进度查询。")
+    return redirect("candidate-login")
 
 
 @candidate_login_required
@@ -3296,7 +3600,7 @@ def candidate_self_status_tracking(request):
         candidate_id = request.session.get("candidate_id")
 
         if not candidate_id:
-            return redirect("candidate-login/")
+            return redirect("candidate-login")
 
         candidate = Candidate.objects.get(pk=candidate_id)
         interviews = candidate.candidate_interview.annotate(
@@ -3336,7 +3640,7 @@ def candidate_self_status_tracking_managers_view(request, cand_id):
             candidate_id = cand_id
 
         if not candidate_id:
-            return redirect("candidate-login/")
+            return redirect("candidate-login")
 
         candidate = Candidate.objects.get(pk=candidate_id)
         interviews = candidate.candidate_interview.annotate(
@@ -3388,12 +3692,15 @@ def self_tracking_feature(request):
 @login_required
 @hx_request_required
 @permission_required("recruitment.delete_rejectreason")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_reject_reason(request):
     """
     This method is used to delete the reject reasons
     """
-    id = request.GET.get("id")
-    if not (reason := RejectReason.find(id)):
+    id = request.POST.get("id") or request.POST.get("ids")
+    reason = RejectReason.objects.select_for_update().filter(id=id).first()
+    if not reason:
         messages.error(request, _("No Rejection Reason found matching the query."))
         return HttpResponse("<script>$('.reload-record').click();</script>")
 
@@ -3646,24 +3953,32 @@ def create_skills(request):
 
 @login_required
 @hx_request_required
-@permission_required("recruitment.delete_rejectreason")
+@permission_required("recruitment.delete_skill")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_skills(request, id=None):
     """
     This method is used to delete the skills
     """
-    ids = request.GET.getlist("ids")
-
-    skills = Skill.objects.filter(id__in=ids)
-    titles = list(skills.values_list("title", flat=True))
-
-    count_before = skills.count()
-    deleted_count, d = skills.delete()
+    try:
+        ids = _parse_posted_ids(json.dumps(request.POST.getlist("ids")))
+    except ValueError:
+        return JsonResponse({"message": _("Invalid skill selection.")}, status=400)
+    skills = list(Skill.objects.select_for_update().filter(id__in=ids))
+    if len(skills) != len(ids):
+        return JsonResponse({"message": _("Skill not found.")}, status=404)
+    titles = [skill.title for skill in skills]
+    try:
+        Skill.objects.filter(id__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("Related entries exist for the selected skills.")},
+            status=409,
+        )
 
     for title in titles:
         messages.success(request, _("%(title)s is deleted.") % {"title": title})
-
-    if count_before - deleted_count == 0:
-        return HttpResponse("<script>$('#reloadMessagesButton').click()</script>")
 
     return HttpResponse("<script>$('.reload-record').click()</script>")
 
@@ -3709,13 +4024,35 @@ def add_bulk_resumes(request):
 @login_required
 @hx_request_required
 @manager_can_enter("recruitment.add_candidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_resume_file(request):
     """
     Used to delete resume
     """
-    ids = request.GET.getlist("ids")
-    rec_id = request.GET.get("rec_id")
-    Resume.objects.filter(id__in=ids).delete()
+    try:
+        ids = _parse_posted_ids(json.dumps(request.POST.getlist("ids")))
+        rec_id = int(request.POST.get("rec_id", ""))
+        if rec_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid resume selection.")}, status=400)
+    recruitment = Recruitment.objects.select_for_update().filter(id=rec_id).first()
+    if recruitment is None:
+        return JsonResponse({"message": _("Recruitment not found.")}, status=404)
+    if not _can_manage_recruitment(
+        request,
+        recruitment,
+        "recruitment.add_candidate",
+        include_stage_managers=True,
+    ):
+        return _permission_denied_json()
+    resumes = Resume.objects.select_for_update().filter(
+        id__in=ids, recruitment_id=recruitment
+    )
+    if resumes.count() != len(ids):
+        return JsonResponse({"message": _("Resume not found.")}, status=404)
+    resumes.delete()
 
     url = reverse("view-bulk-resume")
     query_params = f"?rec_id={rec_id}"
@@ -3863,8 +4200,46 @@ def hired_candidate_chart(request):
     )
 
 
+def _candidate_documents_for_request(request, queryset=None, *, for_change=False):
+    """Scope candidate documents to the portal candidate or managed recruitments."""
+    queryset = queryset if queryset is not None else CandidateDocument.objects.all()
+    session_candidate_id = request.session.get("candidate_id")
+    if session_candidate_id:
+        return queryset.filter(candidate_id_id=session_candidate_id)
+    if not request.user.is_authenticated:
+        return queryset.none()
+    if (
+        (not for_change and request.user.has_perm("recruitment.view_candidatedocument"))
+        or request.user.has_perm("recruitment.change_candidatedocument")
+        or request.user.has_perm("recruitment.delete_candidatedocument")
+    ):
+        return queryset
+    employee = Employee.objects.filter(employee_user_id=request.user).first()
+    if employee is None:
+        return queryset.none()
+    return queryset.filter(
+        Q(candidate_id__recruitment_id__recruitment_managers=employee)
+        | Q(candidate_id__stage_id__stage_managers=employee)
+    ).distinct()
+
+
+def _candidates_managed_by_request(request):
+    if request.user.has_perm(
+        "recruitment.add_candidatedocument"
+    ) or request.user.has_perm("recruitment.add_candidatedocumentrequest"):
+        return Candidate.objects.all()
+    employee = Employee.objects.filter(employee_user_id=request.user).first()
+    if employee is None:
+        return Candidate.objects.none()
+    return Candidate.objects.filter(
+        Q(recruitment_id__recruitment_managers=employee)
+        | Q(stage_id__stage_managers=employee)
+    ).distinct()
+
+
 @login_required
 @hx_request_required
+@manager_can_enter("recruitment.add_candidatedocumentrequest")
 def candidate_document_request(request):
     """
     This function is used to create document requests of an employee in employee requests view.
@@ -3880,6 +4255,8 @@ def candidate_document_request(request):
     form = CandidateDocumentRequestForm(initial={"candidate_id": candidate_id})
     if request.method == "POST":
         form = CandidateDocumentRequestForm(request.POST)
+    form.fields["candidate_id"].queryset = _candidates_managed_by_request(request)
+    if request.method == "POST":
         if form.is_valid():
             form.save()
             messages.success(request, _("Document request created successfully"))
@@ -3901,6 +4278,7 @@ def candidate_document_request(request):
 
 @login_required
 @hx_request_required
+@manager_can_enter("recruitment.add_candidatedocument")
 def document_create(request, id):
     """
     This function is used to create documents from employee individual & profile view.
@@ -3911,13 +4289,17 @@ def document_create(request, id):
 
     Returns: return document_tab template
     """
-    candidate_id = Candidate.objects.get(id=id)
+    candidate_id = get_object_or_404(_candidates_managed_by_request(request), id=id)
     form = CandidateDocumentForm(initial={"candidate_id": candidate_id})
     form.fields["candidate_id"].queryset = Candidate.objects.filter(id=id)
     if request.method == "POST":
         form = CandidateDocumentForm(request.POST, request.FILES)
         if form.is_valid():
-            form.save()
+            document = form.save(commit=False)
+            document.candidate_id = candidate_id
+            document.status = "requested"
+            document.reject_reason = None
+            document.save()
             messages.success(request, _("Document created successfully."))
             return HorillaRedirect(request)
 
@@ -3929,6 +4311,9 @@ def document_create(request, id):
 
 
 @login_required
+@manager_can_enter("recruitment.change_candidatedocument")
+@require_http_methods(["POST"])
+@transaction.atomic
 def update_document_title(request, id):
     """
     This function is used to create documents from employee individual & profile view.
@@ -3938,24 +4323,30 @@ def update_document_title(request, id):
 
     Returns: return document_tab template
     """
-    document = get_object_or_404(CandidateDocument, id=id)
-    name = request.POST.get("title")
-    if request.method == "POST":
-        document.title = name
-        document.save()
-
+    document = get_object_or_404(
+        _candidate_documents_for_request(
+            request, CandidateDocument.objects.select_for_update(), for_change=True
+        ),
+        id=id,
+    )
+    name = (request.POST.get("title") or "").strip()
+    if len(name) < 3:
         return JsonResponse(
-            {"success": True, "message": "Document title updated successfully"}
+            {"success": False, "message": "Title must be at least 3 characters"},
+            status=400,
         )
-    else:
-        return JsonResponse(
-            {"success": False, "message": "Invalid request"}, status=400
-        )
+    document.title = name
+    document.save(update_fields=["title"])
+    return JsonResponse(
+        {"success": True, "message": "Document title updated successfully"}
+    )
 
 
 @login_required
 @hx_request_required
 @manager_can_enter("recruitment.delete_candidatedocument")
+@require_http_methods(["POST"])
+@transaction.atomic
 def document_delete(request, id):
     """
     Handle the deletion of a document, with permissions and error handling.
@@ -3967,14 +4358,17 @@ def document_delete(request, id):
     cannot be deleted, it handles the exception and informs the user.
     """
     try:
-        document = CandidateDocument.objects.filter(id=id)
+        document = _candidate_documents_for_request(
+            request, CandidateDocument.objects.select_for_update(), for_change=True
+        ).filter(id=id).first()
         if document:
+            document_label = str(document)
+            candidate = document.candidate_id
             document.delete()
             messages.success(
                 request,
-                _(
-                    f"Document request {document.first()} for {document.first().employee_id} deleted successfully"
-                ),
+                _("Document %(document)s for %(candidate)s deleted successfully")
+                % {"document": document_label, "candidate": candidate},
             )
         else:
             messages.error(request, _("Document not found"))
@@ -4003,14 +4397,31 @@ def file_upload(request, id):
 
     Returns: return document_form template
     """
-    document_item = CandidateDocument.objects.get(id=id)
+    document_item = get_object_or_404(
+        _candidate_documents_for_request(request, for_change=True), id=id
+    )
     form = CandidateDocumentUpdateForm(instance=document_item)
     if request.method == "POST":
         form = CandidateDocumentUpdateForm(
             request.POST, request.FILES, instance=document_item
         )
         if form.is_valid():
-            form.save()
+            with transaction.atomic():
+                document_item = get_object_or_404(
+                    _candidate_documents_for_request(
+                        request,
+                        CandidateDocument.objects.select_for_update(),
+                        for_change=True,
+                    ),
+                    id=id,
+                )
+                document_item.document = form.cleaned_data["document"]
+                document_item.status = "requested"
+                document_item.reject_reason = None
+                document_item.full_clean()
+                document_item.save(
+                    update_fields=["document", "status", "reject_reason"]
+                )
             messages.success(request, _("Document uploaded successfully"))
             return HorillaRedirect(request)
 
@@ -4033,18 +4444,19 @@ def view_file(request, id):
 
     Returns: return view_file template
     """
-    document_obj = CandidateDocument.objects.filter(id=id).first()
+    document_obj = get_object_or_404(
+        _candidate_documents_for_request(request), id=id
+    )
     context = {
         "document": document_obj,
     }
     if document_obj.document:
-        file_path = document_obj.document.path
-        file_extension = os.path.splitext(file_path)[1][1:].lower()
+        file_extension = os.path.splitext(document_obj.document.name)[1][1:].lower()
 
         content_type = get_content_type(file_extension)
 
         try:
-            with open(file_path, "rb") as file:
+            with document_obj.document.open("rb") as file:
                 file_content = file.read()
         except:
             file_content = None
@@ -4059,6 +4471,8 @@ def view_file(request, id):
 @login_required
 @hx_request_required
 @manager_can_enter("recruitment.change_candidatedocument")
+@require_http_methods(["POST"])
+@transaction.atomic
 def document_approve(request, id):
     """
     This function used to view the approve uploaded document.
@@ -4069,10 +4483,15 @@ def document_approve(request, id):
 
     Returns:
     """
-    document_obj = get_object_or_404(CandidateDocument, id=id)
+    document_obj = get_object_or_404(
+        _candidate_documents_for_request(
+            request, CandidateDocument.objects.select_for_update(), for_change=True
+        ),
+        id=id,
+    )
     if document_obj.document:
         document_obj.status = "approved"
-        document_obj.save()
+        document_obj.save(update_fields=["status"])
         messages.success(request, _("Document request approved"))
     else:
         messages.error(request, _("No document uploaded"))
@@ -4083,6 +4502,7 @@ def document_approve(request, id):
 @login_required
 @hx_request_required
 @manager_can_enter("recruitment.change_candidatedocument")
+@require_http_methods(["GET", "POST"])
 def document_reject(request, id):
     """
     This function used to view the reject uploaded document.
@@ -4093,16 +4513,26 @@ def document_reject(request, id):
 
     Returns:
     """
-    document_obj = get_object_or_404(CandidateDocument, id=id)
+    document_obj = get_object_or_404(
+        _candidate_documents_for_request(request, for_change=True), id=id
+    )
     form = CandidateDocumentRejectForm()
     if document_obj.document:
         if request.method == "POST":
             form = CandidateDocumentRejectForm(request.POST, instance=document_obj)
             if form.is_valid():
-                instance = form.save(commit=False)
-                document_obj.reject_reason = instance.reject_reason
-                document_obj.status = "rejected"
-                document_obj.save()
+                with transaction.atomic():
+                    document_obj = get_object_or_404(
+                        _candidate_documents_for_request(
+                            request,
+                            CandidateDocument.objects.select_for_update(),
+                            for_change=True,
+                        ),
+                        id=id,
+                    )
+                    document_obj.reject_reason = form.cleaned_data["reject_reason"]
+                    document_obj.status = "rejected"
+                    document_obj.save(update_fields=["reject_reason", "status"])
                 messages.error(request, _("Document request rejected"))
 
                 return HorillaRedirect(request)
@@ -4204,17 +4634,19 @@ def employee_profile_interview_tab(request):
 @login_required
 @hx_request_required
 @permission_required("recruitment.delete_rejectedcandidate")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_candidate_rejection(request, rej_id):
     """
     This method is used to delete candidate rejection
     """
     try:
-        instance = RejectedCandidate.objects.filter(id=rej_id).first()
+        instance = RejectedCandidate.objects.select_for_update().filter(id=rej_id).first()
         if instance:
             instance.delete()
             messages.success(request, _("Candidate rejection deleted successfully"))
         else:
             messages.error(request, _("Candidate rejection not found"))
-    except Exception as e:
+    except ProtectedError:
         messages.error(request, _("Error occurred while deleting candidate rejection"))
     return HorillaRedirect(request)

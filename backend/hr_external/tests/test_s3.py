@@ -22,7 +22,10 @@ from hr_external.models import (
 from hr_external.selectors import list_external_profiles
 from hr_external.selectors.profile_selector import ProfileFilterSpec
 from hr_external.services.category_service import CategoryService
-from hr_external.services.engagement_service import EngagementService, EngagementCreateInput
+from hr_external.services.engagement_service import (
+    EngagementCreateInput,
+    EngagementService,
+)
 from hr_external.services.identity_match_service import IdentityMatchService
 from hr_external.services.import_service import ImportService, ImportValidationError
 from hr_external.services.profile_service import ProfileService
@@ -253,8 +256,6 @@ class ImportServiceTests(TestCase):
 
         from openpyxl import Workbook
 
-        from hr_external.models import HrExternalTeacherProfile
-
         CategoryService().ensure_default_categories(self.tenant)
         wb = Workbook()
         ws = wb.active
@@ -310,8 +311,6 @@ class ImportServiceTests(TestCase):
 
     def test_execute_commit_end_to_end(self):
         """upload → validate → confirm → execute → COMPLETED + Profile 创建（分批事务真实执行）。"""
-        from hr_external.models import HrExternalTeacherProfile
-
         CategoryService().ensure_default_categories(self.tenant)
         job = self.service.create_job(
             tenant_id=self.tenant, job_type="PROFILE", file_name="profiles.csv"

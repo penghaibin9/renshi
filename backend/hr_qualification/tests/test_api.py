@@ -8,6 +8,9 @@ tests/test_api.py —— API 层测试（总册 S11）。
 - tenant fail-closed
 """
 
+from unittest import skipUnless
+
+from django.apps import apps
 from django.test import Client, TestCase
 
 from hr_qualification.api.serializers import envelope, error_envelope
@@ -35,6 +38,10 @@ class APIEnvelopeTest(TestCase):
         self.assertFalse(result2["error"]["retryable"])
 
 
+@skipUnless(
+    apps.is_installed("base") and apps.is_installed("employee"),
+    "requires the complete MySQL Horilla CompanyMiddleware integration runtime",
+)
 class ResourceEndpointTest(TestCase):
     """集成测试：端点在真实 selected-school + 鉴权合同下可用。"""
 

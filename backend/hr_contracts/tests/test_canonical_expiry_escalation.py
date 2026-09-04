@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.core.exceptions import ValidationError
 from django.db import DatabaseError, connection, transaction
 from django.test import SimpleTestCase, TestCase
 
@@ -144,12 +145,20 @@ class CanonicalContractExpiryServiceTests(TestCase):
         self.assertEqual(missing_policy["blocked"], 1)
         self.assertEqual(missing_policy["blockers"][0]["code"], "EXPIRY_POLICY_REQUIRED")
 
-        # The database seal must reject direct SQL as well as ORM mutation.
-        with self.assertRaises(DatabaseError), transaction.atomic():
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE hr07_contract_version SET content_hash = %s WHERE id = %s",
-                    ["f" * 64, version.id.hex],
+        # MySQL carries the final raw-SQL trigger seal.  The isolated SQLite
+        # suite still exercises the ORM bypass guard without pretending that
+        # a vendor-specific trigger was installed there.
+        if connection.vendor == "mysql":
+            with self.assertRaises(DatabaseError), transaction.atomic():
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE hr07_contract_version SET content_hash = %s WHERE id = %s",
+                        ["f" * 64, version.id.hex],
+                    )
+        else:
+            with self.assertRaises(ValidationError):
+                HrContractVersion.objects.filter(pk=version.pk).update(
+                    content_hash="f" * 64
                 )
         version.refresh_from_db()
         self.assertEqual(

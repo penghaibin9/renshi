@@ -58,7 +58,8 @@
                                                     class="oh-btn oh-btn--success w-100"
                                                     data-toggle="oh-modal-toggle"
                                                     data-target="#objectDetailsModal"
-                                                    hx-get="{% url 'approve-claim-request' req.id %}?approve=True"
+                                                    hx-post="{% url 'approve-claim-request' req.id %}"
+                                                    hx-vals='{"approve":"true"}'
                                                     hx-target="#objectDetailsModalTarget"
                                                     title="{% trans 'Approve request' %}"
                                                 >
@@ -79,7 +80,8 @@
                                                     title="{% trans 'Reject' %}"
                                                     data-toggle="oh-modal-toggle"
                                                     data-target="#objectDetailsModal"
-                                                    hx-get="{% url 'approve-claim-request' req.id %}?approve=False"
+                                                    hx-post="{% url 'approve-claim-request' req.id %}"
+                                                    hx-vals='{"approve":"false"}'
                                                     hx-target="#objectDetailsModalTarget"
                                                 >
                                                     <ion-icon name="close-outline"></ion-icon>

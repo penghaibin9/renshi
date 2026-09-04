@@ -90,6 +90,22 @@ def individual_permssion_check(request):
     return False
 
 
+def can_delete_shift_request(request, shift_request):
+    """Apply the same delete authority used by the web shift-request flow."""
+    user = request.user
+    employee = getattr(user, "employee_get", None)
+    return bool(
+        user.has_perm("base.delete_shiftrequest")
+        or user.has_perm("base.change_shiftrequest")
+        or is_reportingmanger(request, shift_request)
+        or (
+            employee is not None
+            and shift_request.employee_id == employee
+            and not shift_request.approved
+        )
+    )
+
+
 def _is_reportingmanger(request, instance):
     """
     If the instance have employee id field then you can use this method to know the request
@@ -1150,25 +1166,48 @@ class ShiftRequestDeleteView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk=None):
-
         if pk is None:
+            ids = request.data.get("ids")
+            if not isinstance(ids, list) or not ids:
+                return Response(
+                    {"status": "failed", "error": "ids must be a non-empty list"},
+                    status=400,
+                )
+            unique_ids = set(ids)
+            shift_requests = list(ShiftRequest.objects.filter(id__in=unique_ids))
+            if len(shift_requests) != len(unique_ids):
+                return Response(
+                    {"status": "failed", "error": "Shift request not found"},
+                    status=404,
+                )
+            if any(
+                not can_delete_shift_request(request, item)
+                for item in shift_requests
+            ):
+                return Response(
+                    {"status": "failed", "error": "Permission denied"},
+                    status=403,
+                )
             try:
-                ids = request.data["ids"]
-                shift_requests = ShiftRequest.objects.filter(id__in=ids)
-                shift_requests.delete()
+                ShiftRequest.objects.filter(id__in=unique_ids).delete()
             except Exception as e:
                 return Response({"status": "failed", "error": str(e)}, status=400)
             return Response({"status": "success"}, status=200)
-        try:
-            shift_request = ShiftRequest.objects.get(id=pk)
-            if not shift_request.approved:
-                raise
-            shift_request.delete()
-
-        except ShiftRequest.DoesNotExist:
+        shift_request = ShiftRequest.objects.filter(id=pk).first()
+        if shift_request is None:
             return Response(
                 {"status": "failed", "error": "Shift request does not exists"},
-                status=400,
+                status=404,
+            )
+        if not can_delete_shift_request(request, shift_request):
+            return Response(
+                {"status": "failed", "error": "Permission denied"}, status=403
+            )
+        try:
+            shift_request.delete()
+        except Exception as error:
+            return Response(
+                {"status": "failed", "error": str(error)}, status=400
             )
         return Response({"status": "deleted"}, status=200)
 

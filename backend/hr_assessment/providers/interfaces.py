@@ -350,10 +350,41 @@ class EthicsFactProvider(BaseAssessmentProvider):
     owner_domain = "ethics"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
+        if not ctx.ids:
+            return _empty_result("hr03-formal-discipline-evidence-v1")
+        try:
+            from hr_staff.public import (
+                ETHICS_PROVIDER_VERSION,
+                EthicsEvidenceUnavailable,
+                get_formal_ethics_evidence,
+            )
+
+            evidence = get_formal_ethics_evidence(
+                tenant_id=ctx.tenant_id,
+                staff_ids=ctx.ids,
+                as_of=_ctx_as_of_date(ctx),
+                source_version=ctx.source_version,
+            )
+        except EthicsEvidenceUnavailable as exc:
+            return ProviderResult(
+                status=ProviderStatus.UNAVAILABLE,
+                data=None,
+                error_message=f"{exc.code}: {exc}",
+                source_version="hr03-formal-discipline-evidence-v1",
+            )
+
+        status = ProviderStatus.PARTIAL if evidence.missing_staff_ids else ProviderStatus.OK
+        error = ""
+        if evidence.missing_staff_ids:
+            error = (
+                "ETHICS_BASIS_UNAVAILABLE: missing tenant-scoped HR03 staff: "
+                + ",".join(str(value) for value in evidence.missing_staff_ids)
+            )
         return ProviderResult(
-            status=ProviderStatus.UNAVAILABLE,
-            data=None,
-            error_message="师德事实源未接入",
+            status=status,
+            data=[row.snapshot() for row in evidence.rows],
+            error_message=error,
+            source_version=ETHICS_PROVIDER_VERSION,
         )
 
 
@@ -361,34 +392,167 @@ class DocumentProvider(BaseAssessmentProvider):
     owner_domain = "horilla_documents"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
+        if not ctx.ids:
+            return _empty_result("horilla-documents-approved-evidence-v1")
+        try:
+            from horilla_documents.public import (
+                PROVIDER_VERSION,
+                DocumentEvidenceUnavailable,
+                get_approved_document_evidence,
+            )
+
+            evidence = get_approved_document_evidence(
+                tenant_id=ctx.tenant_id,
+                staff_ids=ctx.ids,
+                as_of=_ctx_as_of_date(ctx),
+                source_version=ctx.source_version,
+            )
+        except DocumentEvidenceUnavailable as exc:
+            return ProviderResult(
+                status=ProviderStatus.UNAVAILABLE,
+                data=None,
+                error_message=f"{exc.code}: {exc}",
+                source_version="horilla-documents-approved-evidence-v1",
+            )
+        status = ProviderStatus.PARTIAL if evidence.missing_staff_ids else ProviderStatus.OK
+        error = ""
+        if evidence.missing_staff_ids:
+            error = (
+                "DOCUMENT_BASIS_UNAVAILABLE: missing tenant-scoped HR03 staff: "
+                + ",".join(str(value) for value in evidence.missing_staff_ids)
+            )
         return ProviderResult(
-            status=ProviderStatus.UNAVAILABLE,
-            data=None,
-            error_message="文档服务未配置真实事实查询/回执接口",
-            source_version="horilla_documents:unconfigured",
+            status=status,
+            data=[row.snapshot() for row in evidence.rows],
+            error_message=error,
+            source_version=PROVIDER_VERSION,
         )
 
 
 class ArchiveProvider(BaseAssessmentProvider):
-    owner_domain = "hr_staff"
+    owner_domain = "hr_assessment"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
+        if not ctx.ids:
+            return _empty_result("hr12-archive-v1")
+        from hr_assessment.models.case import HrAssessmentCase
+        from hr_assessment.models.result import HrAssessmentArchivePackage
+
+        requested = {str(value) for value in ctx.ids}
+        cases = HrAssessmentCase.objects.filter(
+            tenant_id=ctx.tenant_id,
+            staff_id__in=ctx.ids,
+        ).values("id", "staff_id")
+        staff_by_case = {str(row["id"]): str(row["staff_id"]) for row in cases}
+        archives = (
+            HrAssessmentArchivePackage.objects.filter(
+                tenant_id=ctx.tenant_id,
+                result__case_id__in=list(staff_by_case),
+                archive_status="ARCHIVED",
+                sealed_at__isnull=False,
+                sealed_at__date__lte=_ctx_as_of_date(ctx),
+            )
+            .select_related("result")
+            .order_by("result__case_id", "-result_version", "-sealed_at")
+        )
+        rows = []
+        found = set()
+        for archive in archives:
+            staff_id = staff_by_case.get(str(archive.result.case_id))
+            if not staff_id:
+                continue
+            found.add(staff_id)
+            rows.append(
+                {
+                    "staffId": staff_id,
+                    "resultId": str(archive.result_id),
+                    "resultVersion": archive.result_version,
+                    "archivePackageId": archive.archive_package_id,
+                    "archiveStatus": archive.archive_status,
+                    "contentHash": archive.content_hash,
+                    "archiveProviderRef": archive.archive_provider_ref,
+                    "sealedAt": archive.sealed_at.isoformat(),
+                }
+            )
+        missing = sorted(requested - found)
+        if missing:
+            return ProviderResult(
+                status=ProviderStatus.PARTIAL,
+                data=rows,
+                error_message=(
+                    "ASSESSMENT_ARCHIVE_UNAVAILABLE: no sealed tenant-scoped archive for staff: "
+                    + ",".join(missing)
+                ),
+                source_version="hr12-archive-v1",
+            )
         return ProviderResult(
-            status=ProviderStatus.UNAVAILABLE,
-            data=None,
-            error_message="档案归档待建",
+            status=ProviderStatus.OK,
+            data=rows,
+            source_version="hr12-archive-v1",
         )
 
 
 class NotificationProvider(BaseAssessmentProvider):
-    owner_domain = "notifications"
+    owner_domain = "hr_assessment"
 
     def _do_fetch(self, ctx: ProviderContext) -> ProviderResult:
+        if not ctx.ids:
+            return _empty_result("hr12-result-delivery-receipt-v1")
+        from hr_assessment.models.case import HrAssessmentCase
+        from hr_assessment.models.result import HrResultNotice
+
+        requested = {str(value) for value in ctx.ids}
+        cases = HrAssessmentCase.objects.filter(
+            tenant_id=ctx.tenant_id,
+            staff_id__in=ctx.ids,
+        ).values("id", "staff_id")
+        staff_by_case = {str(row["id"]): str(row["staff_id"]) for row in cases}
+        notices = (
+            HrResultNotice.objects.filter(
+                tenant_id=ctx.tenant_id,
+                result__case_id__in=list(staff_by_case),
+                delivery_status="DELIVERED",
+                delivery_receipt_ref__gt="",
+                delivered_at__isnull=False,
+                delivered_at__date__lte=_ctx_as_of_date(ctx),
+            )
+            .select_related("result")
+            .order_by("result__case_id", "-result_version", "-delivered_at")
+        )
+        rows = []
+        found = set()
+        for notice in notices:
+            staff_id = staff_by_case.get(str(notice.result.case_id))
+            if not staff_id:
+                continue
+            found.add(staff_id)
+            rows.append(
+                {
+                    "staffId": staff_id,
+                    "resultId": str(notice.result_id),
+                    "resultVersion": notice.result_version,
+                    "noticeId": str(notice.id),
+                    "noticeNo": notice.notice_no,
+                    "deliveryChannel": notice.delivery_channel,
+                    "deliveryReceiptRef": notice.delivery_receipt_ref,
+                    "deliveredAt": notice.delivered_at.isoformat(),
+                }
+            )
+        missing = sorted(requested - found)
+        if missing:
+            return ProviderResult(
+                status=ProviderStatus.PARTIAL,
+                data=rows,
+                error_message=(
+                    "ASSESSMENT_DELIVERY_RECEIPT_UNAVAILABLE: no verified tenant-scoped receipt for staff: "
+                    + ",".join(missing)
+                ),
+                source_version="hr12-result-delivery-receipt-v1",
+            )
         return ProviderResult(
-            status=ProviderStatus.UNAVAILABLE,
-            data=None,
-            error_message="通知服务未配置真实投递/回执接口",
-            source_version="notifications:unconfigured",
+            status=ProviderStatus.OK,
+            data=rows,
+            source_version="hr12-result-delivery-receipt-v1",
         )
 
 

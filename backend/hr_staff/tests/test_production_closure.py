@@ -91,7 +91,7 @@ class ExportProductionClosureTests(TestCase):
         self.assertTrue(job.file_ref)
         content = ExportService(
             TENANT, actor_user_id=11, context=self.context
-        ).consume_download(job.id, job.download_token)["content"]
+        ).consume_download(job.id, job.issued_download_token)["content"]
         self.assertIn("EXP-001", content)
 
     def test_download_is_bound_to_requester(self):
@@ -99,7 +99,7 @@ class ExportProductionClosureTests(TestCase):
         with self.assertRaises(ExportPolicyDenied):
             ExportService(
                 TENANT, actor_user_id=22, context=self.context
-            ).consume_download(job.id, job.download_token)
+            ).consume_download(job.id, job.issued_download_token)
         job.refresh_from_db()
         self.assertIsNone(job.consumed_at)
 
@@ -109,7 +109,7 @@ class ExportProductionClosureTests(TestCase):
         with self.assertRaises(ExportContentUnavailable):
             ExportService(
                 TENANT, actor_user_id=11, context=self.context
-            ).consume_download(job.id, job.download_token)
+            ).consume_download(job.id, job.issued_download_token)
         job.refresh_from_db()
         self.assertIsNone(job.consumed_at)
         self.assertEqual(job.status, HrExportJob.Status.FAILED)

@@ -36,7 +36,7 @@
                 </a>
             {% else %}
                 <a
-                    hx-get="{% url 'validate-this-attendance' instance.id %}"
+                    hx-post="{% url 'validate-this-attendance' instance.id %}"
                     hx-swap="none"
                     onclick="event.stopPropagation()"
                     class="oh-btn oh-btn--success"

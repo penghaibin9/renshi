@@ -9,6 +9,7 @@ from django.contrib import admin
 from hr_external.models import (
     HrExternalAccessGrant,
     HrExternalAcademicIdentity,
+    HrExternalAcademicProvisioningRequest,
     HrExternalAuditEvent,
     HrExternalAuthorityConfig,
     HrExternalCategory,
@@ -186,6 +187,13 @@ class HrExternalWorkspaceAdmin(ReadOnlyAdmin):
 class HrExternalAcademicIdentityAdmin(ReadOnlyAdmin):
     list_display = ("tenant_id", "engagement_id", "academic_teacher_id", "status", "valid_from", "valid_to")
     list_filter = ("status",)
+    readonly_fields = ("id", "tenant_id", "version", "created_at", "updated_at")
+
+
+@admin.register(HrExternalAcademicProvisioningRequest)
+class HrExternalAcademicProvisioningRequestAdmin(ReadOnlyAdmin):
+    list_display = ("tenant_id", "academic_identity_id", "operation", "status", "retry_count")
+    list_filter = ("operation", "status")
     readonly_fields = ("id", "tenant_id", "version", "created_at", "updated_at")
 
 

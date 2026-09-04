@@ -8,11 +8,15 @@ from __future__ import annotations
 
 from django.core.files.storage import default_storage
 from django.http import FileResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_onboarding.api import base as api_base
-from hr_onboarding.api.exceptions import Hr05ApiError, NotFoundError
+from hr_onboarding.api.exceptions import (
+    Hr05ApiError,
+    MaterialDownloadAuditUnavailableError,
+    MaterialDownloadTicketError,
+    NotFoundError,
+)
 from hr_onboarding.api.labels import (
     label_for,
     BLOCKING_LEVEL_LABELS,
@@ -23,7 +27,11 @@ from hr_onboarding.api.labels import (
     TASK_STATUS_LABELS,
 )
 from hr_onboarding.constants import MaterialStatus, VerificationResult
-from hr_onboarding.models import HrOnboardingCase, HrOnboardingMaterial
+from hr_onboarding.models import (
+    HrOnboardingAuditEvent,
+    HrOnboardingCase,
+    HrOnboardingMaterial,
+)
 from hr_onboarding.permissions import require_hr05_permission
 from hr_onboarding.services import file_service
 from hr_onboarding.services.material_service import MaterialService
@@ -76,6 +84,7 @@ def materials_list(request, case_id: str):
                 "reusePolicyLabel": label_for(REUSE_POLICY_LABELS, m.requirement.reuse_policy),
                 "status": m.status,
                 "statusLabel": label_for(MATERIAL_STATUS_LABELS, m.status),
+                "hasFile": bool(m.file_version_id),
                 "source": m.source,
                 "expiry_date": m.expiry_date.isoformat() if m.expiry_date else None,
             }
@@ -88,7 +97,6 @@ def materials_list(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
-@csrf_exempt
 def material_submit(request, case_id: str, material_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -109,7 +117,6 @@ def material_submit(request, case_id: str, material_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
-@csrf_exempt
 def material_verify(request, material_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -131,7 +138,6 @@ def material_verify(request, material_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
-@csrf_exempt
 def material_return(request, material_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -145,7 +151,6 @@ def material_return(request, material_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
-@csrf_exempt
 def material_waive(request, material_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -159,36 +164,52 @@ def material_waive(request, material_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
-@csrf_exempt
 def material_download_ticket(request, material_id: str):
     try:
         context = api_base.make_hr05_context(request)
         material = _load_material_or_404(context, material_id)
-        ticket = file_service.issue_download_ticket(
-            tenant_id=context.tenant_id, material_id=str(material.id)
-        )
+        purpose = str(request.headers.get("X-HR-Access-Reason", "") or "").strip()
+        if not purpose:
+            raise Hr05ApiError(
+                "下载入职材料前请填写查阅事由",
+                details={"code": "MATERIAL_DOWNLOAD_PURPOSE_REQUIRED"},
+            )
+        try:
+            ticket = file_service.issue_download_ticket(
+                tenant_id=context.tenant_id,
+                material=material,
+                actor_user_id=context.user_id,
+                purpose=purpose,
+                request_id=str(request.headers.get("X-Request-ID", "") or ""),
+            )
+        except ValueError as exc:
+            raise Hr05ApiError(
+                "当前材料尚无可下载文件或查阅事由无效",
+                details={"code": str(exc)},
+            ) from exc
         return api_base.ok(request, {"ticket": ticket, "expiresInSeconds": file_service.TICKET_TTL_SECONDS})
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
 
 
 @require_GET
+@require_hr05_permission("hr05.material.review")
 def material_download(request):
-    """消费下载 ticket（短时效一次性；不暴露存储路径）。"""
+    """从请求头原子消费账号绑定票据并写入正式访问审计。"""
     try:
-        ticket = request.GET.get("ticket")
+        context = api_base.make_hr05_context(request)
+        ticket = request.headers.get("X-HR-Download-Ticket")
         if not ticket:
-            raise NotFoundError("missing ticket")
-        info = file_service.resolve_download_ticket(ticket)
-        if info is None:
-            raise Hr05ApiError("ticket 无效或已过期", details={"code": "TICKET_EXPIRED"})
-        # 一次性：消费即失效（防 ticket 复用/转嫁）
-        file_service.consume_download_ticket(ticket)
-        material = HrOnboardingMaterial.objects.filter(
-            tenant_id=info["tenant_id"], id=info["material_id"]
-        ).first()
-        if material is None:
-            raise NotFoundError("材料不存在")
+            raise MaterialDownloadTicketError("下载票据缺失")
+        try:
+            ticket_record = file_service.consume_download_ticket(
+                ticket=ticket,
+                tenant_id=context.tenant_id,
+                actor_user_id=context.user_id,
+            )
+        except ValueError as exc:
+            raise MaterialDownloadTicketError("下载票据无效、已过期或已使用") from exc
+        material = ticket_record.material
         meta = material.file_meta_json or {}
         file_version_id = meta.get("file_version_id")
         ext = meta.get("ext", "")
@@ -204,7 +225,27 @@ def material_download(request):
         if not default_storage.exists(path):
             raise NotFoundError("文件不存在")
         name = meta.get("original_name", "document")
-        response = FileResponse(default_storage.open(path), as_attachment=True, filename=name)
+        stream = default_storage.open(path, "rb")
+        try:
+            HrOnboardingAuditEvent.objects.create(
+                tenant_id=context.tenant_id,
+                case_id=material.case_id,
+                actor_user_id=context.user_id,
+                action="material.downloaded",
+                business_type="MATERIAL",
+                business_id=str(material.id),
+                after_snapshot_ref=str(meta.get("sha256", "") or "")[:128],
+                reason=ticket_record.purpose,
+                request_id=ticket_record.request_id,
+            )
+        except Exception as exc:
+            stream.close()
+            raise MaterialDownloadAuditUnavailableError(
+                "材料访问审计暂时不可用，请稍后重新申请下载票据"
+            ) from exc
+        response = FileResponse(stream, as_attachment=True, filename=name)
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
         return response
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)

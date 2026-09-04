@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from django.db.models import Q
 
-from hr_recruitment.labels import CANDIDATE_STATUS_LABELS, status_label
+from hr_recruitment.labels import (
+    APPLICATION_STATUS_LABELS,
+    CANDIDATE_STATUS_LABELS,
+    status_label,
+)
 from hr_recruitment.models import HrJobApplication, HrRecruitmentCandidate
 
 # 候选来源（展示层映射，不改机器字段）
@@ -81,6 +85,9 @@ def get_candidate(*, tenant_id, candidate_id):
                 "id": str(a.id),
                 "application_no": a.application_no,
                 "canonical_status": a.canonical_status,
+                "canonical_status_label": status_label(
+                    APPLICATION_STATUS_LABELS, a.canonical_status
+                ),
                 "workflow_stage_name": a.workflow_stage_name,
                 "recruitment_position": a.recruitment_position_id.post_catalog_name
                 if a.recruitment_position_id
@@ -105,6 +112,9 @@ def _candidate_dto(c) -> dict:
         "sourceLabel": SOURCE_LABELS.get(c.source, c.source),
         "status": c.status,
         "statusLabel": status_label(CANDIDATE_STATUS_LABELS, c.status),
+        "legalHold": c.legal_hold,
+        "retentionUntil": c.retention_until.isoformat() if c.retention_until else None,
+        "anonymizedAt": c.anonymized_at.isoformat() if c.anonymized_at else None,
         "talent_tags": c.talent_tags,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }

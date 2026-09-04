@@ -51,13 +51,16 @@ class Hr05TenantMembershipContextTests(SimpleTestCase):
 
     @patch("hr_onboarding.api.base.resolve_tenant_from_request", return_value=TENANT_ID)
     @patch("base.auth_backends.get_allowed_company_ids", return_value={TENANT_ID})
-    def test_explicit_membership_allows_context(self, _allowed, _tenant):
+    @patch("hr_onboarding.api.base.get_authority_mode", return_value="HR05_AUTHORITY")
+    def test_explicit_membership_allows_context(self, _mode, _allowed, _tenant):
         context = make_hr05_context(self._request())
         self.assertEqual(context.tenant_id, TENANT_ID)
+        self.assertEqual(context.authority_mode, "HR05_AUTHORITY")
 
     @patch("hr_onboarding.api.base.resolve_tenant_from_request", return_value=TENANT_ID)
     @patch("base.auth_backends.get_allowed_company_ids")
-    def test_platform_superuser_keeps_existing_cross_school_rule(self, allowed, _tenant):
+    @patch("hr_onboarding.api.base.get_authority_mode", return_value="HR05_AUTHORITY")
+    def test_platform_superuser_keeps_existing_cross_school_rule(self, _mode, allowed, _tenant):
         context = make_hr05_context(self._request(superuser=True))
         self.assertEqual(context.tenant_id, TENANT_ID)
         allowed.assert_not_called()

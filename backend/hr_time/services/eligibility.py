@@ -23,9 +23,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
+from django.db import models
+
 from hr_time.enums import PolicyStatus
 from hr_time.models.policy import HrTimePolicyVersion
 from hr_time.providers.base import HrProviderError, PersonProvider
+from hr_time.providers.hr03 import LocalHr03PersonProvider
 
 
 class EligibilityError(Exception):
@@ -64,9 +67,19 @@ class TimePolicyResolver:
     )
 
     def __init__(self, person_provider: Optional[PersonProvider] = None):
-        # # [总控占位] HR03 PersonProvider 交付后注入真实实现；
-        # 当前由调用方显式传入，缺失时 resolver 对需 person 属性的匹配返回 SOURCE_UNAVAILABLE。
         self.person_provider = person_provider
+
+    @staticmethod
+    def _value(snapshot, key):
+        if snapshot is None:
+            return None
+        if isinstance(snapshot, dict):
+            return snapshot.get(key)
+        return getattr(snapshot, key, None)
+
+    @staticmethod
+    def _contains(values, candidate) -> bool:
+        return bool(values) and str(candidate) in {str(value) for value in values}
 
     def _match_scope(self, version: HrTimePolicyVersion, *, person, assignment) -> Optional[str]:
         """
@@ -83,15 +96,50 @@ class TimePolicyResolver:
         if scope.get("type") == "PERSON_EXCEPTION":
             if person is None:
                 return None
-            if scope.get("person_ids") and person.get("staff_master_id") in scope["person_ids"]:
+            if self._contains(
+                scope.get("person_ids") or scope.get("personIds"),
+                self._value(person, "staff_master_id"),
+            ):
                 return "PERSON_EXCEPTION"
+            return None
+
+        if scope.get("type") == "ASSIGNMENT":
+            if assignment is None:
+                return None
+            if self._contains(
+                scope.get("assignment_ids") or scope.get("assignmentIds"),
+                self._value(assignment, "assignment_id"),
+            ):
+                return "ASSIGNMENT"
+            return None
+
+        if scope.get("type") == "ORG":
+            if assignment is None:
+                return None
+            if self._contains(
+                scope.get("org_ids") or scope.get("orgIds"),
+                self._value(assignment, "org_id"),
+            ):
+                return "ORG"
             return None
 
         if scope.get("type") == "WORKER_CATEGORY":
             if person is None:
                 return None
-            if scope.get("categories") and person.get("worker_category") in scope["categories"]:
+            if self._contains(
+                scope.get("categories"), self._value(person, "worker_category")
+            ):
                 return "WORKER_CATEGORY"
+            return None
+
+        if scope.get("type") == "EMPLOYMENT_TYPE":
+            if person is None:
+                return None
+            if self._contains(
+                scope.get("employment_types") or scope.get("employmentTypes"),
+                self._value(person, "employment_type"),
+            ):
+                return "EMPLOYMENT_TYPE"
             return None
 
         if scope.get("type") == "TENANT_DEFAULT":
@@ -113,6 +161,10 @@ class TimePolicyResolver:
                 tenant_id=tenant_id,
                 status=PolicyStatus.PUBLISHED,
                 effective_from__lte=as_of,
+                policy_pack__status="ACTIVE",
+            )
+            .filter(
+                models.Q(effective_to__isnull=True) | models.Q(effective_to__gt=as_of)
             )
             .select_related("policy_pack", "recording_profile")
             .order_by("-effective_from", "-version_no")
@@ -130,15 +182,30 @@ class TimePolicyResolver:
         # person/assignment 信息：HR03 Provider（缺则 SOURCE_UNAVAILABLE）
         person = None
         assignment = None
-        if self.person_provider is not None:
+        scoped_types = {
+            str(version.policy_pack.effective_scope.get("type", "TENANT_DEFAULT"))
+            for version in versions
+        }
+        needs_hr03 = bool(scoped_types - {"", "TENANT_DEFAULT"})
+        provider = self.person_provider or (
+            LocalHr03PersonProvider(tenant_id) if needs_hr03 else None
+        )
+        if provider is not None:
             try:
-                person = self.person_provider.get_person(
+                person = provider.get_person(
                     legacy_employee_id=staff_master_id, as_of=as_of
                 )
                 if assignment_id:
-                    assignment = self.person_provider.get_assignment(
+                    assignment = provider.get_assignment(
                         assignment_id=assignment_id, as_of=as_of
                     )
+                    if str(self._value(assignment, "staff_master_id")) != str(
+                        self._value(person, "staff_master_id")
+                    ):
+                        raise HrProviderError(
+                            "CROSS_TENANT_REFERENCE",
+                            "任职不属于当前教职工",
+                        )
             except HrProviderError as exc:
                 return TimePolicyResolution(
                     policy_version_id=None,

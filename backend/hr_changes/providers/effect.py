@@ -251,6 +251,8 @@ SUPPORTED_EFFECT_ACTIONS = frozenset(
         ChangeActionCode.EMPLOYEE_CATEGORY_CHANGE,
         ChangeActionCode.EMPLOYMENT_TYPE_CHANGE,
         ChangeActionCode.MANAGER_CHANGE,
+        ChangeActionCode.POST_CATEGORY_CHANGE,
+        ChangeActionCode.LOCATION_CHANGE,
         ChangeActionCode.TEMPORARY_SECONDMENT,
         ChangeActionCode.TEMPORARY_ATTACHMENT,
         ChangeActionCode.RETURN_FROM_TEMPORARY,

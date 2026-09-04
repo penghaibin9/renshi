@@ -48,6 +48,19 @@ def _add_months(value: date, months: int) -> date:
     return date(year, month, day)
 
 
+def _policy_retirement_age_months(policy: RetirementPolicy, birth_date: date) -> int:
+    """Resolve fixed or cohort-stepped retirement age from one sealed policy."""
+    base = int(policy.retirement_age_months)
+    start = policy.transition_birth_start
+    step = int(policy.delay_step_birth_months or 0)
+    maximum = policy.max_retirement_age_months
+    if start is None or step <= 0 or maximum is None or birth_date < start:
+        return base
+    cohort_month = (birth_date.year - start.year) * 12 + birth_date.month - start.month
+    delay_months = cohort_month // step + 1
+    return min(base + delay_months, int(maximum))
+
+
 class RetirementPolicyService:
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
         if not tenant_id:
@@ -85,6 +98,9 @@ class RetirementPolicyService:
         staff_category_code: str = "",
         relationship_type: str = "",
         special_condition_code: str = "",
+        transition_birth_start: date | None = None,
+        delay_step_birth_months: int = 0,
+        max_retirement_age_months: int | None = None,
         priority: int = 0,
     ) -> RetirementPolicy:
         code = self._bounded(policy_code, field="policy_code", maximum=64, required=True)
@@ -115,6 +131,12 @@ class RetirementPolicyService:
             age_months = int(retirement_age_months)
             service_months = int(minimum_service_months)
             priority = int(priority)
+            delay_step = int(delay_step_birth_months or 0)
+            maximum_age = (
+                int(max_retirement_age_months)
+                if max_retirement_age_months not in (None, "")
+                else None
+            )
         except (TypeError, ValueError) as exc:
             raise RetirementPolicyError(
                 "RETIREMENT_POLICY_NUMBER_INVALID", "age/service/priority must be integers"
@@ -124,6 +146,27 @@ class RetirementPolicyService:
                 "RETIREMENT_POLICY_NUMBER_INVALID",
                 "age must be 1..1200 months and service must be 0..1200 months",
             )
+        transition_values = (transition_birth_start, delay_step, maximum_age)
+        if any(value not in (None, 0) for value in transition_values):
+            if not isinstance(transition_birth_start, date):
+                raise RetirementPolicyError(
+                    "RETIREMENT_POLICY_TRANSITION_INVALID",
+                    "transition_birth_start is required for a stepped policy",
+                )
+            if not 1 <= delay_step <= 120:
+                raise RetirementPolicyError(
+                    "RETIREMENT_POLICY_TRANSITION_INVALID",
+                    "delay_step_birth_months must be between 1 and 120",
+                )
+            if maximum_age is None or not age_months <= maximum_age <= 1200:
+                raise RetirementPolicyError(
+                    "RETIREMENT_POLICY_TRANSITION_INVALID",
+                    "max_retirement_age_months must be between base age and 1200",
+                )
+        else:
+            transition_birth_start = None
+            delay_step = 0
+            maximum_age = None
 
         latest_version = (
             RetirementPolicy.objects.filter(tenant_id=self.tenant_id, policy_code=code)
@@ -154,6 +197,11 @@ class RetirementPolicyService:
                 special_condition_code, field="special_condition_code", maximum=64
             ),
             "retirementAgeMonths": age_months,
+            "transitionBirthStart": (
+                transition_birth_start.isoformat() if transition_birth_start else None
+            ),
+            "delayStepBirthMonths": delay_step,
+            "maxRetirementAgeMonths": maximum_age,
             "minimumServiceMonths": service_months,
             "effectiveFrom": effective_from.isoformat(),
             "effectiveTo": effective_to.isoformat() if effective_to else None,
@@ -175,6 +223,9 @@ class RetirementPolicyService:
             relationship_type=content["relationshipType"],
             special_condition_code=content["specialConditionCode"],
             retirement_age_months=age_months,
+            transition_birth_start=transition_birth_start,
+            delay_step_birth_months=delay_step,
+            max_retirement_age_months=maximum_age,
             minimum_service_months=service_months,
             effective_from=effective_from,
             effective_to=effective_to,
@@ -326,7 +377,8 @@ class RetirementPrecheckService:
             decision = RetirementPrecheck.Decision.MANUAL_REVIEW
             reason_codes.append("NO_ACTIVE_POLICY_MATCH")
         else:
-            statutory_date = _add_months(person.birth_date, matched.retirement_age_months)
+            resolved_age_months = _policy_retirement_age_months(matched, person.birth_date)
+            statutory_date = _add_months(person.birth_date, resolved_age_months)
             if as_of < statutory_date:
                 reason_codes.append("STATUTORY_DATE_NOT_REACHED")
             if service_months < matched.minimum_service_months:
@@ -353,7 +405,16 @@ class RetirementPrecheckService:
         explanation = {
             "reasonCodes": reason_codes,
             "rationale": matched.rationale if matched else "需要人工核验或配置政策",
-            "requiredRetirementAgeMonths": matched.retirement_age_months if matched else None,
+            "requiredRetirementAgeMonths": (
+                _policy_retirement_age_months(matched, person.birth_date)
+                if matched and person.birth_date
+                else matched.retirement_age_months if matched else None
+            ),
+            "retirementAgeResolution": (
+                "BIRTH_COHORT_STEP"
+                if matched and matched.transition_birth_start
+                else "FIXED_POLICY"
+            ),
             "requiredMinimumServiceMonths": matched.minimum_service_months if matched else None,
             "observedServiceMonths": service_months,
             "policyContentHash": matched.content_hash if matched else "",

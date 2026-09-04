@@ -10,7 +10,9 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr04-page" data-module="HR04" data-section="plans" data-hr-page="recruitment-plans">
+<div class="hr-v2-page hr04-page" data-module="HR04" data-section="plans" data-hr-page="recruitment-plans"
+     data-can-plan-create="{{ can_plan_create|yesno:'true,false' }}"
+     data-can-plan-approve="{{ can_plan_approve|yesno:'true,false' }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>年度用人计划</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr04-plans-title">
@@ -22,7 +24,7 @@
     <div class="hr-v2-context">
       <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
       <span class="hr-v2-context__item"><strong>依据</strong> 正式计划记录</span>
-      <span class="hr-v2-context__item"><strong>创建</strong> 暂不可用</span>
+      <span class="hr-v2-context__item"><strong>创建</strong> 按权限开放</span>
     </div>
   </header>
 
@@ -35,13 +37,13 @@
     <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
   </nav>
 
-  <div class="hr04-unavailable" role="note"><strong>创建入口：</strong><span>服务端的新建与查询入口尚未完成统一，因此本页暂不提供新建计划周期操作；现有计划读取能力保持可用。</span></div>
-
   <section class="hr04-panel">
     <div class="hr04-toolbar">
       <div><h2>{% trans "计划周期" %}</h2><p>选择正式计划周期后读取该周期的需求申请。</p></div>
-      <button class="hr04-action" type="button" data-hr-new-cycle disabled aria-disabled="true">{% trans "新建计划周期" %}</button>
+      {% if can_plan_create %}<button class="hr04-action" type="button" data-hr-new-cycle>{% trans "新建计划周期" %}</button>{% endif %}
     </div>
+    <div id="hr04-plan-authoring"></div>
+    <div id="hr04-plan-feedback" class="hr04-form-result" role="status"></div>
     <div id="hr04-plan-cycles" class="hr-rec-plan-cycles">
       <div class="hr04-state"><strong>正在读取计划周期</strong><span>等待服务端返回正式计划事实。</span></div>
     </div>

@@ -5,6 +5,7 @@ This module is used to"""
 
 import csv
 import json
+import logging
 import os
 from datetime import date, datetime
 from urllib.parse import parse_qs
@@ -15,11 +16,13 @@ from django.contrib import messages
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_http_methods
 
 from asset.filters import (
     AssetAllocationFilter,
@@ -62,7 +65,6 @@ from base.methods import (
 )
 from base.models import Company
 from employee.models import Employee, EmployeeWorkInformation
-from horilla import settings
 from horilla.decorators import (
     hx_request_required,
     login_required,
@@ -72,8 +74,11 @@ from horilla.decorators import (
 )
 from horilla.group_by import group_by_queryset
 from horilla.http.response import HorillaRedirect
-from horilla.methods import horilla_users_with_perms
+from horilla.methods import renshi_users_with_perms
 from notifications.signals import notify
+
+
+logger = logging.getLogger(__name__)
 
 
 def asset_del(request, asset):
@@ -264,6 +269,7 @@ def asset_information(request, asset_id):
 
 @login_required
 @permission_required(perm="asset.delete_asset")
+@require_http_methods(["POST"])
 def asset_delete(request, asset_id):
     """Delete the asset with the given id.
     If the asset is currently in use, display an info message and
@@ -480,6 +486,7 @@ def asset_category_update(request, cat_id):
 
 @login_required
 @permission_required(perm="asset.delete_assetcategory")
+@require_http_methods(["POST"])
 def delete_asset_category(request, cat_id):
     """
     This method is used to delete asset category
@@ -696,36 +703,57 @@ def asset_request_approve(request, req_id):
         post_data["assigned_by_employee_id"] = request.user.employee_get
 
         form = AssetAllocationForm(post_data, request.FILES)
+        form.fields["asset_id"].queryset = assets
         if form.is_valid():
             try:
-                asset = form.cleaned_data["asset_id"]
-                allocation = form.save(commit=False)
-                allocation.assigned_by_employee_id = request.user.employee_get
-                allocation.save()
-                active_count = AssetAssignment.objects.filter(
-                    asset_id=asset, return_date__isnull=True
-                ).count()
-                if active_count >= asset.quantity:
-                    asset.asset_status = "In use"
-                    asset.save()
+                with transaction.atomic():
+                    asset_request = AssetRequest.objects.select_for_update().get(
+                        id=req_id
+                    )
+                    if asset_request.asset_request_status != "Requested":
+                        messages.error(request, _("Asset request is already processed."))
+                        return HorillaRedirect(request)
+                    asset = Asset.objects.select_for_update().get(
+                        id=form.cleaned_data["asset_id"].id,
+                        asset_category_id=asset_request.asset_category_id,
+                    )
+                    active_count = AssetAssignment.objects.filter(
+                        asset_id=asset, return_date__isnull=True
+                    ).count()
+                    if active_count >= asset.quantity:
+                        form.add_error("asset_id", _("This asset has no available units."))
+                    else:
+                        allocation = form.save(commit=False)
+                        allocation.asset_id = asset
+                        allocation.assigned_to_employee_id = (
+                            asset_request.requested_employee_id
+                        )
+                        allocation.assigned_by_employee_id = request.user.employee_get
+                        allocation.save()
+                        if active_count + 1 >= asset.quantity:
+                            asset.asset_status = "In use"
+                            asset.save(update_fields=["asset_status"])
 
-                asset_request.asset_request_status = "Approved"
-                asset_request.save()
+                        asset_request.asset_request_status = "Approved"
+                        asset_request.save(update_fields=["asset_request_status"])
 
-                notify.send(
-                    request.user.employee_get,
-                    recipient=allocation.assigned_to_employee_id.employee_user_id,
-                    verb=_("Your asset request has been approved!"),
-                    redirect=reverse("asset-request-allocation-view")
-                    + f"?asset_request_date={asset_request.asset_request_date}&"
-                    f"asset_request_status={asset_request.asset_request_status}",
-                    icon="bag-check",
-                )
+                        notify.send(
+                            request.user.employee_get,
+                            recipient=allocation.assigned_to_employee_id.employee_user_id,
+                            verb=_("Your asset request has been approved!"),
+                            redirect=reverse("asset-request-allocation-view")
+                            + f"?asset_request_date={asset_request.asset_request_date}&"
+                            f"asset_request_status={asset_request.asset_request_status}",
+                            icon="bag-check",
+                        )
 
-                messages.success(request, _("Asset request approved successfully!"))
-                return HorillaRedirect(request)
-            except Exception as e:
-                messages.error(request, _("An error occurred: ") + str(e))
+                        messages.success(
+                            request, _("Asset request approved successfully!")
+                        )
+                        return HorillaRedirect(request)
+            except Exception:
+                logger.exception("Asset request approval failed")
+                messages.error(request, _("Asset request approval failed."))
                 return HttpResponse(error_response)
     else:
         form = AssetAllocationForm()
@@ -776,6 +804,8 @@ def reject_request_return(request, asset_request, req_id):
 
 @login_required
 @permission_required(perm="asset.add_assetassignment")
+@require_http_methods(["POST"])
+@transaction.atomic
 def asset_request_reject(request, req_id):
     """
     View function to reject an asset request.
@@ -790,13 +820,16 @@ def asset_request_reject(request, req_id):
         found or already rejected
     """
     try:
-        asset_request = AssetRequest.objects.get(id=req_id)
+        asset_request = AssetRequest.objects.select_for_update().get(id=req_id)
     except AssetRequest.DoesNotExist:
         messages.error(request, _("Asset request not found."))
         return HorillaRedirect(request)
 
+    if asset_request.asset_request_status != "Requested":
+        messages.error(request, _("Asset request is already processed."))
+        return reject_request_return(request, asset_request, req_id)
     asset_request.asset_request_status = "Rejected"
-    asset_request.save()
+    asset_request.save(update_fields=["asset_request_status"])
     messages.info(request, _("Asset request has been rejected."))
     notify.send(
         request.user.employee_get,
@@ -816,6 +849,7 @@ def asset_request_reject(request, req_id):
 
 @login_required
 @permission_required(perm="asset.add_assetassignment")
+@require_http_methods(["GET", "POST"])
 def asset_allocate_creation(request):
     """
     View function to create asset allocation.
@@ -828,29 +862,48 @@ def asset_allocate_creation(request):
     )
     context = {"asset_allocation_form": form}
     if request.method == "POST":
-        form = AssetAllocationForm(request.POST)
+        form = AssetAllocationForm(request.POST, request.FILES)
         if form.is_valid():
-            instance = form.save()
-            asset = instance.asset_id
-            active_count = AssetAssignment.objects.filter(
-                asset_id=asset, return_date__isnull=True
-            ).count()
-            if active_count >= asset.quantity:
-                asset.asset_status = "In use"
-                asset.save()
-            files = request.FILES.getlist("assign_images")
-            attachments = []
-            if request.FILES:
-                for file in files:
-                    attachment = ReturnImages()
-                    attachment.image = file
-                    attachment.save()
-                    attachments.append(attachment)
-                instance.assign_images.add(*attachments)
-            form = AssetAllocationForm(
-                initial={"assigned_by_employee_id": request.user.employee_get}
-            )
-            messages.success(request, _("Asset allocated successfully!."))
+            with transaction.atomic():
+                asset = Asset.objects.select_for_update().get(
+                    pk=form.cleaned_data["asset_id"].pk
+                )
+                active_count = AssetAssignment.objects.filter(
+                    asset_id=asset, return_date__isnull=True
+                ).count()
+                if (
+                    asset.quantity < 1
+                    or asset.is_expired
+                    or active_count >= asset.quantity
+                ):
+                    form.add_error(
+                        "asset_id", _("This asset no longer has an available unit.")
+                    )
+                else:
+                    instance = form.save(commit=False)
+                    instance.asset_id = asset
+                    instance.assigned_by_employee_id = request.user.employee_get
+                    instance.return_request = False
+                    instance.return_status = None
+                    instance.save()
+
+                    attachments = []
+                    for uploaded_file in request.FILES.getlist("assign_images"):
+                        attachment = ReturnImages.objects.create(image=uploaded_file)
+                        attachments.append(attachment)
+                    instance.assign_images.add(*attachments)
+
+                    active_count += 1
+                    asset.asset_status = (
+                        "In use" if active_count >= asset.quantity else "Available"
+                    )
+                    asset.save(update_fields=["asset_status"])
+                    form = AssetAllocationForm(
+                        initial={
+                            "assigned_by_employee_id": request.user.employee_get
+                        }
+                    )
+                    messages.success(request, _("Asset allocated successfully!."))
         context["asset_allocation_form"] = form
     return render(request, "request_allocation/asset_allocation_creation.html", context)
 
@@ -859,22 +912,28 @@ def asset_allocate_creation(request):
 @owner_can_enter(
     "change_assetassignment", AssetAssignment, employee_field="assigned_to_employee_id"
 )
+@require_http_methods(["POST"])
+@transaction.atomic
 def asset_allocate_return_request(request, asset_id):
     """
     Handle the initiation of a return request for an allocated asset.
     """
     previous_data = request.GET.urlencode()
     try:
-        asset_assign = AssetAssignment.objects.get(id=asset_id)
+        asset_assign = AssetAssignment.objects.select_for_update().get(id=asset_id)
     except AssetAssignment.DoesNotExist:
         messages.error(request, _("Asset assignment not found."))
         return HorillaRedirect(request)
 
+    if asset_assign.return_date or asset_assign.return_request:
+        return HorillaRedirect(
+            request, message=_("This asset return is already processed.")
+        )
     asset_assign.return_request = True
-    asset_assign.save()
+    asset_assign.save(update_fields=["return_request"])
     message = _("Return request for {} initiated.").format(asset_assign.asset_id)
     messages.success(request, message)
-    permed_users = horilla_users_with_perms("asset.change_assetassignment")
+    permed_users = renshi_users_with_perms("asset.change_assetassignment")
     notify.send(
         request.user.employee_get,
         recipient=permed_users,
@@ -903,6 +962,7 @@ def asset_allocate_return_request(request, asset_id):
 @login_required
 @hx_request_required
 @permission_required(perm="asset.change_assetassignment")
+@require_http_methods(["GET", "POST"])
 def asset_allocate_return(request, asset_id):
     """
     View function to return asset.
@@ -912,79 +972,87 @@ def asset_allocate_return(request, asset_id):
     - message of the return
     """
 
-    asset_return_form = AssetReturnForm()
-    asset_allocation = AssetAssignment.objects.filter(
-        asset_id=asset_id, return_status__isnull=True
-    ).first()
+    asset_allocation = (
+        AssetAssignment.objects.select_related("asset_id", "assigned_to_employee_id")
+        .filter(pk=asset_id, return_date__isnull=True, return_status__isnull=True)
+        .first()
+    )
+    if not asset_allocation:
+        messages.error(request, _("Active asset assignment not found."))
+        return HorillaRedirect(request)
+
+    asset_return_form = AssetReturnForm(instance=asset_allocation)
     if request.method == "POST":
-        asset_return_form = AssetReturnForm(request.POST, request.FILES)
+        asset_return_form = AssetReturnForm(
+            request.POST, request.FILES, instance=asset_allocation
+        )
 
         if asset_return_form.is_valid():
-            asset = Asset.objects.filter(id=asset_id).first()
-            asset_return_status = asset_return_form.cleaned_data["return_status"]
-            asset_return_date = asset_return_form.cleaned_data["return_date"]
-            asset_return_condition = asset_return_form.cleaned_data["return_condition"]
-            files = request.FILES.getlist("return_images")
-            attachments = []
-            context = {"asset_return_form": asset_return_form, "asset_id": asset_id}
-            if asset_return_status == "Healthy":
-                asset_allocation = AssetAssignment.objects.filter(
-                    asset_id=asset_id, return_status__isnull=True
-                ).first()
-                asset_allocation.return_date = asset_return_date
+            with transaction.atomic():
+                try:
+                    asset_allocation = (
+                        AssetAssignment.objects.select_for_update()
+                        .select_related("asset_id", "assigned_to_employee_id")
+                        .get(
+                            pk=asset_id,
+                            return_date__isnull=True,
+                            return_status__isnull=True,
+                        )
+                    )
+                except AssetAssignment.DoesNotExist:
+                    messages.error(
+                        request, _("This asset return is already processed.")
+                    )
+                    return HorillaRedirect(request)
+
+                asset = Asset.objects.select_for_update().get(
+                    pk=asset_allocation.asset_id_id
+                )
+                asset_return_status = asset_return_form.cleaned_data["return_status"]
+                asset_allocation.return_date = asset_return_form.cleaned_data[
+                    "return_date"
+                ]
                 asset_allocation.return_status = asset_return_status
-                asset_allocation.return_condition = asset_return_condition
+                asset_allocation.return_condition = asset_return_form.cleaned_data[
+                    "return_condition"
+                ]
                 asset_allocation.return_request = False
-                asset_allocation.save()
-                if request.FILES:
-                    for file in files:
-                        attachment = ReturnImages()
-                        attachment.image = file
-                        attachment.save()
-                        attachments.append(attachment)
-                    asset_allocation.return_images.add(*attachments)
-                active_count = AssetAssignment.objects.filter(
-                    asset_id=asset, return_date__isnull=True
-                ).count()
-                if active_count < asset.quantity:
-                    asset.asset_status = "Available"
-                else:
-                    asset.asset_status = "In use"
-                asset.save()
-                messages.success(request, _("Asset Returned Successfully..."))
-                return HorillaRedirect(request)
-            asset_allocation = AssetAssignment.objects.filter(
-                asset_id=asset_id, return_status__isnull=True
-            ).first()
-            asset_allocation.return_date = asset_return_date
-            asset_allocation.return_status = asset_return_status
-            asset_allocation.return_condition = asset_return_condition
-            asset_allocation.save()
-            if request.FILES:
-                for file in files:
-                    attachment = ReturnImages()
-                    attachment.image = file
-                    attachment.save()
+                asset_allocation.save(
+                    update_fields=[
+                        "return_date",
+                        "return_status",
+                        "return_condition",
+                        "return_request",
+                    ]
+                )
+
+                attachments = []
+                for uploaded_file in request.FILES.getlist("return_images"):
+                    attachment = ReturnImages.objects.create(image=uploaded_file)
                     attachments.append(attachment)
                 asset_allocation.return_images.add(*attachments)
-            if asset.quantity > 1:
-                # Damaged unit removed from pool; reduce serviceable quantity
-                asset.quantity = asset.quantity - 1
+
+                if asset_return_status != "Healthy":
+                    asset.quantity = max(0, asset.quantity - 1)
+
                 active_count = AssetAssignment.objects.filter(
                     asset_id=asset, return_date__isnull=True
                 ).count()
-                if asset.quantity == 0:
+                if asset.quantity < 1:
                     asset.asset_status = "Not-Available"
                 elif active_count < asset.quantity:
                     asset.asset_status = "Available"
                 else:
                     asset.asset_status = "In use"
-            else:
-                asset.asset_status = "Not-Available"
-            asset.save()
-            messages.info(request, _("Asset Return Successful!."))
+                asset.save(update_fields=["quantity", "asset_status"])
+
+            messages.success(request, _("Asset returned successfully."))
             return HorillaRedirect(request)
-    context = {"asset_return_form": asset_return_form, "asset_id": asset_id}
+    context = {
+        "asset_return_form": asset_return_form,
+        "assignment_id": asset_allocation.pk,
+        "asset_id": asset_allocation.asset_id_id,
+    }
     context["asset_alocation"] = asset_allocation
     return render(request, "asset/asset_return_form.html", context)
 
@@ -1630,6 +1698,7 @@ def asset_batch_update(request, batch_id):
 @login_required
 @hx_request_required
 @permission_required(perm="asset.delete_assetlot")
+@require_http_methods(["POST"])
 def asset_batch_number_delete(request, batch_id):
     """
     View function to return asset.

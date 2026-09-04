@@ -12,6 +12,7 @@ from hr_external.constants import ExternalAuthorityMode
 from hr_external.models import (
     HrExternalAccessGrant,
     HrExternalAcademicIdentity,
+    HrExternalAcademicProvisioningRequest,
     HrExternalCategory,
     HrExternalConflictDeclaration,
     HrExternalContribution,
@@ -101,6 +102,7 @@ class ModelGovernanceTests(TestCase):
         HrExternalAccessGrant,
         HrExternalProvisioningRequest,
         HrExternalAcademicIdentity,
+        HrExternalAcademicProvisioningRequest,
         HrExternalLifecycleEvent,
         HrExternalContribution,
         HrExternalWorkspace,

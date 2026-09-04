@@ -16,12 +16,13 @@
     <form
         class="oh-profile-section"
         {% if id != None %}
-            hx-post="{% url 'edit-allowed-ip' %}?id={{id}}"
+            hx-post="{% url 'edit-allowed-ip' %}"
         {% else %}
             hx-post="{% url 'create-allowed-ip' %}"
         {% endif %}
         hx-target="#objectDetailsModalW25Target"
     >
+        {% if id != None %}<input type="hidden" name="id" value="{{id}}">{% endif %}
         {% for field in form.visible_fields %}
             {{ form.non_field_errors }}
             <div

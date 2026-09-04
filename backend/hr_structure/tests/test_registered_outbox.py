@@ -108,6 +108,12 @@ class Hr02RegisteredOutboxTests(TestCase):
             plan_year=self.today.year,
             validity_from=self.today,
         )
+        staffing_service.add_headcount_line(
+            plan_id=plan.id,
+            organization_id=school.id,
+            staffing_basis="OFFICIAL_ESTABLISHMENT",
+            authorized_headcount=100,
+        )
         staffing_service.submit(plan)
         staffing_service.approve(plan)
 

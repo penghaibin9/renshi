@@ -8,6 +8,16 @@ LEGACY_ROLLBACK_MODE = "ENTRY_ADAPTER_ONLY"
 LEGACY_FORMAL_WRITER_ROLLBACK_ALLOWED = False
 LEGACY_API_SUCCESSOR_ROOT = "/api/v1/hr/"
 LEGACY_HR_UI_SUCCESSORS = {
+    "dashboard": "/hr/overview",
+    "employee": "/hr/staff/",
+    "attendance": "/hr/time/attendance/",
+    "leave": "/hr/time/leave/",
+    "recruitment": "/hr/recruitment/",
+    "onboarding": "/hr/onboarding/",
+    "pms": "/hr/assessments/",
+    "project": "/hr/overview",
+    "asset": "/hr/exit/",
+    "helpdesk": "/hr/self/",
     "payroll": "/hr/payroll/",
     "offboarding": "/hr/exit/",
     "report": "/hr/data/",

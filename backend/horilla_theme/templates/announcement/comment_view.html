@@ -71,7 +71,7 @@
         <li class="oh-activity-sidebar__qa-item" id="announCommentCard{{comment.id}}">
             <span class="oh-activity-sidebar__q" style="font-size:16px;">{{ comment.comment }}
                 {% if perms.base.delete_announcementcomment or request.user == comment.created_by %}
-                <span class="float-end" hx-get="{% url 'announcement-delete-comment' comment.id %}" hx-swap="delete"
+                <span class="float-end" hx-post="{% url 'announcement-delete-comment' comment.id %}" hx-swap="delete"
                     hx-target="#announCommentCard{{comment.id}}"
                     hx-on:click="setTimeout(() => {reloadMessage(this);},100);">
                     <ion-icon name="close-outline" style="font-size: 24px" role="img" class="md hydrated"

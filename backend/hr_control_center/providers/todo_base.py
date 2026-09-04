@@ -35,6 +35,29 @@ class TodoItem:
     version: str = "1"
     batch_action_supported: bool = False
 
+    def to_api_dict(self) -> dict:
+        """Serialize the domain DTO to the frozen HR01 camelCase contract."""
+        return {
+            "id": f"{self.provider}:{self.business_id}",
+            "provider": self.provider,
+            "businessType": self.business_type,
+            "businessId": self.business_id,
+            "title": self.title,
+            "subjectName": self.subject_name,
+            "orgName": self.org_name,
+            "currentStage": self.current_stage,
+            "severity": self.severity,
+            "submittedAt": self.submitted_at.isoformat() if self.submitted_at else None,
+            "dueAt": self.due_at.isoformat() if self.due_at else None,
+            "isOverdue": self.is_overdue,
+            "assigneeType": self.assignee_type,
+            "actionLabel": self.action_label,
+            "actionUrl": self.action_url,
+            "permissionCode": self.permission_code,
+            "version": self.version,
+            "batchActionSupported": self.batch_action_supported,
+        }
+
 
 @dataclass
 class TodoSummary:

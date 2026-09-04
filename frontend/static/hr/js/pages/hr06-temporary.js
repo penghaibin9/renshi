@@ -10,6 +10,7 @@
   const action = document.getElementById("hr06-temporary-action");
   const reason = document.getElementById("hr06-temporary-reason");
   const targetOrg = document.getElementById("hr06-temporary-target-org");
+  const targetPosition = document.getElementById("hr06-temporary-target-position");
   const effectiveAt = document.getElementById("hr06-temporary-effective-at");
   const returnAt = document.getElementById("hr06-temporary-return-at");
   const priority = document.getElementById("hr06-temporary-priority");
@@ -109,6 +110,34 @@
       addOption(targetOrg, item.id, `${item.name}${item.code ? ` · ${item.code}` : ""}`);
     });
     targetOrg.disabled = items.length === 0;
+  }
+
+  async function fetchPositions(organizationId) {
+    if (!organizationId) return [];
+    const response = await window.HrApi.request("/api/v1/hr/structure/positions", {
+      params: { organizationId, lifecycleStatus: "ACTIVE", page: 1, page_size: 100 },
+      retries: 1,
+    });
+    return (response.data && response.data.items) || [];
+  }
+
+  async function fillTargetPositions() {
+    resetSelect(targetPosition, targetOrg.value ? "正在读取临时岗位…" : "请先选择临时单位");
+    targetPosition.disabled = true;
+    if (!targetOrg.value) return;
+    try {
+      const positions = await fetchPositions(targetOrg.value);
+      resetSelect(targetPosition, positions.length ? "不指定岗位，仅借调到单位" : "该单位没有在用岗位");
+      positions.forEach((item) => addOption(
+        targetPosition,
+        item.id,
+        item.positionCode || item.position_code || item.id
+      ));
+      targetPosition.disabled = false;
+    } catch (error) {
+      resetSelect(targetPosition, window.HrApi.apiErrorToMessage(error));
+    }
+    updateCreateAvailability();
   }
 
   function renderStaffResults(items) {
@@ -219,6 +248,7 @@
           actionId: action.value,
           reasonId: reason.value,
           targetOrgId: targetOrg.value,
+          targetPositionId: targetPosition.value || null,
           requestedEffectiveAt: effectiveAt.value,
           expectedReturnAt: returnAt.value,
           sourcePolicy: "KEEP_ACTIVE",
@@ -237,7 +267,8 @@
 
   action.addEventListener("change", fillReasons);
   reason.addEventListener("change", updateCreateAvailability);
-  targetOrg.addEventListener("change", updateCreateAvailability);
+  targetOrg.addEventListener("change", fillTargetPositions);
+  targetPosition.addEventListener("change", updateCreateAvailability);
   effectiveAt.addEventListener("change", updateCreateAvailability);
   returnAt.addEventListener("change", updateCreateAvailability);
   searchButton.addEventListener("click", searchStaff);

@@ -404,23 +404,21 @@ class LegacyWorkforceProvider:
         LEGACY_ONLY 阶段 → UNAVAILABLE（不静默切源、不 fallback legacy）。
         """
         from hr_control_center.providers.base import (
-            AUTHORITY_ONLY,
             DATA_BASIS_AUTHORITATIVE_EFFECTIVE_FACT,
             ProviderResult,
         )
 
         metric_key = "workforce_distribution_org"
-        mode = getattr(context, "authority_mode", None)
-        # HR01 context 用 LEGACY_ONLY/DUAL_READ_COMPARE/AUTHORITY_ONLY。
-        # HR02 权威化由 cutover 决定；这里仅在 DUAL_READ_COMPARE（显式对账）时切 HR02。
-        # LEGACY_ONLY → UNAVAILABLE（不静默切源、不 fallback legacy）。
-        if mode in ("LEGACY_ONLY", "LEGACY_STRUCTURE_ONLY", None):
+        from hr_structure.services.cutover import Hr02CutoverService
+
+        mode = Hr02CutoverService().get_mode(context.tenant_id)
+        if mode == "LEGACY_STRUCTURE_ONLY":
             return ProviderResult.unavailable(
                 provider_key=self.provider_key,
                 metric_key=metric_key,
                 reason_code="HR02_NOT_AUTHORITY",
                 message="HR02 组织事实尚未进入权威/对账模式，学院分布暂用当前快照。",
-                authority_mode=context.authority_mode,
+                authority_mode=mode,
             )
         try:
             from hr_structure.models import HrLegacyObjectLink, HrOrganizationVersion

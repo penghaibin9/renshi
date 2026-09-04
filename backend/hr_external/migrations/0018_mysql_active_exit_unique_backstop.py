@@ -93,5 +93,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(install_mysql_backstop, uninstall_mysql_backstop),
+        migrations.RunPython(
+            install_mysql_backstop,
+            uninstall_mysql_backstop,
+            atomic=False,
+        ),
     ]

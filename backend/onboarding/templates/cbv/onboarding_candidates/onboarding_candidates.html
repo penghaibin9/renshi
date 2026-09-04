@@ -182,16 +182,6 @@
               });
             }
 
-            function offerLetter(url){
-              $.ajax({
-                type: "get",
-                url: url,
-                success: function (response) {
-                  $("#reloadMessagesButton").click()
-                }
-              });
-            }
-
             (function () {
               function queryParamTruthy(search, key) {
                 var re = new RegExp("[?&]" + key + "=([^&]*)", "i");

@@ -121,4 +121,7 @@ class AuditTest(TestCase):
         from hr_assessment.feature_flags import DEFAULTS, get_flag
 
         self.assertIn("HR12_SHADOW_EXECUTION", DEFAULTS)
-        self.assertIsInstance(get_flag("HR12_SHADOW_EXECUTION"), bool)
+        self.assertIsInstance(
+            get_flag("HR12_SHADOW_EXECUTION", tenant_id=10001),
+            bool,
+        )

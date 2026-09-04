@@ -15,36 +15,37 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET
-
+from django.views.decorators.http import require_GET, require_POST
 from hr_control_center.context import (
     HrContextError,
     resolve_tenant_from_request,
 )
-from hr_structure.scope import Hr02Scope, resolve_scope
-from hr_structure.permissions import has_hr02_permission
-from hr_structure.selectors.organization import OrganizationSelector
+
 from hr_structure.display_labels import (
-    append_labels,
-    append_labels_deep,
-    CHANGE_TYPE,
+    AUTHORITY_MODE,
     CHANGE_CASE_STATUS,
+    CHANGE_TYPE,
+    DATA_BASIS,
+    METRIC_FRESHNESS,
+    ORG_RELATION_STATUS,
+    ORG_RELATION_TYPE,
     ORG_TYPE,
     ORG_VERSION_STATUS,
-    ORG_RELATION_TYPE,
-    ORG_RELATION_STATUS,
-    STAFFING_PLAN_STATUS,
-    POST_CATALOG_CATEGORY,
-    POST_CATALOG_SUBCATEGORY,
-    POST_CATALOG_CONTROL_MODE,
     POSITION_LIFECYCLE_STATUS,
     POSITION_OCCUPANCY_STATUS,
     POSITION_RESERVATION_STATUS,
-    AUTHORITY_MODE,
+    POST_CATALOG_CATEGORY,
+    POST_CATALOG_CONTROL_MODE,
+    POST_CATALOG_SUBCATEGORY,
     SCOPE_TYPE,
-    DATA_BASIS,
-    METRIC_FRESHNESS,
+    STAFFING_PLAN_STATUS,
+    append_labels,
+    append_labels_deep,
+    label_of,
 )
+from hr_structure.permissions import has_hr02_permission
+from hr_structure.scope import Hr02Scope, resolve_scope
+from hr_structure.selectors.organization import OrganizationSelector
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ def _error(request, code, message, status=422, details=None):
 def _parse_as_of(request):
     raw = request.GET.get("asOf")
     if not raw:
-        return date.today()
+        return timezone.localdate()
     try:
         return date.fromisoformat(raw)
     except ValueError:
@@ -140,14 +141,6 @@ def _inject_labels(data: dict, *, field_specs: list):
 def _inject_labels_list(items: list, *, field_specs: list):
     for item in items:
         _inject_labels(item, field_specs=field_specs)
-
-
-# 导入标签映射
-from hr_structure.display_labels import label_of, ORG_TYPE, ORG_VERSION_STATUS, ORG_RELATION_TYPE
-from hr_structure.display_labels import ORG_RELATION_STATUS, STAFFING_PLAN_STATUS
-from hr_structure.display_labels import POST_CATALOG_CATEGORY, POST_CATALOG_SUBCATEGORY, POST_CATALOG_CONTROL_MODE
-from hr_structure.display_labels import POSITION_LIFECYCLE_STATUS, POSITION_OCCUPANCY_STATUS, POSITION_RESERVATION_STATUS
-from hr_structure.display_labels import CHANGE_TYPE, CHANGE_CASE_STATUS, AUTHORITY_MODE
 
 
 def _make_scope(request) -> Hr02Scope:
@@ -188,6 +181,8 @@ def _make_scope(request) -> Hr02Scope:
 @require_GET
 def organizations_bootstrap(request):
     """GET /api/hr/v1/structure/organizations/bootstrap"""
+    if not has_hr02_permission(request.user, "hr.structure.organization.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织查看权限", status=403)
     try:
         as_of = _parse_as_of(request)
         scope = _make_scope(request)
@@ -199,9 +194,9 @@ def organizations_bootstrap(request):
     payload = _root(
         request, scope.tenant_id, as_of,
         permissions={
-            "canCreate": True,
-            "canSubmitChange": True,
-            "canViewHistory": True,
+            "canCreate": has_hr02_permission(request.user, "hr.structure.organization.create"),
+            "canSubmitChange": has_hr02_permission(request.user, "hr.structure.organization.change.submit"),
+            "canViewHistory": has_hr02_permission(request.user, "hr.structure.organization.history.view"),
         },
         root={
             "id": root.organization_id_id if root else None,
@@ -224,6 +219,8 @@ def organizations_bootstrap(request):
 @require_GET
 def organizations_tree(request):
     """GET /api/hr/v1/structure/organizations/tree?parent_id=...&asOf=..."""
+    if not has_hr02_permission(request.user, "hr.structure.organization.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织查看权限", status=403)
     try:
         as_of = _parse_as_of(request)
         scope = _make_scope(request)
@@ -266,8 +263,39 @@ def organizations_tree(request):
 
 
 @require_GET
+def organization_options(request):
+    """供业务表单选择机构；按生效日期返回有限、租户隔离的轻量选项。"""
+    if not has_hr02_permission(request.user, "hr.structure.organization.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织查看权限", status=403)
+    try:
+        as_of = _parse_as_of(request)
+        scope = _make_scope(request)
+        limit = int(request.GET.get("limit", 200) or 200)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    except (TypeError, ValueError):
+        return _error(request, "HR02_INVALID_REQUEST", "选项数量必须是整数", status=400)
+    limit = min(max(limit, 1), 500)
+    versions = OrganizationSelector(scope, as_of=as_of).search(
+        str(request.GET.get("q", "")).strip(), limit=limit
+    )
+    items = [
+        {
+            "id": version.organization_id_id,
+            "code": version.organization_id.stable_code,
+            "name": version.name,
+            "orgType": version.org_type,
+        }
+        for version in versions
+    ]
+    return _json(request, _root(request, scope.tenant_id, as_of, items=items))
+
+
+@require_GET
 def organization_detail(request, org_id):
     """GET /api/hr/v1/structure/organizations/{id}?asOf=..."""
+    if not has_hr02_permission(request.user, "hr.structure.organization.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织查看权限", status=403)
     try:
         as_of = _parse_as_of(request)
         scope = _make_scope(request)
@@ -280,9 +308,7 @@ def organization_detail(request, org_id):
         return _error(request, "HR02_ORG_NOT_FOUND", "组织不存在", status=404)
     version = selector.get_version_as_of(int(org_id))
     child_count = selector.get_children(int(org_id)).count()
-    return _json(
-        request,
-        _root(
+    payload = _root(
             request, scope.tenant_id, as_of,
             id=org.id,
             stable_code=org.stable_code,
@@ -292,9 +318,12 @@ def organization_detail(request, org_id):
             validity_from=version.validity_from.isoformat() if version else None,
             validity_to=version.validity_to.isoformat() if version and version.validity_to else None,
             child_count=child_count,
-        ),
+        )
+    _inject_labels(
+        payload,
+        field_specs=[("org_type", ORG_TYPE), ("status", ORG_VERSION_STATUS)],
     )
-    _inject_labels(payload["id"] is not None and payload or payload, field_specs=[("org_type", ORG_TYPE), ("status", ORG_VERSION_STATUS)])
+    return _json(request, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -332,9 +361,12 @@ def organization_changes(request):
     except ValueError:
         return _error(request, "HR02_INVALID_REQUEST", "无效生效日期", status=400)
 
-    try:
-        from hr_structure.services.organization_change import OrganizationChangeService
+    from hr_structure.services.organization_change import (
+        Hr02ServiceError,
+        OrganizationChangeService,
+    )
 
+    try:
         svc = OrganizationChangeService(scope, actor=str(getattr(request.user, "id", "")))
         case = svc.create_change_case(
             change_type=change_type,
@@ -349,7 +381,7 @@ def organization_changes(request):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             case={"id": case.id, "caseNo": case.case_no, "status": case.status},
         ),
         status=201,
@@ -393,8 +425,8 @@ def position_reservations(request):
             source_business_id=body.get("sourceBusinessId", ""),
             position_id=body.get("positionId"),
             position_pool_id=body.get("positionPoolId"),
-            count=int(body.get("count", 1)),
-            fte=float(body.get("fte", 1.0)),
+            count=body.get("count", 1),
+            fte=body.get("fte", "1.00"),
             idempotency_key=idempotency_key,
         )
     except PositionServiceError as exc:
@@ -416,7 +448,7 @@ def position_reservations(request):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             reservation={
                 "id": r.id,
                 "reservationNo": r.reservation_no,
@@ -456,7 +488,7 @@ def position_reservation_action(request, reservation_id, action):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             reservation={"id": r.id, "reservationNo": r.reservation_no, "status": r.status},
         ),
     )
@@ -464,6 +496,8 @@ def position_reservation_action(request, reservation_id, action):
 
 @require_GET
 def position_reservations_list(request):
+    if not has_hr02_permission(request.user, "hr.structure.position.manage"):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位预占查看权限", status=403)
     """GET /api/hr/v1/structure/position-reservations?sourceBusinessId=..."""
     try:
         scope = _make_scope(request)
@@ -488,11 +522,13 @@ def position_reservations_list(request):
         }
         for r in qs.order_by("-id")[:100]
     ]
-    return _json(request, _root(request, scope.tenant_id, date.today(), items=items))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), items=items))
 
 
 @require_GET
 def position_availability(request):
+    if not has_hr02_permission(request.user, "hr.structure.position.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位查看权限", status=403)
     """GET /api/hr/v1/structure/position-control/availability?positionId=..."""
     try:
         as_of = _parse_as_of(request)
@@ -517,11 +553,13 @@ def position_availability(request):
 
 
 def org_relations(request):
-    """POST /api/hr/v1/structure/org-relations —— 创建关系。"""
+    """GET/POST /api/hr/v1/structure/org-relations —— 查询或创建关系。"""
     import json
 
+    if request.method == "GET":
+        return org_relations_list(request)
     if request.method != "POST":
-        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 GET/POST", status=405)
     if not has_hr02_permission(request.user, "hr.structure.org_relation.manage"):
         return _error(request, "HR02_SCOPE_DENIED", "无关系管理权限", status=403)
 
@@ -561,7 +599,7 @@ def org_relations(request):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             relation={"id": rel.id, "sourceOrgId": rel.source_org_id_id, "targetOrgId": rel.target_org_id_id, "type": rel.relation_type},
         ),
         status=201,
@@ -587,12 +625,14 @@ def org_relation_close(request, relation_id):
     except RelationServiceError as exc:
         return _error(request, exc.code, exc.message, status=exc.http_status)
 
-    return _json(request, _root(request, scope.tenant_id, date.today(), relation={"id": rel.id, "status": rel.status}))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), relation={"id": rel.id, "status": rel.status}))
 
 
 @require_GET
 def org_relations_list(request):
     """GET /api/hr/v1/structure/org-relations —— 关系列表/冲突检测。"""
+    if not has_hr02_permission(request.user, "hr.structure.org_relation.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无关系查看权限", status=403)
     try:
         scope = _make_scope(request)
     except HrContextError as exc:
@@ -624,7 +664,7 @@ def org_relations_list(request):
     conflicts = RelationService(scope).detect_conflicts()
     return _json(
         request,
-        _root(request, scope.tenant_id, date.today(), items=items, conflicts=conflicts),
+        _root(request, scope.tenant_id, timezone.localdate(), items=items, conflicts=conflicts),
     )
 
 
@@ -669,13 +709,13 @@ def staffing_plans(request):
             validity_from=validity_from,
             basis_document_no=body.get("basisDocumentNo", ""),
         )
-    except Exception:
-        return _error(request, "HR02_INVALID_REQUEST", "创建方案失败", status=422)
+    except (ValueError, IntegrityError) as exc:
+        return _error(request, "HR02_INVALID_REQUEST", str(exc), status=422)
 
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             plan={"id": plan.id, "code": plan.code, "status": plan.status},
         ),
         status=201,
@@ -707,7 +747,7 @@ def staffing_plan_action(request, plan_id, action):
         if action == "validate":
             result = svc.preflight(plan)
             issues = [{"level": i.level, "code": i.code, "message": i.message} for i in result.issues]
-            return _json(request, _root(request, scope.tenant_id, date.today(), issues=issues, hasBlocker=result.has_blocker))
+            return _json(request, _root(request, scope.tenant_id, timezone.localdate(), issues=issues, hasBlocker=result.has_blocker))
         if action == "submit":
             if not has_hr02_permission(request.user, "hr.structure.staffing_plan.submit"):
                 return _error(request, "HR02_SCOPE_DENIED", "无提交权限", status=403)
@@ -715,7 +755,7 @@ def staffing_plan_action(request, plan_id, action):
             return _json(
                 request,
                 _root(
-                    request, scope.tenant_id, date.today(),
+                    request, scope.tenant_id, timezone.localdate(),
                     plan={"id": locked_plan.id, "status": locked_plan.status, "versionNo": locked_plan.version_no},
                 ),
             )
@@ -723,14 +763,163 @@ def staffing_plan_action(request, plan_id, action):
             if not has_hr02_permission(request.user, "hr.structure.staffing_plan.approve"):
                 return _error(request, "HR02_SCOPE_DENIED", "无批准权限", status=403)
             plan = svc.approve(plan)
-            return _json(request, _root(request, scope.tenant_id, date.today(), plan={"id": plan.id, "status": plan.status}))
+            return _json(request, _root(request, scope.tenant_id, timezone.localdate(), plan={"id": plan.id, "status": plan.status}))
+        if action == "activate":
+            if not has_hr02_permission(request.user, "hr.structure.staffing_plan.activate"):
+                return _error(request, "HR02_SCOPE_DENIED", "无生效方案权限", status=403)
+            plan = svc.activate(plan)
+            return _json(
+                request,
+                _root(
+                    request,
+                    scope.tenant_id,
+                    timezone.localdate(),
+                    plan={
+                        "id": plan.id,
+                        "status": plan.status,
+                        "versionNo": plan.version_no,
+                    },
+                ),
+            )
         return _error(request, "HR02_INVALID_REQUEST", "未知动作", status=400)
     except ValueError as exc:
         return _error(request, "HR02_INVALID_REQUEST", str(exc), status=422)
 
 
+def staffing_plan_lines(request, plan_id):
+    """GET/POST 编制方案人员、岗位与领导职数明细。"""
+    import json
+
+    if request.method not in {"GET", "POST"}:
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 GET/POST", status=405)
+    permission = (
+        "hr.structure.staffing_plan.view"
+        if request.method == "GET"
+        else "hr.structure.staffing_plan.edit"
+    )
+    if not has_hr02_permission(request.user, permission):
+        return _error(request, "HR02_SCOPE_DENIED", "无编制方案明细权限", status=403)
+    try:
+        scope = _make_scope(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+
+    from hr_structure.models import HrStaffingPlan
+
+    plan = HrStaffingPlan.objects.filter(
+        tenant_id=scope.tenant_id, id=plan_id
+    ).first()
+    if plan is None:
+        return _error(request, "HR02_ORG_NOT_FOUND", "编制方案不存在", status=404)
+
+    if request.method == "POST":
+        try:
+            body = json.loads(request.body or "{}")
+            line_type = body.get("lineType")
+            from hr_structure.services.staffing_plan import StaffingPlanService
+
+            service = StaffingPlanService(
+                scope, actor=str(getattr(request.user, "id", ""))
+            )
+            common = {
+                "plan_id": plan.id,
+                "organization_id": body.get("organizationId"),
+            }
+            if line_type == "HEADCOUNT":
+                line = service.add_headcount_line(
+                    **common,
+                    staffing_basis=body.get("staffingBasis"),
+                    worker_category=body.get("workerCategory", ""),
+                    authorized_headcount=body.get("authorizedHeadcount"),
+                    reserve_headcount=body.get("reserveHeadcount", 0),
+                    control_mode=body.get("controlMode", "HARD"),
+                    notes=body.get("notes", ""),
+                )
+            elif line_type == "POSITION":
+                line = service.add_position_line(
+                    **common,
+                    post_category=body.get("postCategory"),
+                    post_grade=body.get("postGrade", ""),
+                    post_catalog_id=body.get("postCatalogId"),
+                    authorized_positions=body.get("authorizedPositions"),
+                    authorized_fte=body.get("authorizedFte"),
+                    control_mode=body.get("controlMode", "HARD"),
+                )
+            elif line_type == "LEADERSHIP":
+                line = service.add_leadership_line(
+                    **common,
+                    leadership_level=body.get("leadershipLevel"),
+                    quota_count=body.get("quotaCount"),
+                    control_mode=body.get("controlMode", "HARD"),
+                )
+            else:
+                return _error(request, "HR02_INVALID_REQUEST", "明细类型非法", status=400)
+        except json.JSONDecodeError:
+            return _error(request, "HR02_INVALID_REQUEST", "请求体不是合法 JSON", status=400)
+        except ValueError as exc:
+            return _error(request, "HR02_INVALID_REQUEST", str(exc), status=422)
+        return _json(
+            request,
+            _root(
+                request,
+                scope.tenant_id,
+                timezone.localdate(),
+                line={"id": line.id, "lineType": line_type},
+            ),
+            status=201,
+        )
+
+    items = []
+    for line in plan.headcount_lines.select_related("organization_id").order_by("id"):
+        items.append({
+            "id": line.id,
+            "lineType": "HEADCOUNT",
+            "organizationId": line.organization_id_id,
+            "organizationCode": line.organization_id.stable_code,
+            "staffingBasis": line.staffing_basis,
+            "workerCategory": line.worker_category,
+            "authorizedHeadcount": line.authorized_headcount,
+            "reserveHeadcount": line.reserve_headcount,
+            "controlMode": line.control_mode,
+        })
+    for line in plan.position_lines.select_related("organization_id").order_by("id"):
+        items.append({
+            "id": line.id,
+            "lineType": "POSITION",
+            "organizationId": line.organization_id_id,
+            "organizationCode": line.organization_id.stable_code,
+            "postCategory": line.post_category,
+            "postGrade": line.post_grade,
+            "authorizedPositions": line.authorized_positions,
+            "authorizedFte": str(line.authorized_fte),
+            "controlMode": line.control_mode,
+        })
+    for line in plan.leadership_lines.select_related("organization_id").order_by("id"):
+        items.append({
+            "id": line.id,
+            "lineType": "LEADERSHIP",
+            "organizationId": line.organization_id_id,
+            "organizationCode": line.organization_id.stable_code,
+            "leadershipLevel": line.leadership_level,
+            "quotaCount": line.quota_count,
+            "controlMode": line.control_mode,
+        })
+    return _json(
+        request,
+        _root(
+            request,
+            scope.tenant_id,
+            timezone.localdate(),
+            plan={"id": plan.id, "code": plan.code, "status": plan.status},
+            items=items,
+        ),
+    )
+
+
 @require_GET
 def staffing_plans_list(request):
+    if not has_hr02_permission(request.user, "hr.structure.staffing_plan.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无编制方案查看权限", status=403)
     """GET /api/hr/v1/structure/staffing-plans —— 方案列表。"""
     try:
         scope = _make_scope(request)
@@ -750,7 +939,7 @@ def staffing_plans_list(request):
         }
         for p in HrStaffingPlan.objects.filter(tenant_id=scope.tenant_id).order_by("-plan_year")
     ]
-    return _json(request, _root(request, scope.tenant_id, date.today(), items=items))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), items=items))
 
 
 # ---------------------------------------------------------------------------
@@ -785,13 +974,13 @@ def post_catalogs(request):
             category=body.get("category", "PROFESSIONAL_TECHNICAL"),
             subcategory=body.get("subcategory", ""),
         )
-    except Exception:
-        return _error(request, "HR02_INVALID_REQUEST", "创建岗位目录失败", status=422)
+    except (ValueError, IntegrityError) as exc:
+        return _error(request, "HR02_INVALID_REQUEST", str(exc), status=422)
 
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             catalog={"id": catalog.id, "stableCode": catalog.stable_code},
         ),
         status=201,
@@ -800,6 +989,8 @@ def post_catalogs(request):
 
 @require_GET
 def post_catalogs_list(request):
+    if not has_hr02_permission(request.user, "hr.structure.post_catalog.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位目录查看权限", status=403)
     """GET /api/hr/v1/structure/post-catalogs —— 岗位目录列表。"""
     try:
         scope = _make_scope(request)
@@ -818,6 +1009,7 @@ def post_catalogs_list(request):
         items.append(
             {
                 "id": catalog.id,
+                "activeVersionId": version.id if version else None,
                 "stableCode": catalog.stable_code,
                 "name": version.name if version else "",
                 "category": version.category if version else "",
@@ -826,11 +1018,13 @@ def post_catalogs_list(request):
                 "versionNo": version.version_no if version else 0,
             }
         )
-    return _json(request, _root(request, scope.tenant_id, date.today(), items=items))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), items=items))
 
 
 @require_GET
 def post_grade_schemes(request):
+    if not has_hr02_permission(request.user, "hr.structure.post_catalog.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位目录查看权限", status=403)
     """GET /api/hr/v1/structure/post-grade-schemes —— 岗位等级方案。"""
     try:
         scope = _make_scope(request)
@@ -852,7 +1046,7 @@ def post_grade_schemes(request):
         }
         for s in HrPostGradeScheme.objects.filter(tenant_id=scope.tenant_id).order_by("code")
     ]
-    return _json(request, _root(request, scope.tenant_id, date.today(), items=items))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), items=items))
 
 
 # ---------------------------------------------------------------------------
@@ -862,6 +1056,8 @@ def post_grade_schemes(request):
 
 @require_GET
 def change_cases_list(request):
+    if not has_hr02_permission(request.user, "hr.structure.organization.history.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织岗位历史查看权限", status=403)
     """GET /api/hr/v1/structure/change-cases —— 变更 case 列表。"""
     try:
         scope = _make_scope(request)
@@ -881,7 +1077,7 @@ def change_cases_list(request):
         }
         for c in HrStructureChangeCase.objects.filter(tenant_id=scope.tenant_id).order_by("-id")
     ]
-    return _json(request, _root(request, scope.tenant_id, date.today(), items=items))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), items=items))
 
 
 def change_case_action(request, case_id, action):
@@ -905,12 +1101,17 @@ def change_case_action(request, case_id, action):
         return _error(request, "HR02_ORG_NOT_FOUND", "变更 case 不存在", status=404)
 
     try:
-        from hr_structure.services.reorganization import ReorganizationService, ReorgServiceError
+        from hr_structure.services.reorganization import (
+            ReorganizationService,
+            ReorgServiceError,
+        )
 
         svc = ReorganizationService(scope, actor=str(getattr(request.user, "id", "")))
         if action == "preview":
+            if not has_hr02_permission(request.user, "hr.structure.reorg.preview"):
+                return _error(request, "HR02_SCOPE_DENIED", "无影响分析权限", status=403)
             impact = svc.impact_analysis(case)
-            return _json(request, _root(request, scope.tenant_id, date.today(), **impact))
+            return _json(request, _root(request, scope.tenant_id, timezone.localdate(), **impact))
         if action == "submit":
             if not has_hr02_permission(request.user, "hr.structure.reorg.submit"):
                 return _error(request, "HR02_SCOPE_DENIED", "无提交权限", status=403)
@@ -944,15 +1145,15 @@ def change_case_action(request, case_id, action):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             case={"id": case.id, "caseNo": case.case_no, "status": case.status},
         ),
     )
 
 
-@require_GET
+@require_POST
 def effective_runner_trigger(request):
-    """GET /api/hr/v1/structure/effective-runner/run —— 触发到期 case 生效（运维）。"""
+    """POST /api/hr/v1/structure/effective-runner/run —— 触发到期 case 生效（运维）。"""
     try:
         scope = _make_scope(request)
     except HrContextError as exc:
@@ -963,7 +1164,7 @@ def effective_runner_trigger(request):
     from hr_structure.services.effective_runner import run_effective_runner
 
     result = run_effective_runner(tenant_id=scope.tenant_id)
-    return _json(request, _root(request, scope.tenant_id, date.today(), **result))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), **result))
 
 
 # ---------------------------------------------------------------------------
@@ -971,9 +1172,9 @@ def effective_runner_trigger(request):
 # ---------------------------------------------------------------------------
 
 
-@require_GET
+@require_POST
 def projection_run(request):
-    """GET /api/hr/v1/structure/projection/run —— 把权威组织投影到 Horilla Department（单向）。
+    """POST /api/hr/v1/structure/projection/run —— 把权威组织投影到 Horilla Department（单向）。
 
     仅 HR02_AUTHORITY/DUAL_READ_COMPARE 模式允许投影写 Horilla Department
     （总册 30.1：LEGACY_STRUCTURE_ONLY 不得强切/覆盖 legacy）。
@@ -1005,11 +1206,13 @@ def projection_run(request):
     for v in versions:
         svc.project_organization(v)
         projected += 1
-    return _json(request, _root(request, scope.tenant_id, date.today(), projected=projected, mode=mode))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), projected=projected, mode=mode))
 
 
 @require_GET
 def projection_reconcile(request):
+    if not has_hr02_permission(request.user, "hr.structure.organization.manage"):
+        return _error(request, "HR02_SCOPE_DENIED", "无组织管理权限", status=403)
     """GET /api/hr/v1/structure/projection/reconcile —— 对账报告。"""
     try:
         scope = _make_scope(request)
@@ -1019,7 +1222,7 @@ def projection_reconcile(request):
     from hr_structure.projections.horilla import HorillaStructureProjectionService
 
     report = HorillaStructureProjectionService(scope.tenant_id).reconcile_report()
-    return _json(request, _root(request, scope.tenant_id, date.today(), report=report))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), report=report))
 
 
 def cutover(request):
@@ -1055,7 +1258,7 @@ def cutover(request):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             cutover={"tenantId": record.tenant_id, "mode": record.mode, "oldMode": record.old_mode},
         ),
     )
@@ -1072,7 +1275,7 @@ def cutover_status(request):
     from hr_structure.services.cutover import Hr02CutoverService
 
     mode = Hr02CutoverService().get_mode(scope.tenant_id)
-    return _json(request, _root(request, scope.tenant_id, date.today(), mode=mode))
+    return _json(request, _root(request, scope.tenant_id, timezone.localdate(), mode=mode))
 
 
 # ---------------------------------------------------------------------------
@@ -1080,19 +1283,90 @@ def cutover_status(request):
 # ---------------------------------------------------------------------------
 
 
-@require_GET
 def positions_list(request):
-    """GET /api/hr/v1/structure/positions —— 岗位列表（DB 分页）。"""
+    """GET/POST /api/hr/v1/structure/positions —— 查询或创建岗位。"""
+    import json
+
+    if request.method not in {"GET", "POST"}:
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 GET/POST", status=405)
+    permission = (
+        "hr.structure.position.view"
+        if request.method == "GET"
+        else "hr.structure.position.manage"
+    )
+    if not has_hr02_permission(request.user, permission):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位台账权限", status=403)
     try:
         as_of = _parse_as_of(request)
         scope = _make_scope(request)
     except HrContextError as exc:
         return _error(request, exc.code, exc.message, status=403)
 
+    if request.method == "POST":
+        try:
+            body = json.loads(request.body or "{}")
+            from datetime import date as _date
+
+            from hr_structure.services.position import (
+                PositionService,
+                PositionServiceError,
+            )
+
+            validity_from = (
+                _date.fromisoformat(body["validityFrom"])
+                if body.get("validityFrom")
+                else timezone.localdate()
+            )
+            kwargs = {
+                "max_incumbents": body.get("maxIncumbents", 1),
+                "position_type": body.get("positionType", "REGULAR"),
+                "allow_multiple_incumbents": PositionService._bool_value(
+                    body.get("allowMultipleIncumbents", False)
+                ),
+            }
+            if body.get("postGradeId") not in (None, ""):
+                kwargs["post_grade_id_id"] = int(body["postGradeId"])
+            position = PositionService(
+                scope, actor=str(getattr(request.user, "id", ""))
+            ).create_position(
+                position_code=body.get("positionCode"),
+                organization_id=body.get("organizationId"),
+                post_catalog_version_id=body.get("postCatalogVersionId"),
+                planned_fte=body.get("plannedFte", "1.00"),
+                validity_from=validity_from,
+                **kwargs,
+            )
+        except json.JSONDecodeError:
+            return _error(request, "HR02_INVALID_REQUEST", "请求体不是合法 JSON", status=400)
+        except (TypeError, ValueError) as exc:
+            return _error(request, "HR02_INVALID_REQUEST", str(exc), status=400)
+        except PositionServiceError as exc:
+            return _error(request, exc.code, exc.message, status=exc.http_status)
+        return _json(
+            request,
+            _root(
+                request,
+                scope.tenant_id,
+                as_of,
+                position={
+                    "id": position.id,
+                    "positionCode": position.position_code,
+                    "lifecycleStatus": position.lifecycle_status,
+                    "version": position.version,
+                },
+            ),
+            status=201,
+        )
+
     from hr_structure.selectors.position import PositionSelector
 
-    page = int(request.GET.get("page", 1) or 1)
-    page_size = int(request.GET.get("page_size", 20) or 20)
+    try:
+        page = int(request.GET.get("page", 1) or 1)
+        page_size = int(request.GET.get("page_size", 20) or 20)
+    except (TypeError, ValueError):
+        return _error(request, "HR02_INVALID_REQUEST", "分页参数必须是整数", status=400)
+    if page < 1:
+        return _error(request, "HR02_INVALID_REQUEST", "页码必须从 1 开始", status=400)
     page_size = min(max(page_size, 1), 100)
     selector = PositionSelector(scope, as_of=as_of)
     result = selector.list_positions(
@@ -1104,8 +1378,134 @@ def positions_list(request):
     return _json(request, _root(request, scope.tenant_id, as_of, **result))
 
 
+def position_detail(request, position_id):
+    """GET/PATCH 岗位详情与非结构性属性变更。"""
+    import json
+
+    if request.method not in {"GET", "PATCH"}:
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 GET/PATCH", status=405)
+    permission = (
+        "hr.structure.position.view"
+        if request.method == "GET"
+        else "hr.structure.position.manage"
+    )
+    if not has_hr02_permission(request.user, permission):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位台账权限", status=403)
+    try:
+        scope = _make_scope(request)
+        as_of = _parse_as_of(request)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    if request.method == "GET":
+        from hr_structure.selectors.position import PositionSelector
+
+        item = PositionSelector(scope, as_of=as_of).get_position(position_id)
+        if item is None:
+            return _error(request, "HR02_POSITION_NOT_FOUND", "岗位不存在", status=404)
+        return _json(request, _root(request, scope.tenant_id, as_of, position=item))
+    try:
+        body = json.loads(request.body or "{}")
+        mapping = {
+            "postCatalogVersionId": "post_catalog_version_id",
+            "postGradeId": "post_grade_id",
+            "positionType": "position_type",
+            "plannedFte": "planned_fte",
+            "maxIncumbents": "max_incumbents",
+            "allowMultipleIncumbents": "allow_multiple_incumbents",
+        }
+        changes = {
+            target: body[source]
+            for source, target in mapping.items()
+            if source in body
+        }
+        from hr_structure.services.position import PositionService, PositionServiceError
+
+        position = PositionService(
+            scope, actor=str(getattr(request.user, "id", ""))
+        ).update_position(
+            position_id,
+            expected_version=body.get("version"),
+            **changes,
+        )
+    except json.JSONDecodeError:
+        return _error(request, "HR02_INVALID_REQUEST", "请求体不是合法 JSON", status=400)
+    except (TypeError, ValueError):
+        return _error(request, "HR02_INVALID_REQUEST", "岗位参数格式非法", status=400)
+    except PositionServiceError as exc:
+        return _error(request, exc.code, exc.message, status=exc.http_status)
+    return _json(
+        request,
+        _root(
+            request,
+            scope.tenant_id,
+            as_of,
+            position={
+                "id": position.id,
+                "positionCode": position.position_code,
+                "lifecycleStatus": position.lifecycle_status,
+                "version": position.version,
+            },
+        ),
+    )
+
+
+def position_action(request, position_id, action):
+    """POST 岗位冻结、解冻或关闭。"""
+    import json
+
+    if request.method != "POST":
+        return _error(request, "HR02_METHOD_NOT_ALLOWED", "仅支持 POST", status=405)
+    if action == "validate" and not has_hr02_permission(
+        request.user, "hr.structure.staffing_plan.view"
+    ):
+        return _error(request, "HR02_SCOPE_DENIED", "无编制方案查看权限", status=403)
+    permission = (
+        "hr.structure.position.close"
+        if action == "close"
+        else "hr.structure.position.freeze"
+    )
+    if not has_hr02_permission(request.user, permission):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位状态变更权限", status=403)
+    try:
+        scope = _make_scope(request)
+        body = json.loads(request.body or "{}") if request.body else {}
+        from hr_structure.services.position import PositionService, PositionServiceError
+
+        service = PositionService(scope, actor=str(getattr(request.user, "id", "")))
+        reason = str(body.get("reason", "")).strip()
+        if action == "freeze":
+            position = service.freeze(position_id, reason)
+        elif action == "unfreeze":
+            position = service.unfreeze(position_id, reason)
+        elif action == "close":
+            position = service.close(position_id, reason)
+        else:
+            return _error(request, "HR02_INVALID_REQUEST", "未知岗位动作", status=400)
+    except HrContextError as exc:
+        return _error(request, exc.code, exc.message, status=403)
+    except json.JSONDecodeError:
+        return _error(request, "HR02_INVALID_REQUEST", "请求体不是合法 JSON", status=400)
+    except PositionServiceError as exc:
+        return _error(request, exc.code, exc.message, status=exc.http_status)
+    return _json(
+        request,
+        _root(
+            request,
+            scope.tenant_id,
+            timezone.localdate(),
+            position={
+                "id": position.id,
+                "lifecycleStatus": position.lifecycle_status,
+                "version": position.version,
+            },
+        ),
+    )
+
+
 @require_GET
 def position_control_summary(request):
+    if not has_hr02_permission(request.user, "hr.structure.position.view"):
+        return _error(request, "HR02_SCOPE_DENIED", "无岗位查看权限", status=403)
     """GET /api/hr/v1/structure/position-control/summary —— 台账概览。"""
     try:
         as_of = _parse_as_of(request)
@@ -1160,7 +1560,7 @@ def organization_import(request):
     return _json(
         request,
         _root(
-            request, scope.tenant_id, date.today(),
+            request, scope.tenant_id, timezone.localdate(),
             created=result.created,
             errors=[{"row": e.row, "code": e.code, "message": e.message, "field": e.field} for e in result.errors],
             hasErrors=result.has_errors,

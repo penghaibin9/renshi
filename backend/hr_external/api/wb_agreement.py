@@ -14,7 +14,7 @@ from hr_external.integrations.hr07 import AgreementProvider
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400

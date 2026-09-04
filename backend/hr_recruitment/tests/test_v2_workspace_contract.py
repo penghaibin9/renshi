@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.test import SimpleTestCase
+from django.urls import reverse
 
 
 class Hr04V2WorkspaceContractTests(SimpleTestCase):
@@ -28,6 +29,25 @@ class Hr04V2WorkspaceContractTests(SimpleTestCase):
             else Path(settings.BACKEND_DIR)
         )
         return (root / relative_path).read_text(encoding="utf-8")
+
+    def test_plan_authoring_routes_are_registered(self):
+        request_id = "00000000-0000-0000-0000-000000000001"
+        self.assertEqual(
+            reverse("hr04-api-plan-setup-options"),
+            "/api/v1/hr/recruitment/plans/setup-options",
+        )
+        self.assertEqual(
+            reverse("hr04-api-plan-request-start-review", kwargs={"request_id": request_id}),
+            f"/api/v1/hr/recruitment/plan-requests/{request_id}/start-review",
+        )
+        self.assertEqual(
+            reverse("hr04-api-plan-request-detail", kwargs={"request_id": request_id}),
+            f"/api/v1/hr/recruitment/plan-requests/{request_id}",
+        )
+        self.assertEqual(
+            reverse("hr04-api-plan-request-submit-to-school", kwargs={"request_id": request_id}),
+            f"/api/v1/hr/recruitment/plan-requests/{request_id}/submit-to-school",
+        )
 
     def test_all_six_surfaces_use_shared_v2_shell_and_module_css(self):
         for path in self.TEMPLATES:
@@ -76,20 +96,29 @@ class Hr04V2WorkspaceContractTests(SimpleTestCase):
 
     def test_plan_cycle_switching_reads_the_selected_real_cycle(self):
         plans_script = self._source(self.DYNAMIC_SCRIPTS[0])
-        self.assertIn('cycles.addEventListener("click"', plans_script)
-        self.assertIn('closest("button[data-id]")', plans_script)
-        self.assertIn("loadRequests(button.dataset.id)", plans_script)
-        self.assertIn('aria-pressed="', plans_script)
+        self.assertIn("#hr04-plan-cycles", plans_script)
+        self.assertIn("[data-select-cycle]", plans_script)
+        self.assertIn("loadRequests(select.dataset.selectCycle)", plans_script)
+        self.assertIn("aria-pressed", plans_script)
 
-    def test_broken_create_routes_are_not_presented_as_working_frontend_flows(self):
+    def test_plan_create_and_campaign_flow_use_canonical_post_routes(self):
         plans_template = self._source(self.TEMPLATES[0])
         campaigns_template = self._source(self.TEMPLATES[1])
         plans_script = self._source(self.DYNAMIC_SCRIPTS[0])
         campaigns_script = self._source(self.DYNAMIC_SCRIPTS[1])
-        self.assertIn("data-hr-new-cycle disabled", plans_template)
-        self.assertIn("data-hr-new-campaign disabled", campaigns_template)
-        self.assertNotIn("新建计划周期（S3 API", plans_script)
-        self.assertNotIn('method: "POST"', campaigns_script)
+        self.assertIn("data-hr-new-cycle", plans_template)
+        self.assertNotIn("data-hr-new-cycle disabled", plans_template)
+        self.assertIn('id="hr04-campaign-create"', campaigns_template)
+        self.assertNotIn("data-hr-new-campaign disabled", campaigns_template)
+        self.assertIn("/api/v1/hr/recruitment/plans", plans_script)
+        self.assertIn("/api/v1/hr/recruitment/plan-requests", plans_script)
+        self.assertNotIn("/api/hr/v1/", plans_script)
+        self.assertIn('method: "PATCH"', plans_script)
+        self.assertIn("修改退回需求", plans_script)
+        self.assertIn("submit-to-school", plans_script)
+        self.assertIn('"/api/hr/v1/recruitment/campaigns"', campaigns_script)
+        self.assertIn('"/api/hr/v1/recruitment/positions"', campaigns_script)
+        self.assertIn('method:"POST"', campaigns_script)
 
     def test_assessment_visual_details_live_in_shared_css_not_inline_js(self):
         assessment = self._source(self.TEMPLATES[4])

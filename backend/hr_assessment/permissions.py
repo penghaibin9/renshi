@@ -15,6 +15,10 @@ from django.http import HttpRequest, JsonResponse
 
 from hr_assessment.api.response import api_error
 from hr_assessment.constants import DataScope
+from hr_assessment.context import (
+    HrAssessmentContextError,
+    resolve_authenticated_staff_id,
+)
 
 
 class Scope(str, Enum):
@@ -71,8 +75,9 @@ PERMISSION_SCOPE = {
 
 
 def require_assessment_permission(
-    perm_code: str,
+    perm_code: str | tuple[str, ...],
     sensitive: bool = False,
+    staff_mapping_required: bool = False,
 ) -> Callable:
     """视图装饰器 — 校验权限 + 租户上下文。
 
@@ -81,15 +86,63 @@ def require_assessment_permission(
     def decorator(view_func: Callable) -> Callable:
         @wraps(view_func)
         def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> JsonResponse:
+            permission_codes = (
+                (perm_code,) if isinstance(perm_code, str) else tuple(perm_code)
+            )
             if not request.user.is_authenticated:
                 raise PermissionDenied("未登录")
-            if not request.user.is_superuser and not request.user.has_perm(perm_code):
-                raise PermissionDenied(f"缺少权限: {perm_code}")
+            if not request.user.is_superuser and not any(
+                request.user.has_perm(code) for code in permission_codes
+            ):
+                raise PermissionDenied(
+                    "缺少权限: " + " / ".join(permission_codes)
+                )
             tenant_id = getattr(request, "tenant_id", None)
             if not tenant_id:
                 return JsonResponse(
                     api_error("TENANT_CONTEXT_REQUIRED", "请选择当前学校", http_status=403),
                     status=403,
+                )
+            if not request.user.is_superuser:
+                from base.auth_backends import get_allowed_company_ids
+
+                if int(tenant_id) not in (get_allowed_company_ids(request.user) or ()):
+                    return JsonResponse(
+                        api_error(
+                            "TENANT_CONTEXT_REQUIRED",
+                            "当前账号无权访问该学校数据",
+                            http_status=403,
+                        ),
+                        status=403,
+                    )
+            non_self_permission_codes = tuple(
+                code
+                for code in permission_codes
+                if code != "hr.assessment.employee_self"
+            )
+            self_mapping_required = (
+                "hr.assessment.employee_self" in permission_codes
+                and (
+                    len(permission_codes) == 1
+                    or (
+                        not request.user.is_superuser
+                        and not any(
+                            request.user.has_perm(code)
+                            for code in non_self_permission_codes
+                        )
+                    )
+                )
+            )
+            try:
+                request.staff_id = resolve_authenticated_staff_id(
+                    request,
+                    int(tenant_id),
+                    required=staff_mapping_required or self_mapping_required,
+                )
+            except HrAssessmentContextError as exc:
+                return JsonResponse(
+                    api_error(exc.code, exc.message, http_status=exc.status),
+                    status=exc.status,
                 )
             return view_func(request, *args, **kwargs)
         return wrapper

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
 from typing import Any, Dict, List, Optional
 
-from django.db import transaction
+from django.db import models, transaction
 
 from hr_assessment.models.case import HrAnnualAssessmentCase, HrAssessmentCase
 from hr_assessment.models.cycle import HrAssessmentCycle
@@ -51,16 +52,57 @@ class ExcellentCandidateService:
 
     def check_quota(self, tenant_id: int, cycle_id: uuid.UUID) -> Dict[str, Any]:
         from hr_assessment.models.cycle import HrAssessmentPopulationSnapshot
+        cycle = HrAssessmentCycle.objects.filter(
+            tenant_id=tenant_id,
+            id=cycle_id,
+        ).first()
+        if cycle is None:
+            raise ValueError("ASSESSMENT_CYCLE_NOT_FOUND")
         eligible = HrAssessmentPopulationSnapshot.objects.filter(
-            cycle_id=cycle_id, included=True,
+            tenant_id=tenant_id,
+            cycle_id=cycle_id,
+            included=True,
+            excluded=False,
         ).count()
-        try:
-            quota = HrExcellentQuotaPolicy.objects.get(
-                tenant_id=tenant_id, effective_from__lte="2026-12-31",
+        as_of = cycle.end_at.date()
+        policies = list(
+            HrExcellentQuotaPolicy.objects.filter(
+                tenant_id=tenant_id,
+                status="PUBLISHED",
+                effective_from__lte=as_of,
             )
-            max_excellent = max(1, int(eligible * float(quota.max_excellent_ratio)))
-        except HrExcellentQuotaPolicy.DoesNotExist:
-            max_excellent = max(1, int(eligible * 0.20))
+            .filter(
+                models.Q(effective_to__isnull=True)
+                | models.Q(effective_to__gte=as_of)
+            )
+            .order_by("-version_no", "-effective_from", "id")[:2]
+        )
+        if len(policies) != 1:
+            return {
+                "eligible_population": eligible,
+                "max_excellent": 0,
+                "current_excellent": 0,
+                "over_quota": True,
+                "remaining": 0,
+                "policy_status": "UNAVAILABLE" if not policies else "AMBIGUOUS",
+            }
+        quota = policies[0]
+        if eligible < int(quota.min_eligible_for_quota or 0):
+            max_excellent = eligible
+        else:
+            rounding = {
+                "ROUND_DOWN": ROUND_DOWN,
+                "ROUND_UP": ROUND_UP,
+                "ROUND_NEAREST": ROUND_HALF_UP,
+            }.get(str(quota.rounding_rule or "").upper())
+            if rounding is None:
+                raise ValueError("ASSESSMENT_EXCELLENT_QUOTA_ROUNDING_INVALID")
+            max_excellent = int(
+                (Decimal(eligible) * Decimal(str(quota.max_excellent_ratio))).quantize(
+                    Decimal("1"),
+                    rounding=rounding,
+                )
+            )
 
         current_excellent = HrFinalAssessmentResult.objects.filter(
             tenant_id=tenant_id, assessment_type="ANNUAL",
@@ -73,6 +115,7 @@ class ExcellentCandidateService:
             "current_excellent": current_excellent,
             "over_quota": current_excellent >= max_excellent,
             "remaining": max(max_excellent - current_excellent, 0),
+            "policy_status": "OK",
         }
 
 

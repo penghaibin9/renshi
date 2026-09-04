@@ -59,6 +59,7 @@ from hr_time.models.leave_request import (
     HrAbsenceFact,
     HrLeaveApprovalSnapshot,
     HrLeaveEvidence,
+    HrLeaveEvidenceAccessAudit,
     HrLeaveRequest,
     HrReturnFromLeaveCase,
 )
@@ -111,6 +112,7 @@ __all__ = [
     "HrAbsenceFact",
     "HrReturnFromLeaveCase",
     "HrLeaveEvidence",
+    "HrLeaveEvidenceAccessAudit",
     "HrTimeClosePeriod",
     "HrTimeCloseSnapshot",
     "HrTimeCorrectionBatch",

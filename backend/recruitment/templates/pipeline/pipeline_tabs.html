@@ -44,10 +44,9 @@
               {% if not rec.closed %}
                 {% if perms.recruitment.change_recruitment or request.user|recruitment_manages:rec %}
                   <li class="oh-dropdown__item">
-                    <a href="{% url 'recruitment-close-pipeline' rec.id %}" class="oh-dropdown__link"
-                    onclick="return confirm('{% trans "Are you sure you want to close this recruitment?" %}');"
-                    >{% trans "Close" %}</a
-                    >
+                    <form method="post" action="{% url 'recruitment-close-pipeline' rec.id %}" onsubmit="return confirm('{% trans "Are you sure you want to close this recruitment?" %}');">
+                      {% csrf_token %}<button type="submit" class="oh-dropdown__link border-0 bg-transparent w-100 text-start">{% trans "Close" %}</button>
+                    </form>
                   </li>
                 {% endif %}
                 {% if perms.recruitment.add_candidate or request.user|recruitment_manages:rec %}
@@ -63,10 +62,9 @@
                 {% endif %}
               {% elif perms.recruitment.change_recruitment or request.user|recruitment_manages:rec %}
                 <li class="oh-dropdown__item">
-                  <a href="{% url 'recruitment-reopen-pipeline' rec.id %}" class="oh-dropdown__link"
-                  onclick="return confirm('{% trans "Are you sure you want to reopen this recruitment?" %}');"
-                  >{% trans "Reopen" %}</a
-                  >
+                  <form method="post" action="{% url 'recruitment-reopen-pipeline' rec.id %}" onsubmit="return confirm('{% trans "Are you sure you want to reopen this recruitment?" %}');">
+                    {% csrf_token %}<button type="submit" class="oh-dropdown__link border-0 bg-transparent w-100 text-start">{% trans "Reopen" %}</button>
+                  </form>
                 </li>
               {% endif %}
               {% if perms.recruitment.delete_recruitment %}

@@ -10,7 +10,7 @@
     {% if perms.recruitment.delete_recruitment %}
       {% if instance.is_active %}
         <a
-          hx-get="{% url 'recruitment-archive' instance.id %}"
+          hx-post="{% url 'recruitment-archive' instance.id %}"
           hx-swap="none"
           hx-confirm="{% trans 'Are you sure you want to archive this recruitment?' %}"
           hx-on::after-request="if(event.detail.successful){$('#applyFilter').click();$('#reloadMessagesButton').click();}"
@@ -19,7 +19,7 @@
         ><ion-icon name="archive"></ion-icon></a>
       {% else %}
         <a
-          hx-get="{% url 'recruitment-archive' instance.id %}"
+          hx-post="{% url 'recruitment-archive' instance.id %}"
           hx-swap="none"
           hx-confirm="{% trans 'Are you sure you want to unarchive this recruitment?' %}"
           hx-on::after-request="if(event.detail.successful){$('#applyFilter').click();$('#reloadMessagesButton').click();}"

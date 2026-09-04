@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -37,13 +36,27 @@ class PolicyPackService:
     def publish_policy_version(
         self, version: HrAssessmentPolicyVersion,
     ) -> HrAssessmentPolicyVersion:
+        version = (
+            HrAssessmentPolicyVersion.objects.select_for_update()
+            .select_related("policy_pack")
+            .filter(id=version.id, tenant_id=version.tenant_id)
+            .first()
+        )
+        if version is None:
+            raise ValidationError(_("政策版本不存在"))
+        policy_pack = HrAssessmentPolicyPack.objects.select_for_update().get(
+            id=version.policy_pack_id,
+            tenant_id=version.tenant_id,
+        )
         if version.status != "DRAFT":
             raise ValidationError(_("只能从 DRAFT 状态发布"))
         version.status = "PUBLISHED"
-        version.content_hash = self._compute_hash(version)
-        version.save(update_fields=["status", "content_hash"])
-        version.policy_pack.current_published_version_id = version.id
-        version.policy_pack.save(update_fields=["current_published_version_id"])
+        # VersionedModel.save() is the single canonical content-seal writer.
+        # A second partial hash algorithm here previously produced drift after
+        # the policy was reloaded for cycle creation.
+        version.save(update_fields=["status"])
+        policy_pack.current_published_version_id = version.id
+        policy_pack.save(update_fields=["current_published_version_id"])
         return version
 
     @transaction.atomic
@@ -55,11 +68,6 @@ class PolicyPackService:
         version.status = "RETIRED"
         version.save(update_fields=["status"])
         return version
-
-    def _compute_hash(self, version: HrAssessmentPolicyVersion) -> str:
-        raw = f"{version.policy_pack_id}:{version.version_no}:{version.effective_from}:{version.assessment_types}:{version.eligibility_rule_json}"
-        return hashlib.sha256(raw.encode()).hexdigest()
-
 
 class PolicyVersionService:
     def resolve_as_of(

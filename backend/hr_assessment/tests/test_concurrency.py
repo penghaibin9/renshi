@@ -1,11 +1,13 @@
 """S11 并发测试 — 10 个场景。"""
 
+import uuid
+
 from django.test import TestCase
-from hr_assessment.models.result import HrFinalAssessmentResult
-from hr_assessment.models.case import HrAssessmentCase, HrAnnualAssessmentCase
+
+from hr_assessment.models.case import HrAnnualAssessmentCase, HrAssessmentCase
 from hr_assessment.models.evidence import HrSelfAssessment
 from hr_assessment.models.policy import HrAssessmentPolicyPack
-import uuid
+from hr_assessment.models.result import HrFinalAssessmentResult
 
 
 class ConcurrencyTest(TestCase):
@@ -37,7 +39,10 @@ class ConcurrencyTest(TestCase):
             )
 
     def test_calibration_revision_preserves_before_after(self):
-        from hr_assessment.models.result import HrCalibrationSession, HrCalibrationRevision
+        from hr_assessment.models.result import (
+            HrCalibrationRevision,
+            HrCalibrationSession,
+        )
         session = HrCalibrationSession.objects.create(
             tenant_id=self.tenant_id, cycle_id=uuid.uuid4(), session_status="OPEN",
         )
@@ -81,7 +86,9 @@ class ConcurrencyTest(TestCase):
 
     def test_revision_creates_new_version(self):
         from hr_assessment.models.result import HrResultRevision
-        from hr_assessment.services.result_correction_service import base_result_snapshot
+        from hr_assessment.services.result_correction_service import (
+            base_result_snapshot,
+        )
         result = HrFinalAssessmentResult.objects.create(
             tenant_id=self.tenant_id, case_id=uuid.uuid4(), assessment_type="ANNUAL",
             grade_code="QUALIFIED", result_version_no=1, status="FINALIZED",
@@ -98,8 +105,9 @@ class ConcurrencyTest(TestCase):
         self.assertEqual(revision.revision_type, "CORRECTION")
 
     def test_evidence_refresh_preserves_snapshot_hash(self):
-        from hr_assessment.models.evidence import HrAssessmentEvidenceRef
         import hashlib
+
+        from hr_assessment.models.evidence import HrAssessmentEvidenceRef
         test_hash = hashlib.sha256(b"test_evidence").hexdigest()
         ev = HrAssessmentEvidenceRef.objects.create(
             tenant_id=self.tenant_id, case_id=uuid.uuid4(),
@@ -109,7 +117,10 @@ class ConcurrencyTest(TestCase):
         self.assertEqual(ev.snapshot_hash, test_hash)
 
     def test_population_freeze_unique_per_cycle_staff(self):
-        from hr_assessment.models.cycle import HrAssessmentPopulationSnapshot, HrAssessmentCycle
+        from hr_assessment.models.cycle import (
+            HrAssessmentCycle,
+            HrAssessmentPopulationSnapshot,
+        )
         cycle = HrAssessmentCycle.objects.create(
             tenant_id=self.tenant_id, cycle_no="TEST-001", assessment_type="ANNUAL",
             name="测试周期", start_at="2026-01-01T00:00:00Z", end_at="2026-12-31T00:00:00Z",
@@ -128,6 +139,5 @@ class ConcurrencyTest(TestCase):
 
     def test_excel_job_uses_separate_batch_model(self):
         """批量操作应有独立的批量头/行模型"""
-        from hr_assessment.models.case import HrAssessmentCase
         batch_cases = HrAssessmentCase.objects.filter(tenant_id=self.tenant_id)
         self.assertIsNotNone(batch_cases)

@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_upgrade?charset=utf8mb4
+  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_upgrade?charset=utf8mb4
   DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
   SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
   ALLOWED_HOSTS: localhost,127.0.0.1
@@ -28,15 +28,15 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: horilla_upgrade
-          MYSQL_USER: horilla_user
-          MYSQL_PASSWORD: horilla_pass
-          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_DATABASE: renshi_upgrade
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: renshi_pass
+          MYSQL_ROOT_PASSWORD: renshi_root_pass
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -64,7 +64,7 @@ jobs:
       - name: Install base dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.lock
           # Keep the gate able to materialize an older PR base even if that
           # historical requirements file did not yet declare the MySQL driver.
           pip install "mysqlclient>=2.2,<3"
@@ -235,7 +235,7 @@ jobs:
 
       - name: Install head dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements.lock
 
       - name: Upgrade previous baseline schema to exact head
         shell: bash

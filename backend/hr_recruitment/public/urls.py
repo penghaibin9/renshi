@@ -32,4 +32,14 @@ urlpatterns = [
         public_views.public_apply,
         name="hr04-public-apply",
     ),
+    path(
+        "recruit/<str:token>/receipt/request",
+        public_views.public_request_receipt_recovery,
+        name="hr04-public-receipt-request",
+    ),
+    path(
+        "recruit/<str:token>/receipt/verify",
+        public_views.public_verify_receipt_recovery,
+        name="hr04-public-receipt-verify",
+    ),
 ]

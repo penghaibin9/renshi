@@ -72,7 +72,7 @@ class RequestLifecycleTests(TestCase):
 
     def test_submit_reserves_balance(self):
         req = self._request(days=2)
-        LeaveRequestService.submit(req)
+        LeaveRequestService.submit(req, calendar_days=set())
         self.assertEqual(req.status, LeaveRequestStatus.SUBMITTED)
         self.assertEqual(float(req.calculated_amount), 2.0)
         self.assertIsNotNone(req.reservation_id)
@@ -83,12 +83,12 @@ class RequestLifecycleTests(TestCase):
     def test_insufficient_balance_fail_closed(self):
         req = self._request(days=6)  # 可用 5 < 6
         with self.assertRaises(LeaveRequestError) as ctx:
-            LeaveRequestService.submit(req)
+            LeaveRequestService.submit(req, calendar_days=set())
         self.assertEqual(ctx.exception.code, "LEAVE_BALANCE_INSUFFICIENT")
 
     def test_approve_creates_absence_fact_and_use(self):
         req = self._request(days=2)
-        LeaveRequestService.submit(req)
+        LeaveRequestService.submit(req, calendar_days=set())
         fact = LeaveRequestService.approve(req)
         req.refresh_from_db()
         self.assertEqual(req.status, LeaveRequestStatus.APPROVED)
@@ -99,10 +99,12 @@ class RequestLifecycleTests(TestCase):
         )
         self.assertEqual(use_entries.count(), 1)
         self.assertEqual(float(use_entries.first().amount), -2.0)
+        self.assertEqual(use_entries.first().source_type, "LEAVE_REQUEST_USE")
         # RESERVE 已释放
         reserve = HrLeaveLedgerEntry.objects.get(
             pk=req.reservation_id, entry_type=LeaveLedgerEntryType.RESERVE
         )
+        self.assertEqual(reserve.source_type, "LEAVE_REQUEST_RESERVE")
         self.assertTrue(
             HrLeaveLedgerEntry.objects.filter(
                 reversal_of=reserve,
@@ -122,7 +124,7 @@ class RequestLifecycleTests(TestCase):
 
     def test_reject_releases_reservation(self):
         req = self._request(days=2)
-        LeaveRequestService.submit(req)
+        LeaveRequestService.submit(req, calendar_days=set())
         reservation_id = req.reservation_id
         LeaveRequestService.reject(req)
         req.refresh_from_db()
@@ -140,7 +142,7 @@ class RequestLifecycleTests(TestCase):
 
     def test_leave_ledger_is_append_only(self):
         req = self._request(days=1)
-        LeaveRequestService.submit(req)
+        LeaveRequestService.submit(req, calendar_days=set())
         reserve = HrLeaveLedgerEntry.objects.get(pk=req.reservation_id)
         reserve.entry_type = LeaveLedgerEntryType.RESERVATION_RELEASE
         with self.assertRaises(ValidationError):
@@ -172,12 +174,12 @@ class RequestLifecycleTests(TestCase):
         req.status = LeaveRequestStatus.RETURNED
         req.return_reason = "补充材料"
         req.save()
-        LeaveRequestService.submit(req)  # RETURNED 可重新提交
+        LeaveRequestService.submit(req, calendar_days=set())  # RETURNED 可重新提交
         self.assertEqual(req.status, LeaveRequestStatus.SUBMITTED)
 
     def test_return_from_leave_restores_unused(self):
         req = self._request(days=5)
-        LeaveRequestService.submit(req)
+        LeaveRequestService.submit(req, calendar_days=set())
         LeaveRequestService.approve(req)
         # 第 3 天提前返岗
         case = LeaveRequestService.return_from_leave(

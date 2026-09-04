@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ campaign.title }} - 招聘报名</title>
+  <style>
+    :root { color-scheme: light; --blue:#155eef; --ink:#172b4d; --muted:#667085; --line:#d0d5dd; --bg:#f5f7fb; --danger:#b42318; }
+    * { box-sizing: border-box; }
+    body { margin:0; color:var(--ink); background:var(--bg); font:16px/1.65 system-ui,"Microsoft YaHei","PingFang SC",sans-serif; }
+    header { background:linear-gradient(135deg,#0b4bc4,#2e74ff); color:#fff; padding:38px 20px; }
+    header div, main { max-width:1040px; margin:auto; }
+    h1 { margin:0 0 8px; font-size:clamp(26px,4vw,40px); }
+    h2 { margin:0 0 18px; font-size:22px; }
+    main { padding:24px 16px 56px; display:grid; gap:20px; }
+    section { background:#fff; border:1px solid #eaecf0; border-radius:14px; padding:24px; box-shadow:0 6px 22px rgba(16,24,40,.06); }
+    .positions { display:grid; gap:12px; }
+    .position { border:1px solid var(--line); border-radius:10px; padding:16px; }
+    .position strong { font-size:18px; }
+    .muted { color:var(--muted); }
+    form { display:grid; gap:15px; }
+    label { display:grid; gap:6px; font-weight:600; }
+    input, select, textarea, button { font:inherit; }
+    input, select, textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#fff; }
+    textarea { min-height:110px; resize:vertical; }
+    .consent { display:flex; align-items:flex-start; gap:10px; font-weight:400; }
+    .consent input { width:auto; margin-top:6px; }
+    .privacy-notice { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:#f8fafc; }
+    .privacy-notice summary { cursor:pointer; font-weight:700; }
+    .privacy-notice dl { display:grid; grid-template-columns:7em 1fr; gap:6px 12px; margin:12px 0 0; font-size:14px; }
+    .privacy-notice dt { font-weight:700; }
+    .privacy-notice dd { margin:0; }
+    button { border:0; border-radius:8px; padding:11px 18px; color:#fff; background:var(--blue); font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .message { min-height:26px; margin:0; }
+    .error { color:var(--danger); }
+    .success { color:#067647; }
+    @media (min-width:820px) { main { grid-template-columns:1fr 1fr; } .wide { grid-column:1/-1; } }
+  </style>
+</head>
+<body>
+  <header><div><h1>{{ campaign.title }}</h1><p>{{ campaign.description|default:"欢迎报考，请如实填写报名信息。" }}</p></div></header>
+  <main>
+    <section class="wide">
+      <h2>招聘岗位</h2>
+      <div id="positions" class="positions"><p class="muted">正在加载岗位……</p></div>
+    </section>
+    <section>
+      <h2>在线报名</h2>
+      <form id="apply-form">
+        <label>报考岗位<select name="position_id" required><option value="">请选择岗位</option></select></label>
+        <label>姓名<input name="legal_name" autocomplete="name" maxlength="100" required></label>
+        <label>手机号码<input name="primary_mobile" autocomplete="tel" maxlength="32" required></label>
+        <label>电子邮箱<input name="primary_email" type="email" autocomplete="email" maxlength="254" required></label>
+        <label>证件号码（选填）<input name="national_id" autocomplete="off" maxlength="64"></label>
+        <label>个人说明（选填）<textarea name="statement" maxlength="3000"></textarea></label>
+        <details class="privacy-notice">
+          <summary>招聘个人信息处理告知（报名之前请阅读）</summary>
+          <dl>
+            <dt>处理者</dt><dd>{{ privacy_school_name|default:"本招聘单位" }}</dd>
+            <dt>处理目的</dt><dd>本次招聘报名、资格审查、考试考察、录用衔接及依法归档。</dd>
+            <dt>处理方式</dt><dd>通过本系统收集、存储、校验、查询并由获授权的招聘工作人员使用；不用于与本次招聘无关的用途。</dd>
+            <dt>信息种类</dt><dd>姓名、报名岗位、手机号码、电子邮箱、个人说明；证件号码为选填的敏感个人信息，仅用于身份核验和防止重复报名。</dd>
+            <dt>保存期限</dt><dd>常规保留 {{ privacy_retention_days|default:"730" }} 天；法律法规或档案管理另有要求的，从其规定。期限届满后依法删除、匿名化或限制处理。</dd>
+            <dt>个人权利</dt><dd>可申请查阅、复制、更正、补充、删除、限制处理或撤回同意；受理渠道：{{ privacy_contact|default:"招聘公告公布的联系方式" }}。</dd>
+            <dt>告知版本</dt><dd>{{ privacy_notice_version|default:"2026-01" }}</dd>
+          </dl>
+        </details>
+        <label class="consent"><input name="privacy_consent" type="checkbox" required><span>我已阅读上述告知，并同意按告知内容处理我的报名信息。</span></label>
+        <button type="submit">提交报名</button>
+        <p id="apply-message" class="message" role="status"></p>
+      </form>
+    </section>
+    <section>
+      <h2>查询我的报名</h2>
+      <p class="muted">报名成功后可直接查询；查询凭证会保存在当前浏览器中。</p>
+      <form id="query-form">
+        <label>手机号码<input name="primary_mobile" autocomplete="tel" maxlength="32" required></label>
+        <label>电子邮箱<input name="primary_email" type="email" autocomplete="email" maxlength="254" required></label>
+        <button type="submit">查询</button>
+        <p id="query-message" class="message" role="status"></p>
+        <div id="applications"></div>
+      </form>
+      <hr style="margin:24px 0;border:0;border-top:1px solid var(--line)">
+      <h2>找回查询凭证</h2>
+      <p class="muted">更换手机或清理浏览器后，可用报名邮箱验证码重新获取。</p>
+      <form id="receipt-request-form">
+        <label>手机号码<input name="primary_mobile" autocomplete="tel" maxlength="32" required></label>
+        <label>电子邮箱<input name="primary_email" type="email" autocomplete="email" maxlength="254" required></label>
+        <button type="submit">获取邮箱验证码</button>
+      </form>
+      <form id="receipt-verify-form" hidden>
+        <input name="challenge_id" type="hidden">
+        <label>邮箱验证码<input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+        <button type="submit">验证并找回</button>
+      </form>
+      <p id="receipt-message" class="message" role="status"></p>
+    </section>
+  </main>
+  <script>
+    const campaignToken = "{{ token|escapejs }}";
+    const receiptKey = `hr04-receipt:${campaignToken}`;
+    const jsonHeaders = {"Content-Type":"application/json"};
+    const text = value => String(value ?? "");
+    function setMessage(id, value, ok=false) {
+      const node = document.getElementById(id); node.textContent = value; node.className = `message ${ok ? "success" : "error"}`;
+    }
+    async function responseData(response) {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message || "操作失败，请稍后重试");
+      return payload.data;
+    }
+    async function loadPositions() {
+      try {
+        const data = await responseData(await fetch(`/recruit/${encodeURIComponent(campaignToken)}?format=json`));
+        const list = document.getElementById("positions"); const select = document.querySelector('[name="position_id"]'); list.textContent = "";
+        data.positions.forEach(position => {
+          const card = document.createElement("div"); card.className = "position";
+          const title = document.createElement("strong"); title.textContent = text(position.post_catalog_name || "招聘岗位");
+          const meta = document.createElement("div"); meta.className = "muted"; meta.textContent = text(position.organization_name);
+          const desc = document.createElement("div"); desc.textContent = text(position.description);
+          card.append(title, meta, desc); list.append(card);
+          if (position.status === "OPEN") { const option = document.createElement("option"); option.value = position.id; option.textContent = `${text(position.organization_name)} - ${text(position.post_catalog_name)}`; select.append(option); }
+        });
+        if (!data.positions.length) list.innerHTML = '<p class="muted">当前暂无公开岗位。</p>';
+      } catch (error) { document.getElementById("positions").textContent = error.message; }
+    }
+    document.getElementById("apply-form").addEventListener("submit", async event => {
+      event.preventDefault(); const form = event.currentTarget; const button = form.querySelector("button"); button.disabled = true;
+      const values = Object.fromEntries(new FormData(form));
+      const body = {position_id:values.position_id, legal_name:values.legal_name, primary_mobile:values.primary_mobile, primary_email:values.primary_email, national_id:values.national_id || null, privacy_consent:Boolean(values.privacy_consent), form_data:{applicant_statement:values.statement || ""}};
+      try {
+        const data = await responseData(await fetch(`/recruit/${encodeURIComponent(campaignToken)}/apply`, {method:"POST", headers:{...jsonHeaders,"Idempotency-Key":crypto.randomUUID()}, body:JSON.stringify(body)}));
+        localStorage.setItem(receiptKey, data.access_token); setMessage("apply-message", `报名成功，报名号：${data.application_no}`, true);
+      } catch (error) { setMessage("apply-message", error.message); } finally { button.disabled = false; }
+    });
+    document.getElementById("query-form").addEventListener("submit", async event => {
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form)); const accessToken = localStorage.getItem(receiptKey);
+      if (!accessToken) { setMessage("query-message", "当前浏览器没有报名查询凭证，请使用报名时的浏览器。 "); return; }
+      try {
+        const data = await responseData(await fetch("/recruit/my-applications", {method:"POST", headers:jsonHeaders, body:JSON.stringify({primary_email:values.primary_email, primary_mobile:values.primary_mobile, access_token:accessToken})}));
+        setMessage("query-message", `查询到 ${data.applications.length} 条报名记录`, true); const list = document.getElementById("applications"); list.textContent = "";
+        data.applications.forEach(item => { const row = document.createElement("p"); row.textContent = `${text(item.application_no)}｜${text(item.position)}｜${text(item.canonical_status_label || item.canonical_status)}`; list.append(row); });
+      } catch (error) { setMessage("query-message", error.message); }
+    });
+    document.getElementById("receipt-request-form").addEventListener("submit", async event => {
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form)); const button = form.querySelector("button"); button.disabled = true;
+      try {
+        const data = await responseData(await fetch(`/recruit/${encodeURIComponent(campaignToken)}/receipt/request`, {method:"POST", headers:jsonHeaders, body:JSON.stringify({primary_email:values.primary_email, primary_mobile:values.primary_mobile})}));
+        const verifyForm = document.getElementById("receipt-verify-form"); verifyForm.elements.challenge_id.value = data.challenge_id; verifyForm.hidden = false; verifyForm.elements.otp.focus();
+        setMessage("receipt-message", data.message || "若报名信息匹配，验证码已发送至报名邮箱", true);
+      } catch (error) { setMessage("receipt-message", error.message); } finally { button.disabled = false; }
+    });
+    document.getElementById("receipt-verify-form").addEventListener("submit", async event => {
+      event.preventDefault(); const form = event.currentTarget; const values = Object.fromEntries(new FormData(form)); const button = form.querySelector("button"); button.disabled = true;
+      try {
+        const data = await responseData(await fetch(`/recruit/${encodeURIComponent(campaignToken)}/receipt/verify`, {method:"POST", headers:jsonHeaders, body:JSON.stringify({challenge_id:values.challenge_id, otp:values.otp})}));
+        localStorage.setItem(receiptKey, data.access_token); setMessage("receipt-message", "查询凭证已找回，现在可以查询报名进度。", true); form.hidden = true;
+      } catch (error) { setMessage("receipt-message", error.message); } finally { button.disabled = false; }
+    });
+    loadPositions();
+  </script>
+</body>
+</html>

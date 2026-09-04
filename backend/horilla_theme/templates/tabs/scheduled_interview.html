@@ -73,7 +73,7 @@
                     <span
                         class="float-end cursor-pointer"
                         title="{% trans 'delete' %}"
-                        hx-get="{% url 'delete-interview' interview.id %}?view=false"
+                        hx-post="{% url 'delete-interview' interview.id %}?view=false"
                         data-target="#activitySidebar"
                         hx-swap="innerHTML"
                         hx-confirm="{% trans 'Are you sure you want to delete this interview?' %}"

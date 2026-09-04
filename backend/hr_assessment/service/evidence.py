@@ -118,8 +118,6 @@ class ProviderCollectionOrchestrator:
     UNCONFIGURED_PROVIDER_NAMES = {
         "academic",
         "research",
-        "ethics_fact",
-        "document",
     }
 
     def __init__(self):

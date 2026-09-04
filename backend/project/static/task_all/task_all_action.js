@@ -52,10 +52,11 @@ $("#archiveTaskAll").click(function (e) {
 
                 $.ajax({
                     type: "POST",
-                    url: "/project/task-all-bulk-archive/?is_active=False",
+                    url: "/project/task-all-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -98,10 +99,11 @@ $(document).on('click', '#archiveTask', function (e) {
 
                 $.ajax({
                     type: "POST",
-                    url: "/project/task-all-bulk-archive/?is_active=False",
+                    url: "/project/task-all-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -147,10 +149,11 @@ $("#unArchiveTaskAll").click(function (e) {
 
                 $.ajax({
                     type: "POST",
-                    url: "/project/task-all-bulk-archive/?is_active=True",
+                    url: "/project/task-all-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -193,10 +196,11 @@ $(document).on('click', '#unArchiveTask', function (e) {
 
                 $.ajax({
                     type: "POST",
-                    url: "/project/task-all-bulk-archive/?is_active=True",
+                    url: "/project/task-all-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {

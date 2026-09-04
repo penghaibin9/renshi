@@ -434,6 +434,7 @@
                         class="oh-sidebar-label w-7 h-7 rounded-full flex-shrink-0"
                         title="{{ request.session.selected_company_instance.company }}"
                         alt="{{ request.session.selected_company_instance.company }}"
+                        onerror="this.onerror=null;this.src='{% static 'images/ui/university-seal.jpg' %}'"
                     >
                     <div class="oh-sidebar__company-details oh-sidebar-label min-w-0">
                         <span
@@ -446,9 +447,10 @@
                     </div>
                 {% else %}
                     <img
-                        src="{% if request.user.employee_get.employee_work_info.company_id.icon %}{{ request.user.employee_get.employee_work_info.company_id.icon.url }}{% else %}/static/horilla_theme/assets/img/horilla-logo.png{% endif %}"
+                        src="{% if request.user.employee_get.employee_work_info.company_id.icon %}{{ request.user.employee_get.employee_work_info.company_id.icon.url }}{% else %}/static/images/ui/university-seal.jpg{% endif %}"
                         alt="学校标志"
                         class="oh-sidebar-label w-7 h-7 rounded-full flex-shrink-0"
+                        onerror="this.onerror=null;this.src='{% static 'images/ui/university-seal.jpg' %}'"
                     >
                     <div class="oh-sidebar__company-details oh-sidebar-label min-w-0">
                         <span

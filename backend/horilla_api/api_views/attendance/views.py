@@ -176,7 +176,7 @@ class ClockOutAPIView(APIView):
                 return Response({"message": "Clocked-Out"}, status=200)
 
             except Exception as error:
-                logger.error("Got an error in clock_out", error)
+                logger.error("Got an error in clock_out: %s", error)
             # return Response({"message": "Clocked-Out"}, status=200)
         return Response({"message": "Already clocked-out"}, status=400)
 

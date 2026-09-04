@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 
+from django.http import FileResponse
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from hr_recruitment.api.base import (
@@ -113,7 +115,12 @@ def application_detail(request, application_id):
         return error(request, exc.code, exc.message, exc.status_code)
     if not (request.user.is_superuser or request.user.has_perm("hr04.application.view")):
         return error(request, "PERMISSION_DENIED", "无查看申请权限", 403)
-    from hr_recruitment.models import HrApplicationTransition, HrJobApplication
+    from hr_recruitment.constants import SensitiveLevel
+    from hr_recruitment.models import (
+        HrApplicationMaterial,
+        HrApplicationTransition,
+        HrJobApplication,
+    )
 
     try:
         app = HrJobApplication.objects.select_related("candidate_id", "recruitment_position_id").get(
@@ -124,6 +131,41 @@ def application_detail(request, application_id):
     transitions = HrApplicationTransition.objects.filter(
         tenant_id=ctx.tenant_id, application_id=app
     ).order_by("occurred_at")
+    can_view_sensitive = request.user.is_superuser or request.user.has_perm(
+        "hr04.application.sensitive_view"
+    )
+    sensitive_levels = {SensitiveLevel.SENSITIVE, SensitiveLevel.HIGH_SENSITIVE}
+    material_qs = HrApplicationMaterial.objects.filter(
+        tenant_id=ctx.tenant_id,
+        application_id=app,
+        purged_at__isnull=True,
+    ).order_by("material_type", "-version_no", "created_at")
+    hidden_sensitive_count = 0
+    materials = []
+    for material in material_qs:
+        if material.sensitive_level in sensitive_levels and not can_view_sensitive:
+            hidden_sensitive_count += 1
+            continue
+        materials.append(
+            {
+                "id": str(material.id),
+                "material_type": material.material_type,
+                "title": material.title,
+                "version_no": material.version_no,
+                "file_name": material.file_name,
+                "mime_type": material.mime_type,
+                "file_size_bytes": material.file_size_bytes,
+                "verification_status": material.verification_status,
+                "sensitive_level": material.sensitive_level,
+                "download_url": reverse(
+                    "hr04-api-application-material-download",
+                    kwargs={
+                        "application_id": app.id,
+                        "material_id": material.id,
+                    },
+                ),
+            }
+        )
     return ok(
         request,
         {
@@ -142,6 +184,8 @@ def application_detail(request, application_id):
             "announcement_version_id": str(app.announcement_version_id) if app.announcement_version_id else None,
             "qualification_rule_version_id": str(app.qualification_rule_version_id) if app.qualification_rule_version_id else None,
             "selection_scheme_version_id": str(app.selection_scheme_version_id) if app.selection_scheme_version_id else None,
+            "materials": materials,
+            "hidden_sensitive_material_count": hidden_sensitive_count,
             "transitions": [
                 {
                     "from_status": t.from_status,
@@ -164,24 +208,124 @@ def add_material(request, application_id):
         return error(request, exc.code, exc.message, exc.status_code)
     if not (request.user.is_superuser or request.user.has_perm("hr04.application.manage")):
         return error(request, "PERMISSION_DENIED", "无上传材料权限", 403)
+    if request.content_type != "multipart/form-data":
+        return error(request, "MULTIPART_REQUIRED", "上传材料必须使用 multipart/form-data", 415)
+    from hr_recruitment.material_storage import (
+        MaterialStorageError,
+        delete_application_material,
+        store_application_material,
+    )
+
+    stored = None
     try:
-        body = json.loads(request.body or b"{}")
+        stored = store_application_material(
+            request.FILES.get("file"),
+            tenant_id=ctx.tenant_id,
+            application_id=application_id,
+        )
         service = ApplicationService(tenant_id=ctx.tenant_id, actor=str(request.user.id))
         material = service.add_material(
             application_id=application_id,
-            material_type=body.get("material_type", "OTHER"),
-            title=body.get("title", ""),
-            file_name=body.get("file_name", ""),
-            file_path=body.get("file_path", ""),
-            sha256=body.get("sha256", ""),
-            mime_type=body.get("mime_type", ""),
-            file_size_bytes=body.get("file_size_bytes", 0),
-            sensitive_level=body.get("sensitive_level", "RESTRICTED_HR"),
+            material_type=request.POST.get("material_type", "OTHER"),
+            title=request.POST.get("title", ""),
+            file_name=stored["file_name"],
+            file_path=stored["file_path"],
+            sha256=stored["sha256"],
+            mime_type=stored["mime_type"],
+            file_size_bytes=stored["file_size_bytes"],
+            sensitive_level=request.POST.get("sensitive_level", "RESTRICTED_HR"),
         )
         return ok(
             request,
             {"id": str(material.id), "version_no": material.version_no},
             status=201,
         )
+    except MaterialStorageError as exc:
+        return error(request, exc.code, exc.message, exc.status)
     except Exception as exc:  # noqa: BLE001
+        if stored:
+            try:
+                delete_application_material(
+                    stored["file_path"],
+                    tenant_id=ctx.tenant_id,
+                    application_id=application_id,
+                )
+            except MaterialStorageError:
+                pass
         return _handle(request, exc)
+
+
+@require_GET
+def download_material(request, application_id, material_id):
+    try:
+        ctx = make_hr04_context(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    if not (request.user.is_superuser or request.user.has_perm("hr04.application.view")):
+        return error(request, "PERMISSION_DENIED", "无查看申请材料权限", 403)
+
+    from hr_recruitment.constants import SensitiveLevel
+    from hr_recruitment.material_storage import (
+        MaterialStorageError,
+        open_application_material,
+    )
+    from hr_recruitment.models import HrApplicationMaterial
+    from hr_recruitment.services.audit_service import log_sensitive_access
+
+    material = (
+        HrApplicationMaterial.objects.select_related("application_id__candidate_id")
+        .filter(
+            id=material_id,
+            tenant_id=ctx.tenant_id,
+            application_id_id=application_id,
+            purged_at__isnull=True,
+        )
+        .first()
+    )
+    if material is None or not material.file_path:
+        return error(request, "MATERIAL_NOT_FOUND", "材料不存在", 404)
+
+    sensitive_levels = {SensitiveLevel.SENSITIVE, SensitiveLevel.HIGH_SENSITIVE}
+    if material.sensitive_level in sensitive_levels and not (
+        request.user.is_superuser
+        or request.user.has_perm("hr04.application.sensitive_view")
+    ):
+        return error(request, "PERMISSION_DENIED", "无查看敏感材料权限", 403)
+    reason = str(request.headers.get("X-HR-Access-Reason", "") or "").strip()
+    if material.sensitive_level == SensitiveLevel.HIGH_SENSITIVE and not reason:
+        return error(request, "ACCESS_REASON_REQUIRED", "查看高敏材料必须填写访问事由", 422)
+
+    stream = None
+    try:
+        stream = open_application_material(
+            material.file_path,
+            tenant_id=ctx.tenant_id,
+            application_id=application_id,
+        )
+        log_sensitive_access(
+            tenant_id=ctx.tenant_id,
+            candidate_id=material.application_id.candidate_id_id,
+            access_type="DOWNLOAD",
+            sensitive_field="APPLICATION_MATERIAL",
+            material_id=material.id,
+            actor_id=str(request.user.id),
+            reason=reason,
+            request_id=str(getattr(request, "request_id", "") or ""),
+        )
+    except MaterialStorageError as exc:
+        return error(request, exc.code, exc.message, exc.status)
+    except Exception:  # noqa: BLE001
+        if stream is not None:
+            stream.close()
+        return error(request, "MATERIAL_DOWNLOAD_FAILED", "材料读取失败", 500)
+
+    response = FileResponse(
+        stream,
+        as_attachment=True,
+        filename=material.file_name or f"material-{material.id}",
+        content_type=material.mime_type or "application/octet-stream",
+    )
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response

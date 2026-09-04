@@ -25,7 +25,7 @@ from django.template import Context
 from django.template import Template as DjangoTemplate
 from django.template import TemplateSyntaxError
 from django.urls import path, reverse
-from django.utils.html import escape, format_html
+from django.utils.html import conditional_escape, escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.timezone import localtime, now
 from django.utils.translation import gettext_lazy as _
@@ -283,7 +283,7 @@ class TemplateAdmin(admin.ModelAdmin):
         """Comma-separated site names, or Global when no sites are attached."""
         sites = obj.sites.all()
         if not sites:
-            return mark_safe('<span style="color:#aaa">Global</span>')
+            return format_html('<span style="color:#aaa">{}</span>', "Global")
         return ", ".join(site.name for site in sites)
 
     site_list.short_description = _("Sites")
@@ -309,7 +309,7 @@ class TemplateAdmin(admin.ModelAdmin):
                 localtime(obj.locked_at).strftime("%Y-%m-%d %H:%M"),
                 unlock_url,
             )
-        return mark_safe('<span style="color:#2e7d32">🔓 Not locked</span>')
+        return format_html('<span style="color:#2e7d32">{}</span>', "🔓 Not locked")
 
     lock_status_display.short_description = _("Lock Status")
 
@@ -456,7 +456,9 @@ class TemplateAdmin(admin.ModelAdmin):
             "title": _("Restore Template Version"),
             "template": tmpl,
             "version": ver,
-            "diff_html": mark_safe(diff_html),
+            # difflib.HtmlDiff escapes compared lines; only its generated table
+            # markup is declared safe here.
+            "diff_html": mark_safe(diff_html),  # nosec
             "change_url": change_url,
             "opts": self.model._meta,
         }
@@ -518,7 +520,9 @@ class TemplateAdmin(admin.ModelAdmin):
             "v1": v1,
             "v2": v2,
             "version_choices": version_choices,
-            "diff_html": mark_safe(diff_html),
+            # difflib.HtmlDiff escapes compared lines; only its generated table
+            # markup is declared safe here.
+            "diff_html": mark_safe(diff_html),  # nosec
             "opts": self.model._meta,
             "change_url": reverse(
                 "admin:horilla_dbtemplate_template_change", args=[template_id]
@@ -568,7 +572,10 @@ class TemplateAdmin(admin.ModelAdmin):
             **self.admin_site.each_context(request),
             "title": _("Live Preview — %(name)s") % {"name": tmpl.name},
             "template": tmpl,
-            "rendered": mark_safe(rendered),
+            # srcdoc is escaped as an HTML attribute and isolated by the
+            # iframe sandbox in the preview template. Template-authored
+            # scripts therefore cannot execute with the admin session.
+            "rendered_srcdoc": conditional_escape(rendered),
             "error": error,
             "opts": self.model._meta,
             "change_url": change_url,

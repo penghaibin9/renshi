@@ -78,30 +78,93 @@ def proposed_hire_list(request):
         return error(request, exc.code, exc.message, exc.status_code)
     if not (request.user.is_superuser or request.user.has_perm("hr04.proposed_hire.manage")):
         return error(request, "PERMISSION_DENIED", "无查看拟录用权限", 403)
-    from hr_recruitment.models import HrProposedHire
+    from hr_recruitment.constants import ApplicationCanonicalStatus as S
+    from hr_recruitment.models import (
+        HrJobApplication,
+        HrProposedHire,
+        HrPublicNoticeEntry,
+        HrRecruitmentHandoff,
+        HrRecruitmentOffer,
+        HrSelectionResultSnapshot,
+    )
 
     items = HrProposedHire.objects.filter(
         tenant_id=ctx.tenant_id
     ).select_related("application_id__candidate_id", "recruitment_position_id").order_by(
         "-created_at"
     )[:100]
+    proposed_application_ids = set(items.values_list("application_id_id", flat=True))
+    latest_snapshots = (
+        HrSelectionResultSnapshot.objects.filter(
+            tenant_id=ctx.tenant_id,
+            application_id__canonical_status=S.QUALIFIED,
+        )
+        .select_related("application_id__candidate_id", "recruitment_position_id")
+        .order_by("application_id_id", "-snapshot_version")
+    )
+    eligible = []
+    seen_applications = set()
+    for snapshot in latest_snapshots:
+        app_id = snapshot.application_id_id
+        if app_id in proposed_application_ids or app_id in seen_applications:
+            continue
+        seen_applications.add(app_id)
+        app = snapshot.application_id
+        position = snapshot.recruitment_position_id
+        eligible.append(
+            {
+                "application_id": str(app.id),
+                "application_no": app.application_no,
+                "candidate_name": app.candidate_id.legal_name if app.candidate_id else "",
+                "position": position.post_catalog_name,
+                "rank": snapshot.rank,
+                "final_score": str(snapshot.final_score),
+                "reservation_id": position.reservation_id,
+                "reservation_no": position.reservation_no,
+            }
+        )
+
+    item_rows = []
+    for p in items:
+        notice_entry = (
+            HrPublicNoticeEntry.objects.filter(tenant_id=ctx.tenant_id, proposed_hire_id=p)
+            .select_related("notice_id")
+            .order_by("-notice_id__published_at")
+            .first()
+        )
+        offer = HrRecruitmentOffer.objects.filter(
+            tenant_id=ctx.tenant_id, proposed_hire_id=p
+        ).order_by("-created_at").first()
+        handoff = HrRecruitmentHandoff.objects.filter(
+            tenant_id=ctx.tenant_id, proposed_hire_id=p
+        ).order_by("-handoff_at").first()
+        item_rows.append(
+            {
+                "id": str(p.id),
+                "application_id": str(p.application_id_id),
+                "campaign_id": str(p.recruitment_position_id.campaign_id_id),
+                "rank": p.rank,
+                "final_score": str(p.final_score),
+                "approval_status": p.approval_status,
+                "approvalStatusLabel": status_label(PROPOSED_HIRE_STATUS_LABELS, p.approval_status),
+                "candidate_name": p.application_id.candidate_id.legal_name if p.application_id and p.application_id.candidate_id else "",
+                "position": p.recruitment_position_id.post_catalog_name if p.recruitment_position_id else "",
+                "reservation_id": p.reservation_id or "",
+                "notice_id": str(notice_entry.notice_id_id) if notice_entry else "",
+                "notice_status": notice_entry.notice_id.status if notice_entry else "",
+                "offer_id": str(offer.id) if offer else "",
+                "offer_status": offer.status if offer else "",
+                "handoff_id": str(handoff.id) if handoff else "",
+                "handoff_status": handoff.status if handoff else "",
+                "hr05_case_id": handoff.hr05_case_id if handoff else "",
+                "created_at": p.created_at.isoformat() if p.created_at else None,
+            }
+        )
     return ok(
         request,
         {
-            "items": [
-                {
-                    "id": str(p.id),
-                    "rank": p.rank,
-                    "final_score": str(p.final_score),
-                    "approval_status": p.approval_status,
-                    "approvalStatusLabel": status_label(PROPOSED_HIRE_STATUS_LABELS, p.approval_status),
-                    "candidate_name": p.application_id.candidate_id.legal_name if p.application_id and p.application_id.candidate_id else "",
-                    "position": p.recruitment_position_id.post_catalog_name if p.recruitment_position_id else "",
-                    "reservation_id": p.reservation_id or "",
-                    "created_at": p.created_at.isoformat() if p.created_at else None,
-                }
-                for p in items
-            ]
+            "items": item_rows,
+            "eligible_applications": eligible,
         },
         status=200,
     )
@@ -248,6 +311,26 @@ def accept_offer(request, offer_id):
     try:
         service = OfferService(tenant_id=ctx.tenant_id, actor=str(request.user.id))
         offer = service.accept(offer_id=offer_id)
+        return ok(request, {"id": str(offer.id), "status": offer.status})
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
+
+
+@require_http_methods(["POST"])
+def transition_offer(request, offer_id):
+    """Advance an Offer through its explicit approved/issued/viewed lifecycle."""
+    try:
+        ctx = make_hr04_context(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    if not (request.user.is_superuser or request.user.has_perm("hr04.offer.manage")):
+        return error(request, "PERMISSION_DENIED", "无推进 Offer 状态权限", 403)
+    try:
+        body = json.loads(request.body or b"{}")
+        offer = OfferService(tenant_id=ctx.tenant_id, actor=str(request.user.id)).transition(
+            offer_id=offer_id,
+            target=body.get("target"),
+        )
         return ok(request, {"id": str(offer.id), "status": offer.status})
     except Exception as exc:  # noqa: BLE001
         return _handle(request, exc)

@@ -112,19 +112,25 @@
                 ></ion-icon>
               </a>
               {% endcomment %}
-              <a
-                class="oh-btn oh-btn--danger w-100"
-                href="{% url 'delete-biometric-user' uid=employee.uid device_id=device_id %}"
-                onclick = "event.preventDefault();event.stopPropagation(); confirm(`{% trans 'Do you want to delete this user from the biometric device?' %}`)"
-                title='{% trans "Delete" %}'
+              <form
+                method="post"
+                action="{% url 'delete-biometric-user' uid=employee.uid device_id=device_id %}"
+                onsubmit="event.stopPropagation(); return confirm(`{% trans 'Do you want to delete this user from the biometric device?' %}`)"
               >
-                <ion-icon
-                  name="trash-outline"
-                  role="img"
-                  class="md hydrated"
-                  aria-label="{% trans 'trash outline' %}"
-                ></ion-icon>
-              </a>
+                {% csrf_token %}
+                <button
+                  type="submit"
+                  class="oh-btn oh-btn--danger w-100"
+                  title='{% trans "Delete" %}'
+                >
+                  <ion-icon
+                    name="trash-outline"
+                    role="img"
+                    class="md hydrated"
+                    aria-label="{% trans 'trash outline' %}"
+                  ></ion-icon>
+                </button>
+              </form>
             </div>
           </div>
         </div>

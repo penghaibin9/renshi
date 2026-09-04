@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.utils import timezone
 
@@ -121,14 +122,14 @@ def make_hr04_context(request):
     try:
         return build_hr04_context(
             tenant_id=tenant_id,
-            school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
+            school_timezone=settings.TIME_ZONE,
             user_id=request.user.id if request.user.is_authenticated else None,
             as_of=request.GET.get("as_of"),
             period_from=request.GET.get("period_from"),
             period_to=request.GET.get("period_to"),
             scope_type=scope_type,
             scope_org_id=scope_org_id,
-            authority_mode=request.GET.get("authority_mode", "LEGACY_RECRUITING_ONLY"),
+            authority_mode="HR04_AUTHORITY",
         )
     except Exception as exc:  # HrContextError（非法日期/scope）→ Hr04ApiError 统一错误码
         code = getattr(exc, "code", "INVALID_REQUEST")
@@ -138,15 +139,15 @@ def make_hr04_context(request):
 
 
 def get_idempotency_key(request) -> str | None:
-    """读 Idempotency-Key（HEADER 优先，其次 body/query）。"""
+    """Read an idempotency key from non-loggable mutation inputs only."""
     value = request.headers.get("Idempotency-Key")
     if value:
         return value
     if request.method == "POST":
         value = getattr(request, "POST", {}).get("idempotency_key")
-    if value:
-        return value
-    return request.GET.get("idempotency_key")
+        if value:
+            return value
+    return None
 
 
 def get_if_match(request) -> str | None:

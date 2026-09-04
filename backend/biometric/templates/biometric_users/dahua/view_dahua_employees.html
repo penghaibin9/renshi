@@ -17,7 +17,7 @@
             {% include "animation.html" %}
         </div>
     </div>
-    <span hx-delete="{% url 'delete-dahua-user' %}" hx-vals="" id="deleteDahuaUsers"></span>
+    <span hx-post="{% url 'delete-dahua-user' %}" hx-vals="" id="deleteDahuaUsers"></span>
 </div>
 <script src="{% static 'actions.js' %}"></script>
 {% endblock %}

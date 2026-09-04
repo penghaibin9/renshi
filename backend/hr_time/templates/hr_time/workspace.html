@@ -33,6 +33,8 @@
     </nav>
     <p class="hr11-mobile-hint">可左右滑动查看更多工作区</p>
 
+    {% if section_warning %}<div class="hr11-warning" role="alert">{{ section_warning }}</div>{% endif %}
+
     <section class="hr11-summary" aria-label="当前学校时间摘要">
       <article class="hr11-kpi"><span>今日异常</span><b>{{ summary.today_exceptions }}</b><small>{{ today }} 待处理</small></article>
       <article class="hr11-kpi"><span>请假待批</span><b>{{ summary.pending_leave }}</b><small>已提交或审批中</small></article>
@@ -44,7 +46,9 @@
 
     <section class="hr11-workbar" aria-label="本页办理入口">
       <div><span>当前办理区</span><strong>{% if section == 'overview' %}今日考勤办理概览{% elif section == 'attendance' %}异常确认与解决{% elif section == 'schedule' %}生效排班创建{% elif section == 'leave' %}请假提交、审批与销假{% elif section == 'overtime' %}加班申请审批{% elif section == 'close' %}关账预检、关闭与重开{% else %}风险确认与解决{% endif %}</strong></div>
-      {% if section == 'schedule' %}<button class="hr11-button hr11-button--primary" type="button" data-open-schedule>新建生效排班</button>{% endif %}
+      {% if section == 'schedule' %}<button class="hr11-button" type="button" data-download-calendar-template>下载年度日历模板</button><button class="hr11-button" type="button" data-open-calendar-import>导入并发布日历</button><button class="hr11-button hr11-button--primary" type="button" data-open-schedule>新建生效排班</button>{% endif %}
+      {% if section == 'leave' and leave_features_available %}<button class="hr11-button" type="button" data-open-leave-account>配置假期账户</button><button class="hr11-button hr11-button--primary" type="button" data-open-leave>新建请假申请</button>{% elif section == 'leave' %}<span class="hr11-readonly-note">数据库升级期间只读</span>{% endif %}
+      {% if section == 'close' %}<button class="hr11-button hr11-button--primary" type="button" data-open-close>新建月结期间</button>{% endif %}
       <div class="hr11-feedback" data-feedback role="status" aria-live="polite"></div>
     </section>
 
@@ -60,13 +64,16 @@
               <div class="hr11-row__main">
                 <strong>{% if section == 'close' %}{{ item.date }}{% elif section == 'risks' %}{{ item.risk }}{% elif section == 'leave' %}{{ item.type }} · {{ item.staff }}{% elif section == 'attendance' %}{{ item.exception }} · {{ item.staff }}{% else %}{{ item.staff|default:"人员档案暂不可用" }}{% endif %}</strong>
                 <small>{% if section == 'overview' %}{{ item.date }} · 记入工时 {{ item.minutes }} 分钟{% elif section == 'attendance' %}{{ item.date }}{% if item.note %} · {{ item.note }}{% endif %}{% elif section == 'schedule' %}{{ item.date }} · 来源 {{ item.source|default:"—" }}{% elif section == 'leave' %}{{ item.date }} · {{ item.amount }}{% elif section == 'overtime' %}{{ item.date|date:"Y-m-d H:i" }} · 计划 {{ item.minutes }} 分钟{% elif section == 'close' %}{% if item.closed_at %}关闭于 {{ item.closed_at|date:"Y-m-d H:i" }}{% else %}尚未正式关闭{% endif %}{% elif section == 'risks' %}{{ item.severity }} · {{ item.summary|default:"暂无补充摘要" }}{% endif %}</small>
+                {% if section == 'leave' %}<small>{% if item.evidence_available %}{% if item.requires_evidence %}该假别提交前必须上传证明 · {% endif %}已上传 {{ item.evidence_count }} 份证明{% else %}证明材料状态暂不可读取{% endif %}</small>{% endif %}
               </div>
               <span class="hr11-pill" data-status>{{ item.status }}</span>
               <div class="hr11-row__actions">
-                {% if section == 'overview' %}<span class="hr11-row__note">{% if item.finalized %}已月结冻结{% else %}尚未冻结{% endif %}</span>
+                {% if section == 'leave' and item.evidence_available %}{% for evidence in item.evidences %}<a href="/api/v1/hr/time/leave-evidence/{{ evidence.id }}/download" data-evidence-download title="{{ evidence.name }}">审计下载证明 {{ forloop.counter }}</a>{% endfor %}{% endif %}
+                {% if section == 'leave' and not item.writes_available %}<span class="hr11-row__note">数据库升级期间不可办理</span>
+                {% elif section == 'overview' %}<span class="hr11-row__note">{% if item.finalized %}已月结冻结{% else %}尚未冻结{% endif %}</span>
                 {% elif section == 'attendance' and item.status_code == 'OPEN' %}<button type="button" data-action="exception-review">进入复核</button><button type="button" data-action="exception-resolve">解决异常</button>
                 {% elif section == 'attendance' and item.status_code == 'REVIEWING' %}<button type="button" data-action="exception-resolve">解决异常</button><button type="button" data-action="exception-dismiss">排除异常</button>
-                {% elif section == 'leave' and item.status_code == 'DRAFT' or section == 'leave' and item.status_code == 'RETURNED' %}<button type="button" data-action="leave-submit">提交审批</button>
+                {% elif section == 'leave' and item.status_code == 'DRAFT' or section == 'leave' and item.status_code == 'RETURNED' %}<button type="button" data-action="leave-evidence">上传证明</button><button type="button" data-action="leave-submit">提交审批</button>
                 {% elif section == 'leave' and item.status_code == 'SUBMITTED' %}<button type="button" data-action="leave-approve">批准</button><button type="button" data-action="leave-reject">拒绝</button>
                 {% elif section == 'leave' and item.status_code == 'APPROVED' %}<button type="button" data-action="leave-return">办理销假</button>
                 {% elif section == 'overtime' and item.status_code == 'SUBMITTED' %}<button type="button" data-action="overtime-approve">批准申请</button><button type="button" data-action="overtime-reject">拒绝申请</button>

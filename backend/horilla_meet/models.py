@@ -1,4 +1,4 @@
-from datetime import timedelta, timezone
+from datetime import timedelta
 from itertools import chain
 
 from django.apps import apps
@@ -7,9 +7,11 @@ from django.db.models import Q
 from django.forms import ValidationError
 from django.urls import reverse_lazy
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from google.oauth2.credentials import Credentials
 
+from base.encrypted_fields import EncryptedTextField
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import Company
 from employee.models import Employee
@@ -28,7 +30,7 @@ class GoogleCloudCredential(models.Model):
 
     project_id = models.CharField(max_length=255, blank=True, null=True)
     client_id = models.CharField(max_length=255)
-    client_secret = models.CharField(max_length=255)
+    client_secret = EncryptedTextField()
     redirect_uris = models.TextField(help_text=_("Comma separated URIs"))
     company_id = models.ForeignKey(
         Company,
@@ -100,10 +102,11 @@ class GoogleCloudCredential(models.Model):
         Returns:
             str: An HTML string to represent a masked client secret.
         """
-        col = f"""
-        <span class="oh-hidden-item" data-value={self.client_secret}>********************</span>
-        """
-        return col
+        return format_html(
+            '<span title="{}">{}</span>',
+            _("Credential is encrypted and cannot be displayed"),
+            _("Stored securely"),
+        )
 
     def get_redirect_url(self):
         """
@@ -139,11 +142,11 @@ class GoogleCredential(HorillaModel, NoPermissionModel):
     employee_id = models.OneToOneField(
         Employee, on_delete=models.CASCADE, related_name="google_credential"
     )
-    token = models.TextField()
-    refresh_token = models.TextField()
+    token = EncryptedTextField()
+    refresh_token = EncryptedTextField()
     token_uri = models.CharField(max_length=255)
     client_id = models.CharField(max_length=255)
-    client_secret = models.CharField(max_length=255)
+    client_secret = EncryptedTextField()
     scopes = models.TextField()
     expires_at = models.DateTimeField()
 

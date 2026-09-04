@@ -22,7 +22,7 @@ from hr_changes.api.base import (
 )
 from hr_changes.api.changes import _service_error, _version
 from hr_changes.context import HrChangeContextError
-from hr_changes.integrations.hr02 import PositionGate
+from hr_changes.integrations.hr02 import Hr02GateError, PositionGate
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.permissions import require_hr_change_permission
 from hr_changes.selectors.transfer_selector import TransferSelector
@@ -132,9 +132,8 @@ def transfer_reserve(request, case_id):
         return error_response(request, "CHANGE_NOT_FOUND", "调动案件不存在", status=404)
     try:
         reservation = PositionGate(ctx.tenant_id).reserve_for_case(case)
-    except ChangeServiceError as exc:
+    except Hr02GateError as exc:
         return _service_error(request, exc)
-    from hr_changes.integrations.hr02 import Hr02GateError
 
     if reservation is None:
         return error_response(request, "CHANGE_INVALID_ACTION", "该动作不需要岗位预占", status=400)

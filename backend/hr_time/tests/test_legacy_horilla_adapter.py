@@ -7,8 +7,9 @@ from hr_time.legacy.horilla import HorillaLegacyTimeAdapter
 
 
 class HorillaLegacyTimeAdapterTests(SimpleTestCase):
-    @patch("attendance.models.AttendanceActivity.objects")
-    def test_attendance_activity_query_is_tenant_scoped_and_raw_only(self, activity_objects):
+    @patch("hr_time.legacy.horilla._attendance_activity_model")
+    def test_attendance_activity_query_is_tenant_scoped_and_raw_only(self, model_loader):
+        activity_objects = model_loader.return_value.objects
         values_qs = MagicMock()
         values_qs.__iter__.return_value = iter(
             [{"id": 1, "attendance_date": date(2026, 8, 1)}]
@@ -30,8 +31,9 @@ class HorillaLegacyTimeAdapterTests(SimpleTestCase):
         self.assertEqual(rows[0]["factKind"], "RAW_CAPTURE")
         self.assertFalse(rows[0]["authority"])
 
-    @patch("leave.models.LeaveRequest.objects")
-    def test_leave_query_is_tenant_scoped_and_keeps_legacy_workflow_semantics(self, leave_objects):
+    @patch("hr_time.legacy.horilla._leave_request_model")
+    def test_leave_query_is_tenant_scoped_and_keeps_legacy_workflow_semantics(self, model_loader):
+        leave_objects = model_loader.return_value.objects
         first_qs = MagicMock()
         second_qs = MagicMock()
         values_qs = MagicMock()

@@ -7,7 +7,7 @@ hr_qualification/management/commands/hr09_gate_check.py —— 封板验收（�
 - 硬门合规
 """
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
@@ -71,7 +71,9 @@ class Command(BaseCommand):
         try:
             from hr_qualification.models import HrDoubleTeacherRulePack, HrDoubleTeacherRule
             packs = HrDoubleTeacherRulePack.objects.filter(tenant_id=None).count()
-            rules = HrDoubleTeacherRule.objects.count()
+            rules = HrDoubleTeacherRule.objects.filter(
+                version_id__rule_pack_id__tenant_id__isnull=True
+            ).count()
             results.append(("SEED_RULES", packs >= 1 and rules >= 8, f"{packs} packs, {rules} rules"))
         except Exception as e:
             results.append(("SEED_RULES", False, str(e)))
@@ -141,3 +143,6 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(
                 f"HR09 NOT READY: {total - passed}/{total} checks failed"
             ))
+            raise CommandError(
+                f"HR09 acceptance gate failed: {total - passed}/{total} checks failed"
+            )

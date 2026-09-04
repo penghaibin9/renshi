@@ -132,14 +132,14 @@
             <div class="oh-btn-group">
                 {% if dashboard == 'true' %}
                     <a
-                        href="/shift-request-approve/{{shift_request.id}}/"
+                        href="#" hx-post="/shift-request-approve/{{shift_request.id}}/" hx-swap="none" hx-on::after-request="window.location.reload()"
                         onclick="return confirm('{% trans "Do you want to approve this request?" %}')"
                         class="oh-btn oh-btn--info w-50"
                         title='{% trans "Approve" %}'
                     >{% trans "Approve" %}</a>
 
                     <a
-                        href="/shift-request-cancel/{{shift_request.id}}/"
+                        href="#" hx-post="/shift-request-cancel/{{shift_request.id}}/" hx-swap="none" hx-on::after-request="window.location.reload()"
                         onclick="return confirm('{% trans "Do you want to cancel this request?" %}')"
                         class="oh-btn oh-btn--danger w-50"
                         title='{% trans "Cancel" %}'

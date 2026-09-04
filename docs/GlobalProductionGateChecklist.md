@@ -1,6 +1,6 @@
 # GlobalProductionGateChecklist
 
-> 来源：00_高校人事系统全局架构与Horilla接管合同.md §70, §153–§158
+> 来源：00_高校人事系统全局架构与旧系统接管合同.md §70, §153–§158
 > 生成指令：§160 Global-S0
 > 生成日期：2026-08-09
 
@@ -186,7 +186,7 @@ blocking:
 | 文件 | 状态 |
 |---|---|
 | `GlobalAuthorityOwnershipMatrix.md` | ✅ 已生成 |
-| `HorillaGlobalTakeoverMatrix.md` | ✅ 已生成 |
+| `LegacySystemTakeoverMatrix.md` | ✅ 已生成 |
 | `CrossDomainProviderEventMatrix.md` | ✅ 已生成 |
 | `TenantIdentityPermissionMatrix.md` | ✅ 已生成 |
 | `LegacyDataMappingIndex.md` | ✅ 已生成 |
@@ -197,4 +197,4 @@ blocking:
 
 ---
 
-*由 00_高校人事系统全局架构与Horilla接管合同.md §160 自动生成。GLOBAL ARCHITECTURE CONTRACT READY ← 本批次 S0 产物交付后即达成。*
+*由 00_高校人事系统全局架构与旧系统接管合同.md §160 自动生成。GLOBAL ARCHITECTURE CONTRACT READY ← 本批次 S0 产物交付后即达成。*

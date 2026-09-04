@@ -11,11 +11,14 @@ from . import (
     population_api,
     term_api,
     term_effect_api,
+    setup_api,
 )
 
 app_name = "hr_appointment_api"
 urlpatterns = [
     path("dashboard/", api.dashboard, name="dashboard"),
+    path("setup-options/", setup_api.setup_options, name="setup-options"),
+    path("policies/", setup_api.create_policy, name="policy-create"),
     path("batches/", batch_api.create_batch, name="batch-create"),
     path(
         "batches/<uuid:batch_id>/",
@@ -26,6 +29,11 @@ urlpatterns = [
         "batches/<uuid:batch_id>/population/freeze/",
         population_api.freeze_population,
         name="batch-population-freeze",
+    ),
+    path(
+        "batches/<uuid:batch_id>/supply-quota/",
+        setup_api.configure_supply_quota,
+        name="batch-supply-quota",
     ),
     path(
         "batches/<uuid:batch_id>/publish/",
@@ -177,6 +185,11 @@ urlpatterns = [
         "term-changes/<uuid:change_id>/decision/",
         term_api.decide_change,
         name="term-change-decision",
+    ),
+    path(
+        "term-changes/<uuid:change_id>/capacity-reservation/",
+        term_api.reserve_change_position,
+        name="term-change-capacity-reservation",
     ),
     path(
         "term-changes/<uuid:change_id>/apply-effect/",

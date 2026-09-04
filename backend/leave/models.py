@@ -703,27 +703,32 @@ class AvailableLeave(HorillaModel):
         """
         return f"{self.employee_id.get_department()} / {self.employee_id.get_job_position()}"
 
-    def forcasted_leaves(self):
-        forecasted_leave = {}
-        if self.leave_type_id.reset_based == "monthly":
-            today = datetime.now()
-            for i in range(1, 7):  # Calculate for the next 6 months
-                next_month = today + relativedelta(months=i)
-                if self.leave_type_id.carryforward_max:
-                    forecasted_leave[next_month.strftime("%Y-%m")] = (
-                        self.available_days
-                        + min(
-                            self.leave_type_id.carryforward_max,
-                            (self.leave_type_id.total_days * i),
-                        )
-                    )
-                else:
-                    forecasted_leave[next_month.strftime("%Y-%m")] = (
-                        self.available_days + (self.leave_type_id.total_days * i)
-                    )
-        return forecasted_leave
+    def forcasted_leaves(self, date=None):
+        """Return either the six-month forecast or the balance on one date.
 
-    def forcasted_leaves(self, date):
+        The public method historically supported both call forms. Keeping one
+        optional argument avoids Python method redefinition silently disabling
+        the no-argument dashboard call.
+        """
+        if date is None:
+            forecasted_leave = {}
+            if self.leave_type_id.reset_based == "monthly":
+                today = datetime.now()
+                for i in range(1, 7):
+                    next_month = today + relativedelta(months=i)
+                    if self.leave_type_id.carryforward_max:
+                        forecasted_leave[next_month.strftime("%Y-%m")] = (
+                            self.available_days
+                            + min(
+                                self.leave_type_id.carryforward_max,
+                                self.leave_type_id.total_days * i,
+                            )
+                        )
+                    else:
+                        forecasted_leave[next_month.strftime("%Y-%m")] = (
+                            self.available_days + self.leave_type_id.total_days * i
+                        )
+            return forecasted_leave
         if isinstance(date, str):
             date = datetime.strptime(date, "%Y-%m-%d").date()
         next_reset_date = self.leave_type_id.leave_type_next_reset_date()
@@ -1840,6 +1845,9 @@ class LeaverequestComment(HorillaModel):
     employee_id = models.ForeignKey(Employee, on_delete=models.CASCADE)
     files = models.ManyToManyField(LeaverequestFile, blank=True)
     comment = models.TextField(null=True, verbose_name=_("Comment"), max_length=255)
+    objects = HorillaCompanyManager(
+        related_company_field="request_id__employee_id__employee_work_info__company_id"
+    )
 
     def __str__(self) -> str:
         return f"{self.comment}"
@@ -2048,6 +2056,9 @@ class LeaveallocationrequestComment(HorillaModel):
     employee_id = models.ForeignKey(Employee, on_delete=models.CASCADE)
     files = models.ManyToManyField(LeaverequestFile, blank=True)
     comment = models.TextField(null=True, verbose_name=_("Comment"), max_length=255)
+    objects = HorillaCompanyManager(
+        related_company_field="request_id__employee_id__employee_work_info__company_id"
+    )
 
     def __str__(self) -> str:
         return f"{self.comment}"
@@ -2303,14 +2314,6 @@ if apps.is_installed("attendance"):
                     f"onmouseout=\"this.style.backgroundColor='rgba(255, 166, 0, 0.158)';\""
                 )
 
-        def assign_compensatory_leave_type(self):
-            available_leave, created = AvailableLeave.objects.get_or_create(
-                employee_id=self.employee_id,
-                leave_type_id=self.leave_type_id,
-            )
-            available_leave.available_days += self.requested_days
-            available_leave.save()
-
         def __str__(self):
             return f"{self.employee_id}| {self.leave_type_id}| {self.id}"
 
@@ -2372,6 +2375,9 @@ if apps.is_installed("attendance"):
         employee_id = models.ForeignKey(Employee, on_delete=models.CASCADE)
         files = models.ManyToManyField(LeaverequestFile, blank=True)
         comment = models.TextField(null=True, verbose_name=_("Comment"), max_length=255)
+        objects = HorillaCompanyManager(
+            related_company_field="request_id__employee_id__employee_work_info__company_id"
+        )
 
         def __str__(self) -> str:
             return f"{self.comment}"

@@ -7,7 +7,6 @@ hr10_development/api/development_records.py
 import json
 
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from hr10_development.api.envelope import success, error
@@ -48,7 +47,6 @@ def _body(request):
     return parsed
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.fact.correct")
 def correct_fact(request, fact_id):
@@ -73,7 +71,6 @@ def correct_fact(request, fact_id):
     return JsonResponse(success(development_fact_event_payload(fact)), status=201)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.fact.revoke")
 def revoke_fact(request, fact_id):
@@ -97,7 +94,6 @@ def revoke_fact(request, fact_id):
     return JsonResponse(success(development_fact_event_payload(fact)), status=201)
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.record.view")
 def get_record_summary(request, staff_id):
@@ -124,7 +120,6 @@ def get_record_summary(request, staff_id):
     return JsonResponse(success(summary))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.record.view")
 def get_facts(request, staff_id):
@@ -160,7 +155,6 @@ def get_facts(request, staff_id):
     return JsonResponse(success(data))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.record.view")
 def get_ledger(request, staff_id):
@@ -187,7 +181,6 @@ def get_ledger(request, staff_id):
     return JsonResponse(success(data))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.record.view")
 def get_compliance(request, staff_id):
@@ -197,18 +190,40 @@ def get_compliance(request, staff_id):
         return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
 
     from datetime import date
+
+    try:
+        staff_id = int(staff_id)
+        if staff_id <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                "staffId 必须是正整数",
+            ),
+            status=400,
+        )
+
     as_of = request.GET.get("asOf")
-    as_of_date = date.fromisoformat(as_of) if as_of else None
+    try:
+        as_of_date = date.fromisoformat(as_of) if as_of else None
+    except (TypeError, ValueError):
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                "asOf 必须是 YYYY-MM-DD 格式的合法日期",
+            ),
+            status=400,
+        )
 
     results = ComplianceService.evaluate_compliance(
-        staff_master_id=int(staff_id),
+        staff_master_id=staff_id,
         tenant_id=tenant_id,
         as_of=as_of_date,
     )
     return JsonResponse(success(results))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.record.view")
 def get_risks(request, staff_id):

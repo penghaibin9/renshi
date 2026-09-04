@@ -210,7 +210,7 @@ class EvidenceAggregationService:
         as_of: date | None = None,
         provider_results: dict[str, ProviderEvidenceResult] | None = None,
     ) -> HrDoubleTeacherEvidencePackage:
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         rule_version = self._assert_rule_authority(application)
         requirements = (
             self.requirements_for_application(application)

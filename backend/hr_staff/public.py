@@ -18,6 +18,7 @@ from hr_staff.models import (
     HrDegreeRecord,
     HrEducationExperience,
     HrEmploymentRelationship,
+    HrPersonnelDecision,
     HrStaffMaster,
     HrStatusHistory,
     HrWorkExperience,
@@ -27,6 +28,7 @@ from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryS
 
 PROVIDER_VERSION = "hr03-staff-evidence-v1"
 BACKGROUND_PROVIDER_VERSION = "hr03-background-evidence-v1"
+ETHICS_PROVIDER_VERSION = "hr03-formal-discipline-evidence-v1"
 
 
 class StaffEvidenceUnavailable(RuntimeError):
@@ -36,6 +38,12 @@ class StaffEvidenceUnavailable(RuntimeError):
 
 
 class BackgroundEvidenceUnavailable(RuntimeError):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+class EthicsEvidenceUnavailable(RuntimeError):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
@@ -88,6 +96,40 @@ class BackgroundEvidenceRow:
 class BackgroundEvidence:
     rows: tuple[BackgroundEvidenceRow, ...]
     source_version: str = BACKGROUND_PROVIDER_VERSION
+
+
+@dataclass(frozen=True)
+class EthicsEvidenceRow:
+    decision_id: Any
+    decision_no: str
+    staff_id: Any
+    title: str
+    category_code: str
+    level_code: str
+    effective_from: date
+    effective_to: date | None
+    content_hash: str
+
+    def snapshot(self) -> dict:
+        return {
+            "factType": "FORMAL_DISCIPLINE",
+            "decisionId": str(self.decision_id),
+            "decisionNo": self.decision_no,
+            "staffId": str(self.staff_id),
+            "title": self.title,
+            "categoryCode": self.category_code,
+            "levelCode": self.level_code,
+            "effectiveFrom": self.effective_from.isoformat(),
+            "effectiveTo": self.effective_to.isoformat() if self.effective_to else None,
+            "contentHash": self.content_hash,
+        }
+
+
+@dataclass(frozen=True)
+class EthicsEvidence:
+    rows: tuple[EthicsEvidenceRow, ...]
+    missing_staff_ids: tuple[Any, ...]
+    source_version: str = ETHICS_PROVIDER_VERSION
 
 
 def _dedupe_ids(values: Iterable[Any]) -> tuple[Any, ...]:
@@ -348,3 +390,67 @@ def get_verified_background_evidence(
 
     rows.sort(key=lambda row: (row.evidence_date, row.kind, str(row.source_object_id)))
     return BackgroundEvidence(rows=tuple(rows))
+
+
+def get_formal_ethics_evidence(
+    *,
+    tenant_id: int,
+    staff_ids: list[Any],
+    as_of: date,
+    source_version: str | None = None,
+) -> EthicsEvidence:
+    """Return formal, effective disciplinary decisions for HR12 ethics review.
+
+    Unverified complaints, drafts and rejected/approved-but-not-effective workflow
+    cases are deliberately excluded. Corrections/revocations are resolved through
+    the append-only personnel-decision chain as of the requested business date.
+    """
+    if not tenant_id:
+        raise EthicsEvidenceUnavailable("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
+    if not isinstance(as_of, date):
+        raise EthicsEvidenceUnavailable("AS_OF_REQUIRED", "as_of must be a date")
+    if source_version not in (None, "", "v1", ETHICS_PROVIDER_VERSION):
+        raise EthicsEvidenceUnavailable(
+            "SOURCE_VERSION_UNSUPPORTED",
+            f"unsupported HR03 ethics source version: {source_version}",
+        )
+
+    requested = _dedupe_ids(staff_ids)
+    if not requested:
+        return EthicsEvidence((), ())
+
+    existing_keys = {
+        str(value)
+        for value in HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            id__in=requested,
+        ).values_list("id", flat=True)
+    }
+    missing = tuple(value for value in requested if str(value) not in existing_keys)
+
+    decisions = (
+        HrPersonnelDecision.objects.filter(
+            tenant_id=tenant_id,
+            staff_id__in=requested,
+            decision_type=HrPersonnelDecision.DecisionType.DISCIPLINE,
+        )
+        .effective_as_of(as_of)
+        .order_by("staff_id", "effective_from", "decision_no")
+    )
+    rows = []
+    for decision in decisions:
+        snapshot = decision.content_snapshot_json or {}
+        rows.append(
+            EthicsEvidenceRow(
+                decision_id=decision.id,
+                decision_no=decision.decision_no,
+                staff_id=decision.staff_id,
+                title=decision.title,
+                category_code=str(snapshot.get("categoryCode") or ""),
+                level_code=str(snapshot.get("levelCode") or ""),
+                effective_from=decision.effective_from,
+                effective_to=decision.effective_to,
+                content_hash=decision.content_hash,
+            )
+        )
+    return EthicsEvidence(rows=tuple(rows), missing_staff_ids=missing)

@@ -419,6 +419,19 @@ class ApplyService:
             case.target_position_id_id or _ref("position"),
         )
         target_catalog = _resolve_catalog(self.tenant_id, _ref("post_catalog"))
+        if action == ChangeActionCode.POSITION_TRANSFER:
+            # 岗位调动不改变组织；即使旧版客户端未显式提交 targetOrgId，
+            # 也必须从生效日的当前主岗继承权威组织，避免创建无组织的新主岗。
+            current_primary = _primary_assignment_as_of(self.tenant_id, case, eff)
+            if current_primary is None:
+                raise ApplyServiceError(
+                    "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
+                    "生效日未找到可继承组织的当前主岗",
+                )
+            if target_org is None:
+                target_org = current_primary.organization_id
+            if target_catalog is None and target_pos is not None:
+                target_catalog = target_pos.post_catalog_version_id
         if (
             action
             in (
@@ -450,6 +463,11 @@ class ApplyService:
             ChangeActionCode.TEMPORARY_ATTACHMENT,
         ) and target_org is None:
             raise ApplyServiceError("CHANGE_TARGET_ORG_INVALID", "临时异动缺少可信目标组织")
+        if action in (
+            ChangeActionCode.TEMPORARY_SECONDMENT,
+            ChangeActionCode.TEMPORARY_ATTACHMENT,
+        ) and target_pos is not None and target_catalog is None:
+            target_catalog = target_pos.post_catalog_version_id
 
         if action in (
             ChangeActionCode.ORG_TRANSFER,
@@ -457,6 +475,7 @@ class ApplyService:
             ChangeActionCode.ORG_POSITION_TRANSFER,
             ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
         ):
+            inherited_primary = _primary_assignment_as_of(self.tenant_id, case, eff)
             try:
                 new_primary = assignment_service.switch_primary(
                     employment_relationship_id=(
@@ -467,8 +486,14 @@ class ApplyService:
                     organization_id=target_org,
                     position_id=target_pos,
                     post_catalog_id=target_catalog,
+                    location_code=(
+                        inherited_primary.location_code if inherited_primary else ""
+                    ),
                     fte=_decimal_or_none(_ref("fte")) or 1,
-                    reporting_staff_id=reporting_staff,
+                    reporting_staff_id=(
+                        reporting_staff
+                        or (inherited_primary.reporting_staff_id if inherited_primary else None)
+                    ),
                     source_business_type=biz_type,
                     source_business_id=biz_id,
                 )
@@ -548,6 +573,50 @@ class ApplyService:
             )
             target_fact_ids.append(str(source_assignment.id))
 
+        elif action in (
+            ChangeActionCode.POST_CATEGORY_CHANGE,
+            ChangeActionCode.LOCATION_CHANGE,
+        ):
+            current_primary = _primary_assignment_as_of(self.tenant_id, case, eff)
+            if current_primary is None:
+                raise ApplyServiceError(
+                    "ASSIGNMENT_NOT_FOUND",
+                    "生效日未找到可继承的当前主岗",
+                )
+            if action == ChangeActionCode.POST_CATEGORY_CHANGE and target_catalog is None:
+                raise ApplyServiceError(
+                    "CHANGE_INVALID_PAYLOAD", "岗位类别变更缺少有效目录版本"
+                )
+            location_code = (
+                str(_ref("location") or "").strip()
+                if action == ChangeActionCode.LOCATION_CHANGE
+                else current_primary.location_code
+            )
+            if action == ChangeActionCode.LOCATION_CHANGE and not location_code:
+                raise ApplyServiceError(
+                    "CHANGE_INVALID_PAYLOAD", "工作地点不能为空"
+                )
+            new_primary = assignment_service.switch_primary(
+                employment_relationship_id=current_primary.employment_relationship_id,
+                effective_from=eff,
+                organization_id=current_primary.organization_id,
+                position_id=current_primary.position_id,
+                post_catalog_id=(
+                    target_catalog
+                    if action == ChangeActionCode.POST_CATEGORY_CHANGE
+                    else current_primary.post_catalog_id
+                ),
+                legacy_department_id=current_primary.legacy_department_id,
+                legacy_job_position_id=current_primary.legacy_job_position_id,
+                assignment_role_code=current_primary.assignment_role_code,
+                location_code=location_code,
+                fte=current_primary.fte,
+                reporting_staff_id=current_primary.reporting_staff_id,
+                source_business_type=biz_type,
+                source_business_id=biz_id,
+            )
+            target_fact_ids.append(str(new_primary.id))
+
         elif action == ChangeActionCode.EMPLOYEE_CATEGORY_CHANGE:
             if not (_ref("staff_category_code") or "").strip():
                 raise ApplyServiceError(
@@ -608,6 +677,7 @@ class ApplyService:
                 legacy_department_id=current_primary.legacy_department_id,
                 legacy_job_position_id=current_primary.legacy_job_position_id,
                 assignment_role_code=current_primary.assignment_role_code,
+                location_code=current_primary.location_code,
                 fte=current_primary.fte,
                 reporting_staff_id=reporting_staff,
                 source_business_type=biz_type,
@@ -630,6 +700,7 @@ class ApplyService:
                 effective_from=eff,
                 organization_id=target_org,
                 position_id=target_pos,
+                post_catalog_id=target_catalog,
                 fte=_decimal_or_none(_ref("fte")) or 1,
                 effective_to=_date_or_none(_ref("expected_return_at")),
                 source_business_type=biz_type,
@@ -653,6 +724,15 @@ class ApplyService:
                 ),
             )
             target_fact_ids.append(str(temp.id))
+            if target_pos is not None:
+                try:
+                    reservation = self.position_gate.require_commit_for_case(case)
+                    target_fact_ids.append(f"position-reservation:{reservation.id}")
+                except Exception as exc:
+                    raise ApplyServiceError(
+                        getattr(exc, "code", "CHANGE_POSITION_RESERVATION_COMMIT_FAILED"),
+                        str(exc) or "临时岗位预占提交失败",
+                    ) from exc
 
         elif action == ChangeActionCode.RETURN_FROM_TEMPORARY:
             from hr_changes.services.return_service import ReturnService

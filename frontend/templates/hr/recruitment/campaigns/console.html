@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}?v=20260901-1">
 {% endblock styles %}
 
 {% block content %}
@@ -22,7 +22,7 @@
     <div class="hr-v2-context">
       <span class="hr-v2-context__item"><strong>范围</strong> 当前学校</span>
       <span class="hr-v2-context__item"><strong>口径</strong> 招聘工作台</span>
-      <span class="hr-v2-context__item"><strong>创建</strong> 暂不可用</span>
+      <span class="hr-v2-context__item"><strong>创建</strong> 正式写入</span>
     </div>
   </header>
 
@@ -39,16 +39,29 @@
     <div class="hr04-state"><strong>正在读取招聘概况</strong><span>等待服务端招聘工作台返回真实统计。</span></div>
   </div>
 
-  <div class="hr04-unavailable" role="note"><strong>创建入口：</strong><span>当前服务端的新建与查询入口尚未完成统一，因此暂不显示会稳定失败的“新建招聘项目”流程；已有项目查询继续正常工作。</span></div>
+  <div class="hr04-unavailable" role="note"><strong>办理说明：</strong><span>招聘项目、岗位预占和发布全部提交到服务端状态机；未绑定 HR02 正式岗位的招聘岗位不能开放报名。</span></div>
 
   <section class="hr04-panel">
     <div class="hr04-toolbar">
       <div><h2>{% trans "招聘项目" %}</h2><p>查看服务端返回的项目状态、岗位数量和报名截止日。</p></div>
-      <button class="hr04-action" type="button" data-hr-new-campaign disabled aria-disabled="true">{% trans "新建招聘项目" %}</button>
+      <button class="hr04-action" type="button" data-hr-new-campaign>{% trans "新建招聘项目" %}</button>
     </div>
+    <form id="hr04-campaign-create" class="hr04-create-form" hidden>
+      <div class="hr04-form-grid">
+        <label><span>项目编号</span><input name="code" required maxlength="64" placeholder="例如：UAT-2026-001"></label>
+        <label><span>项目名称</span><input name="title" required maxlength="200" placeholder="例如：人工智能专任教师招聘"></label>
+        <label><span>项目类型</span><select name="campaignType"><option value="SINGLE_POSITION">单岗位招聘</option><option value="MULTI_POSITION">多岗位招聘</option></select></label>
+        <label><span>报名开始</span><input name="applicationOpenAt" type="datetime-local"></label>
+        <label><span>报名截止</span><input name="applicationCloseAt" type="datetime-local"></label>
+        <label class="full"><span>项目说明</span><textarea name="description" placeholder="填写招聘对象、岗位方向和办理说明"></textarea></label>
+      </div>
+      <div class="hr04-form-actions"><button class="hr04-action primary" type="submit">保存招聘项目</button><button class="hr04-action" type="button" data-hr-cancel-create>取消</button></div>
+      <div id="hr04-create-result" class="hr04-form-result" role="status" aria-live="polite"></div>
+    </form>
     <div id="hr04-campaign-list" class="hr04-campaign-grid">
       <div class="hr04-state"><strong>正在读取招聘项目</strong><span>等待正式项目列表。</span></div>
     </div>
+    <div id="hr04-campaign-detail" class="hr04-campaign-detail" aria-live="polite"></div>
   </section>
 
   <div class="hr-v2-truth-note"><strong>状态边界</strong><span>岗位开放、项目发布与取消等状态只能由后端状态机确认；页面不会用拖拽、颜色或本地变量替代正式状态。</span></div>
@@ -58,5 +71,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/recruitment-campaigns.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-campaigns.js' %}?v=20260901-1"></script>
 {% endblock scripts %}

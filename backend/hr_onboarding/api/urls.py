@@ -39,6 +39,21 @@ urlpatterns = [
         name="hr05-api-case-detail",
     ),
     path(
+        "api/hr/v1/onboarding/cases/<uuid:case_id>/ready-to-report",
+        api_views.hr05_case_ready_to_report,
+        name="hr05-api-case-ready-to-report",
+    ),
+    path(
+        "api/hr/v1/onboarding/cases/<uuid:case_id>/resolve-person-match",
+        api_views.hr05_case_resolve_person_match,
+        name="hr05-api-case-resolve-person-match",
+    ),
+    path(
+        "api/hr/v1/onboarding/cases/<uuid:case_id>/ready-for-activation",
+        api_views.hr05_case_ready_for_activation,
+        name="hr05-api-case-ready-for-activation",
+    ),
+    path(
         "api/hr/v1/onboarding/cases/<uuid:case_id>/confirm-intent",
         api_views.hr05_case_confirm_intent,
         name="hr05-api-case-confirm-intent",

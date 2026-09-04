@@ -78,7 +78,7 @@
             {% for interview in candidate.candidate_interview.all %}
                 <li class="oh-activity-sidebar__qa-item">
                     {% if perms.recruitment.delete_interviewschedule or request.user|stage_manages:candidate.recruitment_id %}
-                        <span class="float-end" title="{% trans "Delete" %}" hx-get="{% url 'delete-interview' interview.id %}?view=false"
+                        <span class="float-end" title="{% trans "Delete" %}" hx-post="{% url 'delete-interview' interview.id %}?view=false"
                                 data-target="#activitySidebar"
                                 hx-swap="innerHTML" hx-target="#interview">
                             <ion-icon name="close-outline" style="font-size: 24px" role="img" class="md hydrated"

@@ -21,10 +21,7 @@ def on_final_result_created(
     created: bool,
     **kwargs,
 ) -> None:
-    """正式结果创建后触发下游事件。
-
-    S10 前仅记录审计日志；S10 集成后对接 Outbox。
-    """
+    """记录正式结果生命周期日志；事务 Outbox 由正式审定服务写入。"""
     if created and instance.status == "FINALIZED":
         logger.info(
             "AssessmentResultFinalized",

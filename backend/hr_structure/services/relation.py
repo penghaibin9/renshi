@@ -16,6 +16,7 @@ from datetime import date
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from hr_structure.models import HrOrganizationRelation
 from hr_structure.scope import Hr02Scope
@@ -24,6 +25,7 @@ from hr_structure.scope import Hr02Scope
 class RelationServiceError(Exception):
     def __init__(self, code: str, message: str, *, http_status: int = 422):
         self.code = code
+        self.message = message
         self.http_status = http_status
         super().__init__(message)
 
@@ -48,11 +50,27 @@ class RelationService:
     def create_relation(self, *, source_org_id, target_org_id, relation_type, validity_from, validity_to=None) -> HrOrganizationRelation:
         from hr_structure.models import HrOrganization
 
-        source = HrOrganization.objects.filter(id=source_org_id).first()
-        target = HrOrganization.objects.filter(id=target_org_id).first()
+        if relation_type not in {
+            value for value, _ in HrOrganizationRelation.RelationType.choices
+        }:
+            raise RelationServiceError("HR02_RELATION_TYPE_INVALID", "关系类型非法")
+        if validity_to is not None and validity_to <= validity_from:
+            raise RelationServiceError(
+                "HR02_EFFECTIVE_RANGE_OVERLAP", "关系结束日必须晚于开始日"
+            )
+        source = HrOrganization.objects.filter(
+            id=source_org_id, identity_status=HrOrganization.IdentityStatus.ACTIVE
+        ).first()
+        target = HrOrganization.objects.filter(
+            id=target_org_id, identity_status=HrOrganization.IdentityStatus.ACTIVE
+        ).first()
         if source is None or target is None:
-            raise RelationServiceError("HR02_ORG_NOT_FOUND", "组织不存在", http_status=404)
+            raise RelationServiceError("HR02_ORG_NOT_FOUND", "组织不存在或已停用", http_status=404)
         self._validate_tenant(source, target)
+        if source.id == target.id:
+            raise RelationServiceError(
+                "HR02_RELATION_SELF_REFERENCE", "组织关系不能指向自身"
+            )
 
         # 主树 parent：同 source 同日期最多一个 primary parent（INV 10.3）
         if relation_type in PRIMARY_PARENT_TYPES:
@@ -81,6 +99,28 @@ class RelationService:
                     "HR02_RELATION_CONFLICT",
                     f"该组织已有主树上级 {existing.target_org_id_id}，生效区间重叠",
                 )
+            # 从目标向上回溯同类主关系，若遇到 source 则成环。
+            seen = set()
+            cursor = target.id
+            as_of = validity_from
+            while cursor:
+                if cursor == source.id or cursor in seen:
+                    raise RelationServiceError(
+                        "HR02_RELATION_CYCLE", "新关系会形成组织环"
+                    )
+                seen.add(cursor)
+                cursor = (
+                    HrOrganizationRelation.objects.filter(
+                        tenant_id=self.scope.tenant_id,
+                        source_org_id=cursor,
+                        relation_type=relation_type,
+                        status=HrOrganizationRelation.Status.ACTIVE,
+                        validity_from__lte=as_of,
+                    )
+                    .filter(Q(validity_to__isnull=True) | Q(validity_to__gt=as_of))
+                    .values_list("target_org_id", flat=True)
+                    .first()
+                )
 
         relation = HrOrganizationRelation.objects.create(
             tenant_id=self.scope.tenant_id,
@@ -96,26 +136,27 @@ class RelationService:
 
     @transaction.atomic
     def close(self, relation_id):
-        with transaction.atomic():
-            rel = (
-                HrOrganizationRelation.objects.select_for_update()
-                .filter(tenant_id=self.scope.tenant_id, id=relation_id)
-                .first()
-            )
-            if rel is None:
-                raise RelationServiceError("HR02_ORG_NOT_FOUND", "关系不存在", http_status=404)
-            rel.status = HrOrganizationRelation.Status.CLOSED
-            rel.validity_to = date.today()
-            rel.save(update_fields=["status", "validity_to"])
+        rel = (
+            HrOrganizationRelation.objects.select_for_update()
+            .filter(tenant_id=self.scope.tenant_id, id=relation_id)
+            .first()
+        )
+        if rel is None:
+            raise RelationServiceError("HR02_ORG_NOT_FOUND", "关系不存在", http_status=404)
+        if rel.status == HrOrganizationRelation.Status.CLOSED:
             return rel
+        rel.status = HrOrganizationRelation.Status.CLOSED
+        rel.validity_to = max(timezone.localdate(), rel.validity_from)
+        rel.save(update_fields=["status", "validity_to"])
+        return rel
 
     def detect_conflicts(self) -> list:
         """冲突检测（总册 10.4）：党组织未匹配 / 教学组织孤儿 / 多重主归口冲突。"""
         conflicts = []
-        from hr_structure.models import HrOrganization
-
         # 多重主 parent 冲突
         from django.db.models import Count
+
+        from hr_structure.models import HrOrganization
 
         multi = (
             HrOrganizationRelation.objects.filter(

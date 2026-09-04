@@ -274,9 +274,10 @@
                     $('#is_installed').on('change', function () {
                         var boolean = $(this).is(":checked");
                         $.ajax({
-                            type: "GET",
+                            type: "POST",
                             url: "{% url 'activate-biometric-attendance' %}",
                             data: {
+                                csrfmiddlewaretoken: getCookie("csrftoken"),
                                 is_installed: boolean,
                             },
                             success: function (response, textStatus, jqXHR) {

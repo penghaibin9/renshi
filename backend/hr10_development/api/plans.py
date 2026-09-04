@@ -8,7 +8,6 @@ import json
 import uuid
 
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from hr10_development.api.envelope import success, error
@@ -62,7 +61,6 @@ def _version_to_dict(v: HrDevelopmentPlanVersion) -> dict:
     }
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.plan.view")
 def list_plans(request):
@@ -88,7 +86,6 @@ def list_plans(request):
     return JsonResponse(success(data))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.plan.view")
 def get_plan(request, plan_id):
@@ -111,7 +108,6 @@ def get_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.create")
 def create_plan(request):
@@ -159,7 +155,6 @@ def create_plan(request):
     return JsonResponse(success(_plan_to_dict(plan)), status=201)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.create")
 def submit_plan(request, plan_id):
@@ -198,7 +193,6 @@ def submit_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.approve")
 def approve_plan(request, plan_id):
@@ -239,7 +233,6 @@ def approve_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.publish")
 def publish_plan(request, plan_id):
@@ -276,7 +269,6 @@ def publish_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.approve")
 def return_plan(request, plan_id):
@@ -312,7 +304,6 @@ def return_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.approve")
 def reject_plan(request, plan_id):
@@ -348,7 +339,6 @@ def reject_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.publish")
 def close_plan(request, plan_id):
@@ -384,7 +374,6 @@ def close_plan(request, plan_id):
     return JsonResponse(success(_plan_to_dict(plan)))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.plan.create")
 def create_plan_version(request, plan_id):

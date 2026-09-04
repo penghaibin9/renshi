@@ -122,7 +122,10 @@
                                 <li class="oh-dropdown__item">
                                     {% if task.is_active %}
                                         <a
-                                            href="{% url 'task-all-archive' task.id %}"
+                                            href="#"
+                                            hx-post="{% url 'task-all-archive' task.id %}"
+                                            hx-swap="none"
+                                            hx-on::after-request="window.location.reload()"
                                             onclick="return confirm('{% trans 'Do you want to archive this task?' %}')"
                                             class="oh-dropdown__link"
                                         >
@@ -130,7 +133,10 @@
                                         </a>
                                     {% else %}
                                         <a
-                                            href="{% url 'task-all-archive' task.id %}"
+                                            href="#"
+                                            hx-post="{% url 'task-all-archive' task.id %}"
+                                            hx-swap="none"
+                                            hx-on::after-request="window.location.reload()"
                                             onclick="return confirm('{% trans 'Do you want to un archive this task?' %}')"
                                             class="oh-dropdown__link"
                                         >

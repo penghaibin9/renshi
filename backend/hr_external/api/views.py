@@ -20,6 +20,7 @@ import json
 
 from django.http import JsonResponse
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_GET, require_POST
 
 from hr_external.api.base import (
     api_root,
@@ -57,6 +58,7 @@ from hr_external.services.import_service import (
 from hr_external.services.profile_service import ProfileService
 
 
+@require_GET
 def contract_probe(request):
     """契约探针：验证 envelope 结构。"""
     body = api_root(request)
@@ -69,6 +71,7 @@ def contract_probe(request):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.profile.view")
 def category_catalog(request):
     """
@@ -76,7 +79,7 @@ def category_catalog(request):
     返回当前 tenant 的外聘类别目录（含默认集注入）。
     """
     try:
-        ctx = make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY")
+        ctx = make_external_context(request)
     except Exception as exc:  # noqa: BLE001 —— 统一信封
         code = getattr(exc, "code", "INVALID_REQUEST")
         return error_response(request, code, str(exc), 403 if code == "TENANT_CONTEXT_REQUIRED" else 400)
@@ -115,7 +118,7 @@ def category_catalog(request):
 def _ctx(request):
     """构造上下文；失败返回 (None, error_response)。"""
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
@@ -138,9 +141,12 @@ def profile_collection(request):
     """
     if request.method == "POST":
         return _profile_create(request)
-    return _profile_list(request)
+    if request.method == "GET":
+        return _profile_list(request)
+    return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET 或 POST", 405)
 
 
+@require_GET
 @require_hr_external_permission("hr08.profile.view")
 def _profile_list(request):
     """
@@ -190,6 +196,7 @@ def _profile_list(request):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.create")
 def _profile_create(request):
     """
@@ -272,7 +279,8 @@ def _profile_create(request):
     return json_response(request, body, status=201)
 
 
-@require_hr_external_permission("hr08.profile.view")
+@require_POST
+@require_hr_external_permission("hr08.profile.create")
 def identity_match(request):
     """
     POST /api/hr/v1/external-teachers/identity-match
@@ -309,6 +317,7 @@ def identity_match(request):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.profile.view")
 def profile_detail(request, profile_id):
     """GET /api/hr/v1/external-teachers/{id} —— 详情（不含 HIGH_SENSITIVE 字段，§91）。"""
@@ -371,6 +380,7 @@ def profile_detail(request, profile_id):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.profile.view")
 def profile_engagements(request, profile_id):
     """GET /api/hr/v1/external-teachers/{id}/engagements —— 受聘历史（§24.4 受聘历史 tab）。"""
@@ -412,6 +422,7 @@ def profile_engagements(request, profile_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.create")
 def import_job_upload(request):
     """
@@ -462,6 +473,7 @@ def import_job_upload(request):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.create")
 def import_job_validate(request, job_id):
     """POST /api/hr/v1/external-teachers/import-jobs/{job_id}/validate
@@ -496,6 +508,7 @@ def import_job_validate(request, job_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.create")
 def import_job_confirm(request, job_id):
     """POST /api/hr/v1/external-teachers/import-jobs/{job_id}/confirm
@@ -513,11 +526,12 @@ def import_job_confirm(request, job_id):
     body["data"] = {
         "jobId": str(job.id),
         "status": job.status,
-        "note": "已确认，等待异步 execute（生产路径由 job runner 触发）",
+        "note": "已确认，后台导入任务会自动分批执行；可在导入账本查看逐行结果。",
     }
     return json_response(request, body, status=202)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.create")
 def import_job_execute(request, job_id):
     """POST /api/hr/v1/external-teachers/import-jobs/{job_id}/execute
@@ -547,6 +561,7 @@ def import_job_execute(request, job_id):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.profile.view")
 def profile_history(request, profile_id):
     """GET /api/hr/v1/external-teachers/{id}/history —— 履历时间线（事件+聘期，§82）。"""

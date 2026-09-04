@@ -21,14 +21,14 @@ from horilla.config import logger
 
 _request_var = ContextVar("request", default=None)
 current_company_id = ContextVar("current_company_id", default=None)
-_thread_local_state = ContextVar("thread_local_state", default={})
+_thread_local_state = ContextVar("thread_local_state", default=None)
 
 
 class _ThreadLocalProxy:
     def __getattr__(self, name):
         if name == "request":
             return _request_var.get()
-        state = _thread_local_state.get()
+        state = _thread_local_state.get() or {}
         if name in state:
             return state[name]
         raise AttributeError(name)
@@ -37,7 +37,7 @@ class _ThreadLocalProxy:
         if name == "request":
             _request_var.set(value)
         else:
-            state = dict(_thread_local_state.get())
+            state = dict(_thread_local_state.get() or {})
             state[name] = value
             _thread_local_state.set(state)
 
@@ -102,7 +102,7 @@ class MissingParameterMiddleware:
 
 def set_selected_company(company_id):
     """Set the current tenant id and mirror concrete web scope onto the request."""
-    current_company_id.set(company_id)
+    token = current_company_id.set(company_id)
 
     # CompanyMiddleware owns the canonical browser tenant decision. A number of
     # HR APIs intentionally read request.tenant_id so that they can fail closed
@@ -113,6 +113,7 @@ def set_selected_company(company_id):
     request = _request_var.get()
     if request is not None:
         request.tenant_id = None if company_id in (None, "", "all") else int(company_id)
+    return token
 
 
 def get_selected_company():

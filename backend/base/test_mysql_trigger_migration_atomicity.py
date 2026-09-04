@@ -119,5 +119,12 @@ class MysqlTriggerMigrationAtomicityTests(SimpleTestCase):
                 "hr_qualification/migrations/0006_hrdoubleteacherfinaldecisionamendment_and_more.py",
                 "hr10_development/migrations/0023_formal_development_fact_seal.py",
                 "hr_assessment/migrations/0012_result_fact_seals.py",
+                "hr_assessment/migrations/0014_provider_snapshot_seals.py",
+                "hr_assessment/migrations/0015_result_application_ledger_seal.py",
+                "hr_assessment/migrations/0016_result_revision_chain_seal.py",
+                "hr_assessment/migrations/0018_final_result_calculation_seal.py",
+                "hr_assessment/migrations/0019_provider_snapshot_membership_seal.py",
+                "hr_external/migrations/0018_mysql_active_exit_unique_backstop.py",
+                "hr_time/migrations/0014_hr11_authority_database_seals.py",
             },
         )

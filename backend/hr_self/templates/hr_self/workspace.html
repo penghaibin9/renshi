@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr17" data-module="HR17" data-section="{{ section }}" data-bootstrap-url="{% url 'hr_self_api:bootstrap' %}" data-pin-url-template="{% url 'hr_self_api:service_pin' service_code='__service__' %}">
+<div class="hr-v2-page hr17" data-module="HR17" data-section="{{ section }}" data-bootstrap-url="{% url 'hr_self_api:bootstrap' %}" data-records-url="{% url 'hr_self_api:self_records' %}" data-pin-url-template="{% url 'hr_self_api:service_pin' service_code='__service__' %}">
   {% if access_error %}
     <div class="hr17-error" role="alert">{{ access_error }}</div>
   {% else %}

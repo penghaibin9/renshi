@@ -1,6 +1,6 @@
 # CrossDomainProviderEventMatrix
 
-> 来源：00_高校人事系统全局架构与Horilla接管合同.md §13–§17, §28.3, §89–§105
+> 来源：00_高校人事系统全局架构与旧系统接管合同.md §13–§17, §28.3, §89–§105
 > 生成指令：§160 Global-S0
 > 生成日期：2026-08-09
 > 原则：跨域写只能通过 source domain command API、durable event 或受控 Provider action。
@@ -138,4 +138,4 @@ HR04 Plan → Campaign → Application → Offer → Handoff
 
 ---
 
-*由 00_高校人事系统全局架构与Horilla接管合同.md §160 自动生成。*
+*由 00_高校人事系统全局架构与旧系统接管合同.md §160 自动生成。*

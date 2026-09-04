@@ -21,6 +21,10 @@ from hr_contracts.models import (
     HrContractVersionAction,
 )
 from hr_contracts.services.agreement_service import AgreementService, ContractServiceError
+from hr_contracts.services.document_binding import (
+    ContractDocumentBindingError,
+    bind_signed_document_reference,
+)
 
 
 def _request_hash(payload: dict) -> str:
@@ -175,6 +179,18 @@ class ContractVersionActionService:
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
+        try:
+            bind_signed_document_reference(
+                tenant_id=self.tenant_id,
+                agreement_id=agreement.id,
+                version=successor,
+                signed_document_ref=signed_document_ref,
+                actor_id=self.actor_user_id,
+            )
+        except ContractDocumentBindingError as exc:
+            raise ContractServiceError(
+                "CONTRACT_SIGNED_DOCUMENT_INVALID", str(exc)
+            ) from exc
         source.status = HrContractVersion.Status.VOID
         source.updated_by = self.actor_user_id
         source.save(update_fields=["status", "updated_by", "updated_at"])

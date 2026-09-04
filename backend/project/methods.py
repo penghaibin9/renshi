@@ -171,6 +171,8 @@ def time_sheet_update_permissions(request, time_sheet_id):
 def time_sheet_delete_permissions(request, time_sheet_id):
     employee = request.user.employee_get
     timesheet = TimeSheet.objects.filter(id=time_sheet_id).first()
+    if not timesheet:
+        return False
     if (
         request.user.has_perm("project.delete_timesheet")
         or timesheet.employee_id == employee

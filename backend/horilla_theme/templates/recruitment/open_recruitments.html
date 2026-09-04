@@ -9,27 +9,25 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link href="{% static 'horilla_theme/assets/css/tailwind.css' %}" rel="stylesheet">
+        {% include "horilla_theme/components/tailwind_theme_tokens.html" %}
         <title>{{ white_label_company_name }}{% trans " - Open Recruitments" %}</title>
         <link
             rel="apple-touch-icon"
             sizes="180x180"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}"
+            href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
         >
-        <link
-            rel="stylesheet"
-            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-        >
+        <link rel="stylesheet" href="{% static 'cdn/font-awsome/css/all.min.css' %}">
         <link
             rel="icon"
-            type="image/png"
+            type="image/jpeg"
             sizes="32x32"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}"
+            href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
         >
         <link
             rel="icon"
-            type="image/png"
+            type="image/jpeg"
             sizes="16x16"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}"
+            href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
         >
         <link
             rel="stylesheet"
@@ -43,84 +41,10 @@
             rel="stylesheet"
             href="/static/horilla_theme/assets/css/v1_styles.css"
         >
-        <script src='{% static "horilla_theme/assets/js/tailwindcdn.js" %}'></script>
-        <script>
-            window.tailwind.config = {
-                theme: {
-                    colors: {
-                        white: '#FFFFFF',
-                        primary: {
-                            50:  '{{ theme_obj.primary_50  | default:"#f6f6f6" }}',
-                            100: '{{ theme_obj.primary_100 | default:"#FFF5F1" }}',
-                            200: '{{ theme_obj.primary_200 | default:"#FEF6F5" }}',
-                            300: '{{ theme_obj.primary_300 | default:"#FCEDEB" }}',
-                            400: '{{ theme_obj.primary_400 | default:"#FBE5E1" }}',
-                            500: '{{ theme_obj.primary_500 | default:"#F7C8C1" }}',
-                            600: '{{ theme_obj.primary_600 | default:"#E54F38" }}',
-                            700: '{{ theme_obj.primary_700 | default:"#ce4732" }}',
-                            800: '{{ theme_obj.primary_800 | default:"#AC3B2A" }}',
-                            900: '{{ theme_obj.primary_900 | default:"#672419" }}',
-                        },
-                        brand: {
-                            50:  '{{ theme_obj.primary_50  | default:"#f6f6f6" }}',
-                            100: '{{ theme_obj.primary_100 | default:"#FFF5F1" }}',
-                            200: '{{ theme_obj.primary_200 | default:"#FEF6F5" }}',
-                            300: '{{ theme_obj.primary_300 | default:"#FCEDEB" }}',
-                            400: '{{ theme_obj.primary_400 | default:"#FBE5E1" }}',
-                            500: '{{ theme_obj.primary_500 | default:"#F7C8C1" }}',
-                            600: '{{ theme_obj.primary_600 | default:"#E54F38" }}',
-                            700: '{{ theme_obj.primary_700 | default:"#ce4732" }}',
-                            800: '{{ theme_obj.primary_800 | default:"#AC3B2A" }}',
-                            900: '{{ theme_obj.primary_900 | default:"#672419" }}',
-                        },
-                        info: {
-                            50:  '#eaf6fc', 100: '#c9e8f7', 200: '#95d0ec', 300: '#5eb8e2',
-                            400: '#3aa6da', 500: '#2E9BD6', 600: '#2E9BD6', 700: '#2585b8',
-                            800: '#1f6d97', 900: '#184f6f',
-                        },
-                        dark: {
-                            50:  '{{ theme_obj.dark_50  | default:"#E6E6E6" }}',
-                            100: '{{ theme_obj.dark_100 | default:"#A8A8A8" }}',
-                            200: '{{ theme_obj.dark_200 | default:"#515151" }}',
-                            300: '{{ theme_obj.dark_300 | default:"#501C14" }}',
-                            400: '{{ theme_obj.dark_400 | default:"#64748B" }}',
-                            500: '{{ theme_obj.dark_500 | default:"#190906" }}',
-                            600: '{{ theme_obj.dark_600 | default:"#000000" }}',
-                        },
-                        secondary: {
-                            50:  '{{ theme_obj.secondary_50  | default:"#f8fafc" }}',
-                            100: '{{ theme_obj.secondary_100 | default:"#f1f5f9" }}',
-                            200: '{{ theme_obj.secondary_200 | default:"#e2e8f0" }}',
-                            300: '{{ theme_obj.secondary_300 | default:"#cbd5e1" }}',
-                            400: '{{ theme_obj.secondary_400 | default:"#FBE5E1" }}',
-                            500: '{{ theme_obj.secondary_500 | default:"#F7C8C1" }}',
-                            600: '{{ theme_obj.secondary_600 | default:"#E54F38" }}',
-                            700: '{{ theme_obj.secondary_700 | default:"#334155" }}',
-                            800: '{{ theme_obj.secondary_800 | default:"#1e293b" }}',
-                            900: '{{ theme_obj.secondary_900 | default:"#0f172a" }}',
-                        },
-                        success: {
-                            light: "#86efac",
-                            DEFAULT: "#22c55e",
-                            dark: "#15803d",
-                        },
-                        warning: {
-                            light: "#fde68a",
-                            DEFAULT: "#f59e0b",
-                            dark: "#b45309",
-                        },
-                        danger: {
-                            light: "#fca5a5",
-                            DEFAULT: "#ef4444",
-                            dark: "#b91c1c",
-                        },
-                    },
-                },
-            };
-        </script>
+
     </head>
 
-    <body class="bg-[{{theme_obj.primary_50}}] font-[Inter,_sans-serif]">
+    <body class="bg-primary-50 font-[Inter,_sans-serif]">
         {% if messages %}
             <div class="oh-alert-container">
                 {% for message in messages %}
@@ -139,7 +63,7 @@
                             <a href="{{ request.META.HTTP_REFERER }}">
                                 <ion-icon
                                     name="arrow-back-outline"
-                                    class='text-[{{theme_obj.primary_800|default:"#E54F38"}}]'
+                                    class="text-primary-800"
                                     style="font-size: 28px"
                                 ></ion-icon>
                             </a>
@@ -147,7 +71,7 @@
                             <a href="/">
                                 <ion-icon
                                     name="arrow-back-outline"
-                                    class='text-[{{theme_obj.primary_800|default:"#E54F38"}}]'
+                                    class="text-primary-800"
                                     style="font-size: 28px"
                                 ></ion-icon>
                             </a>
@@ -166,9 +90,9 @@
                 class="text-color-600 ps-10 p-2 placeholder:text-sm w-full border border-dark-50 rounded-md focus-visible:outline-0 placeholder:text-dark-100 text-sm [transition:.3s] focus:border-primary-600">
             <i class="fas fa-search absolute left-3 top-0 bottom-0 m-auto flex items-center opacity-50 text-sm"></i>
         </div> {% endcomment %}
-            <div class="h-[80vh] overflow-hidden overflow-y-auto p-5 bg-[{{theme_obj.primary_50}}] rounded-md">
+            <div class="h-[80vh] overflow-hidden overflow-y-auto p-5 bg-primary-50 rounded-md">
                 {% for recruitment in recruitments %}
-                    <div class="[box-shadow:0px_0px_20px_{{theme_obj.secondary_300}}] p-5 rounded-md mb-3 bg-[{{theme_obj.primary_100}}] min-w-80">
+                    <div class="p-5 rounded-md mb-3 bg-primary-100 min-w-80" style="box-shadow: 0 0 20px {{ theme_obj.secondary_300|default:'#cbd5e1' }};">
                         <div class="gap-5 flex flex-col lg:grid grid-cols-4 xl:gap-20 lg:items-center">
                             <div class="flex items-center gap-4">
                                 <div class="w-12 rounded-md overflow-hidden">
@@ -183,7 +107,7 @@
                             </div>
                             <div>
                                 {% for job_position in recruitment.open_positions.all %}
-                                    <h5 class="bg-[{{theme_obj.primary_300}}] text-[{{theme_obj.primary_800}}] text-xs px-2 py-1 rounded-full font-medium w-max mb-2">
+                                    <h5 class="bg-primary-300 text-primary-800 text-xs px-2 py-1 rounded-full font-medium w-max mb-2">
                                         {{ job_position.job_position }}
                                     </h5>
                                 {% endfor %}
@@ -193,7 +117,7 @@
                                 <div>
                                     <div class="w-full bg-gray-200 rounded-full h-1.5 mb-2">
                                         <div
-                                            class="bg-[{{theme_obj.primary_600}}] h-1.5 rounded-full"
+                                            class="bg-primary-600 h-1.5 rounded-full"
                                             style="width: {{ recruitment.candidate.all|length|percentage:recruitment.vacancy }}%"
                                         >
                                         </div>
@@ -247,7 +171,7 @@
             <!--sidecont-->
         </div>
 
-        <div class="oh-activity-sidebar bg-[{{theme_obj.primary_50}}]" id="activitySidebar" style="z-index: 1000">
+        <div class="oh-activity-sidebar bg-primary-50" id="activitySidebar" style="z-index: 1000">
             <div class="oh-activity-sidebar__header">
                 <a style="cursor: pointer" onclick="sidebarToggle()" title="close">
                     <ion-icon

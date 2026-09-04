@@ -9,6 +9,8 @@ HR10 → HR09：只返回 VERIFIED DevelopmentFact 作为双师认定证据。
 
 from datetime import date
 
+from django.db.models import Q
+
 from hr10_development.providers.base import (
     QualificationEvidenceProvider,
     ProviderResult,
@@ -49,7 +51,7 @@ class Hr09QualificationEvidenceProvider(QualificationEvidenceProvider):
 
         if as_of:
             qs = qs.filter(valid_from__lte=as_of).filter(
-                models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=as_of)
+                Q(valid_to__isnull=True) | Q(valid_to__gte=as_of)
             )
 
         evidence_list = []

@@ -606,7 +606,7 @@
                                             <button
                                                 class="note-close-btn"
                                                 aria-label="{% trans 'Close note' %}"
-                                                hx-get="{% url 'note-delete-individual' note.id %}"
+                                                hx-post="{% url 'note-delete-individual' note.id %}"
                                                 title="{% trans 'delete' %}"
                                                 hx-swap="delete"
                                                 hx-target="closest .card"

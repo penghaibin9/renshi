@@ -63,11 +63,14 @@ class ExportServiceTests(TestCase):
         job = self.svc.create_export(
             purpose="年报", staff_ids=[self.staff.id], fields=["staff_no"], has_export_sensitive=False
         )
-        data = self.svc.consume_download(job.id, job.download_token)
+        raw_token = job.issued_download_token
+        self.assertTrue(job.download_token.startswith("sha256$"))
+        self.assertNotEqual(job.download_token, raw_token)
+        data = self.svc.consume_download(job.id, raw_token)
         self.assertIn("T001238", data["content"])
         # 一次性
         with self.assertRaises(ExportPolicyDenied):
-            self.svc.consume_download(job.id, job.download_token)
+            self.svc.consume_download(job.id, raw_token)
 
 
 class ImportApplierTests(TestCase):

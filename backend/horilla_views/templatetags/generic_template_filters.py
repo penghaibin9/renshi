@@ -16,9 +16,7 @@ from django.conf import settings
 from django.contrib.auth.context_processors import PermWrapper
 from django.db.models import Model, QuerySet
 from django.db.models.utils import AltersData
-from django.template.defaultfilters import register
 from django.utils.html import format_html, format_html_join
-from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from horilla.config import import_method
@@ -159,7 +157,7 @@ def linkify(value, user=None):
         if not items:
             return ""
         return format_html_join(
-            mark_safe("<br>"), "{}", ((linkify(item, user),) for item in items)
+            format_html("<{}>", "br"), "{}", ((linkify(item, user),) for item in items)
         )
 
     return value
@@ -266,7 +264,7 @@ def id_list_json(queryset):
     instead of only the rows rendered on the current pagination page.
     """
     try:
-        return mark_safe(json.dumps(list(queryset.values_list("pk", flat=True))))
+        return json.dumps(list(queryset.values_list("pk", flat=True)))
     except (AttributeError, TypeError):
         return "[]"
 

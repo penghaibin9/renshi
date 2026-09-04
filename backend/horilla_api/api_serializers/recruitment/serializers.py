@@ -541,6 +541,7 @@ class LinkedInAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = LinkedInAccount
         fields = "__all__"
+        extra_kwargs = {"api_token": {"write_only": True}}
 
     def get_company_id(self, obj):
         if obj.company_id:

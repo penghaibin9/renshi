@@ -158,10 +158,10 @@ class AgreementRequirement(models.TextChoices):
 
 
 class AgreementProviderStatus(models.TextChoices):
-    """HR07 Provider 投影的协议状态（HR07 未交付 → 占位解析）。
+    """HR07 正式合同 Provider 投影的协议状态。
 
     本状态不是 HR08 权威；仅表示从 HR07 侧读取到的协议生命周期结论。
-    HR07 交付后由 integrations/hr07.py 映射真实 HrAgreement 状态。
+    integrations/hr07.py 将 HrContractAgreement 的正式状态映射到本枚举。
     """
 
     UNAVAILABLE = "UNAVAILABLE", _("Unavailable")
@@ -323,24 +323,6 @@ class SettlementStatus(models.TextChoices):
     READY = "READY", _("Ready")
     VERIFIED = "VERIFIED", _("Verified")
     LOCKED = "LOCKED", _("Locked")
-
-
-class ContributionType(models.TextChoices):
-    """产业/技能大师专项成果类型（§30）。"""
-
-    COURSE_CO_BUILD = "COURSE_CO_BUILD", _("Course Co-build")
-    TRAINING_PROJECT = "TRAINING_PROJECT", _("Training Project")
-    PROGRAM_DEVELOPMENT = "PROGRAM_DEVELOPMENT", _("Program Development")
-    TALENT_TRAINING_CONSULT = "TALENT_TRAINING_CONSULT", _("Talent Training Consult")
-    INDUSTRY_ACADEMIC_COOP = "INDUSTRY_ACADEMIC_COOP", _("Industry-academic Cooperation")
-    TECH_ATTACK = "TECH_ATTACK", _("Technical Breakthrough")
-    STUDENT_PROJECT_GUIDANCE = "STUDENT_PROJECT_GUIDANCE", _("Student Project Guidance")
-    TEACHER_PRACTICE_GUIDANCE = "TEACHER_PRACTICE_GUIDANCE", _("Teacher Practice Guidance")
-    SKILL_COMPETITION_GUIDANCE = "SKILL_COMPETITION_GUIDANCE", _("Skill Competition Guidance")
-    APPRENTICESHIP_GUIDANCE = "APPRENTICESHIP_GUIDANCE", _("Apprenticeship Guidance")
-    FACULTY_TRAINING = "FACULTY_TRAINING", _("Faculty Training")
-    INDUSTRY_RESOURCE_IMPORT = "INDUSTRY_RESOURCE_IMPORT", _("Industry Resource Import")
-    OTHER = "OTHER", _("Other")
 
 
 # ---------------------------------------------------------------------------

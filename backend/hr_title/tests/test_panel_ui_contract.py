@@ -1,10 +1,10 @@
 from pathlib import Path
 
 from django.template.loader import get_template
-from django.test import SimpleTestCase
+from django.test import TestCase
 
 
-class Hr13PanelUiContractTests(SimpleTestCase):
+class Hr13PanelUiContractTests(TestCase):
     def test_workspace_f_compiles_and_uses_canonical_authorities(self):
         template = get_template("hr_title/workspace_f.html")
         source = Path(template.origin.name).read_text(encoding="utf-8")

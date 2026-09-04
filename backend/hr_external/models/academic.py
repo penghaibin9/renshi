@@ -2,7 +2,7 @@
 hr_external/models/academic.py —— HrExternalAcademicIdentity 教务教师身份（S6，总册 §96/§97）。
 
 - external_teacher_no：HR08 tenant-scoped 编号（§17）；
-- academic_teacher_id：教务侧教师号（由教务分配，Provider 占位）；
+- academic_teacher_id：教务侧教师号（由教务系统分配，未接入时显式为空）；
 - valid_from/valid_to 绑定 Engagement 期限；状态机 PENDING/ACTIVE/SUSPENDED/EXPIRED/REVOKED。
 - HR08 不复制完整教务主表；本表只保存"教务身份同步意图与状态"。
 """
@@ -15,6 +15,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from hr_external.constants import AcademicIdentityStatus
+from hr_external.constants import ProvisioningStatus
 
 
 class HrExternalAcademicIdentity(models.Model):
@@ -67,3 +68,56 @@ class HrExternalAcademicIdentity(models.Model):
 
     def __str__(self):
         return f"[{self.tenant_id}] {self.external_teacher_no} -> {self.academic_teacher_id} ({self.status})"
+
+
+class HrExternalAcademicProvisioningRequest(models.Model):
+    """Durable outbox for academic identity activation and deactivation."""
+
+    class Operation(models.TextChoices):
+        ACTIVATE = "ACTIVATE", _("Activate")
+        DEACTIVATE = "DEACTIVATE", _("Deactivate")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    academic_identity_id = models.ForeignKey(
+        HrExternalAcademicIdentity,
+        on_delete=models.PROTECT,
+        related_name="provisioning_requests",
+    )
+    operation = models.CharField(max_length=16, choices=Operation.choices)
+    status = models.CharField(
+        max_length=24,
+        choices=ProvisioningStatus.choices,
+        default=ProvisioningStatus.PENDING,
+        db_index=True,
+    )
+    idempotency_key = models.CharField(max_length=128)
+    external_ref = models.CharField(max_length=128, blank=True, default="")
+    provider_receipt_json = models.JSONField(default=dict, blank=True)
+    retry_count = models.PositiveIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    error_message = models.CharField(max_length=512, blank=True, default="")
+    version = models.BigIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "idempotency_key"],
+                name="uniq_hr_external_academic_req_idem",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="hex_academic_req_version_gte_1",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["tenant_id", "status", "next_attempt_at"],
+                name="hex_academic_req_due_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return f"[{self.tenant_id}] {self.operation} {self.status}"

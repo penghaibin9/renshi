@@ -13,6 +13,7 @@ from datetime import date
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 
 @dataclass
@@ -149,7 +150,7 @@ class MigrationService:
         from hr_staff.services.assignment_service import AssignmentService
         from hr_staff.services.employment_service import EmploymentService
 
-        joining = (legacy_work_info or {}).get("date_joining") or date.today()
+        joining = (legacy_work_info or {}).get("date_joining") or timezone.localdate()
         emp_svc = EmploymentService(self.tenant_id)
         assign_svc = AssignmentService(self.tenant_id)
         try:

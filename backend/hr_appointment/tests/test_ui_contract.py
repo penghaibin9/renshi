@@ -4,6 +4,8 @@ from django.template.loader import get_template
 from django.test import TestCase
 from django.urls import resolve, reverse
 
+FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "frontend"
+
 
 class Hr14UiContractTests(TestCase):
     def test_workspace_routes_are_registered(self):
@@ -34,14 +36,15 @@ class Hr14UiContractTests(TestCase):
         self.assertIsNotNone(get_template("hr_appointment/workspace.html"))
 
     def test_term_effect_workspace_uses_real_apply_effect_boundary(self):
-        source = Path("static/hr/js/pages/hr14-workflows.js").read_text(
+        source = (FRONTEND_ROOT / "static/hr/js/pages/hr14-workflows.js").read_text(
             encoding="utf-8"
         )
         self.assertIn("/apply-effect/", source)
         self.assertIn("执行正式生效", source)
         self.assertIn("正式生效成功后", source)
-        self.assertIn("转岗（等待可信岗位选择器）", source)
-        self.assertIn("正式纠错（需专门纠错入口）", source)
+        self.assertIn("目标岗位（转岗时必选）", source)
+        self.assertIn("capacity-reservation/", source)
+        self.assertIn("正式纠错（使用下方专门入口）", source)
         self.assertNotIn('name="reservationId"', source)
         self.assertNotIn("prompt(", source)
         self.assertNotIn("alert(", source)

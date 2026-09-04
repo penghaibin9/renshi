@@ -17,6 +17,12 @@ from django.db import transaction
 
 from hr_staff.models import HrStaffMaster
 
+
+def _legacy_general_setting_model():
+    from employee.models import EmployeeGeneralSetting
+
+    return EmployeeGeneralSetting
+
 class StaffNoConflict(Exception):
     code = "STAFF_NO_CONFLICT"
 
@@ -33,19 +39,23 @@ class StaffNumberService:
     """tenant-scoped 工号生成（P1-j：序列行锁，O(1) 分配，无截断）。"""
 
     def __init__(self, prefix: str = "", width: int = 6):
-        self.prefix = prefix or self._legacy_prefix()
+        self.prefix = prefix.strip() if prefix else ""
         self.width = max(1, width)
 
     @staticmethod
-    def _legacy_prefix() -> str:
-        try:
-            from employee.models import EmployeeGeneralSetting
+    def _legacy_prefix(tenant_id: int) -> str:
+        """Read only the selected school's legacy prefix; database failures must surface."""
+        from django.apps import apps
 
-            setting = EmployeeGeneralSetting.objects.filter(company_id__isnull=False).first()
-            if setting and setting.badge_id_prefix:
-                return setting.badge_id_prefix
-        except Exception:
-            pass
+        if not apps.is_installed("employee"):
+            return "T"
+        setting = _legacy_general_setting_model().objects.filter(
+            company_id_id=tenant_id
+        ).first()
+        if setting and setting.badge_id_prefix:
+            value = setting.badge_id_prefix.strip()
+            if value:
+                return value
         return "T"
 
     @staticmethod
@@ -73,19 +83,20 @@ class StaffNumberService:
         """
         from hr_staff.models import HrStaffNumberSequence
 
+        prefix = self.prefix or self._legacy_prefix(tenant_id)
         with transaction.atomic():
             seq, created = HrStaffNumberSequence.objects.get_or_create(
                 tenant_id=tenant_id,
-                prefix=self.prefix,
-                defaults={"next_value": self._max_existing_numeric(tenant_id, self.prefix) + 1},
+                prefix=prefix,
+                defaults={"next_value": self._max_existing_numeric(tenant_id, prefix) + 1},
             )
             seq = HrStaffNumberSequence.objects.select_for_update().get(pk=seq.pk)
             if created:
                 # 并发首次创建时另一进程可能已初始化；校正为 max(现有, 序列)
                 seq.next_value = max(
-                    seq.next_value, self._max_existing_numeric(tenant_id, self.prefix) + 1
+                    seq.next_value, self._max_existing_numeric(tenant_id, prefix) + 1
                 )
-            candidate = f"{self.prefix}{seq.next_value:0{self.width}d}"
+            candidate = f"{prefix}{seq.next_value:0{self.width}d}"
             seq.next_value += 1
             seq.save(update_fields=["next_value", "updated_at"])
         return candidate

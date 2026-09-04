@@ -33,7 +33,7 @@ class HrExportJob(models.Model):
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
     file_ref = models.CharField(max_length=255, blank=True, default="")  # 受控存储引用（非 /media/ 裸 URL）
-    download_token = models.CharField(max_length=64, blank=True, default="")
+    download_token = models.CharField(max_length=71, blank=True, default="")
     expires_at = models.DateTimeField(null=True, blank=True)
     consumed_at = models.DateTimeField(null=True, blank=True)
     error = models.CharField(max_length=512, blank=True, default="")

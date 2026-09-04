@@ -3,7 +3,7 @@
 {% if perms.payroll.change_reimbursement %}
     <div id="requestCard{{ instance.id }}" onclick="event.stopPropagation()">
         <form
-            hx-get="{% url 'approve-reimbursements' %}"
+            hx-post="{% url 'approve-reimbursements' %}"
             hx-swap="none"
             onclick="event.stopPropagation()"
         >

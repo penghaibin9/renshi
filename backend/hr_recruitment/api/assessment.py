@@ -34,6 +34,65 @@ from hr_recruitment.services.assessment_service import (
 )
 
 
+@require_GET
+def workbench(request):
+    """Return the minimum canonical context needed to run an assessment from the UI."""
+    try:
+        service, ctx = _service(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    denied = _perm(request, "hr04.assessment.manage", "无查看评审工作台权限")
+    if denied:
+        return denied
+    from hr_recruitment.constants import ApplicationCanonicalStatus as S
+    from hr_recruitment.models import HrCandidateScoreSheet, HrJobApplication
+
+    applications = (
+        HrJobApplication.objects.filter(
+            tenant_id=ctx.tenant_id,
+            canonical_status__in=[S.QUALIFIED, S.ASSESSMENT_PENDING, S.ASSESSING, S.ASSESSMENT_PASSED],
+        )
+        .select_related("candidate_id", "recruitment_position_id")
+        .order_by("submitted_at")[:100]
+    )
+    sheets = (
+        HrCandidateScoreSheet.objects.filter(tenant_id=ctx.tenant_id)
+        .select_related("application_id__candidate_id", "event_id")
+        .order_by("-created_at")[:100]
+    )
+    employee = getattr(request.user, "employee_get", None)
+    return ok(
+        request,
+        {
+            "current_user_id": request.user.id,
+            "evaluator_staff_id": getattr(employee, "id", None),
+            "applications": [
+                {
+                    "id": str(app.id),
+                    "application_no": app.application_no,
+                    "candidate_name": app.candidate_id.legal_name if app.candidate_id else "",
+                    "position_id": str(app.recruitment_position_id_id),
+                    "position": app.recruitment_position_id.post_catalog_name if app.recruitment_position_id else "",
+                    "canonical_status": app.canonical_status,
+                }
+                for app in applications
+            ],
+            "score_sheets": [
+                {
+                    "id": str(sheet.id),
+                    "application_id": str(sheet.application_id_id),
+                    "candidate_name": sheet.application_id.candidate_id.legal_name if sheet.application_id and sheet.application_id.candidate_id else "",
+                    "event_title": sheet.event_id.title if sheet.event_id else "",
+                    "status": sheet.status,
+                    "total_score": str(sheet.total_score),
+                    "version": sheet.version,
+                }
+                for sheet in sheets
+            ],
+        },
+    )
+
+
 def _handle(request, exc):
     from django.core.exceptions import ObjectDoesNotExist
 

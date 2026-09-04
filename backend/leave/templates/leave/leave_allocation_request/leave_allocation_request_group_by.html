@@ -296,7 +296,7 @@
                                                             <div class="oh-btn-group" >
                                                                 {% if perms.leave.change_leaveallocationrequest or request.user|is_reportingmanager %}
                                                                     {% if leave_allocation_request.status == 'requested' %}
-                                                                        <a type="submit" href="{% url 'leave-allocation-request-approve' leave_allocation_request.id %}"
+                                                                        <a type="submit" href="#" hx-post="{% url 'leave-allocation-request-approve' leave_allocation_request.id %}" hx-swap="none"
                                                                             title="{% trans 'Approve' %}"
                                                                             class="oh-btn oh-btn--success w-100">
                                                                             <ion-icon class="me-1" name="checkmark-outline"></ion-icon>

@@ -1,12 +1,12 @@
 import operator
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from dateutil.relativedelta import relativedelta
 from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Value
 from django.db.models.functions import Concat
 from django.urls import reverse, reverse_lazy
@@ -1641,19 +1641,47 @@ class EmployeeBonusPoint(HorillaModel):
             context={"instance": self},
         )
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        if not BonusPoint.objects.filter(employee_id=self.employee_id).exists():
-            bonus_point = BonusPoint.objects.create(
-                employee_id=self.employee_id,
-                points=self.bonus_point,
-                reason=self.based_on,
+    @staticmethod
+    def _adjust_employee_total(employee_id, delta, reason):
+        if employee_id is None:
+            return
+        total = BonusPoint.objects.select_for_update().filter(
+            employee_id_id=employee_id
+        ).first()
+        if total is None:
+            BonusPoint.objects.create(
+                employee_id_id=employee_id, points=delta, reason=reason
             )
-        else:
-            bonus_point = BonusPoint.objects.get(employee_id=self.employee_id)
-        bonus_point.points += self.bonus_point
-        bonus_point.reason = self.based_on
-        bonus_point.save()
+            return
+        total.points += delta
+        total.reason = reason
+        total.save(update_fields=["points", "reason"])
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            previous = None
+            if self.pk:
+                previous = type(self).objects.select_for_update().filter(
+                    pk=self.pk
+                ).values("employee_id", "bonus_point").first()
+            super().save(*args, **kwargs)
+            if previous and previous["employee_id"] != self.employee_id_id:
+                self._adjust_employee_total(
+                    previous["employee_id"], -previous["bonus_point"], self.based_on
+                )
+                delta = self.bonus_point
+            else:
+                delta = self.bonus_point - (previous["bonus_point"] if previous else 0)
+            self._adjust_employee_total(self.employee_id_id, delta, self.based_on)
+
+    def delete(self, *args, **kwargs):
+        with transaction.atomic():
+            employee_id = self.employee_id_id
+            points = self.bonus_point
+            reason = self.based_on
+            result = super().delete(*args, **kwargs)
+            self._adjust_employee_total(employee_id, -points, reason)
+            return result
 
 
 class BonusPointSetting(models.Model):

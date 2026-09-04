@@ -3,7 +3,7 @@
 <div class="oh-inner-sidebar-content__header mt-4">
     <h2 class="oh-inner-sidebar-content__title">{% trans 'Notice Period' %}</h2>
 </div>
-<form hx-get="{% url 'initial-notice-period' %}" hx-swap="none"
+<form hx-post="{% url 'initial-notice-period' %}" hx-swap="none"
     hx-on-htmx-after-request="setTimeout(() => { reloadMessage(); }, 100);">
     <div class="oh-label__info" for="default_notice_period">
         <label class="oh-label" for="default_notice_period">{% trans "Default Notice Period" %}</label>

@@ -110,7 +110,7 @@
                                 {% if document.status == "requested" %}
                                     <button
                                         class="oh-btn oh-btn--sq-sm bg-primary-300 text-dark-700 hover:bg-success hover:text-white"
-                                        hx-get="{% url 'document-approve' document.id %}"
+                                        hx-post="{% url 'document-approve' document.id %}"
                                         title="{% trans 'Approve' %}"
                                         onclick="event.stopPropagation()"
                                     >
@@ -150,7 +150,7 @@
                                 {% else %}
                                     <button
                                         class="oh-btn oh-btn--sq-sm bg-primary-300 text-dark-700 hover:bg-success hover:text-white"
-                                        hx-get="{% url 'document-approve' document.id %}"
+                                        hx-post="{% url 'document-approve' document.id %}"
                                         title="{% trans 'Approve' %}"
                                         onclick="event.stopPropagation()"
                                     >

@@ -3,7 +3,6 @@ employee view page
 """
 
 import logging
-import threading
 from typing import Any
 
 from django import forms
@@ -654,8 +653,9 @@ def user_generic_import_or_update(sender, **kwargs):
                 # Try to detect if the password is already hashed
                 identify_hasher(password)
             except (ValueError, ImproperlyConfigured):
-                # Password is raw, so hash and update it
-                instance.password = make_password(password)
+                # Never accept shared/imported raw passwords. The employee
+                # must activate the account through the reset flow.
+                instance.password = make_password(None)
                 users_to_update.append(instance)
 
         if users_to_update:
@@ -666,8 +666,7 @@ def user_generic_import_or_update(sender, **kwargs):
                     f"{len(users_to_update)} user passwords were successfully updated."
                 )
 
-    thread = threading.Thread(target=_set_password, args=(records,))
-    thread.start()
+    _set_password(records)
 
 
 @method_decorator(login_required, name="dispatch")

@@ -15,13 +15,13 @@
         {% if instance.is_active %}
             <a title="{% trans 'Archive' %}" class="oh-btn oh-btn--danger oh-btn--sq-sm"
                 hx-confirm="{% trans 'Do you want to archive this rotating work type assign?' %}"
-                hx-get="{% url 'rotating-work-type-assign-archive' instance.id %}" hx-target="#rotating-work-container">
+                hx-post="{% url 'rotating-work-type-assign-archive' instance.id %}" hx-target="#rotating-work-container">
                 <ion-icon name="archive-outline"></ion-icon>
             </a>
         {% else %}
             <a title="{% trans 'Un-Archive' %}" class="oh-btn oh-btn--danger oh-btn--sq-sm"
                 hx-confirm="{% trans 'Do you want to un-archive this rotating work type assign?' %}"
-                hx-get="{% url 'rotating-work-type-assign-archive' instance.id %}" hx-target="#rotating-work-container">
+                hx-post="{% url 'rotating-work-type-assign-archive' instance.id %}" hx-target="#rotating-work-container">
                 <ion-icon name="archive-outline"></ion-icon>
             </a>
         {% endif %}

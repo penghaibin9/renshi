@@ -21,12 +21,12 @@ from hr_recruitment.permissions import HR04_PERMISSIONS
 def hr04_api_health(request):
     """GET /api/hr/v1/recruitment/health —— 验证 envelope + tenant fail-closed。"""
     try:
-        make_hr04_context(request)
+        context = make_hr04_context(request)
     except Hr04ApiError as exc:
         return error(request, exc.code, exc.message, exc.status_code, exc.details)
     return ok(
         request,
-        {"status": "ok", "authority_mode": request.GET.get("authority_mode", "LEGACY_RECRUITING_ONLY")},
+        {"status": "ok", "authority_mode": context.authority_mode},
     )
 
 

@@ -13404,7 +13404,7 @@ msgstr ""
 msgid "Please login to access the dashboard."
 msgstr "請登入以存取儀表板。"
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

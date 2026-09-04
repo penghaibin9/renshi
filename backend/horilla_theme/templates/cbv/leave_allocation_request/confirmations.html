@@ -6,7 +6,9 @@
             {% if instance.status == 'requested' %}
                 <a
                     type="submit"
-                    href="{% url 'leave-allocation-request-approve' instance.id %}"
+                    href="#"
+                    hx-post="{% url 'leave-allocation-request-approve' instance.id %}"
+                    hx-swap="none"
                     onclick="return confirm('{% trans "Do you want to approve this request?" %}')"
                     title="{% trans 'Approve' %}"
                     class="h-7 w-7 flex items-center justify-center bg-success text-white rounded-md hover:bg-success-dark transition duration-300"

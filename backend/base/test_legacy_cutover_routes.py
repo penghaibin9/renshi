@@ -6,7 +6,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.cache import cache
 from django.template.loader import get_template
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, TestCase
 from django.urls import URLResolver, get_resolver, resolve
 
 from horilla.config import get_apps_in_base_dir
@@ -50,7 +50,7 @@ def _walk_urlpatterns(patterns, prefix=""):
         yield route, module_name, "callback"
 
 
-class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
+class LegacyFormalWriteCutoverContractTests(TestCase):
     """Legacy payroll/offboarding/report must be unreachable as formal writers."""
 
     def setUp(self):
@@ -99,6 +99,16 @@ class LegacyFormalWriteCutoverContractTests(SimpleTestCase):
     def test_legacy_ui_get_deep_links_move_to_canonical_workspaces(self):
         factory = RequestFactory()
         cases = (
+            ("/dashboard/", "/hr/overview?tenant=7"),
+            ("/employee/employee-view/", "/hr/staff/?tenant=7"),
+            ("/attendance/attendance-view/", "/hr/time/attendance/?tenant=7"),
+            ("/leave/request-view/", "/hr/time/leave/?tenant=7"),
+            ("/recruitment/recruitment-view/", "/hr/recruitment/?tenant=7"),
+            ("/onboarding/onboarding-view/", "/hr/onboarding/?tenant=7"),
+            ("/pms/dashboard/", "/hr/assessments/?tenant=7"),
+            ("/project/project-view/", "/hr/overview?tenant=7"),
+            ("/asset/asset-view/", "/hr/exit/?tenant=7"),
+            ("/helpdesk/ticket-view/", "/hr/self/?tenant=7"),
             ("/payroll/payslip-view/", "/hr/payroll/?tenant=7"),
             ("/offboarding/employee-view/", "/hr/exit/?tenant=7"),
             ("/report/recruitment-report/", "/hr/data/?tenant=7"),

@@ -1,14 +1,20 @@
-## Description
+## 改动说明
 
-<!-- What does this PR change, and why? -->
+<!-- 说明改了什么、为什么改。 -->
 
-## Checklist
+## 验证结果
 
-- [ ] **This PR targets `main`.** The 18-module integration line has one canonical merge target.
-- [ ] I've followed the coding conventions in [CONTRIBUTING.md](../CONTRIBUTING.md) (Black + isort, Horilla decorators/`HorillaModel` patterns, etc.)
-- [ ] CI (Docker CI + Quality) passes
-- [ ] I've linked any related issues
+<!-- 列出实际执行的检查、测试和浏览器回归。 -->
 
-## Related issues
+## 检查清单
 
-<!-- e.g. Closes #123 -->
+- [ ] 本 PR 目标分支为 `main`
+- [ ] 改动遵循 `CONTRIBUTING.md` 和对应 HR 模块合同
+- [ ] 未恢复旧前端入口、旧英文导航或旧写入路径
+- [ ] 租户、权限、审计与历史时点边界已验证
+- [ ] CI 与相关模块测试通过
+- [ ] 已关联相关 Issue（如有）
+
+## 相关问题
+
+<!-- 例如：Closes #123 -->

@@ -5,14 +5,17 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.utils import timezone
 
 from hr_time.api.workbench import (
     choices,
+    create_close_period,
     close_action,
     exception_action,
     overtime_action,
@@ -27,14 +30,16 @@ from hr_time.models import (
     HrWorkCalendar,
     HrWorkCalendarVersion,
 )
+from hr_time.views import _leave_workspace_rows
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_ROOT = BACKEND_ROOT.parent / "frontend"
 
 
 class Hr11WorkspaceStaticContractTests(SimpleTestCase):
     def test_workspace_uses_shared_shell_and_all_seven_sections(self):
-        template = (ROOT / "hr_time/templates/hr_time/workspace.html").read_text(encoding="utf-8")
+        template = (BACKEND_ROOT / "hr_time/templates/hr_time/workspace.html").read_text(encoding="utf-8")
         self.assertIn('{% extends "index.html" %}', template)
         self.assertIn('class="hr-v2-page hr11"', template)
         self.assertIn('data-module="HR11"', template)
@@ -52,7 +57,7 @@ class Hr11WorkspaceStaticContractTests(SimpleTestCase):
         self.assertNotIn('href="#"', template)
 
     def test_action_layer_uses_business_choices_and_no_fake_client_state(self):
-        script = (ROOT / "static/hr/js/pages/hr11-actions.js").read_text(encoding="utf-8")
+        script = (FRONTEND_ROOT / "static/hr/js/pages/hr11-actions.js").read_text(encoding="utf-8")
         self.assertIn("/workbench/choices", script)
         self.assertIn("/schedules/create", script)
         for forbidden in (
@@ -70,14 +75,54 @@ class Hr11WorkspaceStaticContractTests(SimpleTestCase):
 
     def test_visual_layer_is_flat_and_responsive(self):
         for name in ("hr11-actions.css", "hr11-workspace.css"):
-            stylesheet = (ROOT / f"static/hr/css/{name}").read_text(encoding="utf-8")
+            stylesheet = (FRONTEND_ROOT / f"static/hr/css/{name}").read_text(encoding="utf-8")
             self.assertNotIn("linear-gradient", stylesheet)
             self.assertNotIn("radial-gradient", stylesheet)
             self.assertIn("@media", stylesheet)
 
     def test_health_contract_does_not_report_completed_authority_as_pending(self):
-        health = (ROOT / "hr_time/api/views.py").read_text(encoding="utf-8")
+        health = (BACKEND_ROOT / "hr_time/api/views.py").read_text(encoding="utf-8")
         self.assertNotIn('"status": "PENDING"', health)
+
+    def test_leave_workspace_is_read_only_when_optional_schema_is_missing(self):
+        class FailingRows:
+            def __iter__(self):
+                raise DatabaseError("missing calculation_snapshot")
+
+        item = SimpleNamespace(
+            id=19,
+            staff_master_id=701,
+            start_at="2026-09-01",
+            end_at="2026-09-02",
+            status="SUBMITTED",
+            requested_amount="2.00",
+            leave_type=SimpleNamespace(name="事假", requires_evidence=False),
+            get_status_display=lambda: "已提交",
+            get_unit_display=lambda: "天",
+        )
+        leaves = MagicMock()
+        related = leaves.select_related.return_value
+        related.prefetch_related.return_value.order_by.return_value.__getitem__.return_value = FailingRows()
+        related.defer.return_value.order_by.return_value.__getitem__.return_value = [item]
+
+        rows, warning, writes_available = _leave_workspace_rows(
+            leaves,
+            {701: "张老师 · T000701"},
+        )
+
+        self.assertFalse(writes_available)
+        self.assertIn("数据库升级", warning)
+        self.assertEqual(rows[0]["staff"], "张老师 · T000701")
+        self.assertIsNone(rows[0]["evidence_count"])
+        self.assertFalse(rows[0]["evidence_available"])
+        self.assertFalse(rows[0]["writes_available"])
+        related.defer.assert_called_once_with("calculation_snapshot")
+
+        template = (BACKEND_ROOT / "hr_time/templates/hr_time/workspace.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("证明材料状态暂不可读取", template)
+        self.assertIn("数据库升级期间不可办理", template)
 
 
 class Hr11WorkbenchTenantAndLifecycleTests(TestCase):
@@ -132,6 +177,27 @@ class Hr11WorkbenchTenantAndLifecycleTests(TestCase):
         }
         self.assertIn(local_version.id, values)
         self.assertNotIn(foreign_version.id, values)
+
+    def test_create_close_period_is_tenant_scoped_and_rejects_overlap(self):
+        today = timezone.localdate()
+        start = today.replace(day=1)
+        response = self.call_for_tenant(
+            801,
+            create_close_period,
+            self.request("/api/v1/hr/time/close-periods/create", {
+                "startDate": start.isoformat(), "endDate": today.isoformat(),
+            }),
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(HrTimeClosePeriod.objects.filter(tenant_id=801, start_date=start).exists())
+        response = self.call_for_tenant(
+            801,
+            create_close_period,
+            self.request("/api/v1/hr/time/close-periods/create", {
+                "startDate": start.isoformat(), "endDate": today.isoformat(),
+            }),
+        )
+        self.assertEqual(response.status_code, 409)
 
     def test_exception_action_is_tenant_scoped_and_stateful(self):
         local = HrAttendanceException.objects.create(

@@ -2,12 +2,15 @@
 horilla/backends.py
 """
 
+import logging
 import ssl
 
 from django.core.mail.backends.smtp import EmailBackend as SMTPBackend
 
 # import certifi
-from base.models import EmailLog
+from base.email_logging import record_email_log
+
+logger = logging.getLogger(__name__)
 
 
 class CustomSSLContext(ssl.SSLContext):
@@ -44,16 +47,14 @@ class ZimbraBackend(SMTPBackend):
             if self.use_tls:
                 # Start TLS with custom SSL context
                 self.connection.starttls(context=self.ssl_context)
-                print(f"Started TLS on {self.host}:{self.port}")
+                logger.info("Started TLS on %s:%s", self.host, self.port)
 
             # Authenticate after starting TLS
             self.connection.login(self.username, self.password)
-            print(
-                f"Successfully connected and authenticated on {self.host}:{self.port}"
-            )
+            logger.info("Connected and authenticated on %s:%s", self.host, self.port)
 
-        except Exception as e:
-            print(f"Failed to connect or authenticate: {e}")
+        except Exception:
+            logger.exception("Failed to connect or authenticate to Zimbra SMTP")
             self.close()
             return False
         return True
@@ -61,20 +62,18 @@ class ZimbraBackend(SMTPBackend):
     def send_messages(self, email_messages):
         """Send messages and log the results to the database."""
         if not self.open():
-            print("Failed to open connection.")
+            logger.error("Failed to open Zimbra SMTP connection")
             return 0
 
         response = super().send_messages(email_messages)
         for message in email_messages:
-            # Log each email to the EmailLog model
-            email_log = EmailLog(
+            record_email_log(
                 subject=message.subject,
                 from_email=message.from_email,
                 to=message.to,
                 body=message.body,
                 status="sent" if response else "failed",
             )
-            email_log.save()
         return response
 
     def close(self):
@@ -82,7 +81,7 @@ class ZimbraBackend(SMTPBackend):
         if self.connection:
             try:
                 self.connection.quit()
-            except Exception as e:
-                print(f"Error closing connection: {e}")
+            except Exception:
+                logger.exception("Error closing Zimbra SMTP connection")
             finally:
                 self.connection = None

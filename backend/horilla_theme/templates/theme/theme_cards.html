@@ -54,7 +54,7 @@
                     {% if default_theme and default_theme.id == theme.id %}
                         <button
                             type="button"
-                            class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-lg border bg-[{{ theme.primary_600 }}] text-white hover:bg-[{{ theme.primary_800 }}]"
+                            class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-lg border bg-primary-600 text-white hover:bg-primary-800"
                             hx-post="{% url 'horilla_theme:set_default_theme' %}"
                             hx-target="#theme-cards-container"
                             hx-swap="outerHTML"
@@ -69,7 +69,7 @@
                     {% else %}
                         <button
                             type="button"
-                            class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-lg border bg-white text-gray-700 border-dark-50 hover:bg-[{{ theme.primary_600 }}] hover:text-white"
+                            class="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium transition-all duration-200 rounded-lg border bg-white text-gray-700 border-dark-50 hover:bg-primary-600 hover:text-white"
                             hx-post="{% url 'horilla_theme:set_default_theme' %}"
                             hx-target="#theme-cards-container"
                             hx-swap="outerHTML"

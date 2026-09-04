@@ -12,10 +12,13 @@
     <div class="oh-modal__dialog-body" id="addBatchModalBody">
         <form
             id="add-batch-form"
-            hx-post="{% url 'attendance-add-to-batch' %}?ids={{ids}}"
+            hx-post="{% url 'attendance-add-to-batch' %}"
             hx-target="#objectDetailsModalTarget"
         >
             {% csrf_token %}
+            {% for attendance_id in ids %}
+                <input type="hidden" name="ids" value="{{ attendance_id }}">
+            {% endfor %}
             <div class="oh-profile-section pt-0">
                 <div class="row">
                     <div class="mb-2">

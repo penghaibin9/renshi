@@ -1,5 +1,5 @@
 # Build stage - compile Python/native dependencies for the MySQL-only stack.
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -26,9 +26,9 @@ RUN rm -rf /opt/venv \
     && python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
+COPY requirements.txt requirements.lock ./
 RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
-    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall -r requirements.txt \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall -r requirements.lock \
     && find /opt/venv -type d \( \
         -name 'msgpack-*.dist-info' -o \
         -name 'msgpack-*.egg-info' -o \
@@ -49,7 +49,7 @@ RUN /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
     && /opt/venv/bin/python -c 'exec("""from pathlib import Path\nexpected = {\"msgpack\": \"1.2.1\", \"setuptools\": \"83.0.0\"}\nhits = []\nfor metadata in Path(\"/opt/venv\").rglob(\"*\"):\n    if not metadata.is_file() or metadata.name not in {\"METADATA\", \"PKG-INFO\"}:\n        continue\n    name = version = None\n    try:\n        for line in metadata.read_text(encoding=\"utf-8\", errors=\"replace\").splitlines():\n            if line.startswith(\"Name: \") and name is None:\n                name = line[6:].strip().lower()\n            elif line.startswith(\"Version: \") and version is None:\n                version = line[9:].strip()\n            if name is not None and version is not None:\n                break\n    except OSError:\n        continue\n    if name in expected and version != expected[name]:\n        hits.append((str(metadata), name, version, expected[name]))\nif hits:\n    print(\"Unsafe or stale Python package metadata detected in /opt/venv:\")\n    for path, name, version, wanted in hits:\n        print(f\"  {path}: {name} {version} (expected {wanted})\")\n    raise SystemExit(42)\n""")'
 
 # Production stage - minimal runtime image.
-FROM python:3.12-slim AS production
+FROM python:3.12-slim@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36 AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

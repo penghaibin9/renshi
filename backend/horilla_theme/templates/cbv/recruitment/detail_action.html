@@ -21,7 +21,8 @@
                     {% trans 'Do you want to un-archive this recruitment?' %}
                 {% endif %}
             "
-            href="{% url 'recruitment-archive' instance.id %}"
+            hx-post="{% url 'recruitment-archive' instance.id %}"
+            hx-swap="none"
         >
             <img
                 src="{% static 'horilla_theme/assets/img/icons/archive.svg' %}"

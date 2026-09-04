@@ -32,7 +32,10 @@
             {% else %}
                 <a
                     type="submit"
-                    href = "{% url 'claim-ticket' ticket.id %}"
+                    href="#"
+                    hx-post="{% url 'claim-ticket' ticket.id %}"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
                     class="oh-btn oh-btn--success oh-btn--sq-sm"
                     title="{% trans 'Claim' %}"
                 >
@@ -57,7 +60,10 @@
     {% if perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket %}
         {% if ticket.is_active %}
             <a
-                href="{% url 'ticket-archive' ticket.id %}"
+                href="#"
+                hx-post="{% url 'ticket-archive' ticket.id %}"
+                hx-swap="none"
+                hx-on::after-request="window.location.reload()"
                 class="oh-btn oh-btn--danger oh-btn--sq-sm"
                 title="{% trans 'Archive' %}"
             >
@@ -70,7 +76,10 @@
             </a>
         {% else %}
             <a
-                href="{% url 'ticket-archive' ticket.id %}"
+                href="#"
+                hx-post="{% url 'ticket-archive' ticket.id %}"
+                hx-swap="none"
+                hx-on::after-request="window.location.reload()"
                 class="oh-btn oh-btn--danger oh-btn--sq-sm"
                 title="{% trans 'Un-archive' %}"
             >
@@ -86,7 +95,10 @@
     {% if perms.helpdesk.delete_ticket %}
         {% if ticket.status == 'new' %}
             <a
-                href = "{% url 'ticket-delete' ticket.id %}"
+                href="#"
+                hx-post="{% url 'ticket-delete' ticket.id %}"
+                hx-swap="none"
+                hx-on::after-request="window.location.reload()"
                 class="oh-btn oh-btn--danger oh-btn--sq-sm"
                 onclick="return confirm('{% trans 'Are you sure you want to delete	this Ticket?' %}');"
                 title="{% trans 'Delete' %}"

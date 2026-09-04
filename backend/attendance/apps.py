@@ -20,7 +20,9 @@ class AttendanceConfig(AppConfig):
         from django.conf import settings
         from django.urls import include, path
 
-        from attendance import scheduler, signals
+        # Signal registration belongs to app startup.  APScheduler does not:
+        # importing it here would create one scheduler per Gunicorn worker.
+        from attendance import signals  # noqa: F401
         from horilla.settings import MIDDLEWARE
         from horilla.urls import urlpatterns
 

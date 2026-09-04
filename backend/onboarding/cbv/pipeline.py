@@ -7,6 +7,7 @@ import re
 
 from django.contrib import messages
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse, reverse_lazy
 from django.utils.decorators import method_decorator
@@ -154,7 +155,7 @@ class RecruitmentTabView(HorillaTabView):
                         "attrs": f"""
                             data-toggle="oh-modal-toggle"
                             data-target="#genericModal"
-                            hx-get="{reverse("onboarding-stage-sequence-update", kwargs={"pk": rec.pk})}"
+                            hx-get="{reverse("onboarding-stage-order", kwargs={"pk": rec.pk})}"
                             hx-target="#genericModalBody"
                             style="cursor: pointer;"
                         """,
@@ -847,7 +848,7 @@ class KanbanRequiredTaskCheck(View):
 
 @method_decorator(login_required, name="dispatch")
 @method_decorator(
-    all_manager_can_enter(perm="recruitment.view_recruitment"), name="dispatch"
+    all_manager_can_enter(perm="onboarding.change_candidatetask"), name="dispatch"
 )
 class AssignTask(View):
     """
@@ -863,45 +864,43 @@ class AssignTask(View):
                 request, message=_("Requested object does not exist")
             )
 
-    def get(self, *args, **kwargs):
-        """
-        get
-        """
-        task = onboarding_models.OnboardingTask.objects.get(pk=kwargs["task_id"])
-        candidate = onboarding_models.CandidateStage.objects.get(
-            candidate_id__id=kwargs["cand_id"]
-        )
-        task.candidates.add(candidate.candidate_id)
-        candidate_task = onboarding_models.CandidateTask()
-        candidate_task.candidate_id = candidate.candidate_id
-        candidate_task.stage_id = candidate.onboarding_stage_id
-        candidate_task.onboarding_task_id = task
-        candidate_task.save()
-        messages.success(self.request, _("Task Allocated"))
-
-        return HttpResponse(
-            f"""
-            <div id="taskHidden{candidate_task.pk}"></div>
-            <script>$('#taskHidden{candidate_task.pk}').closest('.hlv-container').find(".reload-record").click();</script>
-            <script>$('#reloadMessagesButton').click();</script>
-            """
-        )
-
+    @transaction.atomic
     def post(self, *args, **kwargs):
         """
         post
         """
-        candidate = onboarding_models.CandidateStage.objects.get(
+        candidate_stage = onboarding_models.CandidateStage.objects.select_for_update().get(
             candidate_id__id=kwargs["cand_id"]
         )
-        candidate_task = onboarding_models.CandidateTask.objects.get(
-            pk=kwargs["cand_task_id"]
-        )
-        status = self.request.POST["status"]
-        candidate_task.status = status
-        candidate_task.save()
-
-        messages.success(self.request, _("Status updated"))
+        task = onboarding_models.OnboardingTask.objects.get(pk=kwargs["task_id"])
+        candidate_task_id = kwargs.get("cand_task_id")
+        if candidate_task_id is None:
+            if task.stage_id_id != candidate_stage.onboarding_stage_id_id:
+                return JsonResponse(
+                    {"message": _("Task assignment scope is invalid.")}, status=400
+                )
+            task.candidates.add(candidate_stage.candidate_id)
+            candidate_task, _created = onboarding_models.CandidateTask.objects.get_or_create(
+                candidate_id=candidate_stage.candidate_id,
+                stage_id=candidate_stage.onboarding_stage_id,
+                onboarding_task_id=task,
+            )
+            messages.success(self.request, _("Task Allocated"))
+        else:
+            status = self.request.POST.get("status", "")
+            valid_statuses = {value for value, _label in onboarding_models.CandidateTask.choice}
+            if status not in valid_statuses:
+                return JsonResponse({"message": _("Invalid task status.")}, status=400)
+            candidate_task = onboarding_models.CandidateTask.objects.select_for_update().filter(
+                pk=candidate_task_id,
+                candidate_id=candidate_stage.candidate_id,
+                onboarding_task_id=task,
+            ).first()
+            if candidate_task is None:
+                return JsonResponse({"message": _("Candidate task not found.")}, status=404)
+            candidate_task.status = status
+            candidate_task.save(update_fields=["status"])
+            messages.success(self.request, _("Status updated"))
 
         return HttpResponse(
             f"""

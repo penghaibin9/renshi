@@ -151,7 +151,9 @@ def start_automation():
 
             post_bulk_update.connect(handler, sender=model_class)
 
-            def create_signal_handler(name, automation, query_strings):
+            def create_signal_handler(
+                name, automation, query_strings, model_class
+            ):
                 def signal_handler(sender, instance, created, **kwargs):
                     """
                     Signal handler for post-save events of the model instances.
@@ -183,7 +185,7 @@ def start_automation():
             # Create and connect the signal handler
             handler_name = f"{automation.method_title}_signal_handler"
             dynamic_signal_handler = create_signal_handler(
-                handler_name, automation, query_strings
+                handler_name, automation, query_strings, model_class
             )
             SIGNAL_HANDLERS.append(dynamic_signal_handler)
             post_save.connect(
@@ -238,6 +240,29 @@ def start_automation():
 
         clear_instance_signal_connection()
         automations = MailAutomation.objects.filter(is_active=True)
+
+        def create_instance_handler(automation, model_class):
+            def instance_handler(sender, instance, **kwargs):
+                """Store the pre-save instance for this automation."""
+                request = getattr(_thread_locals, "request", None)
+                previous_instance = instance
+                if instance.pk:
+                    previous_instance = model_class.objects.filter(
+                        id=instance.pk
+                    ).first()
+                if request:
+                    _thread_locals.previous_record = {
+                        "automation": automation,
+                        "instance": previous_instance,
+                    }
+
+            instance_handler.__name__ = (
+                f"{automation.method_title}_instance_handler"
+            )
+            instance_handler.model_class = model_class
+            instance_handler.automation = automation
+            return instance_handler
+
         for automation in automations:
             model_class = get_model_class(automation.model)
 
@@ -245,29 +270,8 @@ def start_automation():
             INSTANCE_HANDLERS.append(handler)
             pre_bulk_update.connect(handler, sender=model_class)
 
-            @receiver(pre_save, sender=model_class)
-            def instance_handler(sender, instance, **kwargs):
-                """
-                Signal handler for pres-save events of the model instances.
-                """
-                # prevented storing the scheduled activities
-                request = getattr(_thread_locals, "request", None)
-                if instance.pk:
-                    # to get the previous instance
-                    instance = model_class.objects.filter(id=instance.pk).first()
-                if request:
-                    _thread_locals.previous_record = {
-                        "automation": automation,
-                        "instance": instance,
-                    }
-                instance_handler.__name__ = (
-                    f"{automation.method_title}_instance_handler"
-                )
-                return instance_handler
-
-            instance_handler.model_class = model_class
-            instance_handler.automation = automation
-
+            instance_handler = create_instance_handler(automation, model_class)
+            pre_save.connect(instance_handler, sender=model_class)
             INSTANCE_HANDLERS.append(instance_handler)
 
     track_previous_instance()
@@ -430,7 +434,8 @@ def send_mail(request, automation, instance):
             sender = None
         # Automation bodies/titles are admin-authored Django template source
         # stored in the DB, rendered here with real employee/instance data and
-        # (for attachments) fed to wkhtmltopdf. sanitize_mail_template_body()
+        # (for attachments) fed to the in-process PDF renderer.
+        # sanitize_mail_template_body()
         # strips forbidden attribute access (password, META, session, ...) and
         # forbidden tags; build_safe_template_request() keeps `request` usable
         # in templates without exposing its sensitive internals.
@@ -454,8 +459,8 @@ def send_mail(request, automation, instance):
                     # by splitting a dangerous tag across separate {{ }}
                     # expressions that only combine into e.g. "<script>" once
                     # rendered. Re-check the actual rendered HTML -- the thing
-                    # that's about to reach wkhtmltopdf (which runs with
-                    # local-file-access enabled) -- not just the source.
+                    # that is about to reach the PDF renderer -- not just the
+                    # source.
                     if has_xss(render_bdy):
                         logger.error(
                             "Automation '%s': rendered attachment body failed "

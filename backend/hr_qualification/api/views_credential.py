@@ -16,6 +16,8 @@ import json
 import uuid
 from datetime import date
 
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
@@ -192,28 +194,43 @@ def credential_create(request: HttpRequest) -> JsonResponse:
             return error
 
         cert_no = data.get("certificate_no", "")
-        credential = HrPersonCredential.objects.create(
-            tenant_id=request.hr09_tenant_id,
-            person_id=person,
-            staff_master_id=staff,
-            catalog_item_id=catalog,
-            credential_name_snapshot=data["credential_name_snapshot"],
-            level_code=data.get("level_code", ""),
-            certificate_no_cipher=encrypt_certificate_no(cert_no),
-            certificate_no_hash=certificate_no_hash(cert_no),
-            issuer_name=data["issuer_name"],
-            issue_date=data.get("issue_date"),
-            valid_from=data.get("valid_from"),
-            valid_to=data.get("valid_to"),
-            status=CredentialStatus.DRAFT,
-            source=data.get("source", "HR_ENTERED"),
-            self_reported=data.get("self_reported", False),
-        )
+        with transaction.atomic():
+            person = HrPerson.objects.select_for_update().get(
+                id=person.id, tenant_id=request.hr09_tenant_id
+            )
+            if staff is not None:
+                staff = HrStaffMaster.objects.select_for_update().get(
+                    id=staff.id,
+                    tenant_id=request.hr09_tenant_id,
+                    person_id=person,
+                )
+            credential = HrPersonCredential(
+                tenant_id=request.hr09_tenant_id,
+                person_id=person,
+                staff_master_id=staff,
+                catalog_item_id=catalog,
+                credential_name_snapshot=data["credential_name_snapshot"],
+                level_code=data.get("level_code", ""),
+                certificate_no_cipher=encrypt_certificate_no(cert_no),
+                certificate_no_hash=certificate_no_hash(cert_no),
+                issuer_name=data["issuer_name"],
+                issue_date=data.get("issue_date"),
+                valid_from=data.get("valid_from"),
+                valid_to=data.get("valid_to"),
+                status=CredentialStatus.DRAFT,
+                source=data.get("source", "HR_ENTERED"),
+                self_reported=data.get("self_reported", False),
+            )
+            credential.full_clean()
+            credential.save()
         return JsonResponse(envelope(_credential_to_dict(credential)), status=201)
-    except (ValueError, KeyError) as exc:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
-    except Exception as exc:
-        return JsonResponse(error_envelope("INTERNAL_ERROR", str(exc)), status=500)
+    except (ValueError, KeyError, ValidationError) as exc:
+        message = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
+        return JsonResponse(error_envelope("INVALID_REQUEST", message), status=400)
+    except IntegrityError:
+        return JsonResponse(error_envelope("VERSION_CONFLICT", "资格证书记录已存在"), status=409)
+    except Exception:
+        return JsonResponse(error_envelope("INTERNAL_ERROR", "资格证书创建失败"), status=500)
 
 
 @require_http_methods(["GET", "HEAD"])
@@ -230,11 +247,6 @@ def credential_detail(request: HttpRequest, credential_id: str) -> JsonResponse:
 @require_http_methods(["PATCH"])
 @api_guard(CRED_CREATE)
 def credential_update(request: HttpRequest, credential_id: str) -> JsonResponse:
-    c = _credential_or_none(credential_id, request.hr09_tenant_id)
-    if c is None:
-        return JsonResponse(
-            error_envelope("CREDENTIAL_NOT_FOUND", "Credential not found"), status=404
-        )
     try:
         body = json.loads(request.body.decode())
         serializer = HrCredentialUpdateSerializer(data=body)
@@ -243,40 +255,55 @@ def credential_update(request: HttpRequest, credential_id: str) -> JsonResponse:
                 error_envelope("VALIDATION_ERROR", str(serializer.errors)), status=400
             )
         data = serializer.validated_data
-        if data["version"] != c.version:
-            return JsonResponse(
-                error_envelope("VERSION_CONFLICT", "Credential was changed by another user"),
-                status=409,
+        with transaction.atomic():
+            c = (
+                HrPersonCredential.objects.select_for_update()
+                .select_related("catalog_item_id", "person_id", "staff_master_id")
+                .filter(id=credential_id, tenant_id=request.hr09_tenant_id)
+                .first()
             )
-        if c.status in (
-            CredentialStatus.ACTIVE,
-            CredentialStatus.EXPIRED,
-            CredentialStatus.SUSPENDED,
-            CredentialStatus.REVOKED,
-            CredentialStatus.SUPERSEDED,
-        ):
-            return JsonResponse(
-                error_envelope(
-                    "CREDENTIAL_STATUS_BLOCKED",
-                    "正式或历史资格不能原地覆盖，请使用续证、暂停或撤销流程。",
-                ),
-                status=409,
-            )
-        for field in (
-            "credential_name_snapshot",
-            "level_code",
-            "issuer_name",
-            "issue_date",
-            "valid_from",
-            "valid_to",
-        ):
-            if field in data and data[field] is not None:
-                setattr(c, field, data[field])
-        c.version += 1
-        c.save()
+            if c is None:
+                return JsonResponse(
+                    error_envelope("CREDENTIAL_NOT_FOUND", "Credential not found"), status=404
+                )
+            if data["version"] != c.version:
+                return JsonResponse(
+                    error_envelope("VERSION_CONFLICT", "Credential was changed by another user"),
+                    status=409,
+                )
+            if c.status in (
+                CredentialStatus.ACTIVE,
+                CredentialStatus.EXPIRED,
+                CredentialStatus.SUSPENDED,
+                CredentialStatus.REVOKED,
+                CredentialStatus.SUPERSEDED,
+            ):
+                return JsonResponse(
+                    error_envelope(
+                        "CREDENTIAL_STATUS_BLOCKED",
+                        "正式或历史资格不能原地覆盖，请使用续证、暂停或撤销流程。",
+                    ),
+                    status=409,
+                )
+            for field in (
+                "credential_name_snapshot",
+                "level_code",
+                "issuer_name",
+                "issue_date",
+                "valid_from",
+                "valid_to",
+            ):
+                if field in data and data[field] is not None:
+                    setattr(c, field, data[field])
+            c.version += 1
+            c.full_clean()
+            c.save()
         return JsonResponse(envelope(_credential_to_dict(c)))
-    except ValueError as exc:
-        return JsonResponse(error_envelope("INVALID_REQUEST", str(exc)), status=400)
+    except (ValueError, ValidationError) as exc:
+        message = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
+        return JsonResponse(error_envelope("INVALID_REQUEST", message), status=400)
+    except IntegrityError:
+        return JsonResponse(error_envelope("VERSION_CONFLICT", "资格证书更新冲突"), status=409)
 
 
 @require_http_methods(["POST"])

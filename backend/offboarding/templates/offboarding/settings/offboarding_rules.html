@@ -16,7 +16,7 @@
         <div class="grid grid-cols-12 gap-4 myform">
             <div class="col-span-12">
                 <form
-                    hx-get="{% url 'enable-resignation-request' %}"
+                    hx-post="{% url 'enable-resignation-request' %}"
                     hx-trigger="change from:#enableResignationRequest"
                     hx-swap="afterend"
                     hx-on-htmx-after-request="reloadMessage(this);"

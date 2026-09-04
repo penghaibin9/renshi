@@ -1,11 +1,12 @@
 """S5 岗位与身份变更契约测试。"""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 
 from hr_changes.api import identity_changes as identity_api
 from hr_changes.constants import ChangeActionCode
@@ -14,6 +15,7 @@ from hr_changes.services.change_service import ChangeServiceError
 from hr_changes.services.identity_change_service import IdentityChangeService
 from hr_changes.tests.factories import (
     make_action,
+    make_catalog_version,
     make_org,
     make_person,
     make_position,
@@ -23,6 +25,7 @@ from hr_changes.tests.factories import (
 from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
+EFFECTIVE_DATE = timezone.localdate() + timedelta(days=30)
 
 
 def ctx():
@@ -48,19 +51,22 @@ class IdentityChangeServiceTests(TestCase):
             staff_master_id=self.staff,
             action_id=action,
             reason_id=reason,
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             proposals=proposals,
             **kwargs,
         )
 
     def test_post_category_change(self):
+        catalog_version = make_catalog_version(TENANT, "管理岗")
+        catalog_version.status = "ACTIVE"
+        catalog_version.save(update_fields=["status"])
         case = self._create(
             ChangeActionCode.POST_CATEGORY_CHANGE,
             [
                 {
                     "domain": "assignment",
                     "field_code": "post_catalog",
-                    "proposed_value_display": "管理岗",
+                    "proposed_value_ref": str(catalog_version.id),
                 }
             ],
         )
@@ -341,7 +347,7 @@ class IdentityApiTests(TestCase):
             "staffMasterId": str(self.staff.id),
             "actionId": str(self.action.id),
             "reasonId": str(self.reason.id),
-            "requestedEffectiveAt": "2026-09-01",
+            "requestedEffectiveAt": EFFECTIVE_DATE.isoformat(),
             "proposals": [
                 {
                     "domain": "staff",

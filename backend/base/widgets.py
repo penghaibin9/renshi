@@ -1,5 +1,5 @@
 from django import forms
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
 
 class CustomModelChoiceWidget(forms.Select):
@@ -27,23 +27,32 @@ class CustomModelChoiceWidget(forms.Select):
         original_html = super().render(name, value, attrs, renderer)
 
         # Get the delete_url from attributes if provided
+        attrs = attrs or {}
         delete_url = attrs.get("delete_url", self.delete_url)
 
-        # Create the custom HTML including the delete button
-        custom_html = f"""
-        <div class="pt-2" id="{name}">
+        delete_button = ""
+        if delete_url:
+            delete_button = format_html(
+                '<button hx-get="{}" class="oh-btn oh-btn--danger oh-btn--sq-sm" '
+                'hx-target="#{}" hx-swap="outerHTML" id="delete-link">'
+                '<ion-icon name="trash-outline"></ion-icon></button>',
+                delete_url,
+                name,
+            )
+
+        return format_html(
+            """
+        <div class="pt-2" id="{}">
             <div class="oh-input__group" style="display: flex">
-                {original_html}
-                {f'<button hx-get="{delete_url}" class="oh-btn oh-btn--danger oh-btn--sq-sm" hx-target="#{name}" hx-swap="outerHTML" id="delete-link"><ion-icon name="trash-outline"></ion-icon></button>' if delete_url else ''}
+                {}
+                {}
             </div>
         </div>
-        """
-        return mark_safe(custom_html)
-
-    from django import forms
-
-
-from django.utils.safestring import mark_safe
+        """,
+            name,
+            original_html,
+            delete_button,
+        )
 
 
 class CustomTextInputWidget(forms.TextInput):
@@ -71,15 +80,29 @@ class CustomTextInputWidget(forms.TextInput):
         original_html = super().render(name, value, attrs, renderer)
 
         # Get the delete_url from attributes if provided
+        attrs = attrs or {}
         delete_url = attrs.get("delete_url", self.delete_url)
 
-        # Create the custom HTML including the delete button
-        custom_html = f"""
-        <div class="pt-2" id="{name}">
+        delete_button = ""
+        if delete_url:
+            delete_button = format_html(
+                '<button hx-get="{}" class="oh-btn oh-btn--danger oh-btn--sq-sm" '
+                'hx-target="#{}" hx-swap="outerHTML" id="delete-link">'
+                '<ion-icon name="trash-outline"></ion-icon></button>',
+                delete_url,
+                name,
+            )
+
+        return format_html(
+            """
+        <div class="pt-2" id="{}">
             <div class="oh-input__group" style="display: flex">
-                {original_html}
-                {f'<button hx-get="{delete_url}" class="oh-btn oh-btn--danger oh-btn--sq-sm" hx-target="#{name}" hx-swap="outerHTML" id="delete-link"><ion-icon name="trash-outline"></ion-icon></button>' if delete_url else ''}
+                {}
+                {}
             </div>
         </div>
-        """
-        return mark_safe(custom_html)
+        """,
+            name,
+            original_html,
+            delete_button,
+        )

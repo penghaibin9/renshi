@@ -15,6 +15,7 @@ from dateutil.relativedelta import relativedelta
 from django import forms
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.db.utils import IntegrityError
 from django.forms import modelformset_factory
@@ -23,7 +24,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from base.methods import (
     closest_numbers,
@@ -106,6 +107,75 @@ from pms.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _can_update_employee_objective(request, employee_objective):
+    objective = employee_objective.objective_id
+    actor = request.user.employee_get
+    return (
+        request.user.has_perm("pms.change_objective")
+        or request.user.has_perm("pms.change_employeeobjective")
+        or request.user.has_perm("pms.change_employeekeyresult")
+        or objective.managers.filter(pk=actor.pk).exists()
+        or objective.self_employee_progress_update
+        and employee_objective.employee_id_id == actor.id
+    )
+
+
+def _valid_status(model, value):
+    return value in {choice[0] for choice in model.STATUS_CHOICES}
+
+
+def _posted_json_ids(request, key="ids", *, allow_empty=False):
+    """Return a small, unique list of positive integer IDs from POST data."""
+    try:
+        values = json.loads(request.POST.get(key, "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(values, list) or len(values) > 500:
+        return None
+    ids = []
+    for value in values:
+        if isinstance(value, bool) or not str(value).isdigit() or int(value) <= 0:
+            return None
+        ids.append(int(value))
+    if len(ids) != len(set(ids)) or (not allow_empty and not ids):
+        return None
+    return ids
+
+
+def _can_archive_employee_objective(request, employee_objective):
+    actor = request.user.employee_get
+    return (
+        request.user.has_perm("pms.change_employeeobjective")
+        or request.user.has_perm("pms.delete_employeeobjective")
+        or employee_objective.employee_id_id == actor.id
+        or employee_objective.objective_id.managers.filter(pk=actor.pk).exists()
+        or EmployeeWorkInformation.objects.filter(
+            employee_id_id=employee_objective.employee_id_id,
+            reporting_manager_id=actor,
+        ).exists()
+    )
+
+
+def _can_manage_feedback(request, feedback, permission, *, allow_owner=False):
+    actor = request.user.employee_get
+    return (
+        request.user.has_perm(permission)
+        or feedback.manager_id_id == actor.id
+        or allow_owner
+        and feedback.employee_id_id == actor.id
+        or EmployeeWorkInformation.objects.filter(
+            employee_id_id=feedback.employee_id_id,
+            reporting_manager_id=actor,
+        ).exists()
+    )
+
+
+def _can_manage_anonymous_feedback(request, feedback, permission):
+    return request.user.has_perm(permission) or feedback.anonymous_feedback_id == str(
+        request.user.id
+    )
 
 
 # objectives
@@ -421,6 +491,8 @@ def kr_create_or_update(request, kr_id=None):
 
 @login_required
 @permission_required("pms.change_keyresult")
+@require_POST
+@transaction.atomic
 def archive_key_result(request, pk):
     """
     This view is used to archive and unarchive the key result,
@@ -429,14 +501,14 @@ def archive_key_result(request, pk):
         employee_id(int) : primarykey of the employee
     Returns:
     """
-    key_result = KeyResult.find(pk)
+    key_result = KeyResult.objects.select_for_update().filter(pk=pk).first()
     if not key_result:
         return HorillaRedirect(
             request, message=_("No Key Result found matching the query.")
         )
 
     key_result.is_active = not key_result.is_active
-    key_result.save()
+    key_result.save(update_fields=["is_active"])
     message = (
         _("Key reuslt unarchived successfully")
         if key_result.is_active
@@ -516,6 +588,8 @@ def add_assignees(request, obj_id):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="pms.delete_employeeobjective")
+@require_POST
+@transaction.atomic
 def objective_delete(request, obj_id):
     """
     This view takes one arguments, id and returns redirecting to a view.
@@ -525,7 +599,7 @@ def objective_delete(request, obj_id):
         Redirect to Objective_list_view".
     """
     try:
-        objective = Objective.objects.get(id=obj_id)
+        objective = Objective.objects.select_for_update().get(id=obj_id)
         if not objective.employee_objective.exists():
             objective.delete()
             messages.success(
@@ -547,6 +621,8 @@ def objective_delete(request, obj_id):
 
 @login_required
 @permission_required("pms.change_objective")
+@require_POST
+@transaction.atomic
 def objective_manager_remove(request, obj_id, manager_id):
     """
     Removes a manager from an objective.
@@ -559,7 +635,7 @@ def objective_manager_remove(request, obj_id, manager_id):
     Returns:
     HttpResponse indicating success.
     """
-    objective = get_object_or_404(Objective, id=obj_id)
+    objective = get_object_or_404(Objective.objects.select_for_update(), id=obj_id)
     objective.managers.remove(manager_id)
     messages.success(request, _("Manger removed successfully."))
     return HttpResponse(
@@ -569,6 +645,8 @@ def objective_manager_remove(request, obj_id, manager_id):
 
 @login_required
 @permission_required("pms.delete_keyresult")
+@require_POST
+@transaction.atomic
 def key_result_remove(request, obj_id, kr_id):
     """
     Removes a Key Result from an objective.
@@ -581,7 +659,7 @@ def key_result_remove(request, obj_id, kr_id):
     Returns:
     HttpResponse indicating success.
     """
-    objective = get_object_or_404(Objective, id=obj_id)
+    objective = get_object_or_404(Objective.objects.select_for_update(), id=obj_id)
     objective.key_result_id.remove(kr_id)
     messages.success(request, _("Key result removed successfully."))
     return HttpResponse(
@@ -959,6 +1037,8 @@ def kr_table_view(request, emp_objective_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def objective_detailed_view_objective_status(request, id):
     """
     This view is used to  update status of objective in objective detailed view,
@@ -969,10 +1049,21 @@ def objective_detailed_view_objective_status(request, id):
         All the filtered and searched object will based on userlevel.
     """
 
-    objective = EmployeeObjective.objects.get(id=id)
+    objective = (
+        EmployeeObjective.objects.select_for_update()
+        .select_related("objective_id", "employee_id")
+        .filter(id=id)
+        .first()
+    )
+    if objective is None:
+        return HorillaRedirect(request, message=_("Objective not found."))
+    if not _can_update_employee_objective(request, objective):
+        return HttpResponse(status=403)
     status = request.POST.get("objective_status")
+    if not _valid_status(EmployeeObjective, status):
+        return JsonResponse({"message": "Invalid objective status"}, status=400)
     objective.status = status
-    objective.save()
+    objective.save(update_fields=["status"])
     messages.info(
         request,
         _("Objective %(objective)s status updated")
@@ -983,6 +1074,8 @@ def objective_detailed_view_objective_status(request, id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def objective_detailed_view_key_result_status(request, obj_id, kr_id):
     """
     This view is used to  update status of key result in objective detailed view,
@@ -995,7 +1088,20 @@ def objective_detailed_view_key_result_status(request, obj_id, kr_id):
     """
 
     status = request.POST.get("key_result_status")
-    employee_key_result = EmployeeKeyResult.objects.get(id=kr_id)
+    employee_key_result = (
+        EmployeeKeyResult.objects.select_for_update()
+        .select_related("employee_objective_id__objective_id")
+        .filter(id=kr_id, employee_objective_id_id=obj_id)
+        .first()
+    )
+    if employee_key_result is None:
+        return HorillaRedirect(request, message=_("Key result not found."))
+    if not _can_update_employee_objective(
+        request, employee_key_result.employee_objective_id
+    ):
+        return HttpResponse(status=403)
+    if not _valid_status(EmployeeKeyResult, status):
+        return JsonResponse({"message": "Invalid key result status"}, status=400)
 
     current_value = employee_key_result.current_value
     target_value = employee_key_result.target_value
@@ -1004,7 +1110,7 @@ def objective_detailed_view_key_result_status(request, obj_id, kr_id):
         employee_key_result.status = "Closed"
     else:
         employee_key_result.status = status
-    employee_key_result.save()
+    employee_key_result.save(update_fields=["status"])
     messages.info(request, _("Status has been updated"))
     # return redirect(objective_detailed_view_activity, id=obj_id)
     response = redirect(objective_detailed_view_activity, id=obj_id)
@@ -1015,6 +1121,8 @@ def objective_detailed_view_key_result_status(request, obj_id, kr_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def objective_detailed_view_current_value(request, kr_id):
     """
     This view is used to update current value of key result,  return redirect to view . using htmx
@@ -1023,44 +1131,45 @@ def objective_detailed_view_current_value(request, kr_id):
     Returns:
         All the history of EmployeeObjective.
     """
-    if request.method == "POST":
-        current_value = request.POST.get("current_value")
-        employee_key_result = EmployeeKeyResult.objects.get(id=kr_id)
-        target_value = employee_key_result.target_value
-        objective_id = employee_key_result.employee_objective_id.id
-        if int(current_value) < target_value:
-            employee_key_result.current_value = current_value
-            employee_key_result.save()
-            messages.info(
-                request,
-                _("Current value of %(employee_key_result)s updated")
-                % {"employee_key_result": employee_key_result},
-            )
-            return redirect(objective_detailed_view_activity, objective_id)
-
-        elif int(current_value) == target_value:
-            employee_key_result.current_value = current_value
-            employee_key_result.status = "Closed"
-            employee_key_result.save()
-            messages.info(
-                request,
-                _("Current value of %(employee_key_result)s updated")
-                % {"employee_key_result": employee_key_result},
-            )
-            # return redirect(objective_detailed_view_activity, objective_id)
-            response = redirect(objective_detailed_view_activity, objective_id)
-            return HttpResponse(
-                response.content.decode("utf-8") + "<script>location.reload();</script>"
-            )
-
-        elif int(current_value) > target_value:
-            messages.warning(request, _("Current value is greater than target value"))
-            return redirect(objective_detailed_view_activity, objective_id)
-        messages.error(request, _("Error occurred during current value updation"))
+    employee_key_result = (
+        EmployeeKeyResult.objects.select_for_update()
+        .select_related("employee_objective_id__objective_id")
+        .filter(id=kr_id)
+        .first()
+    )
+    if employee_key_result is None:
+        return HorillaRedirect(request, message=_("Key result not found."))
+    if not _can_update_employee_objective(
+        request, employee_key_result.employee_objective_id
+    ):
+        return HttpResponse(status=403)
+    try:
+        current_value = int(request.POST.get("current_value"))
+    except (TypeError, ValueError):
+        return JsonResponse({"message": "Invalid current value"}, status=400)
+    target_value = employee_key_result.target_value
+    objective_id = employee_key_result.employee_objective_id.id
+    if current_value < 0 or current_value > target_value:
+        messages.warning(request, _("Current value must be between 0 and target value"))
         return redirect(objective_detailed_view_activity, objective_id)
+    employee_key_result.current_value = current_value
+    update_fields = ["current_value"]
+    if current_value == target_value:
+        employee_key_result.status = "Closed"
+        update_fields.append("status")
+    employee_key_result.save(update_fields=update_fields)
+    employee_key_result.employee_objective_id.update_objective_progress()
+    messages.info(
+        request,
+        _("Current value of %(employee_key_result)s updated")
+        % {"employee_key_result": employee_key_result},
+    )
+    return redirect(objective_detailed_view_activity, objective_id)
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def objective_archive(request, id):
     """
     this function is used to archive the objective
@@ -1069,19 +1178,25 @@ def objective_archive(request, id):
         return:
             redirect to objective_list_view
     """
-    objective = Objective.find(id)
+    objective = Objective.objects.select_for_update().filter(id=id).first()
     if not objective:
         return HorillaRedirect(
             request, message=_("No Objective found matching the query.")
         )
 
+    if not (
+        request.user.has_perm("pms.change_objective")
+        or objective.managers.filter(pk=request.user.employee_get.pk).exists()
+    ):
+        return HttpResponse(status=403)
+
     if objective.archive:
         objective.archive = False
-        objective.save()
+        objective.save(update_fields=["archive"])
         messages.info(request, _("Objective un-archived successfully!."))
     elif not objective.archive:
         objective.archive = True
-        objective.save()
+        objective.save(update_fields=["archive"])
         messages.info(request, _("Objective archived successfully!."))
     return HttpResponse(
         "<script> $('.reload-record').click(); $('#reloadMessagesButton').click();</script>"
@@ -1208,6 +1323,8 @@ def update_employee_objective(request, emp_obj_id):
 
 @login_required
 @manager_can_enter(perm="pms.delete_employeeobjective")
+@require_POST
+@transaction.atomic
 def archive_employee_objective(request, emp_obj_id):
     """
     This function is used to archive or unarchive the employee objective
@@ -1216,20 +1333,20 @@ def archive_employee_objective(request, emp_obj_id):
         return:
             redirect to detailed of employee objective
     """
-    emp_objective = EmployeeObjective.find(emp_obj_id)
-    if not emp_objective:
+    emp_objective = EmployeeObjective.objects.select_for_update().filter(
+        pk=emp_obj_id
+    ).first()
+    if emp_objective is None:
         return HorillaRedirect(
             request, message=_("No Employee Objective found matching the query.")
         )
 
+    emp_objective.archive = not emp_objective.archive
+    emp_objective.save(update_fields=["archive"])
     if emp_objective.archive:
-        emp_objective.archive = False
-        emp_objective.save()
-        messages.success(request, _("Objective un-archived successfully!."))
-    elif not emp_objective.archive:
-        emp_objective.archive = True
-        emp_objective.save()
         messages.success(request, _("Objective archived successfully!."))
+    else:
+        messages.success(request, _("Objective un-archived successfully!."))
     if request.GET.get("detail_view"):
         return HttpResponse(
             "<script> $('.reload-record').click(); $('#reloadMessagesButton').click();</script>"
@@ -1239,6 +1356,8 @@ def archive_employee_objective(request, emp_obj_id):
 
 @login_required
 @manager_can_enter(perm="pms.delete_employeeobjective")
+@require_POST
+@transaction.atomic
 def delete_employee_objective(request, emp_obj_id):
     """
     This function is used to delete the employee objective
@@ -1247,13 +1366,17 @@ def delete_employee_objective(request, emp_obj_id):
         return:
             redirect to detailed of employee objective
     """
-    emp_objective = EmployeeObjective.find(emp_obj_id)
-    if not emp_objective:
+    emp_objective = (
+        EmployeeObjective.objects.select_for_update()
+        .select_related("employee_id", "objective_id")
+        .filter(pk=emp_obj_id)
+        .first()
+    )
+    if emp_objective is None:
         return HorillaRedirect(
             request, message=_("No Employee Objective found matching the query.")
         )
 
-    single_view = request.GET.get("single_view")
     if emp_objective.employee_key_result.exists():
         messages.warning(
             request, _("You can't delete this objective,related entries exists")
@@ -1269,6 +1392,8 @@ def delete_employee_objective(request, emp_obj_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def change_employee_objective_status(request):
     """
     This function is used to change status of the employee objective
@@ -1277,8 +1402,16 @@ def change_employee_objective_status(request):
         return:
             a message
     """
-    emp_obj = request.GET.get("empObjId")
-    emp_objective = EmployeeObjective.objects.filter(id=emp_obj).first()
+    emp_obj = request.POST.get("empObjId")
+    emp_objective = (
+        EmployeeObjective.objects.select_for_update()
+        .select_related("objective_id", "employee_id", "employee_id__employee_user_id")
+        .filter(id=emp_obj)
+        .first()
+    )
+    if emp_objective is None:
+        messages.error(request, _("Employee objective not found."))
+        return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
     if not (
         request.user.has_perm("pms.change_objective")
         or request.user.has_perm("pms.change_employeeobjective")
@@ -1292,22 +1425,14 @@ def change_employee_objective_status(request):
         messages.info(request, _("You dont have permission"))
         return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
 
-    status = request.GET.get("status")
-    if not (
-        request.user.has_perm("pms.change_objective")
-        or request.user.has_perm("pms.change_employeeobjective")
-        or request.user.has_perm("pms.change_employeekeyresult")
-        or request.user.employee_get in emp_objective.objective_id.managers.all()
-        or (
-            emp_objective.objective_id.self_employee_progress_update
-            and (emp_objective.employee_id == request.user.employee_get)
-        )
-    ):
-        messages.info(request, _("You dont have permission."))
+    status = request.POST.get("status")
+    valid_statuses = {value for value, _label in EmployeeObjective.STATUS_CHOICES}
+    if status not in valid_statuses:
+        messages.error(request, _("Invalid objective status."))
     else:
         if emp_objective.status != status:
             emp_objective.status = status
-            emp_objective.save()
+            emp_objective.save(update_fields=["status"])
             messages.success(
                 request,
                 _(
@@ -2077,6 +2202,8 @@ def feedback_answer_view(request, id, **kwargs):
 
 @login_required
 @permission_required(perm="pms.delete_feedback")
+@require_POST
+@transaction.atomic
 def feedback_delete(request, id):
     """
     This view is used to  delete the feedback.
@@ -2085,58 +2212,44 @@ def feedback_delete(request, id):
     Returns:
         it will redirect to  feedback_list_view.
     """
-    error_message = None
-    try:
-        feedback = Feedback.objects.get(id=id)
-        answered = Answer.objects.filter(feedback_id=feedback).first()
-        if (
-            feedback.status == "Closed"
-            or feedback.status == "Not Started"
-            and not answered
-        ):
+    feedback = Feedback.objects.select_for_update().filter(id=id).first()
+    if feedback is None:
+        return HorillaRedirect(
+            request, message=_("No Feedback found matching the query.")
+        )
+    answered = Answer.objects.filter(feedback_id=feedback).exists()
+    if feedback.status == "Closed" or (
+        feedback.status == "Not Started" and not answered
+    ):
+        try:
             feedback.delete()
-            messages.success(
-                request,
-                _("Feedback %(review_cycle)s deleted successfully!")
-                % {"review_cycle": feedback.review_cycle},
-            )
-            if request.headers.get("HX-Request"):
-                response = HttpResponse("", status=200)
-                response["HX-Trigger"] = json.dumps(
-                    {"reloadFeedbackContainer": {"target": "body"}}
-                )
-                return response
-            return redirect(reverse("feedback-view"))
-
-        else:
-            messages.warning(
-                request,
-                _("You can't delete feedback %(review_cycle)s with status %(status)s")
-                % {"review_cycle": feedback.review_cycle, "status": feedback.status},
-            )
-            if request.headers.get("HX-Request"):
-                response = HttpResponse("", status=200)
-                response["HX-Trigger"] = json.dumps(
-                    {"reloadFeedbackContainer": {"target": "body"}}
-                )
-                return response
-            return redirect(reverse("feedback-view"))
-
-    except Feedback.DoesNotExist:
-        error_message = _("No Feedback found matching the query.")
-    except ProtectedError:
-        error_message = _("Related entries exists")
+        except ProtectedError:
+            transaction.set_rollback(True)
+            return HorillaRedirect(request, message=_("Related entries exist."))
+        messages.success(
+            request,
+            _("Feedback %(review_cycle)s deleted successfully!")
+            % {"review_cycle": feedback.review_cycle},
+        )
+    else:
+        messages.warning(
+            request,
+            _("You can't delete feedback %(review_cycle)s with status %(status)s")
+            % {"review_cycle": feedback.review_cycle, "status": feedback.status},
+        )
     if request.headers.get("HX-Request"):
         response = HttpResponse("", status=200)
         response["HX-Trigger"] = json.dumps(
             {"reloadFeedbackContainer": {"target": "body"}}
         )
         return response
-    return HorillaRedirect(request, message=error_message)
+    return redirect(reverse("feedback-view"))
 
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def feedback_detailed_view_status(request, id):
     """
     This view is used to  update status of feedback.
@@ -2146,23 +2259,21 @@ def feedback_detailed_view_status(request, id):
          message to the view
     """
     status = request.POST.get("feedback_status")
-    feedback = get_object_or_404(Feedback, id=id)
-    answer = Answer.objects.filter(feedback_id=feedback)
-    if status == "Not Started" and answer:
+    feedback = get_object_or_404(Feedback.objects.select_for_update(), id=id)
+    if not _can_manage_feedback(request, feedback, "pms.change_feedback"):
+        return HttpResponse(status=403)
+    if not _valid_status(Feedback, status):
+        return JsonResponse({"message": _("Invalid feedback status.")}, status=400)
+    if status == "Not Started" and Answer.objects.filter(
+        feedback_id=feedback
+    ).exists():
         messages.warning(request, _("Feedback is already started"))
         return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
 
     feedback.status = status
-    feedback.save()
-    if (feedback.status) == status:
-        messages.success(
-            request, _("Feedback status updated to  %(status)s") % {"status": _(status)}
-        )
-        return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
-
-    messages.info(
-        request,
-        _("Error occurred during status update to %(status)s") % {"status": _(status)},
+    feedback.save(update_fields=["status"])
+    messages.success(
+        request, _("Feedback status updated to  %(status)s") % {"status": _(status)}
     )
     return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
 
@@ -2217,6 +2328,8 @@ def get_feedback_overview(request, obj_id):
 
 @login_required
 @manager_can_enter(perm="pms.delete_feedback")
+@require_POST
+@transaction.atomic
 def feedback_archive(request, id):
     """
     this function is used to archive the feedback for employee
@@ -2224,20 +2337,20 @@ def feedback_archive(request, id):
         id(int): primarykey of feedback
     """
 
-    feedback = Feedback.find(id)
+    feedback = Feedback.objects.select_for_update().filter(id=id).first()
     if not feedback:
         return HorillaRedirect(
             request, message=_("No Feedback found matching the query.")
         )
+    if not _can_manage_feedback(request, feedback, "pms.delete_feedback"):
+        return HttpResponse(status=403)
 
+    feedback.archive = not feedback.archive
+    feedback.save(update_fields=["archive"])
     if feedback.archive:
-        feedback.archive = False
-        feedback.save()
-        messages.info(request, _("Feedback un-archived successfully!."))
-    elif not feedback.archive:
-        feedback.archive = True
-        feedback.save()
         messages.info(request, _("Feedback archived successfully!."))
+    else:
+        messages.info(request, _("Feedback un-archived successfully!."))
     if request.headers.get("HX-Request"):
         response = HttpResponse("", status=200)
         response["HX-Trigger"] = json.dumps(
@@ -2641,6 +2754,8 @@ def question_template_update(request, template_id):
 
 @login_required
 @manager_can_enter(perm="pms.delete_questiontemplate")
+@require_POST
+@transaction.atomic
 def question_template_delete(request, template_id):
     """
     This view is used to  delete  question template object.
@@ -2650,8 +2765,10 @@ def question_template_delete(request, template_id):
         it will redirect to  question_template_view.
     """
     try:
-        question_template = QuestionTemplate.objects.get(id=template_id)
-        if Feedback.objects.filter(question_template_id=question_template):
+        question_template = QuestionTemplate.objects.select_for_update().get(
+            id=template_id
+        )
+        if Feedback.objects.filter(question_template_id=question_template).exists():
             messages.info(request, _("This template is using in a feedback"))
         else:
             question_template.delete()
@@ -2747,6 +2864,8 @@ def period_update(request, period_id):
 
 @login_required
 @manager_can_enter(perm="pms.delete_period")
+@require_POST
+@transaction.atomic
 def period_delete(request, period_id):
     """
     This view is used to delete period objects.
@@ -2757,7 +2876,7 @@ def period_delete(request, period_id):
     """
     target = request.META.get("HTTP_HX_TARGET")
     try:
-        obj_period = Period.objects.get(id=period_id)
+        obj_period = Period.objects.select_for_update().get(id=period_id)
         obj_period.delete()
         messages.success(request, _("Period deleted successfully."))
     except Period.DoesNotExist:
@@ -2957,145 +3076,165 @@ def create_period(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def objective_bulk_archive(request):
     """
     This method is used to archive/un-archive bulk objectivs
     """
-    ids = request.POST.get("ids", "[]")
-    ids = json.loads(ids)
-    is_active = False
-    message = _("un-archived")
-    if request.GET.get("is_active") == "False":
-        is_active = True
-        message = _("archived")
-    for objective_id in ids:
-        objective_obj = EmployeeObjective.objects.get(id=objective_id)
-        objective_obj.archive = is_active
-        objective_obj.save()
-        messages.success(
-            request,
-            _("{objective} is {message}").format(
-                objective=objective_obj, message=message
-            ),
-        )
+    ids = _posted_json_ids(request)
+    requested_active = request.POST.get("is_active")
+    if ids is None or requested_active not in {"True", "False"}:
+        return JsonResponse({"message": _("Invalid request.")}, status=400)
+
+    objectives = list(
+        EmployeeObjective.objects.select_for_update()
+        .select_related("employee_id", "objective_id")
+        .filter(pk__in=ids)
+    )
+    if len(objectives) != len(ids):
+        return JsonResponse({"message": _("Objective not found.")}, status=404)
+    if any(not _can_archive_employee_objective(request, obj) for obj in objectives):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
+
+    archive = requested_active == "False"
+    EmployeeObjective.objects.filter(pk__in=ids).update(archive=archive)
+    messages.success(
+        request,
+        _("Selected objectives archived successfully.")
+        if archive
+        else _("Selected objectives un-archived successfully."),
+    )
     return JsonResponse({"message": "Success"})
 
 
 @login_required
 @manager_can_enter(perm="pms.delete_employeeobjective")
+@require_POST
+@transaction.atomic
 def objective_bulk_delete(request):
     """
     This method is used to bulk delete objective
     """
-    ids = request.POST.get("ids", "[]")
-    ids = json.loads(ids)
-    for objective_id in ids:
-        try:
-            objective = EmployeeObjective.objects.get(id=objective_id)
-            if objective.status == "Not Started" or objective.status == "Closed":
-                objective.delete()
-                messages.success(
-                    request,
-                    _("%(employee)s's %(objective)s deleted")
-                    % {
-                        "objective": objective.objective,
-                        "employee": objective.employee_id,
-                    },
-                )
-            else:
-                messages.warning(
-                    request,
-                    _("You can't delete objective %(objective)s with status %(status)s")
-                    % {"objective": objective.objective, "status": objective.status},
-                )
-        except EmployeeObjective.DoesNotExist:
-            messages.error(request, _("Objective not found."))
+    ids = _posted_json_ids(request)
+    if ids is None:
+        return JsonResponse({"message": _("Invalid request.")}, status=400)
+    objectives = list(
+        EmployeeObjective.objects.select_for_update()
+        .select_related("employee_id", "objective_id")
+        .filter(pk__in=ids)
+    )
+    if len(objectives) != len(ids):
+        return JsonResponse({"message": _("Objective not found.")}, status=404)
+    if any(obj.status not in {"Not Started", "Closed"} for obj in objectives):
+        return JsonResponse(
+            {"message": _("Only not-started or closed objectives can be deleted.")},
+            status=409,
+        )
+    try:
+        EmployeeObjective.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse({"message": _("Related entries exist.")}, status=409)
+    messages.success(request, _("Selected objectives deleted successfully."))
 
     return JsonResponse({"message": "Success"})
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def feedback_bulk_archive(request):
     """
     This method is used to archive/un-archive bulk feedbacks
     """
 
-    ids = request.POST.get("ids", "[]")
-    announy_ids = request.POST.get("announy_ids", "[]")
-    ids = json.loads(ids)
-    announy_ids = json.loads(announy_ids)
-    is_active = False
-    message = _("un-archived")
-    if request.GET.get("is_active") == "False":
-        is_active = True
-        message = _("archived")
-    for feedback_id in ids:
-        feedback_id = Feedback.objects.get(id=feedback_id)
-        feedback_id.archive = is_active
-        feedback_id.save()
-        messages.success(
-            request,
-            _("{feedback} is {message}").format(feedback=feedback_id, message=message),
-        )
+    ids = _posted_json_ids(request, allow_empty=True)
+    anonymous_ids = _posted_json_ids(request, "announy_ids", allow_empty=True)
+    requested_active = request.POST.get("is_active")
+    if (
+        ids is None
+        or anonymous_ids is None
+        or not ids
+        and not anonymous_ids
+        or requested_active not in {"True", "False"}
+    ):
+        return JsonResponse({"message": _("Invalid request.")}, status=400)
 
-    for feedback_id in announy_ids:
-        feedback_id = AnonymousFeedback.objects.get(id=feedback_id)
-        feedback_id.archive = is_active
-        feedback_id.save()
-        messages.success(
-            request,
-            _("{feedback} is {message}").format(
-                feedback=feedback_id.feedback_subject, message=message
-            ),
+    feedbacks = list(
+        Feedback.objects.select_for_update()
+        .select_related("employee_id", "manager_id")
+        .filter(pk__in=ids)
+    )
+    anonymous_feedbacks = list(
+        AnonymousFeedback.objects.select_for_update().filter(pk__in=anonymous_ids)
+    )
+    if len(feedbacks) != len(ids) or len(anonymous_feedbacks) != len(anonymous_ids):
+        return JsonResponse({"message": _("Feedback not found.")}, status=404)
+    if any(
+        not _can_manage_feedback(
+            request, feedback, "pms.change_feedback", allow_owner=True
         )
+        for feedback in feedbacks
+    ) or any(
+        not _can_manage_anonymous_feedback(
+            request, feedback, "pms.change_feedback"
+        )
+        for feedback in anonymous_feedbacks
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
+
+    archive = requested_active == "False"
+    Feedback.objects.filter(pk__in=ids).update(archive=archive)
+    AnonymousFeedback.objects.filter(pk__in=anonymous_ids).update(archive=archive)
+    messages.success(
+        request,
+        _("Selected feedback archived successfully.")
+        if archive
+        else _("Selected feedback un-archived successfully."),
+    )
     return JsonResponse({"message": "Success"})
 
 
 @login_required
 @manager_can_enter(perm="pms.delete_feedback")
+@require_POST
+@transaction.atomic
 def feedback_bulk_delete(request):
     """
     This method is used to bulk delete feedbacks
     """
-    ids = request.POST.get("ids", "[]")
-    announy_ids = request.POST.get("announy_ids", "[]")
-    ids = json.loads(ids)
-    announy_ids = json.loads(announy_ids)
-    for feedback_id in ids:
-        try:
-            feedback = Feedback.objects.get(id=feedback_id)
-            if feedback.status == "Closed" or feedback.status == "Not Started":
-                feedback.delete()
-                messages.success(
-                    request,
-                    _("Feedback %(review_cycle)s deleted successfully!")
-                    % {"review_cycle": feedback.review_cycle},
-                )
-            else:
-                messages.warning(
-                    request,
-                    _(
-                        "You can't delete feedback %(review_cycle)s with status %(status)s"
-                    )
-                    % {
-                        "review_cycle": feedback.review_cycle,
-                        "status": feedback.status,
-                    },
-                )
-
-        except Feedback.DoesNotExist:
-            messages.error(request, _("Feedback not found."))
-    for feedback_id in announy_ids:
-        feedback_id = AnonymousFeedback.objects.get(id=feedback_id)
-        message = _("Deleted")
-        # feedback_id.archive = is_active
-        feedback_id.delete()
-        messages.success(
-            request,
-            _("{feedback} is {message}").format(
-                feedback=feedback_id.feedback_subject, message=message
-            ),
+    ids = _posted_json_ids(request, allow_empty=True)
+    anonymous_ids = _posted_json_ids(request, "announy_ids", allow_empty=True)
+    if ids is None or anonymous_ids is None or not ids and not anonymous_ids:
+        return JsonResponse({"message": _("Invalid request.")}, status=400)
+    feedbacks = list(Feedback.objects.select_for_update().filter(pk__in=ids))
+    anonymous_feedbacks = list(
+        AnonymousFeedback.objects.select_for_update().filter(pk__in=anonymous_ids)
+    )
+    if len(feedbacks) != len(ids) or len(anonymous_feedbacks) != len(anonymous_ids):
+        return JsonResponse({"message": _("Feedback not found.")}, status=404)
+    answered_ids = set(
+        Answer.objects.filter(feedback_id_id__in=ids).values_list(
+            "feedback_id_id", flat=True
         )
+    )
+    if any(
+        feedback.status != "Closed"
+        and not (feedback.status == "Not Started" and feedback.id not in answered_ids)
+        for feedback in feedbacks
+    ):
+        return JsonResponse(
+            {"message": _("Only closed or unanswered feedback can be deleted.")},
+            status=409,
+        )
+    try:
+        Feedback.objects.filter(pk__in=ids).delete()
+        AnonymousFeedback.objects.filter(pk__in=anonymous_ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse({"message": _("Related entries exist.")}, status=409)
+    messages.success(request, _("Selected feedback deleted successfully."))
     return JsonResponse({"message": "Success"})
 
 
@@ -3258,6 +3397,8 @@ def edit_anonymous_feedback(request, obj_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def archive_anonymous_feedback(request, obj_id):
     """
     this function is used to archive the feedback for employee
@@ -3265,7 +3406,7 @@ def archive_anonymous_feedback(request, obj_id):
         id(int): primarykey of feedback
     """
 
-    feedback = AnonymousFeedback.objects.filter(id=obj_id).first()
+    feedback = AnonymousFeedback.objects.select_for_update().filter(id=obj_id).first()
     if not feedback:
         return HorillaRedirect(
             request, message=_("No Anonymous Feedback found matching the query.")
@@ -3291,6 +3432,8 @@ def archive_anonymous_feedback(request, obj_id):
 
 @login_required
 @permission_required("pms.delete_anonymousfeedback")
+@require_POST
+@transaction.atomic
 def delete_anonymous_feedback(request, obj_id):
     """
     Deletes an anonymous feedback entry.
@@ -3303,7 +3446,7 @@ def delete_anonymous_feedback(request, obj_id):
     Redirects to the feedback list view after deleting the feedback.
     """
     try:
-        feedback = AnonymousFeedback.objects.get(id=obj_id)
+        feedback = AnonymousFeedback.objects.select_for_update().get(id=obj_id)
         feedback.delete()
         messages.success(request, _("Feedback deleted successfully!"))
 
@@ -3453,6 +3596,8 @@ def employee_keyresult_update(request, kr_id):
 
 @login_required
 @manager_can_enter(perm="pms.delete_employeekeyresult")
+@require_POST
+@transaction.atomic
 def delete_employee_keyresult(request, kr_id):
     """
     This function is used to delete the employee key result
@@ -3461,7 +3606,12 @@ def delete_employee_keyresult(request, kr_id):
         return:
             redirect to detailed of employee objective
     """
-    emp_kr = EmployeeKeyResult.objects.filter(id=kr_id).first()
+    emp_kr = (
+        EmployeeKeyResult.objects.select_for_update()
+        .select_related("employee_objective_id__objective_id")
+        .filter(id=kr_id)
+        .first()
+    )
     if not emp_kr:
         return HorillaRedirect(
             request, message=_("No Employee Key Result found matching the query.")
@@ -3480,6 +3630,8 @@ def delete_employee_keyresult(request, kr_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def employee_keyresult_update_status(request, kr_id):
     """
     This function is used to delete the employee key result
@@ -3488,27 +3640,26 @@ def employee_keyresult_update_status(request, kr_id):
         return:
             redirect to detailed of employee objective
     """
-    emp_kr = EmployeeKeyResult.objects.filter(id=kr_id).first()
+    emp_kr = (
+        EmployeeKeyResult.objects.select_for_update()
+        .select_related("employee_objective_id__objective_id")
+        .filter(id=kr_id)
+        .first()
+    )
     if not emp_kr:
 
         return HorillaRedirect(
             request, message=_("No Employee Key Result found matching the query.")
         )
 
-    if (
-        request.user.has_perm("pms.change_objective")
-        or request.user.has_perm("pms.change_employeeobjective")
-        or request.user.has_perm("pms.change_employeekeyresult")
-        or request.user.employee_get
-        in emp_kr.employee_objective_id.objective_id.managers.all()
-        or (
-            emp_kr.employee_objective_id.objective_id.self_employee_progress_update
-            and (emp_kr.employee_id == request.user.employee_get)
-        )
-    ):
+    if _can_update_employee_objective(request, emp_kr.employee_objective_id):
         status = request.POST.get("key_result_status")
+        if not _valid_status(EmployeeKeyResult, status):
+            return JsonResponse({"message": "Invalid key result status"}, status=400)
+        if emp_kr.current_value >= emp_kr.target_value:
+            status = "Closed"
         emp_kr.status = status
-        emp_kr.save()
+        emp_kr.save(update_fields=["status"])
         messages.success(request, _("Key result sattus changed to {}.").format(status))
         return redirect(
             f"/pms/kr-table-view/{emp_kr.employee_objective_id.id}?&objective_id={emp_kr.employee_objective_id.objective_id.id}"
@@ -3519,31 +3670,29 @@ def employee_keyresult_update_status(request, kr_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def key_result_current_value_update(request):
     """
     This method is used to update keyresult current value
     """
     try:
-        current_value = eval_validate(request.POST.get("current_value"))
-        emp_kr_id = eval_validate(request.POST.get("emp_key_result_id"))
-        emp_kr = EmployeeKeyResult.objects.get(id=emp_kr_id)
-        if (
-            request.user.has_perm("pms.change_objective")
-            or request.user.has_perm("pms.change_employeeobjective")
-            or request.user.has_perm("pms.change_employeekeyresult")
-            or request.user.employee_get
-            in emp_kr.employee_objective_id.objective_id.managers.all()
-            or (
-                emp_kr.employee_objective_id.objective_id.self_employee_progress_update
-                and (
-                    emp_kr.employee_objective_id.employee_id
-                    == request.user.employee_get
-                )
-            )
-        ):
-            current_value = max(0, current_value)
+        current_value = int(request.POST.get("current_value"))
+        emp_kr_id = int(request.POST.get("emp_key_result_id"))
+        emp_kr = (
+            EmployeeKeyResult.objects.select_for_update()
+            .select_related("employee_objective_id__objective_id")
+            .get(id=emp_kr_id)
+        )
+        if _can_update_employee_objective(request, emp_kr.employee_objective_id):
+            if current_value < 0 or current_value > emp_kr.target_value:
+                return JsonResponse({"type": "error", "message": "Invalid value"}, status=400)
             emp_kr.current_value = current_value
-            emp_kr.save()
+            if current_value == emp_kr.target_value:
+                emp_kr.status = "Closed"
+                emp_kr.save(update_fields=["current_value", "status"])
+            else:
+                emp_kr.save(update_fields=["current_value"])
             emp_kr.employee_objective_id.update_objective_progress()
             messages.success(request, _("Value updated"))
         else:
@@ -3559,9 +3708,8 @@ def key_result_current_value_update(request):
                 "pk": emp_kr.employee_objective_id.pk,
             }
         )
-    except Exception as e:
-        print(e)
-        return JsonResponse({"type": "error"})
+    except (TypeError, ValueError, EmployeeKeyResult.DoesNotExist):
+        return JsonResponse({"type": "error"}, status=400)
 
 
 @login_required
@@ -3727,6 +3875,8 @@ def create_meetings(request):
 @login_required
 @hx_request_required
 @permission_required("pms.change_meetings")
+@require_POST
+@transaction.atomic
 def archive_meetings(request, obj_id):
     """
     This view is used to archive and unarchive the meeting ,
@@ -3736,7 +3886,7 @@ def archive_meetings(request, obj_id):
     Returns:
         it will redirect to view_meetings.html .
     """
-    meeting = Meetings.find(obj_id)
+    meeting = Meetings.objects.select_for_update().filter(id=obj_id).first()
     if not meeting:
 
         return HorillaRedirect(
@@ -3744,7 +3894,7 @@ def archive_meetings(request, obj_id):
         )
 
     meeting.is_active = not meeting.is_active
-    meeting.save()
+    meeting.save(update_fields=["is_active"])
     message = (
         _("Meeting unarchived successfully")
         if meeting.is_active
@@ -3757,6 +3907,8 @@ def archive_meetings(request, obj_id):
 @login_required
 @hx_request_required
 @permission_required("pms.change_meetings")
+@require_POST
+@transaction.atomic
 def meeting_manager_remove(request, meet_id, manager_id):
     """
     This view is used to remove the manager from the meeting ,
@@ -3766,7 +3918,7 @@ def meeting_manager_remove(request, meet_id, manager_id):
     Returns:
         it will redirect to view_meetings.html .
     """
-    meeting = Meetings.find(meet_id)
+    meeting = Meetings.objects.select_for_update().filter(id=meet_id).first()
     if not meeting:
 
         return HorillaRedirect(
@@ -3784,6 +3936,8 @@ def meeting_manager_remove(request, meet_id, manager_id):
 @login_required
 @hx_request_required
 @permission_required("pms.change_meetings")
+@require_POST
+@transaction.atomic
 def meeting_employee_remove(request, meet_id, employee_id):
     """
     This view is used to remove the employees from the meeting ,
@@ -3793,7 +3947,7 @@ def meeting_employee_remove(request, meet_id, employee_id):
     Returns:
         it will redirect to view_meetings.html .
     """
-    meeting = Meetings.find(meet_id)
+    meeting = Meetings.objects.select_for_update().filter(id=meet_id).first()
     if not meeting:
 
         return HorillaRedirect(
@@ -4070,12 +4224,14 @@ def dashboard_feedback_answer(request):
 
 @login_required
 @permission_required("pms.delete_bonuspointsetting")
+@require_POST
+@transaction.atomic
 def delete_bonus_point_setting(request, pk):
     """
     Delete bonus point setting
     """
     try:
-        BonusPointSetting.objects.get(id=pk).delete()
+        BonusPointSetting.objects.select_for_update().get(id=pk).delete()
         messages.success(request, _("Bonus Point Setting deleted"))
     except Exception as e:
         logger.error(e)
@@ -4085,12 +4241,14 @@ def delete_bonus_point_setting(request, pk):
 
 @login_required
 @permission_required("pms.delete_employeebonuspoint")
+@require_POST
+@transaction.atomic
 def delete_employee_bonus_point(request, pk):
     """
     Automation delete view
     """
     try:
-        bonus = EmployeeBonusPoint.objects.get(id=pk)
+        bonus = EmployeeBonusPoint.objects.select_for_update().get(id=pk)
         bonus.delete()
         messages.success(request, _(f"{bonus} deleted"))
     except Exception as e:

@@ -11,7 +11,7 @@ hr_changes/projections/horilla_work_info.py —— Legacy WorkInformation 投影
 - job_position ← 主岗 position（按 HrLegacyObjectLink 或 position_code ↔ legacy JobPosition.job_position）；
 - reporting_manager ← reporting_staff（经 legacy_employee_id 映射 legacy Employee）；
 - employee_type ← relationship_type（→ legacy EmployeeType 名称匹配）；
-- location ← 主岗 location（V1 无权威字段则保留旧值）。
+- location ← 主岗 location_code（HR02 组织版本受控地点代码）。
 未映射到 legacy FK 时置空并计入未映射清单（由 S10 迁移核对）。
 """
 
@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Optional
+
+from django.utils import timezone
 
 from hr_changes.constants import ChangeActionCode
 from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
@@ -48,8 +50,8 @@ def project_staff_work_info(tenant_id: int, staff_id) -> ProjectionResult:
     result["legacyEmployeeId"] = employee.id
 
     qs = EffectiveDatedQueryService(tenant_id)
-    primary = qs.primary_assignment_as_of(staff_id, date.today())
-    rel = qs.relationships_as_of(staff_id, date.today()).first()
+    primary = qs.primary_assignment_as_of(staff_id, timezone.localdate())
+    rel = qs.relationships_as_of(staff_id, timezone.localdate()).first()
 
     work_info, _ = EmployeeWorkInformation.objects.get_or_create(employee_id=employee)
     changes: dict = {}
@@ -74,6 +76,8 @@ def project_staff_work_info(tenant_id: int, staff_id) -> ProjectionResult:
             changes["reporting_manager_id"] = manager
         else:
             unmapped.append("reporting_manager")
+    if primary and primary.location_code:
+        changes["location"] = primary.location_code
     if rel:
         employee_type = _resolve_legacy_employee_type(tenant_id, rel.relationship_type)
         if employee_type is not None:
@@ -86,7 +90,10 @@ def project_staff_work_info(tenant_id: int, staff_id) -> ProjectionResult:
             setattr(work_info, field, value)
         work_info.save()
         result["updated"] = True
-        result["fields"] = {k: getattr(v, "id", None) for k, v in changes.items()}
+        result["fields"] = {
+            key: (getattr(value, "id", None) if hasattr(value, "id") else value)
+            for key, value in changes.items()
+        }
     result["unmapped"] = unmapped
     return result
 

@@ -20,7 +20,25 @@
     .portal__card { background: var(--hr-surface); border: 1px solid var(--hr-border); border-radius: var(--hr-radius-md); padding: 16px; margin-bottom: 12px; }
     .portal__card h3 { margin: 0 0 8px; font-size: 16px; }
     .portal__apply { display: inline-block; margin-top: 8px; padding: 8px 16px; background: var(--hr-primary-600); color: #fff; border-radius: var(--hr-radius-sm); text-decoration: none; }
+    button.portal__apply { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
     .portal__state { padding: 24px; text-align: center; color: var(--hr-text-500); }
+    .portal__form[hidden] { display: none; }
+    .portal__form { display: grid; gap: 12px; }
+    .portal__field { display: grid; gap: 6px; }
+    .portal__field span { color: var(--hr-text-700); font-size: 13px; font-weight: 700; }
+    .portal__field input, .portal__field select, .portal__field textarea { width: 100%; box-sizing: border-box; min-height: 42px; padding: 9px 10px; border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); background: var(--hr-surface); color: var(--hr-text-900); font: inherit; }
+    .portal__field textarea { min-height: 82px; resize: vertical; }
+    .portal__consent { display: flex; align-items: flex-start; gap: 9px; color: var(--hr-text-700); font-size: 13px; line-height: 1.6; }
+    .portal__consent input { width: auto; min-height: 0; margin-top: 4px; }
+    .portal__privacy { border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); padding: 11px 12px; background: var(--hr-canvas); font-size: 13px; }
+    .portal__privacy summary { cursor: pointer; color: var(--hr-text-900); font-weight: 700; }
+    .portal__privacy dl { display: grid; grid-template-columns: 6em 1fr; gap: 6px 10px; margin: 10px 0 0; line-height: 1.6; }
+    .portal__privacy dt { font-weight: 700; }
+    .portal__privacy dd { margin: 0; }
+    .portal__result { display: none; padding: 11px 12px; border-radius: var(--hr-radius-sm); font-size: 13px; line-height: 1.6; }
+    .portal__result.show { display: block; }
+    .portal__result.ok { background: #edf9f4; color: #116a4b; }
+    .portal__result.error { background: #fff3f3; color: #a72f3a; }
   </style>
 </head>
 <body>
@@ -33,11 +51,58 @@
       <h1 class="portal__title">{{ campaign.title }}</h1>
       {% if campaign.description %}<p class="portal__meta">{{ campaign.description }}</p>{% endif %}
       {% if campaign.application_close_at %}
-        <p class="portal__meta">报名截止：{{ campaign.application_close_at|date:"Y-m-d H:i" }}</p>
+        <p class="portal__meta">报名截止：{{ campaign.application_close_at|date:"Y年m月d日 H:i" }}</p>
       {% endif %}
       <div id="portal-positions">
         <div class="portal__state">加载中…</div>
       </div>
+      <form id="portal-apply-form" class="portal__card portal__form" hidden>
+        <h2 class="portal__title">提交岗位申请</h2>
+        <label class="portal__field"><span>申请岗位</span><select name="positionId" required></select></label>
+        <label class="portal__field"><span>姓名</span><input name="legalName" required maxlength="100"></label>
+        <label class="portal__field"><span>常用称呼</span><input name="preferredName" maxlength="100"></label>
+        <label class="portal__field"><span>邮箱</span><input name="email" type="email" required></label>
+        <label class="portal__field"><span>手机号</span><input name="mobile" inputmode="tel" required></label>
+        <label class="portal__field"><span>应聘说明</span><textarea name="statement" required></textarea></label>
+        <details class="portal__privacy">
+          <summary>招聘个人信息处理告知（报名之前请阅读）</summary>
+          <dl>
+            <dt>处理者</dt><dd>{{ privacy_school_name|default:"本招聘单位" }}</dd>
+            <dt>处理目的</dt><dd>本次招聘报名、资格审查、考试考察、录用衔接及依法归档。</dd>
+            <dt>处理方式</dt><dd>通过本系统收集、存储、校验、查询并由获授权的招聘工作人员使用；不用于与本次招聘无关的用途。</dd>
+            <dt>信息种类</dt><dd>姓名、常用称呼、报名岗位、邮箱、手机号和应聘说明。</dd>
+            <dt>保存期限</dt><dd>常规保留 {{ privacy_retention_days|default:"730" }} 天；法律法规或档案管理另有要求的，从其规定。期限届满后依法删除、匿名化或限制处理。</dd>
+            <dt>个人权利</dt><dd>可申请查阅、复制、更正、补充、删除、限制处理或撤回同意；受理渠道：{{ privacy_contact|default:"招聘公告公布的联系方式" }}。</dd>
+            <dt>告知版本</dt><dd>{{ privacy_notice_version|default:"2026-01" }}</dd>
+          </dl>
+        </details>
+        <label class="portal__consent"><input name="privacyConsent" type="checkbox" required><span>我已阅读上述告知，并同意按告知内容处理我的报名信息。</span></label>
+        <button class="portal__apply" type="submit">确认提交申请</button>
+        <div id="portal-apply-result" class="portal__result" role="status" aria-live="polite"></div>
+      </form>
+      <form id="portal-query-form" class="portal__card portal__form">
+        <h2 class="portal__title">查询我的报名</h2>
+        <p class="portal__meta">报名成功后，查询凭证会安全保存在当前浏览器。</p>
+        <label class="portal__field"><span>邮箱</span><input name="email" type="email" autocomplete="email" required></label>
+        <label class="portal__field"><span>手机号</span><input name="mobile" inputmode="tel" autocomplete="tel" required></label>
+        <button class="portal__apply" type="submit">查询报名进度</button>
+        <div id="portal-query-result" class="portal__result" role="status" aria-live="polite"></div>
+        <div id="portal-applications"></div>
+      </form>
+      <form id="portal-receipt-request-form" class="portal__card portal__form">
+        <h2 class="portal__title">找回查询凭证</h2>
+        <p class="portal__meta">更换手机或清理浏览器后，可用报名邮箱验证码重新获取。</p>
+        <label class="portal__field"><span>邮箱</span><input name="email" type="email" autocomplete="email" required></label>
+        <label class="portal__field"><span>手机号</span><input name="mobile" inputmode="tel" autocomplete="tel" required></label>
+        <button class="portal__apply" type="submit">获取邮箱验证码</button>
+        <div id="portal-receipt-result" class="portal__result" role="status" aria-live="polite"></div>
+      </form>
+      <form id="portal-receipt-verify-form" class="portal__card portal__form" hidden>
+        <h2 class="portal__title">验证报名邮箱</h2>
+        <input name="challengeId" type="hidden">
+        <label class="portal__field"><span>6 位邮箱验证码</span><input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+        <button class="portal__apply" type="submit">验证并找回</button>
+      </form>
     </div>
   </main>
   <script src="{% static 'hr/js/core/api-client.js' %}"></script>
@@ -46,20 +111,29 @@
       var main = document.querySelector('[data-portal-token]');
       if (!main) return;
       var token = main.getAttribute('data-portal-token');
+      var receiptKey = 'hr04-receipt:' + token;
+      var positionRows = [];
+      function esc(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) {
+          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];
+        });
+      }
       window.HrApi.request('/recruit/' + token + '?format=json')
         .then(function (res) {
-          var positions = (res.data && res.data.positions) || [];
+          var payload = (res.data && res.data.data) || res.data || {};
+          var positions = payload.positions || [];
+          positionRows = positions.filter(function (position) { return position.status === 'OPEN'; });
           var box = document.getElementById('portal-positions');
-          if (!positions.length) {
+          if (!positionRows.length) {
             box.innerHTML = '<div class="portal__state">当前暂无开放岗位</div>';
             return;
           }
-          box.innerHTML = positions.map(function (p) {
+          box.innerHTML = positionRows.map(function (p) {
             return '<div class="portal__card">' +
-              '<h3>' + p.post_catalog_name + '</h3>' +
-              '<p class="portal__meta">' + (p.organization_name || '') + '</p>' +
-              '<p class="portal__meta">招聘人数：' + p.max_hires + '</p>' +
-              '<a class="portal__apply" href="/recruit/' + token + '/positions/' + p.slug + '">查看详情</a>' +
+              '<h3>' + esc(p.post_catalog_name) + '</h3>' +
+              '<p class="portal__meta">' + esc(p.organization_name || '') + '</p>' +
+              '<p class="portal__meta">招聘人数：' + esc(p.max_hires) + '</p>' +
+              '<button class="portal__apply" type="button" data-portal-apply="' + esc(p.id) + '">申请该岗位</button>' +
               '</div>';
           }).join('');
         })
@@ -67,6 +141,118 @@
           var box = document.getElementById('portal-positions');
           box.innerHTML = '<div class="portal__state">' + (window.HrApi.apiErrorToMessage(err) || '招聘项目不存在或未开放') + '</div>';
         });
+
+      document.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-portal-apply]');
+        if (!button) return;
+        var form = document.getElementById('portal-apply-form');
+        form.hidden = false;
+        form.elements.positionId.innerHTML = positionRows.map(function (position) {
+          return '<option value="' + esc(position.id) + '">' + esc(position.post_catalog_name + ' · ' + (position.organization_name || '')) + '</option>';
+        }).join('');
+        form.elements.positionId.value = button.getAttribute('data-portal-apply');
+        form.elements.legalName.focus();
+      });
+
+      document.getElementById('portal-apply-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var form = event.currentTarget;
+        var result = document.getElementById('portal-apply-result');
+        var submit = form.querySelector('[type="submit"]');
+        submit.disabled = true;
+        window.HrApi.request('/recruit/' + token + '/apply', {
+          method: 'POST',
+          headers: {'Idempotency-Key': 'portal-' + Date.now() + '-' + Math.random().toString(16).slice(2)},
+          body: {
+            position_id: form.elements.positionId.value,
+            legal_name: form.elements.legalName.value,
+            preferred_name: form.elements.preferredName.value,
+            primary_email: form.elements.email.value,
+            primary_mobile: form.elements.mobile.value,
+            privacy_consent: form.elements.privacyConsent.checked,
+            form_data: {statement: form.elements.statement.value}
+          }
+        }).then(function (response) {
+          var payload = (response.data && response.data.data) || response.data || {};
+          if (payload.access_token) localStorage.setItem(receiptKey, payload.access_token);
+          result.className = 'portal__result show ok';
+          result.textContent = '申请已提交，申请编号：' + (payload.application_no || '已生成');
+          submit.disabled = false;
+        }).catch(function (error) {
+          result.className = 'portal__result show error';
+          result.textContent = window.HrApi.apiErrorToMessage(error) || '提交失败，请稍后重试';
+          submit.disabled = false;
+        });
+      });
+
+      document.getElementById('portal-query-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var form = event.currentTarget;
+        var result = document.getElementById('portal-query-result');
+        var receipt = localStorage.getItem(receiptKey);
+        if (!receipt) {
+          result.className = 'portal__result show error';
+          result.textContent = '当前浏览器没有查询凭证，请使用下方“找回查询凭证”。';
+          return;
+        }
+        window.HrApi.request('/recruit/my-applications', {
+          method: 'POST',
+          body: {primary_email: form.elements.email.value, primary_mobile: form.elements.mobile.value, access_token: receipt}
+        }).then(function (response) {
+          var payload = (response.data && response.data.data) || response.data || {};
+          var applications = payload.applications || [];
+          result.className = 'portal__result show ok';
+          result.textContent = '查询到 ' + applications.length + ' 条报名记录';
+          document.getElementById('portal-applications').innerHTML = applications.map(function (item) {
+            return '<div class="portal__card"><strong>' + esc(item.application_no || '') + '</strong><p class="portal__meta">' + esc(item.position || '') + ' · ' + esc(item.canonical_status_label || item.canonical_status || '') + '</p></div>';
+          }).join('');
+        }).catch(function (error) {
+          result.className = 'portal__result show error';
+          result.textContent = window.HrApi.apiErrorToMessage(error) || '查询失败，请稍后重试';
+        });
+      });
+
+      document.getElementById('portal-receipt-request-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var form = event.currentTarget;
+        var result = document.getElementById('portal-receipt-result');
+        var submit = form.querySelector('[type="submit"]');
+        submit.disabled = true;
+        window.HrApi.request('/recruit/' + token + '/receipt/request', {
+          method: 'POST',
+          body: {primary_email: form.elements.email.value, primary_mobile: form.elements.mobile.value}
+        }).then(function (response) {
+          var payload = (response.data && response.data.data) || response.data || {};
+          var verifyForm = document.getElementById('portal-receipt-verify-form');
+          verifyForm.elements.challengeId.value = payload.challenge_id || '';
+          verifyForm.hidden = false;
+          verifyForm.elements.otp.focus();
+          result.className = 'portal__result show ok';
+          result.textContent = payload.message || '若报名信息匹配，验证码已发送至报名邮箱。';
+        }).catch(function (error) {
+          result.className = 'portal__result show error';
+          result.textContent = window.HrApi.apiErrorToMessage(error) || '验证码发送失败，请稍后重试';
+        }).finally(function () { submit.disabled = false; });
+      });
+
+      document.getElementById('portal-receipt-verify-form').addEventListener('submit', function (event) {
+        event.preventDefault();
+        var form = event.currentTarget;
+        var result = document.getElementById('portal-receipt-result');
+        window.HrApi.request('/recruit/' + token + '/receipt/verify', {
+          method: 'POST',
+          body: {challenge_id: form.elements.challengeId.value, otp: form.elements.otp.value}
+        }).then(function (response) {
+          var payload = (response.data && response.data.data) || response.data || {};
+          localStorage.setItem(receiptKey, payload.access_token);
+          result.className = 'portal__result show ok';
+          result.textContent = '查询凭证已找回，现在可以查询报名进度。';
+          form.hidden = true;
+        }).catch(function (error) {
+          result.className = 'portal__result show error';
+          result.textContent = window.HrApi.apiErrorToMessage(error) || '验证码不正确或已失效';
+        });
+      });
     })();
   </script>
 </body>

@@ -3,7 +3,7 @@ hr_external/models/engagement.py —— HrExternalEngagement 外聘聘用关系�
 
 等价成熟 HCM 的 Work Order/Contingent Engagement：
 - 一个 Person 可多 Engagement（多学院并行，§21）；一个 Engagement 退出不能误杀另一个（§138.14）。
-- agreement_id / agreement_status 只引用 HR07（§7）；HR07 未交付 → AgreementProvider 占位解析。
+- agreement_id / agreement_status 只引用 HR07（§7），由正式 AgreementProvider 解析。
 - review_at 提前触发续聘评估（§59）；到期只 Review 不自动续（§138.11）。
 - 状态机见 constants.ExternalEngagementStatus。
 """
@@ -60,7 +60,7 @@ class HrExternalEngagement(models.Model):
     end_at = models.DateField(null=True, blank=True)
     review_at = models.DateField(null=True, blank=True)
     workload_cap = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    # ---- HR07 协议（§7/§93；Provider 占位）----
+    # ---- HR07 正式协议（§7/§93；Provider 投影）----
     agreement_id = models.CharField(max_length=64, blank=True, default="")
     agreement_status = models.CharField(
         max_length=32,

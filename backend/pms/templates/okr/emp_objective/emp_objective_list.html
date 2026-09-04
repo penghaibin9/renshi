@@ -173,7 +173,7 @@
                                                                 <a
                                                                     class="fw-light"
                                                                     onclick="return confirm(`{% trans 'Do you want to un-archive this employee objective?' %}`)"
-                                                                    href='{% url "archive-employee-objective" emp_objective.id %}?single_view=False'
+                                                                    href="#" hx-post='{% url "archive-employee-objective" emp_objective.id %}?single_view=False'
                                                                     hx-target="#emp_objective_card"
                                                                 >{% trans "Unarchive" %}</a>
                                                             </li>
@@ -182,7 +182,7 @@
                                                                 <a
                                                                     class="fw-light"
                                                                     onclick="return confirm(`{% trans 'Do you want to archive this employee objective?' %}`)"
-                                                                    href='{% url "archive-employee-objective" emp_objective.id %}?single_view=False'
+                                                                    href="#" hx-post='{% url "archive-employee-objective" emp_objective.id %}?single_view=False'
                                                                     hx-target="#emp_objective_card"
                                                                 >{% trans "Archive" %}</a>
                                                             </li>
@@ -195,7 +195,7 @@
                                                                 data-toggle="oh-modal-toggle"
                                                                 data-target="#objectDetailsModal"
                                                                 hx-confirm="{% trans 'Do you want to delete this employee objective?' %}"
-                                                                hx-get='{% url "delete-employee-objective" emp_objective.id %}?single_view="False'
+                                                                hx-post='{% url "delete-employee-objective" emp_objective.id %}?single_view=False'
                                                                 hx-target="#objectDetailsModalTarget"
                                                             >{% trans "Delete" %}</a>
                                                         </li>

@@ -54,7 +54,7 @@ class LoginAPIView(APIView):
         tags=["auth"],
     )
     def post(self, request):
-        if "username" and "password" in request.data.keys():
+        if {"username", "password"}.issubset(request.data):
             username = request.data.get("username")
             password = request.data.get("password")
             user = authenticate(username=username, password=password)
@@ -93,7 +93,9 @@ class LoginAPIView(APIView):
             else:
                 return Response({"error": "Invalid credentials"}, status=401)
         else:
-            return Response({"error": "Please provide Username and Password"})
+            return Response(
+                {"error": "Please provide Username and Password"}, status=400
+            )
 
 
 class PasswordResetAPIView(APIView):

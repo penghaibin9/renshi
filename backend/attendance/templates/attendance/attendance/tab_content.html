@@ -618,7 +618,9 @@
                                     <div class="oh-sticky-table__td oh-sticky-table__right">
                                         {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
                                             <a
-                                                href='{% url "validate-this-attendance" attendance.id %}'
+                                                href="#"
+                                                hx-post='{% url "validate-this-attendance" attendance.id %}'
+                                                hx-swap="none"
                                                 hx-target="#updateAttendanceBody"
                                                 data-req="/attendance/request-attendance-view/?id={{attendance.id}}"
                                                 onclick="event.stopPropagation(); {% if attendance.is_validate_request %}  event.preventDefault(); showSweetAlert($(this).data('req')); {% endif %}"
@@ -984,7 +986,9 @@
                                         {% elif minot <= attendance.overtime_second %}
                                             <a
                                                 type="submit"
-                                                href="{% url 'approve-overtime' attendance.id %}"
+                                                href="#"
+                                                hx-post="{% url 'approve-overtime' attendance.id %}"
+                                                hx-swap="none"
                                                 title="{% trans 'Approve Overtime' %}"
                                                 class="oh-btn oh-btn--success w-100"
                                                 onclick="event.stopPropagation()"
@@ -1026,7 +1030,8 @@
                                                 data-ot-approve-id="{{attendance.id}}"
                                                 hidden
                                                 href=""
-                                                onclick="window.location.href='{% url 'approve-overtime' attendance.id %}'"
+                                                hx-post="{% url 'approve-overtime' attendance.id %}"
+                                                hx-swap="none"
                                                 title="{% trans 'Approve Overtime' %}"
                                                 class="oh-btn oh-btn--success w-100"
                                             >

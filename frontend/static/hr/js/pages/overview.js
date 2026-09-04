@@ -19,8 +19,8 @@
     active_headcount: { label: "在岗教职工", unit: "", drill: "/hr/workforce" },
     full_time_teacher: { label: "专任教师", unit: "", drill: "/hr/workforce" },
     double_teacher_valid: { label: "双师型", unit: "", drill: "/hr/workforce" },
-    new_join_ytd: { label: "本年新进", unit: "", drill: "/employee/employee-view-new/" },
-    departure_ytd: { label: "本年离退", unit: "", drill: "/employee/employee-view-new/" },
+    new_join_ytd: { label: "本年新进", unit: "", drill: "/hr/staff/" },
+    departure_ytd: { label: "本年离退", unit: "", drill: "/hr/staff/" },
     open_risk_count: { label: "待处理风险", unit: "项", drill: "/hr/alerts" },
   };
 

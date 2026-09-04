@@ -8,7 +8,10 @@ GET  /api/hr/v1/staff/{staff_id}/material-requests  材料请求列表
 from __future__ import annotations
 
 import json
+from datetime import date
 
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_staff.api.base import (
@@ -18,7 +21,8 @@ from hr_staff.api.base import (
     make_staff_context,
 )
 from hr_staff.context import HrStaffContextError
-from hr_staff.models import HrMaterialRequest
+from hr_staff.constants import MaterialCategoryCode
+from hr_staff.models import HrMaterialRequest, HrStaffMaster
 from hr_staff.permissions import require_hr_staff_permission
 
 
@@ -65,16 +69,39 @@ def create_request(request, staff_id):
     try:
         body = json.loads(request.body or b"{}")
     except (ValueError, TypeError):
-        body = {}
-    req = HrMaterialRequest.objects.create(
-        tenant_id=resp.tenant_id,
-        target_staff_id=staff_id,
-        request_type=body.get("request_type", ""),
-        required_category_code=body.get("required_category_code", ""),
-        due_at=body.get("due_at"),
-        instruction=body.get("instruction", ""),
-        requested_by=request.user.id,
-    )
+        return error_response(request, "INVALID_REQUEST", "请求内容不是有效 JSON", status=400)
+    if not isinstance(body, dict):
+        return error_response(request, "INVALID_REQUEST", "请求内容必须是对象", status=400)
+
+    category = str(body.get("required_category_code") or "").strip()
+    if category not in MaterialCategoryCode.values:
+        return error_response(request, "INVALID_REQUEST", "请选择有效的材料分类", status=400)
+    try:
+        due_at = date.fromisoformat(body["due_at"]) if body.get("due_at") else None
+    except (TypeError, ValueError):
+        return error_response(request, "INVALID_REQUEST", "截止日期格式无效", status=400)
+
+    try:
+        with transaction.atomic():
+            staff = HrStaffMaster.objects.select_for_update().filter(
+                tenant_id=resp.tenant_id,
+                id=staff_id,
+            ).first()
+            if staff is None:
+                return error_response(request, "STAFF_NOT_FOUND", "未找到该教职工", status=404)
+            req = HrMaterialRequest(
+                tenant_id=resp.tenant_id,
+                target_staff_id=staff,
+                request_type=str(body.get("request_type") or "").strip(),
+                required_category_code=category,
+                due_at=due_at,
+                instruction=str(body.get("instruction") or "").strip(),
+                requested_by=request.user.id,
+            )
+            req.full_clean()
+            req.save()
+    except ValidationError as exc:
+        return error_response(request, "INVALID_REQUEST", "; ".join(exc.messages), status=400)
     payload = api_root(request)
     payload["data"] = {"id": str(req.id), "status": req.status}
     return json_response(request, payload, status=201)

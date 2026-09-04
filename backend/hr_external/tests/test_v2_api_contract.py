@@ -8,9 +8,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import RequestFactory, TestCase
+from hr_staff.models import HrPerson
 
-from hr_external.api import hiring, renewal_exit, tasks
+from hr_external.api import hiring, integration, renewal_exit, tasks
 from hr_external.models import (
+    HrExternalAccessGrant,
     HrExternalEngagement,
     HrExternalExitCase,
     HrExternalHiringCase,
@@ -18,7 +20,6 @@ from hr_external.models import (
 )
 from hr_external.services.category_service import CategoryService
 from hr_external.services.profile_service import ProfileService
-from hr_staff.models import HrPerson
 
 
 class Hr08CollectionDispatcherTests(TestCase):
@@ -187,3 +188,24 @@ class Hr08ActionClosureTests(TestCase):
         self.assertEqual(second.status_code, 200)
         case.refresh_from_db()
         self.assertEqual(case.status, "READY_TO_EXIT")
+
+    def test_engagement_access_api_returns_chinese_status_and_system_labels(self):
+        HrExternalAccessGrant.objects.create(
+            tenant_id=self.TENANT,
+            engagement_id=self.engagement,
+            target_system="EXTERNAL_PORTAL",
+            role_code="EXTERNAL_TEACHER_PORTAL",
+            status="GRANTED",
+        )
+        request = self.factory.get(
+            f"/api/v1/hr/external-teachers/engagements/{self.engagement.id}/access"
+        )
+        request.user = self.user
+        with patch.object(integration, "_ctx", return_value=(self.context, None)):
+            response = integration.engagement_access(request, self.engagement.id)
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)["data"]
+        self.assertEqual(payload["statusLabel"], "聘期中")
+        self.assertEqual(payload["items"][0]["targetSystemLabel"], "外聘人员门户")
+        self.assertEqual(payload["items"][0]["statusLabel"], "已授权")

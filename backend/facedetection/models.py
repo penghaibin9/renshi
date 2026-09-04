@@ -33,16 +33,6 @@ class FaceDetection(models.Model):
         self.full_clean()  # Ensures `clean()` runs
         super().save(*args, **kwargs)
 
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["company_id"],
-                name="unique_company_id_when_not_null_facedetection",
-                condition=~models.Q(company_id=None),
-            )
-        ]
-
-
 class EmployeeFaceDetection(models.Model):
     employee_id = models.OneToOneField(
         "employee.Employee", related_name="face_detection", on_delete=models.CASCADE

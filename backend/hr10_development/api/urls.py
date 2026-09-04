@@ -96,6 +96,7 @@ urlpatterns = [
     path("api/v1/hr/development/imports/upload", imports.upload_import, name="import-upload"),
     path("api/v1/hr/development/imports/<int:job_id>/validate", imports.validate_import, name="import-validate"),
     path("api/v1/hr/development/imports/<int:job_id>/confirm", imports.confirm_import, name="import-confirm"),
+    path("api/v1/hr/development/imports/<int:job_id>/errors/download", imports.download_error_workbook, name="import-error-workbook-download"),
     path("api/v1/hr/development/imports/<int:job_id>", imports.get_import_status, name="import-status"),
 
     # ============ Internal Provider APIs (S9) ============

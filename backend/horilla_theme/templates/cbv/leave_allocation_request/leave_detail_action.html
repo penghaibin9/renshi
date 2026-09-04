@@ -4,7 +4,9 @@
 {% if perms.leave.change_leaveallocationrequest or can_manage %}
     {% if instance.status == 'requested' %}
         <a
-            href="{% url 'leave-allocation-request-approve' instance.id %}"
+            href="#"
+            hx-post="{% url 'leave-allocation-request-approve' instance.id %}"
+            hx-swap="none"
             class="w-24 px-4 py-2 bg-success text-white rounded-md text-xs flex items-center justify-center gap-2 hover:bg-success-dark transition duration-300"
             title="{% trans 'Approve' %}"
         >

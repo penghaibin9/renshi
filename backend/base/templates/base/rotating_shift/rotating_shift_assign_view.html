@@ -149,7 +149,7 @@
                                                 {% if perms.base.change_rotatingshiftassign or request.user|is_reportingmanager %}
                                                     {% if rshift.is_active %}
                                                         <form hx-confirm="{% trans 'Do you want to archive this rotating shift assign?' %}"
-                                                            hx-get="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
+                                                            hx-post="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
                                                             hx-target="#view-container" style="width:100%">
                                                             <input type="hidden" name="is_active" value="{% trans 'False' %}" id="">
                                                             <button class="oh-btn oh-btn--danger w-100"
@@ -160,7 +160,7 @@
                                                     {% else %}
                                                         <form
                                                             hx-confirm="{% trans 'Do you Want to un-archive this rotating shift assign?' %}"
-                                                            hx-get="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
+                                                            hx-post="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
                                                             hx-target="#view-container" style="width:100%">
                                                             <button class="oh-btn oh-btn--danger w-100"
                                                                 title="{% trans 'Un-Archive' %}">

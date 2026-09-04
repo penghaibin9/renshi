@@ -38,6 +38,7 @@ from hr_onboarding.models.idempotency import (
 from hr_onboarding.models.material import (
     HrMaterialVerification,
     HrOnboardingMaterial,
+    HrOnboardingMaterialDownloadTicket,
     HrOnboardingMaterialRequirement,
     HrPersonnelFileTransfer,
 )
@@ -78,6 +79,7 @@ __all__ = [
     "HrOnboardingDataConflict",
     "HrOnboardingMaterialRequirement",
     "HrOnboardingMaterial",
+    "HrOnboardingMaterialDownloadTicket",
     "HrMaterialVerification",
     "HrPersonnelFileTransfer",
     "HrActivationAttempt",

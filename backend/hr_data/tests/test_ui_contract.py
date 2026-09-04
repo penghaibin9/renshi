@@ -2,10 +2,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.conf import settings
 from django.http import HttpResponse
 from django.template.loader import get_template
 from django.test import RequestFactory, TestCase
 from django.urls import resolve, reverse
+
+FRONTEND_ROOT = Path(settings.FRONTEND_DIR)
 
 
 class Hr18UiContractTests(TestCase):
@@ -31,7 +34,7 @@ class Hr18UiContractTests(TestCase):
 
     def test_workspace_uses_one_active_template(self):
         self.assertIsNotNone(get_template("hr_data/workspace_v2.html"))
-        template_dir = Path("hr_data/templates/hr_data")
+        template_dir = Path(settings.BASE_DIR) / "hr_data/templates/hr_data"
         self.assertEqual(
             sorted(path.name for path in template_dir.glob("workspace*.html")),
             ["workspace_v2.html"],
@@ -60,7 +63,7 @@ class Hr18UiContractTests(TestCase):
         self.assertNotIn("style=", source)
 
     def test_action_script_enforces_page_permissions_and_hides_internal_ids(self):
-        source = Path("static/hr/js/pages/hr18-actions.js").read_text(encoding="utf-8")
+        source = (FRONTEND_ROOT / "static/hr/js/pages/hr18-actions.js").read_text(encoding="utf-8")
         for permission in ("define", "asof", "quality", "submit", "approve", "receipt"):
             self.assertIn(f"permissions.{permission}", source)
         self.assertIn("findingIds.get", source)
@@ -74,12 +77,12 @@ class Hr18UiContractTests(TestCase):
         self.assertNotIn('data-finding="${escapeHtml(item.id)}"', source)
         self.assertNotIn('data-submission="${escapeHtml(item.id)}"', source)
         self.assertNotIn("style=", source)
-        header = Path("static/src/js/customHeaderScripts.js").read_text(encoding="utf-8")
+        header = (FRONTEND_ROOT / "static/src/js/customHeaderScripts.js").read_text(encoding="utf-8")
         self.assertNotIn("hr18-actions.js", header)
         self.assertNotIn("hr17-actions.js", header)
 
-        data_css = Path("static/hr/css/hr18-data.css").read_text(encoding="utf-8")
-        actions_css = Path("static/hr/css/hr18-actions.css").read_text(encoding="utf-8")
+        data_css = (FRONTEND_ROOT / "static/hr/css/hr18-data.css").read_text(encoding="utf-8")
+        actions_css = (FRONTEND_ROOT / "static/hr/css/hr18-actions.css").read_text(encoding="utf-8")
         self.assertIn("min-height: 44px", data_css)
         self.assertIn("min-height:44px", actions_css)
         self.assertIn(":focus-visible", data_css)

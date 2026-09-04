@@ -37,12 +37,15 @@ from hr_assessment.models.case import (  # noqa: F401
 # result
 from hr_assessment.models.result import (  # noqa: F401
     HrCalibrationSession, HrCalibrationRevision, HrAssessmentDecisionSession,
+    HrAssessmentDocument,
+    HrAssessmentDocumentAccessAudit,
     HrFinalAssessmentResult, HrResultNotice, HrAcknowledgement,
     HrAssessmentObjection, HrResultRevision, HrAssessmentArchivePackage,
     HrResultApplicationLedger,
 )
 # legacy cutover controls
 from hr_assessment.models.legacy import (  # noqa: F401
+    HrAssessmentCutoverEvent,
     HrLegacyPmsWriterSeal,
     HrLegacyPmsWriterSealEvent,
 )

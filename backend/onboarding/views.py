@@ -17,6 +17,8 @@ import logging
 import os
 import random
 import secrets
+from datetime import date
+from email.mime.image import MIMEImage
 from urllib.parse import parse_qs
 
 from django import template
@@ -24,8 +26,9 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.staticfiles import finders
 from django.core.files.base import ContentFile
-from django.core.mail import EmailMessage, send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
@@ -48,7 +51,6 @@ from employee.models import Employee, EmployeeBankDetails, EmployeeWorkInformati
 from horilla import settings
 from horilla.decorators import (
     hx_request_required,
-    logger,
     login_required,
     permission_required,
 )
@@ -78,6 +80,7 @@ from onboarding.models import (
     OnboardingPortal,
     OnboardingStage,
     OnboardingTask,
+    onboarding_portal_token_digest,
 )
 from recruitment.filters import CandidateFilter, CandidateReGroup, RecruitmentFilter
 from recruitment.forms import RejectedCandidateForm
@@ -85,6 +88,119 @@ from recruitment.models import Candidate, Recruitment, RejectedCandidate
 from recruitment.pipeline_grouper import group_by_queryset
 
 logger = logging.getLogger(__name__)
+
+_TASK_STATUSES = frozenset({"todo", "scheduled", "ongoing", "stuck", "done"})
+_OFFER_STATUSES = frozenset({"not_sent", "sent", "accepted", "rejected", "joined"})
+_MAX_BULK_IDS = 500
+
+
+def _parse_json_id_list(raw_value):
+    if raw_value is None:
+        raise ValueError("invalid id list")
+    try:
+        values = json.loads(raw_value)
+    except (TypeError, ValueError):
+        raise ValueError("invalid id list") from None
+    if not isinstance(values, list) or len(values) > _MAX_BULK_IDS:
+        raise ValueError("invalid id list")
+
+    normalized = []
+    for value in values:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            raise ValueError("invalid id list") from None
+        if parsed <= 0:
+            raise ValueError("invalid id list")
+        if parsed not in normalized:
+            normalized.append(parsed)
+    return normalized
+
+
+def _parse_sequence_map(raw_value):
+    try:
+        values = json.loads(raw_value or "")
+    except (TypeError, ValueError):
+        raise ValueError("invalid sequence") from None
+    if not isinstance(values, dict) or not values or len(values) > _MAX_BULK_IDS:
+        raise ValueError("invalid sequence")
+    sequence_map = {}
+    for raw_id, raw_sequence in values.items():
+        try:
+            object_id = int(raw_id)
+            sequence = int(raw_sequence)
+        except (TypeError, ValueError):
+            raise ValueError("invalid sequence") from None
+        if object_id <= 0 or sequence < 0:
+            raise ValueError("invalid sequence")
+        sequence_map[object_id] = sequence
+    if len(set(sequence_map.values())) != len(sequence_map):
+        raise ValueError("invalid sequence")
+    return sequence_map
+
+
+def _can_manage_recruitment(request, recruitment, permission):
+    actor = request.user.employee_get
+    return request.user.has_perm(permission) or recruitment.recruitment_managers.filter(
+        pk=actor.pk
+    ).exists()
+
+
+def _can_manage_stage(request, stage, permission):
+    actor = request.user.employee_get
+    return (
+        request.user.has_perm(permission)
+        or stage.employee_id.filter(pk=actor.pk).exists()
+        or stage.recruitment_id.recruitment_managers.filter(pk=actor.pk).exists()
+    )
+
+
+def _can_manage_task(request, task, permission):
+    actor = request.user.employee_get
+    return (
+        request.user.has_perm(permission)
+        or task.employee_id.filter(pk=actor.pk).exists()
+        or task.stage_id_id is not None
+        and (
+            task.stage_id.employee_id.filter(pk=actor.pk).exists()
+            or task.stage_id.recruitment_id.recruitment_managers.filter(
+                pk=actor.pk
+            ).exists()
+        )
+    )
+
+
+def _notify_after_commit(sender, **kwargs):
+    def send_notification():
+        with contextlib.suppress(Exception):
+            notify.send(sender, **kwargs)
+
+    transaction.on_commit(send_notification)
+
+
+@transaction.atomic
+def _ensure_candidate_onboarding_stage(candidate):
+    """Create the candidate's initial onboarding stage exactly once."""
+    recruitment = Recruitment.objects.select_for_update().get(
+        pk=candidate.recruitment_id_id
+    )
+    stage = recruitment.onboarding_stage.order_by("sequence", "pk").first()
+    if stage is None:
+        stage = OnboardingStage.objects.create(
+            recruitment_id=recruitment,
+            stage_title="Initial",
+            sequence=0,
+        )
+    candidate_stage, _created = CandidateStage.objects.get_or_create(
+        candidate_id=candidate,
+        defaults={"onboarding_stage_id": stage},
+    )
+    if (
+        candidate_stage.onboarding_stage_id.recruitment_id_id
+        != candidate.recruitment_id_id
+    ):
+        raise ValueError("candidate onboarding stage belongs to another recruitment")
+    return candidate_stage
 
 
 @login_required
@@ -219,6 +335,8 @@ def stage_update(request, stage_id, recruitment_id):
 
 @login_required
 @recruitment_manager_can_enter("onboarding.change_onboardingstage")
+@require_http_methods(["GET", "POST"])
+@transaction.atomic
 def update_stage_order(request, pk):
     """
     This method is used to update the stage sequence of the onboarding
@@ -226,35 +344,43 @@ def update_stage_order(request, pk):
     recruitment = Recruitment.find(pk)
     if not recruitment:
         return HorillaRedirect(request, message=_("Recruitment not found."))
+    if not _can_manage_recruitment(
+        request, recruitment, "onboarding.change_onboardingstage"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
 
-    if request.method == "POST":
-        try:
-            order = json.loads(request.POST.get("order", "[]"))
-            for index, stage_id in enumerate(order):
-                stage = recruitment.onboarding_stage.get(id=stage_id)
-                stage.sequence = index + 1
-                stage.save()
-            messages.success(request, _("Sequence Updated Successfully"))
-            return JsonResponse({"status": "success"})
-        except Exception as e:
-            messages.error(request, _("Error Updating Sequence.."))
-            return JsonResponse({"status": "error", "message": str(e)}, status=400)
+    if request.method == "GET":
+        stages = recruitment.onboarding_stage.order_by("sequence", "pk")
+        return render(
+            request,
+            "cbv/pipeline/onboarding/stage_order.html",
+            {"recruitment": recruitment, "stages": stages},
+        )
 
-    stages = recruitment.onboarding_stage.order_by("sequence")
-
-    return render(
-        request,
-        "cbv/pipeline/onboarding/stage_order.html",
-        {
-            "stages": stages,
-            "recruitment": recruitment,
-        },
-    )
+    try:
+        order = _parse_json_id_list(request.POST.get("order"))
+    except ValueError:
+        return JsonResponse({"status": "error", "message": _("Invalid stage order.")}, status=400)
+    stages = {
+        stage.pk: stage
+        for stage in recruitment.onboarding_stage.select_for_update().filter(pk__in=order)
+    }
+    if len(stages) != len(order):
+        return JsonResponse({"status": "error", "message": _("Invalid stage order.")}, status=400)
+    ordered_stages = []
+    for index, stage_id in enumerate(order):
+        stage = stages[stage_id]
+        stage.sequence = index + 1
+        ordered_stages.append(stage)
+    OnboardingStage.objects.bulk_update(ordered_stages, ["sequence"])
+    messages.success(request, _("Sequence Updated Successfully"))
+    return JsonResponse({"status": "success"})
 
 
 @login_required
-@permission_required("onboarding.delete_onboardingstage")
 @recruitment_manager_can_enter("onboarding.delete_onboardingstage")
+@require_POST
+@transaction.atomic
 def stage_delete(request, stage_id):
     """
     function used to delete onboarding stage.
@@ -267,12 +393,24 @@ def stage_delete(request, stage_id):
     GET : return onboarding view
     """
     try:
-        OnboardingStage.objects.get(id=stage_id).delete()
+        stage = (
+            OnboardingStage.objects.select_for_update()
+            .select_related("recruitment_id")
+            .get(id=stage_id)
+        )
+        if not _can_manage_recruitment(
+            request, stage.recruitment_id, "onboarding.delete_onboardingstage"
+        ):
+            return JsonResponse(
+                {"message": _("You do not have permission.")}, status=403
+            )
+        stage.delete()
         messages.success(request, _("The stage deleted successfully..."))
 
     except OnboardingStage.DoesNotExist:
         messages.error(request, _("Stage not found."))
     except ProtectedError:
+        transaction.set_rollback(True)
         messages.error(request, _("There are candidates in this stage..."))
     return HorillaRedirect(request)
 
@@ -280,6 +418,7 @@ def stage_delete(request, stage_id):
 @login_required
 @hx_request_required
 @stage_manager_can_enter("onboarding.add_onboardingtask")
+@transaction.atomic
 def task_creation(request):
     """
     function used to create onboarding task.
@@ -292,7 +431,13 @@ def task_creation(request):
     POST : return onboarding view
     """
     stage_id = request.GET.get("stage_id")
-    stage = OnboardingStage.objects.get(id=stage_id)
+    stage = (
+        OnboardingStage.objects.select_for_update()
+        .select_related("recruitment_id")
+        .get(id=stage_id)
+    )
+    if not _can_manage_stage(request, stage, "onboarding.add_onboardingtask"):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = OnboardingViewTaskForm(initial={"stage_id": stage})
 
     if request.method == "POST":
@@ -303,25 +448,34 @@ def task_creation(request):
             managers = form_data.cleaned_data["managers"]
             title = form_data.cleaned_data["task_title"]
             is_required = form_data.cleaned_data["is_required"]
+            if stage_id is None or stage_id.pk != stage.pk or any(
+                candidate.recruitment_id_id != stage.recruitment_id_id
+                for candidate in candidates
+            ):
+                return JsonResponse(
+                    {"message": _("Task assignment scope is invalid.")}, status=400
+                )
             onboarding_task = OnboardingTask(
                 task_title=title, stage_id=stage_id, is_required=is_required
             )
             onboarding_task.save()
             onboarding_task.employee_id.set(managers)
             onboarding_task.candidates.set(candidates)
-            if candidates:
-                for cand in candidates:
-                    task = CandidateTask(
-                        candidate_id=cand,
+            CandidateTask.objects.bulk_create(
+                [
+                    CandidateTask(
+                        candidate_id=candidate,
                         stage_id=stage_id,
                         onboarding_task_id=onboarding_task,
                     )
-                    task.save()
+                    for candidate in candidates
+                ]
+            )
             users = [
                 manager.employee_user_id
                 for manager in onboarding_task.employee_id.all()
             ]
-            notify.send(
+            _notify_after_commit(
                 request.user.employee_get,
                 recipient=users,
                 verb="You are chosen as an onboarding task manager",
@@ -342,6 +496,7 @@ def task_creation(request):
 @login_required
 @hx_request_required
 @stage_manager_can_enter("onboarding.change_onboardingtask")
+@transaction.atomic
 def task_update(
     request,
     task_id,
@@ -357,23 +512,72 @@ def task_update(
     GET : return onboarding task update form template
     POST : return onboarding view
     """
-    onboarding_task = OnboardingTask.objects.get(id=task_id)
+    onboarding_task = (
+        OnboardingTask.objects.select_for_update()
+        .select_related("stage_id__recruitment_id")
+        .get(id=task_id)
+    )
+    if not _can_manage_task(
+        request, onboarding_task, "onboarding.change_onboardingtask"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = OnboardingTaskForm(instance=onboarding_task)
     if request.method == "POST":
         form = OnboardingTaskForm(request.POST, instance=onboarding_task)
         if form.is_valid():
+            selected_stage = form.cleaned_data["stage_id"]
+            selected_candidates = list(form.cleaned_data["candidates"])
+            if selected_stage is None or not _can_manage_stage(
+                request, selected_stage, "onboarding.change_onboardingtask"
+            ) or any(
+                candidate.recruitment_id_id != selected_stage.recruitment_id_id
+                for candidate in selected_candidates
+            ):
+                return JsonResponse(
+                    {"message": _("Task assignment scope is invalid.")}, status=400
+                )
             task = form.save()
             task.employee_id.set(
                 Employee.objects.filter(id__in=form.data.getlist("employee_id"))
             )
-            for cand_task in onboarding_task.candidatetask_set.all():
-                if cand_task.candidate_id not in task.candidates.all():
-                    cand_task.delete()
-                else:
-                    cand_task.stage_id = task.stage_id
+            selected_candidate_ids = {
+                candidate.pk for candidate in selected_candidates
+            }
+            candidate_tasks = list(
+                CandidateTask.objects.select_for_update().filter(
+                    onboarding_task_id=task
+                )
+            )
+            CandidateTask.objects.filter(
+                onboarding_task_id=task
+            ).exclude(candidate_id_id__in=selected_candidate_ids).delete()
+            retained_ids = {
+                candidate_task.candidate_id_id
+                for candidate_task in candidate_tasks
+                if candidate_task.candidate_id_id in selected_candidate_ids
+            }
+            retained_tasks = [
+                candidate_task
+                for candidate_task in candidate_tasks
+                if candidate_task.candidate_id_id in selected_candidate_ids
+            ]
+            for candidate_task in retained_tasks:
+                candidate_task.stage_id = selected_stage
+            CandidateTask.objects.bulk_update(retained_tasks, ["stage_id"])
+            CandidateTask.objects.bulk_create(
+                [
+                    CandidateTask(
+                        candidate_id=candidate,
+                        stage_id=selected_stage,
+                        onboarding_task_id=task,
+                    )
+                    for candidate in selected_candidates
+                    if candidate.pk not in retained_ids
+                ]
+            )
             messages.success(request, _("Task updated successfully.."))
             users = [employee.employee_user_id for employee in task.employee_id.all()]
-            notify.send(
+            _notify_after_commit(
                 request.user.employee_get,
                 recipient=users,
                 verb="You are chosen as an onboarding task manager",
@@ -396,8 +600,9 @@ def task_update(
 
 
 @login_required
-@permission_required("onboarding.delete_onboardingtask")
 @stage_manager_can_enter("onboarding.delete_onboardingtask")
+@require_POST
+@transaction.atomic
 def task_delete(request, task_id):
     """
     function used to delete onboarding task.
@@ -411,11 +616,23 @@ def task_delete(request, task_id):
     GET : return onboarding view
     """
     try:
-        OnboardingTask.objects.get(id=task_id).delete()
+        task = (
+            OnboardingTask.objects.select_for_update()
+            .select_related("stage_id__recruitment_id")
+            .get(id=task_id)
+        )
+        if not _can_manage_task(
+            request, task, "onboarding.delete_onboardingtask"
+        ):
+            return JsonResponse(
+                {"message": _("You do not have permission.")}, status=403
+            )
+        task.delete()
         messages.success(request, _("The task deleted successfully..."))
     except OnboardingTask.DoesNotExist:
         messages.error(request, _("Task not found."))
     except ProtectedError:
+        transaction.set_rollback(True)
         messages.error(
             request,
             _(
@@ -427,6 +644,7 @@ def task_delete(request, task_id):
 
 @login_required
 @permission_required("recruitment.add_candidate")
+@transaction.atomic
 def candidate_creation(request):
     """
     function used to create hired candidates .
@@ -444,7 +662,8 @@ def candidate_creation(request):
         if form.is_valid():
             candidate = form.save()
             candidate.hired = True
-            candidate.save()
+            candidate.save(update_fields=["hired"])
+            _ensure_candidate_onboarding_stage(candidate)
             messages.success(request, _("New candidate created successfully.."))
             return redirect(candidates_view)
     return render(request, "onboarding/candidate_creation.html", {"form": form})
@@ -479,6 +698,8 @@ def candidate_update(request, obj_id):
 
 @login_required
 @permission_required("onboarding.delete_onboardingcandidate")
+@require_POST
+@transaction.atomic
 def candidate_delete(request, obj_id):
     """
     function used to delete hired candidates .
@@ -491,11 +712,12 @@ def candidate_delete(request, obj_id):
     GET : return candidate view
     """
     try:
-        Candidate.objects.get(id=obj_id).delete()
+        Candidate.objects.select_for_update().get(id=obj_id).delete()
         messages.success(request, _("Candidate deleted successfully.."))
     except Candidate.DoesNotExist:
         messages.error(request, _("Candidate not found."))
     except ProtectedError as e:
+        transaction.set_rollback(True)
         models_verbose_name_sets = set()
         for obj in e.protected_objects:
             models_verbose_name_sets.add(__(obj._meta.verbose_name))
@@ -522,29 +744,10 @@ def candidates_single_view(request, id, **kwargs):
     """
     candidate = Candidate.objects.get(id=id)
     if not CandidateStage.objects.filter(candidate_id=candidate).exists():
-        try:
-            onboarding_stage = OnboardingStage.objects.filter(
-                recruitment_id=candidate.recruitment_id
-            ).order_by("sequence")[0]
-            CandidateStage(
-                candidate_id=candidate, onboarding_stage_id=onboarding_stage
-            ).save()
-        except Exception:
-            messages.error(
-                request,
-                _("%(recruitment)s has no stage..")
-                % {"recruitment": candidate.recruitment_id},
-            )
-        if tasks := OnboardingTask.objects.filter(
-            recruitment_id=candidate.recruitment_id
-        ):
-            for task in tasks:
-                if not CandidateTask.objects.filter(
-                    candidate_id=candidate, onboarding_task_id=task
-                ).exists():
-                    CandidateTask(
-                        candidate_id=candidate, onboarding_task_id=task
-                    ).save()
+        return JsonResponse(
+            {"message": _("Candidate onboarding has not been initialized.")},
+            status=409,
+        )
 
     recruitment = candidate.recruitment_id
     choices = CandidateTask.choice
@@ -678,128 +881,9 @@ def candidate_filter(request):
     )
 
 
-# @login_required
-# @all_manager_can_enter("recruitment.view_recruitment")
-# def email_send(request):
-#     """
-#     function used to send onboarding portal for hired candidates .
-
-#     Parameters:
-#     request (HttpRequest): The HTTP request object.
-
-#     Returns:
-#     GET : return json response
-#     """
-#     host = request.get_host()
-#     protocol = "https" if request.is_secure() else "http"
-#     candidates = request.POST.getlist("ids")
-#     other_attachments = request.FILES.getlist("other_attachments")
-#     template_attachment_ids = request.POST.getlist("template_attachment_ids")
-#     email_backend = ConfiguredEmailBackend()
-#     if not candidates:
-#         messages.info(request, _("Please choose candidates"))
-#         return HttpResponse("<script>window.location.reload()</script>")
-
-#     bodys = list(
-#         HorillaMailTemplate.objects.filter(id__in=template_attachment_ids).values_list(
-#             "body", flat=True
-#         )
-#     )
-
-#     attachments_other = []
-#     for file in other_attachments:
-#         attachments_other.append((file.name, file.read(), file.content_type))
-#         file.close()
-#     for cand_id in candidates:
-#         attachments = list(set(attachments_other) | set([]))
-#         candidate = Candidate.objects.get(id=cand_id)
-#         if not request.GET.get("no_portal"):
-#             if candidate.converted_employee_id:
-#                 messages.info(
-#                     request, _(f"{candidate} has already been converted to employee.")
-#                 )
-#                 continue
-#             for html in bodys:
-#                 # due to not having solid template we first need to pass the context
-#                 template_bdy = template.Template(html)
-#                 context = template.Context(
-#                     {"instance": candidate, "self": request.user.employee_get}
-#                 )
-#                 render_bdy = template_bdy.render(context)
-#                 attachments.append(
-#                     (
-#                         "Document",
-#                         generate_pdf(
-#                             render_bdy, {}, path=False, title="Document"
-#                         ).content,
-#                         "application/pdf",
-#                     )
-#                 )
-#             token = secrets.token_hex(15)
-#             existing_portal = OnboardingPortal.objects.filter(candidate_id=candidate)
-#             if existing_portal.exists():
-#                 new_portal = existing_portal.first()
-#                 new_portal.token = token
-#                 new_portal.used = False
-#                 new_portal.count = 0
-#                 new_portal.profile = None
-#                 new_portal.save()
-#             else:
-#                 OnboardingPortal(candidate_id=candidate, token=token).save()
-#             html_message = render_to_string(
-#                 "onboarding/mail_templates/default.html",
-#                 {
-#                     "portal": f"{protocol}://{host}/onboarding/user-creation/{token}",
-#                     "instance": candidate,
-#                     "host": host,
-#                     "protocol": protocol,
-#                 },
-#                 request=request,
-#             )
-#             email = EmailMessage(
-#                 subject=f"Hello {candidate.name}, Congratulations on your selection!",
-#                 body=html_message,
-#                 to=[candidate.email],
-#             )
-#             email.content_subtype = "html"
-#             email.attachments = attachments
-#             try:
-#                 email.send()
-#                 # to check ajax or not
-#                 messages.success(request, _("Portal link sent to the candidate"))
-#             except Exception as e:
-#                 logger.error(e)
-#                 messages.error(request, _("Mail not send to %(candidate_name)s") % {"candidate_name": candidate.name})
-#             candidate.start_onboard = True
-#             candidate.save()
-#         try:
-#             onboarding_candidate = CandidateStage()
-#             onboarding_candidate.onboarding_stage_id = (
-#                 candidate.recruitment_id.onboarding_stage.first()
-#             )
-#             onboarding_candidate.candidate_id = candidate
-#             onboarding_candidate.save()
-#             messages.success(request, _("Candidate Added to Onboarding Stage"))
-#         except Exception as e:
-#             logger.error(e)
-
-#     return HttpResponse("<script>window.location.reload()</script>")
-
-
-import logging
-import os
-import secrets
-from email.mime.image import MIMEImage
-
-from django.contrib import messages
-from django.core.mail import EmailMultiAlternatives
-from django.template.loader import render_to_string
-
-logger = logging.getLogger(__name__)
-
-
 @login_required
 @all_manager_can_enter("recruitment.view_recruitment")
+@require_POST
 def email_send(request):
     host = request.get_host()
     protocol = "https" if request.is_secure() else "http"
@@ -841,6 +925,21 @@ def email_send(request):
             )
             continue
 
+        try:
+            _ensure_candidate_onboarding_stage(candidate)
+        except Exception as exc:
+            logger.error(
+                "Onboarding stage initialization failed candidate_id=%s error_type=%s",
+                candidate.pk,
+                type(exc).__name__,
+            )
+            messages.error(
+                request,
+                _("Unable to initialize onboarding for %(candidate)s.")
+                % {"candidate": candidate.name},
+            )
+            continue
+
         # Generate PDFs
         for html in bodys:
             template_bdy = template.Template(html)
@@ -857,14 +956,22 @@ def email_send(request):
                 )
             )
 
-        # Create / reset portal
+        # Rotate the bearer token without destroying a partially completed
+        # onboarding state. Re-sending an invitation must work across workers
+        # and must not send the candidate back to step zero.
         token = secrets.token_hex(15)
-        portal, _ = OnboardingPortal.objects.get_or_create(candidate_id=candidate)
-        portal.token = token
+        portal, portal_created = OnboardingPortal.objects.get_or_create(
+            candidate_id=candidate,
+            defaults={"token": token},
+        )
+        previous_portal_state = {
+            "token": portal.token,
+            "used": portal.used,
+        }
+        if not portal_created:
+            portal.token = token
         portal.used = False
-        portal.count = 0
-        portal.profile = None
-        portal.save()
+        portal.save(update_fields=["token", "used"])
 
         # Render email HTML
         html_message = render_to_string(
@@ -900,7 +1007,7 @@ def email_send(request):
             if company and company.icon and os.path.exists(company.icon.path):
                 image_path = company.icon.path
             else:
-                image_path = finders.find("images/ui/horilla-sticker-round.png")
+                image_path = finders.find("images/ui/university-seal.jpg")
 
             if image_path:
                 with open(image_path, "rb") as f:
@@ -912,37 +1019,44 @@ def email_send(request):
                         filename=os.path.basename(image_path),
                     )
                     email.attach(logo)
-        except Exception as e:
-            logger.error(f"Company logo attach failed: {e}")
+        except Exception as exc:
+            logger.warning(
+                "Company logo attachment skipped error_type=%s", type(exc).__name__
+            )
 
         # Send mail
         try:
-            email.send()
+            sent_count = email.send(fail_silently=False)
+            if sent_count != 1:
+                raise RuntimeError("mail backend returned a non-success count")
             messages.success(request, _("Portal link sent to the candidate"))
-        except Exception as e:
-            logger.error(e)
+        except Exception as exc:
+            # A failed re-send must not invalidate the candidate's previous
+            # working link. Newly created, undelivered portals are disabled.
+            if portal_created:
+                portal.used = True
+                portal.save(update_fields=["used"])
+            else:
+                portal.token = previous_portal_state["token"]
+                portal.used = previous_portal_state["used"]
+                portal.save(update_fields=["token", "used"])
+            logger.error(
+                "Onboarding invitation delivery failed candidate_id=%s error_type=%s",
+                candidate.pk,
+                type(exc).__name__,
+            )
             messages.error(
                 request,
                 _("Mail not sent to %(candidate_name)s")
                 % {"candidate_name": candidate.name},
             )
-            # continue
+            continue
 
         # Mark onboarding started without triggering Candidate.save() validation
         # (which can fail with "Choose valid choice" on job_position_id when the
         # candidate's job position has been removed from recruitment.open_positions).
         Candidate.objects.filter(pk=candidate.pk).update(start_onboard=True)
         candidate.start_onboard = True
-
-        # ✅ SAFE onboarding stage insert
-        try:
-            stage = candidate.recruitment_id.onboarding_stage.first()
-            CandidateStage.objects.get_or_create(
-                candidate_id=candidate,
-                defaults={"onboarding_stage_id": stage},
-            )
-        except Exception as e:
-            logger.error(e)
 
     return HorillaRedirect(request)
 
@@ -1118,14 +1232,10 @@ def kanban_view(request):
             "filter_dict": filter_dict,
             "stage_form": stage_form,
             "status": status,
-            "choices": choices,
             "pd": previous_data,
             "card": True,
         },
     )
-
-
-portal_user = {}
 
 
 def user_creation(request, token):
@@ -1141,21 +1251,32 @@ def user_creation(request, token):
     POST : return user_save function
     """
     try:
-        onboarding_portal = OnboardingPortal.objects.get(token=token)
-        if not onboarding_portal or onboarding_portal.used is True:
-            return render(request, "404.html")
-        if onboarding_portal.count == 3:
+        onboarding_portal = OnboardingPortal.objects.get(
+            token=onboarding_portal_token_digest(token)
+        )
+        if onboarding_portal.used is True:
+            return render(request, "404.html", status=404)
+        if onboarding_portal.count >= 3:
             return redirect("employee-bank-details", token)
+        if onboarding_portal.count >= 2:
+            return redirect("employee-creation", token)
+        if onboarding_portal.count >= 1:
+            return redirect("profile-view", token)
         candidate = onboarding_portal.candidate_id
-        user = HorillaUser.objects.filter(username=candidate.email).first()
-        form = UserCreationForm(instance=user)
-        try:
-            if request.method == "POST":
-                form = UserCreationForm(request.POST, instance=user)
-                if form.is_valid():
-                    return user_save(form, onboarding_portal, request, token)
-        except Exception:
-            messages.error(request, _("User with email-id already exists.."))
+        if HorillaUser.objects.filter(username__iexact=candidate.email).exists():
+            logger.warning(
+                "Onboarding account creation blocked by username collision portal=%s",
+                onboarding_portal.pk,
+            )
+            return HttpResponse(
+                _("An account already exists for this email. Please contact HR."),
+                status=409,
+            )
+        form = UserCreationForm()
+        if request.method == "POST":
+            form = UserCreationForm(request.POST)
+            if form.is_valid():
+                return user_save(form, onboarding_portal, request, token)
         return render(
             request,
             "onboarding/user_creation.html",
@@ -1164,10 +1285,21 @@ def user_creation(request, token):
                 "company": onboarding_portal.candidate_id.recruitment_id.company_id,
             },
         )
-    except Exception as error:
-        return HttpResponse(error)
+    except OnboardingPortal.DoesNotExist:
+        return render(request, "404.html", status=404)
+    except Exception as exc:
+        # Do not serialize arbitrary database/provider exception messages into
+        # logs: upstream exceptions can contain DSNs, tokens or submitted data.
+        logger.error(
+            "Onboarding portal user-creation failed error_type=%s",
+            type(exc).__name__,
+        )
+        return HttpResponse(
+            _("The onboarding portal is temporarily unavailable."), status=500
+        )
 
 
+@transaction.atomic
 def user_save(form, onboarding_portal, request, token):
     """
     function used to save user.
@@ -1182,14 +1314,15 @@ def user_save(form, onboarding_portal, request, token):
     """
     user = form.save(commit=False)
     user.username = onboarding_portal.candidate_id.email
-    session_key = request.session.session_key
-    portal_user[session_key] = user
+    user.email = onboarding_portal.candidate_id.email
+    user.save()
     onboarding_portal.count = 1
-    onboarding_portal.save()
+    onboarding_portal.save(update_fields=["count"])
     messages.success(request, _("Account created successfully.."))
     return redirect("profile-view", token)
 
 
+@transaction.atomic
 def profile_view(request, token):
     """
     function used to view user profile.
@@ -1202,9 +1335,15 @@ def profile_view(request, token):
     GET : return user profile template
     POST : update profile image of the user
     """
-    onboarding_portal = OnboardingPortal.objects.filter(token=token).first()
-    if onboarding_portal is None:
-        return render(request, "404.html")
+    onboarding_portal = OnboardingPortal.objects.filter(
+        token=onboarding_portal_token_digest(token)
+    ).first()
+    if onboarding_portal is None or onboarding_portal.used:
+        return render(request, "404.html", status=404)
+    if onboarding_portal.count < 1:
+        return redirect("user-creation", token)
+    if onboarding_portal.count >= 2:
+        return redirect("employee-creation", token)
     candidate = onboarding_portal.candidate_id
     if request.method == "POST":
         profile = request.FILES.get("profile")
@@ -1227,6 +1366,7 @@ def profile_view(request, token):
     )
 
 
+@transaction.atomic
 def employee_creation(request, token):
     """
     function used to create employee.
@@ -1239,9 +1379,15 @@ def employee_creation(request, token):
     GET : return employee creation profile template.
     POST : return employee bank detail creation template.
     """
-    onboarding_portal = OnboardingPortal.objects.filter(token=token).first()
-    if onboarding_portal is None:
-        return render(request, "404.html")
+    onboarding_portal = OnboardingPortal.objects.filter(
+        token=onboarding_portal_token_digest(token)
+    ).first()
+    if onboarding_portal is None or onboarding_portal.used:
+        return render(request, "404.html", status=404)
+    if onboarding_portal.count < 1:
+        return redirect("user-creation", token)
+    if onboarding_portal.count >= 3:
+        return redirect("employee-bank-details", token)
     candidate = onboarding_portal.candidate_id
     initial = {
         "employee_first_name": candidate.name,
@@ -1249,14 +1395,9 @@ def employee_creation(request, token):
         "address": candidate.address,
         "dob": candidate.dob,
     }
-    session_key = request.session.session_key
-    user = portal_user.get(session_key)
-    if user is None:
-        # Fallback for direct/opened links where in-memory portal state is absent.
-        user = HorillaUser.objects.filter(username=candidate.email).first()
-    elif not getattr(user, "pk", None):
-        # Related filters require a saved instance; resolve persisted user by email/username.
-        user = HorillaUser.objects.filter(username=candidate.email).first() or user
+    # Persisted state is required here: process-local dictionaries break as soon
+    # as consecutive requests land on different Gunicorn workers.
+    user = HorillaUser.objects.filter(username=candidate.email).first()
 
     if user is None:
         messages.error(
@@ -1302,7 +1443,6 @@ def employee_creation(request, token):
                 return redirect("user-creation", token)
             if not getattr(user, "pk", None):
                 user.save()
-            login(request, user)
             employee_personal_info = form.save(commit=False)
             employee_personal_info.employee_user_id = user
             employee_personal_info.email = candidate.email
@@ -1342,7 +1482,8 @@ def employee_creation(request, token):
             )
 
             onboarding_portal.count = 3
-            onboarding_portal.save()
+            onboarding_portal.save(update_fields=["count"])
+            login(request, user)
             messages.success(
                 request, _("Employee personal details created successfully..")
             )
@@ -1366,9 +1507,13 @@ def employee_bank_details(request, token):
     GET : return bank details creation template
     POST : return employee_bank_details_save function
     """
-    onboarding_portal = OnboardingPortal.objects.filter(token=token).first()
-    if not onboarding_portal:
-        return HorillaRedirect(request, message=_("Onboarding portal not found."))
+    onboarding_portal = OnboardingPortal.objects.filter(
+        token=onboarding_portal_token_digest(token)
+    ).first()
+    if onboarding_portal is None or onboarding_portal.used:
+        return render(request, "404.html", status=404)
+    if onboarding_portal.count < 3:
+        return redirect("employee-creation", token)
 
     user = HorillaUser.objects.filter(
         username=onboarding_portal.candidate_id.email
@@ -1383,7 +1528,6 @@ def employee_bank_details(request, token):
         )
         if form.is_valid():
             return employee_bank_details_save(form, request, onboarding_portal)
-        return redirect(welcome_aboard)
     return render(
         request,
         "onboarding/employee_bank_details.html",
@@ -1394,6 +1538,7 @@ def employee_bank_details(request, token):
     )
 
 
+@transaction.atomic
 def employee_bank_details_save(form, request, onboarding_portal):
     """
     function used to save employee bank details.
@@ -1437,6 +1582,7 @@ def welcome_aboard(request):
 @login_required
 @require_http_methods(["POST"])
 @all_manager_can_enter("onboarding.change_candidatetask")
+@transaction.atomic
 def candidate_task_update(request, taskId):
     """
     function used to update candidate task.
@@ -1449,22 +1595,28 @@ def candidate_task_update(request, taskId):
     POST : return candidate task template
     """
     status = request.POST.get("status")
+    if status not in _TASK_STATUSES:
+        return JsonResponse({"message": _("Invalid task status.")}, status=400)
     if request.POST.get("single_view"):
-        candidate_task = CandidateTask.objects.get(id=taskId)
+        candidate_task = CandidateTask.objects.select_for_update().filter(id=taskId).first()
     else:
         canId = request.POST.get("candId")
-        onboarding_task = OnboardingTask.objects.get(id=taskId)
-        candidate = Candidate.objects.get(id=canId)
         candidate_task = CandidateTask.objects.filter(
-            candidate_id=candidate, onboarding_task_id=onboarding_task
-        ).first()
+            candidate_id_id=canId, onboarding_task_id_id=taskId
+        ).select_for_update().first()
+    if candidate_task is None:
+        return JsonResponse({"message": _("Candidate task not found.")}, status=404)
+    if not _can_manage_task(
+        request, candidate_task.onboarding_task_id, "onboarding.change_candidatetask"
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
     candidate_task.status = status
-    candidate_task.save()
+    candidate_task.save(update_fields=["status"])
     users = [
         employee.employee_user_id
         for employee in candidate_task.onboarding_task_id.employee_id.all()
     ]
-    notify.send(
+    _notify_after_commit(
         request.user.employee_get,
         recipient=users,
         verb=f"The task {candidate_task.onboarding_task_id} of\
@@ -1522,6 +1674,8 @@ def get_status(request, task_id):
 
 @login_required
 @all_manager_can_enter("onboarding.change_candidatetask")
+@require_POST
+@transaction.atomic
 def assign_task(request, task_id):
     """
     htmx function that used to assign a onboarding task to candidate
@@ -1533,15 +1687,15 @@ def assign_task(request, task_id):
     Returns:
     POST : return candidate task template
     """
-    stage_id = request.GET.get("stage_id")
-    cand_id = request.GET.get("cand_id")
-    cand_stage = request.GET.get("cand_stage")
+    stage_id = request.POST.get("stage_id")
+    cand_id = request.POST.get("cand_id")
+    cand_stage = request.POST.get("cand_stage")
     if not stage_id or not cand_id or not cand_stage:
         return HorillaRedirect(request, message=_("Missing required parameters."))
-    cand_stage_obj = CandidateStage.find(cand_stage)
-    onboarding_task = OnboardingTask.find(task_id)
-    candidate = Candidate.find(cand_id)
-    onboarding_stage = OnboardingStage.find(stage_id)
+    cand_stage_obj = CandidateStage.objects.select_for_update().filter(pk=cand_stage).first()
+    onboarding_task = OnboardingTask.objects.filter(pk=task_id).first()
+    candidate = Candidate.objects.filter(pk=cand_id).first()
+    onboarding_stage = OnboardingStage.objects.filter(pk=stage_id).first()
     if (
         not cand_stage_obj
         or not onboarding_task
@@ -1550,12 +1704,23 @@ def assign_task(request, task_id):
     ):
         return HorillaRedirect(request, message=_("Object not found."))
 
-    cand_task, created = CandidateTask.objects.get_or_create(
+    if (
+        cand_stage_obj.candidate_id_id != candidate.pk
+        or cand_stage_obj.onboarding_stage_id_id != onboarding_stage.pk
+        or onboarding_stage.recruitment_id_id != candidate.recruitment_id_id
+        or onboarding_task.stage_id_id != onboarding_stage.pk
+    ):
+        return JsonResponse({"message": _("Task assignment scope is invalid.")}, status=400)
+    if not _can_manage_task(
+        request, onboarding_task, "onboarding.change_candidatetask"
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
+
+    cand_task, _created = CandidateTask.objects.get_or_create(
         candidate_id=candidate,
         stage_id=onboarding_stage,
         onboarding_task_id=onboarding_task,
     )
-    cand_task.save()
     onboarding_task.candidates.add(candidate)
     return render(
         request,
@@ -1573,6 +1738,7 @@ def assign_task(request, task_id):
 @login_required
 @require_http_methods(["POST"])
 @stage_manager_can_enter("onboarding.change_candidatestage")
+@transaction.atomic
 def candidate_stage_update(request, candidate_id, recruitment_id):
     """
     function used to update candidate stage.
@@ -1586,10 +1752,26 @@ def candidate_stage_update(request, candidate_id, recruitment_id):
     POST : return candidate task template
     """
     stage_id = request.POST.get("stage")
-    recruitments = Recruitment.objects.filter(id=recruitment_id)
-    stage = OnboardingStage.objects.get(id=stage_id)
-    candidate = Candidate.objects.get(id=candidate_id)
-    candidate_stage = CandidateStage.objects.get(candidate_id=candidate)
+    recruitment = Recruitment.objects.filter(id=recruitment_id).first()
+    if recruitment is None:
+        return JsonResponse({"message": _("Recruitment not found.")}, status=404)
+    stage = OnboardingStage.objects.filter(
+        id=stage_id, recruitment_id=recruitment
+    ).first()
+    candidate = Candidate.objects.filter(
+        id=candidate_id, recruitment_id=recruitment
+    ).first()
+    if stage is None or candidate is None:
+        return JsonResponse({"message": _("Candidate or stage not found.")}, status=404)
+    if not _can_manage_stage(
+        request, stage, "onboarding.change_candidatestage"
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
+    candidate_stage = CandidateStage.objects.select_for_update().filter(
+        candidate_id=candidate
+    ).first()
+    if candidate_stage is None:
+        return JsonResponse({"message": _("Candidate stage not found.")}, status=404)
     candidate_stage.onboarding_stage_id = stage
     candidate_stage.save()
     onboarding_stages = OnboardingStage.objects.all()
@@ -1599,7 +1781,7 @@ def candidate_stage_update(request, candidate_id, recruitment_id):
         for employee in candidate_stage.onboarding_stage_id.employee_id.all()
     ]
     if request.POST.get("is_ajax") is None:
-        notify.send(
+        _notify_after_commit(
             request.user.employee_get,
             recipient=users,
             verb=f"The stage of {candidate_stage.candidate_id} \
@@ -1611,7 +1793,7 @@ def candidate_stage_update(request, candidate_id, recruitment_id):
             icon="people-circle",
             redirect=reverse("onboarding-view"),
         )
-    groups = onboarding_query_grouper(request, recruitments)
+    groups = onboarding_query_grouper(request, Recruitment.objects.filter(pk=recruitment.pk))
     for item in groups:
         setattr(item["recruitment"], "stages", item["stages"])
         return render(
@@ -1631,19 +1813,39 @@ def candidate_stage_update(request, candidate_id, recruitment_id):
 @login_required
 @require_http_methods(["POST"])
 @stage_manager_can_enter("onboarding.change_candidatestage")
+@transaction.atomic
 def candidate_stage_bulk_update(request):
-    candiate_ids = request.POST["ids"]
-    recrutment_id = request.POST["recruitment"]
-    candidate_id_list = json.loads(candiate_ids)
-    stage = request.POST["stage"]
+    try:
+        candidate_id_list = _parse_json_id_list(request.POST.get("ids"))
+        recruitment_id = int(request.POST.get("recruitment", ""))
+        stage_id = int(request.POST.get("stage", ""))
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid bulk update request.")}, status=400)
+    recruitment = Recruitment.objects.filter(pk=recruitment_id).first()
+    stage = OnboardingStage.objects.filter(
+        pk=stage_id, recruitment_id=recruitment
+    ).first()
+    candidates = Candidate.objects.filter(
+        pk__in=candidate_id_list, recruitment_id=recruitment
+    )
+    if recruitment is None or stage is None or candidates.count() != len(candidate_id_list):
+        return JsonResponse({"message": _("Candidate or stage not found.")}, status=404)
+    if not _can_manage_stage(
+        request, stage, "onboarding.change_candidatestage"
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
     onboarding_stages = OnboardingStage.objects.all()
-    recruitments = Recruitment.objects.filter(id=int(recrutment_id))
+    recruitments = Recruitment.objects.filter(id=recruitment_id)
 
     choices = CandidateTask.choice
 
-    CandidateStage.objects.filter(candidate_id__id__in=candidate_id_list).update(
-        onboarding_stage_id=stage
+    candidate_stages = CandidateStage.objects.select_for_update().filter(
+        candidate_id__id__in=candidate_id_list,
+        candidate_id__recruitment_id=recruitment,
     )
+    if candidate_stages.count() != len(candidate_id_list):
+        return JsonResponse({"message": _("Candidate stage not found.")}, status=404)
+    candidate_stages.update(onboarding_stage_id=stage)
     type = "info"
     message = "No candidates selected"
     if candidate_id_list:
@@ -1671,15 +1873,35 @@ def candidate_stage_bulk_update(request):
 @login_required
 @require_http_methods(["POST"])
 @all_manager_can_enter("onboarding.change_candidatetask")
+@transaction.atomic
 def candidate_task_bulk_update(request):
-    candiate_ids = request.POST["ids"]
-    candidate_id_list = json.loads(candiate_ids)
-    task = request.POST["task"]
-    status = request.POST["status"]
+    try:
+        candidate_id_list = _parse_json_id_list(request.POST.get("ids"))
+        task_id = int(request.POST.get("task", ""))
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid bulk update request.")}, status=400)
+    status = request.POST.get("status", "")
+    if status not in _TASK_STATUSES:
+        return JsonResponse({"message": _("Invalid task status.")}, status=400)
+    task = OnboardingTask.objects.filter(pk=task_id).first()
+    if task is None:
+        return JsonResponse({"message": _("Task not found.")}, status=404)
+    if not _can_manage_task(
+        request, task, "onboarding.change_candidatetask"
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
+    eligible_ids = set(
+        task.candidates.filter(pk__in=candidate_id_list).values_list("pk", flat=True)
+    )
+    if len(eligible_ids) != len(candidate_id_list):
+        return JsonResponse({"message": _("Candidate is not assigned to this task.")}, status=404)
 
-    count = CandidateTask.objects.filter(
+    candidate_tasks = CandidateTask.objects.select_for_update().filter(
         candidate_id__id__in=candidate_id_list, onboarding_task_id=task
-    ).update(status=status)
+    )
+    if candidate_tasks.count() != len(candidate_id_list):
+        return JsonResponse({"message": _("Candidate task not found.")}, status=404)
+    count = candidate_tasks.update(status=status)
     # messages.success(request, _("%(count)s candidate's task status updated successfully") % {"count": count})
 
     return JsonResponse(
@@ -1724,8 +1946,9 @@ def onboard_candidate_chart(request):
 
 
 @login_required
-@permission_required("candidate.change_candidate")
+@permission_required("recruitment.change_candidate")
 @require_POST
+@transaction.atomic
 def update_joining(request):
     """
     Ajax method to update joining date of candidate
@@ -1741,16 +1964,21 @@ def update_joining(request):
         messages.error(request, _("Missing date of joining."))
         return JsonResponse({"type": "danger"}, status=400)
 
-    if date_value == "":
-        date_value = None
+    try:
+        date_value = date.fromisoformat(date_value) if date_value else None
+    except ValueError:
+        messages.error(request, _("Invalid date of joining."))
+        return JsonResponse({"type": "danger"}, status=400)
 
-    candidate_obj = Candidate.find(cand_id)
+    candidate_obj = Candidate.objects.select_for_update().filter(
+        id=cand_id, onboarding_stage__isnull=False
+    ).first()
     if not candidate_obj:
         messages.error(request, _("Candidate not found"))
         return JsonResponse({"type": "danger"}, status=400)
 
     candidate_obj.joining_date = date_value
-    candidate_obj.save()
+    candidate_obj.save(update_fields=["joining_date"])
     messages.success(
         request,
         _("{candidate}'s Date of joining updated successfully").format(
@@ -1818,72 +2046,100 @@ def dashboard_stage_chart(request):
 
 @login_required
 @stage_manager_can_enter("recruitment.change_candidate")
+@require_POST
+@transaction.atomic
 def candidate_sequence_update(request):
     """
     This method is used to update the sequence of candidate
     """
-    seq_data = request.POST.get("sequenceData")
-    if not seq_data:
-        messages.error(request, _("Missing required parameter: sequenceData."))
+    try:
+        sequence_data = _parse_sequence_map(request.POST.get("sequenceData"))
+    except ValueError:
+        return JsonResponse({"error": _("Invalid sequence data.")}, status=400)
+    candidate_stages = list(
+        CandidateStage.objects.select_for_update()
+        .select_related("onboarding_stage_id__recruitment_id")
+        .filter(id__in=sequence_data)
+    )
+    if len(candidate_stages) != len(sequence_data):
+        return JsonResponse({"error": _("Candidate stage not found.")}, status=404)
+    stage_ids = {item.onboarding_stage_id_id for item in candidate_stages}
+    if len(stage_ids) != 1:
         return JsonResponse(
-            {"error": "Missing required parameter: sequenceData"}, status=400
+            {"error": _("Candidates must belong to one onboarding stage.")}, status=400
         )
-    sequence_data = json.loads(request.POST.get("sequenceData"))
-    updated = False
-    for cand_id, seq in sequence_data.items():
-        cand = CandidateStage.find(cand_id)
-        if not cand:
-            continue
-        if cand.sequence != seq:
-            cand.sequence = seq
-            cand.save()
-            updated = True
-    if updated:
-        return JsonResponse(
-            {"message": _("Candidate sequence updated"), "type": "info"}
-        )
-    return JsonResponse({"type": "fail"})
+    stage = candidate_stages[0].onboarding_stage_id
+    if not _can_manage_stage(request, stage, "recruitment.change_candidate"):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
+    for candidate_stage in candidate_stages:
+        candidate_stage.sequence = sequence_data[candidate_stage.pk]
+    CandidateStage.objects.bulk_update(candidate_stages, ["sequence"])
+    return JsonResponse(
+        {"message": _("Candidate sequence updated"), "type": "info"}
+    )
 
 
 @login_required
 @stage_manager_can_enter("recruitment.change_stage")
+@require_POST
+@transaction.atomic
 def stage_sequence_update(request):
     """
     This method is used to update the sequence of the stages
     """
-    seq_data = request.POST.get("sequenceData")
-    if not seq_data:
-        messages.error(request, _("Missing required parameter: sequenceData."))
+    try:
+        sequence_data = _parse_sequence_map(request.POST.get("sequenceData"))
+    except ValueError:
+        return JsonResponse({"error": _("Invalid sequence data.")}, status=400)
+    stages = list(
+        OnboardingStage.objects.select_for_update()
+        .select_related("recruitment_id")
+        .filter(id__in=sequence_data)
+    )
+    if len(stages) != len(sequence_data):
+        return JsonResponse({"error": _("Stage not found.")}, status=404)
+    recruitment_ids = {stage.recruitment_id_id for stage in stages}
+    if len(recruitment_ids) != 1:
         return JsonResponse(
-            {"error": "Missing required parameter: sequenceData"}, status=400
+            {"error": _("Stages must belong to one recruitment.")}, status=400
         )
-    sequence_data = json.loads(request.POST.get("sequenceData"))
-    updated = False
-
-    for stage_id, seq in sequence_data.items():
-        stage = OnboardingStage.find(stage_id)
-        if not stage:
-            continue
-        if stage.sequence != seq:
-            stage.sequence = seq
-            stage.save()
-            updated = True
-
-    if updated:
-        return JsonResponse({"type": "success", "message": _("Stage sequence updated")})
-    return JsonResponse({"type": "fail"})
+    recruitment = stages[0].recruitment_id
+    if not _can_manage_recruitment(
+        request, recruitment, "recruitment.change_stage"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
+    for stage in stages:
+        stage.sequence = sequence_data[stage.pk]
+    OnboardingStage.objects.bulk_update(stages, ["sequence"])
+    return JsonResponse({"type": "success", "message": _("Stage sequence updated")})
 
 
 @login_required
 @require_http_methods(["POST"])
 @hx_request_required
+@stage_manager_can_enter("onboarding.change_onboardingstage")
+@transaction.atomic
 def stage_name_update(request, stage_id):
     """
     This method is used to update the name of recruitment stage
     """
-    stage_obj = OnboardingStage.objects.get(id=stage_id)
-    stage_obj.stage_title = request.POST["stage"]
-    stage_obj.save()
+    stage_obj = (
+        OnboardingStage.objects.select_for_update()
+        .select_related("recruitment_id")
+        .filter(id=stage_id)
+        .first()
+    )
+    if stage_obj is None:
+        return JsonResponse({"message": _("Stage not found.")}, status=404)
+    if not _can_manage_stage(
+        request, stage_obj, "onboarding.change_onboardingstage"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
+    title = request.POST.get("stage", "").strip()
+    if not title or len(title) > 200:
+        return JsonResponse({"message": _("Invalid stage title.")}, status=400)
+    stage_obj.stage_title = title
+    stage_obj.save(update_fields=["stage_title"])
     message = _("The stage title has been updated successfully")
     return HttpResponse(
         f'<div class="oh-alert-container"><div class="oh-alert oh-alert--animated oh-alert--success">{message}</div></div>'
@@ -1933,8 +2189,9 @@ def onboarding_send_mail(request, candidate_id):
 
 
 @login_required
-@stage_manager_can_enter("recruitment.change_stage")
+@stage_manager_can_enter("recruitment.change_candidate")
 @require_POST
+@transaction.atomic
 def update_probation_end(request):
     """
     Updates the probation end date for a candidate.
@@ -1946,17 +2203,28 @@ def update_probation_end(request):
         messages.error(request, _("Missing candidate ID."))
         return JsonResponse({"type": "danger"}, status=400)
 
-    try:
-        candidate = Candidate.objects.get(id=candidate_id)
-    except Candidate.DoesNotExist:
+    candidate_stage = (
+        CandidateStage.objects.select_for_update()
+        .select_related("onboarding_stage_id__recruitment_id", "candidate_id")
+        .filter(candidate_id_id=candidate_id)
+        .first()
+    )
+    if candidate_stage is None:
         messages.error(request, _("Candidate not found."))
         return JsonResponse({"type": "danger"}, status=404)
+    if not _can_manage_stage(
+        request, candidate_stage.onboarding_stage_id, "recruitment.change_candidate"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
 
-    if probation_end == "":
-        probation_end = None
+    try:
+        probation_end = date.fromisoformat(probation_end) if probation_end else None
+    except ValueError:
+        return JsonResponse({"message": _("Invalid probation end date.")}, status=400)
 
+    candidate = Candidate.objects.select_for_update().get(pk=candidate_stage.candidate_id_id)
     candidate.probation_end = probation_end
-    candidate.save()
+    candidate.save(update_fields=["probation_end"])
     messages.success(request, _("Probation end date updated"))
     return JsonResponse({"type": "success"})
 
@@ -2009,27 +2277,28 @@ def candidate_tasks_status(request):
 
 @login_required
 @all_manager_can_enter("onboarding.change_candidatetask")
+@require_POST
+@transaction.atomic
 def change_task_status(request):
     """
     This method is to update the candidate task
     """
-    task_id = request.GET.get("task_id")
-    status = request.GET.get("status")
+    task_id = request.POST.get("task_id")
+    status = request.POST.get("status")
     if not task_id or not status:
         return HorillaRedirect(request, message=_("Task ID or status is missing"))
-    candidate_task = CandidateTask.find(task_id)
+    candidate_task = CandidateTask.objects.select_for_update().filter(pk=task_id).first()
     if not candidate_task:
         return HorillaRedirect(request, message=_("Candidate task not found"))
-    if status in [
-        "todo",
-        "scheduled",
-        "ongoing",
-        "stuck",
-        "done",
-    ]:
-        candidate_task.status = status
-        candidate_task.save()
-        messages.success(request, _("Task status updated successfully."))
+    if status not in _TASK_STATUSES:
+        return JsonResponse({"message": _("Invalid task status.")}, status=400)
+    if not _can_manage_task(
+        request, candidate_task.onboarding_task_id, "onboarding.change_candidatetask"
+    ):
+        return JsonResponse({"message": _("You don't have permission.")}, status=403)
+    candidate_task.status = status
+    candidate_task.save(update_fields=["status"])
+    messages.success(request, _("Task status updated successfully."))
 
     return HttpResponse(
         "<script>$('#reloadMessagesButton').click(); $('#myOnboardingReload').click(); </script>"
@@ -2037,28 +2306,28 @@ def change_task_status(request):
 
 
 @login_required
-@permission_required("recruitment.change_recruitment")
+@permission_required("recruitment.change_candidate")
+@require_POST
+@transaction.atomic
 def update_offer_letter_status(request):
     """
     This method is used to update the offer letter status
     """
-    candidate_id = request.GET.get("candidate_id")
-    status = request.GET.get("status")
-    candidate = None
+    candidate_id = request.POST.get("candidate_id")
+    status = request.POST.get("status")
     if not candidate_id or not status:
         messages.error(request, _("candidate or status is missing"))
         return redirect("/onboarding/candidates-view/")
-    if not status in ["not_sent", "sent", "accepted", "rejected", "joined"]:
+    if status not in _OFFER_STATUSES:
         messages.error(request, _("Please Pass valid status"))
         return redirect("/onboarding/candidates-view/")
     try:
-        candidate = Candidate.objects.get(id=candidate_id)
+        candidate = Candidate.objects.select_for_update().get(id=candidate_id)
     except Candidate.DoesNotExist:
         messages.error(request, _("Candidate not found"))
         return redirect("/onboarding/candidates-view/")
-    if status in ["not_sent", "sent", "accepted", "rejected", "joined"]:
-        candidate.offer_letter_status = status
-        candidate.save()
+    candidate.offer_letter_status = status
+    candidate.save(update_fields=["offer_letter_status"])
     messages.success(request, _("Status of offer letter updated successfully"))
     url = "/onboarding/candidates-view/"
     return HttpResponse(
@@ -2073,14 +2342,24 @@ def update_offer_letter_status(request):
 @login_required
 @hx_request_required
 @permission_required("recruitment.add_rejectedcandidate")
+@transaction.atomic
 def add_to_rejected_candidates(request):
     """
     This method is used to add candidates to rejected candidates
     """
-    candidate_id = request.GET.get("candidate_id")
+    candidate_id = (
+        request.POST.get("candidate_id")
+        if request.method == "POST"
+        else request.GET.get("candidate_id")
+    )
     instance = None
     if candidate_id:
-        instance = RejectedCandidate.objects.filter(candidate_id=candidate_id).first()
+        candidate = Candidate.objects.filter(pk=candidate_id).first()
+        if candidate is None:
+            return HorillaRedirect(request, message=_("Candidate not found."))
+        instance = RejectedCandidate.objects.select_for_update().filter(
+            candidate_id=candidate
+        ).first()
     form = RejectedCandidateForm(
         initial={"candidate_id": candidate_id}, instance=instance
     )
@@ -2097,13 +2376,15 @@ def add_to_rejected_candidates(request):
 @login_required
 @permission_required("recruitment.change_candidate")
 @require_http_methods(["POST"])
+@transaction.atomic
 def undo_rejected_candidate(request, candidate_id):
     """
     Remove candidate from rejected list.
     """
-    deleted_count, __ = RejectedCandidate.objects.filter(
+    rejected = RejectedCandidate.objects.select_for_update().filter(
         candidate_id=candidate_id
-    ).delete()
+    )
+    deleted_count, __ = rejected.delete()
     if deleted_count:
         messages.success(request, _("Candidate removed from rejected list"))
     else:
@@ -2183,52 +2464,70 @@ def candidate_select_filter(request):
 
 @login_required
 @permission_required("recruitment.change_candidate")
+@require_POST
+@transaction.atomic
 def offer_letter_bulk_status_update(request):
     """
     This function is used to bulk update the offerletter status
     """
-    letter_ids = request.GET.get("ids")
+    letter_ids = request.POST.get("ids")
 
     if not letter_ids:
         messages.error(request, _("No offer letters selected for status update."))
         return JsonResponse("Missing required parameter: ids", safe=False, status=400)
 
-    ids = json.loads(letter_ids)
-    status = request.GET.get("status")
-    for id in ids:
-        try:
-            candidate = Candidate.objects.filter(id=int(id)).first()
-            if candidate.offer_letter_status != status:
-                candidate.offer_letter_status = status
-                candidate.save()
-                messages.success(request, _("offer letter status updated successfully"))
-            else:
-                messages.error(request, _("Status already in {} status").format(status))
-        except:
-            messages.error(request, _("Candidate doesnot exist"))
-
-    return JsonResponse("success", safe=False)
+    try:
+        ids = _parse_json_id_list(letter_ids)
+    except ValueError:
+        return JsonResponse({"message": _("Invalid candidate list.")}, status=400)
+    status = request.POST.get("status", "")
+    if status not in _OFFER_STATUSES:
+        return JsonResponse({"message": _("Invalid offer status.")}, status=400)
+    candidates = Candidate.objects.select_for_update().filter(id__in=ids)
+    if candidates.count() != len(ids):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
+    updated = candidates.exclude(offer_letter_status=status).update(
+        offer_letter_status=status
+    )
+    messages.success(
+        request,
+        _("Offer letter status updated for %(count)s candidates.")
+        % {"count": updated},
+    )
+    return JsonResponse({"status": "success", "updated": updated})
 
 
 @login_required
 @permission_required("recruitment.delete_candidate")
+@require_POST
+@transaction.atomic
 def onboarding_candidate_bulk_delete(request):
     """
     This function is used to bulk delete onboarding candidates
     """
 
-    cand_ids = request.GET.get("ids")
+    cand_ids = request.POST.get("ids")
     if not cand_ids:
         messages.error(request, _("No candidates selected for deletion."))
         return JsonResponse("Missing required parameter: ids", safe=False, status=400)
 
-    ids = json.loads(cand_ids)
-    for id in ids:
-        try:
-            candidate = Candidate.objects.filter(id=int(id)).first()
+    try:
+        ids = _parse_json_id_list(cand_ids)
+    except ValueError:
+        return JsonResponse({"message": _("Invalid candidate list.")}, status=400)
+    candidates = list(Candidate.objects.select_for_update().filter(id__in=ids))
+    if len(candidates) != len(ids):
+        return JsonResponse({"message": _("Candidate not found.")}, status=404)
+    try:
+        for candidate in candidates:
             candidate.delete()
-            messages.success(request, _("candidate deleted successfully"))
-        except:
-            messages.error(request, _("Candidate doesnot exist"))
-
-    return JsonResponse("success", safe=False)
+    except ProtectedError:
+        transaction.set_rollback(True)
+        transaction.set_rollback(True)
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("A selected candidate is referenced by protected records.")},
+            status=409,
+        )
+    messages.success(request, _("Candidates deleted successfully."))
+    return JsonResponse({"status": "success", "deleted": len(candidates)})

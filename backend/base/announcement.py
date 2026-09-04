@@ -6,11 +6,13 @@ import json
 from datetime import datetime, timedelta
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_POST
 
 from base.forms import AnnouncementCommentForm, AnnouncementForm
 from base.methods import closest_numbers, filter_own_records
@@ -26,6 +28,20 @@ from horilla.decorators import hx_request_required, login_required, permission_r
 from horilla.http.response import HorillaRedirect
 from horilla_auth.models import HorillaUser
 from notifications.signals import notify
+
+
+def _can_access_announcement(request, announcement):
+    """Return whether the current employee may read or comment on an announcement."""
+    if request.user.has_perm("base.view_announcement"):
+        return True
+    try:
+        employee = request.user.employee_get
+    except (AttributeError, Employee.DoesNotExist):
+        return False
+    return (
+        not announcement.employees.exists()
+        or announcement.employees.filter(pk=employee.pk).exists()
+    )
 
 
 @login_required
@@ -203,13 +219,16 @@ def create_announcement(request):
 
 @login_required
 @hx_request_required
+@permission_required("base.delete_announcement")
+@require_POST
+@transaction.atomic
 def delete_announcement(request, anoun_id):
     """
     This method is used to delete announcements.
     """
     from horilla.horilla_middlewares import _thread_locals
 
-    announcement = Announcement.find(anoun_id)
+    announcement = Announcement.objects.select_for_update().filter(pk=anoun_id).first()
     if announcement:
         announcement.delete()
         messages.success(request, _("Announcement deleted successfully."))
@@ -320,9 +339,16 @@ def update_announcement(request, anoun_id):
 
 @login_required
 @hx_request_required
+@permission_required("base.change_announcement")
+@require_POST
+@transaction.atomic
 def remove_announcement_file(request, obj_id, attachment_id):
-    announcement = get_object_or_404(Announcement, id=obj_id)
-    attachment = get_object_or_404(Attachment, id=attachment_id)
+    announcement = get_object_or_404(
+        Announcement.objects.select_for_update(), id=obj_id
+    )
+    attachment = get_object_or_404(
+        announcement.attachments.select_for_update(), id=attachment_id
+    )
 
     announcement.attachments.remove(attachment)
     messages.success(request, _("The file has been successfully deleted."))
@@ -336,6 +362,12 @@ def create_announcement_comment(request, anoun_id):
     This method renders form and template to create Announcement comments
     """
     anoun = Announcement.objects.filter(id=anoun_id).first()
+    if anoun is None or not _can_access_announcement(request, anoun):
+        messages.error(request, _("Announcement not found or access denied."))
+        return HorillaRedirect(request)
+    if anoun.disable_comments:
+        messages.error(request, _("Comments are disabled for this announcement."))
+        return HorillaRedirect(request)
     emp = request.user.employee_get
     form = AnnouncementCommentForm(
         initial={"employee_id": emp.id, "request_id": anoun_id}
@@ -383,7 +415,10 @@ def comment_view(request, anoun_id):
     """
     This method is used to view all comments in the announcements
     """
-    announcement = Announcement.objects.get(id=anoun_id)
+    announcement = Announcement.objects.filter(id=anoun_id).first()
+    if announcement is None or not _can_access_announcement(request, announcement):
+        messages.error(request, _("Announcement not found or access denied."))
+        return HorillaRedirect(request)
     comments = AnnouncementComment.objects.filter(announcement_id=anoun_id).order_by(
         "-created_at"
     )
@@ -405,11 +440,25 @@ def comment_view(request, anoun_id):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def delete_announcement_comment(request, comment_id):
     """
     This method is used to delete announcement comments
     """
-    comment = AnnouncementComment.objects.get(id=comment_id)
+    comment = (
+        AnnouncementComment.objects.select_for_update()
+        .select_related("employee_id", "announcement_id")
+        .filter(id=comment_id)
+        .first()
+    )
+    if comment is None:
+        messages.error(request, _("Comment not found."))
+        return HttpResponse(status=404)
+    is_author = comment.employee_id == request.user.employee_get
+    if not is_author and not request.user.has_perm("base.delete_announcement"):
+        messages.error(request, _("You don't have permission to delete this comment."))
+        return HttpResponse(status=403)
     comment.delete()
     messages.success(request, _("Comment deleted successfully!"))
     return HttpResponse()

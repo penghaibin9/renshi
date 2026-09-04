@@ -1,7 +1,4 @@
-import sys
-from datetime import datetime
-
-from apscheduler.schedulers.background import BackgroundScheduler
+from django.utils import timezone
 
 from horilla.signals import post_scheduler, pre_scheduler
 
@@ -10,8 +7,8 @@ def leave_reset():
     pre_scheduler.send(sender=leave_reset)
     from leave.models import LeaveType
 
-    today = datetime.now()
-    today_date = today.date()
+    today = timezone.localtime()
+    today_date = timezone.localdate()
     leave_types = LeaveType.objects.filter(reset=True)
     # Looping through filtered leave types with reset is true
     for leave_type in leave_types:
@@ -52,16 +49,3 @@ def leave_reset():
             "leave_types": leave_types,
         }
     )
-
-
-if not any(
-    cmd in sys.argv
-    for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
-):
-    """
-    Initializes and starts background tasks using APScheduler when the server is running.
-    """
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(leave_reset, "interval", hours=4)
-
-    scheduler.start()

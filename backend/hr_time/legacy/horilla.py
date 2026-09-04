@@ -14,6 +14,22 @@ from datetime import date
 from django.db.models import Q
 
 
+def _attendance_activity_model():
+    """Resolve the legacy source only when the adapter is actually used."""
+
+    from attendance.models import AttendanceActivity
+
+    return AttendanceActivity
+
+
+def _leave_request_model():
+    """Resolve the legacy source only when the adapter is actually used."""
+
+    from leave.models import LeaveRequest
+
+    return LeaveRequest
+
+
 class HorillaLegacyTimeAdapter:
     """迁移/对账专用只读 adapter。"""
 
@@ -30,7 +46,7 @@ class HorillaLegacyTimeAdapter:
         end: date,
     ) -> list[dict]:
         """读取 legacy 原始 AttendanceActivity，不做考勤结论推导。"""
-        from attendance.models import AttendanceActivity
+        AttendanceActivity = _attendance_activity_model()
 
         rows = AttendanceActivity.objects.filter(
             employee_id_id=legacy_employee_id,
@@ -65,7 +81,7 @@ class HorillaLegacyTimeAdapter:
         end: date,
     ) -> list[dict]:
         """读取与区间相交的 legacy LeaveRequest，保留原状态，不翻译成 HR11 新状态机。"""
-        from leave.models import LeaveRequest
+        LeaveRequest = _leave_request_model()
 
         scoped = LeaveRequest.objects.filter(
             employee_id_id=legacy_employee_id,

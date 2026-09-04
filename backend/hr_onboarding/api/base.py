@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.utils import timezone
 
@@ -36,6 +37,7 @@ from hr_onboarding.api.exceptions import (
     TenantContextRequiredError,
 )
 from hr_onboarding.context import build_hr05_context, resolve_tenant_from_request
+from hr_onboarding.policies.authority import get_authority_mode
 
 logger = logging.getLogger(__name__)
 
@@ -124,14 +126,14 @@ def make_hr05_context(request):
     try:
         return build_hr05_context(
             tenant_id=tenant_id,
-            school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
+            school_timezone=settings.TIME_ZONE,
             user_id=user.id,
             as_of=request.GET.get("as_of"),
             period_from=request.GET.get("period_from"),
             period_to=request.GET.get("period_to"),
             scope_type=scope_type,
             scope_org_id=scope_org_id,
-            authority_mode=request.GET.get("authority_mode", "LEGACY_ONBOARDING_ONLY"),
+            authority_mode=get_authority_mode(tenant_id),
         )
     except HrContextError as exc:
         # HR01 上下文错误 → HR05 信封（非法 scope/日期不再 500）
@@ -139,15 +141,20 @@ def make_hr05_context(request):
 
 
 def get_idempotency_key(request) -> str | None:
-    """读 Idempotency-Key（HEADER 优先，其次 body/query）。"""
+    """Read a mutation idempotency key without trusting URL query data.
+
+    The header is canonical; form bodies remain supported for existing
+    same-origin pages. Query strings are intentionally ignored because they
+    are commonly retained in browser history and infrastructure access logs.
+    """
     value = request.headers.get("Idempotency-Key")
     if value:
         return value
     if request.method == "POST":
         value = getattr(request, "POST", {}).get("idempotency_key")
-    if value:
-        return value
-    return request.GET.get("idempotency_key")
+        if value:
+            return value
+    return None
 
 
 def get_if_match(request) -> str | None:

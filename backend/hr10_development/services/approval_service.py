@@ -32,6 +32,22 @@ class ApprovalService:
     ]
 
     @staticmethod
+    def _lock_request(request_obj):
+        from hr10_development.models.training_request import HrTrainingRequest
+
+        return (
+            HrTrainingRequest.objects.select_for_update()
+            .filter(id=request_obj.id, tenant_id=request_obj.tenant_id)
+            .first()
+        )
+
+    @staticmethod
+    def _is_reviewable(status):
+        return status == RequestLifecycleStatus.SUBMITTED or status in {
+            step[0] for step in ApprovalService.DEFAULT_STEPS
+        }
+
+    @staticmethod
     @transaction.atomic
     def approve_step(request_obj, approver_id: int, workflow_version: str,
                      comment: str = "", reason_code: str = "") -> dict:
@@ -40,13 +56,22 @@ class ApprovalService:
 
         Returns: {"approved": bool, "next_status": str}
         """
-        from hr10_development.models.training_request import HrTrainingRequest
+        request_obj = ApprovalService._lock_request(request_obj)
+        if request_obj is None:
+            return {"approved": False, "error": DevelopmentErrorCode.NOT_FOUND}
 
         # 禁止自审批：申请人与审批人相同
         if request_obj.staff_master_id == approver_id:
             return {"approved": False, "error": DevelopmentErrorCode.SELF_APPROVAL_NOT_ALLOWED}
 
         current_status = request_obj.lifecycle_status
+        if not ApprovalService._is_reviewable(current_status):
+            return {
+                "approved": False,
+                "error": DevelopmentErrorCode.REQUEST_ALREADY_FINAL,
+            }
+        if current_status == RequestLifecycleStatus.SUBMITTED:
+            current_status = RequestLifecycleStatus.UNDER_MANAGER_REVIEW
         next_step = ApprovalService._next_step(current_status)
 
         if next_step is None:
@@ -85,6 +110,15 @@ class ApprovalService:
     def return_step(request_obj, approver_id: int, workflow_version: str,
                     comment: str = "", reason_code: str = "") -> dict:
         """退回修改（RETURNED 可重提）。"""
+        request_obj = ApprovalService._lock_request(request_obj)
+        if request_obj is None:
+            return {"approved": False, "error": DevelopmentErrorCode.NOT_FOUND}
+        current_status = request_obj.lifecycle_status
+        if not ApprovalService._is_reviewable(current_status):
+            return {
+                "approved": False,
+                "error": DevelopmentErrorCode.REQUEST_ALREADY_FINAL,
+            }
         request_obj.lifecycle_status = RequestLifecycleStatus.RETURNED
         request_obj.version += 1
         request_obj.save(update_fields=["lifecycle_status", "version", "updated_at"])
@@ -95,7 +129,7 @@ class ApprovalService:
             case_id=request_obj.id,
             workflow_policy_version_id=workflow_version,
             step_no=request_obj.current_approval_step,
-            role=ApprovalService._role_for_status(request_obj.lifecycle_status),
+            role=ApprovalService._role_for_status(current_status),
             approver_id=approver_id,
             decision="RETURNED",
             reason_code=reason_code,
@@ -111,6 +145,15 @@ class ApprovalService:
     def reject(request_obj, approver_id: int, workflow_version: str,
                comment: str = "", reason_code: str = "") -> dict:
         """最终否决（REJECTED 为终局）。"""
+        request_obj = ApprovalService._lock_request(request_obj)
+        if request_obj is None:
+            return {"approved": False, "error": DevelopmentErrorCode.NOT_FOUND}
+        current_status = request_obj.lifecycle_status
+        if not ApprovalService._is_reviewable(current_status):
+            return {
+                "approved": False,
+                "error": DevelopmentErrorCode.REQUEST_ALREADY_FINAL,
+            }
         request_obj.lifecycle_status = RequestLifecycleStatus.REJECTED
         request_obj.version += 1
         request_obj.save(update_fields=["lifecycle_status", "version", "updated_at"])
@@ -121,7 +164,7 @@ class ApprovalService:
             case_id=request_obj.id,
             workflow_policy_version_id=workflow_version,
             step_no=request_obj.current_approval_step,
-            role=ApprovalService._role_for_status(request_obj.lifecycle_status),
+            role=ApprovalService._role_for_status(current_status),
             approver_id=approver_id,
             decision="REJECTED",
             reason_code=reason_code,

@@ -54,6 +54,8 @@ def has_hr02_permission(user, permission_code: str) -> bool:
 
     if permission_code not in HR02_PERMISSIONS:
         return False
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
     if getattr(user, "is_superuser", False) or user.has_perm(permission_code):
         return True
     legacy_code = LEGACY_HR02_PERMISSION_ALIASES.get(permission_code)

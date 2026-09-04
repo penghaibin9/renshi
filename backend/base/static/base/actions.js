@@ -151,10 +151,11 @@ $("#archiveRotatingShiftAssign").click(function (e) {
                 ids = JSON.parse($("#selectedRShifts").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/rotating-shift-assign-bulk-archive/?is_active=False",
+                    url: "/rotating-shift-assign-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -196,10 +197,11 @@ $("#unArchiveRotatingShiftAssign").click(function (e) {
                 ids = JSON.parse($("#selectedRShifts").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/rotating-shift-assign-bulk-archive/?is_active=True",
+                    url: "/rotating-shift-assign-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {

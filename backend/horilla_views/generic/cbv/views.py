@@ -815,18 +815,18 @@ class HorillaListView(ListView):
                                     )
                                     record[reverse_field] = result
                                 elif reverse_field in self.fk_mapping:
-                                    record.update(
-                                        {
-                                            reverse_field: data
-                                            for data in fk_values_mapping[reverse_field]
-                                            if getattr(
-                                                data,
-                                                self.fk_mapping[reverse_field],
-                                                None,
-                                            )
-                                            == record[reverse_field]
-                                        }
-                                    )
+                                    matches = [
+                                        data
+                                        for data in fk_values_mapping[reverse_field]
+                                        if getattr(
+                                            data,
+                                            self.fk_mapping[reverse_field],
+                                            None,
+                                        )
+                                        == record[reverse_field]
+                                    ]
+                                    if matches:
+                                        record[reverse_field] = matches[-1]
                             records_to_import.append(record)
 
                         except Exception as e:
@@ -1009,18 +1009,18 @@ class HorillaListView(ListView):
                                             result.values()
                                         )[0]
                                 elif reverse_field in self.fk_mapping:
-                                    record.update(
-                                        {
-                                            reverse_field: data
-                                            for data in fk_values_mapping[reverse_field]
-                                            if getattr(
-                                                data,
-                                                self.fk_mapping[reverse_field],
-                                                None,
-                                            )
-                                            == record[reverse_field]
-                                        }
-                                    )
+                                    matches = [
+                                        data
+                                        for data in fk_values_mapping[reverse_field]
+                                        if getattr(
+                                            data,
+                                            self.fk_mapping[reverse_field],
+                                            None,
+                                        )
+                                        == record[reverse_field]
+                                    ]
+                                    if matches:
+                                        record[reverse_field] = matches[-1]
                             records_to_update.append(record)
 
                         except Exception as e:
@@ -1955,12 +1955,15 @@ class HorillaFormView(FormView):
         """
 
         def __new__(
-            self, content: str = "", targets_to_reload: list = [], script: str = ""
+            self,
+            content: str = "",
+            targets_to_reload: list | None = None,
+            script: str = "",
         ) -> HttpResponse:
             """
             __new__ method
             """
-            targets_to_reload = list(set(targets_to_reload))
+            targets_to_reload = list(dict.fromkeys(targets_to_reload or ()))
             targets_to_reload.append("#reloadMessagesButton")
             script_id = get_short_uuid(4)
             request = getattr(_thread_locals, "request", None)
@@ -2132,12 +2135,6 @@ class HorillaFormView(FormView):
                 form.save = MethodType(save, form)
 
             if self.request.method == "GET":
-                [
-                    (
-                        "employee_id",
-                        FormView,
-                    )
-                ]
                 for dynamic_tuple in self.dynamic_create_fields:
                     view = dynamic_tuple[1]
                     view.display_title = "Dynamic create"
@@ -2647,4 +2644,4 @@ def dispatch_profile_tab(request, tab_key: str, pk: int, *args, **kwargs):
     view_func = HorillaProfileView._tab_view_registry.get(tab_key)
     if view_func is None:
         raise Http404(f"No profile tab registered for '{tab_key}'")
-    return view_func(request, pk=pk, *args, **kwargs)
+    return view_func(request, *args, pk=pk, **kwargs)

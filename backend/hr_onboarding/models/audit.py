@@ -14,6 +14,14 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 
+class _AppendOnlyAuditEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR05_AUDIT_EVENT_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("HR05_AUDIT_EVENT_IMMUTABLE")
+
+
 class HrOnboardingAuditEvent(models.Model):
     """HR05 业务审计事件。"""
 
@@ -30,6 +38,8 @@ class HrOnboardingAuditEvent(models.Model):
     request_id = models.CharField(max_length=64, blank=True, default="")
     occurred_at = models.DateTimeField(auto_now_add=True)
 
+    objects = _AppendOnlyAuditEventQuerySet.as_manager()
+
     class Meta:
         verbose_name = _("HR Onboarding Audit Event")
         verbose_name_plural = _("HR Onboarding Audit Events")
@@ -41,3 +51,11 @@ class HrOnboardingAuditEvent(models.Model):
 
     def __str__(self):
         return f"{self.action}:{self.business_id}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError("HR05_AUDIT_EVENT_IMMUTABLE")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR05_AUDIT_EVENT_IMMUTABLE")

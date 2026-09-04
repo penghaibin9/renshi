@@ -35,14 +35,14 @@ class QuickAction:
     feature_flag: Optional[str] = None
 
 
-# V1 快捷动作（总册 13.2），route 指向各业务域真实入口
+# 快捷动作（总册 13.2），只指向 HR01~HR18 正式工作区。
 QUICK_ACTIONS: List[QuickAction] = [
     QuickAction(
         key="staff.create",
         label="新增教职工",
         description="录入新教职工的基本信息与任职关系",
         required_permissions=("employee.add_employee",),
-        route_url="/employee/employee-view-new/",
+        route_url="/hr/staff/",
         icon="user-plus",
         priority=10,
         audiences=("HR_ADMIN", "COLLEGE_HR_SECRETARY"),
@@ -53,7 +53,7 @@ QUICK_ACTIONS: List[QuickAction] = [
         label="导出教职工名册",
         description="导出当前范围在岗教职工名册",
         required_permissions=("employee.view_employee", "hr.dashboard.export"),
-        route_url="/employee/employees-export/",
+        route_url="/hr/staff/",
         icon="download",
         priority=20,
         audiences=("HR_ADMIN", "HR_OFFICE_HEAD"),
@@ -64,7 +64,7 @@ QUICK_ACTIONS: List[QuickAction] = [
         label="创建招聘项目",
         description="发起一个新的招聘项目",
         required_permissions=("recruitment.add_recruitment",),
-        route_url="/recruitment/recruitment-view/",
+        route_url="/hr/recruitment/campaigns",
         icon="briefcase",
         priority=30,
         audiences=("HR_ADMIN",),
@@ -76,7 +76,7 @@ QUICK_ACTIONS: List[QuickAction] = [
         label="办理入职",
         description="为新入职教职工办理入职流程",
         required_permissions=("onboarding.add_onboarding",),
-        route_url="/onboarding/onboarding-view/",
+        route_url="/hr/onboarding/prehires",
         icon="user-check",
         priority=40,
         audiences=("HR_ADMIN", "COLLEGE_HR_SECRETARY"),
@@ -88,7 +88,7 @@ QUICK_ACTIONS: List[QuickAction] = [
         label="合同续签",
         description="处理即将到期的合同续签",
         required_permissions=("payroll.change_contract",),
-        route_url="/payroll/contract-view/",
+        route_url="/hr/contracts/",
         icon="file-signature",
         priority=50,
         audiences=("HR_ADMIN",),
@@ -100,7 +100,7 @@ QUICK_ACTIONS: List[QuickAction] = [
         label="创建请假申请",
         description="教职工请假申请入口",
         required_permissions=("leave.add_leaverequest",),
-        route_url="/leave/request-view/",
+        route_url="/hr/time/leave/",
         icon="calendar-minus",
         priority=60,
         audiences=("ALL",),

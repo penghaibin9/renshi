@@ -20,8 +20,7 @@
     <button
         class="oh-modal__close"
         aria-label="{% trans 'Close' %}"
-        {% if
-        messages %}
+        {% if messages %}
             hx-get="{% url 'user-request-filter' %}?{{pd}}"
             hx-target="#userRequest"
         {% endif %}

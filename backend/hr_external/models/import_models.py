@@ -4,7 +4,7 @@ hr_external/models/import_models.py —— Excel 导入 staging（S3，总册 §
 流程：template → upload → staging → validation → error workbook → preview → confirm
 → async execute → result ledger → audit（§110）。
 - 禁止 Excel 直接建账号/开放权限（§110/§24.4）。
-- S3 提供 staging 骨架；execute_commit（分批事务）由 ImportService 实现；XLSX 解析 # [总控占位]。
+- ImportService 提供 CSV/XLSX 解析、分批事务提交、结果账本与错误回执。
 """
 
 from __future__ import annotations

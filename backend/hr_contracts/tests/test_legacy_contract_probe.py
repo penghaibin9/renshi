@@ -6,8 +6,9 @@ from hr_contracts.legacy_contract_probe import LegacyContractProbe
 
 
 class LegacyContractProbeTests(SimpleTestCase):
-    @patch("payroll.models.models.Contract.objects")
-    def test_inventory_is_explicitly_tenant_scoped(self, contract_objects):
+    @patch("hr_contracts.legacy_contract_probe._legacy_contract_model")
+    def test_inventory_is_explicitly_tenant_scoped(self, contract_model):
+        contract_objects = contract_model.return_value.objects
         scoped = MagicMock()
         scoped.count.return_value = 9
         scoped.filter.return_value.count.side_effect = [2, 4, 2, 1]
@@ -21,8 +22,9 @@ class LegacyContractProbeTests(SimpleTestCase):
         self.assertEqual(report["total"], 9)
         self.assertFalse(report["authority"])
 
-    @patch("payroll.models.models.Contract.objects")
-    def test_snapshot_probe_is_bounded_and_never_claims_authority(self, contract_objects):
+    @patch("hr_contracts.legacy_contract_probe._legacy_contract_model")
+    def test_snapshot_probe_is_bounded_and_never_claims_authority(self, contract_model):
+        contract_objects = contract_model.return_value.objects
         scoped = MagicMock()
         ordered = MagicMock()
         values_qs = MagicMock()

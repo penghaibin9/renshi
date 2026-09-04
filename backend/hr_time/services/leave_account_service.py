@@ -17,6 +17,7 @@ S7 假期账户服务（总册 §87-91、§112）。
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 from django.db import transaction
@@ -108,9 +109,36 @@ class LeaveAccountService:
             raise LeaveAccountError(
                 "LEAVE_POLICY_CONFLICT", "账户已绑定另一假别政策版本"
             )
-        balance_before = LeaveAccountService.balance(
-            account=account, as_of=effective_date
+        if policy_version is not None and account.policy_version_id is None:
+            account.policy_version = policy_version
+            account.save(update_fields=["policy_version", "updated_at"])
+        if unit != leave_type.unit:
+            raise LeaveAccountError(
+                "LEAVE_UNIT_CONFLICT", "账本单位必须与假别目录配置一致"
+            )
+        if source_type and source_id:
+            existing = HrLeaveLedgerEntry.objects.filter(
+                tenant_id=tenant_id,
+                account=account,
+                source_type=source_type,
+                source_id=source_id,
+            ).first()
+            if existing is not None:
+                if (
+                    existing.entry_type != entry_type
+                    or existing.amount != Decimal(str(amount))
+                    or existing.unit != unit
+                    or existing.effective_date != effective_date
+                ):
+                    raise LeaveAccountError(
+                        "LEDGER_SOURCE_CONFLICT",
+                        "同一业务来源已写入不同的假期账本内容",
+                    )
+                return existing
+        balance_before = Decimal(
+            str(LeaveAccountService.balance(account=account, as_of=effective_date))
         )
+        amount = Decimal(str(amount))
         if entry_type in (LeaveLedgerEntryType.RESERVE, LeaveLedgerEntryType.RESERVATION_RELEASE):
             balance_after = balance_before  # 冻结不改变余额
         else:

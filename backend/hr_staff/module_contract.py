@@ -22,3 +22,10 @@ FORBIDDEN_DIRECT_WRITES = (
 
 BUSINESS_EVENT_PRODUCER = True
 BUSINESS_EVENT_POLICY = "TRANSACTIONAL_OUTBOX"
+
+MATERIAL_SECURITY_POLICY = (
+    "private tenant/staff-partitioned storage",
+    "malware + size + extension + MIME + magic-byte validation",
+    "actor-bound one-time ticket transported only in request headers",
+    "audit succeeds before file streaming",
+)

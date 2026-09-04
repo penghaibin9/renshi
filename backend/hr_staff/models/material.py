@@ -121,7 +121,7 @@ class HrMaterialDownloadTicket(models.Model):
     """材料下载票据（短时效一次性/有限次数；落 DB，跨进程可用）。"""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    token = models.CharField(max_length=64, unique=True, db_index=True)
+    token = models.CharField(max_length=71, unique=True, db_index=True)
     tenant_id = models.BigIntegerField(db_index=True)
     staff_id = models.ForeignKey(
         "hr_staff.HrStaffMaster", on_delete=models.PROTECT, related_name="material_tickets"
@@ -146,9 +146,23 @@ class HrMaterialDownloadTicket(models.Model):
         indexes = [
             models.Index(fields=["tenant_id", "expires_at"]),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(purpose__gt=""),
+                name="hr03_ticket_purpose_required",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(max_uses=1),
+                name="hr03_ticket_single_use",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(uses__lte=1),
+                name="hr03_ticket_uses_lte_one",
+            ),
+        ]
 
     def __str__(self):
-        return f"ticket {self.token[:8]}… (uses={self.uses}/{self.max_uses})"
+        return f"material ticket (uses={self.uses}/{self.max_uses})"
 
 
 class HrMaterialRequest(models.Model):

@@ -106,7 +106,9 @@
                             {% else %}
                                 {% if leave.is_approved and leave.status == 'requested' and leave.end_date >= current_date %}
                                     <a
-                                        href="{% url 'request-approve' leave.id %}"
+                                        href="#"
+                                        hx-post="{% url 'request-approve' leave.id %}"
+                                        hx-swap="none"
                                         title="{% trans 'Approve' %}"
                                         class="oh-btn oh-btn--success w-100"
                                         {% if leave.end_date.month > current_date.month %}

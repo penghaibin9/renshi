@@ -25,6 +25,7 @@ from hr_external.models import (
     HrExternalEngagement,
     HrExternalLifecycleEvent,
     HrExternalProvisioningRequest,
+    HrExternalServiceTask,
 )
 from hr_external.services.access_service import AccessScopeInvalid, AccessService
 from hr_external.services.category_service import CategoryService
@@ -62,9 +63,9 @@ class AccessLifecycleTests(TestCase):
 
     def test_provision_creates_scoped_grants_with_expiry(self):
         grants = self.service.provision_engagement_access(tenant_id=self.tenant, engagement=self.eng)
-        self.assertEqual(len(grants), 3)  # EXTERNAL_PORTAL/ACADEMIC/LIBRARY
+        self.assertEqual(len(grants), 1)  # least privilege: portal only without a teaching task
         for g in grants:
-            self.assertIn(g.target_system, {"EXTERNAL_PORTAL", "ACADEMIC", "LIBRARY"})
+            self.assertEqual(g.target_system, "EXTERNAL_PORTAL")
             # expires_at <= end_at + grace（§67）
             max_expiry = timezone.make_aware(
                 datetime.combine(self.eng.end_at, datetime.min.time())
@@ -74,7 +75,7 @@ class AccessLifecycleTests(TestCase):
             HrExternalProvisioningRequest.objects.filter(
                 tenant_id=self.tenant, operation="GRANT"
             ).count(),
-            3,
+            1,
         )
 
     def test_provisioning_idempotency_key_unique(self):
@@ -91,15 +92,94 @@ class AccessLifecycleTests(TestCase):
         )
         self.assertEqual(
             HrExternalAccessGrant.objects.filter(tenant_id=self.tenant, engagement_id=self.eng).count(),
-            3,
+            1,
+        )
+
+    def test_academic_access_requires_authoritative_teaching_reference(self):
+        HrExternalServiceTask.objects.create(
+            tenant_id=self.tenant,
+            engagement_id=self.eng,
+            task_type="TEACHING",
+            source_domain="ACADEMIC",
+            source_object_type="TEACHING_ASSIGNMENT",
+            source_object_id="JW-COURSE-2026-001",
+            title="2026 秋季学期课程教学",
+            planned_start=date(2026, 9, 1),
+            owner_org_id=1,
+            status="ASSIGNED",
+        )
+
+        grants = self.service.provision_engagement_access(
+            tenant_id=self.tenant, engagement=self.eng
+        )
+
+        self.assertEqual({grant.target_system for grant in grants}, {"EXTERNAL_PORTAL", "ACADEMIC"})
+        academic = next(grant for grant in grants if grant.target_system == "ACADEMIC")
+        self.assertEqual(
+            academic.scope_json["teachingTaskRefs"], ["JW-COURSE-2026-001"]
+        )
+        request = HrExternalProvisioningRequest.objects.get(
+            tenant_id=self.tenant,
+            engagement_id=self.eng,
+            target_system="ACADEMIC",
+            operation="GRANT",
+        )
+        self.assertEqual(
+            request.scope_json["teachingTaskRefs"], ["JW-COURSE-2026-001"]
+        )
+
+    def test_unknown_access_policy_fails_closed(self):
+        category = self.profile.primary_category
+        category.access_policy_code = "UNREVIEWED_CUSTOM_POLICY"
+        category.save(update_fields=["access_policy_code", "updated_at"])
+
+        with self.assertRaises(AccessScopeInvalid):
+            self.service.provision_engagement_access(
+                tenant_id=self.tenant, engagement=self.eng
+            )
+
+        self.assertFalse(
+            HrExternalAccessGrant.objects.filter(
+                tenant_id=self.tenant, engagement_id=self.eng
+            ).exists()
+        )
+
+    def test_policy_downgrade_queues_revoke_for_obsolete_grant(self):
+        category = self.profile.primary_category
+        category.access_policy_code = "PORTAL_LIBRARY"
+        category.save(update_fields=["access_policy_code", "updated_at"])
+        self.service.provision_engagement_access(
+            tenant_id=self.tenant, engagement=self.eng
+        )
+        library = HrExternalAccessGrant.objects.get(
+            tenant_id=self.tenant,
+            engagement_id=self.eng,
+            target_system="LIBRARY",
+        )
+
+        category.access_policy_code = "PORTAL_ONLY"
+        category.save(update_fields=["access_policy_code", "updated_at"])
+        current = self.service.provision_engagement_access(
+            tenant_id=self.tenant, engagement=self.eng
+        )
+
+        self.assertEqual({grant.target_system for grant in current}, {"EXTERNAL_PORTAL"})
+        self.assertTrue(
+            HrExternalProvisioningRequest.objects.filter(
+                tenant_id=self.tenant,
+                idempotency_key=f"revoke:{library.id}",
+                operation="REVOKE",
+                status=ProvisioningStatus.PENDING,
+            ).exists()
         )
         self.assertEqual(
             HrExternalProvisioningRequest.objects.filter(
                 tenant_id=self.tenant,
                 engagement_id=self.eng,
                 operation="GRANT",
+                status=ProvisioningStatus.PENDING,
             ).count(),
-            3,
+            1,
         )
 
     def test_wrong_tenant_provisioning_is_fail_closed(self):
@@ -142,9 +222,9 @@ class AccessLifecycleTests(TestCase):
 
         revoked = self.service.revoke_engagement_access(tenant_id=self.tenant, engagement=self.eng)
         # 只撤销 eng 的 grants，eng2 的 grants 不动（§138.14/§99）
-        self.assertEqual(len(revoked), 3)
+        self.assertEqual(len(revoked), 1)
         eng2_grants = HrExternalAccessGrant.objects.filter(engagement_id=eng2)
-        self.assertEqual(eng2_grants.count(), 3)
+        self.assertEqual(eng2_grants.count(), 1)
         for g in eng2_grants:
             self.assertIn(g.status, [AccessGrantStatus.PENDING, AccessGrantStatus.GRANTED])
 

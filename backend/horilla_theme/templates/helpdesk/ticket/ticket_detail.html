@@ -418,7 +418,8 @@
                                                 class="w-full comment_input"
                                                 data-comment-id="{{item.comment.id}}"
                                                 hidden
-                                                hx-post="{% url 'comment-edit' %}?comment_id={{item.comment.id}}"
+                                                hx-post="{% url 'comment-edit' %}"
+                                                hx-vals='{"comment_id":"{{ item.comment.id }}"}'
                                                 name="new_comment"
                                                 hx-trigger="focusout"
                                             >{{item.comment.comment}}</textarea>
@@ -438,7 +439,7 @@
                                                 {% if perms.helpdesk.delete_comment %}
                                                     <a
                                                         hx-confirm="{% trans 'Are you sure you want to delete this comment?' %}"
-                                                        hx-get="{% url 'comment-delete' item.comment.id %}"
+                                                        hx-post="{% url 'comment-delete' item.comment.id %}"
                                                         type="button"
                                                         title="{% trans 'Delete' %}"
                                                         class="oh-btn p-3 text-danger"

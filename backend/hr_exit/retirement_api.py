@@ -167,6 +167,13 @@ def _policy_data(policy):
         "relationshipType": policy.relationship_type,
         "specialConditionCode": policy.special_condition_code,
         "retirementAgeMonths": policy.retirement_age_months,
+        "transitionBirthStart": (
+            policy.transition_birth_start.isoformat()
+            if policy.transition_birth_start
+            else None
+        ),
+        "delayStepBirthMonths": policy.delay_step_birth_months,
+        "maxRetirementAgeMonths": policy.max_retirement_age_months,
         "minimumServiceMonths": policy.minimum_service_months,
         "effectiveFrom": policy.effective_from.isoformat(),
         "effectiveTo": policy.effective_to.isoformat() if policy.effective_to else None,
@@ -194,6 +201,11 @@ def create_retirement_policy(request):
             if payload.get("effectiveTo")
             else None
         )
+        transition_birth_start = (
+            parse_date(str(payload["transitionBirthStart"]))
+            if payload.get("transitionBirthStart")
+            else None
+        )
     except ValueError:
         return _error("RETIREMENT_POLICY_DATE_INVALID", status=400)
     try:
@@ -211,6 +223,9 @@ def create_retirement_policy(request):
             staff_category_code=payload.get("staffCategoryCode", ""),
             relationship_type=payload.get("relationshipType", ""),
             special_condition_code=payload.get("specialConditionCode", ""),
+            transition_birth_start=transition_birth_start,
+            delay_step_birth_months=payload.get("delayStepBirthMonths", 0),
+            max_retirement_age_months=payload.get("maxRetirementAgeMonths"),
             priority=payload.get("priority", 0),
         )
     except (RetirementPolicyError, ValueError) as exc:

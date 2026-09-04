@@ -67,7 +67,31 @@ admin.site.register(WorkTypeRequestComment)
 admin.site.register(DynamicPagination)
 admin.site.register(Announcement)
 admin.site.register(Attachment)
-admin.site.register(EmailLog)
+
+
+@admin.register(EmailLog)
+class EmailLogAdmin(admin.ModelAdmin):
+    list_display = ("subject", "to", "status", "company_id", "created_at")
+    list_filter = ("status", "company_id", "created_at")
+    search_fields = ("subject", "to", "from_email")
+    readonly_fields = (
+        "subject",
+        "body",
+        "from_email",
+        "to",
+        "status",
+        "company_id",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 admin.site.register(DashboardEmployeeCharts)
 admin.site.register(Holidays)
 admin.site.register(CompanyLeaves)

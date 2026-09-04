@@ -33,6 +33,7 @@ from django.utils.html import strip_tags
 from django.utils.http import urlsafe_base64_encode
 from django.utils.translation import gettext_lazy as _
 
+from base.encrypted_fields import EncryptedTextField
 from base.methods import reload_queryset
 from base.models import (
     Announcement,
@@ -72,7 +73,6 @@ from base.models import (
 )
 from base.widgets import CustomModelChoiceWidget
 from employee.filters import EmployeeFilter
-from employee.forms import MultipleFileField
 from employee.models import Employee, EmployeeTag
 from horilla import horilla_middlewares
 from horilla.horilla_middlewares import _thread_locals
@@ -191,6 +191,27 @@ class ModelForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        self._encrypted_secret_fields = []
+        model = getattr(self._meta, "model", None)
+        if model is not None:
+            for field_name, form_field in self.fields.items():
+                try:
+                    model_field = model._meta.get_field(field_name)
+                except Exception:
+                    continue
+                if isinstance(model_field, EncryptedTextField):
+                    self._encrypted_secret_fields.append(field_name)
+                    form_field.widget = forms.PasswordInput(
+                        render_value=False,
+                        attrs={"autocomplete": "new-password"},
+                    )
+                    # Existing secrets are write-only in forms. An empty edit
+                    # means "keep current"; a create still respects blank=False.
+                    form_field.required = (
+                        not bool(self.instance and self.instance.pk)
+                        and not model_field.blank
+                    )
+
         reload_queryset(self.fields)
 
         request = getattr(horilla_middlewares._thread_locals, "request", None)
@@ -299,6 +320,14 @@ class ModelForm(forms.ModelForm):
                         company_field.initial = (
                             company if company in queryset else queryset.first()
                         )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if self.instance and self.instance.pk:
+            for field_name in getattr(self, "_encrypted_secret_fields", ()):
+                if not cleaned_data.get(field_name):
+                    cleaned_data[field_name] = getattr(self.instance, field_name)
+        return cleaned_data
 
     def verbose_name(self):
         """

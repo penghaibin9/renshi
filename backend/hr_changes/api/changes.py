@@ -71,9 +71,13 @@ def _context(request):
 
 
 def _version(request) -> int | None:
-    raw = request.GET.get("version") or request.headers.get("If-Match")
+    raw = request.headers.get("If-Match")
     if not raw:
         return None
+    raw = str(raw).strip()
+    if raw.startswith("W/"):
+        raw = raw[2:].strip()
+    raw = raw.strip('"')
     try:
         return int(raw)
     except (TypeError, ValueError):

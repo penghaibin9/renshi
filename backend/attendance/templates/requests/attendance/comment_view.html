@@ -31,7 +31,7 @@
                     <span class="oh-timeoff-modal__stat-title fw-bold">{% trans "Comment" %}
 
                         <a
-                            hx-get='{% url "attendance-request-delete-comment" comment.id %}'
+                            hx-post='{% url "attendance-request-delete-comment" comment.id %}'
                             data-target="#shiftRequestDetailModal"
                             hx-swap="innerHTML"
                             hx-target="#shiftRequestDetailTarget"

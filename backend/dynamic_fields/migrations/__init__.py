@@ -1,1 +1,1 @@
-from dynamic_fields import signals
+"""Database migration package; importing it must not register runtime signals."""

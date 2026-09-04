@@ -35,10 +35,8 @@ class Command(BaseCommand):
                 name = entry.get("cn", [b""])[0].decode("utf-8")
                 phone = entry.get("telephoneNumber", [b""])[0].decode("utf-8")
 
-                # Get the password from LDAP
-                ldap_password = entry.get("userPassword", [b""])[0].decode("utf-8")
-
-                # Create or update the Employee record, storing the LDAP password
+                # Directory synchronisation imports profile data only. Passwords
+                # remain under the configured authentication provider's control.
                 employee, created = Employee.objects.update_or_create(
                     email=email,
                     defaults={
@@ -55,11 +53,7 @@ class Command(BaseCommand):
                         Q(username=email) | Q(username=user_id) | Q(email=email)
                     )
                     user.username = user_id
-                    user.set_password(
-                        ldap_password
-                    )  # Hash and set the password securely
-                    user.save()  # Save the changes to the HorillaUser instance
-                    action = "Updated"
+                    user.save(update_fields=["username"])
                 except HorillaUser.DoesNotExist:
                     # If the user does not exist, handle it accordingly (e.g., log a message or create a new user)
                     self.stdout.write(
@@ -69,7 +63,7 @@ class Command(BaseCommand):
 
                 action = "Created" if created else "Updated"
                 self.stdout.write(
-                    self.style.SUCCESS(f"{action} employee {name} with LDAP password")
+                    self.style.SUCCESS(f"{action} employee {name}.")
                 )
 
             connection.unbind_s()

@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import logging
 import string
 import threading
@@ -6,6 +8,7 @@ from typing import Iterable
 
 from bs4 import BeautifulSoup
 from django.apps import apps
+from django.core.cache import cache
 from django.contrib import messages
 from django.db.models.signals import m2m_changed, post_save
 from django.dispatch import receiver
@@ -17,7 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 from base.models import Announcement, IntegrationApps
 from employee.models import Employee
 from horilla.decorators import check_integration_enabled, login_required
-from horilla.horilla_middlewares import _thread_locals
+from horilla.horilla_middlewares import _thread_locals, tenant_context
 from notifications.signals import notify
 from whatsapp.flows import (
     get_asset_category_flow_json,
@@ -29,6 +32,7 @@ from whatsapp.flows import (
     get_work_type_request_json,
 )
 from whatsapp.models import WhatsappCredientials
+from whatsapp.security import valid_webhook_signature
 from whatsapp.utils import (
     asset_request_create,
     attendance_request_create,
@@ -88,7 +92,6 @@ DETAILED_FLOW = [
     },
 ]
 
-processed_messages = set()
 logger = logging.getLogger(__name__)
 
 
@@ -107,8 +110,131 @@ def clean_string(s):
         translator = str.maketrans("", "", string.punctuation + " _")
         cleaned_string = s.translate(translator).lower()
         return cleaned_string
-    except:
+    except (AttributeError, TypeError):
         return s
+
+
+def _webhook_values(data):
+    for entry in data.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value") or {}
+            if isinstance(value, dict):
+                yield value
+
+
+def _verified_webhook_credential(request, data):
+    phone_number_ids = {
+        str(value.get("metadata", {}).get("phone_number_id") or "")
+        for value in _webhook_values(data)
+    }
+    phone_number_ids.discard("")
+    if not phone_number_ids:
+        return None
+    credentials = list(
+        WhatsappCredientials._base_manager.filter(
+            meta_phone_number_id__in=phone_number_ids
+        ).prefetch_related("company_id")
+    )
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    for credential in credentials:
+        if valid_webhook_signature(
+            request.body, signature, [credential.meta_app_secret]
+        ):
+            return credential
+    return None
+
+
+def _inbound_company_id(credential, from_number):
+    company_ids = list(credential.company_id.values_list("id", flat=True))
+    if not company_ids or not from_number:
+        return None
+    matches = list(
+        Employee.objects.entire()
+        .filter(
+            phone=from_number,
+            employee_work_info__company_id_id__in=company_ids,
+            is_active=True,
+        )
+        .values_list("employee_work_info__company_id_id", flat=True)
+        .distinct()[:2]
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
+def _process_inbound_message(request, message, value, credential):
+    message_id = str(message.get("id") or "")
+    if not message_id:
+        return
+    dedupe_key = "whatsapp:webhook:" + hashlib.sha256(
+        message_id.encode("utf-8")
+    ).hexdigest()
+    if not cache.add(dedupe_key, 1, timeout=7 * 24 * 60 * 60):
+        return
+
+    from_number = message.get("from")
+    company_id = _inbound_company_id(credential, from_number)
+    if company_id is None:
+        logger.warning("Ignored WhatsApp message without unique school employee match")
+        return
+
+    with tenant_context(company_id):
+        text = message.get("text", {}).get("body")
+        message_type = message.get("type", "")
+        flow_response = (
+            message.get("interactive", {})
+            .get("nfm_reply", {})
+            .get("response_json", {})
+        )
+
+        if message_type == "interactive":
+            flow_conversion(from_number, flow_response)
+        if message_type == "button":
+            text = message.get("button", {}).get("text", "")
+
+        text = clean_string(text)
+        if text == "helloworld":
+            send_template_message(from_number, "hello_world")
+        elif text == "help":
+            send_template_message(from_number, "help_text")
+        elif text in ["asset", "assetrequest"]:
+            send_flow_message(from_number, "asset")
+        elif text in ["shift", "shiftrequest"]:
+            send_flow_message(from_number, "shift")
+        elif text in ["worktype", "worktyperequest"]:
+            send_flow_message(from_number, "work_type")
+        elif text in ["attendance", "attendancerequest"]:
+            send_flow_message(from_number, "attendance")
+        elif text in ["leave", "leaverequest"]:
+            send_flow_message(from_number, "leave")
+        elif text in ["reimbursement", "reimbursementrequest"]:
+            send_flow_message(from_number, "reimbursement")
+        elif text in ["bonus", "bonuspoint", "bonuspointredeem"]:
+            send_flow_message(from_number, "bonus_point")
+        elif text in {
+            "hi",
+            "hello",
+            "goodmorning",
+            "goodafternoon",
+            "goodevening",
+            "goodnight",
+            "hlo",
+        }:
+            send_template_message(from_number, "welcome_message")
+        elif text in {"image", "document"}:
+            employee = Employee.objects.filter(phone=from_number).first()
+            profile = getattr(employee, "employee_profile", None)
+            if not profile:
+                logger.warning("WhatsApp profile attachment requested but unavailable")
+                return
+            link = request.build_absolute_uri(profile.url)
+            if text == "image":
+                send_image_message(from_number, link)
+            else:
+                send_document_message(from_number, link)
+        elif text == "string":
+            send_text_message(from_number, "test message", "test heading")
+        elif text:
+            send_template_message(from_number, "button_template")
 
 
 @csrf_exempt
@@ -124,128 +250,36 @@ def whatsapp(request):
         HttpResponse: A response indicating the status of the operation.
     """
     if request.method == "GET":
-        credentials = WhatsappCredientials.objects.first()
-        if not credentials:
-            return HttpResponse(status=403)
-        token = request.GET.get("hub.verify_token")
+        token = str(request.GET.get("hub.verify_token") or "")
         challenge = request.GET.get("hub.challenge")
-        if token == credentials.meta_webhook_token:
-            return HttpResponse(challenge, status=200)
+        for credential in WhatsappCredientials._base_manager.all().iterator():
+            if token and hmac.compare_digest(
+                token, str(credential.meta_webhook_token or "")
+            ):
+                return HttpResponse(challenge, status=200)
+        return HttpResponse(status=403)
 
     if request.method == "POST":
-        data = json.loads(request.body)
-        if "object" in data and "entry" in data:
-            if data["object"] == "whatsapp_business_account":
-                for entry in data["entry"]:
-                    changes = entry.get("changes", [])[0]
-                    value = changes.get("value", {})
+        try:
+            data = json.loads(request.body)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return HttpResponse("Bad Request", status=400)
+        if data.get("object") != "whatsapp_business_account":
+            return HttpResponse("Bad Request", status=400)
+        credential = _verified_webhook_credential(request, data)
+        if credential is None:
+            logger.warning("Rejected WhatsApp webhook with invalid signature")
+            return HttpResponse(status=403)
+        try:
+            for value in _webhook_values(data):
+                for message in value.get("messages", []):
+                    _process_inbound_message(request, message, value, credential)
+        except Exception:
+            logger.exception("WhatsApp webhook processing failed")
+            return HttpResponse("Internal Server Error", status=500)
+        return HttpResponse("Message processed", status=200)
 
-                    if "messages" in value:
-                        try:
-                            metadata = value.get("metadata", {})
-                            contacts = value.get("contacts", [])[0]
-                            messages = value.get("messages", [])[0]
-
-                            message_id = messages.get("id")
-                            if message_id in processed_messages:
-                                continue
-
-                            processed_messages.add(message_id)
-
-                            profile_name = contacts.get("profile", {}).get("name")
-                            from_number = messages.get("from")
-                            text = messages.get("text", {}).get("body")
-                            type = messages.get("type", {})
-                            flow_response = (
-                                messages.get("interactive", {})
-                                .get("nfm_reply", {})
-                                .get("response_json", {})
-                            )
-
-                            if type == "interactive":
-                                flow_conversion(from_number, flow_response)
-                            if type == "button":
-                                text = messages.get("button", {}).get("text", {})
-
-                            text = clean_string(text)
-
-                            # Handle different messages based on cleaned text
-                            if text == "helloworld":
-                                send_template_message(from_number, "hello_world")
-                            elif text == "help":
-                                send_template_message(from_number, "help_text")
-                            elif text in ["asset", "assetrequest"]:
-                                send_flow_message(from_number, "asset")
-                            elif text in ["shift", "shiftrequest"]:
-                                send_flow_message(from_number, "shift")
-                            elif text in ["worktype", "worktyperequest"]:
-                                send_flow_message(from_number, "work_type")
-                            elif text in ["attendance", "attendancerequest"]:
-                                send_flow_message(from_number, "attendance")
-                            elif text in ["leave", "leaverequest"]:
-                                send_flow_message(from_number, "leave")
-                            elif text in ["reimbursement", "reimbursementrequest"]:
-                                send_flow_message(from_number, "reimbursement")
-                            elif text in ["bonus", "bonuspoint", "bonuspointredeem"]:
-                                send_flow_message(from_number, "bonus_point")
-                            elif text in [
-                                "hi",
-                                "hello",
-                                "goodmorning",
-                                "goodafternoon",
-                                "goodevening",
-                                "goodnight",
-                                "hlo",
-                            ]:
-                                send_template_message(from_number, "welcome_message")
-                            elif text == "image":
-                                try:
-                                    image_relative_url = (
-                                        Employee.objects.filter(phone=from_number)
-                                        .first()
-                                        .employee_profile.url
-                                    )
-                                    image_link = request.build_absolute_uri(
-                                        image_relative_url
-                                    )
-                                except Exception as e:
-                                    print(e)
-
-                                send_image_message(from_number, image_link)
-                            elif text == "document":
-                                try:
-                                    document_relative_url = (
-                                        Employee.objects.filter(phone=from_number)
-                                        .first()
-                                        .employee_profile.url
-                                    )
-                                    document_link = request.build_absolute_uri(
-                                        document_relative_url
-                                    )
-                                except Exception as e:
-                                    print(e)
-
-                                send_document_message(from_number, document_link)
-                            elif text == "string":
-                                send_text_message(
-                                    from_number, "test message", "test heading"
-                                )
-                            else:
-                                if text:
-                                    send_template_message(
-                                        from_number, "button_template"
-                                    )
-
-                        except KeyError as e:
-                            print(f"KeyError: {e}")
-                            return HttpResponse("Bad Request", status=400)
-                        except Exception as e:
-                            print(f"Unexpected error: {e}")
-                            return HttpResponse("Internal Server Error", status=500)
-
-                        return HttpResponse("Message processed", status=403)
-
-    return HttpResponse("error", status=200)
+    return HttpResponse(status=405)
 
 
 @login_required

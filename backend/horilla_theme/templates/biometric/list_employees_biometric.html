@@ -261,14 +261,20 @@
                         </td>
                         {% if perms.biometric.delete_biometricemployees %}
                             <td class="text-sm text-left p-3 text-[#666] h-[45px]">
-                                <a
-                                    class="oh-btn oh-btn--danger w-100"
-                                    href="{% url 'delete-biometric-user' uid=employee.uid device_id=device_id %}"
-                                    onclick="event.preventDefault();event.stopPropagation(); confirm(`{% trans 'Do you want to delete this user from the biometric device?' %}`)"
-                                    title="{% trans 'Delete' %}"
+                                <form
+                                    method="post"
+                                    action="{% url 'delete-biometric-user' uid=employee.uid device_id=device_id %}"
+                                    onsubmit="event.stopPropagation(); return confirm(`{% trans 'Do you want to delete this user from the biometric device?' %}`)"
                                 >
-                                    <ion-icon name="trash-outline"></ion-icon>
-                                </a>
+                                    {% csrf_token %}
+                                    <button
+                                        type="submit"
+                                        class="oh-btn oh-btn--danger w-100"
+                                        title="{% trans 'Delete' %}"
+                                    >
+                                        <ion-icon name="trash-outline"></ion-icon>
+                                    </button>
+                                </form>
                             </td>
                         {% endif %}
                     </tr>

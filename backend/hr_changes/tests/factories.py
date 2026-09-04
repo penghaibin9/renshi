@@ -1,14 +1,13 @@
 """HR06 测试工厂（S3 起复用）。"""
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.utils import timezone
-
 from hr_staff.tests.factories import make_org, make_person, make_staff
 from hr_structure.models import (
+    HrPosition,
     HrPostCatalog,
     HrPostCatalogVersion,
-    HrPosition,
 )
 
 from hr_changes.constants import ChangeActionCode
@@ -91,7 +90,8 @@ def make_case(
         staff_master_id=staff,
         action_id=action,
         reason_id=reason,
-        requested_effective_at=requested_effective_at or date(2026, 9, 1),
+        requested_effective_at=requested_effective_at
+        or timezone.localdate() + timedelta(days=30),
         source_org_id=source_org,
         target_org_id=target_org,
         source_position_id=source_position,

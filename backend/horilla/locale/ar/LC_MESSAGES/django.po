@@ -13457,7 +13457,7 @@ msgstr "الموارد البشرية"
 msgid "Please login to access the dashboard."
 msgstr "يرجى تسجيل الدخول للوصول إلى لوحة التحكم."
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

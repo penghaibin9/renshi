@@ -3,6 +3,7 @@ offboarding/sidebar.py
 """
 
 from django.apps import apps
+from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse, reverse_lazy
 from django.utils.translation import gettext_lazy as _
 
@@ -37,15 +38,14 @@ SUBMENUS = [
 
 
 def offboarding_accessibility(request, menu, user_perms, *args, **kwargs):
-    accessible = False
     try:
-        accessible = (
+        return (
             request.user.has_module_perms("offboarding")
             or any_manager(request.user.employee_get)
             or is_offboarding_employee(request.user.employee_get)
         )
-    finally:
-        return accessible
+    except (AttributeError, ObjectDoesNotExist):
+        return False
 
 
 def resignation_letter_accessibility(request, menu, user_perms, *args, **kwargs):

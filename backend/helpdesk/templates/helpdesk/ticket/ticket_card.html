@@ -122,14 +122,20 @@
                                                                     <li class="oh-dropdown__item">
                                                                         {% if ticket.is_active %}
                                                                             <a
-                                                                                href="{% url 'ticket-archive' ticket.id %}"
-                                                                                onclick="event.stopPropagation();return confirm('{% trans "Do you want to archive this ticket?" %}')"
+                                                            href="#"
+                                                            hx-post="{% url 'ticket-archive' ticket.id %}"
+                                                            hx-swap="none"
+                                                            hx-on::after-request="window.location.reload()"
+                                                            onclick="event.stopPropagation();return confirm('{% trans "Do you want to archive this ticket?" %}')"
                                                                                 class="oh-dropdown__link"
                                                                             >{% trans "Archive" %}</a>
                                                                         {% else %}
                                                                             <a
-                                                                                href="{% url 'ticket-archive' ticket.id %}"
-                                                                                onclick="event.stopPropagation();return confirm('{% trans "Do you want to un-archive this ticket?" %}')"
+                                                            href="#"
+                                                            hx-post="{% url 'ticket-archive' ticket.id %}"
+                                                            hx-swap="none"
+                                                            hx-on::after-request="window.location.reload()"
+                                                            onclick="event.stopPropagation();return confirm('{% trans "Do you want to un-archive this ticket?" %}')"
                                                                                 class="oh-dropdown__link"
                                                                             >{% trans "Un-archive" %}</a>
                                                                         {% endif %}
@@ -493,8 +499,11 @@
                                                                             <li class="oh-dropdown__item">
                                                                                 <a
                                                                                     style="color: inherit; text-decoration: none"
-                                                                                    href="{% url 'claim-ticket' ticket.id %}"
-                                                                                    onclick="event.stopPropagation()"
+                                                                href="#"
+                                                                hx-post="{% url 'claim-ticket' ticket.id %}"
+                                                                hx-swap="none"
+                                                                hx-on::after-request="window.location.reload()"
+                                                                onclick="event.stopPropagation()"
                                                                                     class="oh-dropdown__link"
                                                                                 >{% trans "Claim" %}</a>
                                                                             </li>
@@ -523,16 +532,22 @@
                                                                         {% if ticket.is_active %}
                                                                             <li class="oh-dropdown__item">
                                                                                 <a
-                                                                                    href="{% url 'ticket-archive' ticket.id %}"
-                                                                                    onclick="event.stopPropagation();return confirm('{% trans "Do you want to archive this ticket?" %}')"
+                                                                href="#"
+                                                                hx-post="{% url 'ticket-archive' ticket.id %}"
+                                                                hx-swap="none"
+                                                                hx-on::after-request="window.location.reload()"
+                                                                onclick="event.stopPropagation();return confirm('{% trans "Do you want to archive this ticket?" %}')"
                                                                                     class="oh-dropdown__link"
                                                                                 >{% trans "Archive" %}</a>
                                                                             </li>
                                                                         {% else %}
                                                                             <li class="oh-dropdown__item">
                                                                                 <a
-                                                                                    href="{% url 'ticket-archive' ticket.id %}"
-                                                                                    onclick="event.stopPropagation();return confirm('{% trans "Do you want to un-archive this ticket?" %}')"
+                                                                href="#"
+                                                                hx-post="{% url 'ticket-archive' ticket.id %}"
+                                                                hx-swap="none"
+                                                                hx-on::after-request="window.location.reload()"
+                                                                onclick="event.stopPropagation();return confirm('{% trans "Do you want to un-archive this ticket?" %}')"
                                                                                     class="oh-dropdown__link"
                                                                                 >{% trans "Un-archive" %}</a>
                                                                             </li>
@@ -978,16 +993,22 @@
                                                                             {% if ticket.is_active %}
                                                                                 <li class="oh-dropdown__item">
                                                                                     <a
-                                                                                        href="{% url 'ticket-archive' ticket.id %}"
-                                                                                        onclick="event.stopPropagation();return confirm('{% trans "Do you want to archive this ticket?" %}')"
+                                                                    href="#"
+                                                                    hx-post="{% url 'ticket-archive' ticket.id %}"
+                                                                    hx-swap="none"
+                                                                    hx-on::after-request="window.location.reload()"
+                                                                    onclick="event.stopPropagation();return confirm('{% trans "Do you want to archive this ticket?" %}')"
                                                                                         class="oh-dropdown__link"
                                                                                     >{% trans "Archive" %}</a>
                                                                                 </li>
                                                                             {% else %}
                                                                                 <li class="oh-dropdown__item">
                                                                                     <a
-                                                                                        href="{% url 'ticket-archive' ticket.id %}"
-                                                                                        onclick="event.stopPropagation();return confirm('{% trans "Do you want to un-archive this ticket?" %}')"
+                                                                    href="#"
+                                                                    hx-post="{% url 'ticket-archive' ticket.id %}"
+                                                                    hx-swap="none"
+                                                                    hx-on::after-request="window.location.reload()"
+                                                                    onclick="event.stopPropagation();return confirm('{% trans "Do you want to un-archive this ticket?" %}')"
                                                                                         class="oh-dropdown__link"
                                                                                     >{% trans "Un-archive" %}</a>
                                                                                 </li>

@@ -17,7 +17,8 @@
      data-can-publicity="{{ can_publicity|yesno:'true,false' }}"
      data-can-decide="{{ can_decide|yesno:'true,false' }}"
      data-can-effect="{{ can_effect|yesno:'true,false' }}"
-     data-can-term="{{ can_term|yesno:'true,false' }}">
+     data-can-term="{{ can_term|yesno:'true,false' }}"
+     data-can-fact-correct="{{ can_fact_correct|yesno:'true,false' }}">
   {% if access_error %}
     <div class="hr14-error" role="alert">{{ access_error }}</div>
   {% else %}

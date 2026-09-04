@@ -185,6 +185,7 @@
             <div><b>${esc(pack.name)}</b><small>${esc(pack.code)} · ${esc(domainLabels[pack.assessment_domain] || '其它考核')}</small></div>
             <div class="hr12-action-row-actions">
               <button class="hr12-action-btn" type="button" data-rename>修改名称</button>
+              <button class="hr12-action-btn" type="button" data-new-version>新建制度版本</button>
               <button class="hr12-action-btn primary" type="button" data-versions>查看版本</button>
             </div>
           </div>
@@ -199,6 +200,17 @@
               <button class="hr12-action-btn" type="button" data-rename-cancel>取消</button>
             </div>
           </form>
+          <form class="hr12-action-form hr12-action-version-form" data-version-form>
+            <div class="hr12-action-grid">
+              <div class="hr12-action-field"><label>生效日期<input name="effectiveFrom" type="date" required></label></div>
+              <div class="hr12-action-field"><label>失效日期<input name="effectiveTo" type="date"></label></div>
+              <div class="hr12-action-field"><label>优秀分数线<input name="excellentMinScore" type="number" min="1" max="100" step="0.01" value="90" required></label></div>
+              <div class="hr12-action-field"><label>合格分数线<input name="qualifiedMinScore" type="number" min="1" max="99.99" step="0.01" value="60" required></label></div>
+              <div class="hr12-action-field"><label>优秀比例上限（%）<input name="excellentRatioPercent" type="number" min="0" max="100" step="0.01" value="20" required></label></div>
+            </div>
+            <div class="hr12-action-note">按中国高校常用口径建立百分制量表、结果映射、优秀比例、基础指标集和评审流程；以上数值可按本校制度修改，保存后仍需点击“发布版本”才会生效。</div>
+            <div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="submit">保存草稿版本</button><button class="hr12-action-btn" type="button" data-version-cancel>取消</button></div>
+          </form>
           <div class="hr12-action-versions" data-version-list>
             <div class="hr12-action-empty">正在读取版本…</div>
           </div>
@@ -206,6 +218,7 @@
 
         const versions = row.querySelector('[data-version-list]');
         const renameForm = row.querySelector('[data-rename-form]');
+        const versionForm = row.querySelector('[data-version-form]');
         row.querySelector('[data-rename]').addEventListener('click', () => {
           renameForm.classList.add('open');
           renameForm.querySelector('input').focus();
@@ -213,6 +226,34 @@
         row.querySelector('[data-rename-cancel]').addEventListener('click', () => {
           renameForm.classList.remove('open');
           renameForm.reset();
+        });
+        row.querySelector('[data-new-version]').addEventListener('click', () => {
+          versionForm.classList.add('open');
+          versionForm.querySelector('[name="effectiveFrom"]').focus();
+        });
+        row.querySelector('[data-version-cancel]').addEventListener('click', () => {
+          versionForm.classList.remove('open');
+          versionForm.reset();
+        });
+        versionForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const button = versionForm.querySelector('[type="submit"]');
+          const data = new FormData(versionForm);
+          busy(button, true);
+          try {
+            const created = await post(`/policies/${pack.id}/versions`, {
+              effectiveFrom: data.get('effectiveFrom'),
+              effectiveTo: data.get('effectiveTo') || null,
+              assessmentTypes: [pack.assessment_domain],
+              excellentMinScore: data.get('excellentMinScore'),
+              qualifiedMinScore: data.get('qualifiedMinScore'),
+              excellentRatio: Number(data.get('excellentRatioPercent')) / 100,
+            });
+            reload(`制度草稿版本 v${created.versionNo} 已建立`);
+          } catch (error) {
+            show('error', error.name === 'AbortError' ? '请求超时，请稍后重试。' : error.message);
+            busy(button, false);
+          }
         });
         renameForm.addEventListener('submit', async (event) => {
           event.preventDefault();

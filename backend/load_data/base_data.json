@@ -14,7 +14,7 @@
       "state": "Nevada",
       "city": "Las Vegas",
       "zip": "89101",
-      "icon": "base/icon/Horilla_2.png",
+      "icon": "base/icon/示例大学_2.png",
       "date_format": null,
       "time_format": null
     }
@@ -34,7 +34,7 @@
       "state": "Karnataka",
       "city": "Bengaluru",
       "zip": "560001",
-      "icon": "base/icon/Horilla_3.png",
+      "icon": "base/icon/示例大学_3.png",
       "date_format": null,
       "time_format": null
     }
@@ -54,7 +54,7 @@
       "state": "England",
       "city": "London",
       "zip": "SE1 1LB",
-      "icon": "base/icon/Horilla_1.png",
+      "icon": "base/icon/示例大学_1.png",
       "date_format": null,
       "time_format": null
     }
@@ -3295,7 +3295,7 @@
     }
   },
   {
-    "model": "base.horillamailtemplate",
+    "model": "base.示例大学mailtemplate",
     "pk": 1,
     "fields": {
       "created_at": "2025-07-05T09:39:13.733Z",
@@ -3303,12 +3303,12 @@
       "modified_by": null,
       "is_active": true,
       "title": "Offer letter",
-      "body": "<p style=\"font-size: 12.8px; text-align: center;\"><span style=\"font-weight: bolder;\"><span style=\"font-family: &quot;Courier New&quot;; font-size: 24px;\">Congratulations! Job Offer at {{instance.get_company}}</span></span></p><p style=\"font-size: 12.8px;\">username:{{instance.get_email}}</p><p style=\"font-size: 12.8px;\">password:{{instance.phone}}</p><p style=\"font-size: 12.8px;\"><i><span style=\"font-size: 14px;\">Dear {{instance.get_full_name}},</span></i></p><p style=\"font-size: 12.8px;\">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; I am delighted to extend an official offer of employment to you for the position of [Job Title] at [Company Name]. We were thoroughly impressed with your skills, experience, and the passion you demonstrated during the interview process.</p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">Here are the details of your job offer:&nbsp;</span></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">&nbsp; &nbsp; Job Position: {{instance.get_job_position}}</span></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">We believe that your unique talents will make a significant contribution to our team, and we are thrilled about the prospect of you joining us. Please take the time to review the attached detailed job description, as well as the terms and conditions outlined in the employment contract.</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">To signify your acceptance of this job offer, please confirm your agreement by [Date to Respond]. If you have any questions or need further clarification, feel free to contact me directly</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">We are excited about the value you will bring to [Company Name], and we eagerly anticipate the positive impact you'll have on our team.</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">Welcome aboard, and we look forward to a successful and fulfilling working relationship!</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">Warm regards,</span></p>",
+      "body": "<p style=\"font-size: 12.8px; text-align: center;\"><span style=\"font-weight: bolder;\"><span style=\"font-family: &quot;Courier New&quot;; font-size: 24px;\">Congratulations! Job Offer at {{instance.get_company}}</span></span></p><p style=\"font-size: 12.8px;\">username:{{instance.get_email}}</p><p style=\"font-size: 12.8px;\">首次登录：请在登录页使用“忘记密码”完成账号激活</p><p style=\"font-size: 12.8px;\"><i><span style=\"font-size: 14px;\">Dear {{instance.get_full_name}},</span></i></p><p style=\"font-size: 12.8px;\">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; I am delighted to extend an official offer of employment to you for the position of [Job Title] at [Company Name]. We were thoroughly impressed with your skills, experience, and the passion you demonstrated during the interview process.</p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">Here are the details of your job offer:&nbsp;</span></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">&nbsp; &nbsp; Job Position: {{instance.get_job_position}}</span></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">We believe that your unique talents will make a significant contribution to our team, and we are thrilled about the prospect of you joining us. Please take the time to review the attached detailed job description, as well as the terms and conditions outlined in the employment contract.</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">To signify your acceptance of this job offer, please confirm your agreement by [Date to Respond]. If you have any questions or need further clarification, feel free to contact me directly</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">We are excited about the value you will bring to [Company Name], and we eagerly anticipate the positive impact you'll have on our team.</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">Welcome aboard, and we look forward to a successful and fulfilling working relationship!</span><br></p><p style=\"font-size: 12.8px;\"><span style=\"font-size: 12.8px;\">Warm regards,</span></p>",
       "company_id": null
     }
   },
   {
-    "model": "base.horillamailtemplate",
+    "model": "base.示例大学mailtemplate",
     "pk": 2,
     "fields": {
       "created_at": "2025-07-12T10:23:52.188Z",
@@ -3549,7 +3549,7 @@
       "is_active": true,
       "announcement_id": 2,
       "employee_id": 13,
-      "comment": "Quick question — does the self-assessment in Horilla auto-save as you fill it, or do you need to submit all at once? Want to start early but take time on each section."
+      "comment": "Quick question — does the self-assessment in 示例大学 auto-save as you fill it, or do you need to submit all at once? Want to start early but take time on each section."
     }
   },
   {

@@ -127,3 +127,24 @@ class PositionReservationTests(TransactionTestCase):
             position_id=self.position.id, count=1, idempotency_key="K2",
         )
         self.assertEqual(r2.status, HrPositionReservation.Status.HELD)
+
+    def test_fractional_reservation_count_and_non_positive_fte_are_rejected(self):
+        with self.assertRaises(PositionServiceError):
+            self.svc.reserve(
+                source_domain="hr04",
+                source_business_type="req",
+                source_business_id="fractional",
+                position_id=self.position.id,
+                count="0.5",
+                idempotency_key="K-FRACTIONAL",
+            )
+        with self.assertRaises(PositionServiceError):
+            self.svc.reserve(
+                source_domain="hr04",
+                source_business_type="req",
+                source_business_id="zero-fte",
+                position_id=self.position.id,
+                count=1,
+                fte=0,
+                idempotency_key="K-ZERO-FTE",
+            )

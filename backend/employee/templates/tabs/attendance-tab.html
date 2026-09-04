@@ -141,7 +141,10 @@
                                                         class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
                                                         title="{% trans 'Re-validate Request' %}"
                                                         onclick="return confirm('{% trans "Are you sure want to cancel the request?" %}')"
-                                                        href="{% url 'cancel-validate-attendance-request' attendance.id %}"
+                                                        href="#"
+                                                        hx-post="{% url 'cancel-validate-attendance-request' attendance.id %}"
+                                                        hx-swap="none"
+                                                        hx-on::after-request="window.location.reload()"
                                                     >
                                                         <ion-icon name="close-circle-outline"></ion-icon>
                                                     </a>
@@ -426,7 +429,9 @@
                                         <div class="oh-sticky-table__td" onclick="event.stopPropagation()">
                                             {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
                                                 <a
-                                                    href='{% url "validate-this-attendance" attendance.id %}'
+                                                    href="#"
+                                                    hx-post='{% url "validate-this-attendance" attendance.id %}'
+                                                    hx-swap="none"
                                                     hx-target="#updateAttendanceBody"
                                                     class="oh-btn oh-btn--info"
                                                 >

@@ -21,10 +21,9 @@ class Hr05OnboardingConsumerError(Exception):
 class Hr05OnboardingConsumer:
     """Production consumer used by HandoffService.
 
-    Replays are delegated to HR05 CaseService. If its cache entry has expired
-    but the tenant-scoped source-unique onboarding case still exists, the DB
-    Authority row is recovered instead of turning a successful earlier create
-    into a permanent duplicate failure.
+    Replays are delegated to HR05 CaseService's durable database idempotency record.
+    The tenant-scoped source-unique onboarding case remains a second concurrency
+    backstop and recovery source.
     """
 
     def __init__(self, *, actor_user_id: Optional[int] = None):
@@ -79,22 +78,24 @@ class Hr05OnboardingConsumer:
             except (TypeError, ValueError) as exc:
                 raise Hr05OnboardingConsumerError("invalid HR02 reservation id") from exc
 
-        request = {
-            "tenant_id": tenant_id,
-            "source_type": "HR04_HIRE",
-            "source_id": str(proposed.id),
-            "hr04_proposed_hire_id": str(proposed.id),
-            "hr04_application_id": str(application.id),
-            "position_reservation_id": reservation_id,
-            "planned_organization_id": position.organization_id,
-            "planned_post_catalog_id": position.post_catalog_id,
-            "planned_position_id": position.position_id,
-            "employment_type": offer.employment_type or "FULL_TIME",
-            "staff_category": "TEACHER",
-            "expected_report_date": offer.expected_report_date,
-            "legal_name": candidate.legal_name if candidate else "",
-            "preferred_name": "",
-        }
+        from hr_onboarding.integrations.hr04 import HandoffPayload, Hr04HandoffMapper
+
+        request = Hr04HandoffMapper().build_request(
+            HandoffPayload(
+                tenant_id=tenant_id,
+                proposed_hire_id=str(proposed.id),
+                application_id=str(application.id),
+                reservation_id=reservation_id,
+                legal_name=candidate.legal_name if candidate else "",
+                preferred_name="",
+                employment_type=offer.employment_type or "FULL_TIME",
+                staff_category="TEACHER",
+                organization_id=position.organization_id,
+                post_catalog_id=position.post_catalog_id,
+                position_id=position.position_id,
+                expected_report_date=offer.expected_report_date,
+            )
+        )
 
         service = CaseService(
             tenant_id=tenant_id,
@@ -106,8 +107,6 @@ class Hr05OnboardingConsumer:
                 idempotency_key,
             )
         except OnboardingCaseDuplicateError as exc:
-            # Cache is not Authority. A previous HR05 create may have committed
-            # while its cache entry was evicted before HR04 sealed the handoff.
             # Recover only the exact same tenant + HR04 source tuple; never turn
             # an unrelated duplicate into a successful replay.
             existing = HrOnboardingCase.objects.filter(

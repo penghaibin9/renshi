@@ -55,7 +55,9 @@ def run_dual_read_compare(*, tenant_id: int) -> DiscrepancyReport:
     from hr_recruitment.models import HrJobApplication, HrRecruitmentCampaign
 
     # 1) Campaign 映射覆盖
-    legacy_rec_count = LegacyRecruitment.objects.count()
+    legacy_rec_count = LegacyRecruitment.objects.filter(
+        company_id_id=tenant_id
+    ).count()
     mapped_campaigns = HrRecruitmentCampaign.objects.filter(
         tenant_id=tenant_id, legacy_recruitment_id__isnull=False
     ).count()
@@ -70,13 +72,16 @@ def run_dual_read_compare(*, tenant_id: int) -> DiscrepancyReport:
         )
 
     # 2) Candidate / Application 计数
-    legacy_cand_count = LegacyCandidate.objects.count()
+    legacy_candidates = LegacyCandidate.objects.filter(
+        recruitment_id__company_id_id=tenant_id
+    )
+    legacy_cand_count = legacy_candidates.count()
     authority_app_count = HrJobApplication.objects.filter(tenant_id=tenant_id).count()
     report.metrics["legacy_candidates"] = legacy_cand_count
     report.metrics["authority_applications"] = authority_app_count
 
     # 3) hired 计数（legacy 不权威）
-    legacy_hired = LegacyCandidate.objects.filter(hired=True).count()
+    legacy_hired = legacy_candidates.filter(hired=True).count()
     authority_handoff = HrJobApplication.objects.filter(
         tenant_id=tenant_id, canonical_status="HANDOFF_TO_HR05"
     ).count()

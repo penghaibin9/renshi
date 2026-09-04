@@ -188,7 +188,7 @@
                                     <img
                                         src="{% static 'images/ui/minus-icon.png' %}"
                                         style="display: block; width: 50%; height: 50%"
-                                        hx-get="{% url 'delete-stage-note-file' file.id %}"
+                                        hx-post="{% url 'delete-stage-note-file' file.id %}"
                                         hx-target="#candidateNoteFile{{file.id}}"
                                         hx-swap="delete"
                                         onclick="event.stopPropagation();event.preventDefault()"

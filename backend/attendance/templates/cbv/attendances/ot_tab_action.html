@@ -104,7 +104,7 @@
         </button>
     </a>
     {% else %}
-    <a type="submit" href="{% url 'approve-overtime' instance.id %}" title="{% trans 'Approve Overtime' %}"
+    <a type="submit" href="#" hx-post="{% url 'approve-overtime' instance.id %}" hx-swap="none" title="{% trans 'Approve Overtime' %}"
         class="oh-btn oh-btn-group oh-btn--success" onclick="event.stopPropagation()" style="width: 50%;">
         <button
             style="background: none; color: inherit; border: none; padding: 0; font: inherit; cursor: pointer; outline: inherit;">

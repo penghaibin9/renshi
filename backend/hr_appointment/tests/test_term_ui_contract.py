@@ -2,10 +2,12 @@ from pathlib import Path
 
 from django.test import SimpleTestCase
 
+FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "frontend"
+
 
 class Hr14TermUiContractTests(SimpleTestCase):
     def test_workspace_term_compiles_and_uses_canonical_routes(self):
-        source = Path("static/hr/js/pages/hr14-workflows.js").read_text(
+        source = (FRONTEND_ROOT / "static/hr/js/pages/hr14-workflows.js").read_text(
             encoding="utf-8"
         )
 
@@ -14,12 +16,15 @@ class Hr14TermUiContractTests(SimpleTestCase):
         self.assertIn("'term-changes'", source)
         self.assertIn("/decision/", source)
         self.assertIn("/expiring/", source)
+        self.assertIn("/capacity-reservation/", source)
+        self.assertIn("targetPositionInstanceId", source)
+        self.assertNotIn("转岗尚未接入", source)
         self.assertNotIn("Term UUID", source)
         self.assertNotIn("AppointmentFact UUID", source)
         self.assertNotIn("目标岗位ID", source)
 
     def test_term_ui_never_equates_approval_with_effect(self):
-        source = Path("static/hr/js/pages/hr14-workflows.js").read_text(
+        source = (FRONTEND_ROOT / "static/hr/js/pages/hr14-workflows.js").read_text(
             encoding="utf-8"
         )
 

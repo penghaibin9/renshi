@@ -74,6 +74,13 @@
   background: #fff;
   color: #344054;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.hr04-action.primary {
+  border-color: var(--hr04-blue);
+  background: var(--hr04-blue);
+  color: #fff;
 }
 
 .hr04-action:disabled,
@@ -174,6 +181,58 @@
   border-radius: 12px;
   background: #fff;
 }
+.hr-rec-plan-cycle { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.hr-rec-plan-cycle > button[data-select-cycle] { flex: 1; min-width: 220px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.hr-rec-plan-cycle.is-active { border-color: #84adff; background: #f5f8ff; }
+
+.hr04-create-form,
+.hr04-campaign-detail {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--hr04-border);
+  border-radius: 12px;
+  background: var(--hr04-soft);
+}
+
+.hr04-create-form[hidden] { display: none; }
+.hr04-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
+.hr04-form-grid label { display: grid; gap: 6px; }
+.hr04-form-grid label.full { grid-column: 1 / -1; }
+.hr04-form-grid label > span { color: #475467; font-size: 12px; font-weight: 700; }
+.hr04-form-grid input,
+.hr04-form-grid select,
+.hr04-form-grid textarea { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid #d7dfeb; border-radius: 9px; background: #fff; color: var(--hr04-text); font: inherit; }
+.hr04-form-grid textarea { min-height: 78px; resize: vertical; }
+.hr04-form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.hr04-edit-line { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; margin-top: 12px; padding: 12px; border: 1px solid var(--hr04-border); border-radius: 10px; background: #f8fafc; }
+.hr04-edit-line label { display: grid; gap: 6px; }
+.hr04-edit-line label.full { grid-column: 1 / -1; }
+.hr04-edit-line label > span,
+.hr04-create-form > label > span { color: #475467; font-size: 12px; font-weight: 700; }
+.hr04-edit-line input,
+.hr04-edit-line select,
+.hr04-edit-line textarea,
+.hr04-create-form > label select { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid #d7dfeb; border-radius: 9px; background: #fff; color: var(--hr04-text); font: inherit; }
+.hr04-edit-line textarea { min-height: 78px; resize: vertical; }
+.hr04-form-result { display: none; margin-top: 10px; padding: 9px 11px; border-radius: 9px; font-size: 12px; }
+.hr04-form-result.show { display: block; }
+.hr04-form-result.ok { border: 1px solid #b9e2cf; background: #edf9f4; color: #116a4b; }
+.hr04-form-result.error { border: 1px solid #f1c7c2; background: #fff4f3; color: #b42318; }
+.hr04-campaign-detail:empty { display: none; }
+.hr04-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.hr04-detail-head h3 { margin: 0; font-size: 16px; }
+.hr04-detail-head p { margin: 4px 0 0; color: var(--hr04-muted); font-size: 12px; }
+.hr04-detail-actions,
+.hr04-position-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.hr04-position-list { display: grid; gap: 8px; margin-top: 12px; }
+.hr04-position-row { padding: 11px; border: 1px solid var(--hr04-border); border-radius: 10px; background: #fff; }
+.hr04-position-row strong,
+.hr04-position-row span { display: block; }
+.hr04-position-row span { margin-top: 3px; color: var(--hr04-muted); font-size: 12px; }
+.hr04-position-row > small { display: block; margin-top: 5px; color: #b42318; }
+.hr04-position-row > input { width: min(100%, 520px); min-height: 38px; margin-top: 9px; padding: 8px 10px; border: 1px solid #d7dfeb; border-radius: 9px; font: inherit; }
+.hr04-plan-request-list { display: grid; gap: 9px; }
+.hr04-public-link { display: inline-flex; margin-top: 10px; color: var(--hr04-blue); font-weight: 700; }
 
 .hr04-campaign-card__head {
   display: flex;
@@ -428,4 +487,9 @@
     align-items: stretch;
     flex-direction: column;
   }
+
+  .hr04-form-grid { grid-template-columns: 1fr; }
+  .hr04-form-grid label.full { grid-column: auto; }
+  .hr04-edit-line { grid-template-columns: 1fr; }
+  .hr04-edit-line label.full { grid-column: auto; }
 }

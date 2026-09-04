@@ -36,7 +36,7 @@
                     id="delete-link"
                     {% if instance.status == 'requested' %}
                         hx-confirm="{% trans 'Are you sure you want to delete?' %}"
-                        hx-get="{% url 'request-delete' instance.id %}"
+                        hx-post="{% url 'request-delete' instance.id %}"
                         hx-target="#leaveRequest"
                     {% endif %}
                     >

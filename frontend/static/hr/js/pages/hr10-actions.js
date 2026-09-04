@@ -126,6 +126,10 @@
     };
     createForm.elements.planType.onchange = syncStaff;
     syncStaff();
+    if (new URLSearchParams(window.location.search).get('action') === 'new') {
+      createForm.classList.add('open');
+      createForm.elements.planNo?.focus();
+    }
     createForm.onsubmit = async event => {
       event.preventDefault();
       const button = createForm.querySelector('[type="submit"]');

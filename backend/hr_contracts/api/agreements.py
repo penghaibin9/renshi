@@ -3,7 +3,6 @@
 from datetime import datetime
 
 from django.utils.dateparse import parse_date, parse_datetime
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from hr_contracts.api.base import (
@@ -191,7 +190,6 @@ def _datetime(value, name):
     return parsed
 
 
-@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def agreement_collection(request):
     permission = (
@@ -272,7 +270,6 @@ def agreement_detail(request, agreement_id):
     )
 
 
-@csrf_exempt
 @require_POST
 def sign_initial_version(request, agreement_id):
     enforce_contract_permission(request, PERM_AGREEMENT_SIGN)
@@ -312,7 +309,6 @@ def sign_initial_version(request, agreement_id):
         return api_error(request, "INVALID_REQUEST", str(exc), status=400)
 
 
-@csrf_exempt
 @require_POST
 def activate_initial_version(request, agreement_id, version_id):
     enforce_contract_permission(request, PERM_AGREEMENT_ACTIVATE)
@@ -341,7 +337,6 @@ def activate_initial_version(request, agreement_id, version_id):
         return api_error(request, "INVALID_REQUEST", str(exc), status=400)
 
 
-@csrf_exempt
 @require_POST
 def correct_version(request, agreement_id, version_id):
     enforce_contract_permission(request, PERM_VERSION_CORRECT)
@@ -368,7 +363,6 @@ def correct_version(request, agreement_id, version_id):
         return api_error(request, "INVALID_REQUEST", str(exc), status=400)
 
 
-@csrf_exempt
 @require_POST
 def void_version(request, agreement_id, version_id):
     enforce_contract_permission(request, PERM_VERSION_VOID)

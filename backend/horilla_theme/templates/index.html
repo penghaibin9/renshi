@@ -17,22 +17,20 @@
         <link
             rel="apple-touch-icon"
             sizes="180x180"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}"
+            href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
         >
         <link
             rel="icon"
-            type="image/png"
+            type="image/jpeg"
             sizes="32x32"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}"
+            href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
         >
         <link
             rel="icon"
-            type="image/png"
+            type="image/jpeg"
             sizes="16x16"
-            href="{% if white_label_company.icon %}{{white_label_company.icon.url}} {% else %}{% static 'favicons/favicon-16x16.png' %}{% endif %}"
+            href="{% if white_label_company.icon %}{{white_label_company.icon.url}}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
         >
-
-        <script src='{% static "horilla_theme/assets/js/tailwindcdn.js" %}'></script>
         {% include "horilla_theme/components/header_scripts.html" %}
 
         <link
@@ -48,6 +46,7 @@
             rel="stylesheet"
         >
         <link href="{% static 'horilla_theme/assets/css/tailwind.css' %}" rel="stylesheet">
+        {% include "horilla_theme/components/tailwind_theme_tokens.html" %}
         <link href="{% static 'cdn/select2/css/select2.min.css' %}" rel="stylesheet">
 
         <script src="{% static 'horilla_theme/assets/js/global.js' %}"></script>
@@ -230,11 +229,11 @@
         {% endblock %}
     </head>
 
-    <body class="bg-[{{theme_obj.primary_50}}] font-[Inter,_sans-serif] overflow-hidden {% if request.path|slice:":4" == "/hr/" %}hr-shell-v3{% endif %} {% if request.session.theme == 'dark' %}dark{% endif %}">
+    <body class="bg-primary-50 font-[Inter,_sans-serif] overflow-hidden {% if request.path|slice:":4" == "/hr/" %}hr-shell-v3{% endif %} {% if request.session.theme == 'dark' %}dark{% endif %}">
         {% get_current_language_bidi as LANGUAGE_BIDI %}
         {% get_current_language as LANGUAGE_CODE %}
         <div hidden id="statiUrl" data-url='{% static "" %}'></div>
-        <span hidden id="whiteLabelCompany" data-company="{% if white_label_company_name == 'Horilla' %}高校人事一体化平台{% else %}{{ white_label_company_name }}{% endif %}"></span>
+        <span hidden id="whiteLabelCompany" data-company="{{ white_label_company_name }}"></span>
         <!-- Include Sidebar (sidebar.html owns id="sidebar" itself) -->
         {% include "horilla_theme/components/sidebar.html" %}
 
@@ -272,7 +271,6 @@
                     <div id="imagePreview" style="display: none; position: absolute; z-index: 9999">
                         <img
                             id="previewImg"
-                            src=""
                             style="box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3); background: white"
                             class="rounded-lg"
                         >

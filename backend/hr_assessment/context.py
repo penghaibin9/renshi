@@ -22,9 +22,10 @@ DEFAULT_SCHOOL_TZ = "Asia/Shanghai"
 
 
 class HrAssessmentContextError(Exception):
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, status: int = 403):
         self.code = code
         self.message = message
+        self.status = status
         super().__init__(message)
 
 
@@ -66,6 +67,70 @@ def resolve_tenant_from_assignment(request) -> Optional[int]:
     """从请求解析租户——复用 CompanyMiddleware 的 selected_company。"""
     from hr_control_center.context import resolve_tenant_from_request
     return resolve_tenant_from_request(request)
+
+
+def resolve_authenticated_staff_id(request, tenant_id: int, *, required: bool = False):
+    """Resolve the authenticated account to exactly one tenant-scoped HR03 staff.
+
+    Canonical account links take precedence. Legacy Employee linkage is only a
+    compatibility bridge and is still resolved through the HR03 master. Ambiguous
+    active mappings fail closed instead of choosing an arbitrary staff record.
+    """
+
+    user = getattr(request, "user", None)
+    user_id = getattr(user, "id", None)
+    if user_id:
+        from hr_staff.models import HrAccountLink
+
+        linked_ids = list(
+            HrAccountLink.objects.filter(
+                tenant_id=tenant_id,
+                auth_user_id=user_id,
+                link_status=HrAccountLink.LinkStatus.ACTIVE,
+            )
+            .order_by("staff_id_id")
+            .values_list("staff_id_id", flat=True)[:2]
+        )
+        if len(linked_ids) > 1:
+            raise HrAssessmentContextError(
+                "SELF_STAFF_MAPPING_AMBIGUOUS",
+                "当前账号在本学校关联了多个有效教职工主档，请先修复账号映射。",
+            )
+        if linked_ids:
+            return linked_ids[0]
+
+    employee = getattr(user, "employee_get", None)
+    try:
+        if callable(employee):
+            employee = employee()
+    except Exception:
+        employee = None
+    legacy_employee_id = getattr(employee, "id", None)
+    if legacy_employee_id:
+        from hr_staff.models import HrStaffMaster
+
+        staff_ids = list(
+            HrStaffMaster.objects.filter(
+                tenant_id=tenant_id,
+                legacy_employee_id=legacy_employee_id,
+            )
+            .order_by("id")
+            .values_list("id", flat=True)[:2]
+        )
+        if len(staff_ids) > 1:
+            raise HrAssessmentContextError(
+                "SELF_STAFF_MAPPING_AMBIGUOUS",
+                "当前账号的历史人员映射不唯一，请先修复教职工主档。",
+            )
+        if staff_ids:
+            return staff_ids[0]
+
+    if required:
+        raise HrAssessmentContextError(
+            "SELF_STAFF_MAPPING_REQUIRED",
+            "当前账号在本学校尚未关联 HR03 教职工主档。",
+        )
+    return None
 
 
 def build_assessment_context(

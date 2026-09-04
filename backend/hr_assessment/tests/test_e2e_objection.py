@@ -116,11 +116,12 @@ class E2EProviderFailureChainTest(TestCase):
         self.assertEqual(result.status, ProviderStatus.OK)
         self.assertEqual(result.data, [])
 
-    def test_ethics_fact_provider_unavailable(self):
+    def test_ethics_fact_provider_empty_query_is_complete(self):
         p = EthicsFactProvider()
         ctx = ProviderContext(tenant_id=10001)
         result = p.fetch(ctx)
-        self.assertEqual(result.status, ProviderStatus.UNAVAILABLE)
+        self.assertEqual(result.status, ProviderStatus.OK)
+        self.assertEqual(result.data, [])
 
     def test_unavailable_is_not_zero_or_ok(self):
         self.assertNotEqual(ProviderStatus.UNAVAILABLE, ProviderStatus.OK)

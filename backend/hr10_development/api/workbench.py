@@ -1,7 +1,6 @@
 """Tenant-scoped business choices for the HR10 management workspace."""
 
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 
 from hr_staff.models import HrStaffMaster
@@ -21,7 +20,6 @@ from hr10_development.models.program_version import HrLearningProgramVersion
 from hr10_development.permissions import require_hr10_permission
 
 
-@csrf_exempt
 @require_GET
 @require_hr10_permission("hr.development.program.view")
 def choices(request):

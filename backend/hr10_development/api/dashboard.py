@@ -6,7 +6,6 @@ hr10_development/api/dashboard.py
 """
 
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 
@@ -16,7 +15,6 @@ from hr10_development.observability.metrics import metrics
 from hr10_development.permissions import require_hr10_permission
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.analytics.read")
 def plan_metrics(request, plan_id):
@@ -43,7 +41,6 @@ def plan_metrics(request, plan_id):
     }))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.analytics.read")
 def dashboard(request):
@@ -118,7 +115,6 @@ def dashboard(request):
     return JsonResponse(success(data))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.analytics.read")
 def metric_detail(request, metric_code):

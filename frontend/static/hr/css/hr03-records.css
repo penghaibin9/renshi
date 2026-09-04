@@ -10,6 +10,27 @@
   scrollbar-width: thin;
 }
 
+.hr03-upload-form {
+  display: grid;
+  gap: var(--hr-space-3);
+  margin-bottom: var(--hr-space-5);
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-v2-line);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-v2-surface);
+}
+
+.hr03-upload-form__head strong,
+.hr03-upload-form__head span { display: block; }
+.hr03-upload-form__head span { margin-top: 4px; color: var(--hr-v2-muted); font-size: 12px; }
+.hr03-upload-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--hr-space-3); }
+.hr03-upload-form label { display: grid; gap: 5px; color: var(--hr-v2-text); font-size: 12px; font-weight: 700; }
+.hr03-upload-form input,
+.hr03-upload-form select { min-width: 0; min-height: 38px; padding: 7px 9px; border: 1px solid var(--hr-v2-line); border-radius: var(--hr-radius-sm); background: #fff; font: inherit; }
+.hr03-upload-form__actions { display: flex; align-items: center; gap: var(--hr-space-3); color: var(--hr-v2-muted); font-size: 12px; }
+.hr03-upload-form__actions button { min-height: 36px; padding: 7px 14px; border: 0; border-radius: var(--hr-radius-sm); background: var(--hr-v2-accent); color: #fff; cursor: pointer; font-weight: 700; }
+.hr03-upload-form__actions button:disabled { cursor: wait; opacity: .65; }
+
 .hr03-record-tabs button,
 .hr03-record-filter button {
   flex: 0 0 auto;
@@ -282,6 +303,10 @@
 }
 
 @media (max-width: 760px) {
+  .hr03-upload-form__grid {
+    grid-template-columns: 1fr;
+  }
+
   .hr03-record-card__head {
     flex-direction: column;
   }

@@ -236,6 +236,7 @@ class PublicPortalTests(TestCase):
                     "legal_name": "候选人甲",
                     "primary_email": "cand-a@test.local",
                     "primary_mobile": "13800001111",
+                    "privacy_consent": True,
                 }
             ),
             content_type="application/json",
@@ -253,6 +254,7 @@ class PublicPortalTests(TestCase):
                 "legal_name": "候选人乙",
                 "primary_email": "cand-b@test.local",
                 "primary_mobile": "13800002222",
+                "privacy_consent": True,
             }
         )
         resp1 = self.client.post(
@@ -277,7 +279,7 @@ class PublicPortalTests(TestCase):
     def test_public_my_applications_self_scope(self):
         """self scope：只返回本人申请，不泄漏他人。"""
         url = reverse("hr04-public-apply", kwargs={"token": self.campaign.public_token})
-        self.client.post(
+        apply_response = self.client.post(
             url,
             data=json.dumps(
                 {
@@ -285,6 +287,7 @@ class PublicPortalTests(TestCase):
                     "legal_name": "本人",
                     "primary_email": "me@test.local",
                     "primary_mobile": "13800003333",
+                    "privacy_consent": True,
                 }
             ),
             content_type="application/json",
@@ -293,7 +296,14 @@ class PublicPortalTests(TestCase):
         me_url = reverse("hr04-public-my-applications")
         resp = self.client.post(
             me_url,
-            data=json.dumps({"primary_email": "me@test.local", "primary_mobile": "13800003333"}),
+            data=json.dumps(
+                {
+                    "primary_email": "me@test.local",
+                    "primary_mobile": "13800003333",
+                    "privacy_consent": True,
+                    "access_token": apply_response.json()["data"]["access_token"],
+                }
+            ),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 200)
@@ -302,7 +312,13 @@ class PublicPortalTests(TestCase):
 
         resp_other = self.client.post(
             me_url,
-            data=json.dumps({"primary_email": "other@test.local", "primary_mobile": "13800009999"}),
+            data=json.dumps(
+                {
+                    "primary_email": "other@test.local",
+                    "primary_mobile": "13800009999",
+                    "access_token": apply_response.json()["data"]["access_token"],
+                }
+            ),
             content_type="application/json",
         )
         payload_other = json.loads(resp_other.content)

@@ -1,6 +1,6 @@
 # Demo data
 
-Enterprise demo fixtures and the post-load seeder used by Horilla HR.
+高校人事系统的演示数据与装载后初始化工具。
 
 ## Load
 

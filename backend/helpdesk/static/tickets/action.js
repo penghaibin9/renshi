@@ -338,10 +338,11 @@ function ticketBulkArchive(e) {
                 ids = JSON.parse($("#selectedTickets").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/helpdesk/tickets-bulk-archive/?is_active=False",
+                    url: "/helpdesk/tickets-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -384,10 +385,11 @@ function ticketBulkUnArchive(e) {
                 ids = JSON.parse($("#selectedTickets").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/helpdesk/tickets-bulk-archive/?is_active=True",
+                    url: "/helpdesk/tickets-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {

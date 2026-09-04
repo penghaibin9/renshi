@@ -26,6 +26,7 @@ from hr_external.models import (
     HrExternalTaskEvidence,
     HrExternalWorkloadRecord,
 )
+from hr_payroll.models import ExternalSettlementBasisInput
 from hr_external.services.category_service import CategoryService
 from hr_external.services.engagement_service import EngagementService, EngagementCreateInput
 from hr_external.services.profile_service import ProfileService
@@ -183,7 +184,11 @@ class TaskTests(TestCase):
             policy_ref="EXT-POLICY-001",
         )
         self.assertEqual(basis.verified_workload, 60)  # 只聚合 verified
-        self.assertEqual(basis.status, SettlementStatus.READY)
+        self.assertEqual(basis.status, SettlementStatus.LOCKED)
+        received = ExternalSettlementBasisInput.objects.get(
+            tenant_id=self.tenant, source_engagement_id=self.eng.id, period_code="2026-10"
+        )
+        self.assertEqual(received.verified_workload, 60)
         self.assertNotIn("wage", basis.__dict__)  # HR08 不含金额
 
     def test_evidence_add(self):

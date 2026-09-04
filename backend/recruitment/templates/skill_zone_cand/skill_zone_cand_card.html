@@ -61,11 +61,15 @@
                             {% if perms.recruitment.delete_candidate %}
                             {% if cand.is_active  %}
                             <li class="oh-dropdown__item">
-                                <a href="{% url 'rec-candidate-archive' cand.id %}" onclick="return confirm('{% trans "Do you want to archive this candidate?" %}')" class="oh-dropdown__link">{% trans "Archive" %}</a>
+                                <form method="post" action="{% url 'rec-candidate-archive' cand.id %}" onsubmit="return confirm('{% trans "Do you want to archive this candidate?" %}')">
+                                    {% csrf_token %}<button type="submit" class="oh-dropdown__link border-0 bg-transparent w-100 text-start">{% trans "Archive" %}</button>
+                                </form>
                             </li>
                             {% else %}
                             <li class="oh-dropdown__item">
-                                <a href="{% url 'rec-candidate-archive' cand.id %}" onclick="return confirm('{% trans "Do you want to un-archive this candidate?" %}')" class="oh-dropdown__link">{% trans "Un-Archive" %}</a>
+                                <form method="post" action="{% url 'rec-candidate-archive' cand.id %}" onsubmit="return confirm('{% trans "Do you want to un-archive this candidate?" %}')">
+                                    {% csrf_token %}<button type="submit" class="oh-dropdown__link border-0 bg-transparent w-100 text-start">{% trans "Un-Archive" %}</button>
+                                </form>
                             </li>
                             {% endif %}
                             {% endif %}

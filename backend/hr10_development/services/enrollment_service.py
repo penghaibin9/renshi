@@ -8,6 +8,7 @@ hr10_development/services/enrollment_service.py
 """
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr10_development.constants import (
     DevelopmentErrorCode,
@@ -64,6 +65,33 @@ class EnrollmentService:
         conflict_provider=None,
     ) -> HrLearningEnrollment:
         """报名——先通过 HR11 权威冲突检查，再原子占名额并建 enrollment。"""
+        offering = HrLearningOffering.objects.select_for_update().filter(
+            id=offering.id,
+            tenant_id=tenant_id,
+        ).first()
+        if offering is None:
+            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        from hr10_development.constants import OfferingStatus
+        from hr_staff.models import HrStaffMaster
+
+        if offering.lifecycle_status != OfferingStatus.OPEN:
+            raise ValueError(DevelopmentErrorCode.OFFERING_NOT_OPEN)
+        now = timezone.now()
+        if (offering.enrollment_open_at and now < offering.enrollment_open_at) or (
+            offering.enrollment_close_at and now >= offering.enrollment_close_at
+        ):
+            raise ValueError(DevelopmentErrorCode.OFFERING_NOT_OPEN)
+        if not HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            legacy_employee_id=staff_master_id,
+        ).exists():
+            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        if HrLearningEnrollment.objects.filter(
+            tenant_id=tenant_id,
+            offering_id=offering.id,
+            staff_master_id=staff_master_id,
+        ).exists():
+            raise ValueError(DevelopmentErrorCode.DUPLICATE_ENROLLMENT)
         EnrollmentService._assert_schedule_eligible(
             offering,
             staff_master_id,
@@ -90,6 +118,28 @@ class EnrollmentService:
         tenant_id: int,
     ) -> HrLearningEnrollment:
         """进入候补。"""
+        offering = HrLearningOffering.objects.select_for_update().filter(
+            id=offering.id,
+            tenant_id=tenant_id,
+        ).first()
+        if offering is None:
+            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        from hr10_development.constants import OfferingStatus
+        from hr_staff.models import HrStaffMaster
+
+        if offering.lifecycle_status != OfferingStatus.WAITLIST_OPEN or offering.capacity > 0:
+            raise ValueError(DevelopmentErrorCode.OFFERING_NOT_OPEN)
+        if not HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            legacy_employee_id=staff_master_id,
+        ).exists():
+            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        if HrLearningEnrollment.objects.filter(
+            tenant_id=tenant_id,
+            offering_id=offering.id,
+            staff_master_id=staff_master_id,
+        ).exists():
+            raise ValueError(DevelopmentErrorCode.DUPLICATE_ENROLLMENT)
         ok = OfferingService.occupy_waitlist(offering)
         if not ok:
             raise ValueError(DevelopmentErrorCode.WAITLIST_FULL)
@@ -106,6 +156,7 @@ class EnrollmentService:
     def _promote_first_waitlisted(offering: HrLearningOffering) -> None:
         next_waitlisted = (
             HrLearningEnrollment.objects.filter(
+                tenant_id=offering.tenant_id,
                 offering_id=offering.id,
                 enrollment_status=EnrollmentStatus.WAITLISTED,
             )
@@ -127,17 +178,64 @@ class EnrollmentService:
         )
 
     @staticmethod
+    def _lock_enrollment_and_offering(enrollment, offering):
+        """Resolve caller objects to one current, tenant-bound locked pair."""
+        tenant_id = getattr(enrollment, "tenant_id", None)
+        locked_enrollment = (
+            HrLearningEnrollment.objects.select_for_update()
+            .filter(
+                id=getattr(enrollment, "id", None),
+                tenant_id=tenant_id,
+                offering_id=getattr(offering, "id", None),
+            )
+            .first()
+        )
+        locked_offering = (
+            HrLearningOffering.objects.select_for_update()
+            .filter(
+                id=getattr(offering, "id", None),
+                tenant_id=tenant_id,
+            )
+            .first()
+        )
+        if locked_enrollment is None or locked_offering is None:
+            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        return locked_enrollment, locked_offering
+
+    @staticmethod
     @transaction.atomic
     def cancel_enrollment(
         enrollment: HrLearningEnrollment,
         offering: HrLearningOffering,
-    ):
-        """取消报名→释放名额→触发候补转正。"""
-        enrollment.enrollment_status = EnrollmentStatus.CANCELLED
-        enrollment.save(update_fields=["enrollment_status", "updated_at"])
+    ) -> HrLearningEnrollment:
+        """幂等取消报名，并只释放该报名实际占用的名额类型。"""
+        enrollment, offering = EnrollmentService._lock_enrollment_and_offering(
+            enrollment, offering
+        )
+        if enrollment.enrollment_status == EnrollmentStatus.CANCELLED:
+            return enrollment
 
-        if OfferingService.release_seat(offering):
+        previous_status = enrollment.enrollment_status
+        if previous_status not in {
+            EnrollmentStatus.CONFIRMED,
+            EnrollmentStatus.WAITLISTED,
+        }:
+            raise ValueError(DevelopmentErrorCode.REQUEST_ALREADY_FINAL)
+
+        enrollment.enrollment_status = EnrollmentStatus.CANCELLED
+        enrollment.seat_status = ""
+        enrollment.save(
+            update_fields=["enrollment_status", "seat_status", "updated_at"]
+        )
+
+        if previous_status == EnrollmentStatus.WAITLISTED:
+            if not OfferingService.release_waitlist(offering):
+                raise ValueError(DevelopmentErrorCode.VERSION_CONFLICT)
+        else:
+            if not OfferingService.release_seat(offering):
+                raise ValueError(DevelopmentErrorCode.VERSION_CONFLICT)
             EnrollmentService._promote_first_waitlisted(offering)
+        return enrollment
 
     @staticmethod
     @transaction.atomic
@@ -146,11 +244,23 @@ class EnrollmentService:
         offering: HrLearningOffering,
     ) -> HrLearningEnrollment:
         """标记未出席——释放名额 + 触发候补转正 + 记录 NO_SHOW 状态。"""
-        enrollment.enrollment_status = EnrollmentStatus.NO_SHOW
-        enrollment.save(update_fields=["enrollment_status", "updated_at"])
+        enrollment, offering = EnrollmentService._lock_enrollment_and_offering(
+            enrollment, offering
+        )
+        if enrollment.enrollment_status == EnrollmentStatus.NO_SHOW:
+            return enrollment
+        if enrollment.enrollment_status != EnrollmentStatus.CONFIRMED:
+            raise ValueError(DevelopmentErrorCode.REQUEST_ALREADY_FINAL)
 
-        if OfferingService.release_seat(offering):
-            EnrollmentService._promote_first_waitlisted(offering)
+        enrollment.enrollment_status = EnrollmentStatus.NO_SHOW
+        enrollment.seat_status = ""
+        enrollment.save(
+            update_fields=["enrollment_status", "seat_status", "updated_at"]
+        )
+
+        if not OfferingService.release_seat(offering):
+            raise ValueError(DevelopmentErrorCode.VERSION_CONFLICT)
+        EnrollmentService._promote_first_waitlisted(offering)
         return enrollment
 
 

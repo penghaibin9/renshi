@@ -9,7 +9,7 @@
             {% else %}
                 <button
                     class="oh-btn oh-btn--success oh-btn--sq-sm"
-                    hx-get="{% url 'document-approve' instance.id %}"
+                    hx-post="{% url 'document-approve' instance.id %}"
                     title="{% trans 'Approve' %}"
                     onclick="event.stopPropagation()"
                 >

@@ -11,6 +11,7 @@ OverviewService —— 只编排 provider，不直接查 Employee/LeaveRequest/C
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from hr_control_center.context import HrRequestContext
@@ -18,9 +19,13 @@ from hr_control_center.providers.base import (
     DUAL_READ_COMPARE,
     LEGACY_ONLY,
     AUTHORITY_ONLY,
+    HrProviderError,
     ProviderResult,
 )
 from hr_control_center.providers.legacy_employee import LegacyEmployeeMetricProvider
+from hr_control_center.providers.canonical_workforce import (
+    CanonicalWorkforceMetricProvider,
+)
 from hr_control_center.services.metric_registry import (
     OK,
     PARTIAL,
@@ -50,6 +55,8 @@ HR08_METRIC_KEYS = (
     "hr08_renewals_due",
 )
 
+logger = logging.getLogger(__name__)
+
 
 class OverviewService:
     """
@@ -65,6 +72,7 @@ class OverviewService:
     ):
         self.registry = get_registry()
         self.legacy_provider = LegacyEmployeeMetricProvider()
+        self.canonical_workforce_provider = CanonicalWorkforceMetricProvider()
         self.todo_service_factory = todo_service_factory or self._make_todo_service
         self.alert_service_factory = alert_service_factory or self._make_alert_service
         self.quick_action_service_factory = (
@@ -108,6 +116,16 @@ class OverviewService:
 
             return Hr08DashboardProvider()
 
+        if metric_key in self.canonical_workforce_provider.supported_metric_keys:
+            if authority_mode in (AUTHORITY_ONLY, DUAL_READ_COMPARE):
+                return self.canonical_workforce_provider
+            if metric_key in {
+                "full_time_teacher",
+                "double_teacher_valid",
+                "departure_ytd",
+            }:
+                return self.canonical_workforce_provider
+
         if authority_mode == AUTHORITY_ONLY:
             # 后续 HR02/HR03 authority provider 就绪后在此路由。
             # 当前阶段没有 authority provider，直接返回不可用（不允许 fallback）。
@@ -143,13 +161,34 @@ class OverviewService:
                 definition.key,
             )
 
-        if hasattr(provider, "get_metric"):
-            result = provider.get_metric(metric_key, context)
-        else:
+        try:
+            if hasattr(provider, "get_metric"):
+                result = provider.get_metric(metric_key, context)
+            else:
+                result = ProviderResult.unavailable(
+                    provider_key=getattr(provider, "provider_key", "?") or "?",
+                    metric_key=metric_key,
+                    reason_code="PROVIDER_CONTRACT_VIOLATION",
+                    definition_version=definition.definition_version,
+                    authority_mode=context.authority_mode,
+                )
+        except HrProviderError as exc:
+            logger.warning("HR01 metric provider failed: %s", exc)
+            result = ProviderResult(
+                status=ERROR,
+                reason_code=exc.reason_code,
+                message="该指标暂时无法计算，其他人事数据不受影响。",
+                source=exc.provider_key,
+                definition_version=definition.definition_version,
+                authority_mode=context.authority_mode,
+            )
+        except Exception:
+            logger.exception("HR01 metric provider crashed metric=%s", metric_key)
             result = ProviderResult.unavailable(
                 provider_key=getattr(provider, "provider_key", "?") or "?",
                 metric_key=metric_key,
-                reason_code="PROVIDER_CONTRACT_VIOLATION",
+                reason_code="PROVIDER_UNEXPECTED_ERROR",
+                message="该指标暂时无法计算，其他人事数据不受影响。",
                 definition_version=definition.definition_version,
                 authority_mode=context.authority_mode,
             )
@@ -183,12 +222,14 @@ class OverviewService:
 
         todo_summary = self._todo_summary(context, user)
         alert_summary = self._alert_summary(context, user)
-        quick_actions = self._quick_actions(context, user)
+        quick_actions, quick_actions_status = self._quick_actions(context, user)
         partial_sources = []
         if todo_summary.get("status") in ("PARTIAL", "UNAVAILABLE", "ERROR"):
             partial_sources.append("todos")
         if alert_summary.get("status") in ("PARTIAL", "UNAVAILABLE", "ERROR"):
             partial_sources.append("alerts")
+        if quick_actions_status == "UNAVAILABLE":
+            partial_sources.append("quickActions")
 
         return {
             "context": {
@@ -270,13 +311,14 @@ class OverviewService:
                 "reasonCode": "ALERT_SERVICE_UNAVAILABLE",
             }
 
-    def _quick_actions(self, context: HrRequestContext, user) -> list:
+    def _quick_actions(self, context: HrRequestContext, user) -> tuple[list, str]:
         if not self._has_permission(user, "hr.dashboard.quick_action.use"):
-            return []
+            return [], "FILTERED"
         try:
-            return self.quick_action_service_factory().get_catalog(context, user)
+            return self.quick_action_service_factory().get_catalog(context, user), "OK"
         except Exception:
-            return []
+            logger.exception("HR01 quick action catalog unavailable")
+            return [], "UNAVAILABLE"
 
     # ---- 内部工具 ---------------------------------------------------------
 
@@ -391,8 +433,8 @@ class OverviewService:
             "active_headcount": "/hr/workforce",
             "full_time_teacher": "/hr/workforce",
             "double_teacher_valid": "/hr/workforce",
-            "new_join_ytd": "/employee/employee-view-new/",
-            "departure_ytd": "/employee/employee-view-new/",
+            "new_join_ytd": "/hr/staff/",
+            "departure_ytd": "/hr/staff/",
             "open_risk_count": "/hr/alerts",
         }
         if metric_key.startswith("hr08_"):

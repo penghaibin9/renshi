@@ -100,11 +100,14 @@
         var run = $(".at_work_seconds").data("run");
         var whiteLabelCompany = $("#whiteLabelCompany").data("company");
 
+        at_work_seconds = Number(at_work_seconds);
+        if (!Number.isFinite(at_work_seconds)) at_work_seconds = 0;
+        whiteLabelCompany = whiteLabelCompany || "高校人事一体化平台";
+
         // time-runner
         function secondsToDuration(seconds) {
-            if (seconds < 0){
-                seconds = 0
-            }
+            seconds = Number(seconds);
+            if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
             var hours = Math.floor(seconds / 3600);
             var minutes = Math.floor((seconds % 3600) / 60);
             var remainingSeconds = Math.floor(seconds % 60);

@@ -1,12 +1,18 @@
 """S10/S11/S12 契约测试：对账/授权模式切换。"""
 
 from datetime import date
+from unittest import skipUnless
 
+from django.apps import apps
 from django.test import TestCase
 
-from base.models import Company, Department, JobPosition
-from employee.models import Employee, EmployeeWorkInformation
-from horilla.horilla_middlewares import tenant_context
+LEGACY_PROJECTION_AVAILABLE = apps.is_installed("base") and apps.is_installed(
+    "employee"
+)
+if LEGACY_PROJECTION_AVAILABLE:
+    from base.models import Company, Department, JobPosition
+    from employee.models import Employee, EmployeeWorkInformation
+    from horilla.horilla_middlewares import tenant_context
 from hr_changes.jobs.reconcile_projection import reconcile_staff_projection, run_reconcile
 from hr_changes.models import HrChangeAuthorityMode
 from hr_changes.services.authority_mode_service import AuthorityModeError, AuthorityModeService
@@ -19,6 +25,10 @@ from hr_structure.models import HrPosition
 TENANT = 1
 
 
+@skipUnless(
+    LEGACY_PROJECTION_AVAILABLE,
+    "requires the complete MySQL legacy Employee projection runtime",
+)
 class ReconcileProjectionTests(TestCase):
     def setUp(self):
         # Reconcile is a background/job boundary. Establish the tenant explicitly

@@ -46,7 +46,7 @@
 				<span class="oh-activity-sidebar__q">{{ comment.comment }}
 					{% if request.user.employee_get == comment.employee_id or perms.base.delete_shiftrequestcomment or request.user|is_reportingmanager %}
 						<span class="float-end" hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
-							hx-get='{% url "shift-request-delete-comment" comment.id %}' hx-swap="outerHTML"
+							hx-post='{% url "shift-request-delete-comment" comment.id %}' hx-swap="outerHTML"
 							hx-target="#commentCard{{comment.id}}">
 							<ion-icon name="close-outline" style="font-size: 24px" role="img" class="md hydrated"
 								aria-label="{% trans 'close outline' %}"></ion-icon></span>
@@ -60,7 +60,7 @@
 							<span class="oh-file-icon oh-file-icon--pdf" onmouseover="enlargeImage('{{ file.file.url }}',$(this))" style="width: 40px; height: 40px">
 								{% if request.user.employee_get == comment.employee_id or perms.base.delete_baserequestfile or request.user|is_reportingmanager %}
 									<img src="{% static 'images/ui/minus-icon.png' %}" style="display: block; width: 50%; height: 50%" onclick="event.stopPropagation();event.preventDefault()"
-										hx-get="{% url 'delete-shift-comment-file' %}?ids={{ file.id }}&shift_id={{ request_id }}&comment_id={{comment.id}}" hx-target="#shiftReqCommentFile{{file.id}}"
+										hx-post="{% url 'delete-shift-comment-file' %}" hx-vals='{"ids":"{{file.id}}","shift_id":"{{request_id}}","comment_id":"{{comment.id}}"}' hx-target="#shiftReqCommentFile{{file.id}}"
 										hx-swap="outerHTML" hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
 										/>
 								{% endif %}

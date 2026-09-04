@@ -40,7 +40,7 @@
   </div>
 
   <section class="hr04-panel">
-    <div class="hr04-panel__head"><div><h2>{% trans "审核队列" %}</h2><p>展示申请号、候选人、岗位、正式状态和提交时间。</p></div></div>
+    <div class="hr04-panel__head"><div><h2>{% trans "审核队列" %}</h2><p>先运行系统预检，再由审核人开始审核并形成正式结论；系统不会自动替代人工决定。</p></div></div>
     <div id="hr04-qual-queue" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取审核队列</strong><span>预检不会自动生成最终资格结论。</span></div></div>
   </section>
 
@@ -51,5 +51,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/recruitment-qualification.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-qualification.js' %}?v=20260901-2"></script>
 {% endblock scripts %}

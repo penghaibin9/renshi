@@ -40,6 +40,11 @@
     <div id="hr04-proposed-list" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取拟录用结果</strong><span>等待正式审批与预占事实。</span></div></div>
   </section>
 
+  <section class="hr04-panel">
+    <div class="hr04-panel__head"><div><h2>待形成拟录用</h2><p>只展示已有服务端冻结排名且资格通过的候选人。</p></div></div>
+    <div id="hr04-proposed-eligible" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取冻结排名</strong></div></div>
+  </section>
+
   <div class="hr-v2-truth-note"><strong>录用边界</strong><span>“拟录用”不等于“已入职”；公示、录用通知、预占与 HR05 报到交接必须按各自正式状态推进。</span></div>
 </div>
 {% endblock content %}
@@ -47,5 +52,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/recruitment-proposed.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-proposed.js' %}?v=20260901-2"></script>
 {% endblock scripts %}

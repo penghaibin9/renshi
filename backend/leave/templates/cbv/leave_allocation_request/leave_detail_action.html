@@ -2,7 +2,7 @@
 {% is_manager_of request.user instance as can_manage %}
 {% if perms.leave.change_leaveallocationrequest or can_manage %}
     {% if instance.status == 'requested' %}
-        <a href="{% url 'leave-allocation-request-approve' instance.id %}" class="oh-btn oh-btn--success w-100"
+        <a href="#" hx-post="{% url 'leave-allocation-request-approve' instance.id %}" hx-swap="none" class="oh-btn oh-btn--success w-100"
             title="{% trans 'Approve' %}">
             <ion-icon class="me-1 " name="checkmark-outline"></ion-icon>
             {% trans "Approve" %}

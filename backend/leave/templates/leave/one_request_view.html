@@ -63,13 +63,16 @@
 
 <div class="oh-modal__dialog-footer oh-timeoff-modal__footer">
     {% if leave_request.status != 'approved' %}
-        <a href="{% url 'request-approve' leave_request.id %}" class="oh-btn oh-btn--success">
+        <a href="#" hx-post="{% url 'request-approve' leave_request.id %}" hx-swap="none" class="oh-btn oh-btn--success">
             <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
             {% trans "Approve" %}
         </a>
     {% else %}
         <a
-            href="{% url 'request-approve' leave_request.id %}"
+            href="#"
+            hx-post="{% url 'request-approve' leave_request.id %}"
+            hx-swap="none"
+            hx-on::after-request="window.location.reload()"
             class="oh-btn oh-btn--success oh-btn--disabled"
             onclick="event.preventDefault()"
         >

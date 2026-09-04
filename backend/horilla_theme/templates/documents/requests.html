@@ -133,7 +133,7 @@
                                         {% else %}
                                         <button
                                             hx-confirm="{% trans 'Do you want to approve this request' %}"
-                                            hx-get="{% url 'document-approve' document.id %}"
+                                            hx-post="{% url 'document-approve' document.id %}"
                                             hx-target="this"
                                             hx-swap="outerHTML"
                                             title="{% trans 'Approve' %}"

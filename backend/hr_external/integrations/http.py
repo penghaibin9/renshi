@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from django.conf import settings
@@ -46,6 +46,23 @@ class ConfiguredJsonProvider(BaseProvider):
             return self.unavailable(
                 "PROVIDER_UNAVAILABLE",
                 f"{self.owner_domain} provider is not configured",
+                source_version=self.source_version,
+            )
+        parsed = urlsplit(base_url)
+        loopback_debug = settings.DEBUG and parsed.hostname in {
+            "127.0.0.1", "localhost", "::1"
+        }
+        if (
+            (parsed.scheme != "https" and not loopback_debug)
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+        ):
+            return ProviderResult(
+                status=ProviderStatus.ERROR,
+                error_code="PROVIDER_CONFIG_INVALID",
+                error_message=f"{self.owner_domain} provider requires a valid HTTPS URL",
                 source_version=self.source_version,
             )
         if receipt_required and not idempotency_key:

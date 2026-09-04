@@ -15,6 +15,7 @@ concurrency:
 
 env:
   COMPOSE_FILE: docker-compose.yml
+  TRIVY_VERSION: "0.74.0"
 
 jobs:
   docker-smoke:
@@ -51,7 +52,7 @@ jobs:
           docker compose -f "$COMPOSE_FILE" up -d db redis
           for i in $(seq 1 90); do
             if docker compose -f "$COMPOSE_FILE" exec -T db \
-              mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent >/dev/null 2>&1; then
+              mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent >/dev/null 2>&1; then
               echo "MySQL is ready"
               exit 0
             fi
@@ -113,7 +114,7 @@ jobs:
           chmod 0777 .ci-backup
           set +e
           docker compose -f "$COMPOSE_FILE" run --rm -T --no-deps \
-            -e MYSQL_CI_ROOT_PASSWORD=horilla_root_pass \
+            -e MYSQL_CI_ROOT_PASSWORD=renshi_root_pass \
             -e GITHUB_RUN_ID="$GITHUB_RUN_ID" \
             --entrypoint "" web python scripts/ci_mysql_recovery.py \
             2>&1 | tee .ci-backup/recovery.log
@@ -174,7 +175,7 @@ jobs:
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD/trivy-report:/report" \
-            aquasec/trivy:0.58.1 image \
+            aquasec/trivy:${TRIVY_VERSION} image \
             --severity CRITICAL,HIGH --ignore-unfixed \
             --format json --output /report/trivy.json \
             --exit-code 1 "$IMAGE"

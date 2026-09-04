@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from decimal import Decimal
 import uuid
 from typing import ClassVar
 
@@ -46,5 +49,54 @@ class VersionedModel(TenantScopedModel):
     class Meta:
         abstract = True
 
+    def calculate_content_hash(self) -> str:
+        return calculate_version_content_hash(self)
+
+    def save(self, *args, **kwargs) -> None:
+        old = None
+        if not self._state.adding:
+            old = type(self).objects.filter(pk=self.pk).first()
+            if old is not None and old.status == "PUBLISHED":
+                if old.calculate_content_hash() != self.calculate_content_hash():
+                    raise ValueError("HR12_PUBLISHED_AUTHORITY_IMMUTABLE")
+            if old is not None and old.status == "RETIRED" and self.status == "PUBLISHED":
+                raise ValueError("HR12_RETIRED_AUTHORITY_CANNOT_REPUBLISH")
+        if self.status == "PUBLISHED":
+            expected = self.calculate_content_hash()
+            self.content_hash = expected
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "content_hash" not in update_fields:
+                kwargs["update_fields"] = [*update_fields, "content_hash"]
+        super().save(*args, **kwargs)
+
     def increment_version(self) -> None:
         self.version_no += 1
+
+
+def version_content_payload(instance) -> dict:
+    excluded = {"id", "created_at", "updated_at", "content_hash", "status"}
+    payload = {}
+    for field in instance._meta.concrete_fields:
+        if field.name in excluded:
+            continue
+        value = getattr(instance, field.attname)
+        # DecimalField values are often assigned as int/str and normalized to
+        # their declared scale only after a database round trip.  Hashing the
+        # raw Python input made a freshly published authority look tampered with
+        # as soon as it was reloaded (for example 0 vs Decimal("0.00")).
+        if isinstance(field, models.DecimalField) and value is not None:
+            quantum = Decimal(1).scaleb(-field.decimal_places)
+            value = format(Decimal(str(value)).quantize(quantum), "f")
+        payload[field.name] = value
+    return payload
+
+
+def calculate_version_content_hash(instance) -> str:
+    encoded = json.dumps(
+        version_content_payload(instance),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()

@@ -27,6 +27,10 @@ from hr_recruitment.api.exceptions import Hr04ApiError
 from hr_recruitment.permissions import require_hr04_permission
 from hr_recruitment.selectors import candidate as candidate_selector
 from hr_recruitment.services.candidate_service import CandidateService, CandidateServiceError
+from hr_recruitment.services.retention_service import (
+    CandidateRetentionError,
+    CandidateRetentionService,
+)
 
 
 def _handle(request, exc):
@@ -36,7 +40,7 @@ def _handle(request, exc):
         return error(request, "INVALID_JSON", "请求体不是有效 JSON", 400)
     if isinstance(exc, ObjectDoesNotExist):
         return error(request, "NOT_FOUND", "资源不存在", 404)
-    if isinstance(exc, (Hr04ApiError, CandidateServiceError)):
+    if isinstance(exc, (Hr04ApiError, CandidateServiceError, CandidateRetentionError)):
         return error(request, exc.code, exc.message, getattr(exc, "http_status", exc.status_code if hasattr(exc, "status_code") else 422))
     return error(request, "INTERNAL_ERROR", "服务器内部错误", 500)
 
@@ -60,6 +64,42 @@ def list_candidates(request):
                 page=int(request.GET.get("page", 1)),
                 page_size=int(request.GET.get("page_size", 20)),
             ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _handle(request, exc)
+
+
+@require_POST
+def candidate_legal_hold(request, candidate_id):
+    """Enable or release a retention hold with explicit authority and audit."""
+    try:
+        ctx = make_hr04_context(request)
+    except Hr04ApiError as exc:
+        return error(request, exc.code, exc.message, exc.status_code)
+    allowed = request.user.is_superuser or (
+        request.user.has_perm("hr04.application.manage")
+        and request.user.has_perm("hr04.application.sensitive_view")
+    )
+    if not allowed:
+        return error(request, "PERMISSION_DENIED", "无留存冻结管理权限", 403)
+    try:
+        body = json.loads(request.body or b"{}")
+        if not isinstance(body.get("enabled"), bool):
+            return error(request, "INVALID_REQUEST", "enabled 必须为布尔值", 422)
+        candidate = CandidateRetentionService(
+            ctx.tenant_id, actor=str(request.user.id)
+        ).set_legal_hold(
+            candidate_id,
+            enabled=body["enabled"],
+            reason=body.get("reason", ""),
+        )
+        return ok(
+            request,
+            {
+                "candidate_id": str(candidate.id),
+                "legal_hold": candidate.legal_hold,
+                "reason_recorded": bool(candidate.legal_hold_reason),
+            },
         )
     except Exception as exc:  # noqa: BLE001
         return _handle(request, exc)

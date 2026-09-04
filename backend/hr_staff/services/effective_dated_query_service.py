@@ -14,6 +14,7 @@ from datetime import date
 from typing import Optional
 
 from django.db.models import Count, Q
+from django.utils import timezone
 
 from hr_staff.constants import AssignmentType, StaffStatus
 from hr_staff.models import HrEmploymentRelationship, HrStaffAssignment, HrStatusHistory
@@ -42,7 +43,7 @@ class EffectiveDatedQueryService:
     # ---- 关系 ----
 
     def relationships_as_of(self, staff_id, as_of: Optional[date] = None):
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return _active_segments(
             HrEmploymentRelationship.objects.filter(
                 tenant_id=self.tenant_id, staff_id=staff_id
@@ -53,7 +54,7 @@ class EffectiveDatedQueryService:
     # ---- 任职 ----
 
     def assignments_as_of(self, staff_id, as_of: Optional[date] = None):
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return (
             _active_segments(
                 HrStaffAssignment.objects.filter(
@@ -67,7 +68,7 @@ class EffectiveDatedQueryService:
         )
 
     def assignments_for_relationship_as_of(self, relationship_id, as_of: Optional[date] = None):
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return _active_segments(
             HrStaffAssignment.objects.filter(
                 tenant_id=self.tenant_id,
@@ -77,7 +78,7 @@ class EffectiveDatedQueryService:
         ).order_by("effective_from")
 
     def primary_assignment_as_of(self, staff_id, as_of: Optional[date] = None):
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return (
             self.assignments_as_of(staff_id, as_of)
             .filter(assignment_type=AssignmentType.PRIMARY)
@@ -88,7 +89,7 @@ class EffectiveDatedQueryService:
 
     def assignments_for_org_as_of(self, organization_id, as_of: Optional[date] = None):
         """某组织在 as_of 的全部任职段（半开区间 + ENDED 合法历史语义）。"""
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return _active_segments(
             HrStaffAssignment.objects.filter(
                 tenant_id=self.tenant_id,
@@ -99,7 +100,7 @@ class EffectiveDatedQueryService:
 
     def assignments_for_position_as_of(self, position_id, as_of: Optional[date] = None):
         """某岗位在 as_of 的全部任职段（用于 POSITION_CONTROL 占用计算）。"""
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return _active_segments(
             HrStaffAssignment.objects.filter(
                 tenant_id=self.tenant_id,
@@ -116,7 +117,7 @@ class EffectiveDatedQueryService:
         self, position_ids, as_of: Optional[date] = None
     ) -> dict:
         """批量返回岗位有效任职数，供 HR02 列表/汇总避免逐岗查询。"""
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         position_ids = tuple(position_ids)
         if not position_ids:
             return {}
@@ -151,7 +152,7 @@ class EffectiveDatedQueryService:
         - 全部已结束 → 按最近结束原因区分 RETIRED/DEPARTED；
         - 无任何关系 → PENDING_ENTRY。
         """
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         explicit = _active_segments(
             HrStatusHistory.objects.filter(tenant_id=self.tenant_id, staff_id=staff_id),
             as_of,

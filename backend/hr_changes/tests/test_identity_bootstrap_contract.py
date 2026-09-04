@@ -1,9 +1,9 @@
-from django.test import SimpleTestCase
+from django.test import TestCase
 
 from hr_changes.selectors.bootstrap_data import BootstrapDataSelector
 
 
-class IdentityBootstrapContractTests(SimpleTestCase):
+class IdentityBootstrapContractTests(TestCase):
     def test_identity_options_are_controlled_hr03_machine_values_with_chinese_labels(self):
         options = BootstrapDataSelector(tenant_id=1).identity_options()
         categories = {item["code"]: item["label"] for item in options["staffCategories"]}

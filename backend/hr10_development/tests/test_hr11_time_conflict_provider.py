@@ -15,6 +15,7 @@ from hr_time.models import (
     HrShiftDefinition,
     HrShiftVersion,
 )
+from hr_staff.models import HrPerson, HrStaffMaster
 
 
 def _at(day, hour, minute=0):
@@ -25,6 +26,13 @@ class Hr11TimeConflictProviderTests(TestCase):
     def setUp(self):
         self.provider = Hr11TimeConflictProvider()
         self.day = timezone.localdate().replace(day=15)
+        person = HrPerson.objects.create(tenant_id=71, legal_name="冲突测试教师")
+        HrStaffMaster.objects.create(
+            tenant_id=71,
+            person_id=person,
+            staff_no="TIME-501",
+            legacy_employee_id=501,
+        )
 
     def test_invalid_or_unbounded_window_fails_closed(self):
         result = self.provider.check_conflict(
@@ -112,6 +120,7 @@ class Hr11TimeConflictProviderTests(TestCase):
             start_at=_at(self.day, 9),
             end_at=_at(self.day, 11),
             capacity=1,
+            lifecycle_status="OPEN",
         )
 
         with self.assertRaises(ValueError) as raised:

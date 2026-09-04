@@ -25,7 +25,7 @@ class HrAssessmentCycle(TenantScopedModel):
     start_at = models.DateTimeField(verbose_name=_("开始时间"))
     end_at = models.DateTimeField(verbose_name=_("结束时间"))
     policy_version_id = models.UUIDField(verbose_name=_("绑定的政策版本 ID"))
-    owner_org_id = models.UUIDField(null=True, blank=True, verbose_name=_("归属组织 ID"))
+    owner_org_id = models.BigIntegerField(null=True, blank=True, verbose_name=_("HR02 归属组织 ID"))
     lifecycle_status = models.CharField(max_length=30, default="DRAFT", db_index=True, verbose_name=_("生命周期状态"))
 
     class Meta:
@@ -72,8 +72,8 @@ class HrAssessmentPopulationSnapshot(TenantScopedModel):
     staff_id = models.UUIDField(verbose_name=_("人员 ID"))
     employment_relationship_id = models.UUIDField(null=True, verbose_name=_("聘用关系 ID"))
     primary_assignment_id = models.UUIDField(null=True, verbose_name=_("主岗任职 ID"))
-    org_id = models.UUIDField(null=True, verbose_name=_("当时组织 ID"))
-    position_id = models.UUIDField(null=True, verbose_name=_("当时岗位 ID"))
+    org_id = models.BigIntegerField(null=True, verbose_name=_("当时 HR02 组织 ID"))
+    position_id = models.BigIntegerField(null=True, verbose_name=_("当时 HR02 岗位 ID"))
     worker_category = models.CharField(max_length=50, default="", verbose_name=_("人员类别"))
     classification_profile_json = models.JSONField(default=dict, verbose_name=_("分类评价 profile"))
     included = models.BooleanField(default=True, verbose_name=_("是否包含"))

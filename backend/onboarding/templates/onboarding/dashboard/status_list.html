@@ -40,7 +40,7 @@
             }else{
                 $(this).parent().removeClass('todo-task')
             }
-            " hx-get="{% url 'change-task-status' %}?task_id={{task.id}}" hx-swap="afterend"
+            " hx-post="{% url 'change-task-status' %}" hx-vals='{"task_id":"{{task.id}}"}' hx-swap="afterend"
             name="status"
             class=""
             style="width: 150px;"

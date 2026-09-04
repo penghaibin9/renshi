@@ -8,7 +8,6 @@ S4-S7 陆续挂载 activation/materials/tasks/probations。
 
 import json
 
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_onboarding.api import base as api_base
@@ -81,6 +80,61 @@ def hr05_case_detail(request, case_id: str):
     return api_base.ok(request, detail)
 
 
+@require_POST
+@require_hr05_permission("hr05.case.view")
+def hr05_case_ready_to_report(request, case_id: str):
+    try:
+        context = api_base.make_hr05_context(request)
+        case = _load_case_or_404(context, case_id)
+        case = CaseService(
+            tenant_id=context.tenant_id, actor_user_id=context.user_id
+        ).mark_ready_to_report(case)
+        return api_base.ok(request, {"case_id": str(case.id), "status": case.status})
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+@require_POST
+@require_hr05_permission("hr05.case.activate")
+def hr05_case_resolve_person_match(request, case_id: str):
+    try:
+        context = api_base.make_hr05_context(request)
+        case = _load_case_or_404(context, case_id)
+        case = CaseService(
+            tenant_id=context.tenant_id, actor_user_id=context.user_id
+        ).resolve_person_match(case, person_id=None, status="EXACT_MATCH")
+        return api_base.ok(
+            request,
+            {"case_id": str(case.id), "person_match_status": case.person_match_status},
+        )
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+@require_POST
+@require_hr05_permission("hr05.case.activate")
+def hr05_case_ready_for_activation(request, case_id: str):
+    try:
+        context = api_base.make_hr05_context(request)
+        case = _load_case_or_404(context, case_id)
+        from hr_onboarding.services.activation_service import ActivationService
+
+        gate = ActivationService(tenant_id=context.tenant_id).gate(
+            case, effective_at=context.today()
+        )
+        if not gate.passed:
+            failed = [item.code for item in gate.items if not item.ok]
+            raise Hr05ApiError(
+                f"正式生效条件未通过: {failed}", details={"failedItems": failed}
+            )
+        case = CaseService(
+            tenant_id=context.tenant_id, actor_user_id=context.user_id
+        ).mark_ready_for_activation(case)
+        return api_base.ok(request, {"case_id": str(case.id), "status": case.status})
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
 def _load_case_or_404(context, case_id: str):
     try:
         case = HrOnboardingCase.objects.filter(
@@ -125,7 +179,6 @@ def hr05_case_activation_gate(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.case.activate")
-@csrf_exempt
 def hr05_case_activate(request, case_id: str):
     """执行正式生效（ActivateOnboardingCase 领域命令，幂等）。"""
     try:
@@ -133,7 +186,7 @@ def hr05_case_activate(request, case_id: str):
         case = _load_case_or_404(context, case_id)
         from django.utils.dateparse import parse_date
 
-        effective_at = request.POST.get("effective_at") or request.GET.get("effective_at")
+        effective_at = request.POST.get("effective_at")
         effective = parse_date(effective_at) if effective_at else context.today()
         if effective is None:
             raise Hr05ApiError("effective_at 格式非法")
@@ -189,7 +242,6 @@ def _activation_fact_request_payload(request):
 
 @require_POST
 @require_hr05_permission("hr05.activation_fact.correct")
-@csrf_exempt
 def hr05_activation_fact_correct(request, snapshot_id: str):
     """Append a sealed correction; the original activation fact is never edited."""
 
@@ -226,7 +278,6 @@ def hr05_activation_fact_correct(request, snapshot_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.activation_fact.revoke")
-@csrf_exempt
 def hr05_activation_fact_revoke(request, snapshot_id: str):
     """Append a terminal revocation fact under tenant lock and idempotency."""
 
@@ -259,7 +310,6 @@ def hr05_activation_fact_revoke(request, snapshot_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.report.checkin")
-@csrf_exempt
 def hr05_case_report(request, case_id: str):
     """确认报到（幂等：同 case+时间 返回原记录）。"""
     try:
@@ -301,7 +351,6 @@ def hr05_case_report(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.case.view")
-@csrf_exempt
 def hr05_case_confirm_intent(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -320,12 +369,11 @@ def hr05_case_confirm_intent(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.case.view")
-@csrf_exempt
 def hr05_case_request_delay(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
         case = _load_case_or_404(context, case_id)
-        new_date = request.POST.get("new_date") or (request.GET.get("new_date"))
+        new_date = request.POST.get("new_date")
         reason = request.POST.get("reason", "")
         if not new_date:
             raise Hr05ApiError("new_date 必填")
@@ -346,7 +394,6 @@ def hr05_case_request_delay(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.case.cancel")
-@csrf_exempt
 def hr05_case_decline(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)

@@ -18,13 +18,13 @@
     {% endif %}
     {% if perms.recruitment.delete_recruitment %}
       {% if instance.is_active %}
-        <a onclick="return confirm('{% trans "Are you sure you want to archive this recruitment?" %}');" href="{% url 'recruitment-archive' instance.id %}" class="oh-btn  oh-btn--danger w-50 " title="{% trans 'Archive' %}">
-          <ion-icon name="archive" ></ion-icon>{% trans "Archive" %}
-        </a>
+        <form method="post" action="{% url 'recruitment-archive' instance.id %}" class="w-50" onsubmit="return confirm('{% trans "Are you sure you want to archive this recruitment?" %}');">
+          {% csrf_token %}<button type="submit" class="oh-btn oh-btn--danger w-100" title="{% trans 'Archive' %}"><ion-icon name="archive"></ion-icon>{% trans "Archive" %}</button>
+        </form>
       {% else %}
-        <a onclick="return confirm('{% trans "Are you sure you want to unarchive this recruitment?" %}');" href="{% url 'recruitment-archive' instance.id %}" class="oh-btn  oh-btn--success w-50" title="{% trans 'Unarchive' %}">
-          <ion-icon name="archive" ></ion-icon> {% trans "Un-archive" %}
-        </a>
+        <form method="post" action="{% url 'recruitment-archive' instance.id %}" class="w-50" onsubmit="return confirm('{% trans "Are you sure you want to unarchive this recruitment?" %}');">
+          {% csrf_token %}<button type="submit" class="oh-btn oh-btn--success w-100" title="{% trans 'Unarchive' %}"><ion-icon name="archive"></ion-icon>{% trans "Un-archive" %}</button>
+        </form>
       {% endif %}
     {% endif %}
     {% if perms.recruitment.delete_recruitment %}

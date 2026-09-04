@@ -14,6 +14,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from django.utils import timezone
+
 from hr_changes.constants import ChangeActionCode
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.policies.identity_policy import IdentityPolicy
@@ -218,8 +220,7 @@ class IdentityChangeService:
             priority=priority,
         )
 
-    @staticmethod
-    def _validate_controlled_values(action_code: str, proposals: list[dict]) -> None:
+    def _validate_controlled_values(self, action_code: str, proposals: list[dict]) -> None:
         """对已有 Authority writer 的枚举字段强制机器值白名单，拒绝 display-only/任意字符串。"""
         from hr_staff.constants import EmploymentType, RelationshipType, StaffCategoryCode
 
@@ -252,6 +253,40 @@ class IdentityChangeService:
                         "CHANGE_INVALID_PAYLOAD", "用工类型必须使用 HR03 受控代码"
                     )
 
+        if action_code == ChangeActionCode.POST_CATEGORY_CHANGE:
+            from hr_structure.models import HrPostCatalogVersion
+
+            proposal = by_field.get("post_catalog")
+            version = (
+                HrPostCatalogVersion.objects.filter(
+                    tenant_id=self.tenant_id,
+                    id=proposal.get("proposed_value_ref") if proposal else None,
+                    status="ACTIVE",
+                ).first()
+                if proposal
+                else None
+            )
+            if version is None:
+                raise ChangeServiceError(
+                    "CHANGE_INVALID_PAYLOAD", "岗位类别必须选择当前学校的有效目录版本"
+                )
+            proposal["proposed_value_display"] = version.name
+
+        if action_code == ChangeActionCode.LOCATION_CHANGE:
+            from hr_structure.models import HrOrganizationVersion
+
+            proposal = by_field.get("location")
+            value = str(proposal.get("proposed_value_ref") if proposal else "").strip()
+            if not value or not HrOrganizationVersion.objects.filter(
+                tenant_id=self.tenant_id,
+                status="EFFECTIVE",
+                location_code=value,
+            ).exists():
+                raise ChangeServiceError(
+                    "CHANGE_INVALID_PAYLOAD", "工作地点必须选择 HR02 已生效组织版本中的地点代码"
+                )
+            proposal["proposed_value_display"] = value
+
     def change_matrix(self, case: HrPersonnelChangeCase) -> list[dict]:
         """变更矩阵（维度/当前/变更后/是否影响下游）（总册 §24.2）。"""
         from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
@@ -259,7 +294,7 @@ class IdentityChangeService:
         query = EffectiveDatedQueryService(self.tenant_id)
         staff_id = case.staff_master_id_id
         staff = case.staff_master_id
-        current = query.primary_assignment_as_of(staff_id, date.today())
+        current = query.primary_assignment_as_of(staff_id, timezone.localdate())
         proposals = {proposal.field_code: proposal for proposal in case.proposals.all()}
 
         def value(field_code, fallback=""):
@@ -268,7 +303,7 @@ class IdentityChangeService:
 
         matrix = []
         staff_category = staff.staff_category_code
-        relationship = query.relationships_as_of(staff_id, date.today()).first()
+        relationship = query.relationships_as_of(staff_id, timezone.localdate()).first()
         relationship_type = relationship.relationship_type if relationship else ""
 
         matrix.append(
@@ -313,7 +348,7 @@ class IdentityChangeService:
         matrix.append(
             {
                 "dimension": "工作地点",
-                "current": "",
+                "current": current.location_code if current else "",
                 "after": value("location", "未变更"),
                 "affectsDownstream": case.action_id.code == ChangeActionCode.LOCATION_CHANGE,
             }
@@ -348,6 +383,7 @@ class IdentityChangeService:
             ChangeActionCode.EMPLOYMENT_TYPE_CHANGE: ["relationship_type"],
             ChangeActionCode.MANAGER_CHANGE: ["reporting_staff"],
             ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH: ["organization", "position"],
+            ChangeActionCode.LOCATION_CHANGE: ["location"],
         }.get(action_code, [])
         present = {proposal.field_code for proposal in case.proposals.all()}
         for field in required:

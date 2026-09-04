@@ -7,12 +7,15 @@ HR12 Assessment — API 视图（生产级）。
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.http import HttpRequest, JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
 
 from hr_assessment.api.response import api_error, api_success, paginated_response
@@ -67,7 +70,6 @@ def eligibility_probe(request: HttpRequest) -> JsonResponse:
 # S2 Policy API
 # ═══════════════════════════════════════════
 
-@csrf_exempt
 @require_assessment_permission("hr.assessment.policy.admin")
 @require_http_methods(["GET", "POST"])
 def policy_list(request: HttpRequest) -> JsonResponse:
@@ -102,18 +104,16 @@ def policy_list(request: HttpRequest) -> JsonResponse:
     return JsonResponse(api_success(data={"id": str(pack.id), "code": pack.code}), status=201)
 
 
-@csrf_exempt
 @require_assessment_permission("hr.assessment.policy.admin")
 @require_http_methods(["GET", "PUT"])
 def policy_detail(request: HttpRequest, policy_id: int) -> JsonResponse:
     from hr_assessment.models.policy import HrAssessmentPolicyPack, HrAssessmentPolicyVersion
     tenant = _get_tenant(request)
-    try:
-        pack = HrAssessmentPolicyPack.objects.get(id=policy_id, tenant_id=tenant)
-    except HrAssessmentPolicyPack.DoesNotExist:
-        return JsonResponse(api_error("ASSESSMENT_POLICY_NOT_FOUND", "政策未找到", http_status=404), status=404)
-
     if request.method == "GET":
+        try:
+            pack = HrAssessmentPolicyPack.objects.get(id=policy_id, tenant_id=tenant)
+        except HrAssessmentPolicyPack.DoesNotExist:
+            return JsonResponse(api_error("ASSESSMENT_POLICY_NOT_FOUND", "政策未找到", http_status=404), status=404)
         versions = HrAssessmentPolicyVersion.objects.filter(
             policy_pack=pack,
         ).order_by("-version_no").values("id", "version_no", "status", "effective_from", "effective_to")
@@ -125,16 +125,22 @@ def policy_detail(request: HttpRequest, policy_id: int) -> JsonResponse:
     body = _json_body(request)
     if body is None:
         return JsonResponse(api_error("INVALID_REQUEST", "请求正文不是有效 JSON", http_status=400), status=400)
-    if "name" in body:
-        name = str(body.get("name") or "").strip()
-        if not name or len(name) > 200:
-            return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "请填写有效的制度名称", http_status=400), status=400)
-        pack.name = name
-        pack.save(update_fields=["name"])
+    with transaction.atomic():
+        pack = HrAssessmentPolicyPack.objects.select_for_update().filter(
+            id=policy_id, tenant_id=tenant
+        ).first()
+        if pack is None:
+            return JsonResponse(api_error("ASSESSMENT_POLICY_NOT_FOUND", "政策未找到", http_status=404), status=404)
+        if "name" in body:
+            name = str(body.get("name") or "").strip()
+            if not name or len(name) > 200:
+                return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "请填写有效的制度名称", http_status=400), status=400)
+            pack.name = name
+            pack.full_clean()
+            pack.save(update_fields=["name", "updated_at"])
     return JsonResponse(api_success(data={"id": str(pack.id)}))
 
 
-@csrf_exempt
 @require_assessment_permission("hr.assessment.policy.admin")
 @require_http_methods(["POST"])
 def publish_policy_version(
@@ -154,6 +160,150 @@ def publish_policy_version(
         return JsonResponse(api_success(data={"id": str(version.id), "status": "PUBLISHED"}))
     except ValidationError as exc:
         return JsonResponse(api_error("ASSESSMENT_FINALIZATION_BLOCKED", str(exc), http_status=409), status=409)
+
+
+@require_assessment_permission("hr.assessment.policy.admin")
+@require_http_methods(["POST"])
+def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
+    """Create a usable draft policy version and its explicit baseline authorities."""
+    from hr_assessment.models.policy import (
+        HrExcellentQuotaPolicy,
+        HrAssessmentPolicyPack,
+        HrAssessmentPolicyVersion,
+        HrAssessmentWorkflowVersion,
+        HrIndicatorSetVersion,
+        HrRatingScaleVersion,
+        HrResultRuleVersion,
+    )
+
+    tenant = _get_tenant(request)
+    body = _json_body(request)
+    if body is None:
+        return JsonResponse(api_error("INVALID_REQUEST", "请求正文不是有效 JSON", http_status=400), status=400)
+    try:
+        effective_from = date.fromisoformat(str(body.get("effectiveFrom") or ""))
+        effective_to = date.fromisoformat(str(body["effectiveTo"])) if body.get("effectiveTo") else None
+    except ValueError:
+        return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "请填写有效的生效日期", http_status=400), status=400)
+    if effective_to and effective_to < effective_from:
+        return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "失效日期不能早于生效日期", http_status=400), status=400)
+    try:
+        excellent_min = Decimal(str(body.get("excellentMinScore", "90")))
+        qualified_min = Decimal(str(body.get("qualifiedMinScore", "60")))
+        excellent_ratio = Decimal(str(body.get("excellentRatio", "0.20")))
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "分数线或优秀比例无效", http_status=400), status=400)
+    if not (
+        Decimal("0") < qualified_min < excellent_min <= Decimal("100")
+        and Decimal("0") <= excellent_ratio <= Decimal("1")
+    ):
+        return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "需满足 0 < 合格线 < 优秀线 ≤ 100，优秀比例在 0% 至 100% 之间", http_status=400), status=400)
+    with transaction.atomic():
+        pack = HrAssessmentPolicyPack.objects.select_for_update().filter(
+            id=policy_id, tenant_id=tenant
+        ).first()
+        if pack is None:
+            return JsonResponse(api_error("ASSESSMENT_POLICY_NOT_FOUND", "制度包未找到", http_status=404), status=404)
+        assessment_types = body.get("assessmentTypes") or [pack.assessment_domain]
+        if not isinstance(assessment_types, list) or not assessment_types or any(x not in POLICY_DOMAINS for x in assessment_types):
+            return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "考核类型无效", http_status=400), status=400)
+        version_no = (HrAssessmentPolicyVersion.objects.filter(
+            tenant_id=tenant, policy_pack=pack
+        ).aggregate(max_no=Max("version_no"))["max_no"] or 0) + 1
+        scale = HrRatingScaleVersion.objects.create(
+            tenant_id=tenant,
+            version_no=version_no,
+            status="PUBLISHED",
+            scale_type="SCORE_100",
+            min_value=0,
+            max_value=100,
+            levels=[
+                {"code": "EXCELLENT", "min": str(excellent_min), "label": "优秀"},
+                {"code": "QUALIFIED", "min": str(qualified_min), "label": "合格"},
+                {"code": "UNQUALIFIED", "min": 0, "label": "不合格"},
+            ],
+            display_labels={"zh-CN": "百分制"},
+        )
+        indicator_set = HrIndicatorSetVersion.objects.create(
+            tenant_id=tenant,
+            version_no=version_no,
+            status="PUBLISHED",
+            name=f"{pack.name}基础指标集",
+            total_weight=1,
+        )
+        workflow = HrAssessmentWorkflowVersion.objects.create(
+            tenant_id=tenant,
+            version_no=version_no,
+            status="PUBLISHED",
+            name=f"{pack.name}基础评审流程",
+        )
+        result_rule = HrResultRuleVersion.objects.create(
+            tenant_id=tenant,
+            version_no=version_no,
+            status="PUBLISHED",
+            name=f"{pack.name}结果映射规则",
+            score_to_grade_mapping={
+                "bands": [
+                    {
+                        "gradeCode": "EXCELLENT",
+                        "minScore": str(excellent_min),
+                        "maxScore": "100",
+                        "displayGrade": {"zh-CN": "优秀"},
+                    },
+                    {
+                        "gradeCode": "QUALIFIED",
+                        "minScore": str(qualified_min),
+                        "maxScore": str(excellent_min - Decimal("0.01")),
+                        "displayGrade": {"zh-CN": "合格"},
+                    },
+                    {
+                        "gradeCode": "UNQUALIFIED",
+                        "minScore": "0",
+                        "maxScore": str(qualified_min - Decimal("0.01")),
+                        "displayGrade": {"zh-CN": "不合格"},
+                    },
+                ]
+            },
+            excellent_quota_rule_json={"enforcement": "BLOCKER"},
+        )
+        quota_policy = HrExcellentQuotaPolicy.objects.create(
+            tenant_id=tenant,
+            version_no=version_no,
+            status="PUBLISHED",
+            name=f"{pack.name}优秀比例政策",
+            quota_basis_population="ELIGIBLE_POPULATION",
+            max_excellent_ratio=excellent_ratio,
+            over_quota_action="BLOCKER",
+            rounding_rule="ROUND_DOWN",
+            min_eligible_for_quota=5,
+            effective_from=effective_from,
+            effective_to=effective_to,
+        )
+        version = HrAssessmentPolicyVersion(
+            tenant_id=tenant,
+            policy_pack=pack,
+            version_no=version_no,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            assessment_types=assessment_types,
+            eligibility_rule_json={"scope": "ACTIVE_STAFF"},
+            cycle_rule_json={"source": "HR12_WORKBENCH"},
+            rating_scale_version_id=scale.id,
+            indicator_set_version_id=indicator_set.id,
+            workflow_version_id=workflow.id,
+            excellent_quota_policy_id=quota_policy.id,
+            result_rule_version_id=result_rule.id,
+        )
+        version.full_clean()
+        version.save()
+    return JsonResponse(api_success(data={
+        "id": str(version.id), "versionNo": version.version_no, "status": version.status,
+        "ratingScaleVersionId": str(scale.id),
+        "indicatorSetVersionId": str(indicator_set.id),
+        "workflowVersionId": str(workflow.id),
+        "resultRuleVersionId": str(result_rule.id),
+        "excellentQuotaPolicyId": str(quota_policy.id),
+    }), status=201)
 
 
 @require_assessment_permission("hr.assessment.analytics_view")

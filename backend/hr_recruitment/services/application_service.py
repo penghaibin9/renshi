@@ -43,6 +43,8 @@ class ApplicationServiceError(Exception):
 
 class ApplicationService:
     def __init__(self, *, tenant_id: int, actor: str = ""):
+        if not tenant_id:
+            raise ApplicationServiceError("TENANT_REQUIRED", "tenant_id is required")
         self.tenant_id = tenant_id
         self.actor = actor
 
@@ -110,6 +112,14 @@ class ApplicationService:
         idempotency_key: str | None = None,
     ) -> HrJobApplication:
         """正式提交（幂等：Idempotency-Key 落库 + active 唯一约束，冻结版本 + ledger）。"""
+        if idempotency_key is not None:
+            idempotency_key = str(idempotency_key).strip()
+            if not idempotency_key:
+                idempotency_key = None
+            elif len(idempotency_key) > 128:
+                raise ApplicationServiceError(
+                    "IDEMPOTENCY_KEY_INVALID", "Idempotency-Key 不能超过 128 个字符"
+                )
         app = (
             HrJobApplication.objects.select_for_update()
             .filter(id=application_id, tenant_id=self.tenant_id)
@@ -126,6 +136,12 @@ class ApplicationService:
                 tenant_id=self.tenant_id, idempotency_key=idempotency_key
             ).first()
             if recorded is not None:
+                if recorded.application_id_id != app.id:
+                    raise ApplicationServiceError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "相同 Idempotency-Key 已用于另一份申请",
+                        http_status=409,
+                    )
                 return recorded.application_id
 
         if app.canonical_status == S.SUBMITTED:
@@ -174,13 +190,24 @@ class ApplicationService:
         from hr_recruitment.models import HrApplicationSubmissionKey
 
         try:
-            HrApplicationSubmissionKey.objects.create(
-                tenant_id=self.tenant_id,
-                idempotency_key=idempotency_key,
-                application_id=app,
-            )
-        except IntegrityError:
-            pass  # 并发重复：已存在，无需处理
+            # Savepoint keeps the outer submit transaction usable when a
+            # concurrent request wins the unique-key race.
+            with transaction.atomic():
+                HrApplicationSubmissionKey.objects.create(
+                    tenant_id=self.tenant_id,
+                    idempotency_key=idempotency_key,
+                    application_id=app,
+                )
+        except IntegrityError as exc:
+            recorded = HrApplicationSubmissionKey.objects.filter(
+                tenant_id=self.tenant_id, idempotency_key=idempotency_key
+            ).first()
+            if recorded is None or recorded.application_id_id != app.id:
+                raise ApplicationServiceError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "相同 Idempotency-Key 已用于另一份申请",
+                    http_status=409,
+                ) from exc
 
     def _generate_application_no(self) -> str:
         while True:
@@ -307,7 +334,7 @@ class ApplicationService:
         sensitive_level: str = "RESTRICTED_HR",
     ) -> HrApplicationMaterial:
         """添加材料（版本化：同类型同标题递增版本；提交后禁止增改；sensitive_level 服务端校验）。"""
-        app = HrJobApplication.objects.filter(
+        app = HrJobApplication.objects.select_related("candidate_id").filter(
             id=application_id, tenant_id=self.tenant_id
         ).first()
         if app is None:
@@ -324,6 +351,19 @@ class ApplicationService:
         if sensitive_level not in allowed_levels:
             raise ApplicationServiceError(
                 "INVALID_SENSITIVE_LEVEL", "非法材料敏感级", http_status=422
+            )
+        expected_prefix = f"protected/hr04/{int(self.tenant_id)}/{app.id}/"
+        if not file_path or not str(file_path).startswith(expected_prefix):
+            raise ApplicationServiceError(
+                "MATERIAL_STORAGE_INVALID", "材料存储位置无效", http_status=422
+            )
+        if not sha256 or len(sha256) != 64:
+            raise ApplicationServiceError(
+                "MATERIAL_DIGEST_INVALID", "材料摘要无效", http_status=422
+            )
+        if int(file_size_bytes or 0) <= 0:
+            raise ApplicationServiceError(
+                "MATERIAL_FILE_EMPTY", "材料文件不能为空", http_status=422
             )
         last = (
             HrApplicationMaterial.objects.filter(
@@ -348,6 +388,7 @@ class ApplicationService:
             mime_type=mime_type,
             file_size_bytes=file_size_bytes,
             sensitive_level=sensitive_level,
+            retention_until=app.candidate_id.retention_until,
             supersedes_id=last if last else None,
             created_by=self.actor,
         )

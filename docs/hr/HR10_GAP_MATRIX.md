@@ -1,6 +1,6 @@
 # HR10_GAP_MATRIX — 培训进修与企业实践 基线差距矩阵
 
-> 全局合同：`00_高校人事系统全局架构与Horilla接管合同.md`
+> 全局合同：`00_高校人事系统全局架构与旧系统接管合同.md`
 > 业务事实源：`10_HR10_培训进修与企业实践_施工总册_终极版.md`
 > 代码基线：`penghaibin9/renshi` @ 2026-08-09
 > 审计范围：全仓库 (hr_staff/hr_external/hr_time/hr_changes/hr_contracts/hr_onboarding/hr_recruitment/employee/leave/attendance/base)

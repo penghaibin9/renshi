@@ -4,12 +4,12 @@ employee/methods.py
 
 import logging
 import re
-import threading
 from datetime import date, datetime
 from itertools import chain, groupby
 
 import pandas as pd
 from django.apps import apps
+from django.contrib.auth.hashers import make_password
 from django.db import connection, models, transaction
 from django.utils.translation import gettext as _
 
@@ -445,7 +445,9 @@ def bulk_create_user_import(success_lists):
         HorillaUser(
             username=row["Email"],
             email=row["Email"],
-            password=str(row["Phone"]).strip(),
+            # Imported accounts must be activated through the controlled
+            # password-reset flow; phone numbers are public, predictable data.
+            password=make_password(None),
             is_superuser=False,
         )
         for row in success_lists
@@ -504,21 +506,6 @@ def bulk_create_employee_import(success_lists):
             )
 
     return created_employees
-
-
-def set_initial_password(employees):
-    """
-    method to set initial password
-    """
-
-    logger.info("started to set initial password")
-    for employee in employees:
-        try:
-            employee.employee_user_id.set_password(str(employee.phone))
-            employee.employee_user_id.save()
-        except Exception as e:
-            logger.error(f"falied to set initial password for {employee}")
-    logger.info("initial password configured")
 
 
 def optimize_reporting_manager_lookup():
@@ -725,33 +712,6 @@ def bulk_create_employee_types(success_lists):
             EmployeeType.objects.bulk_create(
                 new_employee_types, batch_size=None if is_postgres else 999
             )
-
-
-def create_contracts_in_thread(new_work_info_list, update_work_info_list):
-    """
-    Creates employee contracts in bulk based on provided work information.
-    """
-    from payroll.models.models import Contract
-
-    contracts_list = [
-        Contract(
-            contract_name=f"{work_info.employee_id}'s Contract",
-            employee_id=work_info.employee_id,
-            contract_start_date=(
-                work_info.date_joining if work_info.date_joining else datetime.today()
-            ),
-            department=work_info.department_id,
-            job_position=work_info.job_position_id,
-            job_role=work_info.job_role_id,
-            shift=work_info.shift_id,
-            work_type=work_info.work_type_id,
-            wage=work_info.basic_salary or 0,
-        )
-        for work_info in new_work_info_list + update_work_info_list
-        if work_info.employee_id
-    ]
-
-    Contract.objects.bulk_create(contracts_list)
 
 
 def bulk_create_work_info_import(success_lists):
@@ -961,13 +921,8 @@ def bulk_create_work_info_import(success_lists):
             ],
             batch_size=None if is_postgres else 999,
         )
-    if apps.is_installed("payroll"):
-
-        contract_creation_thread = threading.Thread(
-            target=create_contracts_in_thread,
-            args=(new_work_info_list, update_work_info_list),
-        )
-        contract_creation_thread.start()
+    # Contract facts are created by HR07. Employee import must not create a
+    # parallel legacy payroll contract authority in a fire-and-forget thread.
 
 
 def get_model_class(model_path):

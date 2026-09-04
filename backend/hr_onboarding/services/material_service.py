@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from django.core.files.storage import default_storage
 from django.db import transaction
 from django.utils import timezone
 
@@ -29,7 +30,7 @@ from hr_onboarding.models import (
     HrOnboardingMaterial,
     HrOnboardingMaterialRequirement,
 )
-from hr_onboarding.services.file_service import store_material_file
+from hr_onboarding.services.file_service import material_storage_path, store_material_file
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,21 @@ class MaterialService:
             requirement=req,
             defaults={"status": MaterialStatus.MISSING},
         )
+        material = HrOnboardingMaterial.objects.select_for_update().get(
+            tenant_id=self.tenant_id,
+            id=material.id,
+            case_id=case.id,
+        )
+        if material.status not in {
+            MaterialStatus.MISSING,
+            MaterialStatus.RETURNED,
+            MaterialStatus.REJECTED,
+            MaterialStatus.EXPIRED,
+        }:
+            raise Hr05ApiError(
+                f"材料状态 {material.status} 不允许重新上传；已核验材料需走正式更正流程",
+                details={"code": "MATERIAL_UPLOAD_STATE_INVALID"},
+            )
 
         # HR04 复用策略：REQUIRE_ORIGINAL 时来源必须 HR04 之外，否则视为退回
         if (
@@ -91,6 +107,8 @@ class MaterialService:
                 details={"code": "REQUIRE_ORIGINAL"},
             )
 
+        old_meta = dict(material.file_meta_json or {})
+        old_version = material.file_version_id
         meta = store_material_file(
             uploaded_file,
             tenant_id=self.tenant_id,
@@ -99,21 +117,49 @@ class MaterialService:
             allowed_formats=req.allowed_formats or None,
             max_size_mb=(req.max_size / (1024 * 1024)) if req.max_size else None,
         )
-        material.file_version_id = meta.get("file_version_id")
-        material.file_meta_json = meta
-        material.submitted_at = timezone.now()
-        material.status = (
-            MaterialStatus.UNDER_REVIEW if req.verification_required else MaterialStatus.VERIFIED
+        new_path = material_storage_path(
+            tenant_id=self.tenant_id,
+            case_id=case.id,
+            material_id=material.id,
+            file_version_id=meta["file_version_id"],
+            ext=meta["ext"],
         )
-        material.save(
-            update_fields=[
-                "file_version_id",
-                "file_meta_json",
-                "submitted_at",
-                "status",
-                "updated_at",
-            ]
-        )
+        try:
+            material.file_version_id = meta.get("file_version_id")
+            material.file_meta_json = meta
+            material.submitted_at = timezone.now()
+            material.status = (
+                MaterialStatus.UNDER_REVIEW if req.verification_required else MaterialStatus.VERIFIED
+            )
+            material.save(
+                update_fields=[
+                    "file_version_id",
+                    "file_meta_json",
+                    "submitted_at",
+                    "status",
+                    "updated_at",
+                ]
+            )
+        except Exception:
+            if default_storage.exists(new_path):
+                default_storage.delete(new_path)
+            raise
+        if old_version and old_meta.get("ext"):
+            old_path = material_storage_path(
+                tenant_id=self.tenant_id,
+                case_id=case.id,
+                material_id=material.id,
+                file_version_id=old_version,
+                ext=old_meta["ext"],
+            )
+            if old_path != new_path:
+                transaction.on_commit(
+                    lambda path=old_path: (
+                        default_storage.delete(path)
+                        if default_storage.exists(path)
+                        else None
+                    )
+                )
         return material
 
     # ------------------------------------------------------------------

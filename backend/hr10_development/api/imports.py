@@ -10,13 +10,14 @@ import json
 import hashlib
 from datetime import datetime, timezone
 
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.core.files.storage import default_storage
+from django.http import FileResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from hr10_development.api.envelope import success, error
 from hr10_development.constants import DevelopmentErrorCode
 from hr10_development.legacy.import_job import HrDevelopmentImportJob
+from hr10_development.models import HrDevelopmentAuditEvent
 from hr10_development.permissions import require_hr10_permission
 from hr10_development.services.import_worker import TEMPLATE_SCHEMAS
 
@@ -24,7 +25,26 @@ from hr10_development.services.import_worker import TEMPLATE_SCHEMAS
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
-@csrf_exempt
+def _error_workbook_payload(job) -> dict:
+    available = bool(job.error_workbook_path)
+    return {
+        "hasErrorWorkbook": available,
+        "errorWorkbookDownloadUrl": (
+            f"/api/v1/hr/development/imports/{job.id}/errors/download"
+            if available
+            else None
+        ),
+    }
+
+
+def _validated_error_workbook_path(job) -> str:
+    expected = f"hr10/imports/{int(job.tenant_id)}/errors/job-{job.id}.xlsx"
+    actual = str(job.error_workbook_path or "")
+    if actual != expected or "\\" in actual or ".." in actual.split("/"):
+        raise ValueError("ERROR_WORKBOOK_STORAGE_INVALID")
+    return actual
+
+
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.import.manage")
 def upload_import(request):
@@ -93,7 +113,6 @@ def upload_import(request):
     }), status=201)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.import.manage")
 def validate_import(request, job_id):
@@ -122,12 +141,11 @@ def validate_import(request, job_id):
         "jobId": str(job.id),
         "status": job.status,
         "errorRows": job.error_rows,
-        "errorWorkbookPath": job.error_workbook_path,
+        **_error_workbook_payload(job),
         "result": job.result_summary_json,
     }))
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_hr10_permission("hr.development.import.manage")
 def confirm_import(request, job_id):
@@ -173,7 +191,6 @@ def confirm_import(request, job_id):
     }))
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 @require_hr10_permission("hr.development.import.manage")
 def get_import_status(request, job_id):
@@ -193,6 +210,73 @@ def get_import_status(request, job_id):
         "errorRows": job.error_rows,
         "warningRows": job.warning_rows,
         "resultSummaryJson": job.result_summary_json,
-        "errorWorkbookPath": job.error_workbook_path,
+        **_error_workbook_payload(job),
         "createdAt": job.created_at.isoformat(),
     }))
+
+
+@require_http_methods(["GET"])
+@require_hr10_permission("hr.development.import.manage")
+def download_error_workbook(request, job_id):
+    """Tenant-scoped, audited download without exposing the storage key."""
+    tenant_id = getattr(request, "tenant_id", None)
+    if tenant_id is None:
+        return JsonResponse(
+            error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"),
+            status=403,
+        )
+    purpose = str(request.headers.get("X-HR-Access-Reason", "") or "").strip()
+    if not purpose:
+        return JsonResponse(
+            error("DOWNLOAD_PURPOSE_REQUIRED", "请填写下载错误工作簿的用途"),
+            status=400,
+        )
+    job = HrDevelopmentImportJob.objects.filter(
+        id=job_id, tenant_id=tenant_id
+    ).first()
+    if not job:
+        return JsonResponse(
+            error(DevelopmentErrorCode.NOT_FOUND, "导入任务不存在"), status=404
+        )
+    try:
+        storage_path = _validated_error_workbook_path(job)
+    except ValueError:
+        return JsonResponse(
+            error("ERROR_WORKBOOK_STORAGE_INVALID", "错误工作簿存储位置无效"),
+            status=500,
+        )
+    if not default_storage.exists(storage_path):
+        return JsonResponse(
+            error("ERROR_WORKBOOK_NOT_FOUND", "错误工作簿不存在"), status=404
+        )
+
+    stream = default_storage.open(storage_path, "rb")
+    try:
+        HrDevelopmentAuditEvent.objects.create(
+            tenant_id=tenant_id,
+            actor_id_id=request.user.id,
+            object_type="HrDevelopmentImportJob",
+            object_id=str(job.id),
+            action="ImportErrorWorkbookDownloaded",
+            reason=purpose[:1000],
+            request_id=str(
+                getattr(request, "request_id", "")
+                or request.headers.get("X-Request-ID", "")
+            )[:64],
+        )
+    except Exception:
+        stream.close()
+        return JsonResponse(
+            error("AUDIT_WRITE_FAILED", "下载审计写入失败"), status=500
+        )
+
+    response = FileResponse(
+        stream,
+        as_attachment=True,
+        filename=f"教师发展导入错误-{job.id}.xlsx",
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Cache-Control"] = "private, no-store, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response

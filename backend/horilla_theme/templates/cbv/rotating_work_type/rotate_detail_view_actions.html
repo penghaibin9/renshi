@@ -21,7 +21,7 @@
                         {% trans 'Do you want to Un-archive this rotating work type assign?' %}
                     {% endif %}
                 "
-        hx-get="{% url 'rotating-work-type-assign-archive' instance.id %}?instances_ids={{instance.ordered_ids}}"
+        hx-post="{% url 'rotating-work-type-assign-archive' instance.id %}?instances_ids={{instance.ordered_ids}}"
         hx-target="#genericModalBody"
     >
         <img

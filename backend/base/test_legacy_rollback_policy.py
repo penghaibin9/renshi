@@ -34,6 +34,16 @@ class LegacyHrRollbackSafetyTests(SimpleTestCase):
         self.assertEqual(
             legacy_hr_ui_module.LEGACY_HR_UI_SUCCESSORS,
             {
+                "dashboard": "/hr/overview",
+                "employee": "/hr/staff/",
+                "attendance": "/hr/time/attendance/",
+                "leave": "/hr/time/leave/",
+                "recruitment": "/hr/recruitment/",
+                "onboarding": "/hr/onboarding/",
+                "pms": "/hr/assessments/",
+                "project": "/hr/overview",
+                "asset": "/hr/exit/",
+                "helpdesk": "/hr/self/",
                 "payroll": "/hr/payroll/",
                 "offboarding": "/hr/exit/",
                 "report": "/hr/data/",

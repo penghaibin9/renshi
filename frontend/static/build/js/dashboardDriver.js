@@ -4,7 +4,7 @@ const driver = window.driver.js.driver;
 
 
 var steps = [
-    { popover: { title: gettext('Dashboard'), description: gettext('Horilla dashboard section') } },
+    { popover: { title: gettext('工作台'), description: gettext('高校人事工作台') } },
     { element: '#attendance-activity-container', popover: { title: gettext('Mark Attendance'), description: gettext('Used to mark your attendance') } },
 ];
 
@@ -26,7 +26,7 @@ if ($('#mainNavProfile').length) {
     steps.push({ element: '#mainNavProfile', popover: { title: gettext('Profile'), description: gettext('Profile and change password options') } });
 }
 if ($('.oh-card-dashboard').length) {
-    steps.push({ element: '#tileContainer .oh-card-dashboard:nth-child(1)', popover: { title: gettext('Dashboard Tiles'), description: gettext('Horilla Dashboard Tiles') } });
+    steps.push({ element: '#tileContainer .oh-card-dashboard:nth-child(1)', popover: { title: gettext('工作台指标'), description: gettext('高校人事核心指标') } });
 }
 setTimeout(() => {
     if ($('.oh-btn-group').length) {
@@ -42,7 +42,7 @@ setTimeout(() => {
         steps.push({ element: '.oh-sidebar__company:nth-child(1)', popover: { title: gettext('Company'), description: gettext('Your current company access') } });
     }
     if ($('[data-id="dashboardNav"]').length) {
-        steps.push({ element: '[data-id="dashboardNav"]', popover: { title: gettext('App'), description: gettext('Horilla Hr Apps. eg Dashboard') } });
+        steps.push({ element: '[data-id="dashboardNav"]', popover: { title: gettext('业务模块'), description: gettext('高校人事业务入口') } });
     }
 }, 1000);
 driverObj = driver(

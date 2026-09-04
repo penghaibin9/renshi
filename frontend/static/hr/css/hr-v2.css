@@ -2,7 +2,7 @@
  * HR UI V2 shared visual foundation.
  *
  * Purpose: make HR01-HR18 read like one production product while keeping the
- * existing Horilla global shell, Django routes, tenant scope, permissions,
+ * existing compatibility shell, Django routes, tenant scope, permissions,
  * Authority boundaries, state machines and API contracts untouched.
  *
  * Visual rules:
@@ -393,7 +393,7 @@
 
 @media (max-width: 760px) {
   /*
-   * The active Horilla theme shell defaults to a 13rem pinned sidebar and
+   * The active compatibility shell defaults to a 13rem pinned sidebar and
    * writes the same margin inline on .oh-main-content. On a 390px viewport
    * that consumes more than half the screen. HR V2 keeps the existing global
    * navigation available as a 4rem icon rail on narrow screens, but it never

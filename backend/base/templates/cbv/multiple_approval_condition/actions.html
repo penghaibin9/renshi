@@ -11,7 +11,7 @@
             </button>
         {% endif %}
         {% if request.user|is_reportingmanager or perms.base.delete_multipleapprovalcondition %}
-            <a hx-confirm="{% trans 'Are you sure you want to delete ?' %}" hx-get={% url "multiple-level-approval-delete" instance.id %}
+            <a hx-confirm="{% trans 'Are you sure you want to delete ?' %}" hx-post={% url "multiple-level-approval-delete" instance.id %}
                 class="oh-btn oh-btn--danger oh-btn--sq-sm" id="delete-link" title="{% trans 'Delete' %}" hx-target="#multipleApproveCondition">
                 <ion-icon name="trash-outline"></ion-icon>
             </a>

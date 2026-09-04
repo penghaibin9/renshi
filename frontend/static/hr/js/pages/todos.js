@@ -9,6 +9,30 @@
 
   const SEVERITY_LABELS = { CRITICAL: "严重", HIGH: "高", MEDIUM: "中", LOW: "低" };
 
+  function esc(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  function formatDateTime(value) {
+    if (!value) return "";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return esc(value);
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(parsed).replaceAll("/", "-");
+  }
+
+  function safeActionUrl(value) {
+    const url = String(value || "");
+    return url.startsWith("/hr/") ? url : "";
+  }
+
   async function loadSummary() {
     const el = document.getElementById("hr-todo-summary");
     if (!el) return;
@@ -16,11 +40,15 @@
       const res = await window.HrApi.request("/api/hr/v1/home/todos/summary");
       if (!res.ok) throw new Error("summary failed");
       const s = res.data;
+      if (s.status === "UNAVAILABLE") {
+        el.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">待办来源暂不可用</div><p>未用 0 条掩盖读取失败，请稍后重试。</p></div>`;
+        return;
+      }
       el.innerHTML = `<div class="hr-summary-numbers">
-        <span class="hr-summary-number hr-risk-danger"><b>${s.overdue ?? 0}</b> 逾期</span>
-        <span class="hr-summary-number"><b>${s.today ?? 0}</b> 今日</span>
-        <span class="hr-summary-number"><b>${s.week ?? 0}</b> 本周</span>
-      </div>`;
+        <span class="hr-summary-number hr-risk-danger"><b>${esc(s.overdue ?? 0)}</b> 逾期</span>
+        <span class="hr-summary-number"><b>${esc(s.today ?? 0)}</b> 今日</span>
+        <span class="hr-summary-number"><b>${esc(s.week ?? 0)}</b> 未来 7 天</span>
+      </div>${s.status === "PARTIAL" ? '<p class="hr-meta">部分业务来源暂不可用，以上仅为已成功读取的数据。</p>' : ""}`;
     } catch (e) {
       el.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
     }
@@ -53,16 +81,16 @@
       sev === "CRITICAL" ? "hr-risk-danger"
       : sev === "HIGH" ? "hr-risk-high"
       : "";
+    const meta = [t.subjectName, t.orgName, t.currentStage].filter(Boolean).map(esc).join(" · ");
+    const actionUrl = safeActionUrl(t.actionUrl);
     return `<li class="hr-todo-item">
-      <span class="hr-todo-item__badge ${sevClass}">${SEVERITY_LABELS[sev] || sev}</span>
+      <span class="hr-todo-item__badge ${sevClass}">${esc(SEVERITY_LABELS[sev] || sev)}</span>
       <div class="hr-todo-item__main">
-        <div class="hr-todo-item__title">${t.title || ""}</div>
-        <div class="hr-todo-item__meta hr-meta">
-          ${t.subjectName || ""}${t.orgName ? " · " + t.orgName : ""}
-        </div>
+        <div class="hr-todo-item__title">${esc(t.title || "")}</div>
+        <div class="hr-todo-item__meta hr-meta">${meta}</div>
       </div>
-      ${t.dueAt ? `<div class="hr-todo-item__due hr-meta">${t.isOverdue ? "已逾期 · " : ""}截止 ${t.dueAt}</div>` : ""}
-      ${t.actionUrl ? `<a class="hr-btn hr-btn--ghost" href="${t.actionUrl}">去处理</a>` : ""}
+      ${t.dueAt ? `<div class="hr-todo-item__due hr-meta">${t.isOverdue ? "已逾期 · " : ""}截止 ${formatDateTime(t.dueAt)}</div>` : ""}
+      ${actionUrl ? `<a class="hr-btn hr-btn--ghost" href="${esc(actionUrl)}">${esc(t.actionLabel || "去处理")}</a>` : ""}
     </li>`;
   }
 

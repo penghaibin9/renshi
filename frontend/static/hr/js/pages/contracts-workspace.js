@@ -41,12 +41,30 @@
     return { summary: summary };
   }
 
+  function cookie(name) {
+    const prefix = name + "=";
+    const item = document.cookie
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix));
+    return item ? decodeURIComponent(item.slice(prefix.length)) : "";
+  }
+
   async function request(url, options) {
+    const requestOptions = Object.assign({}, options || {});
+    requestOptions.headers = Object.assign(
+      { Accept: "application/json" },
+      requestOptions.headers || {}
+    );
+    const method = String(requestOptions.method || "GET").toUpperCase();
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+      requestOptions.headers["X-CSRFToken"] = cookie("csrftoken");
+    }
     const response = await fetch(
       url,
       Object.assign(
-        { credentials: "same-origin", headers: { Accept: "application/json" } },
-        options || {}
+        { credentials: "same-origin" },
+        requestOptions
       )
     );
     let payload = null;
@@ -73,6 +91,52 @@
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify(body || {}),
     });
+  }
+
+  async function uploadSignedDocument(agreementId, file) {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("documentType", "SIGNED_CONTRACT");
+    body.append("signatureStatus", "PENDING");
+    return request(API + "/" + encodeURIComponent(agreementId) + "/documents", {
+      method: "POST",
+      body: body,
+    });
+  }
+
+  async function downloadDocument(documentId, fileName) {
+    const purpose = window.prompt("请输入下载用途（将写入审计记录）", "合同业务办理");
+    if (!purpose || !purpose.trim()) return;
+    const issued = await request(
+      "/api/v1/hr/contracts/documents/" + encodeURIComponent(documentId) + "/ticket",
+      {
+        method: "POST",
+        headers: { "X-HR-Access-Reason": purpose.trim() },
+      }
+    );
+    const response = await fetch(issued.downloadPath, {
+      credentials: "same-origin",
+      headers: {
+        Accept: "application/pdf",
+        "X-HR-Download-Ticket": issued.ticket,
+      },
+    });
+    if (!response.ok) {
+      let message = "合同文档下载失败。";
+      try {
+        const payload = await response.json();
+        message = payload?.error?.message || message;
+      } catch (_) {}
+      throw new Error(message);
+    }
+    const blobUrl = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a");
+    anchor.href = blobUrl;
+    anchor.download = fileName || "合同文档.pdf";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
   }
 
   function statusLabel(status) {
@@ -218,6 +282,19 @@
       <span>签署：${escapeHtml(dateTime(version.signedAt))}</span></div>`).join("")}</div>`;
   }
 
+  function renderDocuments(documents, errorMessage) {
+    if (errorMessage) return `<div class="hr07-inline-state">${escapeHtml(errorMessage)}</div>`;
+    if (!Array.isArray(documents) || !documents.length)
+      return '<div class="hr07-inline-state">尚未上传合同 PDF。请到“签订与续签”办理区上传。</div>';
+    return `<div class="hr07-version-list">${documents.map((item) => `<div class="hr07-version">
+      <strong>${escapeHtml(item.fileName)}</strong>
+      <span>${escapeHtml(item.documentType)}</span>
+      <span>${escapeHtml(item.signatureStatus)}</span>
+      <span>${escapeHtml(Math.max(1, Math.ceil(Number(item.sizeBytes || 0) / 1024)))} KB</span>
+      <button type="button" class="hr07-link-btn" data-document-download="${escapeHtml(item.id)}" data-file-name="${escapeHtml(item.fileName)}">审计下载</button>
+    </div>`).join("")}</div>`;
+  }
+
   async function showDetail(id) {
     const panel = document.getElementById("hr07-detail-panel");
     const content = document.getElementById("hr07-detail-content");
@@ -228,6 +305,13 @@
     panel.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
       const row = await request(API + "/" + encodeURIComponent(id));
+      let documents = [];
+      let documentError = "";
+      try {
+        documents = await request(API + "/" + encodeURIComponent(id) + "/documents");
+      } catch (error) {
+        documentError = error.message;
+      }
       if (title) title.textContent = text(row.agreementNo) + " · " + text(row.title);
       const subjectValue = row.subjectType === "EXTERNAL_WORKFORCE"
         ? escapeHtml(row.staffName)
@@ -240,7 +324,20 @@
         <div><span>${row.subjectType === "EXTERNAL_WORKFORCE" ? "来源业务" : "聘用关系"}</span><strong>${relationshipValue}</strong></div>
         <div><span>合同类型</span><strong>${escapeHtml(row.agreementType)}</strong></div>
         <div><span>状态</span><strong>${escapeHtml(statusLabel(row.status))}</strong></div>
-      </div><h3>合同版本</h3>${renderVersions(row.versions)}`;
+      </div><h3>合同版本</h3>${renderVersions(row.versions)}
+      <h3>合同文档</h3>${renderDocuments(documents, documentError)}`;
+      content.querySelectorAll("[data-document-download]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          try {
+            await downloadDocument(button.dataset.documentDownload, button.dataset.fileName);
+          } catch (error) {
+            window.alert(error.message);
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
     } catch (error) {
       content.innerHTML = `<div class="hr07-inline-state">${escapeHtml(error.message)}</div>`;
     }
@@ -335,7 +432,8 @@
       <label><span>生效日期</span><input name="effectiveFrom" type="date" required></label>
       <label><span>到期日期</span><input name="effectiveTo" type="date"></label>
       <label><span>签署时间</span><input name="signedAt" type="datetime-local" required></label>
-      <label><span>签署文件凭证</span><input name="signedDocumentRef" required placeholder="电子签回执号或受控文件编号"></label>
+      <label><span>已签合同 PDF</span><input name="signedDocumentFile" type="file" accept="application/pdf,.pdf"></label>
+      <label><span>电子签回执号（可选）</span><input name="signedDocumentRef" placeholder="未上传 PDF 时必须填写"></label>
       <label class="is-wide"><span>已签署内容摘要</span><textarea name="contentSnapshot" required placeholder="记录已签署版本的条款摘要"></textarea></label>
       <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">冻结首个签署版本</button><span id="hr07-sign-message" class="hr07-form-message"></span></div>
     </form>`;
@@ -361,12 +459,25 @@
       signForm?.addEventListener("submit", async (event) => {
         event.preventDefault(); const message = document.getElementById("hr07-sign-message");
         const data = Object.fromEntries(new FormData(signForm).entries());
+        const signedFile = signForm.elements.signedDocumentFile.files[0];
+        delete data.signedDocumentFile;
         if (!data.effectiveTo) delete data.effectiveTo;
         if (data.signedAt) data.signedAt = new Date(data.signedAt).toISOString();
         try { data.contentSnapshot = contentSnapshot(data.contentSnapshot); }
         catch (error) { if (message) message.textContent = error.message; return; }
         const button = signForm.querySelector('button[type="submit"]'); if (button) button.disabled = true;
-        try { await postJson(API + "/" + encodeURIComponent(id) + "/versions/sign", data); await loadLedger(); await loadSigningWorkspace(id); }
+        try {
+          if (signedFile) {
+            const uploaded = await uploadSignedDocument(id, signedFile);
+            data.signedDocumentRef = uploaded.signedDocumentRef;
+          }
+          if (!String(data.signedDocumentRef || "").trim()) {
+            throw new Error("请上传已签合同 PDF，或填写电子签回执号。");
+          }
+          await postJson(API + "/" + encodeURIComponent(id) + "/versions/sign", data);
+          await loadLedger();
+          await loadSigningWorkspace(id);
+        }
         catch (error) { if (message) message.textContent = error.message; if (button) button.disabled = false; }
       });
       const activateForm = document.getElementById("hr07-activate-form");
@@ -463,8 +574,17 @@
         else if (action === "approve") url += "/approve";
         else if (action === "sign") {
           const signedAt = actionForm.elements.signedAt.value;
-          const signedDocumentRef = actionForm.elements.signedDocumentRef.value.trim();
-          if (!signedAt || !signedDocumentRef) throw new Error("请填写签署时间和签署文件凭证。");
+          let signedDocumentRef = actionForm.elements.signedDocumentRef.value.trim();
+          const signedFile = actionForm.elements.signedDocumentFile.files[0];
+          if (!signedAt || (!signedDocumentRef && !signedFile)) {
+            throw new Error("请填写签署时间，并上传已签合同 PDF 或填写电子签回执号。");
+          }
+          const selectedCase = cases.find((row) => row.id === caseId);
+          if (signedFile) {
+            if (!selectedCase?.agreementId) throw new Error("当前业务单缺少合同主档编号，无法上传文档。");
+            const uploaded = await uploadSignedDocument(selectedCase.agreementId, signedFile);
+            signedDocumentRef = uploaded.signedDocumentRef;
+          }
           body = { signedAt: new Date(signedAt).toISOString(), signedDocumentRef,
             contentSnapshot: contentSnapshot(actionForm.elements.contentSnapshot.value) };
           url += "/versions/sign";

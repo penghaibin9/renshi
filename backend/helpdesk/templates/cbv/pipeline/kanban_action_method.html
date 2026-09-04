@@ -23,7 +23,10 @@
                         class="w-full text-left px-3 py-1 hover:text-primary-600 font-semibold"
                     >
                         <a
-                            href = "{% url 'claim-ticket' ticket.id %}"
+                            href="#"
+                            hx-post="{% url 'claim-ticket' ticket.id %}"
+                            hx-swap="none"
+                            hx-on::after-request="window.location.reload()"
                         >
                             {% trans "Claim" %}
                         </a>
@@ -56,7 +59,7 @@
             class="w-full text-left px-3 py-1 hover:text-primary-600 font-semibold"
         >
             <a
-                hx-get = "{% url 'ticket-archive' ticket.id %}"
+                hx-post = "{% url 'ticket-archive' ticket.id %}"
                 hx-swap = "outerHTML"
                 {% if ticket.is_active %}
                 hx-confirm = "Do you want to archive this ticket?"
@@ -83,7 +86,10 @@
                 class="w-full text-left px-3 py-1 hover:text-danger font-semibold"
             >
                 <a
-                    href = "{% url 'ticket-delete' ticket.id %}"
+                    href="#"
+                    hx-post="{% url 'ticket-delete' ticket.id %}"
+                    hx-swap="none"
+                    hx-on::after-request="window.location.reload()"
                     onsubmit="return confirm('{% trans 'Are you sure you want to delete	this Ticket?' %}');"
                 >
                     {% trans 'Delete' %}

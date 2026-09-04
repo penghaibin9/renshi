@@ -3,17 +3,19 @@ import datetime
 import json
 import logging
 from collections import defaultdict
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs
 
 import pandas as pd
 from django.contrib import messages
 from django.core import serializers
+from django.db import transaction
+from django.db.models import ProtectedError
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from base.methods import filtersubordinates, get_key_instances
 from horilla.decorators import hx_request_required, login_required, permission_required
@@ -38,6 +40,26 @@ from .methods import (
 from .models import *
 
 logger = logging.getLogger(__name__)
+
+
+def _can_manage_task(request, task, permission):
+    actor = request.user.employee_get
+    return (
+        request.user.is_superuser
+        or request.user.has_perm(permission)
+        or task.task_managers.filter(pk=actor.pk).exists()
+        or task.project.managers.filter(pk=actor.pk).exists()
+    )
+
+
+def _notify_after_commit(sender, **kwargs):
+    def send_notification():
+        try:
+            notify.send(sender, **kwargs)
+        except Exception:
+            logger.exception("Project notification delivery failed")
+
+    transaction.on_commit(send_notification)
 
 # Create your views here.
 # Dash board view
@@ -246,6 +268,8 @@ def project_update(request, project_id):
 
 @login_required
 @project_update_permission()
+@require_POST
+@transaction.atomic
 def change_project_status(request, project_id):
     """
     HTMX function to update the status of a project.
@@ -254,7 +278,12 @@ def change_project_status(request, project_id):
     """
     status = request.POST.get("status")
     try:
-        project = get_object_or_404(Project, id=project_id)
+        project = get_object_or_404(
+            Project.objects.select_for_update(), id=project_id
+        )
+        valid_statuses = {value for value, _label in Project.PROJECT_STATUS}
+        if status not in valid_statuses:
+            return HttpResponse(_("Invalid project status."), status=400)
         if status:
             if project.status != status:
                 project.status = status
@@ -267,7 +296,7 @@ def change_project_status(request, project_id):
                 employees = (project.managers.all() | project.members.all()).distinct()
                 for employee in employees:
                     try:
-                        notify.send(
+                        _notify_after_commit(
                             request.user.employee_get,
                             recipient=employee.employee_user_id,
                             verb=f"The status of the project '{project}' has been changed to {project.get_status_display()}.",
@@ -299,6 +328,8 @@ def change_project_status(request, project_id):
 
 @login_required
 @project_delete_permission()
+@require_POST
+@transaction.atomic
 def project_delete(request, project_id):
     """
     For deleting existing project
@@ -306,7 +337,7 @@ def project_delete(request, project_id):
     view_type = request.GET.get("view")
     project_view_url = reverse("project-view")
     redirected_url = f"{project_view_url}?view={view_type}"
-    Project.objects.get(id=project_id).delete()
+    Project.objects.select_for_update().get(id=project_id).delete()
     if request.headers.get("HX-Request"):
         return HttpResponse(
             "<script>$('#applyFilter').click();$('#reloadMessagesButton').click();</script>"
@@ -575,7 +606,6 @@ def project_bulk_export(request):
         {
             "bg_color": "#ffd0cc",
             "bold": True,
-            "font_size": 14,
             "align": "center",
             "valign": "vcenter",
             "font_size": 20,
@@ -615,14 +645,13 @@ def project_bulk_export(request):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def project_bulk_archive(request):
-    try:
-        ids = request.POST.getlist("ids")
-    except Exception:
-        messages.error(request, _("Could not retrieve project IDs."))
-        return HttpResponse("<script>$('#applyFilter').click();</script>")
-
-    is_active_raw = request.GET.get("is_active", "").lower()
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    if not ids or len(ids) > 500:
+        return JsonResponse({"error": "Invalid project IDs."}, status=400)
+    is_active_raw = request.POST.get("is_active", "").lower()
 
     if is_active_raw in ["true"]:
         is_active = True
@@ -636,22 +665,18 @@ def project_bulk_archive(request):
         )
         return HttpResponse("<script>$('#applyFilter').click();</script>")
 
-    for project_id in ids:
-        project = Project.objects.filter(id=project_id).first()
-        if project and is_project_manager_or_super_user(request, project):
-            project.is_active = is_active
-            project.save()
-            messages.success(
-                request,
-                _("%(project)s is %(message)s successfully.")
-                % {"project": project, "message": message},
-            )
-        else:
-            messages.warning(
-                request,
-                _("Permission denied or project not found: ID %(project_id)s")
-                % {"project_id": project_id},
-            )
+    projects = list(Project.objects.select_for_update().filter(id__in=ids))
+    if len(projects) != len(set(ids)):
+        return JsonResponse({"error": "Project not found."}, status=404)
+    if any(not is_project_manager_or_super_user(request, project) for project in projects):
+        return JsonResponse({"error": "Permission denied."}, status=403)
+    Project.objects.filter(id__in=[project.id for project in projects]).update(
+        is_active=is_active
+    )
+    messages.success(
+        request,
+        _("Selected projects were %(message)s successfully.") % {"message": message},
+    )
 
     return HttpResponse("<script>$('#applyFilter').click();</script>")
 
@@ -659,6 +684,8 @@ def project_bulk_archive(request):
 @login_required
 @hx_request_required
 # @permission_required("project.delete_project")
+@require_POST
+@transaction.atomic
 def project_bulk_delete(request):
     """
     This method deletes a set of Project instances in bulk, after verifying permissions.
@@ -672,7 +699,7 @@ def project_bulk_delete(request):
         messages.error(request, _("Could not retrieve project IDs."))
         return HttpResponse("<script>$('#applyFilter').click();</script>")
 
-    projects = Project.objects.filter(id__in=ids)
+    projects = Project.objects.select_for_update().filter(id__in=ids)
     deletable_projects = []
     skipped_projects = []
 
@@ -684,7 +711,7 @@ def project_bulk_delete(request):
 
     # Delete in bulk
     if deletable_projects:
-        # Project.objects.filter(id__in=[p.id for p in deletable_projects]).delete()
+        Project.objects.filter(id__in=[p.id for p in deletable_projects]).delete()
         messages.success(
             request,
             _("{count} project(s) deleted successfully.").format(
@@ -704,15 +731,17 @@ def project_bulk_delete(request):
 
 @login_required
 @project_delete_permission()
+@require_POST
+@transaction.atomic
 def project_archive(request, project_id):
     """
     This method is used to archive project instance
     Args:
             project_id : Project instance id
     """
-    project = Project.objects.get(id=project_id)
+    project = Project.objects.select_for_update().get(id=project_id)
     project.is_active = not project.is_active
-    project.save()
+    project.save(update_fields=["is_active"])
     message = _(f"{project} Un-Archived successfully.")
     if not project.is_active:
         message = _(f"{project} Archived successfully.")
@@ -902,25 +931,19 @@ def update_task(request, task_id):
 
 @login_required
 @task_delete_permission()
+@require_POST
+@transaction.atomic
 def delete_task(request, task_id):
     """
     For delete task
     """
-    view_type = request.GET.get("view")
-    path = urlparse(request.META["HTTP_REFERER"]).path
-    url_after_project = path.split("project/")[1].rstrip("/")
-    # Split into components
-    parts = url_after_project.split("/")
-    view_name = parts[0]
-    object_id = parts[1] if len(parts) > 1 else None
-
-    if not view_name == "task-all":
-        task_view_url = reverse(view_name, kwargs={"project_id": object_id})
-    else:
+    view_type = request.GET.get("view") or "list"
+    task = Task.objects.select_for_update().get(id=task_id)
+    if request.GET.get("task_all") == "true":
         task_view_url = reverse("task-all")
+    else:
+        task_view_url = reverse("task-view", kwargs={"project_id": task.project_id})
     redirected_url = f"{task_view_url}?view={view_type}"
-    task = Task.objects.get(id=task_id)
-    project_id = task.project.id
     task.delete()
     messages.success(request, _("The task has been deleted successfully."))
     if request.META.get("HTTP_HX_REQUEST"):
@@ -978,6 +1001,8 @@ def task_filter(request, project_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def task_stage_change(request):
     """
     This method is used to change the current stage of a task
@@ -987,11 +1012,21 @@ def task_stage_change(request):
     if not task_id or not stage_id:
         messages.error(request, _("Missing required parameters"))
         return JsonResponse({"error": "Missing required parameters"}, status=400)
-    stage = ProjectStage.objects.filter(id=stage_id).first()
-    if not stage:
+    task = Task.objects.select_for_update().select_related("project").filter(
+        pk=task_id
+    ).first()
+    if task is None:
+        return JsonResponse({"error": _("Task not found")}, status=404)
+    stage = ProjectStage.objects.select_for_update().filter(
+        id=stage_id, project_id=task.project_id
+    ).first()
+    if stage is None:
         messages.error(request, _("Stage not found"))
         return JsonResponse({"error": "Stage not found"}, status=404)
-    Task.objects.filter(id=task_id).update(stage=stage)
+    if not _can_manage_task(request, task, "project.change_task"):
+        return JsonResponse({"error": _("Permission denied.")}, status=403)
+    task.stage = stage
+    task.save(update_fields=["stage"])
     return JsonResponse(
         {
             "type": "success",
@@ -1165,18 +1200,25 @@ def task_all_create(request):
 
 
 @login_required
+@task_update_permission()
+@require_POST
+@transaction.atomic
 def update_project_task_status(request, task_id):
-    status = request.GET.get("status")
-    task = Task.find(task_id)
+    status = request.POST.get("status")
+    task = Task.objects.select_for_update().filter(id=task_id).first()
     if not task:
         return HorillaRedirect(request, message=_("Task not found"))
+
+    valid_statuses = {value for value, _label in Task.TASK_STATUS}
+    if status not in valid_statuses:
+        return HorillaRedirect(request, message=_("Invalid task status"))
 
     if task.end_date and task.end_date < date.today():
         messages.warning(request, _("Cannot update status. Task has already expired."))
         return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
 
     task.status = status
-    task.save()
+    task.save(update_fields=["status"])
     messages.success(request, _("Task status has been updated successfully"))
     return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
 
@@ -1234,6 +1276,8 @@ def task_all_filter(request):
 @login_required
 # @permission_required("project.change_task")
 # @require_http_methods(["POST"])
+@require_POST
+@transaction.atomic
 def task_all_bulk_archive(request):
     """
     This method is used to archive bulk of Task instances
@@ -1242,27 +1286,41 @@ def task_all_bulk_archive(request):
     if not ids:
         messages.error(request, _("Missing required parameter: ids"))
         return JsonResponse({"error": "Missing required parameter: ids"}, status=400)
-    ids = json.loads(ids)
-    is_active = False
-    if request.GET.get("is_active") == "True":
-        is_active = True
-    for task_id in ids:
-        task = Task.objects.filter(id=task_id).first()
-        if not task:
-            continue  # Skip if task not found
-        task.is_active = is_active
-        task.save()
-        message = _("archived")
-        if is_active:
-            message = _("un-archived")
-        messages.success(
-            request, _("%(task)s is %(message)s") % {"task": task, "message": message}
-        )
-    return JsonResponse({"message": "Success"})
+    try:
+        raw_ids = json.loads(ids)
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"error": "Invalid task IDs."}, status=400)
+    if not isinstance(raw_ids, list) or len(raw_ids) > 500:
+        return JsonResponse({"error": "Invalid task IDs."}, status=400)
+    try:
+        ids = list(dict.fromkeys(int(value) for value in raw_ids if int(value) > 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid task IDs."}, status=400)
+    state_value = request.POST.get("is_active", "").lower()
+    if not ids or state_value not in {"true", "false"}:
+        return JsonResponse({"error": "Invalid archive request."}, status=400)
+    tasks = list(
+        Task.objects.select_for_update().select_related("project").filter(id__in=ids)
+    )
+    if len(tasks) != len(ids):
+        return JsonResponse({"error": "Task not found."}, status=404)
+    for task in tasks:
+        if not (
+            request.user.has_perm("project.change_task")
+            or request.user.is_superuser
+            or request.user.employee_get in task.task_managers.all()
+            or request.user.employee_get in task.project.managers.all()
+        ):
+            return JsonResponse({"error": "Permission denied."}, status=403)
+    Task.objects.filter(id__in=ids).update(is_active=state_value == "true")
+    messages.success(request, _("Selected tasks updated successfully."))
+    return JsonResponse({"message": "Success", "updated": len(ids)})
 
 
 @login_required
 # @permission_required("project.delete_task")
+@require_POST
+@transaction.atomic
 def task_all_bulk_delete(request):
     """
     This method is used to delete set of Task instances
@@ -1271,35 +1329,57 @@ def task_all_bulk_delete(request):
     if not ids:
         messages.error(request, _("Missing required parameter: ids"))
         return JsonResponse({"error": "Missing required parameter: ids"}, status=400)
-    ids = json.loads(ids)
-    del_ids = []
-    for task_id in ids:
-        task = Task.find(task_id)
-        if not task:
-            continue  # Skip if task not found
-        try:
-            task.delete()
-            del_ids.append(task)
-        except Exception as error:
-            messages.error(request, error)
-            messages.error(request, _("You cannot delete %(task)s.") % {"task": task})
-    messages.success(request, _("{} tasks.".format(len(del_ids))))
-    return JsonResponse({"message": "Success"})
+    try:
+        raw_ids = json.loads(ids)
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"error": _("Invalid task IDs.")}, status=400)
+    if not isinstance(raw_ids, list) or not raw_ids or len(raw_ids) > 500:
+        return JsonResponse({"error": _("Invalid task IDs.")}, status=400)
+    try:
+        ids = [int(value) for value in raw_ids]
+    except (TypeError, ValueError):
+        return JsonResponse({"error": _("Invalid task IDs.")}, status=400)
+    if any(value <= 0 for value in ids) or len(ids) != len(set(ids)):
+        return JsonResponse({"error": _("Invalid task IDs.")}, status=400)
+
+    tasks = list(
+        Task.objects.select_for_update().select_related("project").filter(pk__in=ids)
+    )
+    if len(tasks) != len(ids):
+        return JsonResponse({"error": _("Task not found.")}, status=404)
+    if any(not _can_manage_task(request, task, "project.delete_task") for task in tasks):
+        return JsonResponse({"error": _("Permission denied.")}, status=403)
+    try:
+        Task.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse({"error": _("A selected task is protected.")}, status=409)
+    messages.success(request, _("{} tasks deleted.".format(len(tasks))))
+    return JsonResponse({"message": "Success", "deleted": len(tasks)})
 
 
 @login_required
 # @permission_required("project.change_task")
+@require_POST
+@transaction.atomic
 def task_all_archive(request, task_id):
     """
     This method is used to archive project instance
     Args:
             task_id : Task instance id
     """
-    task = Task.objects.filter(id=task_id).first()
+    task = Task.objects.select_for_update().filter(id=task_id).first()
     if not task:
         return HorillaRedirect(request, message=_("Task not found"))
+    if not (
+        request.user.has_perm("project.change_task")
+        or request.user.is_superuser
+        or request.user.employee_get in task.task_managers.all()
+        or request.user.employee_get in task.project.managers.all()
+    ):
+        return handle_no_permission(request)
     task.is_active = not task.is_active
-    task.save()
+    task.save(update_fields=["is_active"])
     message = _(f"{task} un-archived")
     if not task.is_active:
         message = _(f"{task} archived")
@@ -1369,6 +1449,8 @@ def update_project_stage(request, stage_id):
 
 @login_required
 @project_stage_delete_permission()
+@require_POST
+@transaction.atomic
 def delete_project_stage(request, stage_id):
     """
     For delete project stage
@@ -1376,7 +1458,7 @@ def delete_project_stage(request, stage_id):
     view_type = request.GET.get("view")
     if view_type == None:
         view_type = "list"
-    stage = ProjectStage.objects.filter(id=stage_id).first()
+    stage = ProjectStage.objects.select_for_update().filter(id=stage_id).first()
     if not stage:
         return HorillaRedirect(request, message=_("Project stage not found"))
     tasks = Task.objects.filter(stage=stage)
@@ -1453,6 +1535,8 @@ def create_stage_taskall(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def drag_and_drop_stage(request):
     """
     For drag and drop project stage into new sequence
@@ -1461,20 +1545,46 @@ def drag_and_drop_stage(request):
     if not sequence:
         messages.error(request, _("Missing required parameters: sequence"))
         return JsonResponse({"error": "Missing required parameters: sequence"})
-    sequence = json.loads(sequence)
-    stage_id = list(sequence.keys())[0]
-    project = ProjectStage.objects.get(id=stage_id).project
+    try:
+        sequence = json.loads(sequence)
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"error": _("Invalid stage sequence.")}, status=400)
+    if not isinstance(sequence, dict) or not sequence or len(sequence) > 500:
+        return JsonResponse({"error": _("Invalid stage sequence.")}, status=400)
+    try:
+        stage_ids = [int(key) for key in sequence]
+        positions = [int(value) for value in sequence.values()]
+    except (TypeError, ValueError):
+        return JsonResponse({"error": _("Invalid stage sequence.")}, status=400)
+    if (
+        any(value <= 0 for value in stage_ids)
+        or any(value < 0 for value in positions)
+        or len(stage_ids) != len(set(stage_ids))
+        or len(positions) != len(set(positions))
+    ):
+        return JsonResponse({"error": _("Invalid stage sequence.")}, status=400)
+    stages = list(
+        ProjectStage.objects.select_for_update()
+        .select_related("project")
+        .filter(pk__in=stage_ids)
+    )
+    if len(stages) != len(stage_ids) or len({stage.project_id for stage in stages}) != 1:
+        return JsonResponse({"error": _("Project stage not found.")}, status=404)
+    project = stages[0].project
     change = False
     if (
         request.user.has_perm("project.change_project")
         or request.user.employee_get in project.managers.all()
         or request.user.employee_get in project.members.all()
     ):
-        for key, val in sequence.items():
-            if val != ProjectStage.objects.get(id=key).sequence:
+        position_by_id = dict(zip(stage_ids, positions))
+        for stage in stages:
+            new_position = position_by_id[stage.id]
+            if new_position != stage.sequence:
                 change = True
-                ProjectStage.objects.filter(id=key).update(sequence=val)
+                stage.sequence = new_position
         if change:
+            ProjectStage.objects.bulk_update(stages, ["sequence"])
             messages.success(
                 request, _("The project stage sequence has been successfully updated.")
             )
@@ -1774,6 +1884,8 @@ def time_sheet_update(request, time_sheet_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def time_sheet_delete(request, time_sheet_id):
     """
     View function to handle the deletion of a timesheet.
@@ -1786,7 +1898,7 @@ def time_sheet_delete(request, time_sheet_id):
         HorillaRedirect: A redirect response to the timesheet view page.
     """
     if time_sheet_delete_permissions(request, time_sheet_id):
-        timesheet = TimeSheet.objects.filter(id=time_sheet_id).first()
+        timesheet = TimeSheet.objects.select_for_update().filter(id=time_sheet_id).first()
         if not timesheet:
             messages.error(request, _("Timesheet not found."))
             return HorillaRedirect(request)

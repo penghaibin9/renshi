@@ -14,7 +14,10 @@ INSTALLED_APPS = [
     "hr_structure",
     "hr_staff",
     "hr10_development",
+    "hr_time",
 ]
+
+ROOT_URLCONF = "hr10_development.tests.urls"
 
 DATABASES = {
     "default": {
@@ -34,4 +37,5 @@ MIGRATION_MODULES = {
     "hr_structure": None,
     "hr_staff": None,
     "hr10_development": None,
+    "hr_time": None,
 }

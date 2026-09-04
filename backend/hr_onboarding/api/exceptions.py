@@ -94,6 +94,17 @@ class MaterialNotVerifiedError(Hr05ApiError):
     code = "MATERIAL_NOT_VERIFIED"
 
 
+class MaterialDownloadTicketError(Hr05ApiError):
+    status_code = 403
+    code = "MATERIAL_DOWNLOAD_TICKET_INVALID"
+
+
+class MaterialDownloadAuditUnavailableError(Hr05ApiError):
+    status_code = 503
+    code = "MATERIAL_DOWNLOAD_AUDIT_UNAVAILABLE"
+    retryable = True
+
+
 class ActivationAlreadyCompletedError(Hr05ApiError):
     status_code = 409
     code = "ACTIVATION_ALREADY_COMPLETED"

@@ -11,25 +11,30 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
 
 from django.db import models, transaction
 from django.utils import timezone
 
+from horilla.hr_event_service import emit_registered_event
 from hr_assessment.models import (
     HrAssessmentCase,
     HrAssessmentDecisionSession,
     HrAssessmentEvidenceRef,
+    HrAssessmentPopulationSnapshot,
     HrAssessmentPolicyVersion,
     HrAssessmentPublicityCase,
     HrCycleSnapshot,
     HrFinalAssessmentResult,
     HrMetricSnapshot,
+    HrExcellentQuotaPolicy,
     HrProviderSnapshotSet,
     HrResultRuleVersion,
     HrReviewerAssignment,
 )
+from hr_assessment.models.base import calculate_version_content_hash
 from hr_assessment.service.evidence import EvidenceSnapshotError, PolicyEvidenceResolver
+from hr_assessment.services.result_correction_service import canonical_result_snapshot
 
 
 class AssessmentFinalizationError(Exception):
@@ -65,13 +70,14 @@ class AssessmentFinalizationService:
     METRIC_BLOCKING = {"STALE", "UNAVAILABLE", "CONFLICT"}
     SCORE_AGGREGATIONS = {"AVERAGE", "WEIGHTED_AVERAGE"}
 
-    def __init__(self, tenant_id: int, actor_staff_id=None):
+    def __init__(self, tenant_id: int, actor_staff_id=None, correlation_id: str = ""):
         if not tenant_id:
             raise AssessmentFinalizationError(
                 "TENANT_CONTEXT_REQUIRED", "tenant_id is required"
             )
         self.tenant_id = tenant_id
         self.actor_staff_id = actor_staff_id
+        self.correlation_id = str(correlation_id or "")
 
     @staticmethod
     def _hash_payload(payload: dict) -> str:
@@ -370,6 +376,20 @@ class AssessmentFinalizationService:
                 "ASSESSMENT_CYCLE_SNAPSHOT_REQUIRED",
                 "the frozen cycle calculation snapshot is required",
             )
+        frozen_policy = snapshot.frozen_policy_json or {}
+        frozen_result_rule = frozen_policy.get("resultRule") or {}
+        if (
+            str(frozen_policy.get("id") or "") != str(policy.id)
+            or str(frozen_result_rule.get("id") or "") != str(result_rule.id)
+            or str(frozen_result_rule.get("contentHash") or "")
+            != str(result_rule.content_hash or "")
+            or result_rule.content_hash != calculate_version_content_hash(result_rule)
+            or not frozen_result_rule.get("scoreToGradeMapping")
+        ):
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_FROZEN_RESULT_RULE_INVALID",
+                "the cycle snapshot result rule is missing or drifted",
+            )
 
         reviewer_rule = snapshot.frozen_reviewer_rules_json or {}
         aggregation = str(reviewer_rule.get("scoreAggregation") or "").upper()
@@ -480,7 +500,9 @@ class AssessmentFinalizationService:
             )
 
         matches = []
-        for band in self._grade_bands(result_rule.score_to_grade_mapping):
+        for band in self._grade_bands(
+            frozen_result_rule.get("scoreToGradeMapping")
+        ):
             if not isinstance(band, dict):
                 continue
             grade_code = str(band.get("gradeCode") or "").strip().upper()
@@ -528,6 +550,107 @@ class AssessmentFinalizationService:
             calculated_score=score,
             calculation_snapshot=calculation_snapshot,
         )
+
+    def _excellent_quota_blockers(
+        self,
+        *,
+        case: HrAssessmentCase,
+        grade_code: str,
+    ) -> list[dict]:
+        """Serialize and enforce the published excellent-ratio policy.
+
+        The cycle row is locked so two concurrent finalizations cannot both take
+        the final excellent slot. Corrected/revoked result versions are counted
+        from their canonical append-only state rather than stale base columns.
+        """
+
+        if grade_code != "EXCELLENT":
+            return []
+        cycle = (
+            type(case.cycle).objects.select_for_update()
+            .filter(id=case.cycle_id, tenant_id=self.tenant_id)
+            .first()
+        )
+        if cycle is None:
+            return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_CYCLE_REQUIRED"}]
+        snapshot = HrCycleSnapshot.objects.filter(
+            tenant_id=self.tenant_id,
+            cycle_id=case.cycle_id,
+        ).first()
+        frozen_quota = (
+            (snapshot.frozen_policy_json or {}).get("excellentQuota") or {}
+            if snapshot is not None
+            else {}
+        )
+        quota_id = frozen_quota.get("id")
+        if not quota_id:
+            return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_POLICY_REQUIRED"}]
+        policy = HrExcellentQuotaPolicy.objects.select_for_update().filter(
+            id=quota_id,
+            tenant_id=self.tenant_id,
+            status="PUBLISHED",
+        ).first()
+        if policy is None:
+            return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_POLICY_REQUIRED"}]
+        if (
+            str(frozen_quota.get("contentHash") or "") != str(policy.content_hash or "")
+            or policy.content_hash != calculate_version_content_hash(policy)
+            or Decimal(str(frozen_quota.get("maxExcellentRatio")))
+            != Decimal(str(policy.max_excellent_ratio))
+            or str(frozen_quota.get("roundingRule") or "") != policy.rounding_rule
+            or int(frozen_quota.get("minEligibleForQuota") or 0)
+            != int(policy.min_eligible_for_quota or 0)
+        ):
+            return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_POLICY_DRIFT"}]
+        ratio = Decimal(str(frozen_quota.get("maxExcellentRatio")))
+        if ratio < 0 or ratio > 1:
+            return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_POLICY_INVALID"}]
+        eligible = HrAssessmentPopulationSnapshot.objects.filter(
+            tenant_id=self.tenant_id,
+            cycle_id=case.cycle_id,
+            included=True,
+            excluded=False,
+        ).count()
+        if eligible <= 0:
+            return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_POPULATION_REQUIRED"}]
+        if eligible < int(frozen_quota.get("minEligibleForQuota") or 0):
+            maximum = eligible
+        else:
+            raw = Decimal(eligible) * ratio
+            rounding = str(frozen_quota.get("roundingRule") or "").upper()
+            rounding_mode = {
+                "ROUND_DOWN": ROUND_DOWN,
+                "ROUND_UP": ROUND_UP,
+                "ROUND_NEAREST": ROUND_HALF_UP,
+            }.get(rounding)
+            if rounding_mode is None:
+                return [{"code": "ASSESSMENT_EXCELLENT_QUOTA_ROUNDING_INVALID"}]
+            maximum = int(raw.quantize(Decimal("1"), rounding=rounding_mode))
+
+        current = 0
+        results = HrFinalAssessmentResult.objects.filter(
+            tenant_id=self.tenant_id,
+            cycle_id=case.cycle_id,
+        ).prefetch_related("revisions")
+        for result in results:
+            state = canonical_result_snapshot(result)
+            if (
+                str(state.get("status") or "").upper() != "REVOKED"
+                and str(state.get("gradeCode") or "").upper() == "EXCELLENT"
+            ):
+                current += 1
+        if current >= maximum:
+            return [
+                {
+                    "code": "ASSESSMENT_EXCELLENT_QUOTA_EXCEEDED",
+                    "eligiblePopulation": eligible,
+                    "maxExcellent": maximum,
+                    "currentExcellent": current,
+                    "policyId": str(policy.id),
+                    "overQuotaAction": policy.over_quota_action,
+                }
+            ]
+        return []
 
     @transaction.atomic
     def finalize(self, *, case_id, payload: FinalResultInput) -> HrFinalAssessmentResult:
@@ -585,6 +708,16 @@ class AssessmentFinalizationService:
             )
 
         calculated = self._calculate_result(case=case)
+        quota_blockers = self._excellent_quota_blockers(
+            case=case,
+            grade_code=calculated.grade_code,
+        )
+        if quota_blockers:
+            raise AssessmentFinalizationError(
+                "ASSESSMENT_FINALIZATION_BLOCKED",
+                "excellent quota gate contains blockers",
+                blockers=quota_blockers,
+            )
 
         finalized_at = timezone.now()
         content = {
@@ -605,6 +738,7 @@ class AssessmentFinalizationService:
             "resultVersionNo": 1,
             "status": "FINALIZED",
         }
+        content_hash = self._hash_payload(content)
         result = HrFinalAssessmentResult.objects.create(
             tenant_id=self.tenant_id,
             case_id=case.id,
@@ -621,10 +755,24 @@ class AssessmentFinalizationService:
             sealed_at=finalized_at,
             finalized_by=self.actor_staff_id,
             result_version_no=1,
-            content_hash=self._hash_payload(content),
+            content_hash=content_hash,
             status="FINALIZED",
         )
 
         case.status = "FINALIZED"
         case.save(update_fields=["status", "updated_at"])
+        emit_registered_event(
+            tenant_id=self.tenant_id,
+            event_name="hr.assessment.assessment_result.finalized",
+            payload={
+                "resultId": str(result.id),
+                "caseId": str(case.id),
+                "staffId": str(case.staff_id),
+                "assessmentType": case.assessment_type,
+                "resultVersion": 1,
+                "contentHash": content_hash,
+                "finalizedAt": finalized_at.isoformat(),
+            },
+            correlation_id=self.correlation_id,
+        )
         return result

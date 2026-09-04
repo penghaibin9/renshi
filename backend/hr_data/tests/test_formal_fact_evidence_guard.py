@@ -45,7 +45,9 @@ class FormalFactEvidenceGuardTests(SimpleTestCase):
 
     def test_changed_or_missing_provider_hash_rejects_frozen_evidence(self):
         for frozen_hash, current_hash in (("a" * 64, "b" * 64), ("", "a" * 64)):
-            provider = lambda **_kwargs: receipt(current_hash)
+            provider = lambda current_hash=current_hash, **_kwargs: receipt(
+                current_hash
+            )
             with patch.dict(
                 "hr_data.services.formal_fact_evidence_guard._PROVIDERS",
                 {"HR13": provider},

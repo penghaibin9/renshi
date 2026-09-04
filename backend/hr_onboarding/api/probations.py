@@ -6,7 +6,6 @@ HR05-05 试用与转正 API（总册 §17.7）。
 
 from __future__ import annotations
 
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_onboarding.api import base as api_base
@@ -76,7 +75,6 @@ def probations_list(request):
 
 @require_POST
 @require_hr05_permission("hr05.probation.manage")
-@csrf_exempt
 def probation_open(request, case_id: str):
     """激活后按 policy 开启试用（同 employment 一份进行中）。"""
     try:
@@ -107,7 +105,6 @@ def probation_open(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.probation.manage")
-@csrf_exempt
 def probation_submit_review(request, probation_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -128,7 +125,6 @@ def probation_submit_review(request, probation_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.probation.finalize")
-@csrf_exempt
 def probation_confirm(request, probation_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -145,7 +141,6 @@ def probation_confirm(request, probation_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.probation.finalize")
-@csrf_exempt
 def probation_extend(request, probation_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -171,7 +166,6 @@ def probation_extend(request, probation_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.probation.finalize")
-@csrf_exempt
 def probation_fail(request, probation_id: str):
     try:
         context = api_base.make_hr05_context(request)

@@ -13,16 +13,23 @@ HR01 API 集成测试（总册 33.6）：
 modified_by 时依赖线程残留的 request.user。
 """
 
+from unittest import skipUnless
+
+from django.conf import settings
 from django.test import TestCase, override_settings
 
-from base.models import Company, Department, EmployeeType, JobPosition
-from employee.models import Employee, EmployeeWorkInformation
-from horilla_auth.models import HorillaUser
+_installed_labels = {app.split(".")[0] for app in settings.INSTALLED_APPS}
+LEGACY_IDENTITY_AVAILABLE = {"base", "employee"}.issubset(_installed_labels)
+if LEGACY_IDENTITY_AVAILABLE:
+    from base.models import Company, Department, EmployeeType, JobPosition
+    from employee.models import Employee, EmployeeWorkInformation
+    from horilla_auth.models import HorillaUser
 
 BOOTSTRAP_URL = "/api/v1/hr/home/bootstrap"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+@skipUnless(LEGACY_IDENTITY_AVAILABLE, "requires installed legacy identity apps")
 class HrBootstrapApiTests(TestCase):
     @classmethod
     def setUpTestData(cls):

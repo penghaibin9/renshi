@@ -1,8 +1,6 @@
 {% extends "index.html" %}
 {% load static i18n %}
-{% comment %}
-Contract test markers: 查询 HR03 名册; 模板与规则 Authority 尚未恢复; 到期预警 Authority 尚未恢复; 不展示假模板; 不会用浏览器日期推算风险.
-{% endcomment %}
+{% comment %}Contract test marker: 查询 HR03 名册.{% endcomment %}
 
 {% block styles %}
 {{ block.super }}
@@ -153,28 +151,42 @@ Contract test markers: 查询 HR03 名册; 模板与规则 Authority 尚未恢�
   </section>
 
   {% elif section == 'rules' %}
-  <section class="hr07-card hr07-capability">
-    <div class="hr07-capability__icon" aria-hidden="true">R</div>
-    <div>
-      <h2>{{ section_title }}</h2>
-      <p>{{ section_description }}</p>
-      <div class="hr07-capability__notice">
-        <strong>合同模板与规则暂未开放维护</strong>
-        <span>当前可以正常办理合同主档、正式版本和续签变更；模板版本、编号和期限规则尚未接通维护入口，因此本页不展示虚构配置。</span>
-      </div>
-    </div>
+  <section class="hr07-card" data-hr07-setup="rules">
+    <div class="hr07-card__head"><div><h2>发布合同模板版本</h2><p>每次发布形成不可改写的新版本；已签合同仍保留签署时的正式内容快照。</p></div><button type="button" class="hr07-btn" data-hr07-setup-refresh>刷新配置</button></div>
+    <form class="hr07-sign-form" id="hr07-template-form">
+      <label><span>模板代码</span><input name="templateCode" required maxlength="64" placeholder="例如 TEACHER_FIXED_TERM"></label>
+      <label><span>模板名称</span><input name="templateName" required maxlength="160" placeholder="例如 专任教师固定期限合同"></label>
+      <label><span>适用合同类型</span><select name="agreementType" required><option value="">请选择</option><option value="PUBLIC_INSTITUTION_EMPLOYMENT">事业单位聘用合同</option><option value="LABOR_CONTRACT">劳动合同</option><option value="FIXED_TERM">固定期限聘用合同</option><option value="OPEN_ENDED">无固定期限合同</option><option value="LABOR_DISPATCH">劳务协议</option><option value="EXTERNAL_TEACHER">外聘教师协议</option><option value="OTHER">其他</option></select></label>
+      <label><span>编号前缀</span><input name="numberingPrefix" required maxlength="32" placeholder="例如 HT-JS"></label>
+      <label><span>默认期限（月，0 表示不预设）</span><input name="defaultTermMonths" type="number" min="0" max="1200" value="36" required></label>
+      <label><span>生效日期</span><input name="effectiveFrom" type="date" required></label>
+      <label><span>失效日期（可选）</span><input name="effectiveTo" type="date"></label>
+      <label class="is-wide"><span>模板正文</span><textarea name="bodyTemplate" required placeholder="填写校内审定的合同正文；可使用〔姓名〕、〔工号〕等人工合并标记。"></textarea></label>
+      <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">发布新版本</button><span class="hr07-form-message" id="hr07-template-message" role="status"></span></div>
+    </form>
+  </section>
+  <section class="hr07-card">
+    <div class="hr07-card__head"><div><h2>模板版本台账</h2><p>当前版本用于新合同准备，历史版本只读保留。</p></div></div>
+    <div class="hr07-table-wrap"><table class="hr07-table"><thead><tr><th>模板</th><th>合同类型</th><th>版本</th><th>编号规则</th><th>默认期限</th><th>生效范围</th><th>状态</th></tr></thead><tbody id="hr07-template-body"><tr><td colspan="7" class="hr07-loading">正在读取模板 Authority…</td></tr></tbody></table></div>
   </section>
   {% else %}
-  <section class="hr07-card hr07-capability">
-    <div class="hr07-capability__icon" aria-hidden="true">!</div>
-    <div>
-      <h2>{{ section_title }}</h2>
-      <p>{{ section_description }}</p>
-      <div class="hr07-capability__notice">
-        <strong>到期预警处置暂未开放</strong>
-        <span>当前可在合同台账中核对有效期和到期状态；预警策略、风险案件与处置回执尚未接通，因此本页不显示虚构的待办数量。</span>
-      </div>
-    </div>
+  <section class="hr07-card" data-hr07-setup="risks">
+    <div class="hr07-card__head"><div><h2>到期策略</h2><p>发布新策略会停用同合同类型的旧策略；每次风险扫描都冻结所依据的策略哈希。</p></div><button type="button" class="hr07-btn" data-hr07-setup-refresh>刷新风险</button></div>
+    <form class="hr07-sign-form" id="hr07-policy-form">
+      <label><span>策略版本</span><input name="policyVersion" maxlength="64" placeholder="例如 EXP-2026-V1（留空自动生成）"></label>
+      <label><span>合同类型（留空为默认策略）</span><select name="agreementType"><option value="">全部类型默认策略</option><option value="PUBLIC_INSTITUTION_EMPLOYMENT">事业单位聘用合同</option><option value="LABOR_CONTRACT">劳动合同</option><option value="FIXED_TERM">固定期限聘用合同</option><option value="OPEN_ENDED">无固定期限合同</option><option value="LABOR_DISPATCH">劳务协议</option><option value="EXTERNAL_TEACHER">外聘教师协议</option><option value="OTHER">其他</option></select></label>
+      <label><span>提前预警天数</span><input name="warningDays" type="number" min="1" max="730" value="90" required></label>
+      <label><span>逾期多少天升级严重</span><input name="criticalAfterDays" type="number" min="0" max="730" value="30" required></label>
+      <label><span>到期动作</span><select name="actionType" required><option value="CREATE_RENEWAL_CASE">自动建立续签业务单</option><option value="MANUAL_REVIEW">自动建立人工复核业务单</option></select></label>
+      <div class="hr07-form-actions"><button class="hr07-btn hr07-btn--primary" type="submit">发布策略</button><span class="hr07-form-message" id="hr07-policy-message" role="status"></span></div>
+    </form>
+    <div class="hr07-setup-list" id="hr07-policy-list"><div class="hr07-loading">正在读取到期策略…</div></div>
+  </section>
+  <section class="hr07-card">
+    <div class="hr07-card__head"><div><h2>到期扫描与处置事实</h2><p>扫描由服务端业务日期、正式合同版本和有效策略共同判定；命中后自动形成风险事实与可追踪业务单。</p></div></div>
+    <form class="hr07-query-row" id="hr07-scan-form"><label><span>扫描业务日期</span><input name="asOf" type="date" required></label><button class="hr07-btn hr07-btn--primary" type="submit">执行到期扫描</button></form>
+    <div class="hr07-form-message hr07-scan-message" id="hr07-scan-message" role="status"></div>
+    <div class="hr07-table-wrap"><table class="hr07-table"><thead><tr><th>合同</th><th>到期日</th><th>风险</th><th>距到期</th><th>处置业务单</th><th>策略版本</th><th>识别日期</th></tr></thead><tbody id="hr07-risk-body"><tr><td colspan="7" class="hr07-loading">正在读取风险事实…</td></tr></tbody></table></div>
   </section>
   {% endif %}
 </div>
@@ -183,4 +195,5 @@ Contract test markers: 查询 HR03 名册; 模板与规则 Authority 尚未恢�
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/pages/contracts-workspace.js' %}?v=20260830-workbench"></script>
+{% if section == 'rules' or section == 'risks' %}<script src="{% static 'hr/js/pages/hr07-setup.js' %}?v=20260901-complete"></script>{% endif %}
 {% endblock scripts %}

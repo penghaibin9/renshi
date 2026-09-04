@@ -1,0 +1,10 @@
+{
+  "name": "university-hr-frontend-assets",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.cjs -i backend/horilla_theme/static/cdn/tailwind/css/input.css -o backend/horilla_theme/static/horilla_theme/assets/css/tailwind.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.19"
+  }
+}

@@ -34,7 +34,10 @@
             </a>
         {% endif %}
         <a
-            href="{% url 'type-delete' instance.id %}"
+            href="#"
+            hx-post="{% url 'type-delete' instance.id %}"
+            hx-swap="none"
+            hx-on::after-request="window.location.reload()"
             hx-confirm="{% trans 'Are you sure you want to delete this leave type?' %}"
             hx-post="true"
             hx-target="#listContainer"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
 
@@ -38,7 +39,7 @@ class AuthorityReceiptService:
     def _snapshot(case):
         try:
             return case.effective_snapshot
-        except Exception:
+        except ObjectDoesNotExist:
             return None
 
     @staticmethod
@@ -130,7 +131,7 @@ class AuthorityReceiptService:
 def effective_execution_chain(case: HrPersonnelChangeCase) -> dict:
     try:
         snapshot = case.effective_snapshot
-    except Exception:
+    except ObjectDoesNotExist:
         snapshot = None
     receipts = case.authority_receipts.order_by("sequence_no", "created_at")
     return {

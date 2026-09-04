@@ -23,9 +23,10 @@ DEFAULT_SCHOOL_TZ = "Asia/Shanghai"
 class HrContextError(Exception):
     """HR01 上下文错误（tenant/scope 解析失败）。"""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, *, status: int = 403):
         self.code = code
         self.message = message
+        self.status = status
         super().__init__(message)
 
 
@@ -82,7 +83,10 @@ class HrRequestContext:
         return local_now.date()
 
     def now(self) -> datetime:
-        return datetime.now(timezone.utc).astimezone(self.tzinfo())
+        # All providers in one response must share the same request snapshot;
+        # consulting the wall clock here can make summary and list disagree at
+        # a deadline boundary.
+        return self.request_snapshot_at.astimezone(self.tzinfo())
 
     def tzinfo(self):
         try:

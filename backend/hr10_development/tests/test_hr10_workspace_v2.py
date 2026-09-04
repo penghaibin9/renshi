@@ -15,7 +15,8 @@ from hr10_development.models.program_version import HrLearningProgramVersion
 from hr10_development.models.provider_org import HrDevelopmentProviderOrganization
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_ROOT = BACKEND_ROOT.parent / "frontend"
 
 
 class Hr10WorkspaceStaticContractTests(SimpleTestCase):
@@ -26,7 +27,7 @@ class Hr10WorkspaceStaticContractTests(SimpleTestCase):
         self.assertEqual(response.url, "/hr/development/dashboard")
 
     def test_shared_workspace_uses_horilla_shell_and_six_sections(self):
-        template = (ROOT / "templates/hr/development/base.html").read_text(encoding="utf-8")
+        template = (FRONTEND_ROOT / "templates/hr/development/base.html").read_text(encoding="utf-8")
         self.assertIn('{% extends "index.html" %}', template)
         self.assertIn('class="hr-v2-page hr10"', template)
         self.assertIn('data-module="HR10"', template)
@@ -43,15 +44,18 @@ class Hr10WorkspaceStaticContractTests(SimpleTestCase):
 
     def test_child_pages_are_business_workspaces_not_api_link_lists(self):
         for name in ("plans", "programs", "requests", "practice", "record", "dashboard"):
-            for template_root in ("templates", "horilla_theme/templates"):
-                template = (ROOT / f"{template_root}/hr/development/{name}.html").read_text(encoding="utf-8")
+            for template_root in (
+                FRONTEND_ROOT / "templates",
+                BACKEND_ROOT / "horilla_theme/templates",
+            ):
+                template = (template_root / f"hr/development/{name}.html").read_text(encoding="utf-8")
                 self.assertIn('{% extends "hr/development/base.html" %}', template)
                 self.assertIn("workspace_content", template)
                 self.assertNotIn("/api/v1/", template)
                 self.assertNotIn('href="#"', template)
 
     def test_action_layer_has_no_raw_identifier_entry_or_fake_state(self):
-        script = (ROOT / "static/hr/js/pages/hr10-actions.js").read_text(encoding="utf-8")
+        script = (FRONTEND_ROOT / "static/hr/js/pages/hr10-actions.js").read_text(encoding="utf-8")
         for forbidden in (
             "Staff ID",
             "Provider 组织 ID",
@@ -70,16 +74,18 @@ class Hr10WorkspaceStaticContractTests(SimpleTestCase):
         self.assertIn("/workbench/choices", script)
         self.assertIn("practicePlacements", script)
         self.assertIn("programVersions", script)
+        self.assertIn("new URLSearchParams(window.location.search)", script)
+        self.assertIn("createForm.classList.add('open')", script)
 
     def test_visual_layer_is_flat_and_has_no_gradient_theme(self):
         for name in ("hr10-actions.css", "hr10-workspace.css"):
-            stylesheet = (ROOT / f"static/hr/css/{name}").read_text(encoding="utf-8")
+            stylesheet = (FRONTEND_ROOT / f"static/hr/css/{name}").read_text(encoding="utf-8")
             self.assertNotIn("linear-gradient", stylesheet)
             self.assertNotIn("radial-gradient", stylesheet)
 
     def test_metric_layer_does_not_turn_unknown_rates_into_zero(self):
-        api = (ROOT / "hr10_development/api/dashboard.py").read_text(encoding="utf-8")
-        script = (ROOT / "static/hr/js/pages/hr10-insights.js").read_text(encoding="utf-8")
+        api = (BACKEND_ROOT / "hr10_development/api/dashboard.py").read_text(encoding="utf-8")
+        script = (FRONTEND_ROOT / "static/hr/js/pages/hr10-insights.js").read_text(encoding="utf-8")
         self.assertNotIn('"asOf": "2026-', api)
         self.assertIn("if total else None", api)
         self.assertIn("if staff_count else None", api)

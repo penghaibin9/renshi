@@ -4,10 +4,11 @@ It allows users to perform various operations such as configuring device setting
 managing users, retrieving attendance events, etc.
 """
 
-import xml.etree.ElementTree as ET
 from base64 import b64encode
 
 import requests
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 cosec_api_response_codes = {
     "0": "Successful",
@@ -172,9 +173,12 @@ class COSECBiometric:
         if response.headers.get("Content-Type") != "text/xml":
             return {"Error": "Unsupported content"}
 
-        response_data = response.content.decode("utf-8")
-        root = ET.fromstring(response_data)
-        text_content = root.text.strip()
+        try:
+            response_data = response.content.decode("utf-8")
+            root = ET.fromstring(response_data)
+        except (UnicodeDecodeError, ET.ParseError, DefusedXmlException):
+            return {"Error": "Invalid XML response"}
+        text_content = (root.text or "").strip()
         if not text_content:
             events = root.findall("Events")
             if events:

@@ -164,7 +164,7 @@
 											{% else %}
 											{% comment %} # 918 {% endcomment %}
 											<a type="submit" hx-confirm="{% trans 'Do you want to approve this request' %}"
-												hx-get="{% url 'document-approve' document.id %}" hx-target="this" hx-swap="outerHTML"
+												hx-post="{% url 'document-approve' document.id %}" hx-target="this" hx-swap="outerHTML"
 												hx-vals='{ "refresh_url": "{% url 'document-request-filter-view' %}?{{pd}}&{{document_list.dynamic_name}}={{ document_list.list.number }}" }'
 												hx-on-htmx-after-request="reloadMessage(this);"
 												title="{% trans 'Approve' %}" class="oh-btn oh-btn--success w-100" onclick="event.stopPropagation()">

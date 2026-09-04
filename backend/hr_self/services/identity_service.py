@@ -36,6 +36,18 @@ class SelfIdentityContext:
             )
 
 
+def _legacy_employee_model():
+    from employee.models import Employee
+
+    return Employee
+
+
+def _staff_master_model():
+    from hr_staff.models import HrStaffMaster
+
+    return HrStaffMaster
+
+
 class SelfIdentityService:
     def __init__(self, tenant_id: int):
         if not tenant_id:
@@ -49,8 +61,8 @@ class SelfIdentityService:
                 "authenticated user is required",
             )
 
-        from employee.models import Employee
-        from hr_staff.models import HrStaffMaster
+        Employee = _legacy_employee_model()
+        HrStaffMaster = _staff_master_model()
 
         # Do not trust Employee.objects request/thread-local company scoping.
         # Explicit company filtering is mandatory for background/mobile/API use.

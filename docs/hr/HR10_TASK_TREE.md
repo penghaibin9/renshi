@@ -1,6 +1,6 @@
 # HR10_TASK_TREE — 施工任务树（S0→S13）
 
-> 全局合同：`00_高校人事系统全局架构与Horilla接管合同.md`
+> 全局合同：`00_高校人事系统全局架构与旧系统接管合同.md`
 > 业务事实源：`10_HR10_培训进修与企业实践_施工总册_终极版.md`
 > 基线复审：`HR10_GAP_MATRIX.md`、`legacy/HR10_LegacyDevelopmentMapping.md`
 > 施工顺序：严格按总册 §179–192 执行

@@ -17,6 +17,7 @@
     submit: root.dataset.canSubmit === 'true',
     approve: root.dataset.canApprove === 'true',
     receipt: root.dataset.canReceipt === 'true',
+    exchange: root.dataset.canExchange === 'true',
   };
   let dashboard = null;
   let fieldSequence = 0;
@@ -29,6 +30,8 @@
     DRAFT: '草稿', VALIDATED: '已校验', APPROVED: '已批准', DISPATCH_QUEUED: '等待派发',
     DISPATCH_FAILED: '派发失败', SUBMITTED: '已提交', ACCEPTED: '已受理', REJECTED: '已拒收',
     CORRECTED: '已更正', ACTIVE: '有效', COMPLETE: '完整', PARTIAL: '不完整', ERROR: '异常',
+    QUEUED: '等待执行', LEASED: '执行中', RETRY_WAIT: '等待重试', TRANSMITTED: '已传输',
+    ACKNOWLEDGED: '已收到回执', RECONCILED: '已对账', DEAD_LETTER: '失败队列', FROZEN: '已冻结',
   };
   const severityLabels = { INFO: '提示', WARNING: '警告', ERROR: '严重', CRITICAL: '紧急' };
   const definitionLabels = { METRIC: '指标', POPULATION: '统计范围' };
@@ -76,6 +79,24 @@
     if (!response.ok) {
       const error = payload.error || {};
       throw new Error(error.message || (response.status === 403 ? '当前账号没有执行此操作的权限' : '操作未完成，请稍后重试'));
+    }
+    return payload.data ?? payload;
+  }
+
+  async function query(path) {
+    const response = await fetch(`${API}${path}`, {
+      credentials: 'same-origin',
+      headers: {'X-Requested-With': 'XMLHttpRequest'},
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_error) {
+      payload = {};
+    }
+    if (!response.ok) {
+      const error = payload.error || {};
+      throw new Error(error.message || '数据读取失败，请稍后重试');
     }
     return payload.data ?? payload;
   }
@@ -504,7 +525,7 @@
 
   async function submissionsPanel({correctionsOnly = false} = {}) {
     const host = card(correctionsOnly ? '回执与更正操作' : '正式报送操作', correctionsOnly
-      ? '回执是外部业务受理事实；被拒收的报送不能覆盖原快照，更正能力未开放时保持原记录可追溯。'
+      ? '回执是外部业务受理事实；更正会追加新草稿并形成父子链，永远不覆盖原报送快照。'
       : '正式报送严格按草稿、校验、批准、异步派发、外部回执依次推进；发送请求成功不等于主管平台已受理。');
 
     if (!correctionsOnly && permissions.submit) {
@@ -527,6 +548,43 @@
 
     try {
       const data = await loadDashboard();
+      if (correctionsOnly && permissions.submit) {
+        const parents = (data.recentSubmissions || []).filter((item) => ['ACCEPTED', 'REJECTED'].includes(item.status));
+        const evidences = (data.recentAsOfEvidence || []).filter((item) => item.status === 'COMPLETE');
+        const parentIds = new Map(parents.map((item, index) => [`correction-parent-${index}`, item.id]));
+        const evidenceIds = new Map(evidences.map((item, index) => [`correction-evidence-${index}`, item.id]));
+        const target = host.querySelector('#hr18-submission-actions');
+        target.insertAdjacentHTML('beforebegin', `
+          <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="button" data-open="hr18-correction-form" ${parents.length && evidences.length ? '' : 'disabled'}>创建更正草稿</button></div>
+          <form class="hr18-action-form" id="hr18-correction-form">
+            <div class="hr18-action-grid">
+              ${field('原报送快照', `<select name="parent" required><option value="">请选择已受理或已拒收报送</option>${parents.map((item, index) => `<option value="correction-parent-${index}">${escapeHtml(item.submission_no)} · ${escapeHtml(statusLabel(item.status))}</option>`).join('')}</select>`)}
+              ${field('新更正编号', '<input name="submissionNo" required placeholder="CORR-2026-0001">')}
+              ${field('完整历史证据', `<select name="asOfEvidenceId" required><option value="">请选择同一口径的完整证据</option>${evidences.map((item, index) => `<option value="correction-evidence-${index}">${escapeHtml(item.evidence_no)} · ${escapeHtml(item.definition_code)} v${item.definition_version}</option>`).join('')}</select>`)}
+              ${field('新内容 SHA-256', '<input name="payloadHash" required minlength="64" maxlength="64" placeholder="64 位小写十六进制">')}
+              ${field('更正范围 JSON', '<textarea name="scope">{}</textarea>', '保存更正原因、范围等冻结信息', true)}
+            </div>
+            <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">追加更正草稿</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+          </form>`);
+        host.querySelector('[data-open="hr18-correction-form"]').addEventListener('click', () => toggleForm(host, 'hr18-correction-form'));
+        host.querySelector('#hr18-correction-form [data-close]').addEventListener('click', () => closeForm(host, host.querySelector('#hr18-correction-form')));
+        host.querySelector('#hr18-correction-form').addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const values = new FormData(form);
+          const button = form.querySelector('[type="submit"]');
+          setBusy(button, true);
+          try {
+            const snapshot = await request(`/submissions/${parentIds.get(values.get('parent'))}/corrections/`, {
+              submissionNo: values.get('submissionNo'),
+              asOfEvidenceId: evidenceIds.get(values.get('asOfEvidenceId')),
+              payloadHash: values.get('payloadHash'),
+              scope: parseJson(values.get('scope'), '更正范围', {}),
+            });
+            reloadAfterSuccess(host, `${snapshot.submissionNo} 更正草稿已追加`);
+          } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+        });
+      }
       if (!correctionsOnly && permissions.submit) {
         const evidenceSelect = host.querySelector('[name="asOfEvidenceId"]');
         const evidences = (data.recentAsOfEvidence || []).filter((item) => item.status === 'COMPLETE');
@@ -556,7 +614,7 @@
       }
 
       let rows = data.recentSubmissions || [];
-      if (correctionsOnly) rows = rows.filter((item) => ['REJECTED', 'CORRECTED'].includes(item.status) || item.parent_submission_id);
+      if (correctionsOnly) rows = rows.filter((item) => ['ACCEPTED', 'REJECTED', 'CORRECTED'].includes(item.status) || item.parent_submission_id);
       const target = host.querySelector('#hr18-submission-actions');
       const submissionIds = new Map(rows.map((item, index) => [`submission-${index}`, item.id]));
       target.innerHTML = rows.length ? rows.map((item, index) => {
@@ -569,7 +627,7 @@
           <div><span class="hr18-action-state">${escapeHtml(statusLabel(item.status))}</span><small>${item.receipt_ref ? `回执 ${escapeHtml(item.receipt_ref)}` : (item.dispatch_error ? '派发失败，请检查服务记录' : '尚无最终回执')}</small></div>
           <div class="hr18-action-row-actions">
             ${transition ? `<button class="hr18-action-btn primary" type="button" data-transition="${transition[0]}">${transition[1]}</button>` : ''}
-            ${receipt ? '<input class="hr18-action-inline-input" data-receipt-ref placeholder="外部回执号"><button class="hr18-action-btn primary" type="button" data-receipt="accept">受理</button><button class="hr18-action-btn danger" type="button" data-receipt="reject">拒收</button>' : ''}
+            ${receipt ? '<textarea class="hr18-action-inline-input" data-provider-receipt rows="3" aria-label="外部平台签名回执 JSON" placeholder="粘贴外部平台签名回执 JSON"></textarea><button class="hr18-action-btn primary" type="button" data-record-receipt>验签并记录</button>' : ''}
           </div>
         </div>`;
       }).join('') : '<div class="hr18-action-empty">当前没有符合此工作区的正式报送快照。</div>';
@@ -586,18 +644,23 @@
           setBusy(button, false);
         }
       }));
-      target.querySelectorAll('[data-receipt]').forEach((button) => button.addEventListener('click', async () => {
+      target.querySelectorAll('[data-record-receipt]').forEach((button) => button.addEventListener('click', async () => {
         const row = button.closest('[data-submission]');
-        const ref = row.querySelector('[data-receipt-ref]').value.trim();
-        if (!ref) {
-          showResult(host, 'error', '记录回执必须填写外部回执号');
+        let providerReceipt;
+        try {
+          providerReceipt = parseJson(row.querySelector('[data-provider-receipt]').value, '外部平台签名回执');
+        } catch (error) {
+          showResult(host, 'error', error.message);
+          return;
+        }
+        if (!providerReceipt || Array.isArray(providerReceipt) || typeof providerReceipt !== 'object') {
+          showResult(host, 'error', '外部平台签名回执必须是 JSON 对象');
           return;
         }
         setBusy(button, true);
         try {
           const snapshot = await request(`/submissions/${submissionIds.get(row.dataset.submission)}/receipt/`, {
-            accepted: button.dataset.receipt === 'accept',
-            receiptRef: ref,
+            providerReceipt,
           });
           reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 回执已记录：${statusLabel(snapshot.status)}`);
         } catch (error) {
@@ -609,21 +672,209 @@
       host.querySelector('#hr18-submission-actions').innerHTML = `<div class="hr18-action-empty">报送快照读取失败：${escapeHtml(error.message)}</div>`;
     }
 
-    if (correctionsOnly) {
-      host.insertAdjacentHTML('beforeend', '<div class="hr18-action-note"><strong>当前边界：</strong>回执记录已开放，更正流程暂未开放，因此这里不会提供“复制并覆盖原快照”的按钮。后续更正必须保留原快照并形成更正链。</div>');
-    }
+    if (correctionsOnly) host.insertAdjacentHTML('beforeend', '<div class="hr18-action-note"><strong>留痕规则：</strong>更正只会追加新快照；原报送、外部回执和父子关系均保持不可覆盖，可继续走校验、审批、异步派发和签名回执流程。</div>');
   }
 
-  function exchangePanel() {
-    const host = card('数据交换与共享工作区', '共享数据集需要经过结构定义、目标映射、异步传输、外部回执和对账；当前交换执行器暂未开放，因此这里只展示流程和阻断点。');
+  async function exchangePanel() {
+    const host = card('数据交换与共享工作区', '冻结数据集和目标映射后进入持久队列；后台执行器负责传输、重试，外部回执完成后再做自动对账。');
+    let data;
+    try {
+      data = await query('/exchange/workbench/');
+    } catch (error) {
+      showResult(host, 'error', error.message);
+      return;
+    }
+    const datasets = data.datasets || [];
+    const targets = data.targets || [];
+    const jobs = data.jobs || [];
+    const standardCatalog = data.standardCatalog || {};
+    const profileCode = standardCatalog.profileCode || 'CHINA_HIGHER_EDUCATION_HR';
+    const classificationStandard = standardCatalog.classificationStandard?.code || 'JY/T 0661-2025';
+    const securityLevelOptions = (standardCatalog.securityLevels || [
+      {code:'L1', name:'一般数据（一级）'}, {code:'L2', name:'一般数据（二级）'},
+      {code:'L3', name:'一般数据（三级）'}, {code:'L4', name:'重要数据'}, {code:'L5', name:'核心数据'},
+    ]).map((item) => `<option value="${escapeHtml(item.code)}" ${item.code === 'L3' ? 'selected' : ''}>${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join('');
+    const scopeOptions = (standardCatalog.scopes || [
+      {code:'WHOLE_UNIVERSITY', name:'全校范围'}, {code:'ORGANIZATION_UNIT', name:'校内单位范围'},
+      {code:'INDIVIDUAL_CASE', name:'单项业务范围'},
+    ]).map((item) => `<option value="${escapeHtml(item.code)}">${escapeHtml(item.name)}</option>`).join('');
+    const now = new Date();
+    const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const datasetOptions = datasets.map((item) => {
+      const level = item.classification?.securityLevel ? ` · ${item.classification.securityLevel}` : '';
+      return `<option value="${escapeHtml(item.id)}">${escapeHtml(item.datasetCode)} v${item.versionNo} · ${escapeHtml(item.name)}${escapeHtml(level)}</option>`;
+    }).join('');
+    const targetOptions = targets.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.targetCode)} v${item.versionNo} · ${escapeHtml(item.datasetCode)} v${item.datasetVersion}</option>`).join('');
+    const receiptJobs = jobs.filter((item) => item.status === 'TRANSMITTED');
+    const receiptOptions = receiptJobs.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.jobNo)} · ${escapeHtml(item.dispatchRef || '已传输')}</option>`).join('');
+
     host.insertAdjacentHTML('beforeend', `
       <div class="hr18-action-stepper">
-        <div class="hr18-action-step"><b>1 · 定义数据集</b><span>冻结共享字段、敏感级别和版本。</span></div>
-        <div class="hr18-action-step"><b>2 · 配置目标映射</b><span>映射学校数据中台、接口或文件交换合同。</span></div>
-        <div class="hr18-action-step"><b>3 · 异步传输</b><span>大数据交换进入后台任务，不占用页面请求。</span></div>
-        <div class="hr18-action-step"><b>4 · 回执与对账</b><span>外部成功回执与本地快照对账后才可称完成。</span></div>
+        <div class="hr18-action-step"><b>1 · 冻结数据集</b><span>保存字段结构、来源证据、载荷位置和哈希。</span></div>
+        <div class="hr18-action-step"><b>2 · 冻结目标映射</b><span>映射目标字段，密钥和地址只放部署配置。</span></div>
+        <div class="hr18-action-step"><b>3 · 异步传输</b><span>后台 worker 使用幂等键执行并自动重试。</span></div>
+        <div class="hr18-action-step"><b>4 · 回执与对账</b><span>核对载荷哈希和记录数后才标记完成。</span></div>
       </div>
-      <div class="hr18-action-note"><strong>当前状态：</strong>异步交换执行器尚未开放。页面不会把同步导出或文件生成包装成“交换成功”；能力开放后，此工作区将承接真实任务、进度、回执与重试。</div>`);
+      <div class="hr18-action-toolbar">
+        <button class="hr18-action-btn primary" type="button" data-open="hr18-exchange-dataset">冻结数据集</button>
+        <button class="hr18-action-btn" type="button" data-open="hr18-exchange-target" ${datasets.length ? '' : 'disabled'}>配置目标映射</button>
+        <button class="hr18-action-btn" type="button" data-open="hr18-exchange-job" ${datasets.length && targets.length ? '' : 'disabled'}>创建交换任务</button>
+        <button class="hr18-action-btn" type="button" data-open="hr18-exchange-receipt" ${receiptJobs.length ? '' : 'disabled'}>登记外部回执</button>
+      </div>
+      <form class="hr18-action-form" id="hr18-exchange-dataset">
+        <div class="hr18-action-note"><strong>标准口径：</strong>按 GB/T 29808-2013、JY/T 0637-2022 描述高校人员数据，并依据 ${escapeHtml(classificationStandard)} 完成分类分级。高校全校范围教职工数据不得低于 L3。</div>
+        <div class="hr18-action-grid">
+          ${field('数据集代码', '<input name="datasetCode" required placeholder="STAFF_ROSTER">', '大写字母、数字、下划线')}
+          ${field('数据集名称', '<input name="name" required placeholder="教职工名册">')}
+          ${field('记录数', '<input name="recordCount" type="number" min="0" required value="0">')}
+          ${field('载荷 SHA-256', '<input name="payloadHash" required minlength="64" maxlength="64" placeholder="64 位小写十六进制">')}
+          ${field('数据二级分类', '<select name="secondaryCategory"><option value="教职工基础数据">教职工基础数据</option><option value="教职工管理数据" selected>教职工管理数据</option></select>', '一级分类固定为“教职工数据”')}
+          ${field('数据覆盖范围', `<select name="classificationScope">${scopeOptions}</select>`, '全校范围的教职工数据最低为 L3')}
+          ${field('数据安全级别', `<select name="securityLevel">${securityLevelOptions}</select>`, '按影响对象、覆盖范围和规模就高从严')}
+          ${field('定级日期', `<input name="classifiedAt" type="date" required max="${localToday}" value="${localToday}">`)}
+          <div class="hr18-action-field full">${checkbox('containsSensitivePersonalInformation', '包含身份证号、银行账户、健康信息等敏感个人信息', true)}</div>
+          ${field('分类分级依据', '<textarea name="classificationBasis" required minlength="10" maxlength="500" placeholder="说明覆盖范围、数据内容、影响对象和定级理由">覆盖全校教职工的人事管理数据，依据就高从严原则定为 L3。</textarea>', '该说明随冻结版本留存，后续口径变化应新建版本', true)}
+          ${field('主管部门报批审定依据', '<input name="approvalReference" maxlength="200" placeholder="L4/L5 必填，如文件名称及文号">', 'L4 重要数据、L5 核心数据必须填写', true)}
+          ${field('安全载荷引用', '<input name="payloadRef" required placeholder="secure://hr18/staff/2026-09">', '这里只保存安全存储引用，不保存密钥或下载口令', true)}
+          ${field('字段结构 JSON', '<textarea name="schema" required>{"fields":[{"name":"staffNo","type":"string"}]}</textarea>', '', true)}
+          ${field('来源证据 JSON', '<textarea name="sourceSnapshot" required>{"HR03":{"status":"COMPLETE"}}</textarea>', '写入来源版本、状态和证据哈希', true)}
+        </div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">冻结版本</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+      </form>
+      <form class="hr18-action-form" id="hr18-exchange-target">
+        <div class="hr18-action-grid">
+          ${field('目标代码', '<input name="targetCode" required placeholder="EDU_PLATFORM">')}
+          ${field('冻结数据集', `<select name="datasetId" required><option value="">请选择</option>${datasetOptions}</select>`)}
+          ${field('传输方式', '<select name="transportKind"><option value="HTTPS">HTTPS</option><option value="SFTP">SFTP</option><option value="MESSAGE_QUEUE">消息队列</option></select>')}
+          ${field('执行器键', '<input name="providerKey" required value="EDU_PLATFORM">', '必须与部署配置 HR18_EXCHANGE_HTTP_PROVIDER_KEY 一致')}
+          ${field('字段映射 JSON', '<textarea name="mapping" required>{"staffNo":"person_id"}</textarea>', '不得包含 endpoint、token、secret、password 等凭据', true)}
+          ${checkbox('expectedReceipt', '要求外部回执', true)}
+        </div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">保存目标版本</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+      </form>
+      <form class="hr18-action-form" id="hr18-exchange-job">
+        <div class="hr18-action-grid">
+          ${field('任务编号', '<input name="jobNo" required placeholder="JOB_202609_001">')}
+          ${field('幂等键', '<input name="idempotencyKey" required placeholder="staff-roster-2026-09">', '同一任务重试必须保持不变')}
+          ${field('冻结数据集', `<select name="datasetVersionId" required><option value="">请选择</option>${datasetOptions}</select>`)}
+          ${field('目标映射', `<select name="targetMappingVersionId" required><option value="">请选择</option>${targetOptions}</select>`)}
+          ${field('最大尝试次数', '<input name="maxAttempts" type="number" min="1" max="20" value="5" required>')}
+        </div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">进入异步队列</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+      </form>
+      <form class="hr18-action-form" id="hr18-exchange-receipt">
+        <div class="hr18-action-grid">
+          ${field('已传输任务', `<select name="jobId" required><option value="">请选择</option>${receiptOptions}</select>`)}
+          ${field('外部回执号', '<input name="receiptRef" required>')}
+          ${field('外部结果', '<select name="accepted"><option value="true">已受理</option><option value="false">已拒收</option></select>')}
+          ${field('收到的记录数', '<input name="receivedRecordCount" type="number" min="0" required>')}
+          ${field('收到的载荷 SHA-256', '<input name="receivedPayloadHash" minlength="64" maxlength="64" required>', '用于与冻结数据集自动对账', true)}
+          ${field('回执证据 JSON', '<textarea name="receiptEvidence" required>{"source":"external-platform"}</textarea>', '保存外部回执中的可审计证据', true)}
+        </div>
+        <div class="hr18-action-toolbar"><button class="hr18-action-btn primary" type="submit">登记并等待对账</button><button class="hr18-action-btn" type="button" data-close>取消</button></div>
+      </form>
+      <div class="hr18-action-table" id="hr18-exchange-jobs"></div>`);
+
+    host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
+    host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeForm(host, button.closest('form'))));
+
+    const datasetById = new Map(datasets.map((item) => [item.id, item]));
+    host.querySelector('#hr18-exchange-dataset').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const values = new FormData(form);
+      const button = form.querySelector('[type="submit"]');
+      setBusy(button, true);
+      try {
+        const schema = parseJson(values.get('schema'), '字段结构');
+        schema.standardProfile = {
+          profileCode,
+          classification: {
+            primaryCategory: '教职工数据',
+            secondaryCategory: values.get('secondaryCategory'),
+            securityLevel: values.get('securityLevel'),
+            scope: values.get('classificationScope'),
+            containsSensitivePersonalInformation: values.get('containsSensitivePersonalInformation') === 'on',
+            classificationBasis: values.get('classificationBasis'),
+            classifiedAt: values.get('classifiedAt'),
+            approvalReference: values.get('approvalReference'),
+          },
+        };
+        const result = await request('/exchange/datasets/', {
+          datasetCode: values.get('datasetCode'), name: values.get('name'),
+          schema,
+          sourceSnapshot: parseJson(values.get('sourceSnapshot'), '来源证据'),
+          payloadRef: values.get('payloadRef'), payloadHash: values.get('payloadHash'),
+          recordCount: Number(values.get('recordCount')),
+        });
+        reloadAfterSuccess(host, `${result.datasetCode} v${result.versionNo} 已冻结`);
+      } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+    });
+    host.querySelector('#hr18-exchange-target').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const values = new FormData(form);
+      const dataset = datasetById.get(values.get('datasetId'));
+      const button = form.querySelector('[type="submit"]');
+      setBusy(button, true);
+      try {
+        const result = await request('/exchange/targets/', {
+          targetCode: values.get('targetCode'), datasetCode: dataset.datasetCode,
+          datasetVersion: dataset.versionNo, transportKind: values.get('transportKind'),
+          providerKey: values.get('providerKey'), mapping: parseJson(values.get('mapping'), '字段映射'),
+          expectedReceipt: values.get('expectedReceipt') === 'on',
+        });
+        reloadAfterSuccess(host, `${result.targetCode} v${result.versionNo} 已保存`);
+      } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+    });
+    host.querySelector('#hr18-exchange-job').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const values = new FormData(form);
+      const button = form.querySelector('[type="submit"]');
+      setBusy(button, true);
+      try {
+        const result = await request('/exchange/jobs/', {
+          jobNo: values.get('jobNo'), idempotencyKey: values.get('idempotencyKey'),
+          datasetVersionId: values.get('datasetVersionId'),
+          targetMappingVersionId: values.get('targetMappingVersionId'),
+          maxAttempts: Number(values.get('maxAttempts')),
+        });
+        reloadAfterSuccess(host, `${result.jobNo} 已进入异步队列`);
+      } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+    });
+    host.querySelector('#hr18-exchange-receipt').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const values = new FormData(form);
+      const button = form.querySelector('[type="submit"]');
+      setBusy(button, true);
+      try {
+        await request(`/exchange/jobs/${values.get('jobId')}/receipt/`, {
+          receiptRef: values.get('receiptRef'), accepted: values.get('accepted') === 'true',
+          receivedPayloadHash: values.get('receivedPayloadHash'),
+          receivedRecordCount: Number(values.get('receivedRecordCount')),
+          receiptEvidence: parseJson(values.get('receiptEvidence'), '回执证据'),
+        });
+        reloadAfterSuccess(host, '外部回执已登记，可执行自动对账');
+      } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+    });
+
+    const target = host.querySelector('#hr18-exchange-jobs');
+    const jobIds = new Map(jobs.map((item, index) => [`exchange-job-${index}`, item.id]));
+    target.innerHTML = jobs.length ? jobs.map((item, index) => `<div class="hr18-action-row" data-exchange-job="exchange-job-${index}">
+      <div><b>${escapeHtml(item.jobNo)}</b><small>${escapeHtml(item.datasetCode)} v${item.datasetVersion} → ${escapeHtml(item.targetCode)} v${item.targetVersion}</small></div>
+      <div><span class="hr18-action-state">${escapeHtml(statusLabel(item.status))}</span><small>尝试 ${item.attemptCount}/${item.maxAttempts}${item.lastErrorCode ? ` · ${escapeHtml(item.lastErrorCode)}` : ''}</small></div>
+      <div class="hr18-action-row-actions">${item.status === 'ACKNOWLEDGED' ? '<button class="hr18-action-btn primary" type="button" data-reconcile>执行对账</button>' : ''}</div>
+    </div>`).join('') : '<div class="hr18-action-empty">尚无交换任务。请依次冻结数据集、配置目标映射并创建任务。</div>';
+    target.querySelectorAll('[data-reconcile]').forEach((button) => button.addEventListener('click', async () => {
+      const row = button.closest('[data-exchange-job]');
+      setBusy(button, true);
+      try {
+        const result = await request(`/exchange/jobs/${jobIds.get(row.dataset.exchangeJob)}/reconcile/`);
+        reloadAfterSuccess(host, `对账完成：${statusLabel(result.status)}`);
+      } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+    }));
   }
 
   async function boot() {
@@ -634,7 +885,7 @@
       else if (section === 'quality' && permissions.quality) await qualityPanel();
       else if (section === 'submissions' && (permissions.submit || permissions.approve || permissions.receipt)) await submissionsPanel();
       else if (section === 'corrections' && permissions.receipt) await submissionsPanel({correctionsOnly: true});
-      else if (section === 'exchange') exchangePanel();
+      else if (section === 'exchange' && permissions.exchange) await exchangePanel();
     } catch (error) {
       const host = card('操作区加载失败', '页面只会显示真实错误，不回退旧接口。');
       showResult(host, 'error', error.message);

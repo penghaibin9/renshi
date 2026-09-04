@@ -11,16 +11,26 @@ HR11-S1 验收测试：
 modified_by 时依赖线程残留的 request.user。
 """
 
-from django.test import TestCase, override_settings
+from unittest import skipUnless
 
-from base.models import Company
-from employee.models import Employee, EmployeeWorkInformation
+from django.apps import apps
+from django.test import TestCase, override_settings
 from horilla_auth.models import HorillaUser
+
+
+LEGACY_CONTEXT_AVAILABLE = apps.is_installed("base") and apps.is_installed("employee")
+if LEGACY_CONTEXT_AVAILABLE:
+    from base.models import Company
+    from employee.models import Employee, EmployeeWorkInformation
 
 HEALTH_URL = "/api/v1/hr/time/health"
 
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+@skipUnless(
+    LEGACY_CONTEXT_AVAILABLE,
+    "requires the complete MySQL Horilla CompanyMiddleware integration runtime",
+)
 class HrTimeS1TenantFailClosedTests(TestCase):
     @classmethod
     def setUpTestData(cls):

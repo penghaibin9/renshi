@@ -501,7 +501,7 @@ def _validate_effective_date(action, effective_at: date):
     if effective_at is None:
         raise ChangeServiceError("CHANGE_EFFECTIVE_DATE_INVALID", "生效日期必填")
     allow_past = bool(rule.get("allow_past", False))
-    if not allow_past and effective_at < date.today():
+    if not allow_past and effective_at < timezone.localdate():
         raise ChangeServiceError(
             "CHANGE_EFFECTIVE_DATE_INVALID", "生效日期不能早于今天"
         )
@@ -509,7 +509,7 @@ def _validate_effective_date(action, effective_at: date):
     if max_days:
         from datetime import timedelta
 
-        if effective_at > date.today() + timedelta(days=int(max_days)):
+        if effective_at > timezone.localdate() + timedelta(days=int(max_days)):
             raise ChangeServiceError(
                 "CHANGE_EFFECTIVE_DATE_INVALID", f"生效日期不能超过 {max_days} 天"
             )

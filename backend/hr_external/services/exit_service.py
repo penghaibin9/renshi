@@ -13,6 +13,7 @@ from datetime import date
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_external.constants import (
     ExitReason,
@@ -106,7 +107,7 @@ class ExitService:
         if case.status != ExitStatus.READY_TO_EXIT:
             raise ExitStateConflict("case not ready to exit")
         case.status = ExitStatus.EXITING
-        case.actual_end_at = case.actual_end_at or date.today()
+        case.actual_end_at = case.actual_end_at or timezone.localdate()
         return self._save_case(case, "status", "actual_end_at")
 
     @transaction.atomic
@@ -150,7 +151,7 @@ class ExitService:
         if eng.status == ExternalEngagementStatus.ENDED:
             # 幂等：已结束则只收尾 case，不重复回收（00 §23）
             case.status = ExitStatus.ENDED
-            case.actual_end_at = case.actual_end_at or date.today()
+            case.actual_end_at = case.actual_end_at or timezone.localdate()
             return self._save_case(case, "status", "actual_end_at")
 
         eng.status = ExternalEngagementStatus.ENDED
@@ -161,7 +162,7 @@ class ExitService:
         self.access.revoke_engagement_access(tenant_id=tenant_id, engagement=eng)
 
         case.status = ExitStatus.ENDED
-        case.actual_end_at = case.actual_end_at or date.today()
+        case.actual_end_at = case.actual_end_at or timezone.localdate()
         return self._save_case(case, "status", "actual_end_at")
 
     @transaction.atomic

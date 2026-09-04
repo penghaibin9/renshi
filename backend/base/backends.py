@@ -7,12 +7,13 @@ This module is used to write email backends
 import importlib
 import logging
 
+from django.conf import settings
 from django.core.cache import cache
 from django.core.mail import EmailMessage
 from django.core.mail.backends.smtp import EmailBackend
 
-from base.models import DynamicEmailConfiguration, EmailLog
-from horilla import settings
+from base.email_logging import record_email_log, resolve_email_log_company
+from base.models import DynamicEmailConfiguration
 from horilla.horilla_middlewares import _thread_locals
 
 logger = logging.getLogger(__name__)
@@ -204,14 +205,15 @@ class ConfiguredEmailBackend(BACKEND_CLASS):
                 or message.from_email
                 or getattr(settings, "DEFAULT_FROM_EMAIL", "")
             )
-            email_log = EmailLog(
+            record_email_log(
                 subject=message.subject,
                 from_email=from_email,
                 to=message.to,
                 body=message.body,
                 status="sent" if response else "failed",
+                company=resolve_email_log_company()
+                or getattr(getattr(self, "configuration", None), "company_id", None),
             )
-            email_log.save()
         return response
 
 
@@ -222,10 +224,38 @@ if EMAIL_BACKEND != default:
     ConfiguredEmailBackend.dynamic_from_email_with_display_name = from_mail
 
 
-__all__ = ["ConfiguredEmailBackend"]
-
-
 message_init = EmailMessage.__init__
+
+
+def send_deployment_email(*, subject, body, to):
+    """Send security mail only through deployment-owned SMTP settings.
+
+    The legacy notification backend is tenant-configurable and its global
+    ``EmailMessage`` hook queries the database. Authentication mail must not
+    depend on mutable tenant rows, so construct the message with Django's
+    original initializer and an explicit SMTP connection.
+    """
+
+    connection = EmailBackend(
+        host=settings.EMAIL_HOST,
+        port=settings.EMAIL_PORT,
+        username=settings.EMAIL_HOST_USER,
+        password=settings.EMAIL_HOST_PASSWORD,
+        use_tls=settings.EMAIL_USE_TLS,
+        use_ssl=settings.EMAIL_USE_SSL,
+        timeout=settings.EMAIL_TIMEOUT,
+        fail_silently=False,
+    )
+    message = EmailMessage.__new__(EmailMessage)
+    message_init(
+        message,
+        subject=subject,
+        body=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=list(to),
+        connection=connection,
+    )
+    return connection.send_messages([message])
 
 
 def new_init(
@@ -270,3 +300,6 @@ def new_init(
 
 
 EmailMessage.__init__ = new_init
+
+
+__all__ = ["ConfiguredEmailBackend", "send_deployment_email"]

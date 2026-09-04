@@ -49,6 +49,25 @@
   </nav>
 
   <section class="hr-v2-section">
+    <form id="materialUploadForm" class="hr03-upload-form" enctype="multipart/form-data">
+      <div class="hr03-upload-form__head">
+        <div><strong>新增人事材料</strong><span>文件进入学校隔离的私有存储，上传与下载均记录审计。</span></div>
+      </div>
+      <div class="hr03-upload-form__grid">
+        <label><span>材料名称</span><input name="title" maxlength="250" required placeholder="例如：最高学历证书"></label>
+        <label><span>材料分类</span><select name="categoryCode" required>
+          <option value="IDENTITY">身份材料</option><option value="EDUCATION">学历材料</option><option value="DEGREE">学位材料</option>
+          <option value="TEACHER_QUALIFICATION">教师资格</option><option value="PROFESSIONAL_CERTIFICATE">职称证书</option>
+          <option value="SKILL_CERTIFICATE">技能证书</option><option value="EMPLOYMENT">入职材料</option>
+          <option value="APPOINTMENT">聘任材料</option><option value="HONOR">荣誉材料</option><option value="OTHER_HR">其他人事材料</option>
+        </select></label>
+        <label><span>敏感级别</span><select name="sensitivityLevel" required>
+          <option value="RESTRICTED_HR">人事受限</option><option value="SENSITIVE">敏感</option><option value="HIGH_SENSITIVE">高敏感</option>
+        </select></label>
+        <label><span>选择文件（最大 50MB）</span><input type="file" name="file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"></label>
+      </div>
+      <div class="hr03-upload-form__actions"><button type="submit">上传材料</button><span id="materialUploadStatus" role="status"></span></div>
+    </form>
     <div class="hr03-record-filter" aria-label="材料筛选">
       <button class="is-active" type="button" id="btn-all" data-filter="">{{ t_all }}</button>
       <button type="button" id="btn-unverified" data-filter="UNVERIFIED">{{ t_unverified }}</button>
@@ -94,7 +113,7 @@
   async function load() {
     const content = document.getElementById("content");
     try {
-      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials`, {credentials:"same-origin"});
+      const resp = await fetch(`/api/v1/hr/staff/${encodeURIComponent(staffId)}/materials`, {credentials:"same-origin"});
       if (!resp.ok) { content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>HTTP ${resp.status}</span></div>`; return; }
       const body = await resp.json();
       items = Array.isArray(body.data?.items) ? body.data.items : [];
@@ -148,7 +167,7 @@
   async function downloadTicket(materialId) {
     const purpose = prompt("请填写查看用途（将记录审计）", "材料核对");
     if (!purpose) return;
-    const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/download-ticket`, {
+    const resp = await fetch(`/api/v1/hr/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/download-ticket`, {
       method:"POST",
       credentials:"same-origin",
       headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest","X-CSRFToken":csrfToken()},
@@ -158,12 +177,40 @@
     const body = await resp.json();
     const ticket = body.data?.ticket;
     if (!ticket) { alert(L.downloadFailed); return; }
-    window.open(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/download/${encodeURIComponent(ticket)}`, "_blank", "noopener");
+    const download = await fetch(`/api/v1/hr/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/download`, {
+      credentials:"same-origin", headers:{"X-HR-Download-Ticket":ticket,"X-Requested-With":"XMLHttpRequest"}
+    });
+    if (!download.ok) { alert(`${L.downloadFailed}（HTTP ${download.status}）`); return; }
+    const blob = await download.blob();
+    const disposition = download.headers.get("Content-Disposition") || "";
+    const matched = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+    const filename = matched ? decodeURIComponent(matched[1].replace(/\"$/,"")) : "人事材料";
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    URL.revokeObjectURL(url);
   }
+
+  document.getElementById("materialUploadForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const status = document.getElementById("materialUploadStatus");
+    const submit = form.querySelector('button[type="submit"]');
+    status.textContent = "正在上传并进行安全检查…"; submit.disabled = true;
+    try {
+      const response = await fetch(`/api/v1/hr/staff/${encodeURIComponent(staffId)}/materials/upload`, {
+        method:"POST", credentials:"same-origin", headers:{"X-Requested-With":"XMLHttpRequest","X-CSRFToken":csrfToken()}, body:new FormData(form)
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error?.message || `HTTP ${response.status}`);
+      status.textContent = "上传成功，材料已进入待核验状态。"; form.reset(); await load();
+    } catch (error) { status.textContent = `上传失败：${error.message || "请稍后重试"}`; }
+    finally { submit.disabled = false; }
+  });
 
   async function viewVersions(materialId) {
     const panel = document.getElementById("versionPanel");
-    const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/versions`, {credentials:"same-origin"});
+    const resp = await fetch(`/api/v1/hr/staff/${encodeURIComponent(staffId)}/materials/${encodeURIComponent(materialId)}/versions`, {credentials:"same-origin"});
     if (!resp.ok) { panel.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>版本历史读取失败</strong><span>HTTP ${resp.status}</span></div>`; return; }
     const body = await resp.json();
     const versions = Array.isArray(body.data?.versions) ? body.data.versions : [];

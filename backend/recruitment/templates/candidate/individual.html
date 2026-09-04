@@ -619,7 +619,8 @@
                                         <span
                                             class="oh-recuritment_tag  {% if task.status == 'done' %} done-task {% elif task.status == 'scheduled' %} scheduled-task{% elif task.status == 'ongoing' %} ongoing-task{% elif task.status == 'stuck' %} dd stuck-task {% elif task.status == 'todo' %} todo-task{% endif %}">
                                             <select hx-swap="none"
-                                                hx-get="{% url 'change-task-status' %}?task_id={{task.id}}"
+                                                hx-post="{% url 'change-task-status' %}"
+                                                hx-vals='{"task_id":"{{task.id}}"}'
                                                 name="status" style="width: 150px;" id="task_status{{task.id}}">
                                                 {% for status in task.choice %}
                                                     <option value="{{status.0}}" {% if status.0 == task.status %} selected {% endif %}>{{status.1}} </option>

@@ -9,16 +9,35 @@ HR09 Evidence Provider endpoint:
 S9 阶段：直接返回格式化数据。生产阶段可增加 service-level auth。
 """
 
-import json
+from datetime import date
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from hr10_development.api.envelope import success, error
-from hr10_development.constants import DevelopmentErrorCode, DataFreshnessStatus
+from hr10_development.api.envelope import ApiMeta, error, success
+from hr10_development.constants import (
+    DataFreshnessStatus,
+    DevelopmentErrorCode,
+    FactType,
+)
 from hr10_development.providers.qualification_provider import Hr09QualificationEvidenceProvider
 from hr10_development.permissions import require_hr10_internal_service
+
+
+def _parse_iso_date(value, *, field_name):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                f"{field_name} 必须是 YYYY-MM-DD 格式的合法日期",
+            ),
+            status=400,
+        )
 
 
 @csrf_exempt
@@ -39,14 +58,26 @@ def get_hr09_evidence(request, staff_id):
             status=403,
         )
 
-    as_of_str = request.GET.get("asOf")
-    as_of = None
-    if as_of_str:
-        from datetime import date
-        as_of = date.fromisoformat(as_of_str)
+    as_of = _parse_iso_date(request.GET.get("asOf"), field_name="asOf")
+    if isinstance(as_of, JsonResponse):
+        return as_of
 
     types_str = request.GET.get("types")
-    fact_types = types_str.split(",") if types_str else None
+    fact_types = (
+        [value.strip().upper() for value in types_str.split(",") if value.strip()]
+        if types_str
+        else None
+    )
+    invalid_types = sorted(set(fact_types or ()) - set(FactType.values))
+    if invalid_types:
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                "types 包含不支持的发展事实类型",
+                details={"invalidTypes": invalid_types},
+            ),
+            status=400,
+        )
 
     provider = Hr09QualificationEvidenceProvider()
     result = provider.get_evidence(
@@ -61,10 +92,19 @@ def get_hr09_evidence(request, staff_id):
     else:
         freshness = DataFreshnessStatus.SOURCE_UNAVAILABLE
 
-    return JsonResponse(success(result.data, meta={
-        "sourceUpdatedAt": result.source_updated_at.isoformat() if result.source_updated_at else None,
-        "dataFreshness": freshness,
-    }))
+    return JsonResponse(
+        success(
+            result.data,
+            meta=ApiMeta(
+                source_updated_at=(
+                    result.source_updated_at.isoformat()
+                    if result.source_updated_at
+                    else None
+                ),
+                data_freshness=freshness,
+            ),
+        )
+    )
 
 
 @csrf_exempt
@@ -83,9 +123,38 @@ def get_development_time_windows(request, staff_id):
             status=403,
         )
 
-    from datetime import date
-    period_start = date.fromisoformat(request.GET.get("periodStart", "2026-01-01"))
-    period_end = date.fromisoformat(request.GET.get("periodEnd", "2026-12-31"))
+    period_start = _parse_iso_date(
+        request.GET.get("periodStart"), field_name="periodStart"
+    )
+    if isinstance(period_start, JsonResponse):
+        return period_start
+    period_end = _parse_iso_date(request.GET.get("periodEnd"), field_name="periodEnd")
+    if isinstance(period_end, JsonResponse):
+        return period_end
+    if period_start is None or period_end is None:
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                "periodStart 和 periodEnd 均为必填项",
+            ),
+            status=400,
+        )
+    if period_end < period_start:
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                "periodEnd 不能早于 periodStart",
+            ),
+            status=400,
+        )
+    if (period_end - period_start).days > 366:
+        return JsonResponse(
+            error(
+                DevelopmentErrorCode.INVALID_REQUEST,
+                "查询时间范围不能超过 366 天",
+            ),
+            status=400,
+        )
 
     from hr10_development.providers.time_provider import Hr11DevelopmentTimeProvider
     provider = Hr11DevelopmentTimeProvider()

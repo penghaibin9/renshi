@@ -1,10 +1,8 @@
-from django import views
 from django.apps import apps
 from django.urls import path
 from django.views.generic import RedirectView
 
 from base.cbv import company_leaves, holidays
-from employee.models import Employee
 from leave import dashboard as leave_dashboard
 
 if apps.is_installed("attendance"):

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict
 
-from hr_assessment.models.case import HrEthicsAssessmentCase
+from hr_assessment.models.case import HrAssessmentCase, HrEthicsAssessmentCase
 from hr_assessment.models.result import HrFinalAssessmentResult
 
 
@@ -39,20 +39,17 @@ class SelfHistoryService:
     """本人考核历史查询 — 总册 §173/personal history。"""
 
     def get_personal_timeline(self, tenant_id: int, staff_id: uuid.UUID) -> list:
-        results = (
-            HrFinalAssessmentResult.objects.filter(
-                tenant_id=tenant_id, case_id__in=(
-                    HrEthicsAssessmentCase.objects.filter(
-                        tenant_id=tenant_id, staff_id=staff_id,
-                    ).values_list("id", flat=True)
-                ) if False else []
-            )
-            .order_by("-finalized_at")
-            .values("case_id", "assessment_type", "grade_code", "result_version_no", "finalized_at", "status")
-        )
-        # 简化：直接从 FinalResult 按 staff 查
+        # FinalResult 只保存 case_id，因此先从所有考核 Case（年度/聘期/专项/师德）
+        # 解析本人 case 集。两层查询都必须显式限定 tenant，禁止返回全校甚至跨校结果。
+        case_ids = HrAssessmentCase.objects.filter(
+            tenant_id=tenant_id,
+            staff_id=staff_id,
+        ).values_list("id", flat=True)
         final_results = (
-            HrFinalAssessmentResult.objects.select_related()
+            HrFinalAssessmentResult.objects.filter(
+                tenant_id=tenant_id,
+                case_id__in=case_ids,
+            )
             .order_by("-finalized_at")[:50]
         )
         return [

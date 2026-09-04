@@ -33,12 +33,16 @@ class OfferingService:
             return False
 
         offering.refresh_from_db()
-        # 名额与候补均耗尽后自动关闭
-        if offering.capacity <= 0 and offering.waitlist_capacity <= 0:
-            from hr10_development.constants import OfferingStatus
+        from hr10_development.constants import OfferingStatus
 
+        if offering.capacity <= 0:
+            next_status = (
+                OfferingStatus.WAITLIST_OPEN
+                if offering.waitlist_capacity > 0
+                else OfferingStatus.CLOSED
+            )
             HrLearningOffering.objects.filter(id=offering.id).update(
-                lifecycle_status=OfferingStatus.CLOSED,
+                lifecycle_status=next_status,
             )
             offering.refresh_from_db()
         return True
@@ -59,6 +63,11 @@ class OfferingService:
         if not updated:
             offering.refresh_from_db()
             return False
+        from hr10_development.constants import OfferingStatus
+
+        HrLearningOffering.objects.filter(id=offering.id).update(
+            lifecycle_status=OfferingStatus.OPEN,
+        )
         offering.refresh_from_db()
         return True
 
@@ -79,6 +88,42 @@ class OfferingService:
         if not updated:
             offering.refresh_from_db()
             return False
+        if offering.waitlist_capacity <= 0:
+            from hr10_development.constants import OfferingStatus
+
+            HrLearningOffering.objects.filter(id=offering.id).update(
+                lifecycle_status=OfferingStatus.CLOSED,
+            )
+            offering.refresh_from_db()
+        offering.refresh_from_db()
+        return True
+
+    @staticmethod
+    @transaction.atomic
+    def release_waitlist(offering: HrLearningOffering) -> bool:
+        """释放一个候补槽位，不改变正式席位数量。"""
+        updated = HrLearningOffering.objects.filter(
+            id=offering.id,
+            version=offering.version,
+        ).update(
+            waitlist_capacity=F("waitlist_capacity") + 1,
+            version=F("version") + 1,
+        )
+        if not updated:
+            offering.refresh_from_db()
+            return False
+
+        offering.refresh_from_db()
+        from hr10_development.constants import OfferingStatus
+
+        next_status = (
+            OfferingStatus.OPEN
+            if offering.capacity > 0
+            else OfferingStatus.WAITLIST_OPEN
+        )
+        HrLearningOffering.objects.filter(id=offering.id).update(
+            lifecycle_status=next_status,
+        )
         offering.refresh_from_db()
         return True
 

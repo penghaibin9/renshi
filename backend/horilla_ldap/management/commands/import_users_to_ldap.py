@@ -1,6 +1,3 @@
-import base64
-import hashlib
-
 from django.core.management.base import BaseCommand
 from ldap3 import ALL, ALL_ATTRIBUTES, Connection, Server
 
@@ -52,14 +49,6 @@ class Command(BaseCommand):
 
                 dn = f"uid={user.employee_user_id.username},{base_dn}"
 
-                # Securely hash the password using SHA
-                hashed_password = (
-                    "{SHA}"
-                    + base64.b64encode(
-                        hashlib.sha1(user.phone.encode()).digest()
-                    ).decode()
-                )
-
                 if user.employee_last_name is None:
                     user.employee_last_name = " "
 
@@ -71,7 +60,6 @@ class Command(BaseCommand):
                     "uid": user.email or "",
                     "mail": user.email or "",
                     "telephoneNumber": user.phone or "",
-                    "userPassword": hashed_password,  # Securely store password
                 }
 
                 # Check if the user already exists in LDAP

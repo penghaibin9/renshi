@@ -67,9 +67,12 @@
                                                         hx-target="#genericModalBody" class="oh-dropdown__link" style="cursor:pointer;">{% trans "Edit" %}</a>
                                                     </li>
                                                     <li class="oh-dropdown__item">
-                                                        <a  href="{% url 'stage-delete' stage.grouper.id %}"
-                                                            onclick="return confirm('{% trans "Do you want to delete this stage?" %}')"
-                                                            class="oh-dropdown__link oh-dropdown__link--danger">{% trans "Delete" %}</a>
+                                                        <form method="post" action="{% url 'stage-delete' stage.grouper.id %}"
+                                                            onsubmit="return confirm('{% trans "Do you want to delete this stage?" %}')">
+                                                            {% csrf_token %}
+                                                            <button type="submit"
+                                                                class="oh-dropdown__link oh-dropdown__link--danger w-100 text-start border-0 bg-transparent">{% trans "Delete" %}</button>
+                                                        </form>
                                                     </li>
                                                 </ul>
                                             </div>

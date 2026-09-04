@@ -21,7 +21,8 @@
 </div>
 
 <form
-    hx-post="{% url 'add-offboarding-note' %}?employee_id={{ employee.id }}"
+    hx-post="{% url 'add-offboarding-note' %}"
+    hx-vals='{"employee_id":"{{ employee.id }}"}'
     hx-target="#noteContainerList"
     hx-select=".oh-activity-sidebar__qa-list"
     hx-on-htmx-after-request="reloadMessage(this);$('#commentInput').val('');$('#commentButton').hide();"
@@ -57,7 +58,7 @@
                     {% if request.user.employee_get|is_any_stage_manager or perms.offboarding.change_offboarding or perms.offboarding.change_offboardingemployee %}
                         <span
                             class="float-end"
-                            hx-get="{% url 'offboarding-note-delete' note.id %}"
+                            hx-post="{% url 'offboarding-note-delete' note.id %}"
                             hx-target="#offboardingNoteItem{{note.id}}"
                             hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
                             hx-swap="outerHTML swap:.5s"
@@ -90,7 +91,8 @@
                                     <img
                                         src="{% static 'images/ui/minus-icon.png' %}"
                                         style="display: block; width: 50%; height: 50%"
-                                        hx-get="{% url 'delete-note-attachment' %}?ids={{ file.id }}&employee_id={{ employee.id }}"
+                                        hx-post="{% url 'delete-note-attachment' %}"
+                                        hx-vals='{"ids":"{{ file.id }}","employee_id":"{{ employee.id }}","note_id":"{{ note.id }}"}'
                                         hx-target="#noteFileItem{{file.id}}"
                                         hx-swap="outerHTML"
                                         hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
@@ -102,7 +104,8 @@
                     {% endfor %}
 
                     <form
-                        hx-post="{% url 'view-offboarding-note' employee.id %}?note_id={{ note.id }}"
+                        hx-post="{% url 'view-offboarding-note' employee.id %}"
+                        hx-vals='{"note_id":"{{ note.id }}"}'
                         class="add-files-form"
                         hx-encoding="multipart/form-data"
                         hx-swap="innerHTML"

@@ -54,7 +54,7 @@ def dynamic_attr(obj, attribute_path):
     return obj
 
 
-def horilla_users_with_perms(permissions):
+def renshi_users_with_perms(permissions):
     """
     Filters users who have any of the specified permissions or are superusers.
 
@@ -80,7 +80,9 @@ def horilla_users_with_perms(permissions):
     return users_with_permissions.distinct()
 
 
-def handle_no_permission(request, message=_("You don't have permission.")):
+def handle_no_permission(request, message=None):
+    if message is None:
+        message = _("You don't have permission.")
     messages.info(request, message)
     if request.headers.get("HX-Request"):
         return render(request, "decorator_404.html")

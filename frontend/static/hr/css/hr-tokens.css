@@ -53,7 +53,7 @@
   --hr-shadow-raised: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
-/* Dark 模式（Horilla 保留 dark mode 时） */
+/* 深色模式（兼容层保留 dark mode 时） */
 .dark {
   --hr-text-900: #f1f5f9;
   --hr-text-700: #cbd5e1;

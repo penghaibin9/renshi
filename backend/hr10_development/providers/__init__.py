@@ -10,12 +10,6 @@ from .person_provider import Hr03PersonProvider
 from .education_writeback_provider import Hr03EducationWritebackProvider
 from .qualification_provider import Hr09QualificationEvidenceProvider
 from .time_provider import Hr11TimeConflictProvider, Hr11DevelopmentTimeProvider
-from .stub_providers import (
-    StubFinanceProvider, StubAcademicProvider, StubResearchProvider,
-    StubAgreementProvider, StubDocumentProvider,     StubNotificationProvider,
-    StubAssessmentFactsConsumer,
-    StubExternalTeacherProvider,
-)
 
 __all__ = [
     "PersonProvider", "ExternalTeacherProvider", "QualificationEvidenceProvider",
@@ -29,6 +23,4 @@ __all__ = [
     "Hr09QualificationEvidenceProvider",
     "Hr11TimeConflictProvider",
     "Hr11DevelopmentTimeProvider",
-    "StubFinanceProvider", "StubAcademicProvider", "StubResearchProvider",
-    "StubAgreementProvider", "StubDocumentProvider", "StubNotificationProvider",
 ]

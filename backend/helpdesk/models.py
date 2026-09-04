@@ -431,6 +431,9 @@ class ClaimRequest(HorillaModel):
     )
     is_approved = models.BooleanField(default=False)
     is_rejected = models.BooleanField(default=False)
+    objects = HorillaCompanyManager(
+        related_company_field="ticket_id__employee_id__employee_work_info__company_id"
+    )
 
     class Meta:
         unique_together = ("ticket_id", "employee_id")
@@ -453,6 +456,9 @@ class Comment(HorillaModel):
         Employee, on_delete=models.DO_NOTHING, related_name="employee_comment"
     )
     date = models.DateTimeField(auto_now_add=True)
+    objects = HorillaCompanyManager(
+        related_company_field="ticket__employee_id__employee_work_info__company_id"
+    )
 
     def __str__(self):
         return self.comment
@@ -475,6 +481,9 @@ class Attachment(HorillaModel):
         null=True,
         blank=True,
         related_name="comment_attachment",
+    )
+    objects = HorillaCompanyManager(
+        related_company_field="ticket__employee_id__employee_work_info__company_id"
     )
 
     def get_file_format(self):

@@ -7,6 +7,18 @@
 from __future__ import annotations
 
 
+def _candidate_stage_model():
+    from onboarding.models import CandidateStage
+
+    return CandidateStage
+
+
+def _candidate_task_model():
+    from onboarding.models import CandidateTask
+
+    return CandidateTask
+
+
 class HorillaLegacyOnboardingAdapter:
     def __init__(self, tenant_id: int):
         if not tenant_id:
@@ -14,8 +26,7 @@ class HorillaLegacyOnboardingAdapter:
         self.tenant_id = tenant_id
 
     def get_candidate_stage(self, *, legacy_candidate_id: int) -> dict | None:
-        from onboarding.models import CandidateStage
-
+        CandidateStage = _candidate_stage_model()
         row = (
             CandidateStage.objects.filter(
                 candidate_id_id=legacy_candidate_id,
@@ -40,8 +51,7 @@ class HorillaLegacyOnboardingAdapter:
         }
 
     def list_candidate_tasks(self, *, legacy_candidate_id: int) -> list[dict]:
-        from onboarding.models import CandidateTask
-
+        CandidateTask = _candidate_task_model()
         rows = CandidateTask.objects.filter(
             candidate_id_id=legacy_candidate_id,
             candidate_id__recruitment_id__company_id=self.tenant_id,

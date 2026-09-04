@@ -592,9 +592,6 @@ class TimeSheet(HorillaModel):
     description = models.TextField(blank=True, null=True, verbose_name=_("Description"))
     objects = HorillaCompanyManager("project_id__company_id")
 
-    class Meta:
-        ordering = ("-id",)
-
     def clean(self):
         if self.project_id is None:
             raise ValidationError({"project_id": "Project name is Required."})
@@ -683,3 +680,4 @@ class TimeSheet(HorillaModel):
     class Meta:
         verbose_name = _("Timesheet")
         verbose_name_plural = _("Timesheets")
+        ordering = ("-id",)

@@ -10,7 +10,11 @@ tests/test_services.py —— 服务层测试（总册 §161/S11）。
 - RiskService: detect + dedup
 """
 
+from datetime import timedelta
+
 from django.test import TestCase
+from django.utils import timezone
+from hr_staff.models import HrPerson
 
 from hr_qualification.constants import (
     ApplicationStatus,
@@ -18,6 +22,8 @@ from hr_qualification.constants import (
     FinalDecisionType,
     RecognitionLevel,
     RecognitionStatus,
+    RiskSeverity,
+    RiskType,
     VerificationResult,
 )
 from hr_qualification.models import (
@@ -29,10 +35,15 @@ from hr_qualification.models import (
     HrDoubleTeacherRulePackVersion,
     HrPersonCredential,
 )
-from hr_qualification.services.application_service import ApplicationError, ApplicationService
-from hr_qualification.services.credential_service import CredentialError, CredentialService
+from hr_qualification.services.application_service import (
+    ApplicationError,
+    ApplicationService,
+)
+from hr_qualification.services.credential_service import (
+    CredentialError,
+    CredentialService,
+)
 from hr_qualification.services.risk_service import RiskService
-from hr_staff.models import HrPerson
 
 
 class CredentialServiceTest(TestCase):
@@ -205,3 +216,24 @@ class RiskServiceTest(TestCase):
             severity="CRITICAL",
         )
         self.assertIsNone(r2)
+
+    def test_expired_active_credential_opens_high_risk_once(self):
+        cred = HrPersonCredential.objects.create(
+            tenant_id=1,
+            person_id=self.person,
+            credential_name_snapshot="Expired Cert",
+            catalog_item_id=self.catalog,
+            issuer_name="I",
+            status=CredentialStatus.ACTIVE,
+            valid_to=timezone.localdate() - timedelta(days=1),
+        )
+
+        first = RiskService.detect_expired_credentials(tenant_id=1)
+        repeated = RiskService.detect_expired_credentials(tenant_id=1)
+
+        self.assertEqual(len(first), 1)
+        self.assertEqual(repeated, [])
+        risk = first[0]
+        self.assertEqual(risk.credential_id, cred.id)
+        self.assertEqual(risk.risk_type, RiskType.CREDENTIAL_EXPIRED)
+        self.assertEqual(risk.severity, RiskSeverity.HIGH)

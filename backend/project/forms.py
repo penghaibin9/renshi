@@ -37,19 +37,16 @@ class ProjectTimeSheetForm(ModelForm):
     Form for Project model in Time sheet form
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, request=None, **kwargs):
         super(ProjectTimeSheetForm, self).__init__(*args, **kwargs)
+        self.fields["managers"].widget.attrs.update({"id": "managers_id"})
         self.fields["status"].widget.attrs.update(
             {
+                "id": "status_id",
                 "style": "width: 100%; height: 47px;",
                 "class": "oh-select",
             }
         )
-
-    def __init__(self, *args, request=None, **kwargs):
-        super(ProjectTimeSheetForm, self).__init__(*args, **kwargs)
-        self.fields["managers"].widget.attrs.update({"id": "managers_id"})
-        self.fields["status"].widget.attrs.update({"id": "status_id"})
         self.fields["members"].widget.attrs.update({"id": "members_id"})
         self.fields["title"].widget.attrs.update({"id": "id_project"})
 

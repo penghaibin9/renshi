@@ -12,6 +12,7 @@ import re
 from typing import Optional
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_external.models import HrExternalTeacherProfile
 
@@ -28,9 +29,7 @@ class ExternalTeacherNumberService:
         self.width = max(1, width)
 
     def next_external_no(self, tenant_id: int, year: Optional[int] = None) -> str:
-        from datetime import date
-
-        year = year or date.today().year
+        year = year or timezone.localdate().year
         pattern = re.compile(rf"^{self.prefix}{year}(?P<num>\d+)$")
         qs = HrExternalTeacherProfile.objects.filter(tenant_id=tenant_id)
         with transaction.atomic():

@@ -65,7 +65,10 @@ class ReconciliationServiceTests(TestCase):
         ):
             item = ReconciliationService(TENANT).reconcile_staff(self.staff)
         self.assertTrue(item.has_mismatch)
-        self.assertTrue(any("staff_no" in m for m in item.mismatches))
+        self.assertFalse(item.staff_no_match)
+        self.assertIn("STAFF_NO_MISMATCH", item.mismatches)
+        self.assertNotIn("T001238", " ".join(item.mismatches))
+        self.assertNotIn("T999999", " ".join(item.mismatches))
 
     def test_reconcile_missing_legacy_link(self):
         item = ReconciliationService(TENANT).reconcile_staff(self.staff)

@@ -183,6 +183,7 @@ def get_campaign(*, tenant_id, campaign_id):
         "status": campaign.status,
         "statusLabel": status_label(CAMPAIGN_STATUS_LABELS, campaign.status),
         "public_slug": campaign.public_slug,
+        "public_token": campaign.public_token,
         "application_open_at": campaign.application_open_at.isoformat() if campaign.application_open_at else None,
         "application_close_at": campaign.application_close_at.isoformat() if campaign.application_close_at else None,
         "timezone": campaign.timezone,

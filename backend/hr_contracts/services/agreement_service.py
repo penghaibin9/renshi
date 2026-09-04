@@ -23,6 +23,10 @@ from hr_contracts.events import (
     EVENT_AGREEMENT_EFFECTIVE,
     EVENT_AGREEMENT_SIGNED,
 )
+from hr_contracts.services.document_binding import (
+    ContractDocumentBindingError,
+    bind_signed_document_reference,
+)
 from hr_contracts.models import HrContractAgreement, HrContractVersion
 
 
@@ -109,7 +113,7 @@ class AgreementService:
         as_of: Optional[date] = None,
     ) -> HrContractAgreement:
         """Create an idempotent regular-employment agreement after HR03 validation."""
-        effective_day = as_of or date.today()
+        effective_day = as_of or timezone.localdate()
         self._validate_staff_relationship(
             staff_id=staff_id,
             relationship_id=employment_relationship_id,
@@ -316,7 +320,7 @@ class AgreementService:
             effective_from=effective_from,
             effective_to=effective_to,
             signed_at=signed_at,
-            signed_document_ref=signed_document_ref,
+            signed_document_ref=signed_document_ref.strip(),
             content_snapshot_json=content_snapshot,
             content_hash=self._content_hash(content_snapshot),
             status=HrContractVersion.Status.SIGNED,
@@ -325,6 +329,18 @@ class AgreementService:
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
+        try:
+            bind_signed_document_reference(
+                tenant_id=self.tenant_id,
+                agreement_id=agreement.id,
+                version=version,
+                signed_document_ref=signed_document_ref,
+                actor_id=self.actor_user_id,
+            )
+        except ContractDocumentBindingError as exc:
+            raise ContractServiceError(
+                "CONTRACT_SIGNED_DOCUMENT_INVALID", str(exc)
+            ) from exc
         agreement.current_version_no = 1
         agreement.status = HrContractAgreement.Status.SIGNED_WAITING_EFFECTIVE
         agreement.updated_by = self.actor_user_id

@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import date
 from typing import Optional
 
+from django.utils import timezone
+
 from hr_changes.constants import ChangeActionCode
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.policies.transfer_policy import TransferPolicy
@@ -148,7 +150,7 @@ class TransferService:
         from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
         status = EffectiveDatedQueryService(self.tenant_id).status_as_of(
-            case.staff_master_id_id, date.today()
+            case.staff_master_id_id, timezone.localdate()
         )
         if status in ("DEPARTED", "DEPARTURE_PENDING", "RETIRED"):
             blockers.append(
@@ -182,10 +184,10 @@ class TransferService:
         from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
         qs = EffectiveDatedQueryService(self.tenant_id)
-        current = qs.primary_assignment_as_of(case.staff_master_id_id, date.today())
+        current = qs.primary_assignment_as_of(case.staff_master_id_id, timezone.localdate())
         before = {
             "organization": (
-                qs.org_name_as_of(case.source_org_id_id, date.today())
+                qs.org_name_as_of(case.source_org_id_id, timezone.localdate())
                 if case.source_org_id_id
                 else (current.organization_id.stable_code if current and current.organization_id else "")
             ),
@@ -236,7 +238,7 @@ def _org_name(tenant_id, org_id):
         return None
     from hr_structure.selectors.effective import org_version_as_of
 
-    version = org_version_as_of(tenant_id, org.id, date.today())
+    version = org_version_as_of(tenant_id, org.id, timezone.localdate())
     return version.name if version else org.stable_code
 
 

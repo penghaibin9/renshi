@@ -13636,7 +13636,7 @@ msgstr "İK"
 msgid "Please login to access the dashboard."
 msgstr "Lütfen giriş yaparak kontrol paneline erişin."
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

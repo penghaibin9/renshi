@@ -14,10 +14,12 @@ from django.contrib.auth import get_user_model
 from django.core import serializers
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_POST
 
 from base.methods import closest_numbers, get_pagination
 from horilla.decorators import (
@@ -48,6 +50,7 @@ from recruitment.models import (
 )
 from recruitment.pipeline_grouper import group_by_queryset
 from recruitment.views.paginator_qry import paginator_qry
+from recruitment.views.views import _can_manage_recruitment, _permission_denied_json
 
 
 @login_required
@@ -98,30 +101,55 @@ def survey_preview(request, pk=None):
 
 
 @login_required
+@is_recruitment_manager(perm="recruitment.change_recruitmentsurvey")
+@require_POST
+@transaction.atomic
 def question_order_update(request):
-    if request.method == "POST":
-        # Extract data from the request
-        question_id = request.POST.get("question_id")
-        new_position = int(request.POST.get("new_position"))
-        qs = RecruitmentSurvey.objects.get(id=question_id)
+    try:
+        question_id = int(request.POST.get("question_id", ""))
+        new_position = int(request.POST.get("new_position", ""))
+        if question_id <= 0 or new_position < 0 or new_position > 500:
+            raise ValueError
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid question order.")}, status=400)
 
-        if qs.sequence > new_position:
-            new_position = new_position
-        if qs.sequence <= new_position:
-            new_position = new_position - 1
-
-        old_qs = RecruitmentSurvey.objects.filter(sequence=new_position)
-        for i in old_qs:
-
-            i.sequence = new_position + 1
-            i.save()
-        qs.sequence = int(new_position)
-        qs.save()
-        return JsonResponse(
-            {"success": True, "message": "Question order updated successfully"}
+    question = (
+        RecruitmentSurvey.objects.select_for_update()
+        .filter(id=question_id)
+        .first()
+    )
+    if question is None:
+        return JsonResponse({"message": _("Question not found.")}, status=404)
+    recruitments = list(question.recruitment_ids.all())
+    if not recruitments and not request.user.has_perm(
+        "recruitment.change_recruitmentsurvey"
+    ):
+        return _permission_denied_json()
+    if any(
+        not _can_manage_recruitment(
+            request, recruitment, "recruitment.change_recruitmentsurvey"
         )
+        for recruitment in recruitments
+    ):
+        return _permission_denied_json()
 
-    return JsonResponse({"error": "Invalid request method"}, status=405)
+    if question.sequence <= new_position:
+        new_position -= 1
+    new_position = max(new_position, 0)
+    displaced = list(
+        RecruitmentSurvey.objects.select_for_update()
+        .filter(sequence=new_position)
+        .exclude(pk=question.pk)
+    )
+    for item in displaced:
+        item.sequence = new_position + 1
+    if displaced:
+        RecruitmentSurvey.objects.bulk_update(displaced, ["sequence"])
+    question.sequence = new_position
+    question.save(update_fields=["sequence"])
+    return JsonResponse(
+        {"success": True, "message": "Question order updated successfully"}
+    )
 
 
 def candidate_survey(request):
@@ -337,12 +365,15 @@ def create_question_template(request):
 
 @login_required
 @permission_required(perm="recruitment.delete_recruitmentsurvey")
+@require_POST
+@transaction.atomic
 def delete_survey_question(request, survey_id):
     """
     This method is used to delete the survey instance
     """
     try:
-        RecruitmentSurvey.objects.get(id=survey_id).delete()
+        survey = RecruitmentSurvey.objects.select_for_update().get(id=survey_id)
+        survey.delete()
         messages.success(request, _("Question was deleted successfully"))
     except RecruitmentSurvey.DoesNotExist:
         messages.error(request, _("Question not found."))
@@ -503,16 +534,27 @@ def create_template(request):
 
 @login_required
 @permission_required("recruitment.delete_surveytemplate")
+@require_POST
+@transaction.atomic
 def delete_template(request):
     """
     This method is used to delete the survey template group
     """
-    title = request.GET.get("title")
-    SurveyTemplate.objects.filter(title=str(title)).delete()
-    if title == "None":
+    title = request.POST.get("title")
+    if not title or title == "None":
         messages.info(request, _("This template group cannot be deleted"))
-    else:
-        messages.success(request, _("Template group deleted"))
+        return JsonResponse({"message": _("Invalid template group.")}, status=400)
+    template = SurveyTemplate.objects.select_for_update().filter(title=title).first()
+    if template is None:
+        return JsonResponse({"message": _("Template group not found.")}, status=404)
+    try:
+        template.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("This template group is in use.")}, status=409
+        )
+    messages.success(request, _("Template group deleted"))
 
     if request.META.get("HTTP_HX_REQUEST") == "true":
         return HttpResponse("<script>$('#filterSubmit').click();</script>")

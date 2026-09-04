@@ -27,7 +27,12 @@
                     title="{{ company.1 }}"
                 >
                     <span class="rounded-full overflow-hidden shrink-0 w-5 h-5 flex items-center justify-center">
-                        <img src="{{ company.2 }}" alt="" class="w-5 h-5 object-cover">
+                        <img
+                            src="{% if company.0 %}{{ company.2 }}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
+                            alt=""
+                            class="w-5 h-5 object-cover"
+                            onerror="this.onerror=null;this.src='{% static 'images/ui/university-seal.jpg' %}'"
+                        >
                     </span>
                     <span class="truncate flex-1">{{ company.1 }}</span>
 

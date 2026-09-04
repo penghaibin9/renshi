@@ -71,7 +71,7 @@
 				{% if perms.recruitment.delete_stagenote or request.user|is_stagemanager %}
 					<div class="position-absolute top-0 end-0 p-4">
 						<span
-							hx-get="{% url 'note-delete' note.id %}"
+							hx-post="{% url 'note-delete' note.id %}"
 							data-target="#activitySidebar"
 							hx-swap="outerHTML swap:1s"
 							hx-target="#candidateNoteItem{{note.id}}"
@@ -124,7 +124,7 @@
 							>
 								<img src="{% static 'images/ui/minus-icon.png' %}"
 									style="display: block; width: 50%; height: 50%"
-									hx-get="{% url 'delete-stage-note-file' file.id %}"
+									hx-post="{% url 'delete-stage-note-file' file.id %}"
 									hx-target="#candidateNoteFile{{file.id}}"
 									hx-swap="outerHTML"
 									hx-on:click="$('#enlargeImageContainer').empty();setTimeout(() => {reloadMessage(this);},100);"

@@ -14,7 +14,6 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
-from base.backends import ConfiguredEmailBackend
 from base.context_processors import AllCompany, AllMyCompanies
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import Company, ShiftRequest, WorkTypeRequest
@@ -24,7 +23,11 @@ from employee.models import (
     EmployeeBankDetails,
     EmployeeWorkInformation,
 )
-from horilla.horilla_middlewares import _thread_locals, set_selected_company
+from horilla.horilla_middlewares import (
+    _thread_locals,
+    current_company_id,
+    set_selected_company,
+)
 from horilla.methods import get_horilla_model_class
 from horilla_documents.models import DocumentRequest
 
@@ -262,7 +265,7 @@ class CompanyMiddleware:
             if company_id == "all":
                 text = "All companies"
             elif company_id == user_company_id:
-                text = "My Company"
+                text = "当前学校"
             else:
                 text = "Other Company"
 
@@ -342,8 +345,11 @@ class CompanyMiddleware:
         _thread_locals.request = request
 
         if not request.user.is_authenticated:
-            set_selected_company(None)
-            return self.get_response(request)
+            company_token = set_selected_company(None)
+            try:
+                return self.get_response(request)
+            finally:
+                current_company_id.reset(company_token)
 
         selected_company = request.session.get("selected_company")
 
@@ -398,11 +404,17 @@ class CompanyMiddleware:
             request.write_company_id = None
 
         # ✅ Store in context
-        set_selected_company(company_id)
+        company_token = set_selected_company(company_id)
         company_obj = self._get_company_obj(request, company_id)
         self._set_company_session(request, company_obj)
 
-        return self.get_response(request)
+        try:
+            return self.get_response(request)
+        finally:
+            # ContextVars persist for the lifetime of the worker context.  A
+            # request tenant must never bleed into the next request, test or
+            # background operation running on the same context.
+            current_company_id.reset(company_token)
 
 
 class ForcePasswordChangeMiddleware:
@@ -470,15 +482,16 @@ class TwoFactorAuthMiddleware:
         if request.path.rstrip("/") in excluded_paths:
             return self.get_response(request)
 
-        if settings.TWO_FACTORS_AUTHENTICATION:
-            try:
-                if ConfiguredEmailBackend().configuration is not None:
-                    if hasattr(request, "user") and request.user.is_authenticated:
-                        if not request.session.get("otp_code_verified", False):
-                            return redirect("/two-factor")
-                else:
-                    return self.get_response(request)
-            except Exception as e:
-                return self.get_response(request)
+        if (
+            settings.TWO_FACTORS_AUTHENTICATION
+            and hasattr(request, "user")
+            and request.user.is_authenticated
+        ):
+            verified = request.session.get("otp_code_verified", False)
+            verified_user = str(
+                request.session.get("mfa_verified_user_id", "") or ""
+            )
+            if not verified or verified_user != str(request.user.pk):
+                return redirect("/two-factor")
 
         return self.get_response(request)

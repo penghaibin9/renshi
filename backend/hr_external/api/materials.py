@@ -6,14 +6,18 @@ hr_external/api/materials.py —— 外聘材料与安全下载 ticket API（B5�
 - POST /api/hr/v1/external-teachers/{profile_id}/materials            登记材料（元数据）
 - POST /api/hr/v1/external-teachers/materials/{material_id}/upload    上传写入私有存储
 - POST /api/hr/v1/external-teachers/materials/{material_id}/download-ticket  签发票据
-- GET  /api/hr/v1/external-teachers/file-ticket?token=...             兑换票据（流式下载/返回引用）
+- GET  /api/hr/v1/external-teachers/file-ticket                       兑换票据（票据仅通过请求头传递）
 """
 
 from __future__ import annotations
 
 import json
+import logging
 
+from django.conf import settings
+from django.db import transaction
 from django.http import FileResponse
+from django.views.decorators.http import require_GET, require_POST
 
 from hr_external.api.base import (
     api_root,
@@ -23,27 +27,35 @@ from hr_external.api.base import (
 )
 from hr_external.models import HrExternalMaterial
 from hr_external.permissions import require_hr_external_permission
+from hr_external.services.audit_service import write_external_audit
+from hr_external.services.material_service import (
+    MAX_MATERIAL_SIZE,
+    MaterialAccessDenied,
+    MaterialFileRejected,
+    MaterialInputInvalid,
+    MaterialService,
+    TicketInvalid,
+    validate_material_file,
+)
+from hr_external.services.storage_backends import get_material_storage
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_ticket_token(request) -> str:
-    """优先从 header 取 ticket（避免 URL/access log 泄漏），兼容旧 query 参数。"""
+    """只从 header 取 ticket，禁止 URL/access log/浏览器历史泄漏。"""
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[len("Bearer ") :].strip()
     header = request.headers.get("X-Portal-Token", "")
     if header:
         return header.strip()
-    return (request.GET.get("token") or "").strip()
-from hr_external.services.material_service import (
-    MaterialAccessDenied,
-    MaterialService,
-    TicketInvalid,
-)
+    return ""
 
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
@@ -55,9 +67,12 @@ def material_collection(request, profile_id):
     """GET/POST /api/hr/v1/external-teachers/{profile_id}/materials"""
     if request.method == "POST":
         return _material_create(request, profile_id)
-    return _material_list(request, profile_id)
+    if request.method == "GET":
+        return _material_list(request, profile_id)
+    return error_response(request, "METHOD_NOT_ALLOWED", "仅支持 GET 或 POST", 405)
 
 
+@require_GET
 @require_hr_external_permission("hr08.profile.view")
 def _material_list(request, profile_id):
     ctx, err = _ctx(request)
@@ -78,6 +93,7 @@ def _material_list(request, profile_id):
                 "status": m.status,
                 "originalFilename": m.original_filename,
                 "sha256": m.sha256,
+                "hasFile": bool(m.storage_ref),
             }
             for m in qs
         ],
@@ -86,9 +102,10 @@ def _material_list(request, profile_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.sensitive_view")
 def _material_create(request, profile_id):
-    """POST .../{profile_id}/materials body: {category, title, storageRef?, originalFilename?, mimeType?, sizeBytes?, sha256?}"""
+    """POST .../{profile_id}/materials body: {category, title, sensitivityLevel?}。"""
     ctx, err = _ctx(request)
     if err:
         return err
@@ -103,14 +120,11 @@ def _material_create(request, profile_id):
             external_profile_id=profile_id,
             category=payload.get("category") or "OTHER",
             title=payload.get("title") or "",
-            storage_ref=payload.get("storageRef") or "",
-            original_filename=payload.get("originalFilename") or "",
-            mime_type=payload.get("mimeType") or "",
-            size_bytes=payload.get("sizeBytes") or 0,
-            sha256=payload.get("sha256") or "",
             sensitivity_level=payload.get("sensitivityLevel") or "SENSITIVE",
             uploaded_by=ctx.user_id,
         )
+    except MaterialInputInvalid as exc:
+        return error_response(request, exc.code, str(exc), 400)
     except MaterialAccessDenied as exc:
         return error_response(request, exc.code, str(exc), 404)
 
@@ -119,9 +133,10 @@ def _material_create(request, profile_id):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.sensitive_view")
 def material_download_ticket(request, material_id):
-    """POST .../materials/{material_id}/download-ticket body: {purpose?} → 短时效票据。"""
+    """POST .../materials/{material_id}/download-ticket body: {purpose} → 一次性票据。"""
     ctx, err = _ctx(request)
     if err:
         return err
@@ -132,19 +147,26 @@ def material_download_ticket(request, material_id):
         return error_response(request, "INVALID_REQUEST", "材料不存在", 404)
     try:
         payload = json.loads(request.body or b"{}")
-        purpose = payload.get("purpose") or ""
+        purpose = str(payload.get("purpose") or "").strip()
     except json.JSONDecodeError:
-        purpose = ""
+        return error_response(request, "INVALID_REQUEST", "请求体必须是 JSON", 400)
+    if not purpose:
+        return error_response(request, "AUDIT_REASON_REQUIRED", "请填写下载用途", 400)
+    if len(purpose) > 512:
+        return error_response(request, "INVALID_REQUEST", "下载用途不得超过 512 个字符", 400)
 
     service = MaterialService()
     token = service.sign_token(tenant_id=ctx.tenant_id, material_id=str(material.id))
-    ticket = service.issue_ticket(
-        tenant_id=ctx.tenant_id,
-        material=material,
-        actor_user_id=ctx.user_id,
-        purpose=purpose,
-        token=token,  # 保证 hash 与返回给前端的 token 一致
-    )
+    try:
+        ticket = service.issue_ticket(
+            tenant_id=ctx.tenant_id,
+            material=material,
+            actor_user_id=ctx.user_id,
+            purpose=purpose,
+            token=token,  # 保证 hash 与返回给前端的 token 一致
+        )
+    except MaterialAccessDenied as exc:
+        return error_response(request, exc.code, str(exc), 409)
     body = api_root(request)
     body["data"] = {
         "ticket": token,
@@ -152,11 +174,12 @@ def material_download_ticket(request, material_id):
         "maxUses": ticket.max_uses,
         # 生产级（A32）：downloadUrl 不内嵌 token（避免进日志/历史）；
         # 下载请带 Authorization: Bearer <ticket> 或 X-Portal-Token 头。
-        "downloadPath": "/api/hr/v1/external-teachers/file-ticket",
+        "downloadPath": "/api/v1/hr/external-teachers/file-ticket",
     }
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.profile.sensitive_view")
 def material_upload(request, material_id):
     """POST .../materials/{material_id}/upload (multipart: file)
@@ -173,41 +196,66 @@ def material_upload(request, material_id):
     uploaded = request.FILES.get("file")
     if uploaded is None:
         return error_response(request, "INVALID_REQUEST", "缺少 file 字段", 400)
-
-    content = uploaded.read()
-    try:
-        # 生产级：扩展名 + magic bytes + 大小校验（service 层统一入口）
-        from hr_external.services.material_service import (
-            MaterialFileRejected,
-            validate_material_file,
+    if getattr(settings, "MALWARE_SCAN_REQUIRED", False) and not getattr(
+        uploaded, "_malware_scan_complete", False
+    ):
+        return error_response(
+            request, "MALWARE_SCAN_REQUIRED", "材料尚未通过安全检查", 503
         )
+    if int(getattr(uploaded, "size", 0) or 0) > MAX_MATERIAL_SIZE:
+        return error_response(request, "MATERIAL_FILE_REJECTED", "文件超过 50MB 限制", 400)
 
+    content_buffer = bytearray()
+    for chunk in uploaded.chunks():
+        content_buffer.extend(chunk)
+        if len(content_buffer) > MAX_MATERIAL_SIZE:
+            return error_response(request, "MATERIAL_FILE_REJECTED", "文件超过 50MB 限制", 400)
+    content = bytes(content_buffer)
+    try:
         validate_material_file(
-            filename=uploaded.name or "", content=content
+            filename=uploaded.name or "",
+            content=content,
+            declared_mime=getattr(uploaded, "content_type", "") or "",
         )
     except MaterialFileRejected as exc:
         return error_response(request, exc.code, str(exc), 400)
 
-    material = MaterialService().save_material_file(
-        material=material,
-        tenant_id=ctx.tenant_id,
-        content=content,
-        original_filename=uploaded.name or "",
-        mime_type=getattr(uploaded, "content_type", "") or "",
-    )
-    write_external_audit(
-        tenant_id=ctx.tenant_id,
-        action="ExternalMaterialUploaded",
-        actor_user_id=ctx.user_id,
-        external_profile_id=material.external_profile_id_id,
-        business_type="HR08_MATERIAL",
-        business_id=str(material.id),
-        source="api",
-    )
+    storage = get_material_storage()
+    old_ref = material.storage_ref
+    new_ref = ""
+    try:
+        with transaction.atomic():
+            material = MaterialService().save_material_file(
+                material=material,
+                tenant_id=ctx.tenant_id,
+                content=content,
+                original_filename=uploaded.name or "",
+                mime_type=getattr(uploaded, "content_type", "") or "",
+                storage=storage,
+            )
+            new_ref = material.storage_ref
+            write_external_audit(
+                tenant_id=ctx.tenant_id,
+                action="ExternalMaterialUploaded",
+                actor_user_id=ctx.user_id,
+                external_profile_id=material.external_profile_id_id,
+                business_type="HR08_MATERIAL",
+                business_id=str(material.id),
+                source="api",
+            )
+    except (MaterialAccessDenied, MaterialFileRejected) as exc:
+        return error_response(request, exc.code, str(exc), 409)
+    except Exception:  # audit/DB fail-closed; rollback leaves old metadata authoritative
+        if new_ref and new_ref != old_ref:
+            storage.delete(new_ref)
+        logger.exception("HR08 material upload transaction failed")
+        return error_response(
+            request, "MATERIAL_AUDIT_UNAVAILABLE", "材料上传审计暂不可用，请稍后重试", 503
+        )
     body = api_root(request)
     body["data"] = {
         "id": str(material.id),
-        "storageRef": material.storage_ref,
+        "hasFile": True,
         "sizeBytes": material.size_bytes,
         "sha256": material.sha256,
         "note": "私有存储，下载需 HMAC ticket（00 §34）",
@@ -215,12 +263,13 @@ def material_upload(request, material_id):
     return json_response(request, body)
 
 
+@require_GET
 def file_ticket_redeem(request):
-    """GET .../file-ticket → 校验票据并返回材料（有文件则流式下载，否则返回引用）。
+    """GET .../file-ticket → 校验一次性票据并流式下载材料。
 
     ticket 本身即授权（HMAC + 时效 + 次数 + 绑定 tenant），不要求登录/HR 权限——
     外聘本人持有效票据即可下载（§90/§92）；下载动作已审计。
-    生产级：token 优先从 Authorization: Bearer / X-Portal-Token 头取（避免 URL 日志泄漏）。
+    生产级：token 只从 Authorization: Bearer / X-Portal-Token 头取。
     """
     token = _extract_ticket_token(request)
     if not token:
@@ -230,32 +279,18 @@ def file_ticket_redeem(request):
     except (TicketInvalid, MaterialAccessDenied) as exc:
         return error_response(request, exc.code, str(exc), 403)
 
-    # 文件存在 → 流式下载（ticket 已校验+已审计）
-    if material.storage_ref:
-        try:
-            stream = MaterialService().open_authorized_stream(material)
-        except MaterialAccessDenied:
-            return error_response(request, "MATERIAL_ACCESS_DENIED", "文件不存在", 404)
-        response = FileResponse(
-            stream,
-            as_attachment=True,
-            filename=material.original_filename or material.title,
-        )
-        response["Cache-Control"] = "no-store"
-        # 生产级：防 MIME sniffing（即使附件下载也加 nosniff）
-        response["X-Content-Type-Options"] = "nosniff"
-        response["Content-Security-Policy"] = "default-src 'none'; sandbox"
-        return response
-
-    body = api_root(request)
-    body["data"] = {
-        "materialId": str(material.id),
-        "title": material.title,
-        "storageRef": material.storage_ref,
-        "originalFilename": material.original_filename,
-        "mimeType": material.mime_type,
-        "sizeBytes": material.size_bytes,
-        "sha256": material.sha256,
-        "note": "private storage + short signed URL（00 §34）；下载已审计",
-    }
-    return json_response(request, body)
+    try:
+        stream = MaterialService().open_authorized_stream(material)
+    except MaterialAccessDenied:
+        return error_response(request, "MATERIAL_ACCESS_DENIED", "文件不存在", 404)
+    response = FileResponse(
+        stream,
+        as_attachment=True,
+        filename=material.original_filename or material.title,
+        content_type=material.mime_type or "application/octet-stream",
+    )
+    response["Cache-Control"] = "no-store"
+    response["Pragma"] = "no-cache"
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    return response

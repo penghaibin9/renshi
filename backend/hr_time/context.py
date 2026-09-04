@@ -79,7 +79,7 @@ class HrTimeContext:
         return local_now.date()
 
     def now(self) -> datetime:
-        return datetime.now(timezone.utc).astimezone(self.tzinfo())
+        return self.request_snapshot_at.astimezone(self.tzinfo())
 
     def tzinfo(self):
         import zoneinfo

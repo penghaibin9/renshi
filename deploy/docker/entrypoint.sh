@@ -19,6 +19,72 @@ while ! nc -z "$DB_HOST" "$DB_PORT"; do
 done
 echo "MySQL TCP endpoint is ready."
 
+# A database name/user rename in Compose does not mutate an existing MySQL
+# data volume.  Probe the canonical URL first and, for local upgrades only,
+# fall back to the explicitly configured legacy URL.  This keeps fresh
+# installs on the canonical schema without forcing operators to discard or
+# manually rewrite an existing development database.
+if [ -n "${LEGACY_DATABASE_URL:-}" ]; then
+  if ! python - <<'PY'
+import os
+from urllib.parse import parse_qs, unquote, urlparse
+
+import MySQLdb
+
+
+def connect(url):
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    connection = MySQLdb.connect(
+        host=parsed.hostname or "db",
+        port=parsed.port or 3306,
+        user=unquote(parsed.username or ""),
+        passwd=unquote(parsed.password or ""),
+        db=parsed.path.lstrip("/"),
+        charset=query.get("charset", ["utf8mb4"])[0],
+        connect_timeout=5,
+    )
+    connection.close()
+
+
+try:
+    connect(os.environ["DATABASE_URL"])
+except MySQLdb.Error:
+    raise SystemExit(1)
+PY
+  then
+    if LEGACY_DATABASE_URL="$LEGACY_DATABASE_URL" python - <<'PY'
+import os
+from urllib.parse import parse_qs, unquote, urlparse
+
+import MySQLdb
+
+parsed = urlparse(os.environ["LEGACY_DATABASE_URL"])
+query = parse_qs(parsed.query)
+try:
+    connection = MySQLdb.connect(
+        host=parsed.hostname or "db",
+        port=parsed.port or 3306,
+        user=unquote(parsed.username or ""),
+        passwd=unquote(parsed.password or ""),
+        db=parsed.path.lstrip("/"),
+        charset=query.get("charset", ["utf8mb4"])[0],
+        connect_timeout=5,
+    )
+    connection.close()
+except MySQLdb.Error:
+    raise SystemExit(1)
+PY
+    then
+      echo "Canonical local database is unavailable; using the compatible existing schema."
+      export DATABASE_URL="$LEGACY_DATABASE_URL"
+    else
+      echo "ERROR: neither the canonical nor compatible existing database is accessible."
+      exit 1
+    fi
+  fi
+fi
+
 # Development may use the documented weak key. Production is fail-closed in
 # Django settings and must provide a unique secret explicitly.
 SECRET_KEY_FILE="/app/.runtime/media/.generated_secret_key"
@@ -53,16 +119,22 @@ fi
 if [ -z "${COLLECTSTATIC_ON_START:-}" ]; then
   if $is_production; then COLLECTSTATIC_ON_START=0; else COLLECTSTATIC_ON_START=1; fi
 fi
+if [ -z "${CHECK_ON_START:-}" ]; then
+  if $is_production; then CHECK_ON_START=0; else CHECK_ON_START=1; fi
+fi
 
+prepare_args=()
 if [ "$MIGRATE_ON_START" = "1" ] || [ "$MIGRATE_ON_START" = "true" ] || [ "$MIGRATE_ON_START" = "True" ]; then
-  python manage.py migrate --noinput
+  prepare_args+=("--migrate")
 fi
-
 if [ "$COLLECTSTATIC_ON_START" = "1" ] || [ "$COLLECTSTATIC_ON_START" = "true" ] || [ "$COLLECTSTATIC_ON_START" = "True" ]; then
-  python manage.py collectstatic --noinput
+  prepare_args+=("--collectstatic")
 fi
-
-python manage.py check
+if [ "$CHECK_ON_START" = "1" ] || [ "$CHECK_ON_START" = "true" ] || [ "$CHECK_ON_START" = "True" ]; then
+  python manage.py prepare_runtime "${prepare_args[@]}"
+elif [ "${#prepare_args[@]}" -gt 0 ]; then
+  python manage.py prepare_runtime "${prepare_args[@]}"
+fi
 
 echo "Starting server..."
 exec "$@"

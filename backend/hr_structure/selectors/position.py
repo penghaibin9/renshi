@@ -18,7 +18,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from hr_structure.models import HrPosition, HrPositionPool, HrPositionReservation
-from hr_structure.scope import Hr02Scope
+from hr_structure.scope import Hr02Scope, organization_ids_for_scope
 
 
 class PositionSelector:
@@ -29,7 +29,7 @@ class PositionSelector:
         occupancy_service=None,
     ):
         self.scope = scope
-        self.as_of = as_of or date.today()
+        self.as_of = as_of or timezone.localdate()
         if occupancy_service is None:
             from hr_staff.services.effective_dated_query_service import (
                 EffectiveDatedQueryService,
@@ -39,10 +39,12 @@ class PositionSelector:
         self.occupancy_service = occupancy_service
 
     def _base(self):
-        return HrPosition.objects.filter(
+        qs = HrPosition.objects.filter(
             tenant_id=self.scope.tenant_id,
             validity_from__lte=self.as_of,
         ).filter(Q(validity_to__isnull=True) | Q(validity_to__gt=self.as_of))
+        allowed = organization_ids_for_scope(self.scope, self.as_of)
+        return qs if allowed is None else qs.filter(organization_id__in=allowed)
 
     def _occupancy_counts(self, position_ids) -> dict:
         return self.occupancy_service.position_occupancy_by_position_as_of(
@@ -203,6 +205,9 @@ class PositionSelector:
                     status="ACTIVE",
                 ).first()
             )
+            allowed = organization_ids_for_scope(self.scope, self.as_of)
+            if allowed is not None and int(organization_id) not in allowed:
+                pool = None
             if pool is None:
                 return {"available": False, "reason": "HR02_POSITION_NOT_FOUND"}
             reference = self._reservation_reference()

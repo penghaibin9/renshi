@@ -147,7 +147,7 @@ class RenewalService:
             new_eng = HrExternalEngagement.objects.create(
                 tenant_id=review.tenant_id,
                 # 短序号防超长（多次续聘不拼接累积；unique 由 DB 约束兜底）
-                engagement_no=f"E{(next_start or date.today()).year}{_uuid.uuid4().hex[:8].upper()}",
+                engagement_no=f"E{(next_start or timezone.localdate()).year}{_uuid.uuid4().hex[:8].upper()}",
                 person_id=eng.person_id,
                 external_profile_id=eng.external_profile_id,
                 category_id=new_category,
@@ -155,7 +155,7 @@ class RenewalService:
                 source_type=eng.source_type,
                 source_case_id=eng.source_case_id,
                 host_organization_id=new_host_org,
-                start_at=next_start or eng.end_at or date.today(),
+                start_at=next_start or eng.end_at or timezone.localdate(),
                 end_at=next_end,
                 review_at=next_end,
                 workload_cap=eng.workload_cap,

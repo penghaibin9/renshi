@@ -1,8 +1,7 @@
 """
 hr_recruitment/urls.py
 
-HR04 页面路由（挂载 /hr/recruitment/ 下）。
-S1 阶段：占位骨架；S3-S8 逐模块挂载：
+HR04 正式页面路由（挂载 /hr/recruitment/ 下）：
   /hr/recruitment/plans            → HR04-01 年度用人计划
   /hr/recruitment/campaigns        → HR04-02 招聘项目与岗位（默认入口/控制台）
   /hr/recruitment/candidates       → HR04-03 人才库与应聘者

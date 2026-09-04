@@ -36,7 +36,12 @@ from django.core.validators import validate_ipv46_address
 from django.db import transaction
 from django.db.models import ProtectedError
 from django.forms import ValidationError
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import (
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseForbidden,
+    JsonResponse,
+)
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -128,6 +133,50 @@ from horilla.decorators import (
     permission_required,
 )
 from notifications.signals import notify
+
+
+def _posted_ids(request):
+    """Parse unique positive integer IDs from the POST body."""
+    posted_values = request.POST.getlist("ids")
+    values = posted_values
+    if len(posted_values) == 1:
+        try:
+            parsed = json.loads(posted_values[0])
+            if isinstance(parsed, list):
+                values = parsed
+        except (TypeError, json.JSONDecodeError):
+            pass
+    if not isinstance(values, list) or not values or len(values) > 500:
+        return []
+    result = []
+    for value in values:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return []
+        if value <= 0 or value in result:
+            return []
+        result.append(value)
+    return result
+
+
+def _subtract_approved_overtime(attendance):
+    """Keep the employee's monthly overtime balance consistent on deletion."""
+    if not attendance.attendance_overtime_approve:
+        return
+    overtime = AttendanceOverTime.objects.select_for_update().filter(
+        employee_id_id=attendance.employee_id_id,
+        month=attendance.attendance_date.strftime("%B").lower(),
+        year=str(attendance.attendance_date.year),
+    ).first()
+    if overtime is None:
+        return
+    total_seconds = strtime_seconds(overtime.overtime)
+    attendance_seconds = strtime_seconds(attendance.attendance_overtime)
+    remaining_seconds = max(0, total_seconds - attendance_seconds)
+    overtime.overtime = format_time(remaining_seconds)
+    overtime.overtime_second = remaining_seconds
+    overtime.save(update_fields=["overtime", "overtime_second"])
 
 
 def attendance_validate(attendance):
@@ -475,6 +524,7 @@ def attendance_view_redirect(request):
 @login_required
 @permission_required("attendance.delete_attendance")
 @require_http_methods(["POST"])
+@transaction.atomic
 def attendance_delete(request, obj_id):
     """
     This method is used to delete attendance.
@@ -482,23 +532,8 @@ def attendance_delete(request, obj_id):
         obj_id : attendance id
     """
     try:
-        attendance = Attendance.objects.get(id=obj_id)
-        month = attendance.attendance_date
-        month = month.strftime("%B").lower()
-        overtime = attendance.employee_id.employee_overtime.filter(month=month).last()
-        if overtime is not None:
-            if attendance.attendance_overtime_approve:
-                # Subtract overtime of this attendance
-                total_overtime = strtime_seconds(overtime.overtime)
-                attendance_overtime_seconds = strtime_seconds(
-                    attendance.attendance_overtime
-                )
-                if total_overtime > attendance_overtime_seconds:
-                    total_overtime = total_overtime - attendance_overtime_seconds
-                else:
-                    total_overtime = attendance_overtime_seconds - total_overtime
-                overtime.overtime = format_time(total_overtime)
-                overtime.save()
+        attendance = Attendance.objects.select_for_update().get(id=obj_id)
+        _subtract_approved_overtime(attendance)
         try:
             attendance.delete()
             messages.success(request, _("Attendance deleted."))
@@ -523,57 +558,37 @@ def attendance_delete(request, obj_id):
 @login_required
 @permission_required("attendance.delete_attendance")
 @require_http_methods(["POST"])
+@transaction.atomic
 def attendance_bulk_delete(request):
     """
     This method is used to delete a bulk of attendances
     """
-    success_count = 0
-    error_messages = []
-    ids = request.POST.getlist("ids", "[]")
-    attendances = Attendance.objects.filter(id__in=ids)
-    employee_ids = attendances.values_list("employee_id", flat=True)
-    overtimes = AttendanceOverTime.objects.filter(
-        employee_id__in=employee_ids
-    ).in_bulk()
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": "Invalid attendance IDs"}, status=400)
+    attendances = list(
+        Attendance.objects.select_for_update()
+        .select_related("employee_id")
+        .filter(id__in=ids)
+    )
+    if len(attendances) != len(ids):
+        return JsonResponse({"message": _("Attendance not found.")}, status=404)
 
-    with transaction.atomic():
+    try:
         for attendance in attendances:
-            try:
-                month = attendance.attendance_date.strftime("%B").lower()
-                overtime = overtimes.get(attendance.employee_id.id)
-
-                if overtime and attendance.attendance_overtime_approve:
-                    # Calculate the new overtime
-                    total_overtime = strtime_seconds(overtime.overtime)
-                    attendance_overtime_seconds = strtime_seconds(
-                        attendance.attendance_overtime
-                    )
-                    total_overtime = abs(total_overtime - attendance_overtime_seconds)
-                    overtime.overtime = format_time(total_overtime)
-                    overtime.save()
-
-                attendance.delete()
-                success_count += 1
-
-            except ProtectedError as e:
-                model_verbose_names_set = {
-                    __(obj._meta.verbose_name.capitalize())
-                    for obj in e.protected_objects
-                }
-                model_names_str = ", ".join(model_verbose_names_set)
-                error_messages.append(
-                    f"An attendance entry is protected by: {model_names_str}."
-                )
-
-    # Build response messages
-    if success_count:
-        messages.success(
-            request,
-            _("%(success_count)s attendances deleted successfully.")
-            % {"success_count": success_count},
+            _subtract_approved_overtime(attendance)
+            attendance.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more attendance records are protected.")},
+            status=409,
         )
-    for error in error_messages:
-        messages.error(request, error)
+    messages.success(
+        request,
+        _("%(success_count)s attendances deleted successfully.")
+        % {"success_count": len(attendances)},
+    )
     return JsonResponse({"message": "Success"})
 
 
@@ -717,6 +732,7 @@ def attendance_overtime_update(request, obj_id):
 @login_required
 @permission_required("attendance.delete_attendanceovertime")
 @require_http_methods(["POST"])
+@transaction.atomic
 def attendance_overtime_delete(request, obj_id):
     """
     This method is used to delete attendance overtime
@@ -725,8 +741,9 @@ def attendance_overtime_delete(request, obj_id):
     """
     previous_data = request.GET.urlencode()
     hx_target = request.META.get("HTTP_HX_TARGET", None)
+    employee_id = None
     try:
-        attendance = AttendanceOverTime.objects.get(id=obj_id)
+        attendance = AttendanceOverTime.objects.select_for_update().get(id=obj_id)
         employee_id = attendance.employee_id.id
         attendance.delete()
         if hx_target == "ot-table":
@@ -747,40 +764,47 @@ def attendance_overtime_delete(request, obj_id):
                 return redirect(
                     f"/attendance/attendance-overtime-search?{previous_data}"
                 )
-            else:
+            elif employee_id is not None:
                 return redirect(
                     f"/attendance/attendance-overtime-individual-tab/{employee_id}/?deleted=true"
                 )
+            return HorillaRedirect(request)
         else:
             return HorillaRedirect(request)
     elif hx_target:
         return HttpResponse()
+    return HorillaRedirect(request)
 
 
 @login_required
 @permission_required("attendance.delete_attendanceovertime")
+@require_http_methods(["POST"])
+@transaction.atomic
 def attendance_account_bulk_delete(request):
     """
     This method is used to bulk delete for Payslip
     """
-    ids = json.loads(request.POST.get("ids", "[]"))
-    for id in ids:
-        try:
-            hour_account = AttendanceOverTime.objects.get(id=id)
-            hour_account.delete()
-            messages.success(
-                request,
-                _("{employee} hour account deleted.").format(
-                    employee=hour_account.employee_id
-                ),
-            )
-        except AttendanceOverTime.DoesNotExist:
-            messages.error(request, _("Hour account not found."))
-        except ProtectedError:
-            messages.error(
-                request,
-                _("You cannot delete {hour_account}").format(hour_account=hour_account),
-            )
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": _("Invalid hour account IDs.")}, status=400)
+    hour_accounts = list(
+        AttendanceOverTime.objects.select_for_update()
+        .select_related("employee_id")
+        .filter(pk__in=ids)
+    )
+    if len(hour_accounts) != len(ids):
+        return JsonResponse({"message": _("Hour account not found.")}, status=404)
+    try:
+        AttendanceOverTime.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more hour accounts are protected.")}, status=409
+        )
+    messages.success(
+        request,
+        _("%(count)s hour accounts deleted.") % {"count": len(hour_accounts)},
+    )
     return JsonResponse({"message": "Success"})
 
 
@@ -898,7 +922,8 @@ def activity_single_view(request, obj_id):
 
 @login_required
 @permission_required("attendance.delete_attendanceactivity")
-@require_http_methods(["POST", "DELETE"])
+@require_http_methods(["POST"])
+@transaction.atomic
 def attendance_activity_delete(request, obj_id):
     """
     This method is used to delete attendance activity
@@ -909,7 +934,7 @@ def attendance_activity_delete(request, obj_id):
     request_copy.pop("instances_ids", None)
     previous_data = request_copy.urlencode()
     try:
-        AttendanceActivity.objects.get(id=obj_id).delete()
+        AttendanceActivity.objects.select_for_update().get(id=obj_id).delete()
         messages.success(request, _("Attendance activity deleted"))
     except AttendanceActivity.DoesNotExist:
         messages.error(request, _("Attendance activity Does not exists.."))
@@ -934,56 +959,33 @@ def attendance_activity_delete(request, obj_id):
 @login_required
 @permission_required("attendance.delete_attendanceactivity")
 @require_http_methods(["POST"])
+@transaction.atomic
 def attendance_activity_bulk_delete(request):
     """
     Deletes a bulk of AttendanceActivity records based on a list of IDs.
     """
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": _("Invalid activity IDs.")}, status=400)
+    activities = list(
+        AttendanceActivity.objects.select_for_update().filter(pk__in=ids)
+    )
+    if len(activities) != len(ids):
+        return JsonResponse({"message": _("Attendance activity not found.")}, status=404)
     try:
-        ids_json = request.POST.get("ids", "[]")
-
-        try:
-            ids = json.loads(ids_json)
-        except json.JSONDecodeError:
-            messages.error(request, _("Invalid list of IDs provided."))
-            return HttpResponse("<script>$('.filterButton')[0].click()</script>")
-
-        try:
-            ids = [int(i) for i in ids]
-        except (ValueError, TypeError):
-            messages.error(request, _("Invalid list of IDs provided."))
-            return HttpResponse("<script>$('.filterButton')[0].click()</script>")
-
-        if not ids:
-            messages.warning(
-                request, _("No attendance activities selected for deletion.")
-            )
-            return HttpResponse("<script>$('.filterButton')[0].click()</script>")
-
-        # Perform the delete operation in a transaction
-        with transaction.atomic():
-            activities = AttendanceActivity.objects.filter(id__in=ids)
-            count = activities.count()
-            activities.delete()
-
-        if count > 0:
-            messages.success(
-                request,
-                _("{count} attendance activities deleted successfully.").format(
-                    count=count
-                ),
-            )
-        else:
-            messages.info(
-                request,
-                _("No matching attendance activities were found to delete."),
-            )
-
-    except Exception as e:
-        logger.exception("Error during bulk delete of attendance activities")
-        messages.error(
-            request,
-            _("Failed to delete attendance activities: {error}").format(error=str(e)),
+        AttendanceActivity.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more attendance activities are protected.")},
+            status=409,
         )
+    messages.success(
+        request,
+        _("{count} attendance activities deleted successfully.").format(
+            count=len(activities)
+        ),
+    )
 
     return HttpResponse("<script>$('.filterButton')[0].click()</script>")
 
@@ -1352,79 +1354,69 @@ def validation_condition_delete(request, obj_id):
 @login_required
 @require_http_methods(["POST"])
 @manager_can_enter("attendance.change_attendance")
+@transaction.atomic
 def validate_bulk_attendance(request):
     """
     This method is used to validate a bulk of attendances.
     """
-    ids = json.loads(request.POST["ids"])
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": "Invalid attendance IDs"}, status=400)
     validate_req_count = 0
-    success_messages = []
     error_messages = []
-    filtered_ids = []
-
-    for obj_id in ids:
-        try:
-            attendance = Attendance.objects.get(id=obj_id)
-            if attendance.employee_id.id != request.user.employee_get.id:
-                filtered_ids.append(obj_id)
-        except Attendance.DoesNotExist:
-            error_messages.append(_("Attendance not found"))
-        except (OverflowError, ValueError):
-            error_messages.append(_("Invalid attendance ID"))
-
-    if request.user.is_superuser:
-        filtered_ids = ids
-
-    for obj_id in filtered_ids:
-        try:
-            attendance = Attendance.objects.get(id=obj_id)
-
-            if attendance.is_validate_request:
-                error_messages.append(
-                    _(
-                        "Pending attendance update request for {}'s attendance on {}!"
-                    ).format(attendance.employee_id, attendance.attendance_date)
+    attendances = list(
+        Attendance.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids)
+    )
+    for attendance in attendances:
+        can_manage = (
+            request.user.is_superuser
+            or request.user.has_perm("attendance.change_attendance")
+            or is_reportingmanger(request, attendance)
+        )
+        if not can_manage or (
+            not request.user.is_superuser
+            and attendance.employee_id_id == request.user.employee_get.id
+        ):
+            error_messages.append(_("You cannot validate this attendance."))
+            continue
+        if attendance.is_validate_request:
+            error_messages.append(
+                _("Pending attendance update request for {}'s attendance on {}!").format(
+                    attendance.employee_id, attendance.attendance_date
                 )
-                continue
-
-            attendance.attendance_validated = True
-            # Recalculate worked hours from attendance activities before validation
-            # to ensure Hours Account reflects actual worked time.
-            # Fixes: https://github.com/horilla/horilla-hr/issues/1055
-            if (
-                not attendance.attendance_worked_hour
-                or attendance.attendance_worked_hour == "00:00"
-            ):
-                at_work_seconds = attendance.get_at_work_from_activities()
-                if at_work_seconds > 0:
-                    attendance.attendance_worked_hour = format_time(at_work_seconds)
-            attendance.save()
-            validate_req_count += 1
-
-            # Send notification
-            notify.send(
-                request.user.employee_get,
-                recipient=attendance.employee_id.employee_user_id,
-                verb=f"Your attendance for the date {attendance.attendance_date} is validated",
-                verb_ar=f"تم التحقق من حضورك في تاريخ {attendance.attendance_date}",
-                verb_de=f"Ihre Anwesenheit für das Datum {attendance.attendance_date} wurde bestätigt",
-                verb_es=f"Se ha validado su asistencia para la fecha {attendance.attendance_date}",
-                verb_fr=f"Votre présence pour la date {attendance.attendance_date} est validée",
-                redirect=reverse("view-my-attendance") + f"?id={attendance.id}",
-                icon="checkmark",
             )
+            continue
 
-        except Attendance.DoesNotExist:
-            error_messages.append(_("Attendance not found"))
-        except (OverflowError, ValueError):
-            error_messages.append(_("Invalid attendance ID"))
+        attendance.attendance_validated = True
+        if (
+            not attendance.attendance_worked_hour
+            or attendance.attendance_worked_hour == "00:00"
+        ):
+            at_work_seconds = attendance.get_at_work_from_activities()
+            if at_work_seconds > 0:
+                attendance.attendance_worked_hour = format_time(at_work_seconds)
+        attendance.save()
+        validate_req_count += 1
+        notify.send(
+            request.user.employee_get,
+            recipient=attendance.employee_id.employee_user_id,
+            verb=f"Your attendance for the date {attendance.attendance_date} is validated",
+            verb_ar=f"تم التحقق من حضورك في تاريخ {attendance.attendance_date}",
+            verb_de=f"Ihre Anwesenheit für das Datum {attendance.attendance_date} wurde bestätigt",
+            verb_es=f"Se ha validado su asistencia para la fecha {attendance.attendance_date}",
+            verb_fr=f"Votre présence pour la date {attendance.attendance_date} est validée",
+            redirect=reverse("view-my-attendance") + f"?id={attendance.id}",
+            icon="checkmark",
+        )
 
     # Handle messages
     if validate_req_count > 0:
         messages.success(
             request, _("{} Attendances validated.").format(validate_req_count)
         )
-    for msg in success_messages + error_messages:
+    for msg in error_messages:
         if "Pending" in msg:
             messages.info(request, msg)
         else:
@@ -1435,6 +1427,8 @@ def validate_bulk_attendance(request):
 
 @login_required
 @manager_can_enter("attendance.change_attendance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def validate_this_attendance(request, obj_id):
     """
     This method is used to validate attendance
@@ -1442,7 +1436,13 @@ def validate_this_attendance(request, obj_id):
         id  : attendance id
     """
     try:
-        attendance = Attendance.objects.get(id=obj_id)
+        attendance = Attendance.objects.select_for_update().get(id=obj_id)
+        if not (
+            request.user.is_superuser
+            or request.user.has_perm("attendance.change_attendance")
+            or is_reportingmanger(request, attendance)
+        ):
+            return HttpResponse(status=403)
         if not request.user.is_superuser:
             if attendance.employee_id.id == request.user.employee_get.id:
                 messages.error(request, _("You cannot validate your own attendance."))
@@ -1489,6 +1489,8 @@ def validate_this_attendance(request, obj_id):
 
 
 @login_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def revalidate_this_attendance(request, obj_id):
     """
     This method is used to not validate the attendance.
@@ -1496,7 +1498,7 @@ def revalidate_this_attendance(request, obj_id):
         id  : attendance id
     """
 
-    attendance = Attendance.find(obj_id)
+    attendance = Attendance.objects.select_for_update().filter(id=obj_id).first()
     if not attendance:
         return HorillaRedirect(
             request, message=_("No Attendance found matching the query.")
@@ -1532,7 +1534,8 @@ def revalidate_this_attendance(request, obj_id):
 
 @login_required
 @manager_can_enter("attendance.change_attendance")
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["POST"])
+@transaction.atomic
 def approve_overtime(request, obj_id):
     """
     This method is used to approve attendance overtime
@@ -1540,7 +1543,13 @@ def approve_overtime(request, obj_id):
         obj_id  : attendance id
     """
     try:
-        attendance = Attendance.objects.get(id=obj_id)
+        attendance = Attendance.objects.select_for_update().get(id=obj_id)
+        if not (
+            request.user.is_superuser
+            or request.user.has_perm("attendance.change_attendance")
+            or is_reportingmanger(request, attendance)
+        ):
+            return HttpResponse(status=403)
         if not request.user.is_superuser:
             if attendance.employee_id.id == request.user.employee_get.id:
                 messages.error(request, _("You cannot approve your own overtime."))
@@ -1581,46 +1590,64 @@ def approve_overtime(request, obj_id):
 
 @login_required
 @manager_can_enter("attendance.change_attendance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def approve_bulk_overtime(request):
     """
     This method is used to approve bulk of attendance
     """
-    ids = json.loads(request.POST.get("ids", "[]"))
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": "Invalid attendance IDs"}, status=400)
     otapprove_ids = []
-    filtered_ids = []
-    for attendance_id in ids:
-        try:
-            attendance = Attendance.objects.get(id=attendance_id)
-            if attendance.employee_id.employee_user_id != request.user:
-                filtered_ids.append(attendance_id)
-        except (Attendance.DoesNotExist, OverflowError, ValueError):
-            messages.error(request, _("Attendance not found"))
-    if request.user.is_superuser:
-        filtered_ids = ids
-    for attendance_id in filtered_ids:
-        try:
-            attendance = Attendance.objects.get(id=attendance_id)
-            attendance.attendance_overtime_approve = True
-            attendance.save()
-            otapprove_ids.append(attendance)
-            notify.send(
-                request.user.employee_get,
-                recipient=attendance.employee_id.employee_user_id,
-                verb=f"Overtime approved for\
-                      {attendance.attendance_date}'s attendance",
-                verb_ar=f"تمت الموافقة على العمل الإضافي لحضور تاريخ \
-                    {attendance.attendance_date}",
-                verb_de=f"Überstunden für die Anwesenheit am \
-                    {attendance.attendance_date} genehmigt",
-                verb_es=f"Horas extra aprobadas para la asistencia del \
-                    {attendance.attendance_date}",
-                verb_fr=f"Heures supplémentaires approuvées pour la présence du \
-                    {attendance.attendance_date}",
-                redirect=reverse("attendance-overtime-view") + f"?id={attendance.id}",
-                icon="checkmark",
-            )
-        except (Attendance.DoesNotExist, OverflowError, ValueError):
-            messages.error(request, _("Attendance not found"))
+    attendances = list(
+        Attendance.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids)
+    )
+    if len(attendances) != len(ids):
+        return JsonResponse({"message": _("Attendance not found.")}, status=404)
+    if any(
+        not (
+            request.user.is_superuser
+            or request.user.has_perm("attendance.change_attendance")
+            or is_reportingmanger(request, attendance)
+        )
+        or (
+            not request.user.is_superuser
+            and attendance.employee_id.employee_user_id == request.user
+        )
+        for attendance in attendances
+    ):
+        return JsonResponse(
+            {"message": _("You cannot approve one or more selected overtime records.")},
+            status=403,
+        )
+
+    Attendance.objects.filter(pk__in=ids).update(attendance_overtime_approve=True)
+    notification_rows = [
+        (
+            attendance.employee_id.employee_user_id,
+            attendance.attendance_date,
+            attendance.id,
+        )
+        for attendance in attendances
+    ]
+
+    def send_approval_notifications():
+        for recipient, attendance_date, attendance_id in notification_rows:
+            with contextlib.suppress(Exception):
+                notify.send(
+                    request.user.employee_get,
+                    recipient=recipient,
+                    verb=f"Overtime approved for {attendance_date}'s attendance",
+                    redirect=reverse("attendance-overtime-view")
+                    + f"?id={attendance_id}",
+                    icon="checkmark",
+                )
+
+    transaction.on_commit(send_approval_notifications)
+    otapprove_ids.extend(attendances)
     if otapprove_ids:
         messages.success(request, _(" {} Overtime approved".format(len(otapprove_ids))))
 
@@ -1629,34 +1656,32 @@ def approve_bulk_overtime(request):
 
 @login_required
 @hx_request_required
-# @manager_can_enter("attendance.change_attendance")
+@manager_can_enter("attendance.change_attendance")
+@transaction.atomic
 def attendance_add_to_batch(request):
     """
     This method is used to add attendance to a batch
     """
-    batches = BatchAttendance.objects.all()
     ids = request.GET.getlist("ids")
     if request.method == "POST":
-        ids = request.GET["ids"]
-        # Remove brackets and quotes, then split and convert to integers
-        int_ids = [int(x.strip().strip("'")) for x in ids.strip("[]").split(",")]
+        ids = _posted_ids(request)
+        if not ids or len(ids) > 500:
+            return JsonResponse({"error": "Invalid attendance IDs."}, status=400)
         batch_id = request.POST.get("batch_attendance_id")
-        if batch_id:
-            batch = BatchAttendance.objects.filter(id=batch_id).first()
-            for id in int_ids:
-                try:
-                    attendance_req = Attendance.objects.filter(id=id).first()
-                    attendance_req.batch_attendance_id = batch
-                    attendance_req.save()
-                except Exception as e:
-                    logger.error(e)
-                    messages.error(request, _("Something went wrong."))
-                    return HorillaRedirect(request)
-            messages.success(request, _(f"Attendances added to {batch}."))
-            return HorillaRedirect(request)
-        else:
-            messages.error(request, _("Something went wrong."))
-            return HorillaRedirect(request)
+        batch = BatchAttendance.objects.select_for_update().filter(id=batch_id).first()
+        if batch is None:
+            return HorillaRedirect(request, message=_("Batch not found."))
+        attendances = Attendance.objects.select_for_update().filter(id__in=ids)
+        if not request.user.has_perm("attendance.change_attendance"):
+            attendances = attendances.filter(
+                employee_id__employee_work_info__reporting_manager_id=request.user.employee_get
+            )
+        if attendances.count() != len(set(ids)):
+            return HttpResponseForbidden(_("You don't have permission."))
+        updated = attendances.update(batch_attendance_id=batch)
+        messages.success(request, _("{} attendances added to {}.").format(updated, batch))
+        return HorillaRedirect(request)
+    batches = BatchAttendance.objects.all()
     return render(
         request,
         "attendance/attendance/attendance_add_batch.html",
@@ -1758,41 +1783,6 @@ def update_fields_based_shift(request):
             else AttendanceForm(initial=initial_data)
         )
     )
-    return render(
-        request,
-        "attendance/attendance/update_hx_form.html",
-        {"request": request, "form": form},
-    )
-
-
-@login_required
-@hx_request_required
-def update_worked_hour_field(request):
-    """
-    Update the worked hour field based on clock-in and clock-out times.
-
-    This view function calculates the total worked hours for an employee
-    by parsing the clock-in and clock-out dates and times from the request
-    parameters. It computes the duration between the two times and formats
-    the result as a string in the "HH:MM" format. The computed worked hours
-    are then initialized in an AttendanceForm, which is rendered in the
-    specified HTML template.
-    """
-    clock_in = parse_datetime(
-        request.GET.get("attendance_clock_in_date"),
-        request.GET.get("attendance_clock_in"),
-    )
-    clock_out = parse_datetime(
-        request.GET.get("attendance_clock_out_date"),
-        request.GET.get("attendance_clock_out"),
-    )
-
-    total_seconds = (
-        (clock_out - clock_in).total_seconds() if clock_in and clock_out else -1
-    )
-    hours, minutes = divmod(max(total_seconds, 0), 3600)
-    worked_hours_str = f"{int(hours):02}:{int(minutes // 60):02}"
-    form = AttendanceForm(initial={"attendance_worked_hour": worked_hours_str})
     return render(
         request,
         "attendance/attendance/update_hx_form.html",
@@ -2487,6 +2477,7 @@ def view_attendancerequest_comment(request, attendance_id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["POST"])
 def delete_attendancerequest_comment(request, comment_id):
     """
     This method is used to delete Attendance request comments
@@ -2496,6 +2487,12 @@ def delete_attendancerequest_comment(request, comment_id):
         return HorillaRedirect(
             request, message=_("No Comment found matching the query.")
         )
+    if (
+        comment.employee_id.employee_user_id_id != request.user.id
+        and not request.user.has_perm("attendance.delete_attendancerequestcomment")
+        and not request.user.has_perm("attendance.change_attendance")
+    ):
+        return HorillaRedirect(request, message=_("You don't have permission."))
 
     script = ""
     comment.delete()
@@ -2505,13 +2502,34 @@ def delete_attendancerequest_comment(request, comment_id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_comment_file(request):
     """
     Used to delete attachment
     """
     script = ""
-    ids = request.GET.getlist("ids")
-    AttendanceRequestFile.objects.filter(id__in=ids).delete()
+    ids = _posted_ids(request)
+    request_id = request.POST.get("request_id")
+    if not ids or len(ids) > 500 or not str(request_id or "").isdigit():
+        return JsonResponse({"error": "Invalid attachment request."}, status=400)
+    comment = AttendanceRequestComment.objects.select_for_update().filter(
+        id=request.POST.get("comment_id"), request_id_id=request_id
+    ).first()
+    if not comment:
+        return HorillaRedirect(request, message=_("Comment not found."))
+    if (
+        comment.employee_id.employee_user_id_id != request.user.id
+        and not request.user.has_perm("attendance.delete_attendancerequestfile")
+        and not request.user.has_perm("attendance.change_attendance")
+    ):
+        return HorillaRedirect(request, message=_("You don't have permission."))
+    records = list(comment.files.select_for_update().filter(id__in=ids))
+    comment.files.remove(*records)
+    AttendanceRequestFile.objects.filter(
+        id__in=[record.id for record in records],
+        attendancerequestcomment__isnull=True,
+    ).delete()
     messages.success(request, _("File deleted successfully"))
     return HttpResponse(script)
 
@@ -3244,12 +3262,17 @@ def allowed_ips(request):
 @login_required
 @permission_required("attendance.add_attendance")
 @require_http_methods(["POST"])
+@transaction.atomic
 def enable_ip_restriction(request):
     """
     This function is used to toggle IP restriction for the active company.
     """
     company = _get_session_company(request)
-    obj, _created = AttendanceAllowedIP.objects.get_or_create(company_id=company)
+    obj = AttendanceAllowedIP.objects.select_for_update().filter(
+        company_id=company
+    ).first()
+    if obj is None:
+        obj = AttendanceAllowedIP(company_id=company)
     is_enabled = True if request.POST.get("is_enabled") == "on" else False
     obj.is_enabled = is_enabled
     obj.save()
@@ -3273,10 +3296,8 @@ def attendance_rule_settings_view(request):
     if company is None:
         attendance_general_settings = AttendanceGeneralSetting.objects.all()
     else:
-        setting, _created = AttendanceGeneralSetting.objects.get_or_create(
-            company_id=company
-        )
-        attendance_general_settings = [setting]
+        setting = AttendanceGeneralSetting.objects.filter(company_id=company).first()
+        attendance_general_settings = [setting] if setting else []
     show_company = len(attendance_general_settings) > 1
 
     biometric = BiometricAttendance.objects.filter(company_id=company).first()
@@ -3322,6 +3343,7 @@ def validate_ip_address(self, value):
 @login_required
 @hx_request_required
 @permission_required("attendance.add_attendance")
+@require_http_methods(["GET", "POST"])
 def create_allowed_ips(request):
     """
     This function is used to create the allowed IPs for the active company.
@@ -3331,31 +3353,39 @@ def create_allowed_ips(request):
         form = AttendanceAllowedIPForm(request.POST)
         if form.is_valid():
             ip_addresses = form.cleaned_data.get("ip_addresses")
-            obj, _created = AttendanceAllowedIP.objects.get_or_create(
-                company_id=company,
-                defaults={"additional_data": {"allowed_ips": []}, "is_enabled": True},
-            )
-            if not obj.additional_data:
-                obj.additional_data = {"allowed_ips": []}
-            existing_ips = set(obj.additional_data.get("allowed_ips", []))
-            new_ips = set(ip_addresses)
-            duplicates = new_ips & existing_ips
-            if duplicates:
-                messages.error(
-                    request,
-                    _("IP addresses already exist: %(ips)s")
-                    % {"ips": ", ".join(duplicates)},
-                )
-            non_duplicates = new_ips - duplicates
-            if non_duplicates:
-                obj.additional_data["allowed_ips"] = list(existing_ips | non_duplicates)
-                obj.save()
-                messages.success(request, _("IP addresses saved successfully"))
-            else:
-                messages.info(
-                    request,
-                    _("All provided IP addresses are already in the allowed list."),
-                )
+            with transaction.atomic():
+                obj = AttendanceAllowedIP.objects.select_for_update().filter(
+                    company_id=company
+                ).first()
+                if obj is None:
+                    obj = AttendanceAllowedIP(
+                        company_id=company,
+                        additional_data={"allowed_ips": []},
+                        is_enabled=True,
+                    )
+                if not obj.additional_data:
+                    obj.additional_data = {"allowed_ips": []}
+                existing_ips = set(obj.additional_data.get("allowed_ips", []))
+                new_ips = set(ip_addresses)
+                duplicates = new_ips & existing_ips
+                if duplicates:
+                    messages.error(
+                        request,
+                        _("IP addresses already exist: %(ips)s")
+                        % {"ips": ", ".join(duplicates)},
+                    )
+                non_duplicates = new_ips - duplicates
+                if non_duplicates:
+                    obj.additional_data["allowed_ips"] = sorted(
+                        existing_ips | non_duplicates
+                    )
+                    obj.save()
+                    messages.success(request, _("IP addresses saved successfully"))
+                else:
+                    messages.info(
+                        request,
+                        _("All provided IP addresses are already in the allowed list."),
+                    )
             return HorillaRedirect(request)
     else:
         form = AttendanceAllowedIPForm()
@@ -3367,20 +3397,30 @@ def create_allowed_ips(request):
 
 @login_required
 @permission_required("attendance.delete_attendance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_allowed_ips(request):
     """
     This function is used to delete the allowed ips for the active company.
     """
     company = _get_session_company(request)
     try:
-        ids = request.GET.getlist("id")
-        obj = AttendanceAllowedIP.objects.filter(company_id=company).first()
+        ids = sorted(
+            {int(value) for value in request.POST.getlist("id")}, reverse=True
+        )
+        obj = AttendanceAllowedIP.objects.select_for_update().filter(
+            company_id=company
+        ).first()
         if obj:
-            ips = (obj.additional_data or {}).get("allowed_ips", [])
+            ips = list((obj.additional_data or {}).get("allowed_ips", []))
             for id in ids:
-                ips.pop(eval_validate(id))
+                if id < 0 or id >= len(ips):
+                    raise IndexError
+                ips.pop(id)
+            if not obj.additional_data:
+                obj.additional_data = {}
             obj.additional_data["allowed_ips"] = ips
-            obj.save()
+            obj.save(update_fields=["additional_data"])
         messages.success(request, _("IP address removed successfully"))
     except Exception:
         messages.error(request, _("Invalid id"))
@@ -3389,6 +3429,7 @@ def delete_allowed_ips(request):
 
 @login_required
 @permission_required("attendance.change_attendance")
+@require_http_methods(["GET", "POST"])
 def edit_allowed_ips(request):
     """
     This function is used to edit the allowed IPs for the active company.
@@ -3400,7 +3441,7 @@ def edit_allowed_ips(request):
         return redirect("allowed-ips")
 
     ips = (obj.additional_data or {}).get("allowed_ips", [])
-    id = request.GET.get("id", request.POST.get("id"))
+    id = request.POST.get("id") if request.method == "POST" else request.GET.get("id")
 
     try:
         id = int(id)
@@ -3413,16 +3454,23 @@ def edit_allowed_ips(request):
         if request.method == "POST":
             form = AttendanceAllowedIPForm(request.POST)
             if form.is_valid():
-                new_ip = form.cleaned_data["ip_addresses"][0]
-                existing_ips = set(ips)
-                if new_ip in existing_ips:
-                    messages.error(request, _("IP address already exists."))
-                else:
-                    existing_ips.discard(initial_ip)
-                    existing_ips.add(new_ip)
-                    obj.additional_data["allowed_ips"] = list(existing_ips)
-                    obj.save()
-                    messages.success(request, _("IP address updated successfully"))
+                with transaction.atomic():
+                    obj = AttendanceAllowedIP.objects.select_for_update().get(
+                        pk=obj.pk, company_id=company
+                    )
+                    ips = list((obj.additional_data or {}).get("allowed_ips", []))
+                    if id < 0 or id >= len(ips):
+                        raise IndexError
+                    new_ip = form.cleaned_data["ip_addresses"][0]
+                    if new_ip in ips and new_ip != ips[id]:
+                        messages.error(request, _("IP address already exists."))
+                    else:
+                        ips[id] = new_ip
+                        if not obj.additional_data:
+                            obj.additional_data = {}
+                        obj.additional_data["allowed_ips"] = ips
+                        obj.save(update_fields=["additional_data"])
+                        messages.success(request, _("IP address updated successfully"))
                 return HorillaRedirect(request)
 
     except (ValueError, IndexError):

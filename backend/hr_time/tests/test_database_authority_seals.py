@@ -23,9 +23,9 @@ class Hr11MySQLAuthoritySealTests(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        super().setUpClass()
         if connection.vendor != "mysql":
             raise SkipTest("HR11 production database seals are MySQL-only")
+        super().setUpClass()
 
     def _database_error(self, sql, params):
         with self.assertRaises(DatabaseError):

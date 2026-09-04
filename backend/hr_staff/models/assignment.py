@@ -63,6 +63,7 @@ class HrStaffAssignment(models.Model):
         default=AssignmentType.PRIMARY,
     )
     assignment_role_code = models.CharField(max_length=64, blank=True, default="")
+    location_code = models.CharField(max_length=128, blank=True, default="")
     fte = models.DecimalField(max_digits=5, decimal_places=2, default=1.00)
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)  # 半开区间

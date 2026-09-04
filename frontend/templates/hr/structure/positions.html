@@ -81,9 +81,30 @@ HR02-05 岗位编制台账 —— 单位岗位供给/空岗/已占/冻结/超限
         <h2 id="hr02-position-ledger-title">岗位列表</h2>
         <p>查看岗位编码、所属机构、岗位标准、等级、折合全职数、编制数、占用与生命周期状态。</p>
       </div>
+      <button type="button" class="hr02-btn" id="hr-position-refresh">刷新</button>
     </div>
+    <details class="hr02-editor hr-v2-panel">
+      <summary>新建正式岗位</summary>
+      <form class="hr02-form" id="hr-position-create-form">
+        <label><span>岗位编码</span><input name="positionCode" required placeholder="例如：JSJX-001"></label>
+        <label><span>所属机构</span><select name="organizationId" required><option value="">正在读取机构…</option></select></label>
+        <label><span>岗位目录</span><select name="postCatalogVersionId" required><option value="">正在读取岗位目录…</option></select></label>
+        <label><span>折合全职数</span><input name="plannedFte" type="number" min="0.01" step="0.01" value="1.00" required></label>
+        <label><span>最大任职人数</span><input name="maxIncumbents" type="number" min="1" value="1" required></label>
+        <label><span>生效日期</span><input name="validityFrom" type="date" required></label>
+        <label class="hr02-check"><input name="allowMultipleIncumbents" type="checkbox"><span>允许多人任职</span></label>
+        <div class="hr02-form__actions"><button class="hr02-btn hr02-btn--primary" type="submit">创建岗位</button><span id="hr-position-form-message" role="status"></span></div>
+      </form>
+    </details>
     <div id="hr-position-table" class="hr-v2-panel hr02-table-wrap" aria-live="polite">
       {% include "hr/components/state_view.html" with state="loading" %}
+    </div>
+    <div class="hr02-pager" id="hr-position-pager" hidden>
+      <span id="hr-position-page-summary"></span>
+      <div class="hr02-item__actions">
+        <button type="button" class="hr02-btn" id="hr-position-prev">上一页</button>
+        <button type="button" class="hr02-btn" id="hr-position-next">下一页</button>
+      </div>
     </div>
   </section>
 

@@ -51,3 +51,50 @@ class HrLegacyPmsWriterSealEvent(models.Model):
         db_table = "hr_assessment_legacy_pms_writer_seal_event"
         ordering = ("-occurred_at",)
         verbose_name = "Legacy PMS writer seal event"
+
+
+class _AppendOnlyCutoverEventQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR12_CUTOVER_EVENT_APPEND_ONLY")
+
+    def delete(self):
+        raise ValueError("HR12_CUTOVER_EVENT_APPEND_ONLY")
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError("HR12_CUTOVER_EVENT_APPEND_ONLY")
+
+
+class HrAssessmentCutoverEvent(models.Model):
+    """Tenant-scoped, append-only audit trail for every HR12 cutover phase."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    phase = models.CharField(max_length=40)
+    previous_phase = models.CharField(max_length=40, blank=True, default="")
+    authority_mode = models.CharField(max_length=32)
+    operator = models.CharField(max_length=128)
+    reason = models.CharField(max_length=255)
+    verification_report_id = models.CharField(max_length=64, blank=True, default="")
+    source_snapshot_hash = models.CharField(max_length=64, blank=True, default="")
+    occurred_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    objects = _AppendOnlyCutoverEventQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr_assessment_cutover_event"
+        ordering = ("occurred_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "phase"),
+                name="uq_hr12_cutover_tenant_phase",
+            )
+        ]
+        indexes = [models.Index(fields=("tenant_id", "occurred_at"))]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError("HR12_CUTOVER_EVENT_APPEND_ONLY")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_CUTOVER_EVENT_APPEND_ONLY")

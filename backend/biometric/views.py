@@ -13,9 +13,9 @@ from threading import Event, Thread
 from urllib.parse import parse_qs, unquote
 
 import pytz
-from apscheduler.schedulers.background import BackgroundScheduler
 from django.conf import settings
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -23,6 +23,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone as django_timezone
 from django.utils.translation import gettext as __
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_POST
 from zk import ZK
 from zk import exception as zk_exception
 
@@ -58,6 +59,26 @@ from .forms import (
 from .models import BiometricDevices, BiometricEmployees, COSECAttendanceArguments
 
 logger = logging.getLogger(__name__)
+
+
+def _visible_biometric_employees():
+    """Return biometric mappings limited to devices visible to the request tenant."""
+    return BiometricEmployees.objects.filter(
+        device_id__in=BiometricDevices.objects.all()
+    )
+
+
+def _posted_ids(request):
+    """Read HTMX or form array values without accepting query-string mutation data."""
+    values = request.POST.getlist("ids")
+    if len(values) == 1:
+        try:
+            parsed = json.loads(values[0])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            parsed = values
+        if isinstance(parsed, list):
+            values = parsed
+    return [str(value) for value in values if str(value).strip()]
 
 
 def str_time_seconds(time):
@@ -206,17 +227,33 @@ class ZKBioAttendance(Thread):
                                             )
                                         except Exception as error:
                                             logger.error(
-                                                "Got an error in clock_out", error
+                                                "Got an error in clock_out: %s", error
                                             )
                                             continue
                             else:
                                 continue
-        except ConnectionResetError as error:
-            ZKBioAttendance(self.machine_ip, self.port_no, self.password).start()
+        except ConnectionResetError:
+            logger.exception("ZK live capture connection was reset")
+        except Exception:
+            logger.exception("ZK live capture stopped unexpectedly")
+        finally:
+            if self.conn is not None and callable(
+                getattr(self.conn, "disconnect", None)
+            ):
+                try:
+                    self.conn.disconnect()
+                except Exception:
+                    logger.exception("Unable to disconnect ZK live capture")
+            if not self._stop_event.is_set():
+                BiometricDevices.objects.filter(
+                    machine_ip=self.machine_ip, port=self.port_no
+                ).update(is_live=False)
 
     def stop(self):
         """To stop the ZK live capture mode"""
-        self.conn.end_live_capture = True
+        self._stop_event.set()
+        if self.conn is not None:
+            self.conn.end_live_capture = True
 
 
 class COSECBioAttendanceThread(Thread):
@@ -276,7 +313,7 @@ class COSECBioAttendanceThread(Thread):
                 for attendance in attendances:
                     ref_user_id = attendance["detail-1"]
                     employee = BiometricEmployees.objects.filter(
-                        ref_user_id=ref_user_id
+                        ref_user_id=ref_user_id, device_id=device
                     ).first()
                     if not employee:
                         continue
@@ -301,8 +338,8 @@ class COSECBioAttendanceThread(Thread):
                             clock_in(request_data)
                         elif punch_code in ["2", "4", "6", "8", "10"]:
                             clock_out(request_data)
-                    except Exception as error:
-                        logger.error("Error processing attendance: ", error)
+                    except Exception:
+                        logger.exception("Error processing COSEC attendance")
 
                 if attendances:
                     last_attendance = attendances[-1]
@@ -318,11 +355,9 @@ class COSECBioAttendanceThread(Thread):
                 # Sleep to prevent overwhelming the device with requests
                 self._stop_event.wait(2)
 
-        except Exception as error:
-            device = BiometricDevices.objects.get(id=self.device_id)
-            device.is_live = False
-            device.save()
-            logger.error("Error in COSECBioAttendanceThread: ", error)
+        except Exception:
+            BiometricDevices.objects.filter(id=self.device_id).update(is_live=False)
+            logger.exception("Error in COSECBioAttendanceThread")
 
     def stop(self):
         """Set the stop event to signal the thread to stop gracefully."""
@@ -394,7 +429,9 @@ def biometric_device_schedule(request, device_id):
     Returns:
     - HttpResponse: HTML response indicating success or failure of the scheduling operation.
     """
-    device = BiometricDevices.objects.get(id=device_id)
+    device = BiometricDevices.objects.filter(id=device_id).first()
+    if not device:
+        return HorillaRedirect(request, message=_("Biometric device not found."))
     initial_data = {"scheduler_duration": device.scheduler_duration}
     scheduler_form = BiometricDeviceSchedulerForm(initial=initial_data)
     context = {
@@ -406,41 +443,25 @@ def biometric_device_schedule(request, device_id):
         if scheduler_form.is_valid():
             duration = scheduler_form.cleaned_data["scheduler_duration"]
             if device.machine_type == "zk":
+                conn = None
                 try:
-                    port_no = device.port
-                    machine_ip = device.machine_ip
-                    password = device.zk_password
-                    conn = None
                     zk_device = ZK(
-                        machine_ip,
-                        port=port_no,
-                        timeout=60,
-                        password=int(password),
+                        device.machine_ip,
+                        port=device.port,
+                        timeout=5,
+                        password=int(device.zk_password),
                         force_udp=False,
                         ommit_ping=False,
                     )
                     conn = zk_device.connect()
                     conn.test_voice(index=0)
-                    device = BiometricDevices.objects.get(id=device_id)
-                    device.scheduler_duration = duration
-                    device.is_scheduler = True
-                    device.is_live = False
-                    device.save()
-                    scheduler = BackgroundScheduler()
-                    scheduler.add_job(
-                        lambda: zk_biometric_attendance_scheduler(device.id),
-                        "interval",
-                        seconds=str_time_seconds(device.scheduler_duration),
-                    )
-                    scheduler.start()
-                    return HorillaRedirect(request)
-                except Exception as error:
-                    logger.error("An error comes in biometric_device_schedule ", error)
+                except Exception:
+                    logger.exception("Unable to validate ZK device before scheduling")
                     script = """
                     <script>
                         Swal.fire({
                           title : "Schedule Attendance unsuccessful",
-                          text: "Please double-check the accuracy of the provided IP Address and Port Number for correctness",
+                          text: "Please double-check the device connection settings.",
                           icon: "warning",
                           showConfirmButton: false,
                           timer: 3500,
@@ -452,63 +473,40 @@ def biometric_device_schedule(request, device_id):
                     </script>
                     """
                     return HttpResponse(script)
-            elif device.machine_type == "anviz":
-                device.is_scheduler = True
-                device.scheduler_duration = duration
-                device.save()
-                scheduler = BackgroundScheduler()
-                scheduler.add_job(
-                    lambda: anviz_biometric_attendance_scheduler(device.id),
-                    "interval",
-                    seconds=str_time_seconds(device.scheduler_duration),
-                )
-                scheduler.start()
-                return HorillaRedirect(request)
-            elif device.machine_type == "dahua":
-                device.is_scheduler = True
-                device.is_live = False
-                device.scheduler_duration = duration
-                device.save()
-                scheduler = BackgroundScheduler()
-                scheduler.add_job(
-                    lambda: dahua_biometric_attendance_scheduler(device.id),
-                    "interval",
-                    seconds=str_time_seconds(device.scheduler_duration),
-                )
-                scheduler.start()
-                return HorillaRedirect(request)
-            elif device.machine_type == "cosec":
-                device.is_scheduler = True
-                device.is_live = False
-                device.scheduler_duration = duration
-                device.save()
-                scheduler = BackgroundScheduler()
-                existing_thread = settings.BIO_DEVICE_THREADS.get(device.id)
-                if existing_thread:
+                finally:
+                    if conn is not None and callable(getattr(conn, "disconnect", None)):
+                        try:
+                            conn.disconnect()
+                        except Exception:
+                            logger.exception(
+                                "Unable to disconnect ZK schedule test connection"
+                            )
+
+            existing_thread = settings.BIO_DEVICE_THREADS.pop(device.id, None)
+            if existing_thread:
+                try:
                     existing_thread.stop()
-                    del settings.BIO_DEVICE_THREADS[device.id]
-                scheduler.add_job(
-                    lambda: cosec_biometric_attendance_scheduler(device.id),
-                    "interval",
-                    seconds=str_time_seconds(device.scheduler_duration),
+                except Exception:
+                    logger.exception("Unable to stop biometric live-capture thread")
+
+            with transaction.atomic():
+                locked_device = (
+                    BiometricDevices.objects.select_for_update()
+                    .filter(id=device.id)
+                    .first()
                 )
-                scheduler.start()
-                return HorillaRedirect(request)
-            elif device.machine_type == "etimeoffice":
-                device.is_scheduler = True
-                device.is_live = False
-                device.scheduler_duration = duration
-                device.save()
-                scheduler = BackgroundScheduler()
-                scheduler.add_job(
-                    lambda: etimeoffice_biometric_attendance_scheduler(device.id),
-                    "interval",
-                    seconds=str_time_seconds(device.scheduler_duration),
+                if not locked_device:
+                    return HorillaRedirect(
+                        request, message=_("Biometric device not found.")
+                    )
+                locked_device.scheduler_duration = duration
+                locked_device.is_scheduler = True
+                locked_device.is_live = False
+                locked_device.save(
+                    update_fields=["scheduler_duration", "is_scheduler", "is_live"]
                 )
-                scheduler.start()
-                return HorillaRedirect(request)
-            else:
-                return HorillaRedirect(request)
+            messages.success(request, _("Biometric device scheduled successfully."))
+            return HorillaRedirect(request)
 
         context["scheduler_form"] = scheduler_form
         response = render(request, "biometric/scheduler_device_form.html", context)
@@ -524,6 +522,7 @@ def biometric_device_schedule(request, device_id):
 @install_required
 @hx_request_required
 @permission_required("biometric.change_biometricdevices")
+@require_POST
 def biometric_device_unschedule(request, device_id):
     """
     Handles unschedule of attendance capture for a biometric device.
@@ -535,12 +534,16 @@ def biometric_device_unschedule(request, device_id):
     Returns:
     - HttpResponseRedirect: Redirects to the biometric devices view after unscheduling.
     """
-    previous_data = request.GET.urlencode()
-    device = BiometricDevices.objects.get(id=device_id)
-    device.is_scheduler = False
-    device.save()
+    with transaction.atomic():
+        device = (
+            BiometricDevices.objects.select_for_update().filter(id=device_id).first()
+        )
+        if not device:
+            return HorillaRedirect(request, message=_("Biometric device not found."))
+        device.is_scheduler = False
+        device.save(update_fields=["is_scheduler"])
     messages.success(request, _("Biometric device unscheduled successfully"))
-    return redirect(f"/biometric/view-biometric-devices/?{previous_data}")
+    return redirect("/biometric/view-biometric-devices/")
 
 
 @login_required
@@ -609,26 +612,30 @@ def biometric_device_edit(request, device_id):
 @install_required
 @hx_request_required
 @permission_required("biometric.change_biometricdevices")
+@require_POST
 def biometric_device_archive(request, device_id):
     """
     This method is used to archive or un-archive devices
     """
-    previous_data = request.GET.urlencode()
-    device_obj = BiometricDevices.find(device_id)
-    if not device_obj:
-        messages.error(request, _("Biometric device not found."))
-        return redirect(f"/biometric/view-biometric-devices/?{previous_data}")
-    device_obj.is_active = not device_obj.is_active
-    device_obj.save()
+    with transaction.atomic():
+        device_obj = (
+            BiometricDevices.objects.select_for_update().filter(id=device_id).first()
+        )
+        if not device_obj:
+            messages.error(request, _("Biometric device not found."))
+            return redirect("/biometric/view-biometric-devices/")
+        device_obj.is_active = not device_obj.is_active
+        device_obj.save(update_fields=["is_active"])
     message = _("archived") if not device_obj.is_active else _("un-archived")
     messages.success(request, _("Device is %(message)s") % {"message": message})
-    return redirect(f"/biometric/view-biometric-devices/?{previous_data}")
+    return redirect("/biometric/view-biometric-devices/")
 
 
 @login_required
 @install_required
 @hx_request_required
 @permission_required("biometric.delete_biometricdevices")
+@require_POST
 def biometric_device_delete(request, device_id):
     """
     Handles the deletion of a biometric device.
@@ -642,14 +649,16 @@ def biometric_device_delete(request, device_id):
                             biometric device.
 
     """
-    previous_data = request.GET.urlencode()
-    device_obj = BiometricDevices.find(device_id)
-    if not device_obj:
-        messages.error(request, _("Biometric device not found."))
-        return redirect(f"/biometric/view-biometric-devices/?{previous_data}")
-    device_obj.delete()
+    with transaction.atomic():
+        device_obj = (
+            BiometricDevices.objects.select_for_update().filter(id=device_id).first()
+        )
+        if not device_obj:
+            messages.error(request, _("Biometric device not found."))
+            return redirect("/biometric/view-biometric-devices/")
+        device_obj.delete()
     messages.success(request, _("Biometric device deleted successfully."))
-    return redirect(f"/biometric/view-biometric-devices/?{previous_data}")
+    return redirect("/biometric/view-biometric-devices/")
 
 
 def render_connection_response(title, text, icon):
@@ -1279,7 +1288,7 @@ def biometric_device_employees(request, device_id, **kwargs):
                     context,
                 )
         except Exception as error:
-            logger.error("An error occurred: ", error)
+            logger.error("An error occurred: %s", error)
             messages.info(
                 request,
                 _(
@@ -1379,6 +1388,7 @@ def search_employee_device(request):
 @login_required
 @install_required
 @permission_required("biometric.delete_biometricemployees")
+@require_POST
 def delete_biometric_user(request, uid, device_id):
     """
     This function connects to the specified biometric device, deletes the user
@@ -1394,7 +1404,18 @@ def delete_biometric_user(request, uid, device_id):
         HttpResponse: A redirect response to the list of employees for the specified
                       biometric device.
     """
-    device = BiometricDevices.objects.get(id=device_id)
+    device = BiometricDevices.objects.filter(id=device_id, machine_type="zk").first()
+    employee_bio = (
+        _visible_biometric_employees()
+        .filter(uid=uid, device_id=device)
+        .select_related("employee_id")
+        .first()
+    )
+    redirect_url = f"/biometric/biometric-device-employees/{device_id}/"
+    if not device or not employee_bio:
+        messages.error(request, _("Biometric user or device not found."))
+        return redirect(redirect_url if device else "/biometric/view-biometric-devices/")
+
     zk_device = ZK(
         device.machine_ip,
         port=device.port,
@@ -1403,23 +1424,48 @@ def delete_biometric_user(request, uid, device_id):
         force_udp=False,
         ommit_ping=False,
     )
-    conn = zk_device.connect()
-    conn.delete_user(uid=uid)
-    employee_bio = BiometricEmployees.objects.filter(uid=uid).first()
-    employee_bio.delete()
+    conn = None
+    try:
+        conn = zk_device.connect()
+        conn.delete_user(uid=uid)
+    except Exception as error:
+        logger.exception("Failed to delete ZK biometric user")
+        messages.error(
+            request,
+            _("Unable to remove the user from the biometric device: %(error)s")
+            % {"error": error},
+        )
+        return redirect(redirect_url)
+    finally:
+        if conn is not None and callable(getattr(conn, "disconnect", None)):
+            try:
+                conn.disconnect()
+            except Exception:
+                logger.exception("Failed to disconnect from ZK biometric device")
+
+    employee_name = employee_bio.employee_id
+    with transaction.atomic():
+        locked_mapping = (
+            _visible_biometric_employees()
+            .select_for_update()
+            .filter(id=employee_bio.id, uid=uid, device_id=device)
+            .first()
+        )
+        if locked_mapping:
+            locked_mapping.delete()
     messages.success(
         request,
         _("{} successfully removed from the biometric device.").format(
-            employee_bio.employee_id
+            employee_name
         ),
     )
-    redirect_url = f"/biometric/biometric-device-employees/{device_id}/"
     return redirect(redirect_url)
 
 
 @login_required
 @install_required
 @permission_required("biometric.change_biometricemployees")
+@require_POST
 def enable_cosec_face_recognition(request, user_id, device_id):
     """
     View function to enable face recognition for a user on a COSEC biometric device
@@ -1433,22 +1479,36 @@ def enable_cosec_face_recognition(request, user_id, device_id):
         HttpResponse: A redirect response to the list of employees for the specified
                       biometric device.
     """
-    device = BiometricDevices.find(device_id)
-    if device:
+    device = BiometricDevices.objects.filter(
+        id=device_id, machine_type="cosec"
+    ).first()
+    employee_bio = (
+        _visible_biometric_employees()
+        .filter(user_id=user_id, device_id=device)
+        .first()
+    )
+    if device and employee_bio:
         cosec = COSECBiometric(
             device.machine_ip,
             device.port,
             device.bio_username,
             device.bio_password,
         )
-        enable_fr = cosec.enable_user_face_recognition(user_id=user_id, enable_fr=True)
-        response_code = enable_fr.get("Response-Code")
+        try:
+            enable_fr = cosec.enable_user_face_recognition(
+                user_id=user_id, enable_fr=True
+            )
+        except Exception:
+            logger.exception("Failed to enable COSEC face recognition")
+            messages.error(request, _("Unable to connect to the biometric device"))
+            return redirect(f"/biometric/biometric-device-employees/{device_id}/")
+        response_code = enable_fr.get("Response-Code") if enable_fr else None
         if response_code == "0":
             messages.success(request, _("Face recognition enabled successfully"))
         else:
             messages.error(request, _("Something went wrong when enabling face"))
     else:
-        messages.error(request, _("Device not found"))
+        messages.error(request, _("Biometric user or device not found"))
     return redirect(f"/biometric/biometric-device-employees/{device_id}/")
 
 
@@ -1553,6 +1613,7 @@ def edit_cosec_user(request, user_id, device_id):
 @login_required
 @install_required
 @permission_required("biometric.delete_biometricemployees")
+@require_POST
 def delete_horilla_cosec_user(request, user_id, device_id):
     """
     View function to delete a user from a COSEC biometric device and database.
@@ -1566,24 +1627,50 @@ def delete_horilla_cosec_user(request, user_id, device_id):
         HttpResponse: A redirect response to the list of employees for the specified
                       biometric device.
     """
-    device = BiometricDevices.find(device_id)
+    device = BiometricDevices.objects.filter(
+        id=device_id, machine_type="cosec"
+    ).first()
     if device:
-        employee_bio = BiometricEmployees.objects.filter(
-            user_id=user_id, device_id=device
-        ).first()
+        employee_bio = (
+            _visible_biometric_employees()
+            .filter(user_id=user_id, device_id=device)
+            .select_related("employee_id")
+            .first()
+        )
+        if not employee_bio:
+            messages.error(request, _("Biometric user not found"))
+            return redirect(f"/biometric/biometric-device-employees/{device_id}/")
         cosec = COSECBiometric(
             device.machine_ip,
             device.port,
             device.bio_username,
             device.bio_password,
         )
-        response = cosec.delete_cosec_user(user_id)
-        if response.get("Response-Code") and response.get("Response-Code") == "0":
-            employee_bio.delete()
+        try:
+            response = cosec.delete_cosec_user(user_id)
+        except Exception as error:
+            logger.exception("Failed to delete COSEC biometric user")
+            messages.error(
+                request,
+                _("Unable to remove the user from the biometric device: %(error)s")
+                % {"error": error},
+            )
+            return redirect(f"/biometric/biometric-device-employees/{device_id}/")
+        if response and response.get("Response-Code") == "0":
+            employee_name = employee_bio.employee_id
+            with transaction.atomic():
+                locked_mapping = (
+                    _visible_biometric_employees()
+                    .select_for_update()
+                    .filter(id=employee_bio.id, user_id=user_id, device_id=device)
+                    .first()
+                )
+                if locked_mapping:
+                    locked_mapping.delete()
             messages.success(
                 request,
                 _("{} successfully removed from the biometric device.").format(
-                    employee_bio.employee_id
+                    employee_name
                 ),
             )
         else:
@@ -1601,6 +1688,7 @@ def delete_horilla_cosec_user(request, user_id, device_id):
 @login_required
 @install_required
 @permission_required("biometric.delete_biometricemployees")
+@require_POST
 def bio_users_bulk_delete(request):
     """
     View function to delete multiple users from a ZK biometric device and the local database.
@@ -1613,10 +1701,21 @@ def bio_users_bulk_delete(request):
 
     """
     conn = None
-    json_ids = request.POST["ids"]
-    device_id = request.POST["deviceId"]
-    ids = json.loads(json_ids)
-    device = BiometricDevices.objects.get(id=device_id)
+    ids = list(dict.fromkeys(_posted_ids(request)))
+    device_id = request.POST.get("deviceId")
+    device = BiometricDevices.objects.filter(id=device_id, machine_type="zk").first()
+    if not device or not ids:
+        return JsonResponse(
+            {"messages": "Invalid device or empty selection"}, status=400
+        )
+    mappings = {
+        str(mapping.user_id): mapping
+        for mapping in _visible_biometric_employees()
+        .filter(device_id=device, user_id__in=ids)
+        .select_related("employee_id")
+    }
+    deleted = 0
+    failed = 0
     try:
         zk_device = ZK(
             device.machine_ip,
@@ -1627,26 +1726,54 @@ def bio_users_bulk_delete(request):
             ommit_ping=False,
         )
         conn = zk_device.connect()
-        for user_id in ids:
-            user_id = int(user_id)
-            conn.delete_user(user_id=user_id)
-            employee_bio = BiometricEmployees.objects.filter(user_id=user_id).first()
-            employee_bio.delete()
-            conn.refresh_data()
+        for raw_user_id in ids:
+            employee_bio = mappings.get(str(raw_user_id))
+            if not employee_bio:
+                failed += 1
+                continue
+            try:
+                conn.delete_user(user_id=int(raw_user_id))
+            except Exception:
+                logger.exception("Failed to delete ZK biometric user %s", raw_user_id)
+                failed += 1
+                continue
+            employee_name = employee_bio.employee_id
+            with transaction.atomic():
+                locked_mapping = (
+                    _visible_biometric_employees()
+                    .select_for_update()
+                    .filter(id=employee_bio.id, device_id=device)
+                    .first()
+                )
+                if locked_mapping:
+                    locked_mapping.delete()
+            deleted += 1
             messages.success(
                 request,
                 _("{} successfully removed from the biometric device.").format(
-                    employee_bio.employee_id
+                    employee_name
                 ),
             )
     except Exception as error:
-        logger.error("An error occurred: ", error)
-    return JsonResponse({"messages": "Success"})
+        logger.exception("Failed to connect to ZK biometric device")
+        return JsonResponse(
+            {"messages": str(error), "deleted": deleted}, status=502
+        )
+    finally:
+        if conn is not None and callable(getattr(conn, "disconnect", None)):
+            try:
+                conn.disconnect()
+            except Exception:
+                logger.exception("Failed to disconnect from ZK biometric device")
+    return JsonResponse(
+        {"messages": "Success", "deleted": deleted, "failed": failed}
+    )
 
 
 @login_required
 @install_required
 @permission_required("biometric.delete_biometricemployees")
+@require_POST
 def cosec_users_bulk_delete(request):
     """
     View function to delete multiple users from a COSEC biometric device and database.
@@ -1657,10 +1784,23 @@ def cosec_users_bulk_delete(request):
     Returns:
         JsonResponse: A JSON response indicating the success of the bulk delete operation.
     """
-    json_ids = request.POST["ids"]
-    device_id = request.POST["deviceId"]
-    ids = json.loads(json_ids)
-    device = BiometricDevices.objects.get(id=device_id)
+    ids = list(dict.fromkeys(_posted_ids(request)))
+    device_id = request.POST.get("deviceId")
+    device = BiometricDevices.objects.filter(
+        id=device_id, machine_type="cosec"
+    ).first()
+    if not device or not ids:
+        return JsonResponse(
+            {"messages": "Invalid device or empty selection"}, status=400
+        )
+    mappings = {
+        str(mapping.user_id): mapping
+        for mapping in _visible_biometric_employees()
+        .filter(user_id__in=ids, device_id=device)
+        .select_related("employee_id")
+    }
+    deleted = 0
+    failed = 0
     try:
         cosec = COSECBiometric(
             device.machine_ip,
@@ -1669,21 +1809,39 @@ def cosec_users_bulk_delete(request):
             device.bio_password,
         )
         for user_id in ids:
-            cosec.delete_cosec_user(user_id=user_id)
-            employee_bio = BiometricEmployees.objects.filter(
-                user_id=user_id, device_id=device
-            ).first()
-            if employee_bio:
-                employee_bio.delete()
+            employee_bio = mappings.get(str(user_id))
+            if not employee_bio:
+                failed += 1
+                continue
+            response = cosec.delete_cosec_user(user_id=user_id)
+            if not response or response.get("Response-Code") != "0":
+                failed += 1
+                continue
+            employee_name = employee_bio.employee_id
+            with transaction.atomic():
+                locked_mapping = (
+                    _visible_biometric_employees()
+                    .select_for_update()
+                    .filter(id=employee_bio.id, device_id=device)
+                    .first()
+                )
+                if locked_mapping:
+                    locked_mapping.delete()
+            deleted += 1
             messages.success(
                 request,
-                f"{employee_bio.employee_id} "
+                f"{employee_name} "
                 + _("successfully removed from the biometric device."),
             )
 
     except Exception as error:
-        logger.error("An error occurred: ", error)
-    return JsonResponse({"messages": "Success"})
+        logger.exception("Failed to delete COSEC biometric users")
+        return JsonResponse(
+            {"messages": str(error), "deleted": deleted}, status=502
+        )
+    return JsonResponse(
+        {"messages": "Success", "deleted": deleted, "failed": failed}
+    )
 
 
 @login_required
@@ -1813,7 +1971,7 @@ def add_biometric_user(request, device_id):
         except Exception as error:
             if device.machine_type == "zk":
                 conn.disable_device()
-                logger.error("An error occurred: ", str(error))
+                logger.error("An error occurred: %s", error)
         return HorillaRedirect(request)
     return render(
         request,
@@ -1872,8 +2030,10 @@ def add_dahua_biometric_user(request, device_id):
     """
     device = BiometricDevices.find(device_id)
     form = DahuaUserForm()
+    context = {"form": form, "device_id": device_id}
     if request.method == "POST":
         form = DahuaUserForm(request.POST)
+        context["form"] = form
         if form.is_valid():
             employee_id = form.cleaned_data["employee"]
             card_no = form.cleaned_data["card_no"]
@@ -1923,7 +2083,7 @@ def add_dahua_biometric_user(request, device_id):
                 form = DahuaUserForm()
             else:
                 messages.error(request, _("Failed to add user to biometric device."))
-    context = {"form": form, "device_id": device_id}
+    context["form"] = form
     return render(request, "biometric_users/dahua/add_dahua_user.html", context)
 
 
@@ -1946,22 +2106,35 @@ def find_employee_badge_id(request):
 @login_required
 @hx_request_required
 @install_required
+@permission_required("biometric.delete_biometricemployees")
+@require_POST
 def delete_dahua_user(request, obj_id=None):
     """
     Deletes a Dahua biometric user or multiple users from a device.
     """
     script = "<script>window.location.reload();</script>"
     try:
-        if request.method == "POST" and obj_id:
-            user = BiometricEmployees.objects.get(id=obj_id)
-            user.delete()
+        if obj_id:
+            with transaction.atomic():
+                user = (
+                    _visible_biometric_employees()
+                    .select_for_update()
+                    .select_related("employee_id")
+                    .filter(id=obj_id, device_id__machine_type="dahua")
+                    .first()
+                )
+                if not user:
+                    messages.error(request, _("Biometric user not found."))
+                    return HttpResponse(script, status=404)
+                employee_name = user.employee_id
+                user.delete()
             messages.success(
-                request, _("{} successfully deleted!").format(user.employee_id)
+                request, _("{} successfully deleted!").format(employee_name)
             )
             script = "<script>reloadMessage();</script>"
-        if request.method == "DELETE":
-            user_ids = request.GET.getlist("ids")
-            device_id = request.GET.get("device_id")
+        else:
+            user_ids = _posted_ids(request)
+            device_id = request.POST.get("device_id")
             if device_id:
                 script = f"""
                             <span hx-get="/biometric/biometric-device-employees/{device_id}/"
@@ -1970,13 +2143,26 @@ def delete_dahua_user(request, obj_id=None):
                             </span>
                         """
             if user_ids:
-                users = BiometricEmployees.objects.filter(user_id__in=user_ids)
-                if users:
+                with transaction.atomic():
+                    device = (
+                        BiometricDevices.objects.select_for_update()
+                        .filter(id=device_id, machine_type="dahua")
+                        .first()
+                    )
+                    users = (
+                        _visible_biometric_employees()
+                        .select_for_update()
+                        .filter(device_id=device, user_id__in=user_ids)
+                        if device
+                        else BiometricEmployees.objects.none()
+                    )
                     count = users.count()
-                    users.delete()
+                    if count:
+                        users.delete()
+                if count:
                     messages.success(
                         request, _("{} users successfully deleted!").format(count)
-                    ),
+                    )
                 else:
                     messages.warning(
                         request,
@@ -1991,22 +2177,33 @@ def delete_dahua_user(request, obj_id=None):
 @install_required
 @hx_request_required
 @permission_required("biometric.delete_biometricemployees")
+@require_POST
 def delete_etimeoffice_user(request, obj_id=None):
     """
     Deletes a user or multiple users from the eTimeOffice biometric system.
     """
     script = "<script>window.location.href = '/';</script>"
-    if request.method == "POST":
-        user = BiometricEmployees.objects.get(id=obj_id)
-        device_id = user.device_id.id
-        user.delete()
+    if obj_id:
+        with transaction.atomic():
+            user = (
+                _visible_biometric_employees()
+                .select_for_update()
+                .select_related("employee_id")
+                .filter(id=obj_id, device_id__machine_type="etimeoffice")
+                .first()
+            )
+            if not user:
+                messages.error(request, _("Biometric user not found."))
+                return HttpResponse(script, status=404)
+            employee_name = user.employee_id
+            user.delete()
         messages.success(
-            request, _("{} successfully deleted!").format(user.employee_id)
+            request, _("{} successfully deleted!").format(employee_name)
         )
         script = "<script>reloadMessage();</script>"
-    if request.method == "DELETE":
-        user_ids = request.GET.getlist("ids")
-        device_id = request.GET.get("device_id")
+    else:
+        user_ids = _posted_ids(request)
+        device_id = request.POST.get("device_id")
         if device_id:
             script = f"""
                             <span hx-get="/biometric/biometric-device-employees/{device_id}/"
@@ -2015,13 +2212,26 @@ def delete_etimeoffice_user(request, obj_id=None):
                             </span>
                         """
         if user_ids:
-            users = BiometricEmployees.objects.filter(user_id__in=user_ids)
-            if users:
+            with transaction.atomic():
+                device = (
+                    BiometricDevices.objects.select_for_update()
+                    .filter(id=device_id, machine_type="etimeoffice")
+                    .first()
+                )
+                users = (
+                    _visible_biometric_employees()
+                    .select_for_update()
+                    .filter(device_id=device, user_id__in=user_ids)
+                    if device
+                    else BiometricEmployees.objects.none()
+                )
                 count = users.count()
-                users.delete()
+                if count:
+                    users.delete()
+            if count:
                 messages.success(
                     request, _("{} users successfully deleted!").format(count)
-                ),
+                )
             else:
                 messages.warning(
                     request,
@@ -2035,6 +2245,7 @@ def delete_etimeoffice_user(request, obj_id=None):
 @install_required
 @hx_request_required
 @permission_required("biometric.change_biometricdevices")
+@require_POST
 def biometric_device_live(request):
     """
     Activate or deactivate live capture mode for a biometric device based on the request parameters.
@@ -2042,114 +2253,134 @@ def biometric_device_live(request):
     :param request: The Django request object.
     :return: A JsonResponse containing a script to be executed on the client side.
     """
-    is_live = request.GET.get("is_live")
-    device_id = request.GET.get("deviceId")
-    device = BiometricDevices.objects.get(id=device_id)
-    is_live = is_live == "on"
-    if is_live:
-        port_no = device.port
-        machine_ip = device.machine_ip
-        password = int(device.zk_password)
-        conn = None
-        # create ZK instance
-        try:
-            if device.machine_type == "zk":
-                zk_device = ZK(
-                    machine_ip,
-                    port=port_no,
-                    timeout=60,
-                    password=int(password),
-                    force_udp=False,
-                    ommit_ping=False,
-                )
-                conn = zk_device.connect()
-                instance = ZKBioAttendance(machine_ip, port_no, password)
-                conn.test_voice(index=14)
-                if conn:
-                    device.is_live = True
-                    device.is_scheduler = False
-                    device.save()
-                    instance.start()
-            elif device.machine_type == "cosec":
-                cosec = COSECBiometric(
-                    device.machine_ip,
-                    device.port,
-                    device.bio_username,
-                    device.bio_password,
-                    timeout=10,
-                )
-                response = cosec.basic_config()
-                if response.get("app"):
-                    device.is_live = True
-                    device.is_scheduler = False
-                    device.save()
-                    thread = COSECBioAttendanceThread(device.id)
-                    thread.start()
-                    settings.BIO_DEVICE_THREADS[device.id] = thread
-                else:
-                    raise TimeoutError
-            else:
-                pass
+    device_id = request.POST.get("deviceId")
+    activate = request.POST.get("is_live") == "on"
+    device = BiometricDevices.objects.filter(
+        id=device_id, machine_type__in=("zk", "cosec")
+    ).first()
+    if not device:
+        return HttpResponse(
+            "<script>$('#reloadMessagesButton').click();</script>", status=404
+        )
 
-            script = """<script>
-                    Swal.fire({
-                      text: "The live capture mode has been activated successfully.",
-                      icon: "success",
-                      showConfirmButton: false,
-                      timer: 1500,
-                      timerProgressBar: true, // Show a progress bar as the timer counts down
-                      didClose: () => {
-                        location.reload();
-                        },
-                    });
-                    </script>
-                """
-        except TimeoutError as error:
-            device.is_live = False
-            device.save()
-            logger.error("An error comes in biometric_device_live", error)
-            script = """
-           <script>
-                Swal.fire({
-                  title : "Connection unsuccessful",
-                  text: "Please double-check the accuracy of the provided IP Address and Port Number for correctness",
-                  icon: "warning",
-                  showConfirmButton: false,
-                  timer: 3000,
-                  timerProgressBar: true,
-                  didClose: () => {
-                    location.reload();
-                    },
-                });
-            </script>
-            """
-        finally:
-            if conn:
-                conn.disconnect()
-    else:
-        device.is_live = False
-        device.save()
-        if device.machine_type == "cosec":
-            existing_thread = settings.BIO_DEVICE_THREADS.get(device.id)
-            if existing_thread:
+    if not activate:
+        existing_thread = settings.BIO_DEVICE_THREADS.pop(device.id, None)
+        if existing_thread:
+            try:
                 existing_thread.stop()
-                del settings.BIO_DEVICE_THREADS[device.id]
-
-        script = """
-           <script>
+            except Exception:
+                logger.exception("Unable to stop biometric live-capture thread")
+        with transaction.atomic():
+            locked_device = (
+                BiometricDevices.objects.select_for_update()
+                .filter(id=device.id)
+                .first()
+            )
+            if locked_device:
+                locked_device.is_live = False
+                locked_device.save(update_fields=["is_live"])
+        return HttpResponse(
+            """
+            <script>
                 Swal.fire({
                   text: "The live capture mode has been deactivated successfully.",
                   icon: "warning",
                   showConfirmButton: false,
                   timer: 3000,
                   timerProgressBar: true,
-                  didClose: () => {
-                    location.reload();
-                    },
+                  didClose: () => { location.reload(); },
                 });
             </script>
             """
-    return HttpResponse(script)
+        )
+
+    conn = None
+    try:
+        if device.machine_type == "zk":
+            password = int(device.zk_password)
+            zk_device = ZK(
+                device.machine_ip,
+                port=device.port,
+                timeout=10,
+                password=password,
+                force_udp=False,
+                ommit_ping=False,
+            )
+            conn = zk_device.connect()
+            conn.test_voice(index=14)
+            thread = ZKBioAttendance(device.machine_ip, device.port, password)
+        else:
+            cosec = COSECBiometric(
+                device.machine_ip,
+                device.port,
+                device.bio_username,
+                device.bio_password,
+                timeout=10,
+            )
+            response = cosec.basic_config()
+            if not response or not response.get("app"):
+                raise TimeoutError("COSEC device did not return its configuration")
+            thread = COSECBioAttendanceThread(device.id)
+
+        existing_thread = settings.BIO_DEVICE_THREADS.pop(device.id, None)
+        if existing_thread:
+            existing_thread.stop()
+
+        with transaction.atomic():
+            locked_device = (
+                BiometricDevices.objects.select_for_update()
+                .filter(id=device.id)
+                .first()
+            )
+            if not locked_device:
+                raise BiometricDevices.DoesNotExist
+            locked_device.is_live = True
+            locked_device.is_scheduler = False
+            locked_device.save(update_fields=["is_live", "is_scheduler"])
+
+        settings.BIO_DEVICE_THREADS[device.id] = thread
+        thread.start()
+    except Exception:
+        logger.exception("Unable to activate biometric live capture")
+        settings.BIO_DEVICE_THREADS.pop(device.id, None)
+        BiometricDevices.objects.filter(id=device.id).update(is_live=False)
+        return HttpResponse(
+            """
+            <script>
+                Swal.fire({
+                  title: "Connection unsuccessful",
+                  text: "Please double-check the device connection settings.",
+                  icon: "warning",
+                  showConfirmButton: false,
+                  timer: 3000,
+                  timerProgressBar: true,
+                  didClose: () => { location.reload(); },
+                });
+            </script>
+            """,
+            status=502,
+        )
+    finally:
+        if conn is not None and callable(getattr(conn, "disconnect", None)):
+            try:
+                conn.disconnect()
+            except Exception:
+                logger.exception("Unable to disconnect biometric test connection")
+
+    return HttpResponse(
+        """
+        <script>
+            Swal.fire({
+              text: "The live capture mode has been activated successfully.",
+              icon: "success",
+              showConfirmButton: false,
+              timer: 1500,
+              timerProgressBar: true,
+              didClose: () => { location.reload(); },
+            });
+        </script>
+        """
+    )
 
 
 def zk_biometric_attendance_logs(device_or_devices):
@@ -2441,7 +2672,7 @@ def cosec_biometric_attendance_logs(device):
             else:
                 pass
         except Exception as error:
-            logger.error("Error processing attendance: ", error)
+            logger.error("Error processing attendance: %s", error)
 
     if attendances:
         last_attendance = attendances[-1]
@@ -2629,57 +2860,3 @@ def etimeoffice_biometric_attendance_scheduler(device_id):
     device = BiometricDevices.find(device_id)
     if device and device.is_scheduler:
         etimeoffice_biometric_attendance_logs(device)
-
-
-try:
-    devices = BiometricDevices.objects.all().update(is_live=False)
-    for device in BiometricDevices.objects.filter(is_scheduler=True):
-        if device:
-            if str_time_seconds(device.scheduler_duration) > 0:
-                if device.machine_type == "anviz":
-                    scheduler = BackgroundScheduler()
-                    scheduler.add_job(
-                        lambda: anviz_biometric_attendance_scheduler(device.id),
-                        "interval",
-                        seconds=str_time_seconds(device.scheduler_duration),
-                    )
-                    scheduler.start()
-                elif device.machine_type == "zk":
-                    scheduler = BackgroundScheduler()
-                    scheduler.add_job(
-                        lambda: zk_biometric_attendance_scheduler(device.id),
-                        "interval",
-                        seconds=str_time_seconds(device.scheduler_duration),
-                        id=f"biometric_{device.id}",
-                    )
-                    scheduler.start()
-                elif device.machine_type == "dahua":
-                    scheduler = BackgroundScheduler()
-                    scheduler.add_job(
-                        lambda: dahua_biometric_attendance_scheduler(device.id),
-                        "interval",
-                        seconds=str_time_seconds(device.scheduler_duration),
-                    )
-                    scheduler.start()
-
-                elif device.machine_type == "cosec":
-                    scheduler = BackgroundScheduler()
-                    scheduler.add_job(
-                        lambda: cosec_biometric_attendance_scheduler(device.id),
-                        "interval",
-                        seconds=str_time_seconds(device.scheduler_duration),
-                    )
-                    scheduler.start()
-
-                elif device.machine_type == "etimeoffice":
-                    scheduler = BackgroundScheduler()
-                    scheduler.add_job(
-                        lambda: etimeoffice_biometric_attendance_scheduler(device.id),
-                        "interval",
-                        seconds=str_time_seconds(device.scheduler_duration),
-                    )
-                    scheduler.start()
-                else:
-                    pass
-except:
-    pass

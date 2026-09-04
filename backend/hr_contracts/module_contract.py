@@ -11,6 +11,8 @@ OWNS = (
     "合同主档与版本",
     "签订、续签、变更、解除等合同案例",
     "合同有效期与生效历史",
+    "合同模板、到期规则与风险处置事实",
+    "租户私有合同文档、一次性下载凭证与访问审计",
 )
 EXPECTED_PRODUCTION_GUARDS = (
     "tenant fail-closed",
@@ -28,11 +30,12 @@ RECOVERED_CORE_PARTS = (
     "续签/变更/解除正式版本追加写链",
     "/api/v1/hr/contracts/agreements Canonical API",
     "/api/v1/hr/contracts/cases Canonical API",
+    "/api/v1/hr/contracts/documents Canonical private document API",
     "Canonical Permission/Event definitions",
     "共享 durable event/outbox 投递",
     "Authority UI 正式入口",
-)
-REMAINING_CORE_PARTS = (
     "模板与规则 Authority",
     "到期预警与风险处置 Authority",
+    "合同 PDF 上传、版本绑定和审计下载闭环",
 )
+REMAINING_CORE_PARTS = ()

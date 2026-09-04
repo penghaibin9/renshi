@@ -34,6 +34,7 @@ def make_source_and_temp():
     staff = make_staff(TENANT, make_person(TENANT, "张某某"), "T5101")
     src_org = make_org(TENANT, "JSXY", "计算机学院", date(2024, 1, 1))
     temp_org = make_org(TENANT, "RGXY", "人工智能学院", date(2024, 1, 1))
+    source_position = make_position(TENANT, src_org, "SRC-P-T5101")
     rel = EmploymentService(TENANT).start_relationship(
         staff_id=staff, relationship_type="REGULAR_EMPLOYMENT",
         effective_from=date(2024, 9, 1),
@@ -43,6 +44,8 @@ def make_source_and_temp():
         assignment_type=AssignmentType.PRIMARY,
         effective_from=date(2024, 9, 1),
         organization_id=src_org,
+        position_id=source_position,
+        post_catalog_id=source_position.post_catalog_version_id,
         source_business_type="MIGRATION_VERIFIED",
     )
     temporary = AssignmentService(TENANT).create_assignment(
@@ -240,6 +243,43 @@ class TemporaryCreateWriterTests(TestCase):
             )
         self.assertEqual(caught.exception.code, "CHANGE_INVALID_ACTION")
 
+    def test_secondment_can_select_and_reserve_a_real_target_position(self):
+        from hr_changes.integrations.hr02 import PositionGate
+
+        staff, target_org, _source = self._authority_facts("T5112")
+        target_position = make_position(
+            TENANT, target_org, "TMP-P-T5112", max_incumbents=1
+        )
+        action = make_action(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        reason = make_reason(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        case = TemporaryAssignmentService(TENANT, actor_user_id=1).create_temporary_case(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            target_org_id=target_org.id,
+            target_position_id=target_position.id,
+            requested_effective_at=date.today(),
+            expected_return_at=date.today() + timedelta(days=90),
+        )
+        self.assertEqual(case.target_position_id_id, target_position.id)
+        workflow = ChangeService(TENANT, actor_user_id=1)
+        case = workflow.submit(case.id)
+        case = workflow.start_approval(case.id)
+        case = workflow.approve_all(case.id)
+        reservation = PositionGate(TENANT).reserve_for_case(case)
+        self.assertIsNotNone(reservation)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+        temporary = HrStaffAssignment.objects.get(
+            tenant_id=TENANT,
+            assignment_type=AssignmentType.SECONDMENT,
+            source_business_id=case.case_no,
+        )
+        self.assertEqual(case.status, "EFFECTIVE")
+        self.assertEqual(temporary.position_id_id, target_position.id)
+        self.assertEqual(
+            temporary.post_catalog_id_id, target_position.post_catalog_version_id_id
+        )
+
 
 class ReturnServiceTests(TestCase):
     def setUp(self):
@@ -280,15 +320,20 @@ class ReturnServiceTests(TestCase):
         from hr_structure.scope import Hr02Scope
 
         position = self.source.position_id
-        if position:
-            PositionService(Hr02Scope(scope_type="SCHOOL", tenant_id=TENANT)).close(position.id, reason="撤销")
-            with self.assertRaises(ReturnServiceError) as cm:
-                ReturnService(TENANT).plan_return(self.link.id)
-            self.assertEqual(cm.exception.code, "RETURN_TARGET_INVALID")
-            self.link.refresh_from_db()
-            self.assertEqual(self.link.status, "RETURN_TARGET_INVALID")
-        else:
-            self.skipTest("source 无权威岗位，跳过岗位关闭分支")
+        self.assertIsNotNone(position)
+        AssignmentService(TENANT).close_assignment(
+            assignment_id=self.source.id,
+            effective_to=date(2026, 9, 1),
+        )
+        PositionService(Hr02Scope(scope_type="SCHOOL", tenant_id=TENANT)).close(
+            position.id,
+            reason="撤销",
+        )
+        with self.assertRaises(ReturnServiceError) as cm:
+            ReturnService(TENANT).plan_return(self.link.id)
+        self.assertEqual(cm.exception.code, "RETURN_TARGET_INVALID")
+        self.link.refresh_from_db()
+        self.assertEqual(self.link.status, "RETURN_TARGET_INVALID")
 
     def test_suspend_policy_restores_source(self):
         # 挂起式原岗 + 返岗 → 恢复新段

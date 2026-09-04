@@ -73,7 +73,7 @@
                         {% if perms.base.delete_announcementcomment or request.user == comment.created_by %}
                             <span
                                 class="float-end"
-                                hx-get="{% url 'announcement-delete-comment' comment.id %}"
+                                hx-post="{% url 'announcement-delete-comment' comment.id %}"
                                 hx-swap="delete"
                                 hx-target="#announCommentCard{{comment.id}}"
                                 hx-on:click="setTimeout(() => {reloadMessage(this);},100);"

@@ -31,13 +31,13 @@
       rect.left < window.innerWidth;
   }
 
-  function closeWithHorillaStateMachine() {
+  function closeWithShellStateMachine() {
     if (!mq.matches || nativeCloseInFlight || !sidebarOccupiesViewport()) return;
     if (typeof window.handleSidebarToggle !== 'function') return;
 
     rememberDesktopState();
     nativeCloseInFlight = true;
-    // Horilla owns the sidebar state machine in static/index/index.js:
+    // The compatibility shell owns the sidebar state machine in static/index/index.js:
     // handleSidebarToggle() updates #sidebar, .oh-wrapper-main and sidebarOpen
     // together. Reuse it instead of hiding the shell with page-specific CSS.
     window.handleSidebarToggle();
@@ -51,7 +51,7 @@
     if (!mq.matches) return;
     rememberDesktopState();
     localStorage.setItem('sidebarOpen', 'false');
-    closeWithHorillaStateMachine();
+    closeWithShellStateMachine();
   }
 
   function restoreDesktopPreference() {
@@ -64,7 +64,7 @@
     desktopStoredState = null;
   }
 
-  // Set the persisted mobile intent before Horilla's restore path runs, then
+  // Set the persisted mobile intent before the compatibility restore path runs, then
   // perform delayed native closes after its bundled handler is guaranteed to
   // exist. A second pass covers late shell initialization without reopening an
   // already-closed sidebar because geometry is checked first.

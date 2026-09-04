@@ -101,7 +101,7 @@ class RecruitmentTodoProvider(HrTodoProvider):
                     due_at=due_at,
                     is_overdue=bool(rec.end_date and rec.end_date < context.today()),
                     action_label="查看招聘",
-                    action_url=f"/recruitment/recruitment-view/{rec.id}/",
+                    action_url="/hr/recruitment/campaigns",
                     permission_code=self.required_permission,
                 )
             )

@@ -39,7 +39,7 @@ docs/README_新手入口.md         你现在看的文件
 docs/开发顺序_接管版.md          当前唯一推荐施工顺序
 docs/00_文档总索引.md            需要深挖业务时再进去
 
-docs/00_高校人事系统全局架构与Horilla接管合同.md
+docs/00_高校人事系统全局架构与旧系统接管合同.md
                                 全系统最高规则
 
 backend/horilla/settings/       Django 全局配置

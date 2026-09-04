@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from django.utils import timezone
+
 from hr_qualification.constants import (
     CredentialStatus,
     RequirementMatchResult,
@@ -69,7 +71,7 @@ class RequirementService:
         repository-wide half-open interval convention, and minimum-level ordering
         is accepted only when the catalog schema actually proves both ranks.
         """
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         matched_id = str(credential.id)
 
         if credential.tenant_id != requirement.tenant_id:
@@ -194,7 +196,7 @@ class RequirementService:
             get_formal_credential_evidence_for_person,
         )
 
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         identity = self._canonical_identity(tenant_id, staff_master_id)
         if identity is None:
             return False
@@ -235,7 +237,7 @@ class RequirementService:
             get_verified_background_evidence,
         )
 
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         identity = self._canonical_identity(tenant_id, staff_master_id)
         if identity is None:
             return False

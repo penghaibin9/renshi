@@ -4,6 +4,7 @@ from importlib.util import find_spec
 
 from django.urls import include, path, re_path
 
+from horilla.legacy_cutover_policy import LEGACY_HR_UI_SUCCESSORS
 from horilla.legacy_hr_api import legacy_hr_api_redirect
 from horilla.legacy_hr_ui import legacy_hr_ui_redirect
 from hr_external.api import wb_agreement as hr08_wb_agreement_api
@@ -86,9 +87,11 @@ urlpatterns.append(
     )
 )
 
-# Retired browser roots remain bookmark-compatible without reviving legacy
-# writers. GET/HEAD land on canonical workspaces; unsafe methods fail closed.
-for _legacy_domain in ("payroll", "offboarding", "report"):
+# Every Horilla browser root is now an entry adapter only.  The legacy apps stay
+# installed as compatibility data/services for the canonical HR01~HR18 modules,
+# but no old template or English navigation shell is reachable.  GET/HEAD land
+# on the corresponding canonical workspace; unsafe methods fail closed.
+for _legacy_domain in LEGACY_HR_UI_SUCCESSORS:
     urlpatterns.append(
         re_path(
             rf"^{_legacy_domain}(?:/(?P<tail>.*))?$",

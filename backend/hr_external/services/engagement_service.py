@@ -18,6 +18,7 @@ from typing import Optional
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from hr_external.constants import (
     AgreementProviderStatus,
@@ -225,7 +226,7 @@ class EngagementService:
             if not self.agreement_gate_passed(engagement):
                 raise AgreementGateBlocked("agreement is not ready for activation")
 
-            effective_day = as_of or date.today()
+            effective_day = as_of or timezone.localdate()
             if engagement.start_at > effective_day:
                 raise InvalidEngagementState("EXTERNAL_ENGAGEMENT_NOT_EFFECTIVE_YET")
             if engagement.end_at is not None and engagement.end_at <= effective_day:
@@ -234,6 +235,22 @@ class EngagementService:
         engagement.status = target_status
         engagement.version += 1
         engagement.save(update_fields=["status", "version", "updated_at"])
+        if target_status in (
+            ExternalEngagementStatus.SUSPENDED,
+            ExternalEngagementStatus.ENDED,
+            ExternalEngagementStatus.EXPIRED,
+        ):
+            from hr_external.services.access_service import AccessService
+
+            AccessService().revoke_engagement_access(
+                tenant_id=tenant_id, engagement=engagement
+            )
+        elif target_status == ExternalEngagementStatus.ACTIVE:
+            from hr_external.services.access_service import AccessService
+
+            AccessService().provision_engagement_access(
+                tenant_id=tenant_id, engagement=engagement
+            )
         return engagement
 
     @transaction.atomic

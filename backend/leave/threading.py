@@ -107,7 +107,7 @@ class LeaveMailSendThread(Thread):
             if company and company.icon and os.path.exists(company.icon.path):
                 image_path = company.icon.path
             else:
-                image_path = finders.find("images/ui/horilla-sticker-round.png")
+                image_path = finders.find("images/ui/university-seal.jpg")
 
             if image_path:
                 with open(image_path, "rb") as f:

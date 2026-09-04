@@ -4,6 +4,8 @@ from django.template.loader import get_template
 from django.test import TestCase
 from django.urls import resolve, reverse
 
+FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "frontend"
+
 
 class Hr16UiContractTests(TestCase):
     def test_workspace_routes_are_registered(self):
@@ -38,6 +40,7 @@ class Hr16UiContractTests(TestCase):
         self.assertIn("data-can-manage", source)
         self.assertIn("data-can-handover", source)
         self.assertIn("data-can-effect", source)
+        self.assertIn("data-can-retirement-precheck", source)
         self.assertIn("hr16-actions.js", source)
         self.assertNotIn("<style", source)
         self.assertNotIn("style=", source)
@@ -46,10 +49,21 @@ class Hr16UiContractTests(TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_actions_use_real_boundaries_without_raw_identity_inputs(self):
-        source = Path("static/hr/js/pages/hr16-actions.js").read_text(encoding="utf-8")
-        for boundary in ("'submit'", "'approve'", "/handover-items/", "/apply-effect/", "/retirement/"):
+        source = (FRONTEND_ROOT / "static/hr/js/pages/hr16-actions.js").read_text(encoding="utf-8")
+        for boundary in ("'submit'", "'approve'", "/handover-items/", "/complete-upload/", "/apply-effect/", "/retirement/", "/retirement-prechecks/", "/archive-transfers/"):
             self.assertIn(boundary, source)
         for forbidden in ("Person UUID", "Relationship UUID", "Staff UUID", "location.reload", "prompt(", "alert("):
             self.assertNotIn(forbidden, source)
-        self.assertIn("可信人员与任职关系选择器", source)
-        self.assertIn("可信证据上传器", source)
+        self.assertIn("hr16-exit-case-candidates", source)
+        self.assertIn("教职工与有效聘用关系", source)
+        self.assertIn("上传凭证并完成", source)
+        self.assertIn("data-download-reason", source)
+        self.assertIn("data-archive-download-reason", source)
+        self.assertNotIn("退休政策与预审能力尚未接通", source)
+
+    def test_workspace_explains_degraded_capabilities(self):
+        source = (FRONTEND_ROOT / "static/hr/js/pages/hr16-exit.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("capabilityReasons", source)

@@ -1,16 +1,17 @@
+import hashlib
+import unicodedata
 import logging
-import os
-import time
 from datetime import datetime
 
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.signals import user_login_failed
+from django.contrib.auth.signals import user_logged_in, user_login_failed
+from django.core.cache import cache
 from django.db.models import Max, Q
 from django.db.models.signals import m2m_changed, post_delete, post_migrate, post_save
 from django.dispatch import receiver
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext as _
 
@@ -456,140 +457,141 @@ def filtered_employees(sender, instance, action, **kwargs):
     instance.filtered_employees.set(employees)
 
 
-# Logger setup
+# Login abuse protection.  State lives in Django's shared cache (Redis in
+# production), so every Gunicorn worker observes the same counters and bans.
 logger = logging.getLogger("django.security")
-
-# Create a global dictionary to track login attempts and ban time per session
-failed_attempts = {}
-ban_time = {}
-
-FAIL2BAN_LOG_ENABLED = os.path.exists(
-    "security.log"
-)  # Checking that any file is created for the details of the wrong logins.
-# The file will be created only if you set the LOGGING in your settings.py
+LOGIN_PATHS = frozenset({"/login", "/login/"})
 
 
-@receiver(user_login_failed)
+def _login_client_fingerprint(request):
+    remote_addr = request.META.get("REMOTE_ADDR", "unknown") if request else "unknown"
+    if request and getattr(settings, "FAIL2BAN_TRUST_X_REAL_IP", False):
+        remote_addr = request.META.get("HTTP_X_REAL_IP") or remote_addr
+    return hashlib.sha256(str(remote_addr).encode("utf-8")).hexdigest()
+
+
+def _login_identity(request, credentials=None):
+    username = ""
+    if credentials:
+        username = credentials.get("username") or ""
+    if not username and request is not None:
+        username = request.POST.get("username") or ""
+    normalized = unicodedata.normalize("NFKC", str(username)).strip().casefold()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _login_cache_key(kind, request, credentials=None):
+    key = f"login-rate:{kind}:{_login_client_fingerprint(request)}"
+    if kind.startswith("identity-"):
+        key += f":{_login_identity(request, credentials)}"
+    return key
+
+
+def _increment_login_counter(key, *, threshold, window_seconds, ban_key, ban_seconds):
+    if cache.add(key, 1, timeout=window_seconds):
+        attempts = 1
+    else:
+        attempts = cache.incr(key)
+    if attempts >= threshold:
+        cache.set(ban_key, True, timeout=ban_seconds)
+        cache.delete(key)
+        return True
+    return False
+
+
+def _rate_limited_response():
+    ban_seconds = int(getattr(settings, "FAIL2BAN_BAN_TIME", 900))
+    response = HttpResponse(
+        _("Too many failed login attempts. Please try again later."),
+        status=429,
+        content_type="text/plain; charset=utf-8",
+    )
+    response["Retry-After"] = str(ban_seconds)
+    return response
+
+
+@receiver(user_login_failed, dispatch_uid="base.shared_login_rate_limit.failed")
 def log_login_failed(sender, credentials, request, **kwargs):
-    """
-    To ban the IP of user that enter wrong credentials for multiple times
-    you should add this section in your settings.py file. And also it creates the security file for deatils of wrong logins.
-
-
-    LOGGING = {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'handlers': {
-            'security_file': {
-                'level': 'WARNING',
-                'class': 'logging.FileHandler',
-                'filename': '/var/log/django/security.log', # File Path for view the log details.
-                                                            # Give the same path to the section FAIL2BAN_LOG_ENABLED = os.path.exists('security.log') in signals.py in Base.
-            },
-        },
-        'loggers': {
-            'django.security': {
-                'handlers': ['security_file'],
-                'level': 'WARNING',
-                'propagate': False,
-            },
-        },
-    }
-
-    # This section is for giving the maxtry and bantime
-
-    FAIL2BAN_MAX_RETRY = 3        # Same as maxretry in jail.local
-    FAIL2BAN_BAN_TIME = 300       # Same as bantime in jail.local (in seconds)
-
-    """
-
-    # Checking that the file is created or not to initiate the ban functions.
-    if not FAIL2BAN_LOG_ENABLED:
+    """Count failed logins without storing usernames or forcing a DB session."""
+    if request is None:
         return
+    max_attempts = int(getattr(settings, "FAIL2BAN_MAX_RETRY", 5))
+    ip_max_attempts = int(getattr(settings, "FAIL2BAN_IP_MAX_RETRY", 100))
+    window_seconds = int(getattr(settings, "FAIL2BAN_ATTEMPT_WINDOW", 900))
+    ban_seconds = int(getattr(settings, "FAIL2BAN_BAN_TIME", 900))
+    try:
+        identity_blocked = _increment_login_counter(
+            _login_cache_key("identity-attempts", request, credentials),
+            threshold=max_attempts,
+            window_seconds=window_seconds,
+            ban_key=_login_cache_key("identity-ban", request, credentials),
+            ban_seconds=ban_seconds,
+        )
+        ip_blocked = _increment_login_counter(
+            _login_cache_key("ip-attempts", request),
+            threshold=ip_max_attempts,
+            window_seconds=window_seconds,
+            ban_key=_login_cache_key("ip-ban", request),
+            ban_seconds=ban_seconds,
+        )
+        if identity_blocked or ip_blocked:
+            request._login_rate_limited = True
+    except Exception:
+        request._login_rate_limit_unavailable = True
+        logger.exception("login rate-limit cache failure")
 
-    max_attempts = getattr(settings, "FAIL2BAN_MAX_RETRY", 3)
-    ban_duration = getattr(settings, "FAIL2BAN_BAN_TIME", 300)
-
-    username = credentials.get("username", "unknown")
-    ip = request.META.get("REMOTE_ADDR", "unknown")
-    session_key = (
-        request.session.session_key or request.session._get_or_create_session_key()
+    logger.warning(
+        "invalid login attempt client=%s",
+        _login_client_fingerprint(request)[:16],
     )
 
-    # Check if currently banned
-    if session_key in ban_time and ban_time[session_key] > time.time():
-        banned_until = time.strftime("%H:%M", time.localtime(ban_time[session_key]))
-        messages.info(
-            request,
-            _("You are banned until %(banned_until)s. Please try again later.")
-            % {"banned_until": banned_until},
+
+@receiver(user_logged_in, dispatch_uid="base.shared_login_rate_limit.succeeded")
+def clear_login_failures(sender, request, user, **kwargs):
+    if request is None:
+        return
+    try:
+        cache.delete_many(
+            [
+                _login_cache_key("identity-attempts", request),
+                _login_cache_key("identity-ban", request),
+                _login_cache_key("ip-attempts", request),
+                _login_cache_key("ip-ban", request),
+            ]
         )
-        return redirect("/")
-
-    # If ban expired, reset counters
-    if session_key in ban_time and ban_time[session_key] <= time.time():
-        del ban_time[session_key]
-        if session_key in failed_attempts:
-            del failed_attempts[session_key]
-
-    # Initialize tracking if needed
-    if session_key not in failed_attempts:
-        failed_attempts[session_key] = 0
-
-    failed_attempts[session_key] += 1
-    attempts_left = max_attempts - failed_attempts[session_key]
-
-    logger.warning(f"Invalid login attempt for user '{username}' from {ip}")
-
-    if failed_attempts[session_key] >= max_attempts:
-        ban_time[session_key] = time.time() + ban_duration
-        messages.info(
-            request,
-            _(
-                "You have been banned for %(minutes)s minutes due to multiple failed login attempts."
-            )
-            % {"minutes": ban_duration // 60},
-        )
-        return redirect("/")
-
-    messages.info(
-        request,
-        _("You have %(attempts)s login attempt(s) left before a temporary ban.")
-        % {"attempts": attempts_left},
-    )
-    return redirect("login")
+    except Exception:
+        logger.exception("failed to clear login rate-limit state")
 
 
 class Fail2BanMiddleware:
-    """
-    Middleware to force password change for new employees.
-    """
+    """Throttle only login POSTs; all other requests remain side-effect free."""
 
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        session_key = request.session.session_key
-        if not session_key:
-            request.session.create()
-
-        # Check ban and enforce it
-        if session_key in ban_time and ban_time[session_key] > time.time():
-            banned_until = time.strftime("%H:%M", time.localtime(ban_time[session_key]))
-            messages.info(
-                request,
-                _("You are banned until %(banned_until)s. Please try again later.")
-                % {"banned_until": banned_until},
+        if request.path_info not in LOGIN_PATHS or request.method != "POST":
+            return self.get_response(request)
+        try:
+            if cache.get(_login_cache_key("identity-ban", request)) or cache.get(
+                _login_cache_key("ip-ban", request)
+            ):
+                return _rate_limited_response()
+        except Exception:
+            logger.exception("login rate-limit cache unavailable")
+            return HttpResponse(
+                _("Authentication service is temporarily unavailable."),
+                status=503,
+                content_type="text/plain; charset=utf-8",
             )
-            return render(request, "403.html")
 
-        # If ban expired, clear counters
-        if session_key in ban_time and ban_time[session_key] <= time.time():
-            del ban_time[session_key]
-            if session_key in failed_attempts:
-                del failed_attempts[session_key]
-
-        return self.get_response(request)
-
-
-settings.MIDDLEWARE.append("base.signals.Fail2BanMiddleware")
+        response = self.get_response(request)
+        if getattr(request, "_login_rate_limit_unavailable", False):
+            return HttpResponse(
+                _("Authentication service is temporarily unavailable."),
+                status=503,
+                content_type="text/plain; charset=utf-8",
+            )
+        if getattr(request, "_login_rate_limited", False):
+            return _rate_limited_response()
+        return response

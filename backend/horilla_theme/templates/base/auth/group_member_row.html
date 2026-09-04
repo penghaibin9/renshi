@@ -26,7 +26,8 @@
                                 <button
                                     type="button"
                                     class="text-primary-400 hover:text-danger leading-none"
-                                    hx-post="{% url 'group-remove-user' user.id group.id %}?company_id={{ company.id }}"
+                                    hx-post="{% url 'group-remove-user' user.id group.id %}"
+                                    hx-vals='{"company_id":"{{ company.id }}"}'
                                     hx-target="#groupMember{{ group.id }}_{{ user.id }}"
                                     hx-swap="outerHTML"
                                     hx-trigger="confirmed"

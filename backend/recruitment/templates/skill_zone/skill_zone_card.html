@@ -60,23 +60,20 @@
                     {% endif %}
                     {% if skill_zone.is_active %}
                       <li class="oh-dropdown__item">
-                        <a
-                        href="{% url 'skill-zone-archive' skill_zone.id %}"
-                        onclick = "event.preventDefault();event.stopPropagation(); confirm(`{% trans 'Do you want to archive this talent pool?' %}`)"
-                        >{% trans "Archive" %}</a>
+                        <form method="post" action="{% url 'skill-zone-archive' skill_zone.id %}" onsubmit="event.stopPropagation(); return confirm(`{% trans 'Do you want to archive this talent pool?' %}`)">
+                          {% csrf_token %}<button type="submit" class="oh-dropdown__link border-0 bg-transparent w-100 text-start">{% trans "Archive" %}</button>
+                        </form>
                       </li>
                     {% else %}
-                      <a
-                      href="{% url 'skill-zone-archive' skill_zone.id %}"
-                      onclick = "event.preventDefault();event.stopPropagation(); confirm(`{% trans 'Do you want to unarchive this talent pool?' %}`)"
-                      >{% trans "Un Archive" %}</a>
+                      <form method="post" action="{% url 'skill-zone-archive' skill_zone.id %}" onsubmit="event.stopPropagation(); return confirm(`{% trans 'Do you want to unarchive this talent pool?' %}`)">
+                        {% csrf_token %}<button type="submit" class="oh-dropdown__link border-0 bg-transparent w-100 text-start">{% trans "Un Archive" %}</button>
+                      </form>
                     {% endif %}
 
                     <li class="oh-dropdown__item">
-                        <a class="text-danger"
-                        href="{% url 'skill-zone-delete' skill_zone.id %}"
-                        onclick = "event.preventDefault();event.stopPropagation(); confirm(`{% trans 'Do you want to delete this talent pool?' %}`)"
-                        >{% trans "Delete" %}</a>
+                        <form method="post" action="{% url 'skill-zone-delete' skill_zone.id %}" onsubmit="event.stopPropagation(); return confirm(`{% trans 'Do you want to delete this talent pool?' %}`)">
+                          {% csrf_token %}<button type="submit" class="oh-dropdown__link oh-dropdown__link--danger border-0 bg-transparent w-100 text-start">{% trans "Delete" %}</button>
+                        </form>
                     </li>
                 </ul>
                 </div>

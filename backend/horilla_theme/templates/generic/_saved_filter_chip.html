@@ -40,6 +40,6 @@
         </button>
 
         <!-- Hidden Delete Trigger -->
-        <button hidden hx-get="{% url 'delete-saved-filter' filter.id %}" hx-swap="none"></button>
+        <button hidden hx-post="{% url 'delete-saved-filter' filter.id %}" hx-swap="none"></button>
     </div>
 </div>

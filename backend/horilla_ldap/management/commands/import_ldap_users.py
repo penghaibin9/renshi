@@ -1,5 +1,4 @@
 import platform
-import re
 import sys
 
 from django.core.management.base import BaseCommand
@@ -60,17 +59,8 @@ class Command(BaseCommand):
                     name = entry.get("cn", [b""])[0].decode("utf-8")
                     phone = entry.get("telephoneNumber", [b""])[0].decode("utf-8")
 
-                    # Get the password from LDAP
-                    ldap_password = entry.get("telephoneNumber", [b""])[0].decode(
-                        "utf-8"
-                    )
-
-                    # Remove non-numeric characters but keep numbers
-                    clean_phone = re.sub(r"[^\d]", "", phone)
-                    ldap_password = clean_phone
-
                     self.create_or_update_employee(
-                        user_id, email, first_name, last_name, phone, ldap_password
+                        user_id, email, first_name, last_name, phone
                     )
 
                 connection.unbind_s()
@@ -110,12 +100,8 @@ class Command(BaseCommand):
                     name = entry.cn.value if entry.cn else ""
                     phone = entry.telephoneNumber.value if entry.telephoneNumber else ""
 
-                    # Get the password from LDAP
-                    clean_phone = re.sub(r"[^\d]", "", phone)
-                    ldap_password = clean_phone
-
                     self.create_or_update_employee(
-                        user_id, email, first_name, last_name, phone, ldap_password
+                        user_id, email, first_name, last_name, phone
                     )
 
                 connection.unbind()
@@ -124,7 +110,7 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f"Error: {e}"))
 
     def create_or_update_employee(
-        self, user_id, email, first_name, last_name, phone, ldap_password
+        self, user_id, email, first_name, last_name, phone
     ):
         employee, created = Employee.objects.update_or_create(
             email=email,
@@ -140,8 +126,9 @@ class Command(BaseCommand):
                 Q(username=email) | Q(username=user_id) | Q(email=email)
             )
             user.username = email
-            user.set_password(ldap_password)  # Hash and store password securely
-            user.save()
+            # Directory synchronisation must not overwrite local credentials,
+            # especially not with a predictable telephone number.
+            user.save(update_fields=["username"])
             action = "Updated"
         except HorillaUser.DoesNotExist:
             self.stdout.write(

@@ -2,31 +2,44 @@
 
 from django.test import TestCase
 from hr_assessment.feature_flags import get_flag, set_flag, list_flags, ensure_no_double_authority
+from hr_assessment.models import HrAssessmentCutoverEvent
+from hr_control_center.models import HrAuthorityCutover
+
+
+TENANT = 10001
 
 
 class CutoverGateTest(TestCase):
-    def setUp(self):
-        set_flag("HR12_NEW_CYCLE_ONLY", False)
-        set_flag("HR12_SHADOW_EXECUTION", False)
-
     def test_new_cycle_only_flag_defaults_false(self):
-        self.assertFalse(get_flag("HR12_NEW_CYCLE_ONLY"))
+        self.assertFalse(get_flag("HR12_NEW_CYCLE_ONLY", tenant_id=TENANT))
 
-    def test_set_and_get_feature_flag(self):
-        set_flag("HR12_NEW_CYCLE_ONLY", True)
-        self.assertTrue(get_flag("HR12_NEW_CYCLE_ONLY"))
-        set_flag("HR12_NEW_CYCLE_ONLY", False)
+    def test_direct_feature_flag_mutation_is_rejected(self):
+        with self.assertRaises(RuntimeError):
+            set_flag("HR12_NEW_CYCLE_ONLY", True, tenant_id=TENANT)
 
-    def test_shadow_execution_defaults_false(self):
-        self.assertFalse(get_flag("HR12_SHADOW_EXECUTION"))
+    def test_shadow_execution_is_derived_from_durable_phase(self):
+        HrAssessmentCutoverEvent.objects.create(
+            tenant_id=TENANT,
+            phase="SHADOW_EXECUTION",
+            authority_mode=HrAuthorityCutover.Mode.DUAL_READ_COMPARE,
+            operator="test",
+            reason="test",
+        )
+        self.assertTrue(get_flag("HR12_SHADOW_EXECUTION", tenant_id=TENANT))
 
     def test_no_double_authority_on_hr12_activation(self):
         """切换 HR12 Authority 后，不应同时开启 shadow"""
-        self.assertFalse(get_flag("HR12_SHADOW_EXECUTION"))
-        self.assertTrue(ensure_no_double_authority("HR12"))
+        HrAuthorityCutover.objects.create(
+            tenant_id=TENANT,
+            domain=HrAuthorityCutover.Domain.ASSESSMENT,
+            mode=HrAuthorityCutover.Mode.AUTHORITY_ONLY,
+            reason="test",
+        )
+        self.assertFalse(get_flag("HR12_SHADOW_EXECUTION", tenant_id=TENANT))
+        self.assertTrue(ensure_no_double_authority("HR12", tenant_id=TENANT))
 
     def test_list_all_flags_complete(self):
-        flags = list_flags()
+        flags = list_flags(tenant_id=TENANT)
         required = {"HR12_POLICY_AUTHORITY", "HR12_CYCLE_AUTHORITY", "HR12_ANNUAL_AUTHORITY",
                      "HR12_TERM_AUTHORITY", "HR12_ETHICS_AUTHORITY", "HR12_GOAL_AUTHORITY",
                      "HR12_SHADOW_EXECUTION", "HR12_NEW_CYCLE_ONLY"}

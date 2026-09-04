@@ -8,6 +8,8 @@ from urllib.parse import parse_qs, urlparse
 
 from django import forms
 from django.contrib import messages
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
@@ -44,6 +46,40 @@ BLOCKED_EXTENSIONS = {
     ".sh",
     ".exe",
 }
+
+
+def scope_documents_for_review(request, queryset=None):
+    """Limit document decisions to global reviewers or the employee's manager."""
+    queryset = queryset if queryset is not None else Document.objects.all()
+    if request.user.has_perm(
+        "horilla_documents.change_document"
+    ) or request.user.has_perm("horilla_documents.add_document"):
+        return queryset
+    try:
+        manager = request.user.employee_get
+    except (AttributeError, ObjectDoesNotExist):
+        return queryset.none()
+    return queryset.filter(
+        employee_id__employee_work_info__reporting_manager_id=manager
+    )
+
+
+def can_edit_employee_document(request, employee):
+    """Allow an employee, their manager, or a global reviewer to upload files."""
+    try:
+        actor = request.user.employee_get
+    except (AttributeError, ObjectDoesNotExist):
+        actor = None
+    if actor == employee:
+        return True
+    if request.user.has_perm(
+        "horilla_documents.change_document"
+    ) or request.user.has_perm("horilla_documents.add_document"):
+        return True
+    try:
+        return employee.employee_work_info.reporting_manager_id == actor.pk
+    except (AttributeError, ObjectDoesNotExist):
+        return False
 
 
 def htmx_refresh_document_request_container(request) -> Optional[HttpResponse]:
@@ -151,10 +187,17 @@ class DocumentCreateForm(HorillaFormView):
     model = Document
     new_display_title = _("Document")
 
+    def dispatch(self, request, *args, **kwargs):
+        self.target_employee = get_object_or_404(Employee, pk=kwargs.get("emp_id"))
+        if not can_edit_employee_document(request, self.target_employee):
+            messages.error(request, _("You don't have permission to upload this document."))
+            return HttpResponse(status=403)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_initial(self) -> dict:
         initial = super().get_initial()
         employee_id = self.kwargs.get("emp_id")
-        initial["employee_id"] = employee_id
+        initial["employee_id"] = self.target_employee.pk
         initial["expiry_date"] = None
         return initial
 
@@ -171,6 +214,9 @@ class DocumentCreateForm(HorillaFormView):
                     return refreshed
                 return HorillaRedirect(self.request)
 
+        form.instance.employee_id = self.target_employee
+        if not self.request.user.has_perm("asset.add_asset"):
+            form.instance.is_digital_asset = False
         form.save()
         messages.success(self.request, _("Document Uploaded Successfully"))
         refreshed = htmx_refresh_document_request_container(self.request)
@@ -190,6 +236,14 @@ class DocumentRejectCbvForm(HorillaFormView):
     form_class = RejectForm
     hx_confirm = _("Do you want to reject this request")
 
+    def dispatch(self, request, *args, **kwargs):
+        if not scope_documents_for_review(
+            request, Document.objects.filter(pk=kwargs.get("pk"))
+        ).exists():
+            messages.error(request, _("You don't have permission to reject this document."))
+            return HttpResponse(status=403)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.form.instance.pk:
@@ -198,12 +252,17 @@ class DocumentRejectCbvForm(HorillaFormView):
 
     def form_valid(self, form: RejectForm) -> HttpResponse:
         if form.is_valid():
-            if self.form.instance.document:
-                self.form.instance.status = "rejected"
-                form.save()
-                messages.success(self.request, _("Document request rejected"))
-            else:
-                messages.error(self.request, _("No document uploaded"))
+            with transaction.atomic():
+                document = Document.objects.select_for_update().get(
+                    pk=self.form.instance.pk
+                )
+                if document.document:
+                    document.reject_reason = form.cleaned_data["reject_reason"]
+                    document.status = "rejected"
+                    document.save(update_fields=["reject_reason", "status"])
+                    messages.success(self.request, _("Document request rejected"))
+                else:
+                    messages.error(self.request, _("No document uploaded"))
             refreshed = htmx_refresh_document_request_container(self.request)
             if refreshed is not None:
                 return refreshed
@@ -221,6 +280,16 @@ class DocumentUploadForm(HorillaFormView):
     model = Document
     form_class = DocumentUpdateForm
     template_name = "cbv/documents/inherit_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        document = get_object_or_404(
+            Document.objects.select_related("employee_id"), pk=kwargs.get("pk")
+        )
+        if not can_edit_employee_document(request, document.employee_id):
+            messages.error(request, _("You don't have permission to upload this document."))
+            return HttpResponse(status=403)
+        self.target_document_id = document.pk
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -269,8 +338,30 @@ class DocumentUploadForm(HorillaFormView):
                     )
                 except Exception:
                     pass
-            form.instance.status = "requested"
-            form.save()
+            with transaction.atomic():
+                document = Document.objects.select_for_update().get(
+                    pk=self.target_document_id
+                )
+                for field_name in (
+                    "document",
+                    "issue_date",
+                    "expiry_date",
+                    "notify_before",
+                ):
+                    setattr(document, field_name, form.cleaned_data[field_name])
+                document.status = "requested"
+                document.reject_reason = None
+                document.full_clean()
+                document.save(
+                    update_fields=[
+                        "document",
+                        "issue_date",
+                        "expiry_date",
+                        "notify_before",
+                        "status",
+                        "reject_reason",
+                    ]
+                )
             refreshed = htmx_refresh_document_request_container(self.request)
             if refreshed is not None:
                 return refreshed

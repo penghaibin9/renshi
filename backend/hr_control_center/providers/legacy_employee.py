@@ -5,7 +5,7 @@ LegacyEmployeeMetricProvider —— HR02/HR03 就绪前的 current-snapshot 指�
 
 硬合同（总册 1.1 / 30 节）：
 - dataBasis = LEGACY_CURRENT_SNAPSHOT，不得伪装“历史事实”。
-- 依赖模块未建设（如双师 HR09）→ UNAVAILABLE，不显示 0。
+- 旧系统快照无法回答的正式指标 → UNAVAILABLE，不显示 0；HR01 会路由到对应权威域。
 - 公司过滤：Employee.objects 已走 HorillaCompanyManager（当前选中学校）。
 - 严禁 except Exception: pass 后 fake zero。
 """
@@ -164,12 +164,12 @@ class LegacyEmployeeMetricProvider:
                 definition_version=definition.definition_version,
                 authority_mode=context.authority_mode or LEGACY_ONLY,
             )
-        # HR09 尚未建设：占位，避免被误认为 fake-zero。
+        # 旧 Employee 快照不拥有 HR09 正式认定事实；由 HR01 权威路由处理。
         return ProviderResult.unavailable(
             provider_key=self.provider_key,
             metric_key=definition.key,
             reason_code="MODULE_NOT_AVAILABLE",
-            message="HR09 双师型教师模块尚未建设。",
+            message="旧人员快照不包含双师认定事实，请使用 HR09 正式数据源。",
             definition_version=definition.definition_version,
             authority_mode=context.authority_mode or LEGACY_ONLY,
         )

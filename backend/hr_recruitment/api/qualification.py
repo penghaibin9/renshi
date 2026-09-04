@@ -91,6 +91,12 @@ def workbench(request):
                 {
                     "id": str(a.id),
                     "application_no": a.application_no,
+                    "recruitment_position_id": str(a.recruitment_position_id_id),
+                    "qualification_rule_version_id": (
+                        str(a.qualification_rule_version_id)
+                        if a.qualification_rule_version_id
+                        else None
+                    ),
                     "candidate_name": a.candidate_id.legal_name if a.candidate_id else "",
                     "position": a.recruitment_position_id.post_catalog_name if a.recruitment_position_id else "",
                     "canonical_status": a.canonical_status,

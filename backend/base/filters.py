@@ -9,7 +9,7 @@ import django_filters
 from django import forms
 from django.db.models import Q
 from django.utils.translation import gettext as __
-from django_filters import CharFilter, DateFilter, FilterSet, filters
+from django_filters import CharFilter, DateFilter, filters
 
 from base.models import (
     Announcement,

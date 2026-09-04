@@ -13,7 +13,7 @@
 | # | 文件 | 内容 |
 |---|---|---|
 | 1 | `docs/GlobalAuthorityOwnershipMatrix.md` | 50+ 事实的 Authority Owner/Consumer、17 条禁止跨域直写行为、Provider 状态枚举 |
-| 2 | `docs/HorillaGlobalTakeoverMatrix.md` | 14 个 Horilla 模块→目标域映射、7 种裁决类型、双层策略语义、13 份 Legacy Mapping 索引 |
+| 2 | `docs/LegacySystemTakeoverMatrix.md` | 14 个 Horilla 模块→目标域映射、7 种裁决类型、双层策略语义、13 份 Legacy Mapping 索引 |
 | 3 | `docs/CrossDomainProviderEventMatrix.md` | 17 个正式跨域事件（含 eventVersion/owner/consumer/aggregate/idempotency）、17 条跨域 Provider/Event Contract、事件信封标准 |
 | 4 | `docs/TenantIdentityPermissionMatrix.md` | 18 模块权限注册表、Data Scope 5 级矩阵、Person/User/Staff 6 层分离、SoD/数据分级/字段加密规则 |
 | 5 | `docs/LegacyDataMappingIndex.md` | 13 已物化 + 9 待物化 Legacy Mapping 文件索引、Cutover 状态、No Silent Fallback 守卫 |

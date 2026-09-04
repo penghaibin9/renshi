@@ -151,7 +151,7 @@
 						{% else %}
 							<a
 								type="submit"
-								hx-get="{% url 'candidate-document-approve' document.id %}"
+								hx-post="{% url 'candidate-document-approve' document.id %}"
 								hx-target="#viewFile"
 								title="{% trans 'Approve' %}"
 								class="oh-btn oh-btn--success w-100"

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from django.db import DatabaseError
+
 from hr_staff.constants import AuthorityMode
 
 
@@ -28,15 +30,20 @@ class AuthorityModeService:
         return HrAuthorityCutover
 
     def get_mode(self, tenant_id: int) -> str:
-        """返回 tenant 当前权威模式（默认 LEGACY_STAFF_ONLY）。"""
+        """返回 tenant 当前权威模式；仅“无切换记录”才使用 legacy 默认值。"""
         try:
             model = self._cutover_model()
             cutover = model.objects.filter(tenant_id=tenant_id, domain="STAFF").first()
-            if cutover:
-                return cutover.mode
-        except Exception:
-            pass
-        return AuthorityMode.LEGACY_STAFF_ONLY
+        except DatabaseError as exc:
+            # 数据库不可用不等于尚未切权。静默回退会让已经切到 HR03 的学校
+            # 重新读取 legacy，既掩盖事故也可能返回过期事实，因此必须 fail-closed。
+            raise AuthorityModeError("HR03 权威模式暂时无法读取") from exc
+
+        if cutover is None:
+            return AuthorityMode.LEGACY_STAFF_ONLY
+        if cutover.mode not in AuthorityMode.values:
+            raise AuthorityModeError(f"未知的 HR03 权威模式: {cutover.mode}")
+        return cutover.mode
 
     def assert_authority_available(self, tenant_id: int, *, require_authority: bool = False):
         """读取权威数据前的守卫：

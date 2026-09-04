@@ -4,6 +4,8 @@
   const SUPPORTED_IDENTITY_ACTIONS = new Set([
     "EMPLOYEE_CATEGORY_CHANGE",
     "EMPLOYMENT_TYPE_CHANGE",
+    "POST_CATEGORY_CHANGE",
+    "LOCATION_CHANGE",
     "MANAGER_CHANGE",
     "PRIMARY_ASSIGNMENT_SWITCH",
     "ADD_SECONDARY_ASSIGNMENT",
@@ -336,6 +338,26 @@
     }
   }
 
+  async function appendPostCatalogField() {
+    const response = await window.HrApi.request("/api/v1/hr/structure/post-catalogs", { retries: 1 });
+    const items = (response.data && response.data.items) || [];
+    const select = appendSelectField(
+      "hr06-identity-post-catalog",
+      "变更后岗位类别",
+      [],
+      items.length ? "请选择有效岗位类别" : "当前没有有效岗位类别",
+      false
+    );
+    items.filter((item) => item.activeVersionId).forEach((item) => {
+      addOption(
+        select,
+        item.activeVersionId,
+        `${item.name || item.stableCode}${item.category ? ` · ${item.category}` : ""}`
+      );
+    });
+    select.disabled = select.options.length <= 1;
+  }
+
   function appendManagerFields() {
     state.selectedManager = null;
     const wrapper = document.createElement("div");
@@ -454,6 +476,29 @@
       if (current) select.dataset.currentValue = current;
     }
 
+    if (actionCode === "POST_CATEGORY_CHANGE") {
+      try {
+        await appendPostCatalogField();
+      } catch (error) {
+        appendState("岗位类别读取失败", window.HrApi.apiErrorToMessage(error), "error");
+      }
+    }
+
+    if (actionCode === "LOCATION_CHANGE") {
+      const locations = options.workLocations || [];
+      if (locations.length) {
+        appendSelectField(
+          "hr06-identity-location",
+          "变更后工作地点",
+          locations,
+          "请选择 HR02 在用地点",
+          false
+        );
+      } else {
+        appendState("当前没有可选工作地点", "请先在 HR02 组织版本中维护地点代码并生效。", "error");
+      }
+    }
+
     if (actionCode === "EMPLOYMENT_TYPE_CHANGE") {
       const relationship = currentRelationship();
       if (!relationship) {
@@ -515,6 +560,14 @@
       const select = document.getElementById("hr06-identity-staff-category");
       return Boolean(select && select.value && select.value !== select.dataset.currentValue);
     }
+    if (actionCode === "POST_CATEGORY_CHANGE") {
+      const select = document.getElementById("hr06-identity-post-catalog");
+      return Boolean(select && select.value);
+    }
+    if (actionCode === "LOCATION_CHANGE") {
+      const select = document.getElementById("hr06-identity-location");
+      return Boolean(select && select.value);
+    }
     if (actionCode === "EMPLOYMENT_TYPE_CHANGE") {
       const relationship = document.getElementById("hr06-identity-relationship-type");
       const employment = document.getElementById("hr06-identity-employment-type");
@@ -573,6 +626,24 @@
           proposed_value_display: select.selectedOptions[0].textContent,
         },
       ];
+    }
+    if (actionCode === "POST_CATEGORY_CHANGE") {
+      const select = document.getElementById("hr06-identity-post-catalog");
+      return [{
+        domain: "assignment",
+        field_code: "post_catalog",
+        proposed_value_ref: select.value,
+        proposed_value_display: select.selectedOptions[0].textContent,
+      }];
+    }
+    if (actionCode === "LOCATION_CHANGE") {
+      const select = document.getElementById("hr06-identity-location");
+      return [{
+        domain: "assignment",
+        field_code: "location",
+        proposed_value_ref: select.value,
+        proposed_value_display: select.selectedOptions[0].textContent,
+      }];
     }
     if (actionCode === "EMPLOYMENT_TYPE_CHANGE") {
       const relationship = document.getElementById("hr06-identity-relationship-type");

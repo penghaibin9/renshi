@@ -2,7 +2,7 @@
 hr_changes/management/commands/hr06_reconcile_legacy.py
 
 双读对账（S10）：HR03 facts ↔ legacy WorkInformation 投影一致性。
-用法：python manage.py hr06_reconcile_legacy [--tenant=1]
+用法：python manage.py hr06_reconcile_legacy --tenant=1
 只发现/记录 HR06_PROJECTION_DRIFT，不静默修复权威数据。
 """
 
@@ -15,7 +15,7 @@ class Command(BaseCommand):
     help = "Reconcile HR03 facts vs legacy WorkInformation projection (HR06 S10)"
 
     def add_arguments(self, parser):
-        parser.add_argument("--tenant", type=int, default=None, help="tenant_id（缺省=全部）")
+        parser.add_argument("--tenant", type=int, required=True, help="tenant_id（必填）")
 
     def handle(self, *args, **options):
         result = run_reconcile(tenant_id=options.get("tenant"), only_drift=False)

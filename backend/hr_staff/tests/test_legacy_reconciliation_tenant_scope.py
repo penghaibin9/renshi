@@ -6,8 +6,9 @@ from hr_staff.legacy.reconciliation import ReconciliationService
 
 
 class LegacyReconciliationTenantScopeTests(SimpleTestCase):
-    @patch("employee.models.Employee.objects")
-    def test_legacy_employee_lookup_is_explicitly_tenant_scoped(self, employee_objects):
+    @patch("hr_staff.legacy.reconciliation._legacy_employee_model")
+    def test_legacy_employee_lookup_is_explicitly_tenant_scoped(self, employee_model):
+        employee_objects = employee_model.return_value.objects
         qs = MagicMock()
         qs.first.return_value = None
         employee_objects.filter.return_value = qs
@@ -20,8 +21,9 @@ class LegacyReconciliationTenantScopeTests(SimpleTestCase):
         )
         self.assertIsNone(result)
 
-    @patch("employee.models.Employee.objects")
-    def test_empty_legacy_id_does_not_query_employee_table(self, employee_objects):
+    @patch("hr_staff.legacy.reconciliation._legacy_employee_model")
+    def test_empty_legacy_id_does_not_query_employee_table(self, employee_model):
+        employee_objects = employee_model.return_value.objects
         result = ReconciliationService(tenant_id=88)._legacy_employee(legacy_employee_id=None)
 
         employee_objects.filter.assert_not_called()

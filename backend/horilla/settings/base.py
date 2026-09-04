@@ -42,6 +42,39 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 HORILLA_ENV = env("HORILLA_ENV", default="")
 REDIS_URL = env("REDIS_URL", default=None)
+REDIS_PASSWORD = env("REDIS_PASSWORD", default="")
+FAIL2BAN_MAX_RETRY = env.int("FAIL2BAN_MAX_RETRY", default=5)
+FAIL2BAN_IP_MAX_RETRY = env.int("FAIL2BAN_IP_MAX_RETRY", default=100)
+FAIL2BAN_ATTEMPT_WINDOW = env.int("FAIL2BAN_ATTEMPT_WINDOW", default=900)
+FAIL2BAN_BAN_TIME = env.int("FAIL2BAN_BAN_TIME", default=900)
+FAIL2BAN_TRUST_X_REAL_IP = env.bool("FAIL2BAN_TRUST_X_REAL_IP", default=False)
+TWO_FACTORS_AUTHENTICATION = env.bool(
+    "TWO_FACTORS_AUTHENTICATION", default=False
+)
+MFA_OTP_TTL_SECONDS = env.int("MFA_OTP_TTL_SECONDS", default=300)
+MFA_OTP_MAX_ATTEMPTS = env.int("MFA_OTP_MAX_ATTEMPTS", default=5)
+MFA_OTP_RESEND_COOLDOWN_SECONDS = env.int(
+    "MFA_OTP_RESEND_COOLDOWN_SECONDS", default=60
+)
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+EMAIL_FAIL_SILENTLY = env.bool("EMAIL_FAIL_SILENTLY", default=False)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@localhost")
+FIELD_ENCRYPTION_KEYS = env("FIELD_ENCRYPTION_KEYS", default="")
+MALWARE_SCAN_REQUIRED = env.bool("MALWARE_SCAN_REQUIRED", default=False)
+MALWARE_SCAN_HOST = env("MALWARE_SCAN_HOST", default="")
+MALWARE_SCAN_PORT = env.int("MALWARE_SCAN_PORT", default=3310)
+MALWARE_SCAN_TIMEOUT_SECONDS = env.float(
+    "MALWARE_SCAN_TIMEOUT_SECONDS", default=10.0
+)
+MALWARE_SCAN_MAX_BYTES = env.int(
+    "MALWARE_SCAN_MAX_BYTES", default=50 * 1024 * 1024
+)
 
 THEME_APP = "horilla_theme"
 
@@ -149,6 +182,7 @@ APSCHEDULER_RUN_NOW_TIMEOUT = 25  # Seconds
 # MIDDLEWARE
 # ========================================
 MIDDLEWARE = [
+    "base.observability.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -159,6 +193,9 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "base.upload_security.MalwareScanMiddleware",
+    "base.runtime_automations.RuntimeAutomationMiddleware",
+    "base.signals.Fail2BanMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Horilla-specific middlewares
     "base.middleware.CompanyMiddleware",
@@ -202,6 +239,28 @@ else:
             "OPTIONS": _database_options,
         }
     }
+
+# MySQL cannot materialize Django partial unique indexes. Every conditional
+# constraint currently used by the product has a generated-column unique-index
+# migration and is audited by base.production_checks. Suppress Django's generic
+# warning only after replacing the three constraints that did not have a
+# physical MySQL equivalent. SAMEORIGIN is intentional because authenticated
+# document/PDF previews are rendered in same-origin iframes.
+if DATABASES.get("default", {}).get("ENGINE") == "django.db.backends.mysql":
+    SILENCED_SYSTEM_CHECKS = ["models.W036", "security.W019"]
+
+# HR08 external workforce providers. Writes remain queued until a deployment
+# supplies the real IAM or academic authority boundary.
+HR08_IAM_PROVIDER = {
+    "BASE_URL": env("HR08_IAM_PROVIDER_URL", default=""),
+    "TOKEN": env("HR08_IAM_PROVIDER_TOKEN", default=""),
+    "TIMEOUT_MS": env.int("HR08_IAM_PROVIDER_TIMEOUT_MS", default=10000),
+}
+HR08_ACADEMIC_PROVIDER = {
+    "BASE_URL": env("HR08_ACADEMIC_PROVIDER_URL", default=""),
+    "TOKEN": env("HR08_ACADEMIC_PROVIDER_TOKEN", default=""),
+    "TIMEOUT_MS": env.int("HR08_ACADEMIC_PROVIDER_TIMEOUT_MS", default=10000),
+}
 
 # HR16 external effect providers. Empty URL/token pairs intentionally fail
 # closed as UNAVAILABLE until deployment supplies real authority endpoints.
@@ -267,6 +326,22 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = RUNTIME_DIR / "media"
+
+PRODUCTION_BACKUP_ROOT = env(
+    "PRODUCTION_BACKUP_ROOT", default=str(RUNTIME_DIR / "backups")
+)
+PRODUCTION_BACKUP_ENCRYPTION_KEY = env(
+    "PRODUCTION_BACKUP_ENCRYPTION_KEY", default=""
+)
+PRODUCTION_BACKUP_RETENTION_COUNT = env.int(
+    "PRODUCTION_BACKUP_RETENTION_COUNT", default=30
+)
+PRODUCTION_BACKUP_INTERVAL_HOURS = env.int(
+    "PRODUCTION_BACKUP_INTERVAL_HOURS", default=24
+)
+CANONICAL_HR_JOB_BATCH_SIZE = env.int("CANONICAL_HR_JOB_BATCH_SIZE", default=2000)
+if not 1 <= CANONICAL_HR_JOB_BATCH_SIZE <= 5000:
+    raise ValueError("CANONICAL_HR_JOB_BATCH_SIZE must be between 1 and 5000")
 
 # ========================================
 # AUTHENTICATION & SECURITY
@@ -378,6 +453,7 @@ MESSAGE_TAGS = {
 }
 
 LOGIN_URL = "/login"
+LOGIN_REMEMBER_ME_SECONDS = env.int("LOGIN_REMEMBER_ME_SECONDS", default=14 * 24 * 60 * 60)
 SIMPLE_HISTORY_REVERT_DISABLED = True
 
 DJANGO_NOTIFICATIONS_CONFIG = {
@@ -393,8 +469,6 @@ DJANGO_NOTIFICATIONS_CONFIG = {
 # ========================================
 WHITE_LABELLING = False
 NESTED_SUBORDINATE_VISIBILITY = False
-TWO_FACTORS_AUTHENTICATION = False
-
 SIDEBARS = [
     "employee",
     "attendance",
@@ -572,13 +646,100 @@ AUTH_LDAP_ALWAYS_UPDATE_USER = True
 from horilla.settings.security import (  # noqa: E402
     apply_secure_defaults,
     is_production_mode,
+    validate_login_security_configuration,
+    validate_malware_scanner_configuration,
+    validate_field_encryption_configuration,
+    validate_mfa_email_configuration,
     validate_production_secrets,
 )
 
 IS_PRODUCTION = is_production_mode(DEBUG, HORILLA_ENV)
 
 if IS_PRODUCTION:
-    validate_production_secrets(SECRET_KEY, ALLOWED_HOSTS, DB_INIT_PASSWORD)
+    validate_login_security_configuration(
+        max_attempts=FAIL2BAN_MAX_RETRY,
+        ip_max_attempts=FAIL2BAN_IP_MAX_RETRY,
+        attempt_window=FAIL2BAN_ATTEMPT_WINDOW,
+        ban_time=FAIL2BAN_BAN_TIME,
+        remember_seconds=LOGIN_REMEMBER_ME_SECONDS,
+    )
+    validate_field_encryption_configuration(
+        FIELD_ENCRYPTION_KEYS,
+        production=True,
+    )
+    validate_mfa_email_configuration(
+        enabled=TWO_FACTORS_AUTHENTICATION,
+        email_host=EMAIL_HOST,
+        email_port=EMAIL_PORT,
+        email_host_user=EMAIL_HOST_USER,
+        email_host_password=EMAIL_HOST_PASSWORD,
+        from_email=DEFAULT_FROM_EMAIL,
+        use_tls=EMAIL_USE_TLS,
+        use_ssl=EMAIL_USE_SSL,
+        fail_silently=EMAIL_FAIL_SILENTLY,
+        timeout=EMAIL_TIMEOUT,
+        otp_ttl=MFA_OTP_TTL_SECONDS,
+        max_attempts=MFA_OTP_MAX_ATTEMPTS,
+        resend_cooldown=MFA_OTP_RESEND_COOLDOWN_SECONDS,
+        production=True,
+    )
+    validate_malware_scanner_configuration(
+        required=MALWARE_SCAN_REQUIRED,
+        host=MALWARE_SCAN_HOST,
+        port=MALWARE_SCAN_PORT,
+        timeout_seconds=MALWARE_SCAN_TIMEOUT_SECONDS,
+        max_bytes=MALWARE_SCAN_MAX_BYTES,
+        production=True,
+    )
+    validate_production_secrets(
+        SECRET_KEY,
+        ALLOWED_HOSTS,
+        DB_INIT_PASSWORD,
+        csrf_trusted_origins=CSRF_TRUSTED_ORIGINS,
+        database_password=DATABASES["default"].get("PASSWORD", ""),
+        redis_url=REDIS_URL,
+        redis_password=REDIS_PASSWORD,
+        backup_encryption_key=PRODUCTION_BACKUP_ENCRYPTION_KEY,
+    )
 
 if not DEBUG:
     globals().update(apply_secure_defaults(env, DEBUG))
+
+# Container-native logs: stdout/stderr only, one record per line, with a
+# request correlation id and redaction of common credential shapes.
+LOG_LEVEL = env("LOG_LEVEL", default="INFO").upper()
+LOG_FORMAT = env("LOG_FORMAT", default="json" if IS_PRODUCTION else "console").lower()
+_selected_formatter = "json" if LOG_FORMAT == "json" else "console"
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_context": {"()": "base.observability.RequestContextFilter"},
+    },
+    "formatters": {
+        "json": {"()": "base.observability.JsonFormatter"},
+        "console": {
+            "format": "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s"
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["request_context"],
+            "formatter": _selected_formatter,
+        }
+    },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+}

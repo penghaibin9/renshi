@@ -73,7 +73,20 @@ class TodoServiceContractTests(SimpleTestCase):
         payload = TodoService([_OkProvider()]).list_todos(
             self.context, page=1, page_size=6
         )
-        self.assertEqual(payload["items"][0]["business_id"], "0")
+        self.assertEqual(payload["items"][0]["businessId"], "0")
+
+    def test_todo_items_use_the_frozen_camel_case_api_contract(self):
+        payload = TodoService([_OkProvider()]).list_todos(
+            self.context, page=1, page_size=1
+        )
+
+        item = payload["items"][0]
+        self.assertEqual(item["id"], "ok:0")
+        self.assertEqual(item["businessType"], "case")
+        self.assertIn("dueAt", item)
+        self.assertIn("isOverdue", item)
+        self.assertIn("actionUrl", item)
+        self.assertNotIn("business_id", item)
 
     def test_missing_due_date_can_mix_with_timezone_aware_dates(self):
         provider = _OkProvider()

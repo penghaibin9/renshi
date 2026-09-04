@@ -131,6 +131,46 @@ class ApplyTransferTests(TestCase):
         self.assertIn("HR11", domains)
         self.assertIn("HR07", domains)
 
+    def test_position_only_transfer_inherits_current_organization(self):
+        target_position = make_position(
+            TENANT, self.source_org, "JSXY-P301", max_incumbents=1
+        )
+        action = make_action(TENANT, ChangeActionCode.POSITION_TRANSFER)
+        reason = make_reason(TENANT, ChangeActionCode.POSITION_TRANSFER)
+        service = ChangeService(TENANT, actor_user_id=1)
+        case = service.create_case(
+            staff_master_id=self.staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[
+                {
+                    "domain": "assignment",
+                    "field_code": "position",
+                    "proposed_value_ref": str(target_position.id),
+                }
+            ],
+            source_org_id=self.source_org,
+            target_position_id=target_position,
+        )
+        case = service.submit(case.id)
+        case = service.start_approval(case.id)
+        case = service.approve_all(case.id)
+        PositionGate(TENANT).reserve_for_case(case)
+
+        result = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        self.assertEqual(result.status, CaseStatus.EFFECTIVE)
+        from hr_staff.services.effective_dated_query_service import (
+            EffectiveDatedQueryService,
+        )
+
+        primary = EffectiveDatedQueryService(TENANT).primary_assignment_as_of(
+            self.staff.id, date.today()
+        )
+        self.assertEqual(primary.organization_id_id, self.source_org.id)
+        self.assertEqual(primary.position_id_id, target_position.id)
+
     def test_apply_before_due_rejected(self):
         case = self._approved_case(date.today())
         with self.assertRaises(ApplyServiceError) as cm:
@@ -142,6 +182,69 @@ class ApplyTransferTests(TestCase):
         with self.assertRaises(ApplyServiceError) as cm:
             ApplyService(TENANT).apply_case(case.id)
         self.assertEqual(cm.exception.code, "CHANGE_INVALID_STATE")
+
+    def test_post_category_change_writes_new_primary_authority_fact(self):
+        action = make_action(TENANT, ChangeActionCode.POST_CATEGORY_CHANGE)
+        reason = make_reason(TENANT, ChangeActionCode.POST_CATEGORY_CHANGE)
+        case = IdentityChangeService(TENANT, actor_user_id=1).create_identity_change(
+            staff_master_id=self.staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[{
+                "domain": "assignment",
+                "field_code": "post_catalog",
+                "proposed_value_ref": str(self.target_pos.post_catalog_version_id_id),
+            }],
+        )
+        workflow = ChangeService(TENANT, actor_user_id=1)
+        case = workflow.submit(case.id)
+        case = workflow.start_approval(case.id)
+        case = workflow.approve_all(case.id)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+
+        current = EffectiveDatedQueryService(TENANT).primary_assignment_as_of(
+            self.staff.id, date.today()
+        )
+        self.assertEqual(case.status, CaseStatus.EFFECTIVE)
+        self.assertEqual(
+            current.post_catalog_id_id, self.target_pos.post_catalog_version_id_id
+        )
+
+    def test_location_change_writes_controlled_location_to_new_primary_fact(self):
+        from hr_structure.models import HrOrganizationVersion
+
+        HrOrganizationVersion.objects.filter(
+            tenant_id=TENANT, organization_id=self.source_org, status="EFFECTIVE"
+        ).update(location_code="EAST-CAMPUS")
+        action = make_action(TENANT, ChangeActionCode.LOCATION_CHANGE)
+        reason = make_reason(TENANT, ChangeActionCode.LOCATION_CHANGE)
+        case = IdentityChangeService(TENANT, actor_user_id=1).create_identity_change(
+            staff_master_id=self.staff,
+            action_id=action,
+            reason_id=reason,
+            requested_effective_at=date.today(),
+            proposals=[{
+                "domain": "assignment",
+                "field_code": "location",
+                "proposed_value_ref": "EAST-CAMPUS",
+            }],
+        )
+        workflow = ChangeService(TENANT, actor_user_id=1)
+        case = workflow.submit(case.id)
+        case = workflow.start_approval(case.id)
+        case = workflow.approve_all(case.id)
+        case = ApplyService(TENANT, actor_user_id=1).apply_case(case.id)
+
+        from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
+
+        current = EffectiveDatedQueryService(TENANT).primary_assignment_as_of(
+            self.staff.id, date.today()
+        )
+        self.assertEqual(case.status, CaseStatus.EFFECTIVE)
+        self.assertEqual(current.location_code, "EAST-CAMPUS")
 
     def test_apply_failure_on_blocker(self):
         case = self._approved_case(date.today())

@@ -178,6 +178,13 @@ ACCESS_GRANT_STATUS_LABELS = {
     "REVOKE_FAILED": "回收失败",
 }
 
+# 最小权限访问目标 → 中文
+TARGET_SYSTEM_LABELS = {
+    "EXTERNAL_PORTAL": "外聘人员门户",
+    "ACADEMIC": "教务系统",
+    "LIBRARY": "图书馆系统",
+}
+
 # 教务身份状态 → 中文
 ACADEMIC_IDENTITY_LABELS = {
     "PENDING": "待开通",
@@ -304,6 +311,10 @@ def agreement_status_label(status) -> str:
 
 def access_grant_status_label(status) -> str:
     return _label(ACCESS_GRANT_STATUS_LABELS, status)
+
+
+def target_system_label(system) -> str:
+    return _label(TARGET_SYSTEM_LABELS, system)
 
 
 def academic_identity_label(status) -> str:

@@ -142,7 +142,7 @@
 												{% if rwork_type.is_active %}
 													<form
 														hx-confirm="{% trans 'Do you Want to archive this rotating work type assign?' %}"
-														hx-get="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
+												hx-post="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
 														hx-target="#view-container">
 														<button class="oh-btn oh-btn--danger w-100"
 															title="{% trans 'Archive' %}">
@@ -153,7 +153,7 @@
 												{% else %}
 													<form
 														hx-confirm="{% trans 'Do you Want to un-archive this rotating work type assign?' %}"
-														hx-get="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
+												hx-post="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
 														hx-target="#view-container">
 														<button class="oh-btn oh-btn--danger w-100"
 															title="{% trans 'Un-Archive' %}">

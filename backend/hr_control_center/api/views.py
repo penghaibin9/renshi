@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -63,6 +64,8 @@ def _json(request, payload: dict, status: int = 200) -> JsonResponse:
 
 
 def _error(request, code: str, message: str, status: int, details=None) -> JsonResponse:
+    if code == "AUTHORITY_UNAVAILABLE":
+        status = 503
     body = _api_root(request)
     body["error"] = {
         "code": code,
@@ -75,30 +78,28 @@ def _error(request, code: str, message: str, status: int, details=None) -> JsonR
 def _resolve_authority_mode(tenant_id) -> str:
     """服务端解析 authority mode（复审：不信前端参数）。
 
-    HR02 cutover mode 映射到 HR01 context 语义：
-      HR02_AUTHORITY       → DUAL_READ_COMPARE（HR01 在权威化前先走对账）
-      其它（LEGACY/DUAL）  → LEGACY_ONLY（HR01 保持 legacy 快照）
+    首页人员指标由 HR03 拥有，因此这里只解析 HR03 的租户级切换状态；
+    HR02 组织分布由对应 Provider 独立读取 HR02 cutover，禁止把两个领域的
+    权威状态压成一个错误的全局开关。
     """
+    from hr_staff.constants import AuthorityMode
+    from hr_staff.services.authority_mode_service import (
+        AuthorityModeError,
+        AuthorityModeService,
+    )
+
     try:
-        from hr_structure.services.cutover import Hr02CutoverService
-
-        mode = Hr02CutoverService().get_mode(tenant_id)
-        if mode == "HR02_AUTHORITY":
-            return "DUAL_READ_COMPARE"
-    except Exception:
-        # HR02 未就绪（app 未注册/表未建）→ 安全回退 LEGACY_ONLY，不阻 HR01 正常运行
-        # 实际异常通过日志记录，不静默吞
-        try:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                "_resolve_authority_mode failed for tenant=%s, falling back to LEGACY_ONLY",
-                tenant_id,
-                exc_info=True,
-            )
-        except Exception:
-            pass
+        mode = AuthorityModeService().get_mode(tenant_id)
+    except AuthorityModeError as exc:
+        raise HrContextError(
+            "AUTHORITY_UNAVAILABLE",
+            "人事权威状态暂时无法确认，请稍后重试",
+            status=503,
+        ) from exc
+    if mode == AuthorityMode.HR03_AUTHORITY:
+        return "AUTHORITY_ONLY"
+    if mode == AuthorityMode.DUAL_READ_COMPARE:
+        return "DUAL_READ_COMPARE"
     return "LEGACY_ONLY"
 
 
@@ -109,6 +110,15 @@ def _make_context(request):
         raise HrContextError(
             "TENANT_CONTEXT_REQUIRED", "请选择当前学校（多学校账号需明确学校上下文）"
         )
+
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        raise HrContextError("UNAUTHENTICATED", "请先登录")
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        if tenant_id not in (get_allowed_company_ids(user) or ()):
+            raise HrContextError("TENANT_CONTEXT_REQUIRED", "当前账号无权访问该学校数据")
 
     scope_type = request.GET.get("scope_type", "SCHOOL")
     scope_org_id = request.GET.get("scope_id")
@@ -128,8 +138,8 @@ def _make_context(request):
 
     return build_hr_context(
         tenant_id=tenant_id,
-        school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
-        user_id=request.user.id,
+        school_timezone=settings.TIME_ZONE,
+        user_id=user.id,
         as_of=request.GET.get("as_of"),
         period_from=request.GET.get("period_from"),
         period_to=request.GET.get("period_to"),

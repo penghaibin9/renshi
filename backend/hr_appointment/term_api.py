@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -283,4 +285,55 @@ def decide_change(request, change_id):
             "termEffectApplied": False,
         },
         schema="hr14.term-change-decision.1",
+    )
+
+
+def reserve_change_position(request, change_id):
+    """Hold the exact HR02 target position for an HR14 transfer change."""
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        service = _service(request)
+    except HrAppointmentAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+
+    from hr_appointment.term_models import AppointmentChangeCase
+    from hr_structure.scope import Hr02Scope
+    from hr_structure.services.position import PositionService, PositionServiceError
+
+    change = AppointmentChangeCase.objects.filter(
+        id=change_id,
+        tenant_id=service.tenant_id,
+        change_type=AppointmentChangeCase.ChangeType.TRANSFER,
+        status=AppointmentChangeCase.Status.APPROVED,
+    ).first()
+    if change is None or not change.target_position_instance_id:
+        return _error(
+            "APPOINTMENT_TRANSFER_NOT_RESERVABLE",
+            "只有已批准且目标岗位完整的转岗案件可以预占",
+            status=409,
+        )
+    try:
+        reservation = PositionService(
+            Hr02Scope("SCHOOL", tenant_id=service.tenant_id),
+            actor=str(getattr(request.user, "id", "") or ""),
+        ).reserve(
+            source_domain="HR14",
+            source_business_type="TERM_CHANGE",
+            source_business_id=str(change.id),
+            position_id=change.target_position_instance_id,
+            count=1,
+            fte=Decimal("1.00"),
+            idempotency_key=f"hr14:term-change:{service.tenant_id}:{change.id}:{change.target_position_instance_id}",
+        )
+    except PositionServiceError as exc:
+        return _error(exc.code, str(exc), status=409)
+    return _response(
+        {
+            "reservationId": reservation.id,
+            "status": reservation.status,
+            "positionInstanceId": reservation.position_id_id,
+        },
+        status=201,
+        schema="hr14.term-change-reservation.1",
     )

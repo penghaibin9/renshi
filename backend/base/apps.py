@@ -23,7 +23,7 @@ class BaseConfig(AppConfig):
         _install_legacy_write_authority_core()
         _install_mysql_schema_compatibility()
 
-        from base import sidebar, signals  # noqa: F401
+        from base import production_checks, sidebar, signals  # noqa: F401
 
         super().ready()
         check_for_no_permissions_models()

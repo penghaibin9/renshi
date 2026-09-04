@@ -60,7 +60,7 @@
                     {% if request.user.employee_get == comment.employee_id or perms.payroll.delete_reimbursementrequestcomment or request.user|is_reportingmanager %}
                         <span
                             class="float-end"
-                            hx-get="{% url 'payroll-request-delete-comment' comment.id %}"
+                            hx-post="{% url 'payroll-request-delete-comment' comment.id %}"
                             hx-swap="outerHTML swap:.5s"
                             hx-target="#requestCommentItem{{comment.id}}"
                             hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
@@ -94,7 +94,8 @@
                                         <img
                                             src="{% static 'images/ui/minus-icon.png' %}"
                                             style="display: block; width: 50%; height: 50%"
-                                            hx-get="{% url 'delete-reimbursement-comment-file' %}?ids={{ file.id }}&payroll_id={{ request_id }}"
+                                            hx-post="{% url 'delete-reimbursement-comment-file' %}"
+                                            hx-vals='{"ids":"{{ file.id }}","payroll_id":"{{ request_id }}","comment_id":"{{ comment.id }}"}'
                                             hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
                                             hx-target="#commentFileItem{{file.id}}"
                                             hx-swap="outerHTML"

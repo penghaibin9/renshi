@@ -4,6 +4,7 @@ Policy  forms
 
 from django import forms
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse
 from django.urls import reverse_lazy
 from django.utils.decorators import method_decorator
@@ -12,12 +13,12 @@ from django.utils.translation import gettext_lazy as _
 from employee.filters import PolicyFilter
 from employee.forms import PolicyForm
 from employee.models import Policy
-from horilla_views.cbv_methods import login_required, permission_required
+from horilla.methods import handle_no_permission
+from horilla_views.cbv_methods import login_required
 from horilla_views.generic.cbv.views import HorillaFormView, HorillaNavView
 
 
 @method_decorator(login_required, name="dispatch")
-@method_decorator(permission_required(perm="employee.add_policy"), name="dispatch")
 class PolicyFormView(HorillaFormView):
     """
     form view for create policy
@@ -26,6 +27,16 @@ class PolicyFormView(HorillaFormView):
     form_class = PolicyForm
     model = Policy
     new_display_title = _("Policy Creation")
+
+    def dispatch(self, request, *args, **kwargs):
+        permission = (
+            "employee.change_policy"
+            if kwargs.get("pk")
+            else "employee.add_policy"
+        )
+        if not request.user.has_perm(permission):
+            return handle_no_permission(request)
+        return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -36,10 +47,11 @@ class PolicyFormView(HorillaFormView):
     def form_valid(self, form: PolicyForm) -> HttpResponse:
         if form.is_valid():
             if form.instance.pk:
-                message = _("Policy saved")
-            else:
                 message = _("Policy updated")
-            form.save()
+            else:
+                message = _("Policy saved")
+            with transaction.atomic():
+                form.save()
             messages.success(self.request, _(message))
             return self.HttpResponse(targets_to_reload=["#policyContainerReload"])
 

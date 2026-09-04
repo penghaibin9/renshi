@@ -3,7 +3,7 @@ hr_onboarding/tests/test_production_r6.py
 
 HR05 生产级审计（第六轮）回归测试：
 - R6-A：权限 meta migration 存在（hr05.* 权限可注册）；
-- R6-B：所有 POST view 已 csrf_exempt（JSON API + JWT/token 认证不被 CSRF 拦截）；
+- R6-B：会话管理写接口保留 CSRF，只有独立 token 门户免 CSRF；
 - R6-C：bank_json 加密存储（不含明文卡号）；
 - R6-G：报到时间拒绝未来日期。
 """
@@ -54,16 +54,10 @@ class PermissionMetaMigrationTests(TestCase):
         self.assertIn("hr05.probation.finalize", content)
 
 
-class CsrfExemptTests(TestCase):
-    """R6-B：所有 POST view 必须 csrf_exempt（Django 设置 view.csrf_exempt=True）。"""
+class CsrfProtectionTests(TestCase):
+    """R6-B：高权限会话写接口必须受 CSRF 保护。"""
 
-    def _assert_csrf_exempt(self, view_func, name):
-        self.assertTrue(
-            getattr(view_func, "csrf_exempt", False),
-            f"{name} 缺少 @csrf_exempt（生产环境 JSON POST 会被 CsrfViewMiddleware 拦截为 403）",
-        )
-
-    def test_all_post_views_csrf_exempt(self):
+    def test_management_post_views_are_csrf_protected(self):
         for v in (
             api_views.hr05_case_activate,
             api_views.hr05_case_report,
@@ -85,10 +79,18 @@ class CsrfExemptTests(TestCase):
             probations_views.probation_confirm,
             probations_views.probation_extend,
             probations_views.probation_fail,
+        ):
+            self.assertFalse(
+                getattr(v, "csrf_exempt", False),
+                f"{v.__name__} must remain behind global CSRF middleware",
+            )
+
+    def test_token_portal_post_views_are_csrf_exempt(self):
+        for view in (
             portal_views.prehire_update_profile,
             portal_views.prehire_confirm_intent,
         ):
-            self._assert_csrf_exempt(v, v.__name__)
+            self.assertTrue(getattr(view, "csrf_exempt", False), view.__name__)
 
 
 class BankEncryptionTests(TestCase):

@@ -511,7 +511,7 @@ def update_saved_filter_cache(request, cache):
     return cache
 
 
-def get_nested_field(model_class: models.Model, field_name: str) -> object:
+def get_nested_model_field(model_class: models.Model, field_name: str) -> object:
     """
     Recursion function to execute nested field logic
     """
@@ -521,7 +521,7 @@ def get_nested_field(model_class: models.Model, field_name: str) -> object:
             model_class,
             splits[0],
         ).related.related_model
-        return get_nested_field(related_model_class, splits[1])
+        return get_nested_model_field(related_model_class, splits[1])
     field = getattribute(model_class, field_name)
     return field
 
@@ -533,7 +533,7 @@ def get_field_class_map(model_class: models.Model, bulk_update_fields: list) -> 
     """
     field_class_map = {}
     for field_name in bulk_update_fields:
-        field = get_nested_field(model_class, field_name)
+        field = get_nested_model_field(model_class, field_name)
         field_class_map[field_name] = field
     return field_class_map
 
@@ -985,14 +985,14 @@ def assign_related(
             for field, value in record[reverse_field].items():
                 full_field = reverse_field + "__" + field
                 if full_field in pk_values_mapping:
-                    reverse_obj_dict.update(
-                        {
-                            field: data
-                            for data in pk_values_mapping[full_field]
-                            if getattr(data, pk_field_mapping[full_field], None)
-                            == value
-                        }
-                    )
+                    matches = [
+                        data
+                        for data in pk_values_mapping[full_field]
+                        if getattr(data, pk_field_mapping[full_field], None)
+                        == value
+                    ]
+                    if matches:
+                        reverse_obj_dict[field] = matches[-1]
                 else:
                     reverse_obj_dict[field] = value
         else:

@@ -17,7 +17,8 @@
                     ><img
                         src="{% static 'images/ui/minus-icon.png' %}"
                         style="display: block; width: 50%; height: 50%"
-                        hx-get="{% url 'delete-resume-file' %}?ids={{ file.id }}&rec_id={{rec_id}}"
+                        hx-post="{% url 'delete-resume-file' %}"
+                        hx-vals='{"ids":"{{file.id}}","rec_id":"{{rec_id}}"}'
                         hx-target="#bulkResumeUploadBody"
                         onclick="event.stopPropagation();event.preventDefault()"
                     /> </span

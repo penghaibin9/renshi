@@ -14,14 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
   DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
   SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
+  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass
 
 jobs:
   django-contract:
@@ -31,15 +31,15 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: horilla_db
-          MYSQL_USER: horilla_user
-          MYSQL_PASSWORD: horilla_pass
-          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_DATABASE: renshi_db
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: renshi_pass
+          MYSQL_ROOT_PASSWORD: renshi_root_pass
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -62,8 +62,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install "black==24.4.2" "isort==5.13.2"
+          pip install -r requirements.lock
+          pip install "black==24.4.2" "isort==5.13.2" "ruff==0.16.5"
 
       - name: Ensure local settings stub
         run: |
@@ -76,6 +76,11 @@ jobs:
         run: |
           mapfile -t hr_dirs < <(find backend -maxdepth 1 -type d \( -name 'hr_*' -o -name 'hr10_development' \) -printf '%p\n' | sort)
           python -m compileall -q backend/horilla backend/base backend/employee "${hr_dirs[@]}"
+
+      - name: Runtime and high-signal bug gate
+        run: >-
+          ruff check backend
+          --select E9,F821,F601,F811,PLE,B012,B018,B023,B026,B035,B039,SIM220,SIM221,SIM222,SIM223
 
       - name: Format gate for takeover-owned bootstrap files
         run: |
@@ -96,6 +101,34 @@ jobs:
 
       - name: Django system check
         run: python manage.py check
+
+      - name: Production deployment settings check
+        env:
+          DEBUG: "0"
+          HORILLA_ENV: production
+          SECRET_KEY: ci-production-check-secret-0d4aaf08a7f34ef79d9c70e7e6eb8af5
+          ALLOWED_HOSTS: hr.example.edu.cn
+          CSRF_TRUSTED_ORIGINS: https://hr.example.edu.cn
+          DATABASE_URL: mysql://renshi_user:ci-production-db-password@127.0.0.1:3306/renshi_db?charset=utf8mb4
+          DB_INIT_PASSWORD: ci-production-db-init-password
+          REDIS_URL: redis://:ci-production-redis-password@127.0.0.1:6379/0
+          REDIS_PASSWORD: ci-production-redis-password
+          PRODUCTION_BACKUP_ENCRYPTION_KEY: ci-production-backup-encryption-key-32-bytes
+          TWO_FACTORS_AUTHENTICATION: "True"
+          EMAIL_HOST: smtp.university.cn
+          EMAIL_HOST_USER: ci-hr-notifier
+          EMAIL_HOST_PASSWORD: ci-production-smtp-password
+          DEFAULT_FROM_EMAIL: hr-system@university.cn
+          FIELD_ENCRYPTION_KEYS: ci-2026:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+          MALWARE_SCAN_REQUIRED: "True"
+          MALWARE_SCAN_HOST: clamav
+          HR04_PRIVACY_NOTICE_VERSION: ci-2026-01
+          HR04_CANDIDATE_RETENTION_DAYS: "730"
+          HR04_PRIVACY_CONTACT: 人事处招聘办公室 010-12345678 hr@university.cn
+          HR04_APPLICATION_MATERIAL_MAX_BYTES: "20971520"
+          HR10_HR09_SERVICE_TOKEN: ci-hr09-service-token-2026-09-distinct-value
+          HR10_HR11_SERVICE_TOKEN: ci-hr11-service-token-2026-09-distinct-value
+        run: python manage.py check --deploy
 
       - name: Migration drift gate
         id: migration-drift
@@ -157,14 +190,14 @@ jobs:
           )
           try:
               cursor = connection.cursor()
-              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute("DROP DATABASE IF EXISTS `test_renshi_db`")
               cursor.execute(
-                  "CREATE DATABASE `test_horilla_db` "
+                  "CREATE DATABASE `test_renshi_db` "
                   "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
               )
               cursor.execute(
-                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
-                  "TO 'horilla_user'@'%'"
+                  "GRANT ALL PRIVILEGES ON `test_renshi_db`.* "
+                  "TO 'renshi_user'@'%'"
               )
               cursor.execute("FLUSH PRIVILEGES")
           finally:
@@ -179,24 +212,24 @@ jobs:
           mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
           test -n "$mysql_container"
           docker exec "$mysql_container" sh -c \
-            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers horilla_db' \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers renshi_db' \
             | docker exec -i "$mysql_container" sh -c \
-              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_renshi_db'
 
-          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
             python manage.py migrate --run-syncdb --noinput
-          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
             python manage.py migrate --check
 
       - name: Seed deterministic Authority reconciliation tenant
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4
         run: |
           python manage.py shell -c "from base.models import Company; Company.objects.get_or_create(company='CI Authority Tenant', address='CI only', defaults={'hq': True, 'country': 'CN', 'state': 'Hunan', 'city': 'Changsha', 'zip': '410000'})"
 
       - name: HR01-HR18 production acceptance gate
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4
         run: >-
           python manage.py hr_authority_gate
           --all-tenants
@@ -206,7 +239,7 @@ jobs:
 
       - name: Reset isolated Django test data after acceptance
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4
         run: |
           # The production acceptance gate intentionally seeds a real tenant and
           # may persist reconciliation evidence. The registered TestCase suite
@@ -225,7 +258,7 @@ jobs:
           PY
           )
           echo "Testing registered apps: $HR_APPS"
-          # test_horilla_db is cloned from the exact fresh-migration schema and
+          # test_renshi_db is cloned from the exact fresh-migration schema and
           # completed with --run-syncdb above. --keepdb reuses that isolated
           # schema without granting the application user global DB privileges.
           # Capture full output as a diagnostic artifact while preserving the

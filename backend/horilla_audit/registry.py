@@ -7,9 +7,11 @@ default set of Employee-related models is tracked.
 """
 
 import logging
+import threading
 
 from auditlog.registry import auditlog
 from django.apps import apps
+from django.core.cache import cache
 from django.db.utils import OperationalError, ProgrammingError
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,9 @@ DEFAULT_TRACKED_MODELS = [
 # Models registered by this module so we can safely unregister them later
 # without touching registrations made elsewhere.
 _managed_registrations: set = set()
+_configuration_lock = threading.Lock()
+_seen_generation = None
+_GENERATION_KEY = "horilla-audit:configuration-generation"
 
 
 def _resolve_model(app_label, model_name):
@@ -59,6 +64,15 @@ def _unregister(model):
     _managed_registrations.discard(model)
 
 
+def _default_targets():
+    targets = []
+    for app_label, model_name in DEFAULT_TRACKED_MODELS:
+        model = _resolve_model(app_label, model_name)
+        if model:
+            targets.append((model, []))
+    return targets
+
+
 def _load_targets():
     """
     Return a list of ``(model_class, fields)`` tuples to register.
@@ -80,11 +94,22 @@ def _load_targets():
                 targets.append((model, cfg.tracked_fields or []))
         return targets
 
-    for app_label, model_name in DEFAULT_TRACKED_MODELS:
-        model = _resolve_model(app_label, model_name)
-        if model:
-            targets.append((model, []))
-    return targets
+    return _default_targets()
+
+
+def _apply_targets(desired):
+    """Synchronise managed auditlog registrations with explicit targets."""
+    desired_models = {model for model, _fields in desired}
+    for model in list(_managed_registrations):
+        if model not in desired_models:
+            _unregister(model)
+    for model, fields in desired:
+        _register(model, fields)
+
+
+def apply_default_configuration():
+    """Register critical built-ins without any database/cache access."""
+    _apply_targets(_default_targets())
 
 
 def apply_audit_configuration():
@@ -92,18 +117,37 @@ def apply_audit_configuration():
     Synchronise the auditlog registry with the desired configuration.
     Safe to call multiple times.
     """
-    desired = _load_targets()
-    desired_models = {m for m, _ in desired}
+    _apply_targets(_load_targets())
 
-    # Unregister anything we previously managed but no longer want.
-    for model in list(_managed_registrations):
-        if model not in desired_models:
-            _unregister(model)
 
-    for model, fields in desired:
-        _register(model, fields)
+def apply_database_configuration_if_changed():
+    """Reload custom audit targets when another Web worker changes them."""
+    global _seen_generation
+    try:
+        generation = cache.get(_GENERATION_KEY)
+        if generation is None:
+            cache.add(_GENERATION_KEY, 1, timeout=None)
+            generation = cache.get(_GENERATION_KEY) or 1
+    except Exception:
+        # Database configuration still loads once if Redis has a transient
+        # issue; readiness independently reports the cache outage.
+        generation = "cache-unavailable"
+    if _seen_generation == generation:
+        return
+    with _configuration_lock:
+        if _seen_generation == generation:
+            return
+        apply_audit_configuration()
+        _seen_generation = generation
 
 
 def on_config_change(sender, instance=None, **kwargs):
     """Signal handler that reapplies configuration after a row changes."""
+    global _seen_generation
     apply_audit_configuration()
+    try:
+        if not cache.add(_GENERATION_KEY, 1, timeout=None):
+            cache.incr(_GENERATION_KEY)
+        _seen_generation = cache.get(_GENERATION_KEY)
+    except Exception:
+        _seen_generation = None

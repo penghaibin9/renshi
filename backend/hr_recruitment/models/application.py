@@ -174,6 +174,7 @@ class HrApplicationMaterial(models.Model):
     reviewed_at = models.DateTimeField(null=True, blank=True)
     rejection_reason = models.TextField(blank=True, default="")
     retention_until = models.DateField(null=True, blank=True)
+    purged_at = models.DateTimeField(null=True, blank=True)
     supersedes_id = models.ForeignKey(
         "self",
         on_delete=models.SET_NULL,

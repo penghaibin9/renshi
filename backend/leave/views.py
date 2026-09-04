@@ -53,7 +53,11 @@ from horilla.decorators import (
 )
 from horilla.group_by import group_by_queryset
 from horilla.http.response import HorillaRedirect
-from horilla.methods import get_horilla_model_class, remove_dynamic_url
+from horilla.methods import (
+    get_horilla_model_class,
+    handle_no_permission,
+    remove_dynamic_url,
+)
 from leave.decorators import *
 from leave.filters import *
 from leave.forms import *
@@ -69,6 +73,86 @@ from leave.models import *
 from leave.models import leave_requested_dates
 from leave.services import evaluate_leave_type_conditions
 from leave.threading import LeaveMailSendThread
+
+
+def _notify_after_commit(sender, **kwargs):
+    def send_notification():
+        with contextlib.suppress(Exception):
+            notify.send(sender, **kwargs)
+
+    transaction.on_commit(send_notification)
+
+
+def _delete_scoped_leave_comment_files(comment, ids):
+    """Detach only files owned by ``comment`` and delete true orphans."""
+    files = list(comment.files.select_for_update().filter(id__in=ids))
+    comment.files.remove(*files)
+    for file in files:
+        related_sets = (
+            "leaverequestcomment_set",
+            "leaveallocationrequestcomment_set",
+            "compensatoryleaverequestcomment_set",
+        )
+        if not any(
+            hasattr(file, related_name)
+            and getattr(file, related_name).exists()
+            for related_name in related_sets
+        ):
+            file.delete()
+    return len(files)
+
+
+def _can_decide_leave_request(request, leave_request):
+    """Return whether the current user may approve or reject this request."""
+    if request.user.is_superuser:
+        return True
+    actor = getattr(request.user, "employee_get", None)
+    if actor is None or leave_request.employee_id_id == actor.id:
+        return False
+    if request.user.has_perm("leave.change_leaverequest"):
+        return True
+
+    approvals = LeaveRequestConditionApproval.objects.filter(
+        leave_request_id=leave_request
+    )
+    if approvals.exists():
+        return approvals.filter(manager_id=actor).exists()
+
+    work_info = getattr(leave_request.employee_id, "employee_work_info", None)
+    return bool(
+        work_info and work_info.reporting_manager_id_id == actor.id
+    )
+
+
+def _is_direct_reporting_manager(request, employee):
+    actor = getattr(request.user, "employee_get", None)
+    work_info = getattr(employee, "employee_work_info", None)
+    return bool(
+        actor and work_info and work_info.reporting_manager_id_id == actor.id
+    )
+
+
+def _posted_ids(request, key="ids"):
+    try:
+        raw_ids = json.loads(request.POST.get(key, ""))
+    except (TypeError, ValueError):
+        raise ValueError("invalid ids") from None
+    if not isinstance(raw_ids, list) or not raw_ids or len(raw_ids) > 500:
+        raise ValueError("invalid ids")
+    ids = []
+    for raw_id in raw_ids:
+        try:
+            object_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise ValueError("invalid ids") from None
+        if object_id <= 0:
+            raise ValueError("invalid ids")
+        ids.append(object_id)
+    if len(set(ids)) != len(ids):
+        raise ValueError("invalid ids")
+    return ids
+
+
 from notifications.signals import notify
 
 
@@ -299,6 +383,8 @@ def leave_type_update(request, id, **kwargs):
 
 @login_required
 @permission_required("leave.delete_leavetype")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_type_delete(request, obj_id):
     """
     function used to delete leave type.
@@ -311,11 +397,12 @@ def leave_type_delete(request, obj_id):
     GET : return leave type view template
     """
     try:
-        LeaveType.objects.get(id=obj_id).delete()
+        LeaveType.objects.select_for_update().get(id=obj_id).delete()
         messages.success(request, _("Leave type deleted successfully.."))
     except (LeaveType.DoesNotExist, OverflowError, ValueError):
         messages.error(request, _("Leave type not found."))
     except ProtectedError as e:
+        transaction.set_rollback(True)
         models_verbose_name_sets = set()
         for obj in e.protected_objects:
             models_verbose_name_sets.add(__(obj._meta.verbose_name))
@@ -962,6 +1049,8 @@ def leave_request_update(request, id):
 @login_required
 @hx_request_required
 @manager_can_enter("leave.delete_leaverequest")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_request_delete(request, id):
     """
     function used to delete leave request.
@@ -975,7 +1064,11 @@ def leave_request_delete(request, id):
     """
     previous_data = request.GET.urlencode()
     try:
-        leave_request = LeaveRequest.objects.get(id=id)
+        leave_request = LeaveRequest.objects.select_for_update().get(id=id)
+        if not _can_decide_leave_request(request, leave_request):
+            return JsonResponse(
+                {"message": _("You cannot delete this leave request.")}, status=403
+            )
         messages.success(request, _("Leave request deleted successfully.."))
         leave_request.delete()
     except (LeaveRequest.DoesNotExist, OverflowError, ValueError):
@@ -994,6 +1087,8 @@ def leave_request_delete(request, id):
 
 @login_required
 @manager_can_enter("leave.change_leaverequest")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_request_approve(request, id, emp_id=None):
     """
     function used to approve a leave request.
@@ -1008,22 +1103,20 @@ def leave_request_approve(request, id, emp_id=None):
     GET : If `emp_id` is provided, it returns to the "/employee/employee-view/{employee_id}/" template after approval.
           Otherwise, it returns to the default leave request view template.
     """
-    leave_request = LeaveRequest.find(id)
+    leave_request = LeaveRequest.objects.select_for_update().filter(id=id).first()
     if not leave_request:
         return HorillaRedirect(
             request, message=_("No leave rquest found matching the query.")
         )
     employee_id = leave_request.employee_id
-    if not request.user.is_superuser:
-        if employee_id == request.user.employee_get:
-            messages.error(request, _("You cannot approve your own leave request."))
-            if emp_id is not None:
-                employee_id = emp_id
-                return redirect(f"/employee/employee-view/{employee_id}/")
-            return HorillaRedirect(request)
+    if not _can_decide_leave_request(request, leave_request):
+        messages.error(request, _("You cannot approve this leave request."))
+        if emp_id is not None:
+            return redirect(f"/employee/employee-view/{emp_id}/")
+        return HorillaRedirect(request)
     leave_type_id = leave_request.leave_type_id
     try:
-        available_leave = AvailableLeave.objects.get(
+        available_leave = AvailableLeave.objects.select_for_update().get(
             leave_type_id=leave_type_id, employee_id=employee_id
         )
     except AvailableLeave.DoesNotExist:
@@ -1094,12 +1187,23 @@ def leave_request_approve(request, id, emp_id=None):
                         ),
                         None,
                     )
-                    condition_approval = LeaveRequestConditionApproval.objects.filter(
-                        manager_id=approver, leave_request_id=leave_request
-                    ).first()
+                    condition_approval = (
+                        LeaveRequestConditionApproval.objects.select_for_update()
+                        .filter(manager_id=approver, leave_request_id=leave_request)
+                        .first()
+                    )
                     if condition_approval is None:
                         error_message = str(
                             _("You are not an approver for this leave request.")
+                        )
+                        messages.error(request, error_message)
+                    elif LeaveRequestConditionApproval.objects.filter(
+                        leave_request_id=leave_request,
+                        sequence__lt=condition_approval.sequence,
+                        is_approved=False,
+                    ).exists():
+                        error_message = str(
+                            _("A previous approval step is still pending.")
                         )
                         messages.error(request, error_message)
                     else:
@@ -1142,10 +1246,11 @@ def leave_request_approve(request, id, emp_id=None):
                             redirect=reverse("user-request-view")
                             + f"?id={leave_request.id}",
                         )
-                    mail_thread = LeaveMailSendThread(
-                        request, leave_request, type="approve"
+                    transaction.on_commit(
+                        lambda: LeaveMailSendThread(
+                            request, leave_request, type="approve"
+                        ).start()
                     )
-                    mail_thread.start()
         else:
             error_message = str(
                 _(f"{employee_id} dont have enough leave days to approve the request..")
@@ -1177,65 +1282,73 @@ def leave_request_approve(request, id, emp_id=None):
 
 @login_required
 @manager_can_enter("leave.change_leaverequest")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_request_bulk_approve(request):
-    if request.method == "POST":
-        request_ids = request.POST.getlist("ids")
-        filtered_ids = []
-        for request_id in request_ids:
-            leave_request = LeaveRequest.objects.get(id=int(request_id))
-            # Exclude requests where the employee is the current user
-            if leave_request.employee_id != request.user.employee_get:
-                filtered_ids.append(request_id)
-        if request.user.is_superuser:
-            filtered_ids = request_ids
-        for request_id in filtered_ids:
-            try:
-                leave_request = (
-                    LeaveRequest.objects.get(id=int(request_id)) if request_id else None
-                )
-                if leave_request.status == "requested" and (
-                    leave_request.start_date >= datetime.today().date()
-                    or request.user.has_perm("leave.change_leaverequest")
-                ):
-                    leave_request_approve(request, leave_request.id)
-                else:
-                    if leave_request.status == "approved":
-                        messages.info(
-                            request,
-                            _("{} {} request already approved").format(
-                                leave_request.employee_id, leave_request.leave_type_id
-                            ),
-                        )
-                    elif leave_request.start_date < datetime.today().date():
-                        messages.warning(
-                            request,
-                            _("{} {} request date exceeded").format(
-                                leave_request.employee_id, leave_request.leave_type_id
-                            ),
-                        )
-                    else:
-                        messages.warning(
-                            request,
-                            _("{} {} can't approve.").format(
-                                leave_request.employee_id, leave_request.leave_type_id
-                            ),
-                        )
-            except (ValueError, OverflowError, LeaveRequest.DoesNotExist):
-                messages.error(request, _("Leave request not found"))
-                pass
+    request_ids = list(dict.fromkeys(request.POST.getlist("ids")))
+    if not request_ids or len(request_ids) > 500 or any(
+        not str(value).isdigit() or int(value) <= 0 for value in request_ids
+    ):
+        return JsonResponse({"error": "Invalid leave request IDs."}, status=400)
+
+    leave_requests = list(
+        LeaveRequest.objects.select_for_update()
+        .filter(id__in=request_ids)
+        .select_related("employee_id", "leave_type_id")
+    )
+    for leave_request in leave_requests:
+        if not _can_decide_leave_request(request, leave_request):
+            messages.error(request, _("You cannot approve this leave request."))
+        elif leave_request.status == "requested" and (
+            leave_request.start_date >= datetime.today().date()
+            or request.user.has_perm("leave.change_leaverequest")
+        ):
+            leave_request_approve(request, leave_request.id)
+        elif leave_request.status == "approved":
+            messages.info(
+                request,
+                _("{} {} request already approved").format(
+                    leave_request.employee_id, leave_request.leave_type_id
+                ),
+            )
+        elif leave_request.start_date < datetime.today().date():
+            messages.warning(
+                request,
+                _("{} {} request date exceeded").format(
+                    leave_request.employee_id, leave_request.leave_type_id
+                ),
+            )
+        else:
+            messages.warning(
+                request,
+                _("{} {} can't approve.").format(
+                    leave_request.employee_id, leave_request.leave_type_id
+                ),
+            )
     return HorillaRedirect(request)
 
 
 @login_required
 @manager_can_enter("leave.change_leaverequest")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_bulk_reject(request):
-    request_ids = request.POST.getlist("request_ids")
+    request_ids = list(dict.fromkeys(request.POST.getlist("request_ids")))
+    if not request_ids or len(request_ids) > 500 or any(
+        not str(value).isdigit() or int(value) <= 0 for value in request_ids
+    ):
+        return JsonResponse({"error": "Invalid leave request IDs."}, status=400)
 
-    for request_id in request_ids:
-        leave_request = (
-            LeaveRequest.objects.get(id=int(request_id)) if request_id else None
-        )
-        leave_request_cancel(request, leave_request.id)
+    leave_requests = list(
+        LeaveRequest.objects.select_for_update()
+        .filter(id__in=request_ids)
+        .select_related("employee_id")
+    )
+    for leave_request in leave_requests:
+        if _can_decide_leave_request(request, leave_request):
+            leave_request_cancel(request, leave_request.id)
+        else:
+            messages.error(request, _("You cannot reject this leave request."))
 
     return HorillaRedirect(request)
 
@@ -1243,6 +1356,7 @@ def leave_bulk_reject(request):
 @login_required
 @hx_request_required
 @manager_can_enter("leave.change_leaverequest")
+@transaction.atomic
 def leave_request_cancel(request, id, emp_id=None):
     """
     function used to Reject leave request.
@@ -1257,16 +1371,37 @@ def leave_request_cancel(request, id, emp_id=None):
           Otherwise, it returns to the default leave request view template.
 
     """
+    queryset = LeaveRequest.objects.select_related(
+        "employee_id__employee_user_id", "leave_type_id"
+    )
+    if request.method == "POST":
+        queryset = queryset.select_for_update()
+    leave_request = queryset.filter(id=id).first()
+    if leave_request is None:
+        return HorillaRedirect(request, message=_("Leave request not found."))
+    if not _can_decide_leave_request(request, leave_request):
+        return HorillaRedirect(
+            request, message=_("You cannot reject this leave request.")
+        )
+
     form = RejectForm()
     if request.method == "POST":
         form = RejectForm(request.POST)
         if form.is_valid():
-            leave_request = LeaveRequest.objects.get(id=id)
             employee_id = leave_request.employee_id
             leave_type_id = leave_request.leave_type_id
-            available_leave = AvailableLeave.objects.get(
-                leave_type_id=leave_type_id, employee_id=employee_id
+            available_leave = (
+                AvailableLeave.objects.select_for_update()
+                .filter(leave_type_id=leave_type_id, employee_id=employee_id)
+                .first()
             )
+            if available_leave is None:
+                return HorillaRedirect(
+                    request,
+                    message=_(
+                        "No available leave record found for this employee and leave type."
+                    ),
+                )
             if leave_request.status != "rejected":
                 available_leave.available_days += leave_request.approved_available_days
                 available_leave.carryforward_days += (
@@ -1277,28 +1412,49 @@ def leave_request_cancel(request, id, emp_id=None):
                 leave_request.status = "rejected"
                 leave_request.leave_clashes_count = 0
 
-                if leave_request.multiple_approvals() and not request.user.is_superuser:
-                    conditional_requests = leave_request.multiple_approvals()
-                    approver = [
-                        manager
-                        for manager in conditional_requests["managers"]
-                        if manager.employee_user_id == request.user
-                    ]
-                    condition_approval = LeaveRequestConditionApproval.objects.filter(
-                        manager_id=approver[0], leave_request_id=leave_request
-                    ).first()
-                    condition_approval.is_approved = False
-                    condition_approval.is_rejected = True
-                    condition_approval.save()
+                approval_rows = LeaveRequestConditionApproval.objects.select_for_update().filter(
+                    leave_request_id=leave_request
+                )
+                if approval_rows.exists():
+                    if request.user.is_superuser or request.user.has_perm(
+                        "leave.change_leaverequest"
+                    ):
+                        approval_rows.update(is_approved=False, is_rejected=True)
+                    else:
+                        condition_approval = approval_rows.filter(
+                            manager_id=request.user.employee_get
+                        ).first()
+                        if condition_approval is None:
+                            return HorillaRedirect(
+                                request,
+                                message=_(
+                                    "You are not an approver for this leave request."
+                                ),
+                            )
+                        condition_approval.is_approved = False
+                        condition_approval.is_rejected = True
+                        condition_approval.save(
+                            update_fields=["is_approved", "is_rejected"]
+                        )
 
                 leave_request.reject_reason = form.cleaned_data["reason"]
-                leave_request.save()
-                available_leave.save()
-                comment = LeaverequestComment()
-                comment.request_id = leave_request
-                comment.employee_id = request.user.employee_get
-                comment.comment = leave_request.reject_reason
-                comment.save()
+                leave_request.save(
+                    update_fields=[
+                        "approved_available_days",
+                        "approved_carryforward_days",
+                        "status",
+                        "leave_clashes_count",
+                        "reject_reason",
+                    ]
+                )
+                available_leave.save(
+                    update_fields=["available_days", "carryforward_days"]
+                )
+                LeaverequestComment.objects.create(
+                    request_id=leave_request,
+                    employee_id=request.user.employee_get,
+                    comment=leave_request.reject_reason,
+                )
 
                 messages.success(request, _("Leave request rejected successfully.."))
                 with contextlib.suppress(Exception):
@@ -1315,8 +1471,11 @@ def leave_request_cancel(request, id, emp_id=None):
                         + f"?id={leave_request.id}",
                     )
 
-                mail_thread = LeaveMailSendThread(request, leave_request, type="reject")
-                mail_thread.start()
+                transaction.on_commit(
+                    lambda: LeaveMailSendThread(
+                        request, leave_request, type="reject"
+                    ).start()
+                )
             else:
                 messages.error(request, _("Leave request already rejected."))
 
@@ -1343,6 +1502,7 @@ def leave_request_cancel(request, id, emp_id=None):
 
 @login_required
 @hx_request_required
+@transaction.atomic
 def user_leave_cancel(request, id):
     """
     function used to cancel approved leave request by employee.
@@ -1355,7 +1515,12 @@ def user_leave_cancel(request, id):
     GET :  it returns to the default my leave request view template.
 
     """
-    leave_request = LeaveRequest.objects.get(id=id)
+    queryset = LeaveRequest.objects.select_related("employee_id__employee_user_id")
+    if request.method == "POST":
+        queryset = queryset.select_for_update()
+    leave_request = queryset.filter(id=id).first()
+    if leave_request is None:
+        return HorillaRedirect(request, message=_("Leave request not found."))
     employee_id = leave_request.employee_id
     if employee_id.employee_user_id.id == request.user.id:
         current_date = date.today()
@@ -1369,15 +1534,16 @@ def user_leave_cancel(request, id):
                 if form.is_valid():
                     leave_request.reject_reason = form.cleaned_data["reason"]
                     leave_request.status = "cancelled"
-                    leave_request.save()
+                    leave_request.save(update_fields=["reject_reason", "status"])
                     messages.success(
                         request, _("Leave request cancelled successfully..")
                     )
 
-                    mail_thread = LeaveMailSendThread(
-                        request, leave_request, type="cancel"
+                    transaction.on_commit(
+                        lambda: LeaveMailSendThread(
+                            request, leave_request, type="cancel"
+                        ).start()
                     )
-                    mail_thread.start()
                     return HorillaRedirect(request)
             return render(
                 request,
@@ -1837,6 +2003,8 @@ def available_leave_update(request, id):
 @login_required
 @hx_request_required
 @manager_can_enter("leave.delete_availableleave")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_assign_delete(request, obj_id):
     """
     Function to delete an assigned leave type of an employee.
@@ -1851,11 +2019,21 @@ def leave_assign_delete(request, obj_id):
     pd = request.GET.urlencode()
 
     try:
-        AvailableLeave.objects.get(id=obj_id).delete()
+        assigned_leave = AvailableLeave.objects.select_for_update().get(id=obj_id)
+        if not (
+            request.user.is_superuser
+            or request.user.has_perm("leave.delete_availableleave")
+            or _is_direct_reporting_manager(request, assigned_leave.employee_id)
+        ):
+            return JsonResponse(
+                {"message": _("You cannot delete this assigned leave.")}, status=403
+            )
+        assigned_leave.delete()
         messages.success(request, _("Assigned leave successfully deleted."))
     except AvailableLeave.DoesNotExist:
         messages.error(request, _("Assigned leave not found."))
     except ProtectedError:
+        transaction.set_rollback(True)
         messages.error(request, _("Related entries exists"))
     if not request.GET.get("instances_ids"):
         if not AvailableLeave.objects.filter():
@@ -1878,24 +2056,27 @@ def leave_assign_delete(request, obj_id):
 @login_required
 @require_http_methods(["POST"])
 @permission_required("leave.delete_availableleave")
+@transaction.atomic
 def leave_assign_bulk_delete(request):
     """
     This method is used to delete bulk of assigned leaves
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    count = 0
-    for assigned_leave_id in ids:
-        try:
-            assigned_leave = AvailableLeave.objects.get(id=assigned_leave_id)
-            assigned_leave.delete()
-            count += 1
-        except Exception as e:
-            messages.error(request, _("Assigned leave not found."))
-    messages.success(
-        request, _("{} assigned leaves deleted successfully ").format(count)
-    )
-    return JsonResponse({"message": "Success"})
+    try:
+        ids = _posted_ids(request)
+    except ValueError:
+        return JsonResponse({"message": _("Invalid leave selection.")}, status=400)
+    assigned_leaves = AvailableLeave.objects.select_for_update().filter(id__in=ids)
+    if assigned_leaves.count() != len(ids):
+        return JsonResponse({"message": _("Assigned leave not found.")}, status=404)
+    try:
+        assigned_leaves.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more assigned leaves are in use.")}, status=409
+        )
+    messages.success(request, _("Selected assigned leaves deleted successfully."))
+    return JsonResponse({"message": "Success", "deleted": len(ids)})
 
 
 def assign_leave_type_excel(_request):
@@ -2214,6 +2395,8 @@ def restrict_update(request, id):
 @login_required
 @hx_request_required
 @permission_required("leave.delete_restrictleave")
+@require_http_methods(["POST"])
+@transaction.atomic
 def restrict_delete(request, id):
     """
     function used to delete restricted days.
@@ -2231,11 +2414,13 @@ def restrict_delete(request, id):
 
     query_string = request.GET.urlencode()
     try:
-        RestrictLeave.objects.get(id=id).delete()
+        RestrictLeave.objects.select_for_update().get(id=id).delete()
         messages.success(request, _("Restricted day deleted successfully.."))
     except RestrictLeave.DoesNotExist:
         messages.error(request, _("Restricted day not found."))
     except ProtectedError:
+        transaction.set_rollback(True)
+        transaction.set_rollback(True)
         messages.error(request, _("Related entries exists"))
 
     hx_target = request.META.get("HTTP_HX_TARGET")
@@ -2257,6 +2442,8 @@ def restrict_delete(request, id):
 @login_required
 @hx_request_required
 @permission_required("leave.delete_restrictleave")
+@require_http_methods(["POST"])
+@transaction.atomic
 def restrict_days_bulk_delete(request):
     """
     function used to delete multiple restricted days.
@@ -2268,21 +2455,32 @@ def restrict_days_bulk_delete(request):
     GET : return restricted days view template
     """
     pd = request.GET.urlencode()
-    if request.method == "POST":
-        restrict_day_ids = request.POST.getlist("ids")
-        try:
-            restrict_days = RestrictLeave.objects.filter(
-                id__in=restrict_day_ids
-            ).delete()
-            count = len(restrict_day_ids)
-            messages.success(
-                request,
-                _("{} Leave restricted days deleted successfully").format(count),
-            )
-        except (OverflowError, ValueError):
-            messages.error(request, _("Restricted Days not found"))
-        except:
-            messages.error(request, _("Something went wrong"))
+    restrict_day_ids = request.POST.getlist("ids")
+    if (
+        not restrict_day_ids
+        or len(restrict_day_ids) > 500
+        or len(restrict_day_ids) != len(set(restrict_day_ids))
+        or any(not str(value).isdigit() or int(value) <= 0 for value in restrict_day_ids)
+    ):
+        return JsonResponse({"message": _("Invalid restricted day IDs.")}, status=400)
+    restrict_days = RestrictLeave.objects.select_for_update().filter(
+        id__in=restrict_day_ids
+    )
+    if restrict_days.count() != len(restrict_day_ids):
+        return JsonResponse({"message": _("Restricted day not found.")}, status=404)
+    try:
+        restrict_days.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more restricted days are protected.")}, status=409
+        )
+    messages.success(
+        request,
+        _("{} Leave restricted days deleted successfully").format(
+            len(restrict_day_ids)
+        ),
+    )
     return redirect(f"/leave/restrict-filter?{pd}")
 
 
@@ -2600,6 +2798,8 @@ def user_request_update(request, id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def user_request_delete(request, id):
     """
     function used to delete user leave request.
@@ -2616,10 +2816,11 @@ def user_request_delete(request, id):
 
     previous_data = request.GET.urlencode()
     try:
-        leave_request = LeaveRequest.objects.get(id=id)
-        if request.user.employee_get == leave_request.employee_id:
-            messages.success(request, _("Leave request deleted successfully.."))
-            leave_request.delete()
+        leave_request = LeaveRequest.objects.select_for_update().get(
+            id=id, employee_id=request.user.employee_get
+        )
+        messages.success(request, _("Leave request deleted successfully.."))
+        leave_request.delete()
     except LeaveRequest.DoesNotExist:
         messages.error(request, _("User has no leave request.."))
     except ProtectedError:
@@ -3724,6 +3925,8 @@ def leave_allocation_request_update(request, req_id):
 
 @login_required
 @leave_allocation_reject_permission()
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_allocation_request_approve(request, req_id):
     """
     function used to approve a leave allocation request.
@@ -3735,7 +3938,9 @@ def leave_allocation_request_approve(request, req_id):
     Returns:
     GET :It returns to the default leave allocation request view template.
     """
-    leave_allocation_request = LeaveAllocationRequest.objects.get(id=req_id)
+    leave_allocation_request = get_object_or_404(
+        LeaveAllocationRequest.objects.select_for_update(), id=req_id
+    )
     if leave_allocation_request.status == "requested":
         employee = leave_allocation_request.employee_id
         if (
@@ -3744,7 +3949,7 @@ def leave_allocation_request_approve(request, req_id):
             .exists()
         ):
             available_leave = (
-                employee.available_leave.all()
+                employee.available_leave.select_for_update()
                 .filter(leave_type_id=leave_allocation_request.leave_type_id)
                 .first()
             )
@@ -3758,19 +3963,14 @@ def leave_allocation_request_approve(request, req_id):
         leave_allocation_request.status = "approved"
         leave_allocation_request.save()
         messages.success(request, _("Leave allocation request approved successfully"))
-        with contextlib.suppress(Exception):
-            notify.send(
-                request.user.employee_get,
-                recipient=leave_allocation_request.employee_id.employee_user_id,
-                verb="Your leave allocation request has been approved",
-                verb_ar="تمت الموافقة على طلب تخصيص إجازتك",
-                verb_de="Ihr Antrag auf Urlaubszuweisung wurde genehmigt",
-                verb_es="Se ha aprobado su solicitud de asignación de vacaciones",
-                verb_fr="Votre demande d'allocation de congé a été approuvée",
-                icon="people-circle",
-                redirect=reverse("leave-allocation-request-view")
-                + f"?id={leave_allocation_request.id}",
-            )
+        _notify_after_commit(
+            request.user.employee_get,
+            recipient=leave_allocation_request.employee_id.employee_user_id,
+            verb="Your leave allocation request has been approved",
+            icon="people-circle",
+            redirect=reverse("leave-allocation-request-view")
+            + f"?id={leave_allocation_request.id}",
+        )
     else:
         messages.error(request, _("The leave allocation request can't be approved"))
     return HorillaRedirect(request)
@@ -3779,6 +3979,7 @@ def leave_allocation_request_approve(request, req_id):
 @login_required
 @hx_request_required
 @leave_allocation_reject_permission()
+@transaction.atomic
 def leave_allocation_request_reject(request, req_id):
     """
     function used to Reject leave allocation request.
@@ -3791,7 +3992,12 @@ def leave_allocation_request_reject(request, req_id):
     GET : It returns to the default leave allocation request view template.
 
     """
-    leave_allocation_request = LeaveAllocationRequest.objects.get(id=req_id)
+    allocation_queryset = LeaveAllocationRequest.objects.select_related(
+        "employee_id__employee_user_id", "leave_type_id"
+    )
+    if request.method == "POST":
+        allocation_queryset = allocation_queryset.select_for_update()
+    leave_allocation_request = get_object_or_404(allocation_queryset, id=req_id)
     if (
         leave_allocation_request.status == "requested"
         or leave_allocation_request.status == "approved"
@@ -3804,10 +4010,14 @@ def leave_allocation_request_reject(request, req_id):
                 if leave_allocation_request.status == "approved":
                     leave_type = leave_allocation_request.leave_type_id
                     requested_days = leave_allocation_request.requested_days
-                    available_leave = AvailableLeave.objects.filter(
+                    available_leave = AvailableLeave.objects.select_for_update().filter(
                         leave_type_id=leave_type,
                         employee_id=leave_allocation_request.employee_id,
                     ).first()
+                    if available_leave is None:
+                        return HorillaRedirect(
+                            request, message=_("Available leave balance not found.")
+                        )
                     available_leave.available_days = max(
                         0, available_leave.available_days - requested_days
                     )
@@ -3818,19 +4028,14 @@ def leave_allocation_request_reject(request, req_id):
                 messages.success(
                     request, _("Leave allocation request rejected successfully")
                 )
-                with contextlib.suppress(Exception):
-                    notify.send(
-                        request.user.employee_get,
-                        recipient=leave_allocation_request.employee_id.employee_user_id,
-                        verb="Your leave allocation request has been rejected",
-                        verb_ar="تم رفض طلب تخصيص إجازتك",
-                        verb_de="Ihr Antrag auf Urlaubszuweisung wurde abgelehnt",
-                        verb_es="Se ha rechazado su solicitud de asignación de vacaciones",
-                        verb_fr="Votre demande d'allocation de congé a été rejetée",
-                        icon="people-circle",
-                        redirect=reverse("leave-allocation-request-view")
-                        + f"?id={leave_allocation_request.id}",
-                    )
+                _notify_after_commit(
+                    request.user.employee_get,
+                    recipient=leave_allocation_request.employee_id.employee_user_id,
+                    verb="Your leave allocation request has been rejected",
+                    icon="people-circle",
+                    redirect=reverse("leave-allocation-request-view")
+                    + f"?id={leave_allocation_request.id}",
+                )
                 return HorillaRedirect(request)
         return render(
             request,
@@ -3845,6 +4050,8 @@ def leave_allocation_request_reject(request, req_id):
 @login_required
 @hx_request_required
 @leave_allocation_delete_permission()
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_allocation_request_delete(request, req_id):
     """
     function used to delete leave allocation request.
@@ -3861,7 +4068,9 @@ def leave_allocation_request_delete(request, req_id):
     previous_data = request_copy.urlencode()
 
     try:
-        leave_allocation_request = LeaveAllocationRequest.objects.get(id=req_id)
+        leave_allocation_request = LeaveAllocationRequest.objects.select_for_update().get(
+            id=req_id
+        )
 
         if leave_allocation_request.status != "approved":
             leave_allocation_request.delete()
@@ -3876,6 +4085,8 @@ def leave_allocation_request_delete(request, req_id):
         messages.error(request, _("Leave allocation request not found."))
 
     except ProtectedError:
+        transaction.set_rollback(True)
+        transaction.set_rollback(True)
         messages.error(request, _("Related entries exist"))
     hx_target = request.META.get("HTTP_HX_TARGET")
     previous_data = request.GET.urlencode()
@@ -3956,35 +4167,46 @@ def assigned_leave_select_filter(request):
 @login_required
 @require_http_methods(["POST"])
 @manager_can_enter("leave.delete_leaverequest")
+@transaction.atomic
 def leave_request_bulk_delete(request):
     """
     This method is used to delete a bulk of leave requests.
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    count = 0  # To track the number of successfully deleted requests
-    for leave_request_id in ids:
-        try:
-            leave_request = LeaveRequest.objects.get(id=leave_request_id)
-            employee = leave_request.employee_id
-            if leave_request.status == "requested":
-                leave_request.delete()
-                count += 1
-            else:
-                messages.error(
-                    request,
-                    _("{}'s leave request cannot be deleted.".format(employee)),
-                )
-        except Exception as e:
-            messages.error(request, _("An error occurred: {}.".format(str(e))))
-
-    if count > 0:
-        messages.success(
-            request,
-            _("{count}  leave request(s) successfully deleted.".format(count=count)),
+    try:
+        ids = _posted_ids(request)
+    except ValueError:
+        return JsonResponse({"message": _("Invalid leave selection.")}, status=400)
+    leave_requests = list(
+        LeaveRequest.objects.select_for_update()
+        .select_related("employee_id__employee_work_info")
+        .filter(id__in=ids)
+    )
+    if len(leave_requests) != len(ids):
+        return JsonResponse({"message": _("Leave request not found.")}, status=404)
+    if any(request_item.status != "requested" for request_item in leave_requests):
+        return JsonResponse(
+            {"message": _("Only requested leave requests can be deleted.")}, status=409
         )
-
-    return JsonResponse({"message": "Success"})
+    if any(
+        not _can_decide_leave_request(request, request_item)
+        for request_item in leave_requests
+    ):
+        return JsonResponse(
+            {"message": _("You cannot delete one or more leave requests.")},
+            status=403,
+        )
+    try:
+        LeaveRequest.objects.filter(id__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more leave requests are in use.")}, status=409
+        )
+    messages.success(
+        request,
+        _("{count} leave request(s) successfully deleted.").format(count=len(ids)),
+    )
+    return JsonResponse({"message": "Success", "deleted": len(ids)})
 
 
 @login_required
@@ -4041,30 +4263,33 @@ def leave_request_select_filter(request):
 
 @login_required
 @require_http_methods(["POST"])
+@transaction.atomic
 def user_request_bulk_delete(request):
     """
     This method is used to delete bulk of leaves requests
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    for leave_request_id in ids:
-        try:
-            leave_request = LeaveRequest.objects.get(id=leave_request_id)
-            status = leave_request.status
-            if leave_request.status == "requested":
-                leave_request.delete()
-                messages.success(
-                    request,
-                    _("Leave request deleted."),
-                )
-            else:
-                messages.error(
-                    request,
-                    _("You cannot delete leave request with status {}.".format(status)),
-                )
-        except Exception as e:
-            messages.error(request, _("Leave request not found."))
-    return JsonResponse({"message": "Success"})
+    try:
+        ids = _posted_ids(request)
+    except ValueError:
+        return JsonResponse({"message": _("Invalid leave selection.")}, status=400)
+    leave_requests = LeaveRequest.objects.select_for_update().filter(
+        id__in=ids, employee_id=request.user.employee_get
+    )
+    if leave_requests.count() != len(ids):
+        return JsonResponse({"message": _("Leave request not found.")}, status=404)
+    if leave_requests.exclude(status="requested").exists():
+        return JsonResponse(
+            {"message": _("Only requested leave requests can be deleted.")}, status=409
+        )
+    try:
+        leave_requests.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more leave requests are in use.")}, status=409
+        )
+    messages.success(request, _("Selected leave requests deleted."))
+    return JsonResponse({"message": "Success", "deleted": len(ids)})
 
 
 @login_required
@@ -4615,12 +4840,18 @@ def view_allocationrequest_comment(request, leave_id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_allocationrequest_comment(request, comment_id):
     """
     This method is used to delete Allocation request comments
     """
     script = ""
-    comment = LeaveallocationrequestComment.find(comment_id)
+    comment = LeaveallocationrequestComment.objects.select_for_update().filter(
+        id=comment_id
+    ).first()
+    if not comment:
+        return HorillaRedirect(request, message=_("Comment not found."))
     request_id = comment.request_id.id
     if (
         request.user.employee_get == comment.employee_id
@@ -4638,15 +4869,21 @@ def delete_allocationrequest_comment(request, comment_id):
 
 
 @login_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_allocation_comment_file(request):
     """
     Used to delete attachment
     """
     script = ""
-    ids = request.GET.getlist("ids")
-    leave_id = request.GET.get("leave_id")
-    comment_id = request.GET.get("comment_id")
-    comment = LeaveallocationrequestComment.find(comment_id)
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    leave_id = request.POST.get("leave_id")
+    comment_id = request.POST.get("comment_id")
+    if not ids or len(ids) > 500 or not str(leave_id or "").isdigit():
+        return JsonResponse({"error": "Invalid attachment request."}, status=400)
+    comment = LeaveallocationrequestComment.objects.select_for_update().filter(
+        id=comment_id, request_id_id=leave_id
+    ).first()
     if not comment:
         return HorillaRedirect(
             request, message=_("No comment found matching the query.")
@@ -4654,9 +4891,9 @@ def delete_allocation_comment_file(request):
     if (
         request.user.employee_get == comment.employee_id
         or request.user.has_perm("leave.delete_leaverequestfile")
-        or is_reportingmanager(request)
+        or _is_direct_reporting_manager(request, comment.request_id.employee_id)
     ):
-        LeaverequestFile.objects.filter(id__in=ids).delete()
+        _delete_scoped_leave_comment_files(comment, ids)
         messages.success(request, _("File deleted successfully"))
     else:
         messages.warning(request, _("You don't have permission"))
@@ -4861,12 +5098,18 @@ def restrict_leaves_settings_view(request):
 
 @login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_leaverequest_comment(request, comment_id):
     """
     This method is used to delete Leave request comments
     """
     script = ""
-    comment = LeaverequestComment.find(comment_id)
+    comment = LeaverequestComment.objects.select_for_update().filter(
+        id=comment_id
+    ).first()
+    if not comment:
+        return HorillaRedirect(request, message=_("Comment not found."))
     if (
         request.user.employee_get == comment.employee_id
         or request.user.has_perm("leave.delete_leaverequestcomment")
@@ -4883,23 +5126,31 @@ def delete_leaverequest_comment(request, comment_id):
 
 
 @login_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_leave_comment_file(request):
     """
     Used to delete attachment
     """
     script = ""
-    ids = request.GET.getlist("ids")
-    leave_id = request.GET.get("leave_id")
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    leave_id = request.POST.get("leave_id")
     if not leave_id:
         return HorillaRedirect(request, message=_("No leave found matching the query."))
-    comment_id = request.GET["comment_id"]
-    comment = LeaverequestComment.find(comment_id)
+    if not ids or len(ids) > 500 or not str(leave_id).isdigit():
+        return JsonResponse({"error": "Invalid attachment request."}, status=400)
+    comment_id = request.POST.get("comment_id")
+    comment = LeaverequestComment.objects.select_for_update().filter(
+        id=comment_id, request_id_id=leave_id
+    ).first()
+    if not comment:
+        return HorillaRedirect(request, message=_("Comment not found."))
     if (
         request.user.employee_get == comment.employee_id
         or request.user.has_perm("leave.delete_leaverequestfile")
-        or is_reportingmanager(request)
+        or _is_direct_reporting_manager(request, comment.request_id.employee_id)
     ):
-        LeaverequestFile.objects.filter(id__in=ids).delete()
+        _delete_scoped_leave_comment_files(comment, ids)
         messages.success(request, _("File deleted successfully"))
     else:
         messages.warning(request, _("You don't have permission"))
@@ -4944,21 +5195,33 @@ if apps.is_installed("attendance"):
         )
 
     @login_required
+    @require_http_methods(["POST"])
+    @transaction.atomic
     def delete_comment_compensatory_file(request):
         """
         Used to delete attachment
         """
-        ids = request.GET.getlist("ids")
-        LeaverequestFile.objects.filter(id__in=ids).delete()
-        leave_id = request.GET.get("leave_id")
+        ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+        leave_id = request.POST.get("leave_id")
         if not leave_id:
             return HorillaRedirect(
                 request, message=_("No leave comment found matching the query.")
             )
-        comments = CompensatoryLeaverequestComment.objects.all()
+        if not ids or len(ids) > 500 or not str(leave_id).isdigit():
+            return JsonResponse({"error": "Invalid attachment request."}, status=400)
+        comment = (
+            CompensatoryLeaverequestComment.objects.select_for_update()
+            .filter(id=request.POST.get("comment_id"), request_id=leave_id)
+            .first()
+        )
+        if not comment:
+            return HorillaRedirect(request, message=_("Comment not found."))
         if not request.user.has_perm("leave.delete_compensatoryleaverequestcomment"):
-            comments = comments.filter(employee_id__employee_user_id=request.user)
-        if request.GET.get("compensatory"):
+            if comment.employee_id.employee_user_id != request.user:
+                return handle_no_permission(request)
+        _delete_scoped_leave_comment_files(comment, ids)
+        comments = CompensatoryLeaverequestComment.objects.all()
+        if request.POST.get("compensatory"):
             comments = comments.filter(request_id=leave_id).order_by("-created_at")
             template = "leave/compensatory_leave/compensatory_leave_comment.html"
         else:
@@ -4975,23 +5238,28 @@ if apps.is_installed("attendance"):
 
     @login_required
     @hx_request_required
+    @require_http_methods(["POST"])
+    @transaction.atomic
     def delete_leaverequest_compensatory_comment(request, comment_id):
         """
         This method is used to delete Leave request comments
         """
         if request.GET.get("compensatory"):
-            comment = CompensatoryLeaverequestComment.objects.filter(id=comment_id)
+            comment = CompensatoryLeaverequestComment.objects.select_for_update().filter(id=comment_id)
             if not request.user.has_perm(
                 "leave.delete_compensatoryleaverequestcomment"
             ):
                 comment = comment.filter(employee_id__employee_user_id=request.user)
             redirect_url = "view-compensatory-leave-comment"
         else:
-            comment = LeaverequestComment.objects.filter(id=comment_id)
+            comment = LeaverequestComment.objects.select_for_update().filter(id=comment_id)
             if not request.user.has_perm("leave.delete_leaverequestcomment"):
                 comment = comment.filter(employee_id__employee_user_id=request.user)
             redirect_url = "leave-request-view-comment"
-        leave_id = comment.first().request_id.id
+        comment_instance = comment.first()
+        if not comment_instance:
+            return HorillaRedirect(request, message=_("Comment not found."))
+        leave_id = comment_instance.request_id.id
         comment.delete()
         messages.success(request, _("Comment deleted successfully!"))
         return redirect(redirect_url, leave_id)
@@ -5187,16 +5455,22 @@ if apps.is_installed("attendance"):
         model=CompensatoryLeaveRequest,
         manager_access=True,
     )
+    @require_http_methods(["POST"])
+    @transaction.atomic
     def delete_compensatory_leave(request, comp_id):
         """
         function used to delete compensatory leave request,
         and reload the list view of compensatory leave requests.
         """
         try:
-            comp_leave_req = CompensatoryLeaveRequest.objects.get(id=comp_id).delete()
+            CompensatoryLeaveRequest.objects.select_for_update().get(
+                id=comp_id
+            ).delete()
             messages.success(request, _("Compensatory leave request deleted."))
-
-        except:
+        except CompensatoryLeaveRequest.DoesNotExist:
+            messages.error(request, _("Compensatory leave request not found."))
+        except ProtectedError:
+            transaction.set_rollback(True)
             messages.error(request, _("Sorry, something went wrong!"))
         if request.GET.get("list") == "True":
             return redirect(filter_compensatory_leave)
@@ -5207,13 +5481,17 @@ if apps.is_installed("attendance"):
     @is_compensatory_leave_enabled()
     @hx_request_required
     @manager_can_enter(perm="leave.change_compensatoryleaverequest")
+    @require_http_methods(["POST"])
+    @transaction.atomic
     def approve_compensatory_leave(request, comp_id):
         """
         function used to approve compensatory leave request,
         and reload the list view of compensatory leave requests.
         """
         try:
-            comp_leave_req = CompensatoryLeaveRequest.objects.get(id=comp_id)
+            comp_leave_req = CompensatoryLeaveRequest.objects.select_for_update().get(
+                id=comp_id
+            )
             if comp_leave_req.status == "requested":
                 comp_leave_req.status = "approved"
                 comp_leave_req.assign_compensatory_leave_type()
@@ -5774,14 +6052,23 @@ def leave_type_condition_create(request, leave_type_id):
 @login_required
 @hx_request_required
 @permission_required("leave.change_leavetype")
+@require_http_methods(["POST"])
+@transaction.atomic
 def leave_type_condition_delete(request, leave_type_id, condition_id):
     """
     HTMX view to remove a condition from a LeaveType and delete it.
     """
-    leave_type = get_object_or_404(LeaveType, id=leave_type_id)
-    condition = get_object_or_404(LeaveTypeCondition, id=condition_id)
+    leave_type = get_object_or_404(
+        LeaveType.objects.select_for_update(), id=leave_type_id
+    )
+    condition = get_object_or_404(
+        LeaveTypeCondition.objects.select_for_update(),
+        id=condition_id,
+        leavetype__id=leave_type.id,
+    )
     leave_type.conditions.remove(condition)
-    condition.delete()
+    if not condition.leavetype_set.exists():
+        condition.delete()
     messages.success(request, _("Condition removed successfully."))
     return render(
         request,

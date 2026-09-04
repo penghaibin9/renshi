@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase
 
-from report.views.report_templates import _legacy_write_block_response
+from report.write_guard import legacy_report_write_block_response
 
 
 class Hr18LegacyReportWriteGuardTests(SimpleTestCase):
@@ -19,7 +19,7 @@ class Hr18LegacyReportWriteGuardTests(SimpleTestCase):
         request = self.factory.post("/report/report-templates/save/")
         request.tenant_id = 77
 
-        response = _legacy_write_block_response(request)
+        response = legacy_report_write_block_response(request)
 
         self.assertEqual(response.status_code, 409)
         self.assertIn(b"LEGACY_REPORT_WRITES_BLOCKED", response.content)
@@ -31,5 +31,5 @@ class Hr18LegacyReportWriteGuardTests(SimpleTestCase):
         request = self.factory.post("/report/report-templates/save/")
         request.tenant_id = None
 
-        self.assertIsNone(_legacy_write_block_response(request))
+        self.assertIsNone(legacy_report_write_block_response(request))
         lookup.assert_not_called()

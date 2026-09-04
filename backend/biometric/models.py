@@ -13,6 +13,7 @@ from django.db import models
 from django.urls import reverse, reverse_lazy
 from django.utils.translation import gettext_lazy as _
 
+from base.encrypted_fields import EncryptedTextField
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import Company
 from employee.models import Employee
@@ -71,14 +72,14 @@ class BiometricDevices(HorillaModel):
         max_length=150, null=True, blank=True, default="", verbose_name=_("Machine IP")
     )
     port = models.IntegerField(null=True, blank=True, verbose_name=_("Port No"))
-    zk_password = models.CharField(
-        max_length=100, null=True, blank=True, default="0", verbose_name=_("Password")
+    zk_password = EncryptedTextField(
+        null=True, blank=True, default="0", verbose_name=_("Password")
     )
     bio_username = models.CharField(
         max_length=100, null=True, blank=True, default="", verbose_name=_("Username")
     )
-    bio_password = models.CharField(
-        max_length=100, null=True, blank=True, verbose_name=_("Password")
+    bio_password = EncryptedTextField(
+        null=True, blank=True, verbose_name=_("Password")
     )
     anviz_request_id = models.CharField(
         max_length=200, null=True, blank=True, verbose_name=_("Request ID")
@@ -86,13 +87,13 @@ class BiometricDevices(HorillaModel):
     api_url = models.CharField(
         max_length=200, null=True, blank=True, verbose_name=_("API Url")
     )
-    api_key = models.CharField(
-        max_length=100, null=True, blank=True, verbose_name=_("API Key")
+    api_key = EncryptedTextField(
+        null=True, blank=True, verbose_name=_("API Key")
     )
-    api_secret = models.CharField(
-        max_length=100, null=True, blank=True, verbose_name=_("API Secret")
+    api_secret = EncryptedTextField(
+        null=True, blank=True, verbose_name=_("API Secret")
     )
-    api_token = models.CharField(max_length=500, null=True, blank=True)
+    api_token = EncryptedTextField(null=True, blank=True)
     api_expires = models.CharField(max_length=100, null=True, blank=True)
     is_live = models.BooleanField(default=False, verbose_name=_("Is Live"))
     is_scheduler = models.BooleanField(default=False, verbose_name=_("Is Scheduled"))

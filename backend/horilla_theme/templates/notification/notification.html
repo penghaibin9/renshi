@@ -8,7 +8,7 @@
         <div class="flex gap-1">
             <span
                 class="cursor-pointer text-xs group text-primary-600 w-7 h-7 bg-primary-100 hover:bg-primary-600 hover:text-white rounded-full transition duration-300 flex items-center justify-center"
-                hx-get="{% url 'notification-sound' %}"
+                hx-post="{% url 'notification-sound' %}"
                 hx-swap="none"
                 title="{% trans 'Notification Sound' %}"
                 onclick="event.stopPropagation();
@@ -28,7 +28,7 @@
             <span
                 class="cursor-pointer text-xs group text-primary-600 w-7 h-7 bg-primary-100 hover:bg-primary-600 hover:text-white rounded-full transition duration-300 flex items-center justify-center"
                 onclick="event.stopPropagation();event.preventDefault()"
-                hx-get="{% url 'read-notifications' %}"
+                hx-post="{% url 'read-notifications' %}"
                 hx-target="#notificationContainer"
                 title="{% trans 'Mark All as Read' %}"
             >
@@ -37,7 +37,7 @@
             <span
                 class="cursor-pointer text-xs group text-primary-600 w-7 h-7 bg-primary-100 hover:bg-primary-600 hover:text-white rounded-full transition duration-300 flex items-center justify-center"
                 onclick="event.stopPropagation();event.preventDefault()"
-                hx-get="{% url 'clear-notifications' %}"
+                hx-post="{% url 'clear-notifications' %}"
                 hx-target="#notificationContainer"
                 title="{% trans 'Clear Notifications' %}"
             >

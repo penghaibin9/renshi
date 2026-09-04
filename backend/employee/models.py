@@ -5,23 +5,7 @@ This module is used to register models for employee app
 
 """
 
-import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
-
-from django.apps import apps
-from django.conf import settings
-from django.contrib.auth.models import Permission
-from django.core.exceptions import ValidationError
-from django.core.files.storage import default_storage
-from django.core.validators import RegexValidator
-from django.db import models
-from django.db.models.query import QuerySet
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.templatetags.static import static
-from django.urls import reverse, reverse_lazy
-from django.utils.translation import gettext_lazy as _
-from PIL import Image
 
 from accessibility.accessibility import ACCESSBILITY_FEATURE
 from base.horilla_company_manager import HorillaCompanyManager
@@ -35,7 +19,20 @@ from base.models import (
     WorkType,
     validate_time_format,
 )
-from employee.methods.duration_methods import format_time, strtime_seconds
+from defusedxml import ElementTree as ET
+from django.apps import apps
+from django.conf import settings
+from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError
+from django.core.files.storage import default_storage
+from django.core.validators import RegexValidator
+from django.db import models
+from django.db.models.query import QuerySet
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.templatetags.static import static
+from django.urls import reverse, reverse_lazy
+from django.utils.translation import gettext_lazy as _
 from horilla import horilla_middlewares
 from horilla.horilla_middlewares import _thread_locals
 from horilla.methods import get_horilla_model_class
@@ -44,6 +41,9 @@ from horilla_audit.methods import get_diff
 from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
 from horilla_auth.models import HorillaUser
 from horilla_views.cbv_methods import render_template
+from PIL import Image
+
+from employee.methods.duration_methods import format_time, strtime_seconds
 
 # create your model
 
@@ -620,7 +620,6 @@ class Employee(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["badge_id"],
-                condition=models.Q(badge_id__isnull=False),
                 name="unique_badge_id",
             )
         ]
@@ -640,10 +639,13 @@ class Employee(models.Model):
         """
         This method is used to get last send mail
         """
+        from base.email_logging import email_log_recipient_q
         from base.models import EmailLog
 
         return (
-            EmailLog.objects.filter(to__icontains=self.get_mail())
+            EmailLog.objects.filter(
+                email_log_recipient_q(self.get_mail()), company_id=self.get_company()
+            )
             .order_by("-created_at")
             .first()
         )
@@ -733,17 +735,15 @@ class Employee(models.Model):
         if employee.employee_user_id is None:
             # Create user if no corresponding user exists
             username = self.email
-            password = str(self.phone)
-
             user = HorillaUser.objects.create_user(
                 username=username,
                 email=username,
-                password=password,
+                password=None,
                 is_new_employee=True,
             )
             if not user:
                 user = HorillaUser.objects.create_user(
-                    username=username, email=username, password=password
+                    username=username, email=username, password=None
                 )
             self.employee_user_id = user
             # default permissions
@@ -1114,8 +1114,12 @@ class Policy(HorillaModel):
         verbose_name_plural = _("Policies")
 
     def delete(self, *args, **kwargs):
-        super().delete(*args, **kwargs)
-        self.attachments.all().delete()
+        attachment_ids = list(self.attachments.values_list("id", flat=True))
+        result = super().delete(*args, **kwargs)
+        PolicyMultipleFile.objects.filter(
+            id__in=attachment_ids, policy__isnull=True
+        ).delete()
+        return result
 
 
 class BonusPoint(HorillaModel):

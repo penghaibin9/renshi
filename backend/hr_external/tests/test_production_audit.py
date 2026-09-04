@@ -18,6 +18,7 @@ from datetime import date
 from django.apps import apps
 from django.conf import settings
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.test.client import RequestFactory
 
 from hr_external.api.materials import _extract_ticket_token
 from hr_external.api.portal import _extract_token
@@ -67,6 +68,36 @@ class MaterialFileValidationTests(SimpleTestCase):
     def test_size_limit_rejected(self):
         with self.assertRaises(MaterialFileRejected):
             validate_material_file(filename="big.pdf", content=b"x" * (51 * 1024 * 1024))
+
+    def test_declared_mime_mismatch_rejected(self):
+        with self.assertRaises(MaterialFileRejected):
+            validate_material_file(
+                filename="proof.pdf",
+                content=b"%PDF-1.4 fake",
+                declared_mime="text/html",
+            )
+
+    def test_filename_too_long_rejected(self):
+        with self.assertRaises(MaterialFileRejected):
+            validate_material_file(
+                filename=("a" * 252) + ".pdf",
+                content=b"%PDF-1.4 fake",
+            )
+
+
+class DownloadTokenTransportTests(SimpleTestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def test_query_token_is_rejected(self):
+        request = self.factory.get("/file-ticket?token=must-not-leak")
+        self.assertEqual(_extract_ticket_token(request), "")
+
+    def test_authorization_header_is_supported(self):
+        request = self.factory.get(
+            "/file-ticket", HTTP_AUTHORIZATION="Bearer safe-header-token"
+        )
+        self.assertEqual(_extract_ticket_token(request), "safe-header-token")
 
 
 @override_settings(

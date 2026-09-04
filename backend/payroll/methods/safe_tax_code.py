@@ -30,6 +30,8 @@ imports, file access, attribute introspection, or I/O are permitted.
 """
 
 import ast
+import math
+from numbers import Real
 
 __all__ = [
     "TaxCodeValidationError",
@@ -45,6 +47,21 @@ class TaxCodeValidationError(ValueError):
 # Builtins that are safe to expose to the formula. Deliberately minimal:
 # numeric/sequence helpers only, nothing that touches the filesystem,
 # imports, evaluation, or introspection.
+MAX_SOURCE_LENGTH = 32_000
+MAX_AST_NODES = 2_500
+MAX_RANGE_ITEMS = 10_000
+
+
+def _safe_range(*args):
+    """Return a bounded range so a formula cannot monopolise a payroll worker."""
+    value = range(*args)
+    if len(value) > MAX_RANGE_ITEMS:
+        raise TaxCodeValidationError(
+            f"Tax formula range exceeds the {MAX_RANGE_ITEMS}-item execution limit."
+        )
+    return value
+
+
 _SAFE_BUILTINS = {
     "abs": abs,
     "min": min,
@@ -52,7 +69,7 @@ _SAFE_BUILTINS = {
     "round": round,
     "sum": sum,
     "len": len,
-    "range": range,
+    "range": _safe_range,
     "float": float,
     "int": int,
     "bool": bool,
@@ -81,6 +98,11 @@ _FORBIDDEN_NODES = (
     ast.Await,
     ast.AsyncFor,
     ast.AsyncWith,
+    # Unbounded loops are never necessary for a payroll formula and can pin a
+    # web/worker process forever. Finite ``for`` loops remain supported.
+    ast.While,
+    # Exponentiation can create huge integers with tiny source expressions.
+    ast.Pow,
 )
 
 # Names that must never appear as identifiers, calls, or string-built
@@ -155,11 +177,20 @@ def _check(code: str):
     """Parse ``code`` and return the parsed module, raising on any violation."""
     if not isinstance(code, str) or not code.strip():
         raise TaxCodeValidationError(_("Tax code is empty."))
+    if len(code) > MAX_SOURCE_LENGTH:
+        raise TaxCodeValidationError(
+            f"Tax code exceeds the {MAX_SOURCE_LENGTH}-character limit."
+        )
 
     try:
         tree = ast.parse(code, mode="exec")
     except SyntaxError as exc:
         raise TaxCodeValidationError(f"Syntax error in tax code: {exc}") from exc
+
+    if sum(1 for _node in ast.walk(tree)) > MAX_AST_NODES:
+        raise TaxCodeValidationError(
+            f"Tax code exceeds the {MAX_AST_NODES}-node complexity limit."
+        )
 
     visitor = _PolicyVisitor()
     visitor.visit(tree)
@@ -216,13 +247,19 @@ def run_tax_code(code: str, yearly_income):
     # escapes, or dangerous calls; execution happens with the restricted
     # builtins only.
     compiled = compile(code, "<tax_code>", "exec")
-    exec(
+    # The validated AST runs with restricted builtins and isolated local globals.
+    exec(  # nosec B102
         compiled, sandbox_globals, local_vars
-    )  # noqa: S102 - sandboxed; see module docstring
+    )
 
     func = local_vars.get(ENTRY_POINT) or sandbox_globals.get(ENTRY_POINT)
     if not callable(func):
         raise TaxCodeValidationError(
             f"Tax code did not define a callable '{ENTRY_POINT}'."
         )
-    return func(yearly_income)
+    result = func(yearly_income)
+    if isinstance(result, bool) or not isinstance(result, Real):
+        raise TaxCodeValidationError("Tax formula must return a real number.")
+    if not math.isfinite(float(result)):
+        raise TaxCodeValidationError("Tax formula must return a finite number.")
+    return result

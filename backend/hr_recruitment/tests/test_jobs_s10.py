@@ -7,11 +7,17 @@ HR04 S10 对账与迁移测试：
 """
 
 from datetime import date
+from unittest import skipUnless
 
+from django.apps import apps
 from django.test import TestCase
 
-from base.models import Company, Department, JobPosition
-from horilla.horilla_middlewares import tenant_context
+LEGACY_RECRUITMENT_AVAILABLE = apps.is_installed("base") and apps.is_installed(
+    "recruitment"
+)
+if LEGACY_RECRUITMENT_AVAILABLE:
+    from base.models import Company, Department, JobPosition
+    from horilla.horilla_middlewares import tenant_context
 
 from hr_recruitment.jobs.dual_read_compare import run_dual_read_compare
 from hr_recruitment.jobs.legacy_migrate import migrate_legacy_candidates
@@ -19,6 +25,7 @@ from hr_recruitment.jobs.legacy_migrate import migrate_legacy_candidates
 TENANT = 9001
 
 
+@skipUnless(LEGACY_RECRUITMENT_AVAILABLE, "requires installed legacy recruitment apps")
 class DualReadCompareTests(TestCase):
     def setUp(self):
         self._tenant_ctx = tenant_context(TENANT)
@@ -60,6 +67,7 @@ class DualReadCompareTests(TestCase):
         )
 
 
+@skipUnless(LEGACY_RECRUITMENT_AVAILABLE, "requires installed legacy recruitment apps")
 class LegacyMigrateTests(TestCase):
     def setUp(self):
         self._tenant_ctx = tenant_context(TENANT)

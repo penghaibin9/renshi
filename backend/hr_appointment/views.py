@@ -9,6 +9,7 @@ from .permissions import (
     MANAGE_PERMISSION,
     PUBLICITY_PERMISSION,
     REVIEW_PERMISSION,
+    FACT_CORRECT_PERMISSION,
 )
 from .term_api import TERM_PERMISSION
 
@@ -57,5 +58,6 @@ def workspace(request, section="overview"):
             "can_decide": allowed(DECISION_PERMISSION),
             "can_effect": allowed(EFFECT_PERMISSION),
             "can_term": allowed(TERM_PERMISSION),
+            "can_fact_correct": allowed(FACT_CORRECT_PERMISSION),
         },
     )

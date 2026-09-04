@@ -10,7 +10,7 @@
   <form id="hr06-temporary-create-form" novalidate>
     {% csrf_token %}
     <section class="hr06-panel">
-      <div class="hr06-section-head"><div><h2>发起借调或挂职</h2><p>从教职工名册选择人员并核对当前主岗，再从组织信息中选择临时单位；当前办理规则为保留原岗位，创建后先保存为草稿。</p></div></div>
+      <div class="hr06-section-head"><div><h2>发起借调或挂职</h2><p>从教职工名册选择人员并核对当前主岗，再选择临时单位及可选临时岗位；涉及岗位时会进入 HR02 容量预占。</p></div></div>
       <div class="hr06-search-row">
         <label class="hr06-field hr06-field--grow"><span>姓名 / 工号</span><input id="hr06-temporary-staff-keyword" type="search" autocomplete="off" placeholder="例如：张老师 / T20260018"></label>
         <button class="hr06-button hr06-button--secondary" type="button" id="hr06-temporary-search-staff">搜索人员</button>
@@ -21,11 +21,12 @@
         <label class="hr06-field"><span>临时异动类型</span><select id="hr06-temporary-action" disabled><option value="">正在读取可选类型</option></select></label>
         <label class="hr06-field"><span>异动原因</span><select id="hr06-temporary-reason" disabled><option value="">请先选择类型</option></select></label>
         <label class="hr06-field"><span>临时单位</span><select id="hr06-temporary-target-org" disabled><option value="">正在读取组织信息</option></select></label>
+        <label class="hr06-field"><span>临时岗位（可选）</span><select id="hr06-temporary-target-position" disabled><option value="">请先选择临时单位</option></select></label>
         <label class="hr06-field"><span>计划生效日</span><input id="hr06-temporary-effective-at" type="date"></label>
         <label class="hr06-field"><span>预计返岗日</span><input id="hr06-temporary-return-at" type="date"></label>
         <label class="hr06-field"><span>优先级</span><select id="hr06-temporary-priority" disabled><option value="NORMAL">普通</option></select></label>
       </div>
-      <div class="hr06-truth-note"><strong>原岗处理</strong><span>当前办理规则为保留原岗位；暂停原岗或调整工作量暂未开放，也不在借调挂职中另选目标岗位。</span></div>
+      <div class="hr06-truth-note"><strong>原岗与容量</strong><span>借调挂职期间保留原主岗；如选择临时岗位，提交审批前必须完成岗位容量预占，生效时再提交占用。</span></div>
       <div id="hr06-temporary-bootstrap-state" class="hr06-meta" aria-live="polite"><span>正在准备异动类型与组织信息…</span></div>
       <div class="hr06-submit-panel"><div><h2>创建临时异动草稿</h2><p>系统会记录临时单位、预计返岗日和原岗处理方式；审批通过前不会修改正式任职信息。</p></div><button class="hr06-button" type="button" id="hr06-temporary-create" disabled>创建借调/挂职草稿</button><div id="hr06-temporary-create-result" class="hr06-meta" aria-live="polite"><span>尚未创建</span></div></div>
     </section>

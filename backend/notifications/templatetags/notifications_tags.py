@@ -1,11 +1,14 @@
 """Django notifications template tags file"""
 
+import re
+
 from django.template import Library
 from django.urls import reverse
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.utils.html import escapejs, format_html
 
 register = Library()
+_CALLBACK_NAME = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$")
+_CSS_CLASS_NAME = re.compile(r"^[A-Za-z_-][A-Za-z0-9_-]*$")
 
 
 @register.simple_tag(takes_context=True)
@@ -32,7 +35,15 @@ def register_notify_callbacks(
     api_name="list",
     fetch=5,
 ):
-    refresh_period = int(refresh_period) * 1000
+    try:
+        refresh_period = max(1, min(int(refresh_period), 3600)) * 1000
+        fetch = max(1, min(int(fetch), 100))
+    except (TypeError, ValueError):
+        return ""
+    if not _CSS_CLASS_NAME.fullmatch(str(badge_class)):
+        badge_class = "live_notify_badge"
+    if not _CSS_CLASS_NAME.fullmatch(str(menu_class)):
+        menu_class = "live_notify_list"
 
     if api_name == "list":
         api_url = reverse("notifications:live_unread_notification_list")
@@ -41,7 +52,8 @@ def register_notify_callbacks(
     else:
         return ""
 
-    script = """
+    script = format_html(
+        """
 <script>
 var notify_badge_class = "{}";
 var notify_menu_class = "{}";
@@ -50,23 +62,22 @@ var notify_fetch_count = {};
 var notify_unread_url = "{}";
 var notify_mark_all_unread_url = "{}";
 var notify_refresh_period = {};
-""".format(
-        badge_class,
-        menu_class,
-        api_url,
+""",
+        escapejs(badge_class),
+        escapejs(menu_class),
+        escapejs(api_url),
         fetch,
-        reverse("notifications:unread"),
-        reverse("notifications:mark_all_as_read"),
+        escapejs(reverse("notifications:unread")),
+        escapejs(reverse("notifications:mark_all_as_read")),
         refresh_period,
     )
 
     for callback in callbacks.split(","):
-        if callback.strip():
-            script += "register_notifier({});\n".format(callback.strip())
+        callback = callback.strip()
+        if callback and _CALLBACK_NAME.fullmatch(callback):
+            script += format_html("register_notifier({});\n", escapejs(callback))
 
-    script += "</script>"
-
-    return mark_safe(script)
+    return script + format_html("</script>")
 
 
 @register.simple_tag(takes_context=True)

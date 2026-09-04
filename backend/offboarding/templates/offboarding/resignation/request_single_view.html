@@ -73,7 +73,10 @@
                     ></ion-icon></a>
                 {% if perms.offboarding.delete_resignationletter %}
                     <a
-                        href="{% url 'delete-resignation-request' %}?letter_ids={{letter.id}}"
+                        href="#"
+                        hx-post="{% url 'delete-resignation-request' %}"
+                        hx-vals='{"letter_ids":"{{ letter.id }}"}'
+                        hx-swap="none"
                         class="oh-btn oh-btn--light"
                         style="flex: 1 0 auto; width: 40px; height: 40.68px; padding: 0"
                         title='{% trans "Delete" %}'
@@ -111,7 +114,8 @@
     </div>
     <h3 class="oh-faq-card__title">{{ letter.title }}</h3>
     <div class="oh-faq-card__desc" style="max-height: 200px; overflow: auto">{{ letter.description|safe }}</div>
-    <form action="{% url 'update-letter-status' %}">
+    <form action="{% url 'update-letter-status' %}" method="post">
+        {% csrf_token %}
         {% if perms.offboarding.change_resignationletter %}
             <div class="oh-btn-group">
                 {% if letter.status == "requested" %}

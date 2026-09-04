@@ -15,6 +15,7 @@ OWNS = (
     "离校与退休 Case、规则版本和完成 Gate",
     "ExitFact、RetirementFact、离校交接与关系转移证据",
     "离退休历史、档案转递状态与返聘衔接事实",
+    "租户私有离校凭证与不可变下载审计",
 )
 FORBIDDEN_DIRECT_WRITES = (
     "HR03 处分决定与人员主档事实",

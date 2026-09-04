@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -7,6 +8,11 @@ from pathlib import Path
 
 class MySQLBackupError(RuntimeError):
     """Raised when a MySQL backup cannot be produced safely."""
+
+
+_INSERT_RE = re.compile(
+    r"^INSERT INTO `(?P<table>[^`]+)` \((?P<columns>.+)\) VALUES \((?P<values>.*)\);$"
+)
 
 
 def _resolve_client(*names):
@@ -115,6 +121,130 @@ def _schema_object_count(
         ) from exc
 
 
+def _generated_columns(db_name, username, password, host, port):
+    client = resolve_mysql_client()
+    command = [
+        client,
+        "--host",
+        str(host or "localhost"),
+        "--port",
+        str(port or 3306),
+        "--user",
+        str(username),
+        f"--database={db_name}",
+        "--batch",
+        "--skip-column-names",
+        "--execute",
+        (
+            "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND EXTRA LIKE '%GENERATED%' "
+            "ORDER BY TABLE_NAME, ORDINAL_POSITION"
+        ),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            check=True,
+            text=True,
+            capture_output=True,
+            env=_child_environment(password),
+        )
+    except (subprocess.CalledProcessError, OSError) as exc:
+        detail = _safe_detail(exc, "generated-column preflight failed")
+        raise MySQLBackupError(
+            f"MySQL generated-column preflight failed: {detail}"
+        ) from exc
+    generated = {}
+    for line in result.stdout.splitlines():
+        try:
+            table, column = line.split("\t", 1)
+        except ValueError as exc:
+            raise MySQLBackupError(
+                f"Invalid generated-column metadata row: {line!r}"
+            ) from exc
+        generated.setdefault(table, set()).add(column)
+    return generated
+
+
+def _split_sql_values(values):
+    """Split one mysqldump VALUES tuple without breaking quoted commas."""
+    result = []
+    start = 0
+    quoted = False
+    escaped = False
+    for index, character in enumerate(values):
+        if escaped:
+            escaped = False
+            continue
+        if quoted and character == "\\":
+            escaped = True
+            continue
+        if character == "'":
+            quoted = not quoted
+        elif character == "," and not quoted:
+            result.append(values[start:index])
+            start = index + 1
+    if quoted:
+        raise MySQLBackupError("Unterminated SQL string in dump INSERT")
+    result.append(values[start:])
+    return result
+
+
+def rewrite_generated_column_inserts(dump_path, generated_columns):
+    """Replace dumped generated values with DEFAULT for MySQL 8 restores.
+
+    Debian's MariaDB-compatible dump client includes generated columns in data
+    INSERTs when connected to MySQL 8. MySQL correctly rejects explicit values
+    for those columns. ``DEFAULT`` is the only portable allowed value and asks
+    the target server to recompute the generated expression.
+    """
+    dump_path = Path(dump_path)
+    if not generated_columns:
+        return 0
+    descriptor, rewritten_name = tempfile.mkstemp(
+        prefix=f".{dump_path.name}.generated.",
+        suffix=".tmp",
+        dir=dump_path.parent,
+    )
+    os.close(descriptor)
+    rewritten_path = Path(rewritten_name)
+    replacements = 0
+    try:
+        with dump_path.open("r", encoding="utf-8", newline="") as source, rewritten_path.open(
+            "w", encoding="utf-8", newline=""
+        ) as target:
+            for line in source:
+                stripped = line.rstrip("\r\n")
+                match = _INSERT_RE.match(stripped)
+                generated = generated_columns.get(match.group("table")) if match else None
+                if not generated:
+                    target.write(line)
+                    continue
+                columns = [
+                    item.strip().removeprefix("`").removesuffix("`")
+                    for item in match.group("columns").split(",")
+                ]
+                values = _split_sql_values(match.group("values"))
+                if len(columns) != len(values):
+                    raise MySQLBackupError(
+                        f"Column/value mismatch while rewriting {match.group('table')}"
+                    )
+                for index, column in enumerate(columns):
+                    if column in generated:
+                        values[index] = "DEFAULT"
+                        replacements += 1
+                newline = "\r\n" if line.endswith("\r\n") else "\n"
+                target.write(
+                    f"INSERT INTO `{match.group('table')}` ({match.group('columns')}) "
+                    f"VALUES ({','.join(values)});{newline}"
+                )
+        os.replace(rewritten_path, dump_path)
+    except Exception:
+        rewritten_path.unlink(missing_ok=True)
+        raise
+    return replacements
+
+
 def dump_mysql_db(
     db_name,
     username,
@@ -149,6 +279,9 @@ def dump_mysql_db(
     event_count = _schema_object_count(
         "EVENTS", db_name, username, password, host, port
     )
+    generated_columns = _generated_columns(
+        db_name, username, password, host, port
+    )
 
     command = [
         dump_client,
@@ -162,6 +295,8 @@ def dump_mysql_db(
         "--quick",
         "--triggers",
         "--hex-blob",
+        "--complete-insert",
+        "--skip-extended-insert",
         "--no-tablespaces",
         "--default-character-set=utf8mb4",
         f"--result-file={temporary_path}",
@@ -186,6 +321,7 @@ def dump_mysql_db(
             raise MySQLBackupError(
                 f"{Path(dump_client).name} completed without producing backup data"
             )
+        rewrite_generated_column_inserts(temporary_path, generated_columns)
         os.replace(temporary_path, output_path)
     except subprocess.CalledProcessError as exc:
         temporary_path.unlink(missing_ok=True)

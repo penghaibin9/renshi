@@ -30,9 +30,17 @@ class CompletionService:
     )
 
     @staticmethod
+    def _lock_completion(completion):
+        return type(completion).objects.select_for_update().get(
+            pk=completion.pk,
+            tenant_id=completion.tenant_id,
+        )
+
+    @staticmethod
     @transaction.atomic
     def submit_completion(completion, submitted_evidence_package_id: str) -> dict:
         """提交完成核验申请。"""
+        completion = CompletionService._lock_completion(completion)
         if completion.verification_status in CompletionService.VERIFIABLE_SOURCES:
             return {"status": "ALREADY_VERIFIED"}
 
@@ -50,6 +58,7 @@ class CompletionService:
         Only VERIFIED → generate DevelopmentFact。
         已核验记录不可原地修改。
         """
+        completion = CompletionService._lock_completion(completion)
         if completion.verification_status in CompletionService.VERIFIABLE_SOURCES:
             return {"status": "COMPLETION_ALREADY_VERIFIED"}
 

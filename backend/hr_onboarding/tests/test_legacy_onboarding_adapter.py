@@ -6,8 +6,9 @@ from hr_onboarding.legacy.horilla import HorillaLegacyOnboardingAdapter
 
 
 class LegacyOnboardingAdapterTests(SimpleTestCase):
-    @patch("onboarding.models.CandidateStage.objects")
-    def test_candidate_stage_is_tenant_scoped_and_non_authoritative(self, stage_objects):
+    @patch("hr_onboarding.legacy.horilla._candidate_stage_model")
+    def test_candidate_stage_is_tenant_scoped_and_non_authoritative(self, stage_model):
+        stage_objects = stage_model.return_value.objects
         values_qs = MagicMock()
         values_qs.first.return_value = {
             "id": 1,
@@ -29,8 +30,9 @@ class LegacyOnboardingAdapterTests(SimpleTestCase):
         )
         self.assertFalse(row["authority"])
 
-    @patch("onboarding.models.CandidateTask.objects")
-    def test_candidate_tasks_keep_legacy_status_without_state_translation(self, task_objects):
+    @patch("hr_onboarding.legacy.horilla._candidate_task_model")
+    def test_candidate_tasks_keep_legacy_status_without_state_translation(self, task_model):
+        task_objects = task_model.return_value.objects
         values_qs = MagicMock()
         values_qs.__iter__.return_value = iter(
             [{"id": 2, "candidate_id_id": 20, "status": "stuck"}]

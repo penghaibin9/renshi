@@ -19,14 +19,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
   DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
   SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  MYSQL_CI_ROOT_PASSWORD: horilla_root_pass
+  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass
 
 jobs:
   external-agreement-db-first:
@@ -36,15 +36,15 @@ jobs:
       mysql:
         image: mysql:8.4
         env:
-          MYSQL_DATABASE: horilla_db
-          MYSQL_USER: horilla_user
-          MYSQL_PASSWORD: horilla_pass
-          MYSQL_ROOT_PASSWORD: horilla_root_pass
+          MYSQL_DATABASE: renshi_db
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: renshi_pass
+          MYSQL_ROOT_PASSWORD: renshi_root_pass
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uhorilla_user -phorilla_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -65,7 +65,7 @@ jobs:
             libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
             libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.lock
 
       - name: Ensure local settings stub
         run: |
@@ -148,14 +148,14 @@ jobs:
           )
           try:
               cursor = connection.cursor()
-              cursor.execute("DROP DATABASE IF EXISTS `test_horilla_db`")
+              cursor.execute("DROP DATABASE IF EXISTS `test_renshi_db`")
               cursor.execute(
-                  "CREATE DATABASE `test_horilla_db` "
+                  "CREATE DATABASE `test_renshi_db` "
                   "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
               )
               cursor.execute(
-                  "GRANT ALL PRIVILEGES ON `test_horilla_db`.* "
-                  "TO 'horilla_user'@'%'"
+                  "GRANT ALL PRIVILEGES ON `test_renshi_db`.* "
+                  "TO 'renshi_user'@'%'"
               )
               cursor.execute("FLUSH PRIVILEGES")
           finally:
@@ -165,18 +165,18 @@ jobs:
           mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
           test -n "$mysql_container"
           docker exec "$mysql_container" sh -c \
-            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers horilla_db' \
+            'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers renshi_db' \
             | docker exec -i "$mysql_container" sh -c \
-              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_horilla_db'
+              'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_renshi_db'
 
-          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
             python manage.py migrate --run-syncdb --noinput
-          DATABASE_URL='mysql://horilla_user:horilla_pass@127.0.0.1:3306/test_horilla_db?charset=utf8mb4' \
+          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
             python manage.py migrate --check
 
       - name: Exact HR07 HR08 W-B regression
         env:
-          DATABASE_URL: mysql://horilla_user:horilla_pass@127.0.0.1:3306/horilla_db?charset=utf8mb4
+          DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
         run: >-
           python manage.py test
           hr_contracts.tests.test_agreement_service

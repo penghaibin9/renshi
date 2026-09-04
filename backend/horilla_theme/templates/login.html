@@ -9,18 +9,17 @@
     <link
       rel="apple-touch-icon"
       sizes="180x180"
-      href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/apple-touch-icon.png' %}{% endif %}"
+      href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
     >
     <link
       rel="icon"
-      type="image/png"
+      type="image/jpeg"
       sizes="32x32"
-      href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'favicons/favicon-32x32.png' %}{% endif %}"
+      href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}"
     >
     <link rel="stylesheet" href="{% static 'horilla_theme/assets/css/global.css' %}">
     <link rel="stylesheet" href="{% static 'horilla_theme/assets/css/v1_styles.css' %}">
     <link rel="stylesheet" href="{% static 'horilla_theme/assets/css/login-v2.css' %}">
-    <script src="{% static 'jquery/jquery.min.js' %}"></script>
   </head>
   <body class="yk-login-page">
     <div class="oh-alert-container" aria-live="polite">
@@ -34,16 +33,16 @@
     <main class="yk-login-shell">
       <section class="yk-login-panel" aria-labelledby="login-title">
         <div class="yk-login-panel__inner">
-          <header class="yk-login-brand" aria-label="国内大学人事一体化平台">
+          <header class="yk-login-brand" aria-label="{% if white_label_company %}{{ white_label_company.company }}{% else %}高校{% endif %}人事一体化平台">
             <img
               class="yk-login-brand__seal"
-              src="{% static 'horilla_theme/assets/img/university-seal.jpg' %}"
-              alt="国内大学校徽"
+              src="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'horilla_theme/assets/img/university-seal.jpg' %}{% endif %}"
+              alt="{% if white_label_company %}{{ white_label_company.company }}{% else %}高校{% endif %}校徽"
               width="92"
               height="92"
             >
             <div class="yk-login-brand__copy">
-              <strong class="yk-login-brand__university">国内大学</strong>
+              <strong class="yk-login-brand__university">{% if white_label_company %}{{ white_label_company.company }}{% else %}高校{% endif %}</strong>
               <span class="yk-login-brand__platform">人事一体化平台</span>
             </div>
           </header>

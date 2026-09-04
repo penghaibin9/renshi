@@ -5,11 +5,11 @@ import json
 import os
 import random
 import re
+import secrets
 from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
 
 import pandas as pd
-import pdfkit
 from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import Group
@@ -33,6 +33,8 @@ from base.models import (
 )
 from employee.models import Employee, EmployeeWorkInformation
 from horilla.horilla_middlewares import _thread_locals
+
+from base.pdf import PDFRenderError, render_html_to_pdf
 
 CHART_CONFIG = {
     "offline_employees": {
@@ -903,7 +905,6 @@ def export_data(request, model, form_class, filter_class, file_name, perm=None):
         "semi_monthly": _("Semi-Monthly"),
         "hourly": _("Hourly"),
         "daily": _("Daily"),
-        "monthly": _("Monthly"),
         "full_day": _("Full Day"),
         "first_half": _("First Half"),
         "second_half": _("Second Half"),
@@ -1477,29 +1478,16 @@ def template_pdf(template, context={}, html=False, filename="payslip.pdf"):
         HttpResponse: A response with the generated PDF file or raw HTML.
     """
     try:
-        bootstrap_css = '<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">'
-        html_content = f"{bootstrap_css}\n{template}"
-
-        pdf_options = {
-            "page-size": "A4",
-            "margin-top": "10mm",
-            "margin-bottom": "10mm",
-            "margin-left": "10mm",
-            "margin-right": "10mm",
-            "encoding": "UTF-8",
-            "enable-local-file-access": None,
-            "dpi": 300,
-            "zoom": 1.3,
-            "footer-center": "[page]/[topage]",
-        }
-
-        pdf = pdfkit.from_string(html_content, False, options=pdf_options)
-
+        html_content = template if html else render_to_string(template, context)
+        pdf = render_html_to_pdf(html_content)
         response = HttpResponse(pdf, content_type="application/pdf")
-        response["Content-Disposition"] = f"inline; filename={filename}"
+        safe_filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(filename)) or "document.pdf"
+        if not safe_filename.lower().endswith(".pdf"):
+            safe_filename = f"{safe_filename}.pdf"
+        response["Content-Disposition"] = f'inline; filename="{safe_filename}"'
         return response
-    except Exception as e:
-        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
+    except (PDFRenderError, TypeError):
+        return HttpResponse("Error generating PDF", status=500)
 
 
 def generate_otp():
@@ -1508,4 +1496,4 @@ def generate_otp():
     Returns:
         str: A 6-digit random OTP as a string.
     """
-    return str(random.randint(100000, 999999))
+    return str(100000 + secrets.randbelow(900000))

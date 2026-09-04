@@ -6,14 +6,14 @@ This module is used to define the method for the path in the urls
 
 import json
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from itertools import groupby
 from urllib.parse import parse_qs
 
 import pandas as pd
-import pdfkit
 from django.conf import settings as pay_settings
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -21,7 +21,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from base.methods import (
     closest_numbers,
@@ -33,6 +33,7 @@ from base.methods import (
     sortby,
 )
 from base.models import Company
+from base.pdf import PDFRenderError, render_html_to_pdf
 from employee.models import Employee, EmployeeWorkInformation
 from horilla.decorators import (
     hx_request_required,
@@ -71,6 +72,25 @@ status_choices = {
     "confirmed": _("Confirmed"),
     "paid": _("Paid"),
 }
+
+
+def _posted_json_ids(request):
+    try:
+        values = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list) or not values or len(values) > 500:
+        return []
+    result = []
+    for value in values:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return []
+        if value <= 0 or value in result:
+            return []
+        result.append(value)
+    return result
 
 
 @login_required
@@ -161,12 +181,16 @@ def contract_update(request, contract_id, **kwargs):
 @login_required
 @hx_request_required
 @permission_required("payroll.change_contract")
+@require_POST
+@transaction.atomic
 def contract_status_update(request, contract_id):
     from payroll.forms.forms import ContractForm
 
     previous_data = request.GET.urlencode()
+    contract = Contract.objects.select_for_update().filter(id=contract_id).first()
+    if contract is None:
+        return HorillaRedirect(request, message=_("Contract not found."))
     if request.method == "POST":
-        contract = Contract.objects.get(id=contract_id)
         if request.POST.get("view"):
             status = request.POST.get("status")
             if status in dict(contract.CONTRACT_STATUS_CHOICES).keys():
@@ -174,10 +198,10 @@ def contract_status_update(request, contract_id):
                 if status in ["active", "draft"]:
                     active_contract = Contract.objects.filter(
                         contract_status="active", employee_id=contract.employee_id
-                    ).exists()
+                    ).exclude(pk=contract.pk).exists()
                     draft_contract = Contract.objects.filter(
                         contract_status="draft", employee_id=contract.employee_id
-                    ).exists()
+                    ).exclude(pk=contract.pk).exists()
                     if (status == "active" and active_contract) or (
                         status == "draft" and draft_contract
                     ):
@@ -214,47 +238,44 @@ def contract_status_update(request, contract_id):
 
 @login_required
 @permission_required("payroll.change_contract")
+@require_POST
+@transaction.atomic
 def bulk_contract_status_update(request):
     status = request.POST.get("status")
-    ids = request.POST.get("ids")
-    ids = eval_validate(ids) if ids else []
-    all_contracts = Contract.objects.all()
-    contracts = all_contracts.filter(id__in=ids)
-
-    for contract in contracts:
-        save = True
-        if status in ["active", "draft"]:
-            active_contract = all_contracts.filter(
-                contract_status="active", employee_id=contract.employee_id
-            ).exists()
-            draft_contract = all_contracts.filter(
-                contract_status="draft", employee_id=contract.employee_id
-            ).exists()
-            if (status == "active" and active_contract) or (
-                status == "draft" and draft_contract
-            ):
-                save = False
-                messages.info(
-                    request,
-                    _("An {} contract already exists for {}").format(
-                        status, contract.employee_id
-                    ),
-                )
-        if save:
-            contract.contract_status = status
-            contract.save()
-            messages.success(
-                request, _("The contract status has been updated successfully.")
+    if status not in dict(Contract.CONTRACT_STATUS_CHOICES):
+        return JsonResponse({"message": "Invalid contract status"}, status=400)
+    ids = _posted_json_ids(request)
+    if not ids:
+        return JsonResponse({"message": "Invalid contract IDs"}, status=400)
+    all_contracts = Contract.objects.select_for_update().all()
+    contracts = list(all_contracts.filter(id__in=ids))
+    if len(contracts) != len(ids):
+        return JsonResponse({"message": "Contract not found"}, status=404)
+    if status in {"active", "draft"}:
+        employee_ids = [contract.employee_id_id for contract in contracts]
+        duplicate_employees = len(employee_ids) != len(set(employee_ids))
+        external_conflict = all_contracts.filter(
+            contract_status=status, employee_id_id__in=employee_ids
+        ).exclude(pk__in=ids).exists()
+        if duplicate_employees or external_conflict:
+            return JsonResponse(
+                {"message": _("An employee can only have one contract in this status.")},
+                status=409,
             )
+    Contract.objects.filter(pk__in=ids).update(contract_status=status)
+    messages.success(request, _("The contract status has been updated successfully."))
     return HttpResponse("success")
 
 
 @login_required
 @permission_required("payroll.change_contract")
 @require_http_methods(["POST"])
+@transaction.atomic
 def update_contract_filing_status(request, contract_id):
     if request.method == "POST":
-        contract = get_object_or_404(Contract, id=contract_id)
+        contract = get_object_or_404(
+            Contract.objects.select_for_update(), id=contract_id
+        )
         filing_status_id = request.POST.get("filing_status")
         try:
             filing_status = (
@@ -277,6 +298,8 @@ def update_contract_filing_status(request, contract_id):
 @login_required
 @hx_request_required
 @permission_required("payroll.delete_contract")
+@require_POST
+@transaction.atomic
 def contract_delete(request, contract_id):
     """
     Delete a contract.
@@ -289,7 +312,7 @@ def contract_delete(request, contract_id):
 
     """
     try:
-        Contract.objects.get(id=contract_id).delete()
+        Contract.objects.select_for_update().get(id=contract_id).delete()
         messages.success(request, _("Contract deleted"))
         request_path = request.path.split("/")
         if "delete-contract-modal" in request_path:
@@ -480,18 +503,22 @@ def settings(request):
 
 @login_required
 @permission_required("payroll.change_payslip")
+@require_POST
+@transaction.atomic
 def update_payslip_status(request, payslip_id):
     """
     This method is used to update the payslip confirmation status
     """
     status = request.POST.get("status")
+    if status not in dict(Payslip.status_choices):
+        return JsonResponse({"message": "Invalid payslip status"}, status=400)
     view = request.POST.get("view")
-    payslip = Payslip.objects.filter(id=payslip_id).first()
+    payslip = Payslip.objects.select_for_update().filter(id=payslip_id).first()
     if not payslip:
         return HorillaRedirect(request, message=_("Payslip not found."))
     if payslip:
         payslip.status = status
-        payslip.save()
+        payslip.save(update_fields=["status"])
         messages.success(request, _("Payslip status updated"))
     else:
         messages.error(request, _("Payslip not found"))
@@ -499,7 +526,7 @@ def update_payslip_status(request, payslip_id):
         from .component_views import filter_payslip
 
         return redirect(reverse("payslip-list"))
-    data = payslip.pay_head_data
+    data = dict(payslip.pay_head_data or {})
     data["employee"] = payslip.employee_id
     data["payslip"] = payslip
     data["json_data"] = data.copy()
@@ -511,21 +538,30 @@ def update_payslip_status(request, payslip_id):
 
 @login_required
 @hx_request_required
+@permission_required("payroll.change_payslip")
+@require_POST
+@transaction.atomic
 def update_payslip_status_no_id(request):
     """
     This method is used to update the payslip confirmation status
     """
     message = {"type": "success", "message": "Payslip status updated."}
-    if request.method == "POST":
-        ids_json = request.POST["ids"]
-        ids = json.loads(ids_json)
-        status = request.POST["status"]
-        slips = Payslip.objects.filter(id__in=ids)
-        slips.update(status=status)
-        message = {
-            "type": "success",
-            "message": f"{slips.count()} Payslips status updated.",
-        }
+    ids = _posted_json_ids(request)
+    status = request.POST.get("status")
+    if not ids or status not in dict(Payslip.status_choices):
+        return JsonResponse(
+            {"type": "error", "message": "Invalid payslip update."}, status=400
+        )
+    slips = Payslip.objects.select_for_update().filter(id__in=ids)
+    if slips.count() != len(ids):
+        return JsonResponse(
+            {"type": "error", "message": "Payslip not found."}, status=404
+        )
+    updated_count = slips.update(status=status)
+    message = {
+        "type": "success",
+        "message": f"{updated_count} Payslips status updated.",
+    }
     return JsonResponse(message)
 
 
@@ -638,6 +674,8 @@ def view_created_payslip(request, payslip_id, **kwargs):
 
 @login_required
 @permission_required("payroll.delete_payslip")
+@require_POST
+@transaction.atomic
 def delete_payslip(request, payslip_id):
     """
     This method is used to delete payslip instances
@@ -647,11 +685,12 @@ def delete_payslip(request, payslip_id):
     from .component_views import filter_payslip
 
     try:
-        Payslip.objects.get(id=payslip_id).delete()
+        Payslip.objects.select_for_update().get(id=payslip_id).delete()
         messages.success(request, _("Payslip deleted"))
     except Payslip.DoesNotExist:
         messages.error(request, _("Payslip not found."))
     except ProtectedError:
+        transaction.set_rollback(True)
         messages.error(request, _("Something went wrong"))
     if request.headers.get("HX-Request"):
         response = HttpResponse("", status=200)
@@ -1240,7 +1279,6 @@ def payslip_export(request):
     heading_format = workbook.add_format(
         {
             "bold": True,
-            "font_size": 14,
             "align": "center",
             "valign": "vcenter",
             "bg_color": "#eb7968",
@@ -1319,35 +1357,29 @@ def payslip_export(request):
 
 @login_required
 @permission_required("payroll.delete_payslip")
+@require_POST
+@transaction.atomic
 def payslip_bulk_delete(request):
     """
     This method is used to bulk delete for Payslip
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
-        messages.error(request, _("Missing required parameters."))
-        return JsonResponse({"message": "Missing required parameters."}, status=400)
-
-    ids = json.loads(ids)
-    for id in ids:
-        try:
-            payslip = Payslip.objects.get(id=id)
-            period = f"{payslip.start_date} to {payslip.end_date}"
-            payslip.delete()
-            messages.success(
-                request,
-                _("{employee} {period} payslip deleted.").format(
-                    employee=payslip.employee_id, period=period
-                ),
-            )
-        except Payslip.DoesNotExist:
-            messages.error(request, _("Payslip not found."))
-        except ProtectedError:
-            messages.error(
-                request,
-                _("You cannot delete {payslip}").format(payslip=payslip),
-            )
-    return JsonResponse({"message": "Success"})
+        return JsonResponse({"message": _("Invalid payslip IDs.")}, status=400)
+    payslips = list(Payslip.objects.select_for_update().filter(pk__in=ids))
+    if len(payslips) != len(ids):
+        return JsonResponse({"message": _("Payslip not found.")}, status=404)
+    try:
+        Payslip.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("A selected payslip is protected.")}, status=409
+        )
+    messages.success(
+        request, _("%(count)s payslips deleted.") % {"count": len(payslips)}
+    )
+    return JsonResponse({"message": "Success", "deleted": len(payslips)})
 
 
 @login_required
@@ -1397,32 +1429,29 @@ def contract_export(request):
 
 @login_required
 @permission_required("payroll.delete_contract")
+@require_POST
+@transaction.atomic
 def contract_bulk_delete(request):
     """
     This method is used to bulk delete Contract
     """
-    ids = request.POST.get("ids")
+    ids = _posted_json_ids(request)
     if not ids:
-        messages.error(request, _("No IDs provided for deletion."))
-        return JsonResponse({"message": "error."}, status=400)
-    ids = json.loads(ids)
-    for id in ids:
-        try:
-            contract = Contract.objects.get(id=id)
-            name = f"{contract.contract_name}"
-            contract.delete()
-            messages.success(
-                request,
-                _("{name} deleted.").format(name=name),
-            )
-        except Payslip.DoesNotExist:
-            messages.error(request, _("Contract not found."))
-        except ProtectedError:
-            messages.error(
-                request,
-                _("You cannot delete {contract}").format(contract=contract),
-            )
-    return JsonResponse({"message": "Success"})
+        return JsonResponse({"message": _("Invalid contract IDs.")}, status=400)
+    contracts = list(Contract.objects.select_for_update().filter(pk__in=ids))
+    if len(contracts) != len(ids):
+        return JsonResponse({"message": _("Contract not found.")}, status=404)
+    try:
+        Contract.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("A selected contract is protected.")}, status=409
+        )
+    messages.success(
+        request, _("%(count)s contracts deleted.") % {"count": len(contracts)}
+    )
+    return JsonResponse({"message": "Success", "deleted": len(contracts)})
 
 
 def equalize_lists_length(allowances, deductions):
@@ -1463,54 +1492,16 @@ def generate_payslip_pdf(template_path, context, html=False):
         HttpResponse: A response with the generated PDF file or raw HTML.
     """
 
-    from horilla.horilla_middlewares import _thread_locals
-
     try:
-        # Render the HTML content from the template and context
         html_content = render_to_string(template_path, context)
-        request = getattr(_thread_locals, "request")
-        cookies = None
-        if request:
-            cookies = request.META.get("HTTP_COOKIE", "")
-
-        # Return raw HTML if requested
         if html:
             return HttpResponse(html_content, content_type="text/html")
-
-        # PDF options for pdfkit
-        pdf_options = {
-            "page-size": "A4",
-            "margin-top": "10mm",
-            "margin-bottom": "10mm",
-            "margin-left": "10mm",
-            "margin-right": "10mm",
-            "encoding": "UTF-8",
-            "enable-local-file-access": None,  # Required to load local CSS/images
-            "dpi": 300,
-            "zoom": 1.3,
-            "footer-center": "[page]/[topage]",  # Required to load local CSS/images
-        }
-
-        if cookies:
-            pdf_options.update(
-                {
-                    "custom-header": [
-                        ("Cookie", cookies),
-                    ],
-                    "custom-header-propagation": None,
-                }
-            )
-
-        # Generate the PDF as binary content
-        pdf = pdfkit.from_string(html_content, False, options=pdf_options)
-
-        # Return an HttpResponse containing the PDF content
+        pdf = render_html_to_pdf(html_content)
         response = HttpResponse(pdf, content_type="application/pdf")
-        response["Content-Disposition"] = "inline; filename=payslip.pdf"
+        response["Content-Disposition"] = 'inline; filename="payslip.pdf"'
         return response
-    except Exception as e:
-        # Handle errors gracefully
-        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
+    except (PDFRenderError, TypeError):
+        return HttpResponse("Error generating PDF", status=500)
 
 
 @login_required
@@ -1839,46 +1830,86 @@ def view_payrollrequest_comment(request, payroll_id):
 
 
 @login_required
+@require_http_methods(["POST"])
 def delete_payrollrequest_comment(request, comment_id):
     """
     This method is used to delete Reimbursement request comments
     """
 
-    comment = ReimbursementrequestComment.objects.filter(id=comment_id)
-    if not comment.exists():
+    comment = ReimbursementrequestComment.objects.filter(id=comment_id).first()
+    if not comment:
         messages.error(request, _("Comment not found."))
         return HorillaRedirect(request)
+    if (
+        comment.employee_id.employee_user_id_id != request.user.id
+        and not request.user.has_perm("payroll.delete_reimbursementrequestcomment")
+        and not request.user.has_perm("payroll.change_reimbursement")
+    ):
+        return HorillaRedirect(request, message=_("You don't have permission."))
     comment.delete()
     return HorillaRedirect(request, message=_("Comment deleted successfully!"))
 
 
 @login_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_reimbursement_comment_file(request):
     """
     Used to delete attachment
     """
-    ids = request.GET.getlist("ids")
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
     if not ids:
         return HorillaRedirect(request, message=_("No file IDs provided for deletion."))
-    records = ReimbursementFile.objects.filter(id__in=ids)
-    if not request.user.has_perm("payroll.delete_reimbursementfile"):
-        records = records.filter(employee_id__employee_user_id=request.user)
-    records.delete()
+    comment_id = request.POST.get("comment_id")
+    payroll_id = request.POST.get("payroll_id")
+    comment = (
+        ReimbursementrequestComment.objects.select_for_update()
+        .filter(id=comment_id, request_id_id=payroll_id)
+        .first()
+    )
+    if not comment:
+        return HorillaRedirect(request, message=_("Comment not found."))
+    if (
+        comment.employee_id.employee_user_id_id != request.user.id
+        and not request.user.has_perm("payroll.delete_reimbursementfile")
+        and not request.user.has_perm("payroll.change_reimbursement")
+    ):
+        return HorillaRedirect(request, message=_("You don't have permission."))
+    records = list(comment.files.select_for_update().filter(id__in=ids))
+    comment.files.remove(*records)
+    ReimbursementFile.objects.filter(
+        id__in=[record.id for record in records],
+        reimbursementrequestcomment__isnull=True,
+    ).delete()
     return HorillaRedirect(request, message=_("File deleted successfully"))
 
 
 @login_required
 @permission_required("payroll.add_payrollgeneralsetting")
+@require_POST
+@transaction.atomic
 def initial_notice_period(request):
     """
     This method is used to set initial value notice period
     """
-    if not request.GET.get("notice_period"):
+    if not request.POST.get("notice_period"):
         return HorillaRedirect(request, message=_("required parameter is missing"))
 
-    notice_period = eval_validate(request.GET["notice_period"])
-    settings = PayrollGeneralSetting.objects.first()
-    settings = settings if settings else PayrollGeneralSetting()
+    try:
+        notice_period = int(request.POST["notice_period"])
+    except (TypeError, ValueError):
+        return HorillaRedirect(request, message=_("Invalid notice period."))
+
+    selected_company = request.session.get("selected_company")
+    company = None
+    if selected_company not in {None, "all"}:
+        company = Company.objects.filter(id=selected_company).first()
+    settings = (
+        PayrollGeneralSetting.objects.select_for_update()
+        .filter(company=company)
+        .first()
+    )
+    settings = settings or PayrollGeneralSetting(company=company)
     settings.notice_period = max(notice_period, 0)
     settings.save()
     messages.success(
@@ -1974,6 +2005,7 @@ def activate_auto_payslip_generate(request):
 @login_required
 @hx_request_required
 @permission_required("payroll.delete_payslipautogenerate")
+@require_http_methods(["POST"])
 def delete_auto_payslip(request, auto_id):
     """
     Delete a PayslipAutoGenerate object.

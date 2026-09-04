@@ -4,6 +4,8 @@ from django.template.loader import get_template
 from django.test import TestCase
 from django.urls import resolve, reverse
 
+FRONTEND_ROOT = Path(__file__).resolve().parents[3] / "frontend"
+
 
 class Hr17UiContractTests(TestCase):
     def test_self_routes_never_take_staff_id(self):
@@ -40,6 +42,7 @@ class Hr17UiContractTests(TestCase):
         template = get_template("hr_self/workspace.html")
         source = Path(template.origin.name).read_text(encoding="utf-8")
         self.assertIn("{% url 'hr_self_api:bootstrap' %}", source)
+        self.assertIn("{% url 'hr_self_api:self_records' %}", source)
         self.assertIn("{% url 'hr_self_api:service_pin' service_code='__service__' %}", source)
         for route_name in (
             "overview", "services", "todos", "progress", "files", "payslips", "contracts"
@@ -57,9 +60,9 @@ class Hr17UiContractTests(TestCase):
         self.assertEqual(source.count("hr17-self.js"), 1)
 
     def test_single_page_script_owns_real_pin_action(self):
-        script = Path("static/hr/js/pages/hr17-self.js").read_text(encoding="utf-8")
+        script = (FRONTEND_ROOT / "static/hr/js/pages/hr17-self.js").read_text(encoding="utf-8")
         self.assertIn("data-service-code", script)
         self.assertIn("method: willPin ? 'POST' : 'DELETE'", script)
         self.assertIn("'X-CSRFToken': cookie('csrftoken')", script)
         self.assertNotIn("/api/v1/hr/self/bootstrap/", script)
-        self.assertFalse(Path("static/hr/js/pages/hr17-actions.js").exists())
+        self.assertFalse((FRONTEND_ROOT / "static/hr/js/pages/hr17-actions.js").exists())

@@ -71,11 +71,21 @@ urlpatterns = [
         name="hr04-api-offer-accept",
     ),
     path(
+        "api/hr/v1/recruitment/offers/<uuid:offer_id>/status",
+        proposed_hire_api.transition_offer,
+        name="hr04-api-offer-status",
+    ),
+    path(
         "api/hr/v1/recruitment/hiring-decisions/<uuid:fact_id>/revisions",
         proposed_hire_api.hiring_decision_revisions,
         name="hr04-api-hiring-decision-revisions",
     ),
     # HR04-05 考试面试与考察（总册 12）
+    path(
+        "api/hr/v1/recruitment/assessment/workbench",
+        assessment_api.workbench,
+        name="hr04-api-assessment-workbench",
+    ),
     path(
         "api/hr/v1/recruitment/assessment/schemes",
         assessment_api.create_scheme,
@@ -210,6 +220,11 @@ urlpatterns = [
         name="hr04-api-candidate-detail",
     ),
     path(
+        "api/hr/v1/recruitment/candidates/<uuid:candidate_id>/legal-hold",
+        candidate_api.candidate_legal_hold,
+        name="hr04-api-candidate-legal-hold",
+    ),
+    path(
         "api/hr/v1/recruitment/applications/drafts",
         application_api.save_draft,
         name="hr04-api-application-draft",
@@ -233,6 +248,11 @@ urlpatterns = [
         "api/hr/v1/recruitment/applications/<uuid:application_id>/materials",
         application_api.add_material,
         name="hr04-api-application-material",
+    ),
+    path(
+        "api/hr/v1/recruitment/applications/<uuid:application_id>/materials/<uuid:material_id>/download",
+        application_api.download_material,
+        name="hr04-api-application-material-download",
     ),
     # HR04-02 招聘控制台/项目/岗位（总册 9）
     path(
@@ -302,6 +322,11 @@ urlpatterns = [
         name="hr04-api-plan-collection",
     ),
     path(
+        "api/hr/v1/recruitment/plans/setup-options",
+        plan_api.plan_setup_options,
+        name="hr04-api-plan-setup-options",
+    ),
+    path(
         "api/hr/v1/recruitment/plans/<uuid:cycle_id>",
         plan_api.plan_detail,
         name="hr04-api-plan-detail",
@@ -322,9 +347,24 @@ urlpatterns = [
         name="hr04-api-plan-request-create",
     ),
     path(
+        "api/hr/v1/recruitment/plan-requests/<uuid:request_id>",
+        plan_api.plan_request_detail,
+        name="hr04-api-plan-request-detail",
+    ),
+    path(
         "api/hr/v1/recruitment/plan-requests/<uuid:request_id>/submit",
         plan_api.plan_request_submit,
         name="hr04-api-plan-request-submit",
+    ),
+    path(
+        "api/hr/v1/recruitment/plan-requests/<uuid:request_id>/start-review",
+        plan_api.plan_request_start_review,
+        name="hr04-api-plan-request-start-review",
+    ),
+    path(
+        "api/hr/v1/recruitment/plan-requests/<uuid:request_id>/submit-to-school",
+        plan_api.plan_request_submit_to_school,
+        name="hr04-api-plan-request-submit-to-school",
     ),
     path(
         "api/hr/v1/recruitment/plan-requests/<uuid:request_id>/return",

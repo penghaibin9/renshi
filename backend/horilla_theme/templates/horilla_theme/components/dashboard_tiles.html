@@ -12,7 +12,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=gender_chart"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"gender_chart"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -37,7 +37,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=employees_chart"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"employees_chart"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -68,7 +68,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=shift_request_approve"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"shift_request_approve"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -96,7 +96,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=work_type_request_approve"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"work_type_request_approve"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -124,7 +124,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=employee_work_info"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"employee_work_info"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -169,7 +169,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=recruitment_analytics"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"recruitment_analytics"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -195,7 +195,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=department_chart"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"department_chart"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -230,7 +230,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=key_result_status"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"key_result_status"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -255,7 +255,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=attendance_validate"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"attendance_validate"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -283,7 +283,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=onboarding_candidates"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"onboarding_candidates"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -313,7 +313,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=hired_candidates"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"hired_candidates"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -343,7 +343,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=asset_request_approve"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"asset_request_approve"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -371,7 +371,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=online_employees"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"online_employees"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -399,7 +399,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=offline_employees"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"offline_employees"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -427,7 +427,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=overtime_approve"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"overtime_approve"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -455,7 +455,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=attendance_analytic"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"attendance_analytic"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -502,7 +502,7 @@
                     <span
                         class="float-end hidden group-hover:block"
                         role="button"
-                        hx-post="{% url 'dashboard-components-toggle' %}?chart_id=hours_chart"
+                        hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"hours_chart"}'
                         hx-target="closest .shadow-card"
                         hx-swap="outerHTML"
                     >
@@ -539,7 +539,7 @@
                     <span
                         class="float-end hidden group-hover:block"
                         role="button"
-                        hx-post="{% url 'dashboard-components-toggle' %}?chart_id=overall_leave_chart"
+                        hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"overall_leave_chart"}'
                         hx-target="closest .shadow-card"
                         hx-swap="outerHTML"
                     >
@@ -567,7 +567,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=leave_request_approve"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"leave_request_approve"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -602,7 +602,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=leave_allocation_approve"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"leave_allocation_approve"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -630,7 +630,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=feedback_answer"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"feedback_answer"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -656,7 +656,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=feedback_status"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"feedback_status"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >
@@ -688,7 +688,7 @@
                 <span
                     class="float-end hidden group-hover:block"
                     role="button"
-                    hx-post="{% url 'dashboard-components-toggle' %}?chart_id=objective_status"
+                    hx-post="{% url 'dashboard-components-toggle' %}" hx-vals='{"chart_id":"objective_status"}'
                     hx-target="closest .shadow-card"
                     hx-swap="outerHTML"
                 >

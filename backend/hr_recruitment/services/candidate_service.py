@@ -16,9 +16,11 @@ from __future__ import annotations
 import hashlib
 from uuid import uuid4
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
-from hr_recruitment.constants import IdentityMatchResult
+from hr_recruitment.constants import CandidateStatus, IdentityMatchResult
 from hr_recruitment.models import (
     HrCandidateIdentityMatch,
     HrRecruitmentCandidate,
@@ -81,6 +83,54 @@ class CandidateService:
             talent_tags=talent_tags or [],
             created_by=self.actor,
         )
+        try:
+            candidate.full_clean()
+        except ValidationError as exc:
+            raise CandidateServiceError(
+                "CANDIDATE_INVALID",
+                "; ".join(exc.messages),
+            ) from exc
+        return candidate
+
+    @transaction.atomic
+    def record_consent(
+        self,
+        candidate_id: str,
+        *,
+        consent_version: str,
+        retention_until,
+    ) -> HrRecruitmentCandidate:
+        consent_version = str(consent_version or "").strip()
+        if not consent_version:
+            raise CandidateServiceError("CONSENT_VERSION_REQUIRED", "隐私告知版本不能为空")
+        candidate = HrRecruitmentCandidate.objects.select_for_update().filter(
+            id=candidate_id,
+            tenant_id=self.tenant_id,
+            status=CandidateStatus.ACTIVE,
+        ).first()
+        if candidate is None:
+            raise CandidateServiceError(
+                "CANDIDATE_NOT_AVAILABLE",
+                "候选人不存在或当前不可报名",
+                http_status=409,
+            )
+        candidate.consent_version = consent_version
+        candidate.consent_at = timezone.now()
+        candidate.retention_until = retention_until
+        candidate.save(
+            update_fields=[
+                "consent_version",
+                "consent_at",
+                "retention_until",
+                "updated_at",
+            ]
+        )
+        from hr_recruitment.models import HrApplicationMaterial
+
+        HrApplicationMaterial.objects.filter(
+            tenant_id=self.tenant_id,
+            application_id__candidate_id=candidate,
+        ).update(retention_until=retention_until)
         return candidate
 
     def _generate_candidate_no(self) -> str:

@@ -58,7 +58,7 @@
                 <span class="oh-activity-sidebar__q">{{ comment.comment }}
                     <span
                         class="float-end"
-                        hx-get="{% url 'attendance-request-delete-comment' comment.id %}"
+                        hx-post="{% url 'attendance-request-delete-comment' comment.id %}"
                         hx-target="#requestCommentItem{{comment.id}}"
                         hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
                         hx-swap="outerHTML swap:.5s"
@@ -89,7 +89,8 @@
                                 <img
                                     src="{% static 'images/ui/minus-icon.png' %}"
                                     style="display: block; width: 50%; height: 50%"
-                                    hx-get="{% url 'delete-comment-file' %}?ids={{ file.id }}&request_id={{ request_id }}"
+                                    hx-post="{% url 'delete-comment-file' %}"
+                                    hx-vals='{"ids":"{{ file.id }}","request_id":"{{ request_id }}","comment_id":"{{ comment.id }}"}'
                                     hx-target="#commentFileItem{{file.id}}"
                                     hx-swap="outerHTML"
                                     hx-on:click="setTimeout(() => {reloadMessage(this);},100);"

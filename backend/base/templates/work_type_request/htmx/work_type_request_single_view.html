@@ -128,7 +128,7 @@
                                     {% trans "Approve" %}
                                 </a>
                                 <a
-                                    href="/work-type-request-cancel/{{work_type_request.id}}/"
+                                    href="#" hx-post="/work-type-request-cancel/{{work_type_request.id}}/" hx-swap="none" hx-on::after-request="window.location.reload()"
                                     onclick="return confirm('{% trans 'Do you want to cancel this request?' %}')"
                                     class="oh-btn oh-btn--danger w-50"
                                     title="{% trans 'Reject' %}"

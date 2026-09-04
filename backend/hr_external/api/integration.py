@@ -11,11 +11,18 @@ hr_external/api/integration.py —— HR08-S6 IAM/教务集成 API。
 
 from __future__ import annotations
 
+from django.views.decorators.http import require_GET, require_POST
+
 from hr_external.api.base import (
     api_root,
     error_response,
     json_response,
     make_external_context,
+)
+from hr_external.display_labels import (
+    access_grant_status_label,
+    engagement_status_label,
+    target_system_label,
 )
 from hr_external.models import (
     HrExternalAcademicIdentity,
@@ -23,14 +30,14 @@ from hr_external.models import (
     HrExternalEngagement,
 )
 from hr_external.permissions import require_hr_external_permission
-from hr_external.services.access_service import AccessService
+from hr_external.services.access_service import AccessScopeInvalid, AccessService
 from hr_external.services.audit_service import write_external_audit
 from hr_external.services.reconciliation_service import ReconciliationService
 
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
@@ -49,6 +56,7 @@ def _get_engagement(request, engagement_id):
     return ctx, eng, None
 
 
+@require_GET
 @require_hr_external_permission("hr08.access.view")
 def engagement_access(request, engagement_id):
     """GET .../engagements/{id}/access —— 访问授权列表。"""
@@ -67,7 +75,7 @@ def engagement_access(request, engagement_id):
             {
                 "id": str(g.id),
                 "targetSystem": g.target_system,
-                "targetSystemLabel": _TARGET_SYSTEM_LABELS.get(g.target_system, g.target_system),
+                "targetSystemLabel": target_system_label(g.target_system),
                 "roleCode": g.role_code,
                 "scope": g.scope_json,
                 "grantedAt": g.granted_at.isoformat() if g.granted_at else None,
@@ -82,13 +90,19 @@ def engagement_access(request, engagement_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.access.manage")
 def engagement_access_provision(request, engagement_id):
     """POST .../engagements/{id}/access/provision —— 创建 scoped grants + GRANT requests。"""
     ctx, eng, err = _get_engagement(request, engagement_id)
     if err:
         return err
-    grants = AccessService().provision_engagement_access(tenant_id=ctx.tenant_id, engagement=eng)
+    try:
+        grants = AccessService().provision_engagement_access(
+            tenant_id=ctx.tenant_id, engagement=eng
+        )
+    except AccessScopeInvalid as exc:
+        return error_response(request, exc.code, str(exc), 409)
     write_external_audit(
         tenant_id=ctx.tenant_id,
         action="ExternalAccessGranted",
@@ -102,11 +116,12 @@ def engagement_access_provision(request, engagement_id):
     body["data"] = {
         "engagementId": str(eng.id),
         "grantIds": [str(g.id) for g in grants],
-        "note": "IAM Provider # [总控占位] UNAVAILABLE；grant 为 PENDING，由 provisioning/reconciliation 驱动",
+        "note": "授权请求已进入可靠队列；以 IAM 回执确认最终生效，失败会按退避策略重试并留痕。",
     }
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.access.manage")
 def engagement_access_revoke(request, engagement_id):
     """POST .../engagements/{id}/access/revoke —— 发起 REVOKE（§66/§105）。"""
@@ -126,6 +141,7 @@ def engagement_access_revoke(request, engagement_id):
     return json_response(request, body, status=202)
 
 
+@require_GET
 @require_hr_external_permission("hr08.access.view")
 def engagement_academic(request, engagement_id):
     """GET .../engagements/{id}/academic —— 教务教师身份。"""
@@ -153,6 +169,7 @@ def engagement_academic(request, engagement_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.access.manage")
 def reconciliation_run(request):
     """POST /api/hr/v1/external-teachers/reconciliations/run —— 对账（academic/access）。"""

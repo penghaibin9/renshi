@@ -111,7 +111,8 @@ class Hr03V2WorkspaceContractTests(SimpleTestCase):
     def test_material_download_stays_ticketed_and_never_exposes_media_url(self):
         source = self._source(self.MATERIALS_TEMPLATE)
         self.assertIn("/materials/${encodeURIComponent(materialId)}/download-ticket", source)
-        self.assertIn("/download/${encodeURIComponent(ticket)}", source)
+        self.assertIn('"X-HR-Download-Ticket":ticket', source)
+        self.assertIn("/materials/upload", source)
         self.assertIn("X-CSRFToken", source)
         self.assertIn("请填写查看用途", source)
         self.assertNotIn("/media/", source)

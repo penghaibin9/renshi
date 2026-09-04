@@ -17,7 +17,9 @@ from typing import Optional
 from django.db import transaction
 from django.utils import timezone
 
+from base.token_security import bearer_token_digest
 from hr_staff.constants import (
+    MaterialCategoryCode,
     MaterialVersionStatus,
     SensitivityLevel,
     VerificationStatus,
@@ -65,6 +67,15 @@ class MaterialService:
         legacy_document_id: Optional[int] = None,
     ) -> HrStaffMaterial:
         staff = resolve_staff(self.tenant_id, staff_id)  # P1-6 跨租户防线
+        title = str(title or "").strip()
+        category_code = str(category_code or "").strip().upper()
+        sensitivity_level = str(sensitivity_level or "").strip().upper()
+        if not title or len(title) > 250:
+            raise MaterialAccessDenied("MATERIAL_TITLE_INVALID")
+        if category_code not in MaterialCategoryCode.values:
+            raise MaterialAccessDenied("MATERIAL_CATEGORY_INVALID")
+        if sensitivity_level not in SensitivityLevel.values:
+            raise MaterialAccessDenied("MATERIAL_SENSITIVITY_INVALID")
         material = HrStaffMaterial.objects.create(
             tenant_id=self.tenant_id,
             staff_id=staff,
@@ -240,6 +251,9 @@ class MaterialService:
             raise MaterialAccessDenied("MATERIAL_ACCESS_DENIED")
         if not purpose.strip():
             raise MaterialAccessDenied("PURPOSE_REQUIRED")
+        purpose = purpose.strip()
+        if len(purpose) > 512:
+            raise MaterialAccessDenied("PURPOSE_TOO_LONG")
 
         version = None
         if version_id:
@@ -252,10 +266,18 @@ class MaterialService:
             ).first()
         if version is None:
             raise MaterialAccessDenied("MATERIAL_VERSION_NOT_FOUND")
+        if not version.storage_file_id:
+            raise MaterialAccessDenied("MATERIAL_FILE_NOT_FOUND")
+        if version.status in (MaterialVersionStatus.VOID, MaterialVersionStatus.RETIRED):
+            raise MaterialAccessDenied("MATERIAL_VERSION_NOT_DOWNLOADABLE")
+
+        # Personnel material downloads are always short-lived and single-use.
+        expires_in_seconds = min(max(int(expires_in_seconds), 30), 600)
+        max_uses = 1
 
         token = secrets.token_urlsafe(32)
         HrMaterialDownloadTicket.objects.create(
-            token=token,
+            token=bearer_token_digest(token, namespace="hr03-material-download"),
             tenant_id=self.tenant_id,
             staff_id=staff,
             material_id=material,
@@ -280,6 +302,9 @@ class MaterialService:
             "maxUses": max_uses,
             "versionNo": version.version_no,
             "originalFilename": version.original_filename,
+            "downloadPath": (
+                f"/api/v1/hr/staff/{staff.id}/materials/{material.id}/download"
+            ),
         }
 
     @transaction.atomic
@@ -289,13 +314,19 @@ class MaterialService:
         """消费票据：原子自增（行锁），返回版本文件引用；失效/超次/归属不符 → 拒绝且不烧票。"""
         ticket = (
             HrMaterialDownloadTicket.objects.select_for_update()
-            .filter(token=token)
+            .filter(
+                token=bearer_token_digest(
+                    token, namespace="hr03-material-download"
+                )
+            )
             .first()
         )
         if ticket is None:
             raise MaterialAccessDenied("MATERIAL_TICKET_INVALID")
         if ticket.tenant_id != self.tenant_id:
             raise MaterialAccessDenied("MATERIAL_TICKET_INVALID")
+        if ticket.issued_by != self.actor_user_id:
+            raise MaterialAccessDenied("MATERIAL_TICKET_ACTOR_MISMATCH")
         # N7：归属校验先于消费，避免 URL 不匹配时白白烧票
         if expected_staff_id is not None and str(ticket.staff_id_id) != str(expected_staff_id):
             raise MaterialAccessDenied("MATERIAL_TICKET_INVALID")
@@ -325,4 +356,27 @@ class MaterialService:
             "originalFilename": ticket.version_id.original_filename,
             "mimeType": ticket.version_id.mime_type,
             "sizeBytes": ticket.version_id.size_bytes,
+        }
+
+    @transaction.atomic
+    def serve_download_ticket(
+        self, token: str, *, expected_staff_id, expected_material_id
+    ):
+        """Atomically consume, audit and open one actor-bound material version."""
+        data = self.consume_download_ticket(
+            token,
+            expected_staff_id=expected_staff_id,
+            expected_material_id=expected_material_id,
+        )
+        from hr_staff.services.material_file_service import open_staff_material
+
+        stream = open_staff_material(
+            data["storageFileId"],
+            tenant_id=self.tenant_id,
+            staff_id=expected_staff_id,
+        )
+        return stream, {
+            "filename": data["originalFilename"],
+            "mime_type": data["mimeType"],
+            "size_bytes": data["sizeBytes"],
         }

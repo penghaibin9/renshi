@@ -40,8 +40,6 @@ class Hr06ApplySupportProvider(ImpactProvider):
     # 尚无对应 Authority fact writer。若不阻断，会出现“0 事实写入却 EFFECTIVE”。
     _UNSUPPORTED = frozenset(
         {
-            ChangeActionCode.POST_CATEGORY_CHANGE,
-            ChangeActionCode.LOCATION_CHANGE,
             ChangeActionCode.BULK_ORG_RESTRUCTURE_MOVE,
             ChangeActionCode.DATA_CORRECTION,
         }

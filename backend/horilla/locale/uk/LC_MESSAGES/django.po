@@ -14131,7 +14131,7 @@ msgstr ""
 msgid "Please login to access the dashboard."
 msgstr "Будь ласка, увійдіть для доступу до панелі приладів."
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

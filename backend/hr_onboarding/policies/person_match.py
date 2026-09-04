@@ -11,6 +11,7 @@ Person 匹配决策（总册 §23 / 00 §92）。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 from hr_onboarding.constants import PersonMatchStatus
 

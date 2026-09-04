@@ -854,7 +854,6 @@ class FeedbackForm(HorillaModelForm):
         if "employee_key_results_id" in self.errors:
             del self.errors["employee_key_results_id"]
 
-        self.instance
         validate_date(start_date, end_date)
         return cleaned_data
 

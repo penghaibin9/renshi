@@ -1,4 +1,5 @@
-<form hx-post="{% url 'add-to-rejected-candidates' %}?candidate_id={{form.instance.candidate_id.id}}">
+<form hx-post="{% url 'add-to-rejected-candidates' %}">
+    {% csrf_token %}
     {{form.as_p}}
 </form>
 

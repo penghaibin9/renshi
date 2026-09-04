@@ -27,10 +27,11 @@ def migrate_legacy_candidates(*, tenant_id: int, dry_run: bool = True) -> Migrat
     """
     拆分 legacy Candidate → HrRecruitmentCandidate + HrJobApplication。
 
-    V1 仅 dry-run 统计（总控纪律：迁移需人工确认后执行，不自动合并）。
-    返回统计结果；非 dry_run 时实际创建。
+    dry_run 只做可迁移性检查；非 dry_run 在已核验身份与岗位映射后实际创建。
+    POSSIBLE_MATCH/EXACT_MATCH 一律进入人工确认，禁止自动合并。
     """
     from django.apps import apps
+    from django.db import transaction
 
     result = MigrationResult(tenant_id=tenant_id)
     if not apps.is_installed("recruitment"):
@@ -45,7 +46,9 @@ def migrate_legacy_candidates(*, tenant_id: int, dry_run: bool = True) -> Migrat
     candidate_service = CandidateService(tenant_id=tenant_id, actor="migration")
     app_service = ApplicationService(tenant_id=tenant_id, actor="migration")
 
-    legacy_candidates = LegacyCandidate.objects.order_by("id")
+    legacy_candidates = LegacyCandidate.objects.filter(
+        recruitment_id__company_id_id=tenant_id
+    ).order_by("id")
     for legacy in legacy_candidates:
         result.candidates_processed += 1
         # identity match（按 email 不做自动合并；无 email 无法可靠匹配）
@@ -53,38 +56,71 @@ def migrate_legacy_candidates(*, tenant_id: int, dry_run: bool = True) -> Migrat
         if match["match_result"] in ("POSSIBLE_MATCH", "EXACT_MATCH"):
             result.possible_matches += 1
             result.notes.append(
-                f"legacy #{legacy.id} {legacy.email} 存在 POSSIBLE_MATCH，需人工确认，跳过自动迁移"
+                f"legacy #{legacy.id} 存在人员匹配候选，需人工确认，跳过自动迁移"
             )
             continue
         if not legacy.email:
             result.skipped += 1
             continue
+        recruitment_position_id = _legacy_position_id(legacy, tenant_id=tenant_id)
+        if recruitment_position_id is None:
+            result.skipped += 1
+            result.notes.append(
+                f"legacy #{legacy.id} 缺少已核验的 HR02→HR04 岗位映射，跳过"
+            )
+            continue
         if dry_run:
-            result.notes.append(f"legacy #{legacy.id} {legacy.email} 可迁移（dry-run）")
+            result.notes.append(f"legacy #{legacy.id} 可迁移（dry-run）")
             continue
         # 实际迁移
-        candidate = candidate_service.create_candidate(
-            legal_name=legacy.name or "未命名",
-            primary_email=legacy.email,
-            primary_mobile=legacy.mobile,
-            source="LEGACY_MIGRATION",
-        )
-        draft = app_service.save_draft(
-            candidate_id=str(candidate.id),
-            recruitment_position_id=_legacy_position_id(legacy),
-        )
-        app_service.submit(application_id=str(draft.id))
+        # 人员、申请、提交必须同事务，避免岗位/提交失败后留下孤立候选人。
+        with transaction.atomic():
+            candidate = candidate_service.create_candidate(
+                legal_name=legacy.name or "未命名",
+                primary_email=legacy.email,
+                primary_mobile=legacy.mobile,
+                source="LEGACY_MIGRATION",
+            )
+            draft = app_service.save_draft(
+                candidate_id=str(candidate.id),
+                recruitment_position_id=recruitment_position_id,
+            )
+            app_service.submit(application_id=str(draft.id))
         result.applications_created += 1
     return result
 
 
-def _legacy_position_id(legacy_candidate):
-    """从 legacy Candidate 关联的招聘岗位找 HR04 position（无则 None，走投影）。"""
-    from hr_recruitment.models import HrRecruitmentPosition
+def _legacy_position_id(legacy_candidate, *, tenant_id: int):
+    """经 HR02 正式映射解析 legacy 岗位，禁止把两个域的整数主键直接等同。"""
+    from hr_recruitment.models import HrRecruitmentCampaign, HrRecruitmentPosition
+    from hr_structure.models import HrLegacyObjectLink
 
     if not legacy_candidate.job_position_id_id:
         return None
+    link = HrLegacyObjectLink.objects.filter(
+        tenant_id=tenant_id,
+        legacy_app="base",
+        legacy_model="jobposition",
+        legacy_pk=str(legacy_candidate.job_position_id_id),
+        domain_entity_type="position",
+        link_status="MAPPED",
+    ).first()
+    if link is None:
+        return None
+    try:
+        position_id = int(link.domain_entity_id)
+    except (TypeError, ValueError):
+        return None
+
+    campaign = HrRecruitmentCampaign.objects.filter(
+        tenant_id=tenant_id,
+        legacy_recruitment_id=legacy_candidate.recruitment_id_id,
+    ).first()
+    if campaign is None:
+        return None
     position = HrRecruitmentPosition.objects.filter(
-        post_catalog_id=legacy_candidate.job_position_id_id
+        tenant_id=tenant_id,
+        campaign_id=campaign,
+        position_id=position_id,
     ).first()
     return str(position.id) if position else None

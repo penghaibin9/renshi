@@ -21,9 +21,9 @@ INSTALLED_APPS = [
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("PG_DB", "horilla_db"),
-        "USER": os.environ.get("PG_USER", "horilla_user"),
-        "PASSWORD": os.environ.get("PG_PASSWORD", "horilla_pass"),
+        "NAME": os.environ.get("PG_DB", "renshi_db"),
+        "USER": os.environ.get("PG_USER", "renshi_user"),
+        "PASSWORD": os.environ.get("PG_PASSWORD", "renshi_pass"),
         "HOST": os.environ.get("PG_HOST", "127.0.0.1"),
         "PORT": os.environ.get("PG_PORT", "5432"),
     }

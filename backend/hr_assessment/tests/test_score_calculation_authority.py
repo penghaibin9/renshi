@@ -26,7 +26,7 @@ class AssessmentScoreCalculationAuthorityTests(TestCase):
 
     def setUp(self):
         now = timezone.now()
-        result_rule = HrResultRuleVersion.objects.create(
+        self.result_rule = HrResultRuleVersion.objects.create(
             tenant_id=self.tenant_id,
             name="年度结果映射",
             version_no=1,
@@ -70,7 +70,7 @@ class AssessmentScoreCalculationAuthorityTests(TestCase):
             rating_scale_version_id=uuid.uuid4(),
             indicator_set_version_id=uuid.uuid4(),
             workflow_version_id=uuid.uuid4(),
-            result_rule_version_id=result_rule.id,
+            result_rule_version_id=self.result_rule.id,
         )
         self.cycle = HrAssessmentCycle.objects.create(
             tenant_id=self.tenant_id,
@@ -85,6 +85,15 @@ class AssessmentScoreCalculationAuthorityTests(TestCase):
         HrCycleSnapshot.objects.create(
             tenant_id=self.tenant_id,
             cycle=self.cycle,
+            frozen_policy_json={
+                "id": str(self.policy.id),
+                "contentHash": self.policy.content_hash,
+                "resultRule": {
+                    "id": str(self.result_rule.id),
+                    "contentHash": self.result_rule.content_hash,
+                    "scoreToGradeMapping": self.result_rule.score_to_grade_mapping,
+                }
+            },
             frozen_reviewer_rules_json={
                 "scoreAggregation": "WEIGHTED_AVERAGE",
                 "scoreField": "totalScore",

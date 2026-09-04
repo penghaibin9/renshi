@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from hr_assessment.models.policy import (
@@ -55,8 +55,8 @@ def make_cycle(
         tenant_id=tenant_id,
         cycle_no=cycle_no, assessment_type=assessment_type,
         name=f"测试周期 {cycle_no}",
-        start_at=datetime(2026, 1, 1, 0, 0),
-        end_at=datetime(2026, 12, 31, 23, 59),
+        start_at=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+        end_at=datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc),
         policy_version_id=policy_version.id,
     )
 
@@ -85,7 +85,7 @@ def make_subject_snapshot(
     return HrSubjectSnapshot.objects.create(
         tenant_id=tenant_id, case_id=case_id, staff_id=staff_id,
         display_name=display_name, org_name=org_name,
-        snapshot_at=datetime(2026, 1, 1, 0, 0),
+        snapshot_at=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
     )
 
 
@@ -96,7 +96,7 @@ def make_self_assessment(
 ) -> HrSelfAssessment:
     return HrSelfAssessment.objects.create(
         tenant_id=tenant_id, case_id=case_id, summary=summary,
-        submitted_at=datetime(2026, 6, 15, 10, 0),
+        submitted_at=datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc),
     )
 
 
@@ -123,7 +123,7 @@ def make_reviewer_evaluation(
         tenant_id=tenant_id, assignment=assignment,
         indicator_evaluations_json=indicator_scores or [],
         recommendation=recommendation,
-        submitted_at=datetime(2026, 7, 1, 10, 0),
+        submitted_at=datetime(2026, 7, 1, 10, 0, tzinfo=timezone.utc),
     )
 
 
@@ -139,5 +139,5 @@ def make_final_result(
         tenant_id=tenant_id, case_id=case_id or uuid.uuid4(),
         assessment_type=assessment_type, grade_code=grade_code,
         result_version_no=result_version_no, status=status,
-        finalized_at=datetime(2026, 8, 1, 10, 0),
+        finalized_at=datetime(2026, 8, 1, 10, 0, tzinfo=timezone.utc),
     )

@@ -13616,7 +13616,7 @@ msgstr "RH"
 msgid "Please login to access the dashboard."
 msgstr "Veuillez vous connecter pour accéder au tableau de bord."
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

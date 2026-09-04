@@ -6,7 +6,6 @@ HR05-04 协同任务 + Provisioning API（总册 §14/§15）。
 
 from __future__ import annotations
 
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_onboarding.api import base as api_base
@@ -78,7 +77,6 @@ def tasks_list(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.task.complete")
-@csrf_exempt
 def task_start(request, task_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -93,7 +91,6 @@ def task_start(request, task_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.task.complete")
-@csrf_exempt
 def task_complete(request, task_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -112,7 +109,6 @@ def task_complete(request, task_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.task.waive")
-@csrf_exempt
 def task_waive(request, task_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -127,7 +123,6 @@ def task_waive(request, task_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.identity.provision")
-@csrf_exempt
 def provisioning_request(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -169,7 +164,6 @@ def provisioning_request(request, case_id: str):
 
 @require_POST
 @require_hr05_permission("hr05.identity.provision")
-@csrf_exempt
 def provisioning_retry(request, provisioning_id: str):
     try:
         context = api_base.make_hr05_context(request)

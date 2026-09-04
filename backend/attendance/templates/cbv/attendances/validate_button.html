@@ -26,7 +26,7 @@
                     cancelButtonText: '{% trans 'Cancel' %}'
                 }).then(function(result) {
                     if (result.isConfirmed) {
-                        htmx.ajax('GET', '{% url 'validate-this-attendance' instance.id %}', {swap: 'none'});
+                        htmx.ajax('POST', '{% url 'validate-this-attendance' instance.id %}', {swap: 'none'});
                     }
                 });
             })({{ instance.id }}); return false"

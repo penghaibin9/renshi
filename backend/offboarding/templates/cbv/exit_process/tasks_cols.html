@@ -6,7 +6,8 @@
     >
         {% if task %}
             <select
-                hx-get="{% url 'update-task-status' %}?stage_id={{instance.stage_id.pk}}&employee_ids={{instance.id}}&task_id={{task_id}}"
+                hx-post="{% url 'update-task-status' %}"
+                hx-vals='{"stage_id":"{{ instance.stage_id.pk }}","employee_ids":"{{ instance.id }}","task_id":"{{ task_id }}"}'
                 name="task_status"
                 id="task_status{{task.id}}"
                 hx-swap="none"
@@ -31,7 +32,8 @@
             <button
                 class="px-4 py-2 bg-brand-600 text-white rounded-lg text-xs hover:bg-brand-800"
                 data-toggle="oh-modal-toggle"
-                hx-get="{% url 'offboarding-assign-task' %}?employee_ids={{instance.id}}&task_id={{task_id}}"
+                hx-post="{% url 'offboarding-assign-task' %}"
+                hx-vals='{"employee_ids":"{{ instance.id }}","task_id":"{{ task_id }}"}'
                 hx-swap="none"
                 hx-on-htmx-after-request="$(`#offboardingStageContainer{{instance.stage_id.pk}}`).find('.reload-record').click();"
             >

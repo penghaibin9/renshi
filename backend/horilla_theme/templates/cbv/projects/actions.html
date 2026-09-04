@@ -34,8 +34,11 @@
         {% if instance.is_active %}
             <a
                 class="oh-btn oh-btn--light-bkg oh-btn--sq-sm"
-                href="{{instance.get_archive_url}}"
-                onclick="return confirm('Do you want to {{instance.archive_status}} this project?')"
+                href="#"
+                hx-post="{{instance.get_archive_url}}"
+                hx-swap="none"
+                hx-confirm="Do you want to {{instance.archive_status}} this project?"
+                hx-on::after-request="window.location.reload()"
                 title="{% trans 'Archive' %}"
             >
                 <ion-icon name="archive"></ion-icon>
@@ -43,8 +46,11 @@
         {% else %}
             <a
                 class="oh-btn oh-btn--light-bkg oh-btn--sq-sm"
-                href="{{instance.get_archive_url}}"
-                onclick="return confirm('Do you want to {{instance.archive_status}} this project?')"
+                href="#"
+                hx-post="{{instance.get_archive_url}}"
+                hx-swap="none"
+                hx-confirm="Do you want to {{instance.archive_status}} this project?"
+                hx-on::after-request="window.location.reload()"
                 title="{% trans 'Un-Archive' %}"
             >
                 <ion-icon name="archive"></ion-icon>
@@ -54,8 +60,12 @@
     {% if perms.project.delete_project %}
         <a
             class="oh-btn oh-btn--danger oh-btn--sq-sm"
-            href="{% url 'delete-project' instance.id %}?view=list"
-            onclick="event.preventDefault();event.stopPropagation(); confirm(`{% trans 'Do you want to delete this project?' %}`)"
+            href="#"
+            hx-post="{% url 'delete-project' instance.id %}?view=list"
+            hx-swap="none"
+            hx-confirm="{% trans 'Do you want to delete this project?' %}"
+            hx-on::after-request="window.location.reload()"
+            onclick="event.stopPropagation()"
         >
             <ion-icon
                 name="trash-outline"

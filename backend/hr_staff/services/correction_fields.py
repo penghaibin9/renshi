@@ -7,6 +7,7 @@ from datetime import date
 from typing import Callable
 
 from django.core.validators import validate_email
+from django.utils import timezone
 
 from hr_staff.constants import StaffCategoryCode
 
@@ -66,7 +67,7 @@ def _birth_date(value, item):
         raise CorrectionFieldApplicationError(
             f"{item.field_code}: 日期必须为 YYYY-MM-DD"
         ) from exc
-    if parsed > date.today():
+    if parsed > timezone.localdate():
         raise CorrectionFieldApplicationError(f"{item.field_code}: 出生日期不能晚于今天")
     return parsed
 

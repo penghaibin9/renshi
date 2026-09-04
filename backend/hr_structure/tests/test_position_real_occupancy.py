@@ -2,6 +2,7 @@
 
 import json
 from datetime import date, timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import RequestFactory, TestCase
@@ -11,10 +12,11 @@ from hr_staff.models import HrStaffAssignment
 from hr_staff.services.employment_service import EmploymentService
 from hr_staff.tests.factories import make_org, make_person, make_staff
 from hr_structure.api.views import position_control_summary
-from hr_structure.models import HrPositionReservation
+from hr_structure.models import HrPosition, HrPositionReservation
 from hr_structure.scope import Hr02Scope
+from hr_structure.selectors.effective import position_as_of
 from hr_structure.selectors.position import PositionSelector
-from hr_structure.services.position import PositionService
+from hr_structure.services.position import PositionService, PositionServiceError
 from hr_structure.services.post_catalog import PostCatalogService
 
 
@@ -173,6 +175,15 @@ class PositionRealOccupancyTests(TestCase):
             "/api/hr/v1/structure/position-control/summary",
             {"asOf": self.as_of.isoformat()},
         )
+        request.user = type(
+            "AuthorizedUser",
+            (),
+            {
+                "is_authenticated": True,
+                "is_superuser": False,
+                "has_perm": lambda _self, _permission: True,
+            },
+        )()
 
         with patch("hr_structure.api.views._make_scope", return_value=self.scope):
             response = position_control_summary(request)
@@ -212,3 +223,67 @@ class PositionRealOccupancyTests(TestCase):
         self.assertEqual(summary["available"], 1)
         self.assertEqual(dto["occupancyStatus"], "OVERFILLED")
         self.assertEqual(empty.max_incumbents, 1)
+
+    def test_direct_lifecycle_writes_preserve_effective_dated_history(self):
+        self.assertEqual(self.position.history_versions.count(), 1)
+        self.assertEqual(
+            position_as_of(
+                self.tenant_id, self.position.id, self.as_of - timedelta(days=1)
+            ).lifecycle_status,
+            HrPosition.LifecycleStatus.ACTIVE,
+        )
+
+        self.position = PositionService(self.scope).freeze(
+            self.position.id, reason="暂停招聘"
+        )
+        self.assertEqual(
+            position_as_of(self.tenant_id, self.position.id, self.as_of).lifecycle_status,
+            HrPosition.LifecycleStatus.FROZEN,
+        )
+        self.position = PositionService(self.scope).close(
+            self.position.id, reason="岗位撤销"
+        )
+        self.assertEqual(self.position.history_versions.count(), 3)
+        self.assertEqual(
+            position_as_of(self.tenant_id, self.position.id, self.as_of).lifecycle_status,
+            HrPosition.LifecycleStatus.CLOSED,
+        )
+
+    def test_direct_close_rejects_active_assignment(self):
+        self._assignment(self.tenant_id, "close-block")
+        with self.assertRaises(PositionServiceError) as error:
+            PositionService(self.scope).close(self.position.id, reason="不应关闭")
+        self.assertEqual(error.exception.code, "HR02_POSITION_HAS_ACTIVE_ASSIGNMENTS")
+
+    def test_fractional_position_capacity_is_rejected_instead_of_truncated(self):
+        with self.assertRaises(PositionServiceError) as error:
+            PositionService(self.scope).create_position(
+                position_code="REAL-OCC-FRACTIONAL",
+                organization_id=self.org.id,
+                post_catalog_version_id=self.position.post_catalog_version_id_id,
+                max_incumbents="1.5",
+            )
+        self.assertEqual(error.exception.code, "HR02_POSITION_CAPACITY_INVALID")
+
+    def test_direct_update_and_unfreeze_append_history_with_optimistic_lock(self):
+        updated = PositionService(self.scope).update_position(
+            self.position.id,
+            expected_version=1,
+            planned_fte="0.50",
+            max_incumbents=3,
+            allow_multiple_incumbents="true",
+        )
+        self.assertEqual(updated.planned_fte, Decimal("0.50"))
+        self.assertEqual(updated.max_incumbents, 3)
+        self.assertTrue(updated.allow_multiple_incumbents)
+        self.assertEqual(updated.history_versions.count(), 2)
+        with self.assertRaises(PositionServiceError) as conflict:
+            PositionService(self.scope).update_position(
+                self.position.id, expected_version=1, max_incumbents=2
+            )
+        self.assertEqual(conflict.exception.code, "HR02_VERSION_CONFLICT")
+
+        PositionService(self.scope).freeze(self.position.id, "暂停补员")
+        unfrozen = PositionService(self.scope).unfreeze(self.position.id, "恢复补员")
+        self.assertEqual(unfrozen.lifecycle_status, HrPosition.LifecycleStatus.ACTIVE)
+        self.assertEqual(unfrozen.freeze_reason, "")

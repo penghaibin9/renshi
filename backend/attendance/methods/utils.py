@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timedelta
 
 import pandas as pd
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.paginator import Paginator
 from django.db import models
 from django.db.models import Q, Sum
@@ -166,8 +166,9 @@ def employee_exists(request):
     try:
         employee = request.user.employee_get
         employee_work_info = employee.employee_work_info
-    finally:
-        return (employee, employee_work_info)
+    except (AttributeError, ObjectDoesNotExist):
+        pass
+    return (employee, employee_work_info)
 
 
 def shift_schedule_today(day, shift):
@@ -221,7 +222,8 @@ def is_reportingmanger(request, instance):
             instance.employee_id.employee_work_info.reporting_manager_id
         )
     except Exception:
-        return HttpResponse("This Employee Dont Have any work information")
+        # Missing work information must never become a truthy authorization result.
+        return False
     return manager == employee_workinfo_manager
 
 
@@ -602,14 +604,6 @@ def parse_time(time_str):
             except ValueError:
                 continue
     return None
-
-
-def parse_datetime(date_str, time_str):
-    return (
-        datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-        if date_str and time_str
-        else None
-    )
 
 
 def parse_date(date_str, error_key, activity):

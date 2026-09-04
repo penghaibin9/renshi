@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_GET, require_POST
 
 from hr_external.api.base import (
     api_root,
@@ -51,13 +52,14 @@ from hr_external.services.renewal_service import RenewalService, RenewalStateCon
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
         return None, error_response(request, code, str(exc), status)
 
 
+@require_GET
 @require_hr_external_permission("hr08.renewal.review")
 def renewal_list(request):
     ctx, err = _ctx(request)
@@ -92,6 +94,7 @@ def renewal_list(request):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.renewal.review")
 def renewal_create(request, engagement_id):
     """POST .../engagements/{id}/renewal-review 创建到期评估（§59）。"""
@@ -128,6 +131,7 @@ def renewal_create(request, engagement_id):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.renewal.decide")
 def renewal_decide(request, review_id):
     """POST .../renewal-reviews/{id}/decide body: {decision, nextStart?, nextEnd?}（§60/§61）。"""
@@ -176,6 +180,7 @@ def renewal_decide(request, review_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.exit.manage")
 def exit_create(request, engagement_id):
     """POST .../engagements/{id}/exit body: {exitReason, plannedEndAt?, clearancePolicy?}（§63）。"""
@@ -216,6 +221,7 @@ def exit_create(request, engagement_id):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.exit.manage")
 def exit_prepare(request, exit_id):
     """POST advances the auditable pre-exit review one state at a time."""
@@ -246,6 +252,7 @@ def exit_prepare(request, exit_id):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.exit.manage")
 def exit_detail(request, exit_id):
     ctx, err = _ctx(request)
@@ -275,6 +282,7 @@ def exit_detail(request, exit_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.exit.manage")
 def exit_complete(request, exit_id):
     """POST .../exits/{id}/complete body: {clearanceOk?, clearanceItems?[]}
@@ -318,6 +326,6 @@ def exit_complete(request, exit_id):
         "id": str(case.id),
         "status": case.status,
         "statusLabel": exit_status_label(case.status),
-        "note": "权限回收已发起（IAM Provider # [总控占位]）；历史任务/成果/评价/协议保留（§70）",
+        "note": "权限回收已进入可靠队列；以 IAM 回执确认最终撤权，历史任务、成果、评价和协议继续保留。",
     }
     return json_response(request, body)

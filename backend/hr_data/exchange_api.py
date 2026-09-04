@@ -8,12 +8,18 @@ from datetime import datetime
 from django.http import JsonResponse
 
 from .api import HrDataAccessError, _error, _payload, resolve_request_tenant
-from .models import ExchangeDeadLetter, ExchangeJob
+from .models import (
+    ExchangeDatasetVersion,
+    ExchangeDeadLetter,
+    ExchangeJob,
+    ExchangeTargetMappingVersion,
+)
 from .services.exchange_service import (
     ExchangeDefinitionService,
     ExchangeError,
     ExchangeJobService,
 )
+from .standards.china_education import classification_summary, standard_catalog
 
 EXCHANGE_PERMISSION = "hr.data.exchange"
 
@@ -67,6 +73,77 @@ def _prepare(request):
     except ValueError:
         return None, None, _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
     return tenant_id, payload, None
+
+
+def workbench(request):
+    """Return tenant-scoped frozen definitions and operational job state."""
+    if request.method != "GET":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = _tenant(request)
+    except HrDataAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    datasets = ExchangeDatasetVersion.objects.filter(tenant_id=tenant_id).order_by(
+        "dataset_code", "-version_no"
+    )[:200]
+    targets = ExchangeTargetMappingVersion.objects.filter(tenant_id=tenant_id).order_by(
+        "target_code", "-version_no"
+    )[:200]
+    jobs = ExchangeJob.objects.filter(tenant_id=tenant_id).select_related(
+        "dataset_version", "target_mapping_version"
+    ).order_by("-created_at")[:200]
+    return _json(
+        {
+            "datasets": [
+                {
+                    "id": str(row.id),
+                    "datasetCode": row.dataset_code,
+                    "versionNo": row.version_no,
+                    "name": row.name,
+                    "status": row.status,
+                    "payloadHash": row.payload_hash,
+                    "recordCount": row.record_count,
+                    "frozenAt": row.frozen_at.isoformat(),
+                    "classification": classification_summary(row.schema_json),
+                }
+                for row in datasets
+            ],
+            "targets": [
+                {
+                    "id": str(row.id),
+                    "targetCode": row.target_code,
+                    "versionNo": row.version_no,
+                    "datasetCode": row.dataset_code,
+                    "datasetVersion": row.dataset_version,
+                    "transportKind": row.transport_kind,
+                    "providerKey": row.provider_key,
+                    "expectedReceipt": row.expected_receipt,
+                    "status": row.status,
+                }
+                for row in targets
+            ],
+            "jobs": [
+                {
+                    "id": str(row.id),
+                    "jobNo": row.job_no,
+                    "status": row.status,
+                    "datasetCode": row.dataset_version.dataset_code,
+                    "datasetVersion": row.dataset_version.version_no,
+                    "targetCode": row.target_mapping_version.target_code,
+                    "targetVersion": row.target_mapping_version.version_no,
+                    "snapshotHash": row.snapshot_hash,
+                    "attemptCount": row.attempt_count,
+                    "maxAttempts": row.max_attempts,
+                    "dispatchRef": row.dispatch_ref or None,
+                    "lastErrorCode": row.last_error_code or None,
+                    "createdAt": row.created_at.isoformat(),
+                }
+                for row in jobs
+            ],
+            "standardCatalog": standard_catalog(),
+        },
+        schema="hr18.exchange-workbench.1",
+    )
 
 
 def create_dataset(request):

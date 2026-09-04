@@ -64,11 +64,11 @@
             </div>
         </div>
     </div>
-    <button id="selfTrackButton" hx-get="{% url 'candidate-self-tracking' %}" hx-target="#reloadMessages" hidden>
+    <button id="selfTrackButton" hx-post="{% url 'candidate-self-tracking' %}" hx-target="#reloadMessages" hidden>
     </button>
     <button
         id="ratingButton"
-        hx-get="{% url 'candidate-self-tracking-rating-option' %}"
+        hx-post="{% url 'candidate-self-tracking-rating-option' %}"
         hx-target="#reloadMessages"
         hidden
     >

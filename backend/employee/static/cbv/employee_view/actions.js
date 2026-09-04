@@ -300,10 +300,11 @@ $(document).on("click", "#archiveEmployees", function (e) {
                 ids = JSON.parse($("#selectedInstances").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/employee/employee-bulk-archive/?is_active=False",
+                    url: "/employee/employee-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -351,10 +352,11 @@ $(document).on("click", "#unArchiveEmployees", function (e) {
 
                 $.ajax({
                     type: "POST",
-                    url: "/employee/employee-bulk-archive/?is_active=True",
+                    url: "/employee/employee-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {

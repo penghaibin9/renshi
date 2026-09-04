@@ -17,7 +17,6 @@ import contextlib
 import json
 import operator
 import os
-import threading
 from datetime import date, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -28,7 +27,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, ProtectedError, Q
 from django.db.models.query import QuerySet
 from django.forms import DateInput, HiddenInput, Select
@@ -38,6 +37,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as __
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
@@ -67,7 +67,10 @@ from base.models import (
     WorkTypeRequest,
 )
 from base.views import generate_error_report
-from employee.cbv.document_request import htmx_refresh_document_request_container
+from employee.cbv.document_request import (
+    htmx_refresh_document_request_container,
+    scope_documents_for_review,
+)
 from employee.filters import DocumentRequestFilter, EmployeeFilter, EmployeeReGroup
 from employee.forms import (
     BonusPointAddForm,
@@ -97,7 +100,6 @@ from employee.methods.methods import (
     error_data_template,
     get_ordered_badge_ids,
     process_employee_records,
-    set_initial_password,
     valid_import_file_headers,
 )
 from employee.models import (
@@ -189,6 +191,44 @@ BLOCKED_EXTENSIONS = {
     ".sh",
     ".exe",
 }
+
+
+def _can_manage_employee(request, employee, permission):
+    if request.user.is_superuser or request.user.has_perm(permission):
+        return True
+    actor = getattr(request.user, "employee_get", None)
+    if actor is None:
+        return False
+    if actor.pk == employee.pk:
+        return False
+    work_info = getattr(employee, "employee_work_info", None)
+    return bool(work_info and work_info.reporting_manager_id_id == actor.pk)
+
+
+def _posted_ids(request, key="ids"):
+    try:
+        raw_ids = json.loads(request.POST.get(key, ""))
+    except (TypeError, ValueError):
+        raise ValueError("invalid ids") from None
+    if not isinstance(raw_ids, list) or not raw_ids or len(raw_ids) > 500:
+        raise ValueError("invalid ids")
+    ids = []
+    for raw_id in raw_ids:
+        try:
+            object_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise ValueError("invalid ids") from None
+        if object_id <= 0:
+            raise ValueError("invalid ids")
+        ids.append(object_id)
+    if len(set(ids)) != len(ids):
+        raise ValueError("invalid ids")
+    return ids
+
+
+def _delete_storage_file(storage, name):
+    with contextlib.suppress(Exception):
+        storage.delete(name)
 
 
 def _check_reporting_manager(request, *args, **kwargs):
@@ -802,6 +842,8 @@ def update_document_title(request, id):
 
 @login_required
 @hx_request_required
+@require_http_methods(["POST"])
+@transaction.atomic
 def document_delete(request, id):
     """
     Handle the deletion of a document, with permissions and error handling.
@@ -813,7 +855,7 @@ def document_delete(request, id):
     cannot be deleted, it handles the exception and informs the user.
     """
     try:
-        document_qs = Document.objects.filter(id=id)
+        document_qs = Document.objects.select_for_update().filter(id=id)
 
         if not request.user.has_perm("horilla_documents.delete_document"):
             document_qs = document_qs.filter(
@@ -1018,6 +1060,8 @@ def view_file(request, id):
 @login_required
 @hx_request_required
 @manager_can_enter("horilla_documents.add_document")
+@require_http_methods(["POST"])
+@transaction.atomic
 def document_approve(request, id):
     """
     This function used to view the approve uploaded document.
@@ -1029,11 +1073,25 @@ def document_approve(request, id):
     Returns:
     """
 
-    document_obj = get_object_or_404(Document, id=id)
-    refresh_url = request.GET.get("refresh_url") or request.POST.get("refresh_url")
+    document_obj = get_object_or_404(
+        scope_documents_for_review(
+            request, Document.objects.select_for_update().filter(id=id)
+        )
+    )
+    refresh_url = request.POST.get("refresh_url")
+    if refresh_url and not (
+        refresh_url.startswith("/")
+        and not refresh_url.startswith("//")
+        and url_has_allowed_host_and_scheme(
+            url=refresh_url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        )
+    ):
+        refresh_url = None
     if document_obj.document:
         document_obj.status = "approved"
-        document_obj.save()
+        document_obj.save(update_fields=["status"])
         messages.success(request, _("Document request approved"))
     else:
         messages.error(request, _("No document uploaded"))
@@ -1043,16 +1101,21 @@ def document_approve(request, id):
         return refreshed
 
     if refresh_url:
-        span = f"""
+        span = format_html(
+            """
         <span
             hx-trigger="load"
-            hx-get="{refresh_url}"
-            hx-target="#requestDocument{id}"
-            hx-select="#requestDocument{id}"
+            hx-get="{}"
+            hx-target="#requestDocument{}"
+            hx-select="#requestDocument{}"
             hx-swap="outerHTML"
-            ">
+        >
         </span>
-        """
+        """,
+            refresh_url,
+            id,
+            id,
+        )
         return HttpResponse(span)
 
     return HorillaRedirect(request)
@@ -1096,6 +1159,8 @@ def document_reject(request, id):
 
 @login_required
 @manager_can_enter("horilla_documents.add_document")
+@require_http_methods(["POST"])
+@transaction.atomic
 def document_bulk_approve(request):
     """
     This function is used to bulk-approve uploaded documents.
@@ -1106,25 +1171,29 @@ def document_bulk_approve(request):
     Returns:
         HttpResponse: A 204 No Content response with HX-Refresh header.
     """
-    if request.method == "POST":
-        ids = request.POST.getlist("ids")
+    ids = request.POST.getlist("ids")
 
-        # Documents with uploaded files
-        approved_docs = Document.objects.filter(id__in=ids).exclude(document="")
-        count_approved = approved_docs.update(status="approved")
+    # Serialize rows so approval cannot race a simultaneous delete/reject.
+    approved_docs = scope_documents_for_review(
+        request, Document.objects.select_for_update().filter(id__in=ids)
+    ).exclude(document="")
+    approved_ids = list(approved_docs.values_list("id", flat=True))
+    count_approved = Document.objects.filter(id__in=approved_ids).exclude(
+        status="approved"
+    ).update(status="approved")
 
-        # Documents without uploaded files
-        not_uploaded_count = len(ids) - approved_docs.count()
+    # Documents without uploaded files or outside the tenant scope are skipped.
+    not_uploaded_count = len(set(ids)) - len(approved_ids)
 
-        if count_approved:
-            messages.success(
-                request, _(f"{count_approved} document request(s) approved")
-            )
+    if count_approved:
+        messages.success(
+            request, _(f"{count_approved} document request(s) approved")
+        )
 
-        if not_uploaded_count:
-            messages.info(
-                request, _(f"{not_uploaded_count} document(s) skipped (not uploaded)")
-            )
+    if not_uploaded_count:
+        messages.info(
+            request, _(f"{not_uploaded_count} document(s) skipped (not uploaded)")
+        )
 
     refreshed = htmx_refresh_document_request_container(request)
     if refreshed is not None:
@@ -1135,6 +1204,7 @@ def document_bulk_approve(request):
 @login_required
 @hx_request_required
 @manager_can_enter("horilla_documents.add_document")
+@require_http_methods(["GET", "POST"])
 def document_bulk_reject(request):
     """
     Handle bulk rejection of documents.
@@ -1156,17 +1226,25 @@ def document_bulk_reject(request):
     # ValueError ("has no field named 'title'") since title isn't one of
     # them. Binding to any one of the actual target documents gives clean()
     # a real, already-valid title instead.
+    reviewable_documents = scope_documents_for_review(
+        request, Document.objects.filter(id__in=ids)
+    )
     form = DocumentRejectForm(
-        request.POST or None, instance=Document.objects.filter(id__in=ids).first()
+        request.POST or None, instance=reviewable_documents.first()
     )
 
     if request.method == "POST" and form.is_valid():
         reject_reason = form.cleaned_data["reject_reason"]
-        updated_count = (
-            Document.objects.filter(id__in=ids)
-            .exclude(status="rejected")
-            .update(status="rejected", reject_reason=reject_reason)
-        )
+        with transaction.atomic():
+            documents = scope_documents_for_review(
+                request, Document.objects.select_for_update().filter(id__in=ids)
+            )
+            document_ids = list(documents.values_list("id", flat=True))
+            updated_count = (
+                Document.objects.filter(id__in=document_ids)
+                .exclude(status="rejected")
+                .update(status="rejected", reject_reason=reject_reason)
+            )
         messages.success(
             request, _("{} Document request rejected").format(updated_count)
         )
@@ -1581,19 +1659,17 @@ def save_employee_bulk_update(request):
 
 @login_required
 @permission_required("employee.change_employee")
+@require_http_methods(["POST"])
+@transaction.atomic
 def employee_account_block_unblock(request, emp_id):
-    employee = get_object_or_404(Employee, id=emp_id)
-    if not employee:
-        messages.info(request, _("Employee not found"))
-        return redirect(f"{reverse('employee-view')}?view=list")
-    user = get_object_or_404(HorillaUser, id=employee.employee_user_id.id)
-    if not user:
-        messages.info(request, _("Employee not found"))
-        return redirect(f"{reverse('employee-view')}?view=list")
+    employee = get_object_or_404(Employee.objects.select_for_update(), id=emp_id)
+    user = get_object_or_404(
+        HorillaUser.objects.select_for_update(), id=employee.employee_user_id_id
+    )
     if not user.is_superuser:
         user.is_active = not user.is_active
         action_message = _("blocked") if not user.is_active else _("unblocked")
-        user.save()
+        user.save(update_fields=["is_active"])
         messages.success(
             request,
             _("{employee}'s account {action_message} successfully!").format(
@@ -1772,18 +1848,27 @@ def employee_view_update(request, obj_id, **kwargs):
 @login_required
 @require_http_methods(["POST"])
 @permission_required("employee.change_employee")
+@transaction.atomic
 def update_profile_image(request, obj_id):
     """
     This method is used to upload a profile image
     """
-    try:
-        employee = Employee.objects.get(id=obj_id)
-        img = request.FILES["employee_profile"]
-        employee.employee_profile = img
-        employee.save()
-        messages.success(request, _("Profile image updated."))
-    except Exception:
+    employee = Employee.objects.select_for_update().filter(id=obj_id).first()
+    img = request.FILES.get("employee_profile")
+    if employee is None:
+        return JsonResponse({"message": _("Employee not found.")}, status=404)
+    if img is None:
         messages.error(request, _("Upload a valid image."))
+        return JsonResponse({"message": _("Upload a valid image.")}, status=400)
+    old_storage = employee.employee_profile.storage
+    old_name = employee.employee_profile.name
+    employee.employee_profile = img
+    employee.save(update_fields=["employee_profile"])
+    if old_name and old_name != employee.employee_profile.name:
+        transaction.on_commit(
+            lambda: _delete_storage_file(old_storage, old_name)
+        )
+    messages.success(request, _("Profile image updated."))
     response = render(
         request,
         "employee/profile/profile_modal.html",
@@ -1795,18 +1880,27 @@ def update_profile_image(request, obj_id):
 
 @login_required
 @require_http_methods(["POST"])
+@transaction.atomic
 def update_own_profile_image(request):
     """
     This method is used to update own profile image from profile view form
     """
-    try:
-        employee = request.user.employee_get
-        img = request.FILES.get("employee_profile")
-        employee.employee_profile = img
-        employee.save()
-        messages.success(request, _("Profile image updated."))
-    except Exception:
+    employee = Employee.objects.select_for_update().get(
+        pk=request.user.employee_get.pk
+    )
+    img = request.FILES.get("employee_profile")
+    if img is None:
         messages.error(request, _("Upload a valid image."))
+        return JsonResponse({"message": _("Upload a valid image.")}, status=400)
+    old_storage = employee.employee_profile.storage
+    old_name = employee.employee_profile.name
+    employee.employee_profile = img
+    employee.save(update_fields=["employee_profile"])
+    if old_name and old_name != employee.employee_profile.name:
+        transaction.on_commit(
+            lambda: _delete_storage_file(old_storage, old_name)
+        )
+    messages.success(request, _("Profile image updated."))
     response = render(
         request,
         "employee/profile/profile_modal.html",
@@ -1819,12 +1913,13 @@ def update_own_profile_image(request):
 @login_required
 @require_http_methods(["DELETE"])
 @permission_required("employee.change_employee")
+@transaction.atomic
 def remove_profile_image(request, obj_id):
     """
     This method is used to remove uploaded image
     Args: obj_id : Employee model instance id
     """
-    employee = Employee.objects.get(id=obj_id)
+    employee = Employee.objects.select_for_update().get(id=obj_id)
     if employee.employee_profile.name == "":
         messages.info(request, _("No profile image to remove."))
         response = render(
@@ -1834,11 +1929,11 @@ def remove_profile_image(request, obj_id):
         return HttpResponse(
             response.content.decode("utf-8") + "<script>location.reload();</script>"
         )
-    file_path = employee.employee_profile.path
-    absolute_path = os.path.join(settings.MEDIA_ROOT, file_path)
-    os.remove(absolute_path)
+    storage = employee.employee_profile.storage
+    file_name = employee.employee_profile.name
     employee.employee_profile = None
-    employee.save()
+    employee.save(update_fields=["employee_profile"])
+    transaction.on_commit(lambda: _delete_storage_file(storage, file_name))
     messages.success(request, _("Profile image removed."))
     response = render(
         request,
@@ -1851,11 +1946,14 @@ def remove_profile_image(request, obj_id):
 
 @login_required
 @require_http_methods(["DELETE"])
+@transaction.atomic
 def remove_own_profile_image(request):
     """
     This method is used to remove own profile image
     """
-    employee = request.user.employee_get
+    employee = Employee.objects.select_for_update().get(
+        pk=request.user.employee_get.pk
+    )
     if employee.employee_profile.name == "":
         messages.info(request, _("No profile image to remove."))
         response = render(
@@ -1865,11 +1963,11 @@ def remove_own_profile_image(request):
         return HttpResponse(
             response.content.decode("utf-8") + "<script>location.reload();</script>"
         )
-    file_path = employee.employee_profile.path
-    absolute_path = os.path.join(settings.MEDIA_ROOT, file_path)
-    os.remove(absolute_path)
+    storage = employee.employee_profile.storage
+    file_name = employee.employee_profile.name
     employee.employee_profile = None
-    employee.save()
+    employee.save(update_fields=["employee_profile"])
+    transaction.on_commit(lambda: _delete_storage_file(storage, file_name))
 
     messages.success(request, _("Profile image removed."))
     response = render(
@@ -1884,11 +1982,21 @@ def remove_own_profile_image(request):
 @login_required
 @manager_can_enter("employee.change_employee")
 @require_http_methods(["POST"])
+@transaction.atomic
 def employee_create_update_personal_info(request, obj_id=None):
     """
     This method is used to update employee's personal info.
     """
-    employee = Employee.objects.filter(id=obj_id).first()
+    employee = Employee.objects.select_for_update().filter(id=obj_id).first()
+    if obj_id is None:
+        if not request.user.has_perm("employee.add_employee"):
+            return JsonResponse(
+                {"message": _("You do not have permission.")}, status=403
+            )
+    elif employee is None:
+        return JsonResponse({"message": _("Employee not found.")}, status=404)
+    elif not _can_manage_employee(request, employee, "employee.change_employee"):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = EmployeeForm(request.POST, request.FILES, instance=employee)
     if form.is_valid():
         form.save()
@@ -1939,11 +2047,18 @@ def employee_create_update_personal_info(request, obj_id=None):
 @login_required
 @manager_can_enter("employee.change_employeeworkinformation")
 @require_http_methods(["POST"])
+@transaction.atomic
 def employee_update_work_info(request, obj_id=None):
     """
     This method is used to update employee work info
     """
-    employee = Employee.objects.filter(id=obj_id).first()
+    employee = Employee.objects.select_for_update().filter(id=obj_id).first()
+    if employee is None:
+        return JsonResponse({"message": _("Employee not found.")}, status=404)
+    if not _can_manage_employee(
+        request, employee, "employee.change_employeeworkinformation"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = EmployeeWorkInformationForm(
         request.POST,
         instance=EmployeeWorkInformation.objects.filter(employee_id=employee).first(),
@@ -1977,11 +2092,18 @@ def employee_update_work_info(request, obj_id=None):
 @login_required
 @manager_can_enter("employee.change_employeebankdetails")
 @require_http_methods(["POST"])
+@transaction.atomic
 def employee_update_bank_details(request, obj_id=None):
     """
     This method is used to render form to create employee's bank information.
     """
-    employee = Employee.objects.filter(id=obj_id).first()
+    employee = Employee.objects.select_for_update().filter(id=obj_id).first()
+    if employee is None:
+        return JsonResponse({"message": _("Employee not found.")}, status=404)
+    if not _can_manage_employee(
+        request, employee, "employee.change_employeebankdetails"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = EmployeeBankDetailsForm(
         request.POST,
         instance=EmployeeBankDetails.objects.filter(employee_id=employee).first(),
@@ -2174,6 +2296,7 @@ def employee_update(request, obj_id):
 @login_required
 @permission_required("employee.delete_employee")
 @require_http_methods(["POST"])
+@transaction.atomic
 def employee_delete(request, obj_id):
     """
     This method is used to delete employee
@@ -2183,23 +2306,35 @@ def employee_delete(request, obj_id):
 
     try:
         view = request.POST.get("view")
-        employee = Employee.objects.get(id=obj_id)
-        if apps.is_installed("payroll"):
-            if employee.contract_set.all().exists():
-                contracts = employee.contract_set.all()
-                for contract in contracts:
-                    if contract.contract_status != "active":
-                        contract.delete()
+        employee = (
+            Employee.objects.select_for_update()
+            .select_related("employee_user_id")
+            .get(id=obj_id)
+        )
+        if employee.employee_user_id_id == request.user.id:
+            return JsonResponse(
+                {"message": _("You cannot delete your own account.")}, status=409
+            )
         user = employee.employee_user_id
-        try:
+        if user and user.is_superuser and not request.user.is_superuser:
+            return JsonResponse(
+                {"message": _("Only a superuser can delete a superuser account.")},
+                status=403,
+            )
+        if apps.is_installed("payroll"):
+            contracts = employee.contract_set.select_for_update().all()
+            contracts.exclude(contract_status="active").delete()
+        if user:
+            HorillaUser.objects.select_for_update().get(pk=user.pk)
             user.delete()
-        except AttributeError:
+        else:
             employee.delete()
         messages.success(request, _("Employee deleted"))
 
     except Employee.DoesNotExist:
         messages.error(request, _("Employee not found."))
     except ProtectedError as e:
+        transaction.set_rollback(True)
         model_verbose_names_set = set()
         for obj in e.protected_objects:
             model_verbose_names_set.add(__(obj._meta.verbose_name.capitalize()))
@@ -2213,108 +2348,167 @@ def employee_delete(request, obj_id):
 
 @login_required
 @permission_required("employee.delete_employee")
+@require_http_methods(["POST"])
+@transaction.atomic
 def employee_bulk_delete(request):
     """
     This method is used to delete set of Employee instances
     """
-    ids = json.loads(request.POST.get("ids", "[]"))
-    if not ids:
-        messages.error(request, _("No IDs provided."))
-    deleted_count = 0
-    employees = Employee.objects.filter(id__in=ids).select_related("employee_user_id")
-    for employee in employees:
-        try:
-            if apps.is_installed("payroll"):
-                if employee.contract_set.all().exists():
-                    contracts = employee.contract_set.all()
-                    for contract in contracts:
-                        if contract.contract_status != "active":
-                            contract.delete()
-            user = employee.employee_user_id
-            user.delete()
-            deleted_count += 1
-        except Employee.DoesNotExist:
-            messages.error(request, _("Employee not found."))
-        except ProtectedError:
-            messages.error(
-                request, _("You cannot delete %(employee)s.") % {"employee": employee}
-            )
-    if deleted_count > 0:
-        messages.success(
-            request,
-            _("%(deleted_count)s employees deleted.")
-            % {"deleted_count": deleted_count},
+    try:
+        ids = _posted_ids(request)
+    except ValueError:
+        return JsonResponse({"message": _("Invalid employee selection.")}, status=400)
+    employees = list(
+        Employee.objects.select_for_update()
+        .select_related("employee_user_id")
+        .filter(id__in=ids)
+    )
+    if len(employees) != len(ids):
+        return JsonResponse({"message": _("Employee not found.")}, status=404)
+    if any(employee.employee_user_id_id == request.user.id for employee in employees):
+        return JsonResponse(
+            {"message": _("You cannot delete your own account.")}, status=409
         )
-    return JsonResponse({"message": "Success"})
+    if not request.user.is_superuser and any(
+        employee.employee_user_id and employee.employee_user_id.is_superuser
+        for employee in employees
+    ):
+        return JsonResponse(
+            {"message": _("Only a superuser can delete a superuser account.")},
+            status=403,
+        )
+    user_ids = [
+        employee.employee_user_id_id
+        for employee in employees
+        if employee.employee_user_id_id
+    ]
+    users = {
+        user.pk: user
+        for user in HorillaUser.objects.select_for_update().filter(pk__in=user_ids)
+    }
+    try:
+        for employee in employees:
+            if apps.is_installed("payroll"):
+                employee.contract_set.select_for_update().exclude(
+                    contract_status="active"
+                ).delete()
+            user = users.get(employee.employee_user_id_id)
+            if user:
+                user.delete()
+            else:
+                employee.delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse(
+            {"message": _("One or more employees are still in use.")}, status=409
+        )
+    messages.success(
+        request,
+        _("%(deleted_count)s employees deleted.")
+        % {"deleted_count": len(employees)},
+    )
+    return JsonResponse({"message": "Success", "deleted": len(employees)})
 
 
 @login_required
 @permission_required("employee.delete_employee")
 @require_http_methods(["POST"])
+@transaction.atomic
 def employee_bulk_archive(request):
     """
     This method is used to archive bulk of Employee instances
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    is_active = False
-    if request.GET.get("is_active") == "True":
-        is_active = True
-    for employee_id in ids:
-        employee = Employee.objects.get(id=employee_id)
+    try:
+        raw_ids = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"error": "Invalid employee IDs."}, status=400)
+    if not isinstance(raw_ids, list) or len(raw_ids) > 500:
+        return JsonResponse({"error": "Invalid employee IDs."}, status=400)
+    try:
+        ids = list(dict.fromkeys(int(value) for value in raw_ids if int(value) > 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid employee IDs."}, status=400)
+    state_value = request.POST.get("is_active", "").lower()
+    if not ids or state_value not in {"true", "false"}:
+        return JsonResponse({"error": "Invalid archive request."}, status=400)
+    is_active = state_value == "true"
 
-        emp = Employee.objects.get(id=employee_id)
-        if emp.employee_user_id.is_superuser and emp.is_active:
-            count = 0
-            employees = Employee.objects.filter(is_active=True)
-            for super_emp in employees:
-                if super_emp.employee_user_id.is_superuser:
-                    count = count + 1
-            if count == 1:
-                messages.error(request, _("You can't archive the last superuser."))
-                return HttpResponse("<script>$('#filterEmployee').click();</script>")
+    employees = list(
+        Employee.objects.select_for_update()
+        .select_related("employee_user_id")
+        .filter(id__in=ids)
+    )
+    if len(employees) != len(ids):
+        return JsonResponse({"error": "Employee not found."}, status=404)
 
+    if not is_active:
+        blocked = [
+            str(employee) for employee in employees if employee.get_archive_condition()
+        ]
+        if blocked:
+            messages.warning(request, _("Related data found for selected employees."))
+            return JsonResponse({"error": "Related data found.", "employees": blocked}, status=409)
+        active_superusers = list(
+            Employee.objects.select_for_update()
+            .filter(is_active=True, employee_user_id__is_superuser=True)
+            .values_list("id", flat=True)
+        )
+        selected_superusers = {
+            employee.id
+            for employee in employees
+            if employee.is_active and employee.employee_user_id.is_superuser
+        }
+        if selected_superusers and len(set(active_superusers) - selected_superusers) < 1:
+            messages.error(request, _("You can't archive the last superuser."))
+            return JsonResponse({"error": "Last superuser cannot be archived."}, status=409)
+
+    users = {
+        user.id: user
+        for user in HorillaUser.objects.select_for_update().filter(
+            id__in=[employee.employee_user_id_id for employee in employees]
+        )
+    }
+    for employee in employees:
         employee.is_active = is_active
-        employee.employee_user_id.is_active = is_active
-        if employee.get_archive_condition() is False:
-            employee.save()
-            message = _("archived")
-            if is_active:
-                message = _("un-archived")
-            messages.success(
-                request,
-                _("%(employee)s is %(message)s")
-                % {"employee": employee, "message": message},
-            )
-        else:
-            messages.warning(request, _("Related data found for {}.").format(employee))
-    return JsonResponse({"message": "Success"})
+        employee.save(update_fields=["is_active"])
+        user = users.get(employee.employee_user_id_id)
+        if user:
+            user.is_active = is_active
+            user.save(update_fields=["is_active"])
+    messages.success(
+        request,
+        _("Selected employees have been %(state)s.")
+        % {"state": _("restored") if is_active else _("archived")},
+    )
+    return JsonResponse({"message": "Success", "updated": len(employees)})
 
 
 @login_required
 @hx_request_required
 @permission_required("employee.delete_employee")
+@require_http_methods(["POST"])
+@transaction.atomic
 def employee_archive(request, obj_id):
     """
     This method is used to archive employee instance
     Args:
             obj_id : Employee instance id
     """
-    employee = Employee.objects.get(id=obj_id)
-    employee.is_active = not employee.is_active
-    employee.employee_user_id.is_active = not employee.is_active
+    employee = get_object_or_404(
+        Employee.objects.select_for_update().select_related("employee_user_id"),
+        id=obj_id,
+    )
+    new_active_state = not employee.is_active
     save = True
     message = "Employee un-archived"
-    if not employee.is_active:
-
-        emp = Employee.objects.get(id=obj_id)
-        if emp.employee_user_id.is_superuser:
-            count = 0
-            employees = Employee.objects.filter(is_active=True)
-            for super_emp in employees:
-                if super_emp.employee_user_id.is_superuser:
-                    count = count + 1
-            if count == 1:
+    if not new_active_state:
+        if employee.employee_user_id.is_superuser:
+            active_superuser_ids = list(
+                Employee.objects.select_for_update()
+                .filter(is_active=True, employee_user_id__is_superuser=True)
+                .values_list("id", flat=True)
+            )
+            if len(active_superuser_ids) <= 1:
                 messages.error(request, _("You can't archive the last superuser."))
                 return HttpResponse("<script>$('#applyFilter').click();</script>")
 
@@ -2324,7 +2518,13 @@ def employee_archive(request, obj_id):
         else:
             message = _("Employee archived")
     if save:
-        employee.save()
+        employee.is_active = new_active_state
+        employee.save(update_fields=["is_active"])
+        user = HorillaUser.objects.select_for_update().get(
+            id=employee.employee_user_id_id
+        )
+        user.is_active = new_active_state
+        user.save(update_fields=["is_active"])
         messages.success(request, message)
         key = "HTTP_HX_REQUEST"
         if key not in request.META.keys():
@@ -2700,7 +2900,7 @@ def employee_import(request):
                     user = HorillaUser.objects.create_user(
                         username=email,
                         email=email,
-                        password=str(phone).strip(),
+                        password=None,
                         is_superuser=False,
                     )
                     employee = Employee()
@@ -2871,10 +3071,10 @@ def work_info_import(request):
                     bulk_create_shifts(success_list)
                     bulk_create_employee_types(success_list)
                     bulk_create_work_info_import(success_list)
-                    thread = threading.Thread(
-                        target=set_initial_password, args=(employees,)
+                    messages.info(
+                        request,
+                        _("新导入账号默认不可直接登录，请通知教职工通过“忘记密码”完成首次激活。"),
                     )
-                    thread.start()
 
                 except Exception as e:
                     messages.error(request, _("Error Occured {}").format(e))
@@ -3345,12 +3545,25 @@ def history_tab(request, pk):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="employee.add_employeenote")
+@transaction.atomic
 def add_note(request, emp_id=None):
     """
     Handles the addition of a note to a specific employee, including file attachments.
     Saves the note and redirects to the employee's note tab upon successful submission.
     """
 
+    employee_obj = (
+        Employee.objects.select_for_update()
+        .select_related("employee_work_info")
+        .filter(id=emp_id)
+        .first()
+    )
+    if employee_obj is None:
+        return JsonResponse({"message": _("Employee not found.")}, status=404)
+    if not _can_manage_employee(
+        request, employee_obj, "employee.add_employeenote"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = EmployeeNoteForm(initial={"employee_id": emp_id})
     if request.method == "POST":
         form = EmployeeNoteForm(
@@ -3360,15 +3573,13 @@ def add_note(request, emp_id=None):
 
         if form.is_valid():
             note, attachment_ids = form.save(commit=False)
-            employee = Employee.objects.get(id=emp_id)
-            note.employee_id = employee
+            note.employee_id = employee_obj
             note.updated_by = request.user.employee_get
             note.save()
             note.note_files.set(attachment_ids)
             messages.success(request, _("Note added successfully.."))
             return redirect(f"/employee/note-tab/{emp_id}")
 
-    employee_obj = Employee.objects.get(id=emp_id)
     return render(
         request,
         "tabs/add_note.html",
@@ -3381,6 +3592,7 @@ def add_note(request, emp_id=None):
 
 @login_required
 @manager_can_enter(perm="employee.change_employeenote")
+@transaction.atomic
 def employee_note_update(request, note_id):
     """
     This method is used to update the note
@@ -3388,12 +3600,21 @@ def employee_note_update(request, note_id):
         id : stage note instance id
     """
 
-    note = EmployeeNote.find(note_id)
+    note = (
+        EmployeeNote.objects.select_for_update()
+        .select_related("employee_id__employee_work_info")
+        .filter(id=note_id)
+        .first()
+    )
     if not note:
         return HorillaRedirect(
             request, message=_("No Employee Note found matching the query.")
         )
 
+    if not _can_manage_employee(
+        request, note.employee_id, "employee.change_employeenote"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     form = EmployeeNoteForm(instance=note)
     if request.POST:
         form = EmployeeNoteForm(request.POST, instance=note)
@@ -3417,6 +3638,8 @@ def employee_note_update(request, note_id):
 
 @login_required
 @manager_can_enter(perm="employee.delete_employeenote")
+@require_http_methods(["POST"])
+@transaction.atomic
 def employee_note_delete(request, note_id):
     """
     This method is used to delete the note
@@ -3424,12 +3647,21 @@ def employee_note_delete(request, note_id):
         id : stage note instance id
     """
 
-    note = EmployeeNote.find(note_id)
+    note = (
+        EmployeeNote.objects.select_for_update()
+        .select_related("employee_id__employee_work_info")
+        .filter(id=note_id)
+        .first()
+    )
     if not note:
         return HorillaRedirect(
             request, message=_("No Employee Note found matching the query.")
         )
 
+    if not _can_manage_employee(
+        request, note.employee_id, "employee.delete_employeenote"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     emp_id = note.employee_id.id
     note.delete()
     messages.success(request, _("Note deleted successfully."))
@@ -3439,13 +3671,22 @@ def employee_note_delete(request, note_id):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="employee.add_notefiles")
+@transaction.atomic
 def add_more_employee_files(request, note_id):
     """
     This method is used to Add more files to the Employee note.
     Args:
         id : stage note instance id
     """
-    note = EmployeeNote.objects.get(id=note_id)
+    note = (
+        EmployeeNote.objects.select_for_update()
+        .select_related("employee_id__employee_work_info")
+        .get(id=note_id)
+    )
+    if not _can_manage_employee(
+        request, note.employee_id, "employee.add_notefiles"
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     employee_id = note.employee_id.id
 
     if request.method == "POST":
@@ -3471,13 +3712,29 @@ def add_more_employee_files(request, note_id):
 @login_required
 @hx_request_required
 @manager_can_enter(perm="employee.delete_notefiles")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_employee_note_file(request, note_file_id):
     """
     This method is used to delete the stage note file
     Args:
         id : stage file instance id
     """
-    file = NoteFiles.objects.get(id=note_file_id)
+    file = NoteFiles.objects.select_for_update().filter(id=note_file_id).first()
+    if file is None:
+        return JsonResponse({"message": _("Note file not found.")}, status=404)
+    notes = list(
+        file.employeenote_set.select_related(
+            "employee_id__employee_work_info"
+        ).all()
+    )
+    if not notes or any(
+        not _can_manage_employee(
+            request, note.employee_id, "employee.delete_notefiles"
+        )
+        for note in notes
+    ):
+        return JsonResponse({"message": _("You do not have permission.")}, status=403)
     file.delete()
     return HttpResponse()
 
@@ -3886,13 +4143,15 @@ def employee_get_mail_log(request, pk):
     This method is used to track mails sent along with the status
     """
     employee = Employee.objects.get(id=pk)
-    tracked_mails = EmailLog.objects.filter(to__icontains=employee.email)
     try:
+        addresses = [employee.email]
         if employee.employee_work_info and employee.employee_work_info.email:
-            tracked_mails = tracked_mails | EmailLog.objects.filter(
-                to__icontains=employee.employee_work_info.email
-            )
-        tracked_mails = tracked_mails.order_by("-created_at")
+            addresses.append(employee.employee_work_info.email)
+        from base.email_logging import email_log_recipient_q
+
+        tracked_mails = EmailLog.objects.filter(
+            email_log_recipient_q(*addresses), company_id=employee.get_company()
+        ).order_by("-created_at")
 
         return render(request, "tabs/mail_log.html", {"tracked_mails": tracked_mails})
     except ObjectDoesNotExist:

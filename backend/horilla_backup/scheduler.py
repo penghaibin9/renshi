@@ -1,9 +1,8 @@
 import os
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from django.conf import settings
 from django.core.management import call_command
-
-from horilla import settings
 
 from .gdrive import *
 from .models import *
@@ -11,6 +10,13 @@ from .mysqldump import dump_mysql_db
 from .zip import *
 
 scheduler = BackgroundScheduler()
+
+
+def _ensure_legacy_gdrive_allowed():
+    if getattr(settings, "IS_PRODUCTION", False):
+        raise RuntimeError(
+            "Legacy Google Drive backup is disabled in production; use the encrypted production backup scheduler."
+        )
 
 # def backup_database():
 #     folder_path = DBBACKUP_STORAGE_OPTIONS['location']
@@ -80,6 +86,7 @@ scheduler = BackgroundScheduler()
 
 
 def google_drive_backup():
+    _ensure_legacy_gdrive_allowed()
     if GoogleDriveBackup.objects.exists():
         google_drive = GoogleDriveBackup.objects.first()
         service_account_file = google_drive.service_account_file.path
@@ -112,6 +119,7 @@ def start_gdrive_backup_job():
     """
     Start the backup job based on the LocalBackup configuration.
     """
+    _ensure_legacy_gdrive_allowed()
     # Check if any Gdrive Backup object exists
     if GoogleDriveBackup.objects.exists():
         gdrive_backup = GoogleDriveBackup.objects.first()

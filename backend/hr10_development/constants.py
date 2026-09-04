@@ -541,6 +541,7 @@ class ScheduleConflictResult(models.TextChoices):
 # ============================================================
 
 class DevelopmentErrorCode(models.TextChoices):
+    INVALID_REQUEST = "INVALID_REQUEST", _("请求参数无效")
     TENANT_CONTEXT_REQUIRED = "TENANT_CONTEXT_REQUIRED", _("缺少租户上下文")
     DEVELOPMENT_PLAN_VERSION_CONFLICT = "DEVELOPMENT_PLAN_VERSION_CONFLICT", _("计划版本冲突")
     DEVELOPMENT_PLAN_NOT_PUBLISHED = "DEVELOPMENT_PLAN_NOT_PUBLISHED", _("计划未发布")

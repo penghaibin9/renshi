@@ -6,8 +6,6 @@ based on their contract details and income information.
 """
 
 import datetime
-import logging
-
 from payroll.methods.methods import (
     compute_yearly_taxable_amount,
     convert_year_tax_to_period,
@@ -19,9 +17,6 @@ from payroll.methods.payslip_calc import (
 from payroll.methods.safe_tax_code import run_tax_code
 from payroll.models.models import Contract
 from payroll.models.tax_models import TaxBracket
-
-logger = logging.getLogger(__name__)
-
 
 def calculate_taxable_amount(**kwargs):
     """Calculate the taxable amount for a given employee within a specific period.
@@ -93,10 +88,9 @@ def calculate_taxable_amount(**kwargs):
         federal_tax = sum(bracket["calculated_rate"] for bracket in filterd_brackets)
 
     elif filing.use_py:
-        try:
-            federal_tax = run_tax_code(filing.python_code, yearly_income)
-        except Exception as e:
-            logger.error(e)
+        # A broken formula must stop payslip generation. Treating it as zero
+        # tax silently creates an incorrect formal payroll result.
+        federal_tax = run_tax_code(filing.python_code, yearly_income)
 
     federal_tax_for_period = 0
     if federal_tax and (tax_brackets.exists() or filing.use_py):

@@ -9,7 +9,7 @@
   function closeNativeSidebarOnMobile() {
     const shell = document.querySelector('.oh-wrapper-main');
     if (!mq.matches || !shell) return;
-    // Horilla's own index.js represents the closed shell with this exact
+    // The compatibility index.js represents the closed shell with this exact
     // class and persists it as sidebarOpen=false. Initialise that canonical
     // state directly on mobile; do not hide/remove the sidebar with page CSS.
     shell.classList.add('oh-wrapper-main--closed');

@@ -11,6 +11,8 @@ hr_staff/selectors/assignments.py —— HR03-03 任职与身份履历（S6，�
 from __future__ import annotations
 
 from datetime import date
+
+from django.utils import timezone
 from typing import Optional
 
 from hr_staff.context import HrStaffRequestContext
@@ -23,7 +25,7 @@ class AssignmentHistorySelector:
     def __init__(self, context: HrStaffRequestContext):
         self.context = context
         self.tenant_id = context.tenant_id
-        self.as_of = context.as_of or date.today()
+        self.as_of = context.as_of or timezone.localdate()
         self.qs = EffectiveDatedQueryService(self.tenant_id)
 
     def _deny_check(self, staff_id):

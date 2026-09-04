@@ -160,8 +160,9 @@ class Document(HorillaModel):
                 )
 
     def save(self, *args, **kwargs):
+        is_new = self._state.adding
         super().save(*args, **kwargs)
-        if self.is_digital_asset:
+        if is_new and self.is_digital_asset:
             if apps.is_installed("asset"):
                 from asset.models import Asset, AssetCategory
 

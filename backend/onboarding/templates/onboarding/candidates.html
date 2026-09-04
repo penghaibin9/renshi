@@ -104,7 +104,8 @@
                             class="oh-sticky-table__td">{{candidate.recruitment_id}}</a>
                         <a data-cell-index="6" style="color: inherit; text-decoration: none" class="oh-sticky-table__td"
                             onload="event.stopPropagation()">
-                            <select hx-get="{% url 'update-offer-letter-status' %}?candidate_id={{candidate.id}}"
+                            <select hx-post="{% url 'update-offer-letter-status' %}"
+                                hx-vals='{"candidate_id": "{{ candidate.id }}"}'
                                 hx-swap="none" name="status" id="id_offeletter_status_{{candidate.id}}" class="w-100"
                                 style="height: 40px;border:solid 1px rgba(128, 128, 128, 0.32);">
                                 {% for status in candidate.offer_letter_statuses %}
@@ -149,12 +150,15 @@
                                         title="{% trans 'Send Portal / Start onboarding' %}" data-toggle="oh-modal-toggle"
                                         disabled><ion-icon name="link-outline"></ion-icon></a>
                                 {% endif %}
-                                <a class="oh-btn oh-btn--danger w-100"
-                                    onclick="return confirm('{% trans " Do you want to delete this record" %}?')"
-                                    id="delete-link" href="{% url 'candidate-delete' candidate.id %}"
-                                    title="{% trans 'Delete' %}">
-                                    <ion-icon name="trash-outline"></ion-icon>
-                                </a>
+                                <form method="post" action="{% url 'candidate-delete' candidate.id %}"
+                                    onsubmit="return confirm('{% trans "Do you want to delete this record" %}?')"
+                                    class="w-100">
+                                    {% csrf_token %}
+                                    <button class="oh-btn oh-btn--danger w-100" type="submit"
+                                        title="{% trans 'Delete' %}">
+                                        <ion-icon name="trash-outline"></ion-icon>
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     </div>

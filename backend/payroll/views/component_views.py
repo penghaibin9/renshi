@@ -18,6 +18,7 @@ import pandas as pd
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Sum
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse, QueryDict
 from django.shortcuts import redirect, render
@@ -25,6 +26,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_http_methods
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
@@ -40,7 +42,7 @@ from base.methods import (
     sortby,
 )
 from base.models import Company
-from employee.models import Employee, EmployeeWorkInformation
+from employee.models import BonusPoint, Employee, EmployeeWorkInformation
 from horilla.decorators import (
     handle_no_permission,
     hx_request_required,
@@ -598,16 +600,27 @@ def update_allowance(request, allowance_id, **kwargs):
 @login_required
 @hx_request_required
 @permission_required("payroll.delete_allowance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_allowance(request, allowance_id, emp_id=None):
-    target = request.META.get("HTTP_HX_TARGET")
     instances_ids = request.GET.get("instances_ids")
     next_instance = None
     instances_list = None
     if instances_ids:
-        instances_list = json.loads(instances_ids)
-        previous_instance, next_instance = closest_numbers(instances_list, allowance_id)
-        instances_list.remove(allowance_id)
-    allowance = payroll.models.models.Allowance.objects.filter(id=allowance_id).first()
+        try:
+            instances_list = [int(value) for value in json.loads(instances_ids)]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            instances_list = []
+        if allowance_id in instances_list:
+            _previous_instance, next_instance = closest_numbers(
+                instances_list, allowance_id
+            )
+            instances_list.remove(allowance_id)
+    allowance = (
+        payroll.models.models.Allowance.objects.select_for_update()
+        .filter(id=allowance_id)
+        .first()
+    )
     if allowance:
         allowance.delete()
         messages.success(request, _("Allowance deleted successfully"))
@@ -626,16 +639,13 @@ def delete_allowance(request, allowance_id, emp_id=None):
     if http_hx_target:
         if (
             http_hx_target == "payroll-deduction-container"
-            and not Deduction.objects.filter()
+            and not Allowance.objects.exists()
         ):
             return HorillaRedirect(request)
         if redirected_path:
             return redirect(redirected_path)
 
-    default_redirect = (
-        request.path if http_hx_target else request.META.get("HTTP_REFERER", "/")
-    )
-    return HttpResponseRedirect(default_redirect)
+    return redirect("allowances-list-view")
 
 
 @login_required
@@ -818,6 +828,8 @@ def update_deduction(request, deduction_id, **kwargs):
 @login_required
 @hx_request_required
 @permission_required("payroll.delete_deduction")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_deduction(request, deduction_id, emp_id=None):
     instances_ids = request.GET.get("instances_ids")
     next_instance = None
@@ -825,10 +837,18 @@ def delete_deduction(request, deduction_id, emp_id=None):
     previous_data = ""
     if instances_ids:
         previous_data = get_urlencode(request)
-        instances_list = json.loads(instances_ids)
-        previous_instance, next_instance = closest_numbers(instances_list, deduction_id)
-        instances_list.remove(deduction_id)
-    deduction = Deduction.objects.filter(id=deduction_id).first()
+        try:
+            instances_list = [int(value) for value in json.loads(instances_ids)]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            instances_list = []
+        if deduction_id in instances_list:
+            _previous_instance, next_instance = closest_numbers(
+                instances_list, deduction_id
+            )
+            instances_list.remove(deduction_id)
+    deduction = (
+        Deduction.objects.select_for_update().filter(id=deduction_id).first()
+    )
     if deduction:
         deduction.delete()
         messages.success(request, _("Deduction deleted successfully"))
@@ -854,10 +874,7 @@ def delete_deduction(request, deduction_id, emp_id=None):
         if redirected_path:
             return redirect(redirected_path)
 
-    default_redirect = (
-        request.path if http_hx_target else request.META.get("HTTP_REFERER", "/")
-    )
-    return HttpResponseRedirect(default_redirect)
+    return redirect("deduction-view-list")
 
 
 def get_month_start_end(year):
@@ -1640,12 +1657,19 @@ def view_installments(request):
 
 @login_required
 @permission_required("payroll.delete_loanaccount")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_loan(request):
     """
     Delete loan
     """
-    ids = request.GET.getlist("ids")
-    loans = LoanAccount.objects.filter(id__in=ids)
+    ids = request.POST.getlist("ids")
+    ids = list(dict.fromkeys(ids))
+    if not ids or len(ids) > 500 or any(
+        not str(value).isdigit() or int(value) <= 0 for value in ids
+    ):
+        return JsonResponse({"error": "Invalid loan IDs."}, status=400)
+    loans = LoanAccount.objects.select_for_update().filter(id__in=ids)
     # This 👇 would'nt trigger the delete method in the model
     # loans.delete()
     for loan in loans:
@@ -1964,63 +1988,67 @@ def get_assigned_leaves(request):
 
 @login_required
 @permission_required("payroll.change_reimbursement")
+@require_http_methods(["POST"])
+@transaction.atomic
 def approve_reimbursements(request):
     """
     This method is used to approve or reject the reimbursement request
     """
-    ids = request.GET.getlist("ids")
-    status = request.GET.get("status")
-    if not status:
-        return HorillaRedirect(request, message=_("Missing required parameters."))
+    ids = request.POST.getlist("ids")
+    ids = list(dict.fromkeys(ids))
+    if not ids or len(ids) > 500 or any(
+        not str(value).isdigit() or int(value) <= 0 for value in ids
+    ):
+        return JsonResponse({"error": "Invalid reimbursement IDs."}, status=400)
+    status = request.POST.get("status")
     if status == "canceled":
         status = "rejected"
-    amount = (
-        eval_validate(request.GET.get("amount")) if request.GET.get("amount") else 0
-    )
-    amount = max(0, amount)
-    reimbursements = Reimbursement.objects.filter(id__in=ids)
-    if status and len(status):
-        for reimbursement in reimbursements:
-            if reimbursement.type == "leave_encashment":
-                reimbursement.amount = amount
-            elif reimbursement.type == "bonus_encashment":
-                reimbursement.amount = amount
+    if status not in {"approved", "rejected"}:
+        return HorillaRedirect(request, message=_("Missing required parameters."))
+    raw_amount = request.POST.get("amount") or 0
+    try:
+        amount = float(raw_amount)
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid reimbursement amount."}, status=400)
+    if not math.isfinite(amount) or amount < 0:
+        return JsonResponse({"error": "Invalid reimbursement amount."}, status=400)
+    reimbursements = Reimbursement.objects.select_for_update().filter(id__in=ids)
+    for reimbursement in reimbursements:
+        if reimbursement.type == "bonus_encashment":
+            BonusPoint.objects.select_for_update().filter(
+                employee_id=reimbursement.employee_id
+            ).first()
+        elif reimbursement.type == "leave_encashment":
+            (
+                reimbursement.leave_type_id.employee_available_leave.select_for_update()
+                .filter(employee_id=reimbursement.employee_id)
+                .first()
+            )
+        if reimbursement.type in {"leave_encashment", "bonus_encashment"}:
+            reimbursement.amount = amount
 
-            emp = reimbursement.employee_id
-            reimbursement.status = status
-            reimbursement.save()
-            if reimbursement.status == "requested":
-                if not (messages.get_messages(request)._queued_messages):
-                    messages.info(request, _("Please check the data you provided."))
-            else:
-                messages.success(
-                    request,
-                    _(f"Request {reimbursement.get_status_display()} successfully"),
-                )
-        if status == "rejected":
-            notify.send(
-                request.user.employee_get,
-                recipient=emp.employee_user_id,
-                verb="Your reimbursement request has been rejected.",
-                verb_ar="تم رفض طلب استرداد النفقات الخاص بك.",
-                verb_de="Ihr Erstattungsantrag wurde abgelehnt.",
-                verb_es="Su solicitud de reembolso ha sido rechazada.",
-                verb_fr="Votre demande de remboursement a été rejetée.",
-                redirect=reverse("view-reimbursement") + f"?id={reimbursement.id}",
-                icon="checkmark",
-            )
+        reimbursement.status = status
+        reimbursement.save()
+        if reimbursement.status == "requested":
+            if not messages.get_messages(request)._queued_messages:
+                messages.info(request, _("Please check the data you provided."))
         else:
-            notify.send(
-                request.user.employee_get,
-                recipient=emp.employee_user_id,
-                verb="Your reimbursement request has been approved.",
-                verb_ar="تمت الموافقة على طلب استرداد نفقاتك.",
-                verb_de="Ihr Rückerstattungsantrag wurde genehmigt.",
-                verb_es="Se ha aprobado tu solicitud de reembolso.",
-                verb_fr="Votre demande de remboursement a été approuvée.",
-                redirect=reverse("view-reimbursement") + f"?id={reimbursement.id}",
-                icon="checkmark",
+            messages.success(
+                request,
+                _(f"Request {reimbursement.get_status_display()} successfully"),
             )
+        verb = (
+            "Your reimbursement request has been rejected."
+            if status == "rejected"
+            else "Your reimbursement request has been approved."
+        )
+        notify.send(
+            request.user.employee_get,
+            recipient=reimbursement.employee_id.employee_user_id,
+            verb=verb,
+            redirect=reverse("view-reimbursement") + f"?id={reimbursement.id}",
+            icon="checkmark",
+        )
     if request.headers.get("HX-Request"):
         response = HttpResponse("", status=200)
         response["HX-Trigger"] = json.dumps(
@@ -2032,23 +2060,37 @@ def approve_reimbursements(request):
 
 @login_required
 @permission_required("payroll.delete_reimbursement")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_reimbursements(request):
     """
     This method is used to delete the reimbursements
     """
-    ids = request.GET.getlist("ids")
-    reimbursements = Reimbursement.objects.filter(id__in=ids).select_related(
-        "employee_id__employee_user_id"
+    ids = request.POST.getlist("ids")
+    ids = list(dict.fromkeys(ids))
+    if not ids or len(ids) > 500 or any(
+        not str(value).isdigit() or int(value) <= 0 for value in ids
+    ):
+        return JsonResponse({"error": "Invalid reimbursement IDs."}, status=400)
+    reimbursements = list(
+        Reimbursement.objects.select_for_update()
+        .filter(id__in=ids)
+        .select_related("employee_id__employee_user_id")
     )
     recipients = []
     seen_user_ids = set()
     for reimbursement in reimbursements:
+        if reimbursement.status == "approved":
+            messages.info(
+                request,
+                _("Approved reimbursement requests cannot be deleted."),
+            )
+            continue
         recipient = getattr(reimbursement.employee_id, "employee_user_id", None)
         if recipient and recipient.id not in seen_user_ids:
             recipients.append(recipient)
             seen_user_ids.add(recipient.id)
-    reimbursements.delete()
-    messages.success(request, _("Reimbursements deleted"))
+        reimbursement.delete()
     if recipients:
         notify.send(
             request.user.employee_get,
@@ -2115,12 +2157,37 @@ def reimbursement_attachments(request, instance_id):
 
 @login_required
 @owner_can_enter("payroll.delete_reimbursement", Reimbursement, True)
+@require_http_methods(["POST"])
 def delete_attachments(request, _reimbursement_id):
     """
     This mehtod is used to delete the attachements
     """
-    ids = request.GET.getlist("ids")
-    ReimbursementMultipleAttachment.objects.filter(id__in=ids).delete()
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    if not ids:
+        return HorillaRedirect(request, message=_("Invalid attachment selection."))
+
+    with transaction.atomic():
+        reimbursement = (
+            Reimbursement.objects.select_for_update()
+            .filter(id=_reimbursement_id)
+            .first()
+        )
+        if not reimbursement:
+            return HorillaRedirect(
+                request, message=_("Reimbursement request not found.")
+            )
+        attachments = list(
+            reimbursement.other_attachments.select_for_update().filter(id__in=ids)
+        )
+        if not attachments:
+            return HorillaRedirect(request, message=_("Attachment not found."))
+
+        reimbursement.other_attachments.remove(*attachments)
+        for attachment in attachments:
+            if not Reimbursement.objects.filter(
+                other_attachments=attachment
+            ).exists():
+                attachment.delete()
     messages.success(request, _("Attachment deleted"))
     return redirect("view-reimbursement")
 

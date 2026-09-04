@@ -9,6 +9,8 @@ COLLEGE/DEPARTMENT scope 用 HR02 组织子树解析；SELF/EXPLICIT_STAFF_SET �
 from __future__ import annotations
 
 from datetime import date
+
+from django.utils import timezone
 from typing import Optional
 
 from hr_staff.context import HrStaffRequestContext
@@ -30,7 +32,7 @@ class ScopeEnforcer:
     def __init__(self, context: HrStaffRequestContext):
         self.context = context
         self.tenant_id = context.tenant_id
-        self.as_of = context.as_of or date.today()
+        self.as_of = context.as_of or timezone.localdate()
 
     def get_staff_or_deny(self, staff_id) -> HrStaffMaster:
         staff = HrStaffMaster.objects.filter(tenant_id=self.tenant_id, id=staff_id).first()

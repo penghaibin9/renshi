@@ -35,6 +35,9 @@ class HrRecruitmentCandidate(models.Model):
     consent_version = models.CharField(max_length=32, blank=True, default="")
     consent_at = models.DateTimeField(null=True, blank=True)
     retention_until = models.DateField(null=True, blank=True)
+    legal_hold = models.BooleanField(default=False)
+    legal_hold_reason = models.CharField(max_length=300, blank=True, default="")
+    anonymized_at = models.DateTimeField(null=True, blank=True)
     source = models.CharField(max_length=32, blank=True, default="")
     status = models.CharField(
         max_length=16, choices=CandidateStatus.choices, default=CandidateStatus.ACTIVE

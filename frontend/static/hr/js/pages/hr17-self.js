@@ -8,6 +8,7 @@
 
   const section = root.dataset.section || 'overview';
   const bootstrapUrl = root.dataset.bootstrapUrl;
+  const recordsUrl = root.dataset.recordsUrl;
   const pinUrlTemplate = root.dataset.pinUrlTemplate;
   const TIMEOUT_MS = 7000;
   let data = null;
@@ -46,6 +47,7 @@
     APPROVED: '已批准', RETURNED: '已退回', DRAFT: '草稿', PUBLISHED: '已发布',
     SIGNED: '已签署', EXPIRED: '已到期', TERMINATED: '已终止', CANCELLED: '已取消',
     VOID: '已作废', PAID: '已发放', PENDING: '待处理', COMPLETED: '已完成',
+    VERIFIED: '已核验', UNVERIFIED: '待核验', CURRENT: '当前版本', SUPERSEDED: '历史版本',
   };
   const employmentLabels = { ACTIVE: '在职', INACTIVE: '非在职', EXITED: '已离职', RETIRED: '已退休' };
   const contractTypeLabels = {
@@ -217,7 +219,7 @@
     document.getElementById('hr17-work-desc').textContent = message;
     document.getElementById('hr17-service-tools').hidden = true;
     const rows = document.getElementById('hr17-rows');
-    if (rows) rows.innerHTML = `<div class="hr17-empty">${esc(message)} 这里不会把“暂未开放”误写成“您没有记录”。</div>`;
+    if (rows) rows.innerHTML = `<div class="hr17-empty">${esc(message)} 来源异常不会被误报为“您没有记录”。</div>`;
   }
 
   function renderSection() {
@@ -244,7 +246,8 @@
     if (section === 'payslips') {
       title.textContent = '我的工资结果';
       desc.textContent = '只展示薪酬管理中已经形成的本人正式结果，不在本页面重新计算或推测发放状态。';
-      const results = data.providerData?.HR15?.payrollResults || [];
+      const results = data.selfRecords?.payslips;
+      if (!Array.isArray(results)) return unavailable('我的工资结果', '薪酬结果来源当前暂不可用，请稍后刷新。');
       renderRows(results.map((item) => ({
         name: item.periodCode || item.resultNo || '工资结果',
         sub: `${item.currencyCode === 'CNY' ? '人民币' : (item.currencyCode || '')} 实发 ${item.netAmount ?? '—'}`.trim(),
@@ -256,7 +259,8 @@
     if (section === 'contracts') {
       title.textContent = '我的合同';
       desc.textContent = '只展示合同管理中属于本人的协议摘要，合同正文和内部审批信息不会在这里展开。';
-      const agreements = data.providerData?.HR07?.contractAgreements || [];
+      const agreements = data.selfRecords?.contracts;
+      if (!Array.isArray(agreements)) return unavailable('我的合同', '合同结果来源当前暂不可用，请稍后刷新。');
       renderRows(agreements.map((item) => ({
         name: item.title || item.agreementNo || '合同协议',
         sub: [item.agreementNo, contractTypeLabels[item.type]].filter(Boolean).join(' · '),
@@ -287,7 +291,19 @@
       })), '当前没有可展示的本人办理记录。');
       return;
     }
-    if (section === 'files') return unavailable('我的文件', '跨业务模块的本人文件汇总目前暂未开放，请从对应服务入口安全查看。');
+    if (section === 'files') {
+      title.textContent = '我的文件';
+      desc.textContent = '展示教职工主档中属于当前登录本人的受控材料目录；文件内容仍通过短时效受控凭证访问。';
+      const files = data.selfRecords?.files;
+      if (!Array.isArray(files)) return unavailable('我的文件', '本人文件来源当前暂不可用，请稍后刷新。');
+      renderRows(files.map((item) => ({
+        name: item.title || item.categoryCode || '本人材料',
+        sub: [item.categoryCode, item.currentVersion ? `版本 ${item.currentVersion.versionNo}` : '无当前版本'].filter(Boolean).join(' · '),
+        status: item.verificationStatus || item.currentVersion?.status,
+        meta: item.currentVersion ? `${item.currentVersion.mimeType || '受控文件'} · 更新于 ${String(item.updatedAt || '').slice(0, 10) || '—'}` : '当前没有可访问版本',
+      })), '当前没有登记在本人主档下的受控文件。');
+      return;
+    }
   }
 
   function fail(message) {
@@ -298,12 +314,16 @@
     });
   }
 
-  if (!bootstrapUrl) {
+  if (!bootstrapUrl || !recordsUrl) {
     fail('页面地址配置缺失');
     return;
   }
-  requestJson(bootstrapUrl).then((payload) => {
+  Promise.all([
+    requestJson(bootstrapUrl),
+    requestJson(recordsUrl).catch(() => null),
+  ]).then(([payload, selfRecords]) => {
     data = payload;
+    data.selfRecords = selfRecords;
     renderKpis();
     renderIdentity();
     renderHealth();

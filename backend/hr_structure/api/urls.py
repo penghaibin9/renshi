@@ -20,6 +20,11 @@ urlpatterns = [
         name="hr-api-structure-org-tree",
     ),
     path(
+        "api/hr/v1/structure/organizations/options",
+        api_views.organization_options,
+        name="hr-api-structure-org-options",
+    ),
+    path(
         "api/hr/v1/structure/organizations/<int:org_id>",
         api_views.organization_detail,
         name="hr-api-structure-org-detail",
@@ -71,6 +76,11 @@ urlpatterns = [
         "api/hr/v1/structure/staffing-plans/list",
         api_views.staffing_plans_list,
         name="hr-api-staffing-plans-list",
+    ),
+    path(
+        "api/hr/v1/structure/staffing-plans/<int:plan_id>/lines",
+        api_views.staffing_plan_lines,
+        name="hr-api-staffing-plan-lines",
     ),
     path(
         "api/hr/v1/structure/staffing-plans/<int:plan_id>/<str:action>",
@@ -135,6 +145,16 @@ urlpatterns = [
         "api/hr/v1/structure/positions",
         api_views.positions_list,
         name="hr-api-positions",
+    ),
+    path(
+        "api/hr/v1/structure/positions/<int:position_id>",
+        api_views.position_detail,
+        name="hr-api-position-detail",
+    ),
+    path(
+        "api/hr/v1/structure/positions/<int:position_id>/<str:action>",
+        api_views.position_action,
+        name="hr-api-position-action",
     ),
     path(
         "api/hr/v1/structure/position-control/summary",

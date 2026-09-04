@@ -403,19 +403,6 @@
         $("select[name=ids]").change();
     });
 
-    $("#delete-link").on("click", function (event) {
-        event.preventDefault(); // prevent the default behavior of the link
-
-        const link = $(this);
-        const confirmation = confirm(
-            "{% trans 'Are you sure you want to delete?' %}"
-        );
-
-        if (confirmation) {
-            window.location.href = link.attr("href"); // execute the href if confirmed
-        }
-    });
-
     $("#candidateOfferLetterUpdate").on("change", function() {
         ids = $("#selectedInstances").data("ids");
         var textMessage = noRowMessages[languageCode] || ((languageCode = "en"), noRowMessages[languageCode]);
@@ -428,11 +415,12 @@
               })
         }else {
             $.ajax({
-                type: "GET",
+                type: "POST",
                 url: "{% url 'offer-letter-bulk-status-update' %}",
                 data: {
                     ids: JSON.stringify(ids),
                     status: $(this).val(),
+                    csrfmiddlewaretoken: "{{ csrf_token }}",
                 },
                 success: function (response) {
                     window.location.reload()
@@ -467,10 +455,11 @@
             }).then(function (result) {
                 if (result.isConfirmed) {
                     $.ajax({
-                        type: "GET",
+                        type: "POST",
                         url: "{% url 'onboarding-candidate-bulk-delete' %}",
                         data: {
                             ids: JSON.stringify(ids),
+                            csrfmiddlewaretoken: "{{ csrf_token }}",
                         },
                         success: function (response) {
                             window.location.reload()

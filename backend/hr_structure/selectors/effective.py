@@ -11,11 +11,14 @@ EffectiveDatedQueryService —— 统一 as-of 查询（总册 8.4 / 19.2）。
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from django.db.models import Q
 
 from hr_structure.models import HrOrganizationVersion
+
+if TYPE_CHECKING:
+    from hr_structure.models import HrPosition, HrPositionPool, HrPostCatalogVersion
 
 FORMAL_STATUSES = ("APPROVED", "EFFECTIVE", "SUPERSEDED")
 

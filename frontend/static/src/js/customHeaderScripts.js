@@ -1,10 +1,10 @@
-// Horilla responsive shell bootstrap.
+// Responsive compatibility-shell bootstrap.
 //
 // The legacy desktop shell defaults to a 230px sidebar and restores its state
 // from localStorage inside static/index/index.js on jQuery-ready. On a narrow
 // viewport that restore can happen after page-level business scripts and reopen
 // the PC sidebar, squeezing the actual workspace. Initialise the same canonical
-// Horilla state here, before the later index.js ready callback runs.
+// compatibility state here, before the later index.js ready callback runs.
 (function () {
     const MOBILE_QUERY = '(max-width: 767.98px)';
     const DESKTOP_STATE_KEY = 'horillaDesktopSidebarOpenBeforeMobile';
@@ -20,7 +20,7 @@
         sessionStorage.setItem(DESKTOP_STATE_KEY, stored === null ? '__unset__' : stored);
     }
 
-    function closeWithNativeHorillaState() {
+    function closeWithNativeShellState() {
         if (!mediaQuery().matches) return;
         rememberDesktopSidebarState();
         explicitMobileOpen = false;
@@ -56,7 +56,7 @@
             const stopDesktopHoverReopen = function (event) {
                 if (!mediaQuery().matches || explicitMobileOpen) return;
                 event.stopImmediatePropagation();
-                requestAnimationFrame(closeWithNativeHorillaState);
+                requestAnimationFrame(closeWithNativeShellState);
             };
             sidebar.addEventListener('mouseover', stopDesktopHoverReopen, true);
             sidebar.addEventListener('mouseenter', stopDesktopHoverReopen, true);
@@ -78,7 +78,7 @@
 
     function initialiseResponsiveShell() {
         bindMobileShellInteractions();
-        if (mediaQuery().matches) closeWithNativeHorillaState();
+        if (mediaQuery().matches) closeWithNativeShellState();
         else restoreDesktopSidebarState();
     }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from urllib import error, request
+from urllib.parse import urlparse
 
 from django.conf import settings
 
@@ -67,6 +68,16 @@ def _execute(participant: str, *, tenant_id, case, effect, actor_user_id=None):
         raise ExitParticipantUnavailable(
             f"{participant} provider URL/token is not configured"
         )
+    parsed = urlparse(url)
+    loopback = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    if (
+        not parsed.hostname
+        or parsed.scheme not in {"http", "https"}
+        or (parsed.scheme != "https" and not (settings.DEBUG and loopback))
+    ):
+        raise ExitParticipantUnavailable(
+            f"{participant} provider must use HTTPS (HTTP loopback is development-only)"
+        )
 
     body = json.dumps(
         _payload(
@@ -92,7 +103,9 @@ def _execute(participant: str, *, tenant_id, case, effect, actor_user_id=None):
         },
     )
     try:
-        with request.urlopen(outbound, timeout=timeout) as response:
+        # Scheme and production HTTPS enforcement are validated immediately
+        # above; custom/file schemes cannot reach this call.
+        with request.urlopen(outbound, timeout=timeout) as response:  # nosec B310
             raw = response.read()
     except error.HTTPError as exc:
         if exc.code == 429 or exc.code >= 500:

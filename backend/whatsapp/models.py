@@ -1,7 +1,9 @@
 from django.db import models
 from django.urls import reverse
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+from base.encrypted_fields import EncryptedTextField
 from base.horilla_company_manager import HorillaCompanyManager
 from base.models import Company
 from horilla.models import HorillaModel
@@ -9,15 +11,20 @@ from horilla_views.cbv_methods import render_template
 
 
 class WhatsappCredientials(HorillaModel):
-    meta_token = models.TextField()
+    meta_token = EncryptedTextField()
     meta_business_id = models.CharField(max_length=255)
     meta_phone_number_id = models.CharField(max_length=255)
     meta_phone_number = models.CharField(max_length=20)
     created_templates = models.BooleanField(default=False)
-    meta_webhook_token = models.CharField(
-        max_length=50,
+    meta_webhook_token = EncryptedTextField(
         verbose_name="Webhook Token",
         help_text=_("This token is used to connect webhook to the server"),
+    )
+    meta_app_secret = EncryptedTextField(
+        null=True,
+        blank=True,
+        verbose_name="Meta App Secret",
+        help_text=_("Required to verify signed webhook requests"),
     )
     company_id = models.ManyToManyField(Company, blank=True, verbose_name="Company")
     is_primary = models.BooleanField(default=False)
@@ -28,31 +35,11 @@ class WhatsappCredientials(HorillaModel):
         return f"WhatsApp Business {self.meta_business_id} ({self.meta_phone_number})"
 
     def token_render(self):
-
-        alert = """
-                    Swal.fire({
-                    text: "Token copied",
-                    icon: "success",
-                    showConfirmButton: false,
-                    timer: 2000,
-                    timerProgressBar: true,
-                    });
-                """
-
-        html = f"""
-        <span onclick="copyToken()" title={self.meta_token}>{self.meta_token[:20]}...</span>
-        <script>
-            function copyToken() {{
-                var token = "{self.meta_token}";
-                navigator.clipboard.writeText(token).then(function() {{
-                    {alert}
-                }}, function(err) {{
-                    console.error('Could not copy text: ', err);
-                }});
-            }}
-        </script>
-        """
-        return html
+        return format_html(
+            '<span title="{}">{}</span>',
+            _("Credential is encrypted and cannot be displayed"),
+            _("Stored securely"),
+        )
 
     def get_update_url(self):
         url = reverse("whatsapp-credential-update", kwargs={"pk": self.pk})
@@ -87,22 +74,11 @@ class WhatsappCredientials(HorillaModel):
         return url
 
     def get_webhook_token(self):
-        placeholder = "•" * len(self.meta_webhook_token)
-        html = f"""
-            <style>
-                .editable-span {{
-                    cursor: pointer;
-                }}
-                .editable-span::after {{
-                    content: '{placeholder}';
-                }}
-                .editable-span:hover::after {{
-                    content: '{self.meta_webhook_token}';
-                }}
-            </style>
-            <span class="editable-span"></span>
-            """
-        return html
+        return format_html(
+            '<span title="{}">{}</span>',
+            _("Credential is encrypted and cannot be displayed"),
+            _("Stored securely"),
+        )
 
 
 class WhatsappFlowDetails(models.Model):

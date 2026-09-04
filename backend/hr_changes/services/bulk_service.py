@@ -34,8 +34,19 @@ class BulkService:
         self.actor_user_id = actor_user_id
 
     # ------------------------------------------------------------------
+    @transaction.atomic
     def prevalidate(self, batch: HrBulkChangeBatch) -> dict:
         """PREVALIDATE_ALL：为每 item 创建 case 并校验（不提交审批）。"""
+        batch = HrBulkChangeBatch.objects.select_for_update().filter(
+            tenant_id=self.tenant_id, id=batch.id
+        ).first()
+        if batch is None:
+            raise BulkServiceError("CHANGE_NOT_FOUND", "批量任务不存在")
+        if batch.status not in {
+            HrBulkChangeBatch.Status.DRAFT,
+            HrBulkChangeBatch.Status.PREVALIDATED,
+        }:
+            raise BulkServiceError("CHANGE_BULK_STATE_CONFLICT", "当前批量任务状态不能预校验")
         items = list(batch.items.select_related("staff_master_id").order_by("sequence"))
         results = []
         for item in items:
@@ -90,6 +101,7 @@ class BulkService:
         return case
 
     # ------------------------------------------------------------------
+    @transaction.atomic
     def execute(
         self, batch_id, *, approve_first: bool = True,
     ) -> dict:
@@ -101,6 +113,10 @@ class BulkService:
         )
         if batch is None:
             raise BulkServiceError("CHANGE_NOT_FOUND", "批量任务不存在")
+        if batch.status != HrBulkChangeBatch.Status.PREVALIDATED:
+            raise BulkServiceError("CHANGE_BULK_STATE_CONFLICT", "批量任务必须先完成预校验")
+        batch.status = HrBulkChangeBatch.Status.APPLYING
+        batch.save(update_fields=["status", "updated_at"])
         items = list(batch.items.select_related("change_case_id").order_by("sequence"))
         results = []
         apply_service = ApplyService(self.tenant_id, actor_user_id=self.actor_user_id)

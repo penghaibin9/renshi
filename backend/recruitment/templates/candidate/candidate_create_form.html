@@ -125,12 +125,11 @@
               />
               {% if form.instance.id %}
               <div class="d-flex justify-content-center">
-                <a
-                  class="oh-btn oh-btn--light-danger mr-1"
-                  href="{% url 'delete-profile-image' form.instance.id %}"
-                >
+                <form method="post" action="{% url 'delete-profile-image' form.instance.id %}">
+                  {% csrf_token %}<button type="submit" class="oh-btn oh-btn--light-danger mr-1">
                   <ion-icon class="me-1" name="trash-outline"></ion-icon>{% trans "Delete Image" %}
-                </a>
+                  </button>
+                </form>
               </div>
               {% endif %}
             </div>

@@ -6,11 +6,11 @@ from django.shortcuts import render
 from django.utils.decorators import method_decorator
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from base.backends import ConfiguredEmailBackend
 from base.methods import eval_validate
+from base.pdf import PDFRenderError, render_html_to_pdf
 from payroll.filters import (
     AllowanceFilter,
     ContractFilter,
@@ -412,18 +412,10 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 # Your models / helpers
-from payroll.models.models import Company, EmployeeWorkInformation, Payslip
+from payroll.models.models import Company, EmployeeWorkInformation
 from payroll.models.tax_models import PayrollSettings
 from payroll.views.component_views import filter_payslip
 from payroll.views.views import equalize_lists_length
-
-try:
-    import pdfkit
-
-    HAVE_PDFKIT = True
-except Exception:
-    HAVE_PDFKIT = False
-
 
 class PayslipPDFAPIView(APIView):
     """
@@ -536,28 +528,17 @@ class PayslipPDFAPIView(APIView):
             "payroll/payslip/payslip_pdf.html", context=data, request=request
         )
 
-        # If client asked for PDF and pdfkit is available -> return PDF
+        # PDF generation stays in-process and never receives browser cookies.
         requested_format = request.GET.get("format", "").lower()
         if requested_format == "pdf":
-            if not HAVE_PDFKIT:
-                return Response(
-                    {
-                        "detail": "PDF generation not available on server. Install pdfkit/wkhtmltopdf."
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
             try:
-                # optional: configure pdfkit with path if needed
-                pdf_options = {
-                    "enable-local-file-access": None,  # if your template references local CSS
-                }
-                pdf_bytes = pdfkit.from_string(html, False, options=pdf_options)
+                pdf_bytes = render_html_to_pdf(html)
                 response = HttpResponse(pdf_bytes, content_type="application/pdf")
                 response["Content-Disposition"] = f'inline; filename="payslip-{id}.pdf"'
                 return response
-            except Exception as e:
+            except (PDFRenderError, TypeError):
                 return Response(
-                    {"detail": f"PDF generation failed: {str(e)}"},
+                    {"detail": "PDF generation failed."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
 

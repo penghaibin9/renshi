@@ -124,6 +124,18 @@ class BootstrapDataSelector:
 
     def identity_options(self) -> dict:
         """只暴露 HR03 受控枚举；浏览器不自行维护机器值。"""
+        from hr_structure.models import HrOrganizationVersion
+
+        location_codes = list(
+            HrOrganizationVersion.objects.filter(
+                tenant_id=self.tenant_id,
+                status="EFFECTIVE",
+            )
+            .exclude(location_code="")
+            .order_by("location_code")
+            .values_list("location_code", flat=True)
+            .distinct()[:300]
+        )
         return {
             "staffCategories": [
                 {"code": code, "label": staff_category_label(code)}
@@ -136,6 +148,9 @@ class BootstrapDataSelector:
             "employmentTypes": [
                 {"code": code, "label": employment_type_label(code)}
                 for code, _ in EmploymentType.choices
+            ],
+            "workLocations": [
+                {"code": code, "label": code} for code in location_codes
             ],
         }
 

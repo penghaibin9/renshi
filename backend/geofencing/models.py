@@ -1,6 +1,5 @@
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from geopy.geocoders import Nominatim
 
@@ -45,12 +44,3 @@ class GeoFencing(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()  # Run clean before save
         super().save(*args, **kwargs)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["company_id"],
-                name="unique_company_id_when_not_null_geofencing",
-                condition=~Q(company_id=None),
-            )
-        ]

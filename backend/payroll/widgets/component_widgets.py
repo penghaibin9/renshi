@@ -3,9 +3,9 @@ Custom form widgets for conditional visibility and styling.
 """
 
 from django import forms
-from django.utils.safestring import SafeText, mark_safe
-
-from horilla import settings
+from django.templatetags.static import static
+from django.utils.html import format_html
+from django.utils.safestring import SafeText
 
 
 class AllowanceConditionalVisibility(forms.Widget):
@@ -20,20 +20,18 @@ class AllowanceConditionalVisibility(forms.Widget):
 
     def render(self, name, value, attrs=None, renderer=None):
         # Exclude the label from the rendered HTML
-        rendered_script = (
-            f'<script src="/{settings.STATIC_URL}build/js/allowanceWidget.js"></script>'
-        )
-        additional_script = f"""
-        <script id="{name}Script">
-            $(document).ready(function () {{
-                $("[for='id_{name}']").remove()
-                $("#{name}Script").remove()
-            }});
-        </script>
-        """
         attrs = attrs or {}
         attrs["required"] = False
-        return mark_safe(rendered_script + additional_script)
+        return format_html(
+            '<script src="{}"></script>'
+            '<script id="{}Script">$(document).ready(function () {{'
+            '$("[for=\'id_{}\']").remove();'
+            '$("#{}Script").remove();}});</script>',
+            static("build/js/allowanceWidget.js"),
+            name,
+            name,
+            name,
+        )
 
 
 class DeductionConditionalVisibility(forms.Widget):
@@ -48,20 +46,18 @@ class DeductionConditionalVisibility(forms.Widget):
 
     def render(self, name, value, attrs, renderer) -> SafeText:
         # Exclude the label from the rendered HTML
-        rendered_script = (
-            f'<script src="/{settings.STATIC_URL}build/js/deductionWidget.js"></script>'
-        )
-        additional_script = f"""
-        <script id="{name}Script">
-            $(document).ready(function () {{
-                $("[for='id_{name}']").remove()
-                $("#{name}Script").remove()
-            }});
-        </script>
-        """
         attrs = attrs or {}
         attrs["required"] = False
-        return mark_safe(rendered_script + additional_script)
+        return format_html(
+            '<script src="{}"></script>'
+            '<script id="{}Script">$(document).ready(function () {{'
+            '$("[for=\'id_{}\']").remove();'
+            '$("#{}Script").remove();}});</script>',
+            static("build/js/deductionWidget.js"),
+            name,
+            name,
+            name,
+        )
 
 
 class StyleWidget(forms.Widget):
@@ -99,14 +95,13 @@ class StyleWidget(forms.Widget):
         Returns:
             str: The rendered HTML representation of the widget.
         """
-        rendered_script = (
-            f'<script src="/{settings.STATIC_URL}build/js/styleWidget.js"></script>'
-        )
-        additional_script = f"""
-        <script id="{name}Script">
+        script_url = static("build/js/styleWidget.js")
+        stylesheet_url = static("build/css/styleWidget.css")
+        additional_script = """
+        <script id="{}Script">
             $(document).ready(function () {{
-                $("[for='id_{name}']").remove()
-                $("#{name}Script").remove()
+                $("[for='id_{}']").remove()
+                $("#{}Script").remove()
                 // Select all select elements with select2 initialized
                 var selects = $("select[data-widget='style-widget']").select2();
                 function toggleSelect2() {{
@@ -127,8 +122,15 @@ class StyleWidget(forms.Widget):
                 toggleSelect2();
             }});
         </script>
-        <link rel="stylesheet" type="text/css" href="/{settings.STATIC_URL}build/css/styleWidget.css">
+        <link rel="stylesheet" type="text/css" href="{}">
         """
         attrs = attrs or {}
         attrs["required"] = False
-        return mark_safe(rendered_script + additional_script)
+        return format_html(
+            '<script src="{}"></script>' + additional_script,
+            script_url,
+            name,
+            name,
+            name,
+            stylesheet_url,
+        )

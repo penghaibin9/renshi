@@ -13,6 +13,8 @@ hr_staff/selectors/profile.py —— HR03-02 主档 Profile bootstrap（S5，只
 from __future__ import annotations
 
 from datetime import date
+
+from django.utils import timezone
 from typing import Optional
 
 from django.db.models import Q
@@ -34,7 +36,7 @@ class ProfileSelector:
     def __init__(self, context: HrStaffRequestContext):
         self.context = context
         self.tenant_id = context.tenant_id
-        self.as_of = context.as_of or date.today()
+        self.as_of = context.as_of or timezone.localdate()
         self.qs = EffectiveDatedQueryService(self.tenant_id)
 
     def get_staff_or_deny(self, staff_id) -> HrStaffMaster:

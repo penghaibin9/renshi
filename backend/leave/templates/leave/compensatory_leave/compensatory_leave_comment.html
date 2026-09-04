@@ -73,7 +73,7 @@
                     <span
                         class="float-end"
                         title="{% trans 'Delete' %}"
-                        hx-get="{% url 'compensatory-request-delete-comment' comment.id %}?compensatory=True"
+                        hx-post="{% url 'compensatory-request-delete-comment' comment.id %}?compensatory=True"
                         data-target="#leaveactivitySidebar"
                         hx-swap="innerHTML"
                         hx-target="#commentContainer"
@@ -101,7 +101,8 @@
                             ><img
                                     src="{% static 'images/ui/minus-icon.png' %}"
                                     style="display: block; width: 50%; height: 50%"
-                                    hx-get="{% url 'delete-compensatory-comment-file' %}?ids={{ file.id }}&leave_id={{ request_id }}&compensatory=True"
+                                    hx-post="{% url 'delete-compensatory-comment-file' %}"
+                                    hx-vals='{"ids":"{{ file.id }}","leave_id":"{{ request_id }}","comment_id":"{{ comment.id }}","compensatory":"true"}'
                                     hx-target="#commentContainer"
                                     onclick="event.stopPropagation();event.preventDefault()"
                                 ></span></a>

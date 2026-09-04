@@ -15,7 +15,7 @@ from hr10_development.providers.base import (
     ProviderResult,
     ProviderStatus,
 )
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.db import DatabaseError
 from django.db.models import Q
@@ -250,6 +250,13 @@ class Hr11DevelopmentTimeProvider(DevelopmentTimeProvider):
         from hr10_development.models.practice_models import HrEnterprisePracticeAssignment
 
         windows = []
+        current_tz = timezone.get_current_timezone()
+        period_start_at = timezone.make_aware(
+            datetime.combine(period_start, time.min), current_tz
+        )
+        period_end_exclusive = timezone.make_aware(
+            datetime.combine(period_end + timedelta(days=1), time.min), current_tz
+        )
 
         # Training enrollments
         enrollments = HrLearningEnrollment.objects.filter(
@@ -260,10 +267,11 @@ class Hr11DevelopmentTimeProvider(DevelopmentTimeProvider):
 
         if enrollments:
             offerings = HrLearningOffering.objects.filter(
+                tenant_id=tenant_id,
                 id__in=list(enrollments),
-                start_at__gte=period_start,
-                end_at__lte=period_end,
-            )
+                start_at__isnull=False,
+                start_at__lt=period_end_exclusive,
+            ).filter(Q(end_at__isnull=True) | Q(end_at__gte=period_start_at))
             for o in offerings:
                 windows.append({
                     "type": "AUTHORIZED_TRAINING",
@@ -277,7 +285,9 @@ class Hr11DevelopmentTimeProvider(DevelopmentTimeProvider):
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             assignment_status__in=["IN_PROGRESS", "COMPLETED"],
-        )
+            started_at__isnull=False,
+            started_at__lt=period_end_exclusive,
+        ).filter(Q(completed_at__isnull=True) | Q(completed_at__gte=period_start_at))
         for a in assignments:
             windows.append({
                 "type": "ENTERPRISE_PRACTICE",

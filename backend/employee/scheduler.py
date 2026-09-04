@@ -10,6 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from horilla.horilla_middlewares import tenant_context
+from base.worker_health import write_worker_heartbeat
 
 
 def _for_each_company(job):
@@ -108,6 +109,16 @@ def block_unblock_disciplinary_all_tenants():
 def build_scheduler(*, blocking=False):
     scheduler_cls = BlockingScheduler if blocking else BackgroundScheduler
     scheduler = scheduler_cls(timezone="UTC")
+    scheduler.add_job(
+        write_worker_heartbeat,
+        "interval",
+        args=("employee-scheduler",),
+        seconds=30,
+        id="runtime.employee_scheduler_heartbeat",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.add_job(
         update_experience_all_tenants,
         "interval",

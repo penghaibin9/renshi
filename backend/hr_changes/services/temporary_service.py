@@ -83,17 +83,28 @@ class TemporaryAssignmentService:
                 "CHANGE_INVALID_ACTION",
                 "当前仅开放原岗保持有效（KEEP_ACTIVE）策略",
             )
-        if target_position_id not in (None, ""):
-            raise TemporaryServiceError(
-                "CHANGE_INVALID_ACTION",
-                "借调挂职目标岗位预占尚未开放，请仅选择目标组织",
-            )
         if target_org_id in (None, ""):
             raise TemporaryServiceError(
                 "CHANGE_INVALID_PAYLOAD",
                 "借调挂职必须选择 HR02 目标组织",
             )
         target_org_ref = getattr(target_org_id, "pk", target_org_id)
+        target_position = None
+        if target_position_id not in (None, ""):
+            from hr_structure.models import HrPosition
+
+            target_position_ref = getattr(target_position_id, "pk", target_position_id)
+            target_position = HrPosition.objects.filter(
+                tenant_id=self.tenant_id,
+                id=target_position_ref,
+                organization_id_id=target_org_ref,
+                lifecycle_status="ACTIVE",
+            ).first()
+            if target_position is None:
+                raise TemporaryServiceError(
+                    "CHANGE_TARGET_POSITION_INVALID",
+                    "临时岗位必须属于所选单位且处于在用状态",
+                )
 
         effective_at = _parse_effective_date(requested_effective_at)
         return_at = _parse_effective_date(expected_return_at)
@@ -105,7 +116,7 @@ class TemporaryAssignmentService:
         staff_id = getattr(staff_master_id, "pk", staff_master_id)
         source_assignment = EffectiveDatedQueryService(
             self.tenant_id
-        ).primary_assignment_as_of(staff_id, date.today())
+        ).primary_assignment_as_of(staff_id, timezone.localdate())
         if source_assignment is None:
             raise ChangeServiceError(
                 "CHANGE_SOURCE_ASSIGNMENT_MISMATCH",
@@ -136,11 +147,30 @@ class TemporaryAssignmentService:
                     "field_code": "source_policy",
                     "proposed_value_ref": SourceAssignmentPolicy.KEEP_ACTIVE,
                 },
+                *(
+                    [
+                        {
+                            "domain": "assignment",
+                            "field_code": "position",
+                            "proposed_value_ref": str(target_position.id),
+                            "proposed_value_display": target_position.position_code,
+                        },
+                        {
+                            "domain": "assignment",
+                            "field_code": "post_catalog",
+                            "proposed_value_ref": str(target_position.post_catalog_version_id_id),
+                            "proposed_value_display": target_position.post_catalog_version_id.name,
+                        },
+                    ]
+                    if target_position
+                    else []
+                ),
             ],
             source_org_id=source_assignment.organization_id,
             source_position_id=source_assignment.position_id,
             source_assignment_id=source_assignment,
             target_org_id=target_org_id,
+            target_position_id=target_position,
             priority=priority,
         )
 
@@ -226,7 +256,7 @@ class TemporaryAssignmentService:
     # 到期/超期检测
     # ------------------------------------------------------------------
     def due_soon(self, days: int = 30, as_of: Optional[date] = None) -> list:
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         horizon = as_of + timedelta(days=days)
         return list(
             HrTemporaryAssignmentLink.objects.filter(
@@ -238,7 +268,7 @@ class TemporaryAssignmentService:
         )
 
     def overdue(self, as_of: Optional[date] = None) -> list:
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         return list(
             HrTemporaryAssignmentLink.objects.filter(
                 tenant_id=self.tenant_id,

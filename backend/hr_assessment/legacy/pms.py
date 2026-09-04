@@ -10,6 +10,14 @@
 from __future__ import annotations
 
 
+def _employee_objective_model():
+    """Resolve legacy PMS only when migration evidence is requested."""
+
+    from pms.models import EmployeeObjective
+
+    return EmployeeObjective
+
+
 class PmsLegacyObjectiveAdapter:
     def __init__(self, tenant_id: int):
         if not tenant_id:
@@ -17,7 +25,7 @@ class PmsLegacyObjectiveAdapter:
         self.tenant_id = tenant_id
 
     def list_employee_objectives(self, *, legacy_employee_id: int, limit: int = 500) -> list[dict]:
-        from pms.models import EmployeeObjective
+        EmployeeObjective = _employee_objective_model()
 
         safe_limit = max(1, min(int(limit), 1000))
         rows = (

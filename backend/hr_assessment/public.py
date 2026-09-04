@@ -9,12 +9,13 @@ the requested as-of date.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
 from django.db.models import Prefetch
+from django.utils import timezone
 
 from hr_assessment.models.case import HrAssessmentCase
 from hr_assessment.models.result import (
@@ -25,6 +26,18 @@ from hr_assessment.models.result import (
 from hr_staff.models import HrStaffMaster
 
 PROVIDER_VERSION = "hr12-final-assessment-v2"
+
+
+def _as_of_exclusive_boundary(as_of: date) -> datetime:
+    """Return the first instant after ``as_of`` in the school timezone.
+
+    Comparing the raw timestamp against this Python-computed boundary avoids
+    MySQL ``CONVERT_TZ`` and therefore does not depend on optional server time
+    zone tables being populated.
+    """
+
+    local_midnight = datetime.combine(as_of + timedelta(days=1), time.min)
+    return timezone.make_aware(local_midnight, timezone.get_default_timezone())
 
 
 class AssessmentEvidenceUnavailable(Exception):
@@ -299,6 +312,7 @@ def list_finalized_assessment_evidence(
         person_id=person_id,
         staff_id=staff_id,
     )
+    as_of_end = _as_of_exclusive_boundary(as_of)
     case_ids = HrAssessmentCase.objects.filter(
         tenant_id=tenant_id,
         staff_id=staff.id,
@@ -308,14 +322,14 @@ def list_finalized_assessment_evidence(
         case_id__in=case_ids,
         status="FINALIZED",
         finalized_at__isnull=False,
-        finalized_at__date__lte=as_of,
+        finalized_at__lt=as_of_end,
     ).prefetch_related(
         Prefetch(
             "revisions",
             queryset=HrResultRevision.objects.filter(
                 tenant_id=tenant_id,
                 effective_at__isnull=False,
-                effective_at__date__lte=as_of,
+                effective_at__lt=as_of_end,
             ).order_by("-new_version", "-effective_at", "-id"),
             to_attr="effective_revisions",
         )
@@ -343,13 +357,14 @@ def get_finalized_assessment_evidence(
         as_of=as_of,
         source_version=source_version,
     )
+    as_of_end = _as_of_exclusive_boundary(as_of)
     result = (
         HrFinalAssessmentResult.objects.filter(
             tenant_id=tenant_id,
             id=result_id,
             status="FINALIZED",
             finalized_at__isnull=False,
-            finalized_at__date__lte=as_of,
+            finalized_at__lt=as_of_end,
         )
         .prefetch_related(
             Prefetch(
@@ -357,7 +372,7 @@ def get_finalized_assessment_evidence(
                 queryset=HrResultRevision.objects.filter(
                     tenant_id=tenant_id,
                     effective_at__isnull=False,
-                    effective_at__date__lte=as_of,
+                    effective_at__lt=as_of_end,
                 ).order_by("-new_version", "-effective_at", "-id"),
                 to_attr="effective_revisions",
             )

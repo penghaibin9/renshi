@@ -49,6 +49,8 @@ from hr_assessment.models.case import (
     HrAssessmentPublicityCase,
 )
 from hr_assessment.models.result import (
+    HrAssessmentDecisionSession,
+    HrAssessmentDocument,
     HrCalibrationSession,
     HrFinalAssessmentResult,
     HrResultNotice,
@@ -57,6 +59,7 @@ from hr_assessment.models.result import (
     HrAssessmentArchivePackage,
     HrResultApplicationLedger,
 )
+from hr_assessment.models.legacy import HrAssessmentCutoverEvent
 
 
 @admin.register(HrAssessmentPolicyPack)
@@ -211,6 +214,16 @@ class ReviewerEvaluationAdmin(admin.ModelAdmin):
     list_display = ("assignment", "recommendation", "submitted_at", "revision_no")
     readonly_fields = ("submitted_at",)
 
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.submitted_at is not None:
+            return tuple(field.name for field in obj._meta.concrete_fields)
+        return super().get_readonly_fields(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.submitted_at is not None:
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(HrQuestionnaireVersion)
 class QuestionnaireAdmin(admin.ModelAdmin):
@@ -267,6 +280,43 @@ class CalibrationSessionAdmin(admin.ModelAdmin):
     list_filter = ("session_status",)
 
 
+@admin.register(HrAssessmentDecisionSession)
+class DecisionSessionAdmin(admin.ModelAdmin):
+    list_display = ("id", "cycle_id", "meeting_at", "status", "confidentiality")
+    list_filter = ("status", "confidentiality")
+    readonly_fields = ("minutes_document_ref",)
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.status == "COMPLETED":
+            return tuple(field.name for field in obj._meta.concrete_fields)
+        return super().get_readonly_fields(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.status == "COMPLETED":
+            return False
+        return super().has_delete_permission(request, obj)
+
+
+@admin.register(HrAssessmentDocument)
+class AssessmentDocumentAdmin(admin.ModelAdmin):
+    list_display = ("original_filename", "document_type", "related_object_id", "size_bytes", "status", "sealed_at")
+    list_filter = ("document_type", "status")
+    readonly_fields = (
+        "tenant_id", "document_type", "related_object_type", "related_object_id",
+        "storage_key", "original_filename", "content_type", "size_bytes", "sha256",
+        "uploaded_by", "sealed_at", "status", "created_at", "updated_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(HrFinalAssessmentResult)
 class FinalResultAdmin(admin.ModelAdmin):
     list_display = ("case_id", "assessment_type", "grade_code", "result_version_no", "status", "finalized_at")
@@ -303,3 +353,35 @@ class ArchivePackageAdmin(admin.ModelAdmin):
 class ApplicationLedgerAdmin(admin.ModelAdmin):
     list_display = ("consumer_domain", "purpose", "result_version", "consumer_status")
     list_filter = ("consumer_domain",)
+
+
+@admin.register(HrAssessmentCutoverEvent)
+class AssessmentCutoverEventAdmin(admin.ModelAdmin):
+    list_display = (
+        "tenant_id",
+        "phase",
+        "authority_mode",
+        "operator",
+        "occurred_at",
+    )
+    list_filter = ("tenant_id", "phase", "authority_mode")
+    readonly_fields = (
+        "tenant_id",
+        "phase",
+        "previous_phase",
+        "authority_mode",
+        "operator",
+        "reason",
+        "verification_report_id",
+        "source_snapshot_hash",
+        "occurred_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

@@ -70,7 +70,7 @@
                     <span
                         class="float-end"
                         title="{% trans 'delete' %}"
-                        hx-get="{% url 'delete-interview' interview.id %}?view=false"
+                        hx-post="{% url 'delete-interview' interview.id %}?view=false"
                         data-target="#activitySidebar"
                         hx-swap="innerHTML"
                         hx-target="#interview"

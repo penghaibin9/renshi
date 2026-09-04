@@ -8,6 +8,7 @@ from urllib.parse import parse_qs
 from django.conf import settings
 from django.contrib import messages
 from django.core import serializers
+from django.db import transaction
 from django.db.models import ProtectedError
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -15,7 +16,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from base.forms import TagsForm
 from base.methods import (
@@ -93,6 +94,26 @@ logger = logging.getLogger(__name__)
 
 def strtobool(val):
     return str(val).lower() in ("y", "yes", "t", "true", "on", "1")
+
+
+def _notify_after_commit(sender, **kwargs):
+    def send_notification():
+        try:
+            notify.send(sender, **kwargs)
+        except Exception:
+            logger.exception("Helpdesk notification delivery failed")
+
+    transaction.on_commit(send_notification)
+
+
+def _start_thread_after_commit(thread):
+    def start_thread():
+        try:
+            thread.start()
+        except Exception:
+            logger.exception("Helpdesk mail thread failed to start")
+
+    transaction.on_commit(start_thread)
 
 
 @login_required
@@ -176,9 +197,11 @@ def faq_category_update(request, id):
 
 @login_required
 @permission_required("helpdesk.delete_faqcategory")
+@require_POST
+@transaction.atomic
 def faq_category_delete(request, id):
     try:
-        faq = FAQCategory.objects.get(id=id)
+        faq = FAQCategory.objects.select_for_update().get(id=id)
         faq.delete()
         messages.success(request, _("The FAQ category has been deleted successfully."))
         return HttpResponse("")
@@ -389,9 +412,11 @@ def faq_suggestion(request):
 
 @login_required
 @permission_required("helpdesk.delete_faq")
+@require_POST
+@transaction.atomic
 def faq_delete(request, id):
     try:
-        faq = FAQ.objects.get(id=id)
+        faq = FAQ.objects.select_for_update().get(id=id)
         faq.delete()
         messages.success(
             request, _('The FAQ "{}" has been deleted successfully.').format(faq)
@@ -402,7 +427,7 @@ def faq_delete(request, id):
         message = _("No FAQ found matching the query.")
 
     except ProtectedError:
-        messages = _("You cannot delete this FAQ.")
+        message = _("You cannot delete this FAQ.")
 
     return HorillaRedirect(request, message=message)
 
@@ -573,6 +598,8 @@ def ticket_update(request, ticket_id):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def ticket_archive(request, ticket_id):
     """
     This function is responsible for archiving the Ticket.
@@ -584,7 +611,7 @@ def ticket_archive(request, ticket_id):
         return Ticket view
     """
 
-    ticket = Ticket.find(ticket_id)
+    ticket = Ticket.objects.select_for_update().filter(id=ticket_id).first()
     if not ticket:
         return HorillaRedirect(
             request, message=_("No Ticket found matching the query.")
@@ -599,7 +626,7 @@ def ticket_archive(request, ticket_id):
 
         # Toggle the ticket's active state
         ticket.is_active = not ticket.is_active
-        ticket.save()
+        ticket.save(update_fields=["is_active"])
 
         messsage = (
             _("The Ticket un-archived successfully.")
@@ -614,16 +641,20 @@ def ticket_archive(request, ticket_id):
 
 @login_required
 @ticket_owner_can_enter(perm="helpdesk.change_ticket", model=Ticket)
+@require_POST
+@transaction.atomic
 def ticket_status_change(request, ticket_id):
-    if request.method != "POST":
-        messages.error(request, _("Invalid request method."))
-        return HttpResponse("error")
-    ticket = Ticket.objects.get(id=ticket_id)
+    ticket = Ticket.objects.select_for_update().get(id=ticket_id)
     status = request.POST.get("status")
+    allowed_statuses = {value for value, _label in TICKET_STATUS}
+    if status not in allowed_statuses:
+        return HttpResponse(_("Invalid ticket status."), status=400)
     ticket.status = status
     if ticket.status == "resolved":
         ticket.resolved_date = datetime.today()
-    ticket.save()
+    else:
+        ticket.resolved_date = None
+    ticket.save(update_fields=["status", "resolved_date"])
 
     employees = ticket.assigned_to.all()
     assignees = [employee.employee_user_id for employee in employees]
@@ -632,7 +663,7 @@ def ticket_status_change(request, ticket_id):
         if ticket.get_raised_on_object().dept_manager.all():
             manager = ticket.get_raised_on_object().dept_manager.all().first().manager
             assignees.append(manager.employee_user_id)
-    notify.send(
+    _notify_after_commit(
         request.user.employee_get,
         recipient=assignees,
         verb=f"The status of the ticket has been changed to {ticket.status}.",
@@ -648,7 +679,7 @@ def ticket_status_change(request, ticket_id):
         ticket,
         type="status_change",
     )
-    mail_thread.start()
+    _start_thread_after_commit(mail_thread)
     messages.success(request, _("The Ticket status updated successfully."))
     return HttpResponse("success")
 
@@ -656,6 +687,8 @@ def ticket_status_change(request, ticket_id):
 @login_required
 @hx_request_required
 # @ticket_owner_can_enter(perm="helpdesk.change_ticket", model=Ticket)
+@require_POST
+@transaction.atomic
 def change_ticket_status(request, ticket_id):
     """
     This function is responsible for changing the Ticket status.
@@ -667,7 +700,7 @@ def change_ticket_status(request, ticket_id):
     Returns:
         return Ticket view
     """
-    ticket = Ticket.find(ticket_id)
+    ticket = Ticket.objects.select_for_update().filter(pk=ticket_id).first()
     if not ticket:
         response = {
             "type": "danger",
@@ -677,6 +710,9 @@ def change_ticket_status(request, ticket_id):
 
     pre_status = ticket.get_status_display()
     status = request.POST.get("status")
+    allowed_statuses = {value for value, _label in TICKET_STATUS}
+    if status not in allowed_statuses:
+        return JsonResponse({"message": _("Invalid ticket status.")}, status=400)
     user = request.user.employee_get
     if (
         user == ticket.employee_id
@@ -687,7 +723,9 @@ def change_ticket_status(request, ticket_id):
             ticket.status = status
             if ticket.status == "resolved":
                 ticket.resolved_date = datetime.today()
-            ticket.save()
+            else:
+                ticket.resolved_date = None
+            ticket.save(update_fields=["status", "resolved_date"])
             time = datetime.now()
             time = time.strftime("%b. %d, %Y, %I:%M %p")
             response = {
@@ -707,23 +745,28 @@ def change_ticket_status(request, ticket_id):
                         ticket.get_raised_on_object().dept_manager.all().first().manager
                     )
                     assignees.append(manager.employee_user_id)
-            notify.send(
-                request.user.employee_get,
-                recipient=assignees,
-                verb=f"The status of the ticket has been changed to {ticket.status}.",
-                verb_ar="تم تغيير حالة التذكرة.",
-                verb_de="Der Status des Tickets wurde geändert.",
-                verb_es="El estado del ticket ha sido cambiado.",
-                verb_fr="Le statut du ticket a été modifié.",
-                icon="infinite",
-                redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
-            )
             mail_thread = TicketSendThread(
                 request,
                 ticket,
                 type="status_change",
             )
-            mail_thread.start()
+
+            def dispatch_status_change():
+                try:
+                    notify.send(
+                        request.user.employee_get,
+                        recipient=assignees,
+                        verb=f"The status of the ticket has been changed to {ticket.status}.",
+                        icon="infinite",
+                        redirect=reverse(
+                            "ticket-detail", kwargs={"ticket_id": ticket.id}
+                        ),
+                    )
+                except Exception:
+                    logger.exception("Ticket status notification failed")
+                mail_thread.start()
+
+            transaction.on_commit(dispatch_status_change)
         else:
             response = {"errors": "noChange"}
     else:
@@ -737,6 +780,8 @@ def change_ticket_status(request, ticket_id):
 
 @login_required
 @ticket_owner_can_enter(perm="helpdesk.delete_ticket", model=Ticket)
+@require_POST
+@transaction.atomic
 def ticket_delete(request, ticket_id):
     """
     This function is responsible for deleting the Ticket.
@@ -749,14 +794,13 @@ def ticket_delete(request, ticket_id):
     return Ticket view
     """
     try:
-        ticket = Ticket.objects.get(id=ticket_id)
+        ticket = Ticket.objects.select_for_update().get(id=ticket_id)
         if ticket.status == "new":
             mail_thread = TicketSendThread(
                 request,
                 ticket,
                 type="delete",
             )
-            mail_thread.start()
             employees = ticket.assigned_to.all()
             assignees = [employee.employee_user_id for employee in employees]
             assignees.append(ticket.employee_id.employee_user_id)
@@ -766,7 +810,7 @@ def ticket_delete(request, ticket_id):
                         ticket.get_raised_on_object().dept_manager.all().first().manager
                     )
                     assignees.append(manager.employee_user_id)
-            notify.send(
+            _notify_after_commit(
                 request.user.employee_get,
                 recipient=assignees,
                 verb=f"The ticket has been deleted.",
@@ -778,6 +822,7 @@ def ticket_delete(request, ticket_id):
                 redirect=reverse("ticket-view"),
             )
             ticket.delete()
+            _start_thread_after_commit(mail_thread)
             messages.success(
                 request,
                 _('The Ticket "{}" has been deleted successfully.').format(ticket),
@@ -1166,23 +1211,33 @@ def create_tag(request):
 
 @login_required
 @hx_request_required
+@require_POST
+@transaction.atomic
 def remove_tag(request):
     """
     This is an ajax method to  remove tag from a ticket.
     """
 
-    data = request.GET
+    data = request.POST
     ticket_id = data.get("ticket_id")
     tag_id = data.get("tag_id")
     try:
-        ticket = Ticket.objects.get(id=ticket_id)
-        tag = Tags.objects.get(id=tag_id)
+        ticket = Ticket.objects.select_for_update().get(id=ticket_id)
+        employee = request.user.employee_get
+        if not (
+            request.user.has_perm("helpdesk.change_ticket")
+            or ticket.employee_id == employee
+            or employee in ticket.assigned_to.all()
+            or is_department_manager(request, ticket)
+        ):
+            return handle_no_permission(request)
+        tag = ticket.tags.select_for_update().get(id=tag_id)
         ticket.tags.remove(tag)
         # message = messages.success(request,_("Success"))
         message = _("success")
         type = "success"
-    except:
-        message = messages.error(request, _("Failed"))
+    except (Ticket.DoesNotExist, Tags.DoesNotExist, ValueError):
+        message = _("Failed")
         type = "failed"
 
     return JsonResponse({"message": message, "type": type})
@@ -1210,7 +1265,6 @@ def can_access_ticket(request, ticket):
 
 @login_required
 @hx_request_required
-@ticket_owner_can_enter(perm="helpdesk.view_ticket", model=Ticket)
 def view_ticket_document(request, doc_id):
     """
     This function used to view the uploaded document in the modal.
@@ -1259,7 +1313,8 @@ def view_ticket_document(request, doc_id):
 
 @login_required
 @hx_request_required
-@ticket_owner_can_enter(perm="helpdesk.view_ticket", model=Ticket)
+@require_POST
+@transaction.atomic
 def delete_ticket_document(request, doc_id):
     """
     This function used to delete the uploaded document in the modal.
@@ -1269,7 +1324,7 @@ def delete_ticket_document(request, doc_id):
     id (int): The id of the document.
 
     """
-    document_obj = Attachment.find(doc_id)
+    document_obj = Attachment.objects.select_for_update().filter(id=doc_id).first()
     if document_obj is None:
         return HorillaRedirect(
             request, message=_("No Attachment found matching the query.")
@@ -1278,7 +1333,14 @@ def delete_ticket_document(request, doc_id):
     ticket = document_obj.ticket or (
         document_obj.comment.ticket if document_obj.comment else None
     )
-    if not can_access_ticket(request, ticket):
+    employee = request.user.employee_get
+    comment_owner = document_obj.comment and document_obj.comment.employee_id == employee
+    if not (
+        request.user.has_perm("helpdesk.delete_attachment")
+        or ticket.employee_id == employee
+        or is_department_manager(request, ticket)
+        or comment_owner
+    ):
         return HorillaRedirect(
             request, message=_("You do not have permission to delete the documents.")
         )
@@ -1351,12 +1413,14 @@ def comment_create(request, ticket_id):
 @login_required
 @hx_request_required
 @ticket_owner_can_enter(perm="helpdesk.change_comment", model=Comment)
+@require_POST
+@transaction.atomic
 def comment_edit(request):
-    comment_id = request.GET.get("comment_id")
+    comment_id = request.POST.get("comment_id")
     new_comment = request.POST.get("new_comment")
 
     if new_comment and len(new_comment) > 1:
-        comment = Comment.objects.get(id=comment_id)
+        comment = Comment.objects.select_for_update().get(id=comment_id)
 
         if not (
             request.user.has_perm("helpdesk.change_claimrequest")
@@ -1385,8 +1449,10 @@ def comment_edit(request):
 
 @login_required
 @ticket_owner_can_enter(perm="helpdesk.delete_comment", model=Comment)
+@require_POST
+@transaction.atomic
 def comment_delete(request, comment_id):
-    comment = Comment.find(comment_id)
+    comment = Comment.objects.select_for_update().filter(id=comment_id).first()
     if not comment:
         return HorillaRedirect(
             request, message=_("No Comment found matching the query.")
@@ -1436,45 +1502,62 @@ def get_raised_on(request):
 
 
 @login_required
+@require_POST
+@transaction.atomic
 def claim_ticket(request, id):
     """
     This is a function to create a claim request for requested employee
     """
-    ticket = Ticket.find(id)
+    ticket = Ticket.objects.select_for_update().filter(id=id).first()
     if not ticket:
         return HorillaRedirect(
             request, message=_("No Ticket found matching the query.")
         )
 
-    if not ClaimRequest.objects.filter(
+    can_claim = request.user.has_perm("helpdesk.change_ticket")
+    if not can_claim:
+        try:
+            can_claim = get_allocated_tickets(request).filter(id=ticket.id).exists()
+        except (AttributeError, TypeError):
+            can_claim = False
+    if not can_claim:
+        return handle_no_permission(request)
+
+    ClaimRequest.objects.get_or_create(
         employee_id=request.user.employee_get, ticket_id=ticket
-    ).exists():
-        ClaimRequest(employee_id=request.user.employee_get, ticket_id=ticket).save()
+    )
     return HorillaRedirect(request)
 
 
 @login_required
-@ticket_owner_can_enter(perm="helpdesk.change_ticket", model=Ticket)
+@require_POST
+@transaction.atomic
 def approve_claim_request(request, req_id):
     """
     Function for approve claim request and send notifications to the responsibles.
     """
-    claim_request = ClaimRequest.objects.filter(id=req_id).first()
+    claim_request = (
+        ClaimRequest.objects.select_for_update()
+        .select_related("ticket_id", "employee_id")
+        .filter(id=req_id)
+        .first()
+    )
     if not claim_request:
         return HttpResponse("Invalid claim request", status=404)
 
+    ticket = Ticket.objects.select_for_update().get(id=claim_request.ticket_id_id)
     if not (
         request.user.has_perm("helpdesk.change_claimrequest")
         or request.user.has_perm("helpdesk.change_ticket")
         or is_department_manager(request, ticket)
     ):
-        handle_no_permission(request)
+        return handle_no_permission(request)
 
-    approve = strtobool(
-        request.GET.get("approve", "False")
-    )  # Safely convert to boolean
+    decision = request.POST.get("approve", "").lower()
+    if decision not in {"true", "false"}:
+        return HttpResponse(_("Invalid claim decision."), status=400)
+    approve = decision == "true"
 
-    ticket = claim_request.ticket_id
     employee = claim_request.employee_id
     refresh = False
     if approve:
@@ -1485,7 +1568,7 @@ def approve_claim_request(request, req_id):
             ticket.assigned_to.add(employee)  # Approve and assign to employee
             try:
                 # send notification
-                notify.send(
+                _notify_after_commit(
                     request.user.employee_get,
                     recipient=employee.employee_user_id,
                     verb=f"You have been assigned to a new Ticket-{ticket}.",
@@ -1501,7 +1584,7 @@ def approve_claim_request(request, req_id):
             if not ticket.employee_id == ticket.created_by.employee_get:
                 for emp in [ticket.created_by.employee_get, ticket.employee_id]:
                     try:
-                        notify.send(
+                        _notify_after_commit(
                             request.user.employee_get,
                             recipient=emp.employee_user_id,
                             verb=f"{employee} assigned to your ticket - {ticket}.",
@@ -1517,7 +1600,7 @@ def approve_claim_request(request, req_id):
                     except Exception as e:
                         logger.error(e)
             try:
-                notify.send(
+                _notify_after_commit(
                     request.user.employee_get,
                     recipient=ticket.employee_id.employee_user_id,
                     verb=f"{employee} assigned to your ticket - {ticket}.",
@@ -1534,11 +1617,11 @@ def approve_claim_request(request, req_id):
         # message
         message = _("Claim request rejected successfully.")
         refresh = True
-        if employee in ticket.assigned_to.all():
+        if claim_request.is_approved and employee in ticket.assigned_to.all():
             ticket.assigned_to.remove(employee)  # Reject and remove from assignment
 
             # send notification
-            notify.send(
+            _notify_after_commit(
                 request.user.employee_get,
                 recipient=employee.employee_user_id,
                 verb=f"Your claim request is rejected for Ticket-{ticket}",
@@ -1548,10 +1631,9 @@ def approve_claim_request(request, req_id):
                 verb_fr=f"Votre demande de réclamation pour le ticket {ticket} a été rejetée.",
                 icon="infinite",
             )
-    ticket.save()
     claim_request.is_approved = approve
     claim_request.is_rejected = not approve
-    claim_request.save()
+    claim_request.save(update_fields=["is_approved", "is_rejected"])
     html = render_to_string(
         "helpdesk/ticket/ticket_claim_requests.html",
         {"claim_requests": ticket.claimrequest_set.all(), "refresh": refresh},
@@ -1600,19 +1682,32 @@ def tickets_select_filter(request):
 
 @login_required
 @permission_required("helpdesk.change_ticket")
+@require_POST
+@transaction.atomic
 def tickets_bulk_archive(request):
     """
     This is a ajax method used to archive bulk of Ticket instances
     """
-    ids = request.POST.get("ids", "[]")
-    ids = json.loads(ids)
-    is_active = False
-    if request.GET.get("is_active") == "True":
-        is_active = True
-    for ticket_id in ids:
-        ticket = Ticket.objects.get(id=ticket_id)
-        ticket.is_active = is_active
-        ticket.save()
+    try:
+        raw_ids = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"error": "Invalid ticket IDs."}, status=400)
+    if not isinstance(raw_ids, list) or len(raw_ids) > 500:
+        return JsonResponse({"error": "Invalid ticket IDs."}, status=400)
+    try:
+        ids = list(dict.fromkeys(int(value) for value in raw_ids if int(value) > 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid ticket IDs."}, status=400)
+    state_value = request.POST.get("is_active", "").lower()
+    if not ids or state_value not in {"true", "false"}:
+        return JsonResponse({"error": "Invalid archive request."}, status=400)
+    is_active = state_value == "true"
+    tickets = Ticket.objects.select_for_update().filter(id__in=ids)
+    if tickets.count() != len(ids):
+        return JsonResponse(
+            {"error": "Some tickets were not found or not accessible."}, status=404
+        )
+    tickets.update(is_active=is_active)
     messages.success(request, _("The Ticket updated successfully."))
     previous_url = request.META.get("HTTP_REFERER", "/")
 
@@ -1630,48 +1725,72 @@ def tickets_bulk_archive(request):
 @login_required
 # @ticket_owner_can_enter("perms.helpdesk.helpdesk_change_ticket", Ticket)
 @permission_required("helpdesk.delete_ticket")
+@require_POST
+@transaction.atomic
 def tickets_bulk_delete(request):
     """
     This is a ajax method used to delete bulk of Ticket instances
     """
-    ids = request.POST.get("ids", "[]")
-    ids = json.loads(ids)
-    for ticket_id in ids:
-        try:
-            ticket = Ticket.objects.get(id=ticket_id)
-            mail_thread = TicketSendThread(
-                request,
-                ticket,
-                type="delete",
-            )
+    try:
+        raw_ids = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"message": _("Invalid ticket IDs.")}, status=400)
+    if not isinstance(raw_ids, list) or not raw_ids or len(raw_ids) > 500:
+        return JsonResponse({"message": _("Invalid ticket IDs.")}, status=400)
+    try:
+        ids = [int(value) for value in raw_ids]
+    except (TypeError, ValueError):
+        return JsonResponse({"message": _("Invalid ticket IDs.")}, status=400)
+    if any(value <= 0 for value in ids) or len(ids) != len(set(ids)):
+        return JsonResponse({"message": _("Invalid ticket IDs.")}, status=400)
+
+    tickets = list(
+        Ticket.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .prefetch_related("assigned_to")
+        .filter(pk__in=ids)
+    )
+    if len(tickets) != len(ids):
+        return JsonResponse({"message": _("Ticket not found.")}, status=404)
+    if any(ticket.status != "new" for ticket in tickets):
+        return JsonResponse(
+            {"message": _("Only new tickets can be deleted.")}, status=409
+        )
+
+    side_effects = []
+    for ticket in tickets:
+        assignees = [
+            employee.employee_user_id for employee in ticket.assigned_to.all()
+        ]
+        assignees.append(ticket.employee_id.employee_user_id)
+        side_effects.append(
+            (TicketSendThread(request, ticket, type="delete"), assignees)
+        )
+    try:
+        Ticket.objects.filter(pk__in=ids).delete()
+    except ProtectedError:
+        transaction.set_rollback(True)
+        return JsonResponse({"message": _("A selected ticket is protected.")}, status=409)
+
+    def dispatch_delete_side_effects():
+        for mail_thread, assignees in side_effects:
+            try:
+                notify.send(
+                    request.user.employee_get,
+                    recipient=assignees,
+                    verb="The ticket has been deleted.",
+                    icon="infinite",
+                    redirect=reverse("ticket-view"),
+                )
+            except Exception:
+                logger.exception("Ticket delete notification failed")
             mail_thread.start()
-            employees = ticket.assigned_to.all()
-            assignees = [employee.employee_user_id for employee in employees]
-            assignees.append(ticket.employee_id.employee_user_id)
-            if hasattr(ticket.get_raised_on_object(), "dept_manager"):
-                if ticket.get_raised_on_object().dept_manager.all():
-                    manager = (
-                        ticket.get_raised_on_object().dept_manager.all().first().manager
-                    )
-                    assignees.append(manager.employee_user_id)
-            notify.send(
-                request.user.employee_get,
-                recipient=assignees,
-                verb=f"The ticket has been deleted.",
-                verb_ar="تم حذف التذكرة.",
-                verb_de="Das Ticket wurde gelöscht",
-                verb_es="El billete ha sido eliminado.",
-                verb_fr="Le ticket a été supprimé.",
-                icon="infinite",
-                redirect=reverse("ticket-view"),
-            )
-            ticket.delete()
-            messages.success(
-                request,
-                _('The Ticket "{}" has been deleted successfully.').format(ticket),
-            )
-        except ProtectedError:
-            messages.error(request, _("You cannot delete this Ticket."))
+
+    transaction.on_commit(dispatch_delete_side_effects)
+    messages.success(
+        request,
+        _("%(count)s tickets deleted successfully.") % {"count": len(tickets)},
+    )
     previous_url = request.META.get("HTTP_REFERER", "/")
 
     # Prevent XSS / open redirect
@@ -1724,8 +1843,12 @@ def update_department_manager(request, dep_id):
 
 @login_required
 @permission_required("helpdesk.delete_departmentmanager")
+@require_POST
+@transaction.atomic
 def delete_department_manager(request, dep_id):
-    department_manager = DepartmentManager.find(dep_id)
+    department_manager = (
+        DepartmentManager.objects.select_for_update().filter(id=dep_id).first()
+    )
     if not department_manager:
         return HorillaRedirect(
             request, message=_("No Department Manager found matching the query.")
@@ -1737,7 +1860,7 @@ def delete_department_manager(request, dep_id):
     # display the assigned manager, so removing it here should only hide it
     # from Helpdesk's own list, not clear the manager shown there.
     department_manager.is_active = False
-    department_manager.save()
+    department_manager.save(update_fields=["is_active"])
     messages.success(request, _("The department manager has been deleted successfully"))
     if count == 1:
         return HttpResponse("<script>$('.reload-record').click();</script>")
@@ -1746,12 +1869,14 @@ def delete_department_manager(request, dep_id):
 
 @login_required
 @ticket_owner_can_enter(perm="helpdesk.change_ticket", model=Ticket)
+@require_POST
+@transaction.atomic
 def update_priority(request, ticket_id):
     """
     This function is used to update the priority
     from the detailed view
     """
-    ticket = Ticket.find(ticket_id)
+    ticket = Ticket.objects.select_for_update().filter(id=ticket_id).first()
     if not ticket:
         messages.error(
             request,
@@ -1769,12 +1894,12 @@ def update_priority(request, ticket_id):
     ):
         rating = request.POST.get("rating")
 
-        if rating == "1":
-            ticket.priority = "low"
-        elif rating == "2":
-            ticket.priority = "medium"
-        else:
-            ticket.priority = "high"
+        priority = {"1": "low", "2": "medium", "3": "high"}.get(rating)
+        if priority is None:
+            return JsonResponse(
+                {"type": "danger", "message": _("Invalid priority.")}, status=400
+            )
+        ticket.priority = priority
         ticket.save()
         messages.success(request, _("Priority updated successfully."))
         return HorillaRedirect(request)

@@ -191,6 +191,7 @@ def manager_can_enter(function, perm):
 
 @decorator_with_arguments
 def is_recruitment_manager(function, perm):
+    from employee.models import Employee
     from recruitment.models import Recruitment
 
     """
@@ -199,15 +200,11 @@ def is_recruitment_manager(function, perm):
     """
 
     def _function(request, *args, **kwargs):
-
         user = request.user
-        perm = "recruitment.view_recruitmentsurvey"
-        is_manager = False
-        recs = Recruitment.objects.all()
-        for i in recs:
-            for manager in i.recruitment_managers.all():
-                if request.user.employee_get == manager:
-                    is_manager = True
+        employee = Employee.objects.filter(employee_user_id=user).first()
+        is_manager = bool(employee) and Recruitment.objects.filter(
+            recruitment_managers=employee
+        ).exists()
 
         if user.has_perm(perm) or is_manager:
             return function(request, *args, **kwargs)

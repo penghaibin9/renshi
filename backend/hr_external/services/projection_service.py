@@ -55,7 +55,7 @@ class ProjectionService:
     def project_active_external_workers(self, *, tenant_id: int, as_of: Optional[date] = None) -> ProjectionSummary:
         """为当前 active 外聘生成/更新投影状态（worker_kind=EXTERNAL）。"""
         summary = ProjectionSummary()
-        as_of = as_of or date.today()
+        as_of = as_of or timezone.localdate()
         active_engs = HrExternalEngagement.objects.filter(
             tenant_id=tenant_id,
             status__in=[

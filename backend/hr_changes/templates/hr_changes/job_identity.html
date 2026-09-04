@@ -1,6 +1,6 @@
 {% extends "index.html" %}
 {% load static i18n %}
-{% comment %}Implementation contract: Hr06ApplySupportProvider. Required actions: 人员类别、用工性质、直属上级、主岗切换、新增/结束兼岗. Blocked actions: 岗位类别变更、工作地点变更.{% endcomment %}
+{% comment %}Implementation contract: Hr06ApplySupportProvider and HR03 assignment authority.{% endcomment %}
 {% block title %}{% trans "岗位与身份变更" %}{% endblock %}
 {% block styles %}
 {{ block.super }}
@@ -29,8 +29,7 @@
   <section class="hr06-panel">
     <div class="hr06-section-head"><div><h2>当前办理范围</h2><p>仅展示已经具备完整材料、影响检查和生效条件的变更类型。</p></div></div>
     <div class="hr06-capability-grid">
-      <div class="hr06-capability" data-state="ready"><strong>已开放</strong><span>人员类别、用工性质、直属上级、主岗切换、新增/结束兼岗</span><small>组织岗位、直属上级和兼岗信息均从系统现有记录中选择。</small></div>
-      <div class="hr06-capability" data-state="blocked"><strong>暂未开放</strong><span>岗位类别变更、工作地点变更</span><small>相关生效条件尚未全部接通，当前不会提前开放办理。</small></div>
+      <div class="hr06-capability" data-state="ready"><strong>已开放</strong><span>岗位类别、工作地点、人员类别、用工性质、直属上级、主岗切换、新增/结束兼岗</span><small>岗位类别和地点取自 HR02 当前有效配置，生效后形成新的 HR03 任职事实段。</small></div>
       <div class="hr06-capability" data-state="pending"><strong>岗位余量</strong><span>主岗切换与新增兼岗必须先检查余量</span><small>创建草稿后仍会核对目标岗位是否可用；岗位余量不足时不能提交生效。</small></div>
     </div>
   </section>

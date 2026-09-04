@@ -32,13 +32,9 @@
 							></a>
 							{% endif %}
 							{% if perms.base.delete_department %}
-                            <a onclick="return confirm('{% trans "Are you sure want to delete this skill?" %}')"
-                                href="{% url 'delete-skills' %}?ids={{skill.id}}"
-                                class="oh-btn oh-btn--danger w-50"
-                                title="{% trans 'Remove' %}"
-                            >
-                                <ion-icon name="trash-outline"></ion-icon>
-                            </a>
+                            <form method="post" action="{% url 'delete-skills' %}" class="w-50" onsubmit="return confirm('{% trans "Are you sure want to delete this skill?" %}')">
+                                {% csrf_token %}<input type="hidden" name="ids" value="{{skill.id}}"><button type="submit" class="oh-btn oh-btn--danger w-100" title="{% trans 'Remove' %}"><ion-icon name="trash-outline"></ion-icon></button>
+                            </form>
 							{% endif %}
 						</div>
 					</div>

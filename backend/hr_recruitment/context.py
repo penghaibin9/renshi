@@ -76,7 +76,7 @@ class Hr04RequestContext:
         return self.request_snapshot_at.astimezone(self.tzinfo()).date()
 
     def now(self) -> datetime:
-        return dj_timezone.now().astimezone(self.tzinfo())
+        return self.request_snapshot_at.astimezone(self.tzinfo())
 
     def tzinfo(self):
         try:

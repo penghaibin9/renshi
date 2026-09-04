@@ -109,6 +109,7 @@ class HrExternalFileTicket(models.Model):
         on_delete=models.PROTECT,
         related_name="download_tickets",
     )
+    material_version_no = models.PositiveIntegerField(default=1)
     actor_user_id = models.BigIntegerField(null=True, blank=True)
     purpose = models.CharField(max_length=512, blank=True, default="")
     token_hash = models.CharField(max_length=64, db_index=True)  # HMAC-SHA256 摘要，不存裸 token
@@ -126,6 +127,24 @@ class HrExternalFileTicket(models.Model):
             models.Index(
                 fields=["tenant_id", "token_hash"],
                 name="hex_file_ticket_token_idx",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(purpose__gt=""),
+                name="hex_file_ticket_purpose_required",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(max_uses=1),
+                name="hex_file_ticket_single_use",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(used_count__lte=1),
+                name="hex_file_ticket_used_lte_one",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(material_version_no__gte=1),
+                name="hex_file_ticket_version_gte_one",
             ),
         ]
 

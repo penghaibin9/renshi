@@ -18,14 +18,19 @@ from hr_control_center.providers.todo_base import (
     TodoItem,
     TodoProviderUnavailable,
 )
-from hr_control_center.providers.todo_recruitment import RecruitmentTodoProvider
 from hr_control_center.providers.todo_registry import (
     register_todo_provider,
     todo_provider_registry,
 )
+from hr_control_center.providers.todo_domains import CANONICAL_DOMAIN_TODO_PROVIDERS
+from hr_onboarding.providers.todo import OnboardingTaskTodoProvider
+from hr_recruitment.providers.todo import RecruitmentApplicationTodoProvider
 
 
-register_todo_provider(RecruitmentTodoProvider)
+register_todo_provider(RecruitmentApplicationTodoProvider)
+register_todo_provider(OnboardingTaskTodoProvider)
+for _provider_type in CANONICAL_DOMAIN_TODO_PROVIDERS:
+    register_todo_provider(_provider_type)
 
 def _all_providers() -> List[HrTodoProvider]:
     return list(todo_provider_registry.create_all())
@@ -162,7 +167,7 @@ class TodoService:
                 if visible_sources > 0 and successful_sources == 0
                 else ("PARTIAL" if partial_sources else "OK")
             ),
-            "items": [item.__dict__ for item in page_items],
+            "items": [item.to_api_dict() for item in page_items],
             "pagination": {
                 "page": page,
                 "pageSize": page_size,

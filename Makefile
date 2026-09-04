@@ -31,7 +31,7 @@ shell: ## 进入 web 容器
 	$(COMPOSE) exec web bash
 
 db-shell: ## 打开 MySQL 控制台
-	$(COMPOSE) exec db mysql -uhorilla_user -phorilla_pass horilla_db
+	$(COMPOSE) exec db mysql -urenshi_user -prenshi_pass renshi_db
 
 status: ## 查看容器状态
 	$(COMPOSE) ps

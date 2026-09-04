@@ -20,4 +20,6 @@ REQUIRED_GUARDS = (
     "tenant fail-closed",
     "跨域只走 provider/command/event",
     "有效期历史 [effective_from, effective_to)",
+    "私有材料仅允许请求头携带的一次性、文件版本绑定票据下载",
+    "材料上传必须通过大小、扩展名、MIME、magic bytes 与恶意文件扫描校验",
 )

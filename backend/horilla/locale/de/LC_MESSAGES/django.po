@@ -13599,7 +13599,7 @@ msgstr "HR"
 msgid "Please login to access the dashboard."
 msgstr "Bitte loggen Sie sich ein, um auf das Dashboard zuzugreifen."
 
-msgid "e.g. adam.luis@horilla.com"
+msgid "e.g. adam.luis@university.example"
 msgstr ""
 
 msgid "Sign In"

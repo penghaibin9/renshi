@@ -19,7 +19,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from hr_assessment.models.base import TenantScopedModel
+from hr_assessment.models.base import TenantManager, TenantScopedModel
 
 
 def default_correction_no() -> str:
@@ -52,7 +52,7 @@ class _AppendOnlyResultQuerySet(models.QuerySet):
         raise ValueError(f"{self.immutable_code}: append a correction fact")
 
 
-class _AppendOnlyResultManager(models.Manager.from_queryset(_AppendOnlyResultQuerySet)):
+class _AppendOnlyResultManager(TenantManager.from_queryset(_AppendOnlyResultQuerySet)):
     def bulk_create(self, objs, *args, **kwargs):
         for obj in objs:
             validate_chain = getattr(obj, "_validate_chain", None)
@@ -74,12 +74,58 @@ class _AppendOnlyLedgerQuerySet(models.QuerySet):
 
 
 class _AppendOnlyLedgerManager(
-    models.Manager.from_queryset(_AppendOnlyLedgerQuerySet)
+    TenantManager.from_queryset(_AppendOnlyLedgerQuerySet)
 ):
     def bulk_create(self, objs, *args, **kwargs):
         for obj in objs:
             obj._validate_scope()
         return super().bulk_create(objs, *args, **kwargs)
+
+
+class _CompletedDecisionQuerySet(models.QuerySet):
+    immutable_code = "HR12_COMPLETED_DECISION_IMMUTABLE"
+
+    def update(self, **kwargs):
+        if (
+            str(kwargs.get("status") or "").upper() == "COMPLETED"
+            or self.filter(status="COMPLETED").exists()
+        ):
+            raise ValueError(self.immutable_code)
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(status="COMPLETED").exists():
+            raise ValueError(self.immutable_code)
+        return super().delete()
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError(self.immutable_code)
+
+
+class _CompletedDecisionManager(
+    TenantManager.from_queryset(_CompletedDecisionQuerySet)
+):
+    pass
+
+
+class _AppendOnlyDocumentQuerySet(models.QuerySet):
+    immutable_code = "HR12_SEALED_DOCUMENT_IMMUTABLE"
+
+    def update(self, **kwargs):
+        raise ValueError(self.immutable_code)
+
+    def delete(self):
+        raise ValueError(self.immutable_code)
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError(self.immutable_code)
+
+
+class _AppendOnlyDocumentManager(
+    TenantManager.from_queryset(_AppendOnlyDocumentQuerySet)
+):
+    def bulk_create(self, objs, *args, **kwargs):
+        raise ValueError("HR12_SEALED_DOCUMENT_SERVICE_REQUIRED")
 
 
 class HrCalibrationSession(TenantScopedModel):
@@ -121,7 +167,7 @@ class HrCalibrationRevision(models.Model):
 class HrAssessmentDecisionSession(TenantScopedModel):
     """集体审定会话 —— 总册 §90-91。"""
     cycle_id = models.UUIDField(verbose_name=_("所属周期 ID"))
-    body_org_id = models.UUIDField(null=True, verbose_name=_("决策机构组织 ID"))
+    body_org_id = models.BigIntegerField(null=True, verbose_name=_("HR02 决策机构组织 ID"))
     meeting_at = models.DateTimeField(null=True, verbose_name=_("会议时间"))
     quorum_policy_json = models.JSONField(default=dict, verbose_name=_("法定人数"))
     participants_json = models.JSONField(default=list, verbose_name=_("参与者"))
@@ -131,9 +177,124 @@ class HrAssessmentDecisionSession(TenantScopedModel):
     minutes_document_ref = models.UUIDField(null=True, verbose_name=_("纪要文件引用"))
     confidentiality = models.CharField(max_length=30, default="INTERNAL", verbose_name=_("保密级别"))
 
+    objects = _CompletedDecisionManager()
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            old = type(self).objects.filter(pk=self.pk).only("status").first()
+            if old is not None and old.status == "COMPLETED":
+                raise ValueError("HR12_COMPLETED_DECISION_IMMUTABLE")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status == "COMPLETED":
+            raise ValueError("HR12_COMPLETED_DECISION_IMMUTABLE")
+        return super().delete(*args, **kwargs)
+
     class Meta:
         db_table = "hr_assessment_decision_session"
         verbose_name = _("集体审定会话")
+
+
+class HrAssessmentDocument(TenantScopedModel):
+    """HR12 受控业务文件元数据；文件正文只保存于 protected 存储。"""
+
+    document_type = models.CharField(max_length=40, verbose_name=_("文件类型"))
+    related_object_type = models.CharField(max_length=40, verbose_name=_("关联对象类型"))
+    related_object_id = models.UUIDField(db_index=True, verbose_name=_("关联对象 ID"))
+    storage_key = models.CharField(max_length=512, verbose_name=_("受控存储键"))
+    original_filename = models.CharField(max_length=255, verbose_name=_("原始文件名"))
+    content_type = models.CharField(max_length=127, default="", verbose_name=_("内容类型"))
+    size_bytes = models.PositiveBigIntegerField(verbose_name=_("文件字节数"))
+    sha256 = models.CharField(max_length=64, verbose_name=_("SHA-256"))
+    uploaded_by = models.BigIntegerField(null=True, verbose_name=_("上传账号"))
+    sealed_at = models.DateTimeField(verbose_name=_("封存时间"))
+    status = models.CharField(max_length=20, default="SEALED", verbose_name=_("状态"))
+
+    objects = _AppendOnlyDocumentManager()
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            raise ValueError("HR12_SEALED_DOCUMENT_IMMUTABLE")
+        if (
+            self.status != "SEALED"
+            or not self.sealed_at
+            or not self.storage_key
+            or len(str(self.sha256 or "")) != 64
+            or int(self.size_bytes or 0) <= 0
+        ):
+            raise ValueError("HR12_SEALED_DOCUMENT_INVALID")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_SEALED_DOCUMENT_IMMUTABLE")
+
+    class Meta:
+        db_table = "hr_assessment_document"
+        verbose_name = _("考核受控文件")
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "tenant_id",
+                    "document_type",
+                    "related_object_type",
+                    "related_object_id",
+                ),
+                name="hr12_document_business_object_uq",
+            )
+        ]
+
+
+class _AppendOnlyDocumentAccessAuditQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValueError("HR12_DOCUMENT_ACCESS_AUDIT_IMMUTABLE")
+
+    def delete(self):
+        raise ValueError("HR12_DOCUMENT_ACCESS_AUDIT_IMMUTABLE")
+
+
+class HrAssessmentDocumentAccessAudit(TenantScopedModel):
+    """Append-only receipt for each successful confidential document download."""
+
+    document = models.ForeignKey(
+        HrAssessmentDocument,
+        on_delete=models.PROTECT,
+        related_name="access_audits",
+    )
+    actor_user_id = models.PositiveBigIntegerField()
+    purpose = models.CharField(max_length=500)
+    request_id = models.CharField(max_length=128, blank=True, default="")
+
+    objects = _AppendOnlyDocumentAccessAuditQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr12_document_access_audit"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "document", "created_at"),
+                name="idx_hr12_doc_access",
+            ),
+            models.Index(
+                fields=("tenant_id", "actor_user_id", "created_at"),
+                name="idx_hr12_doc_actor_access",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(purpose__gt=""),
+                name="ck_hr12_doc_access_purpose",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError("HR12_DOCUMENT_ACCESS_AUDIT_IMMUTABLE")
+        if not str(self.purpose or "").strip():
+            raise ValueError("HR12_DOCUMENT_ACCESS_REASON_REQUIRED")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("HR12_DOCUMENT_ACCESS_AUDIT_IMMUTABLE")
 
 
 class HrFinalAssessmentResult(TenantScopedModel):
@@ -237,15 +398,31 @@ class HrResultNotice(TenantScopedModel):
     generated_document_id = models.UUIDField(null=True, verbose_name=_("生成的文件 ID"))
     delivery_channel = models.CharField(max_length=30, default="SYSTEM", verbose_name=_("送达渠道"))
     delivery_status = models.CharField(max_length=30, default="PENDING", verbose_name=_("送达状态"))
+    delivery_receipt_ref = models.CharField(
+        max_length=200,
+        default="",
+        verbose_name=_("送达回执引用"),
+    )
     delivered_at = models.DateTimeField(null=True, verbose_name=_("送达时间"))
 
     class Meta:
         db_table = "hr_assessment_result_notice"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "notice_no"),
+                name="hr12_notice_tenant_no_uq",
+            ),
+            models.UniqueConstraint(
+                fields=("tenant_id", "result", "result_version"),
+                name="hr12_notice_result_version_uq",
+            ),
+        ]
 
 
 class HrAcknowledgement(TenantScopedModel):
     """本人意见确认 —— 总册 §96。"""
     result = models.ForeignKey(HrFinalAssessmentResult, on_delete=models.PROTECT, related_name="acknowledgements", verbose_name=_("所属结果"))
+    result_version = models.PositiveSmallIntegerField(default=1, verbose_name=_("结果版本"))
     received_at = models.DateTimeField(null=True, verbose_name=_("收到时间"))
     acknowledgement_status = models.CharField(max_length=30, default="NOT_DELIVERED", verbose_name=_("确认状态"))
     employee_opinion = models.TextField(default="", verbose_name=_("本人意见"))
@@ -253,22 +430,38 @@ class HrAcknowledgement(TenantScopedModel):
 
     class Meta:
         db_table = "hr_assessment_acknowledgement"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "result", "result_version"),
+                name="hr12_ack_result_version_uq",
+            )
+        ]
 
 
 class HrAssessmentObjection(TenantScopedModel):
     """考核异议/申诉 —— 总册 §97-98。"""
     result = models.ForeignKey(HrFinalAssessmentResult, on_delete=models.PROTECT, related_name="objections", verbose_name=_("所属结果"))
+    result_version = models.PositiveSmallIntegerField(default=1, verbose_name=_("异议对应结果版本"))
+    submitted_by_staff_id = models.UUIDField(null=True, verbose_name=_("异议提交人"))
     reason = models.TextField(verbose_name=_("申诉理由"))
     evidence_json = models.JSONField(default=list, verbose_name=_("证据"))
     reviewer_staff_id = models.UUIDField(null=True, verbose_name=_("复核人"))
     conflict_check_json = models.JSONField(default=dict, verbose_name=_("冲突检查"))
     conclusion = models.TextField(default="", verbose_name=_("复核结论"))
+    decision_code = models.CharField(max_length=30, default="", verbose_name=_("复核决定"))
+    resolution_revision_id = models.UUIDField(null=True, verbose_name=_("结果更正版本 ID"))
     status = models.CharField(max_length=30, default="SUBMITTED", db_index=True, verbose_name=_("处理状态"))
     submitted_at = models.DateTimeField(auto_now_add=True, verbose_name=_("提交时间"))
     resolved_at = models.DateTimeField(null=True, verbose_name=_("解决时间"))
 
     class Meta:
         db_table = "hr_assessment_objection"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "result", "result_version"),
+                name="hr12_objection_result_version_uq",
+            )
+        ]
 
 
 class HrResultRevision(TenantScopedModel):
@@ -409,13 +602,23 @@ class HrAssessmentArchivePackage(TenantScopedModel):
     """考核归档包 —— 总册 §101。"""
     result = models.ForeignKey(HrFinalAssessmentResult, on_delete=models.PROTECT, null=True, related_name="archives", verbose_name=_("所属结果"))
     archive_package_id = models.CharField(max_length=100, unique=True, verbose_name=_("归档包 ID"))
+    result_version = models.PositiveSmallIntegerField(default=1, verbose_name=_("结果版本"))
     document_refs_json = models.JSONField(default=list, verbose_name=_("文件引用"))
+    manifest_json = models.JSONField(default=dict, verbose_name=_("归档清单"))
+    content_hash = models.CharField(max_length=64, default="", verbose_name=_("归档内容哈希"))
     archive_status = models.CharField(max_length=30, default="PENDING", verbose_name=_("归档状态"))
     archived_at = models.DateTimeField(null=True, verbose_name=_("归档时间"))
+    sealed_at = models.DateTimeField(null=True, verbose_name=_("封存时间"))
     archive_provider_ref = models.CharField(max_length=200, default="", verbose_name=_("归档 Provider 引用"))
 
     class Meta:
         db_table = "hr_assessment_archive_package"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant_id", "result", "result_version"),
+                name="hr12_archive_result_version_uq",
+            )
+        ]
 
 
 class HrResultApplicationLedger(TenantScopedModel):

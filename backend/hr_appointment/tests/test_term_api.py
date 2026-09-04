@@ -59,6 +59,10 @@ class AppointmentTermApiContractTests(SimpleTestCase):
                 {"change_id": change_id},
                 f"/api/v1/hr/appointments/term-changes/{change_id}/decision/",
             ),
+            "hr_appointment_api:term-change-capacity-reservation": (
+                {"change_id": change_id},
+                f"/api/v1/hr/appointments/term-changes/{change_id}/capacity-reservation/",
+            ),
             "hr_appointment_api:term-change-effect-apply": (
                 {"change_id": change_id},
                 f"/api/v1/hr/appointments/term-changes/{change_id}/apply-effect/",

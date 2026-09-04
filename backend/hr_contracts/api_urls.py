@@ -2,11 +2,32 @@
 
 from django.urls import path
 
-from hr_contracts.api import agreements, lifecycle
+from hr_contracts.api import agreements, documents, lifecycle
+from hr_contracts import setup_api
 
 app_name = "hr_contracts_api"
 
 urlpatterns = [
+    path(
+        "api/v1/hr/contracts/setup/workbench",
+        setup_api.setup_workbench,
+        name="hr07-setup-workbench",
+    ),
+    path(
+        "api/v1/hr/contracts/setup/templates/publish",
+        setup_api.publish_template,
+        name="hr07-template-publish",
+    ),
+    path(
+        "api/v1/hr/contracts/setup/expiry-policies/publish",
+        setup_api.publish_expiry_policy,
+        name="hr07-expiry-policy-publish",
+    ),
+    path(
+        "api/v1/hr/contracts/setup/expiry-scan",
+        setup_api.scan_expiry,
+        name="hr07-expiry-scan",
+    ),
     path(
         "api/v1/hr/contracts/agreements",
         agreements.agreement_collection,
@@ -16,6 +37,21 @@ urlpatterns = [
         "api/v1/hr/contracts/agreements/<uuid:agreement_id>",
         agreements.agreement_detail,
         name="hr07-agreement-detail",
+    ),
+    path(
+        "api/v1/hr/contracts/agreements/<uuid:agreement_id>/documents",
+        documents.document_collection,
+        name="hr07-document-collection",
+    ),
+    path(
+        "api/v1/hr/contracts/documents/<uuid:document_id>/ticket",
+        documents.generate_ticket,
+        name="hr07-document-ticket",
+    ),
+    path(
+        "api/v1/hr/contracts/documents/download",
+        documents.download_via_ticket,
+        name="hr07-document-download",
     ),
     path(
         "api/v1/hr/contracts/agreements/<uuid:agreement_id>/versions/sign",

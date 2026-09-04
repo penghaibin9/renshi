@@ -103,6 +103,7 @@ class HrAuthorityCutover(HorillaModel):
     class Domain(models.TextChoices):
         ORGANIZATION = "ORGANIZATION", _("Organization")
         STAFF = "STAFF", _("Staff")
+        ASSESSMENT = "ASSESSMENT", _("Assessment")
 
     tenant_id = models.BigIntegerField(db_index=True)
     domain = models.CharField(max_length=32, choices=Domain.choices)

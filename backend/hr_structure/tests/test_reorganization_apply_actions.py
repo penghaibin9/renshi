@@ -1,18 +1,22 @@
 """HR02 reorganization execution contracts and effective-dated history."""
 
 from datetime import date, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from django.test import SimpleTestCase, TestCase
 
 from hr_structure.models import (
+    HrHeadcountQuotaLine,
     HrOrganization,
     HrOrganizationRelation,
     HrOrganizationVersion,
     HrPosition,
+    HrPositionQuotaLine,
     HrPositionVersion,
     HrPostCatalog,
     HrPostCatalogVersion,
+    HrStaffingPlan,
     HrStructureChangeCase,
     HrStructureChangeItem,
 )
@@ -29,13 +33,24 @@ class ReorganizationApplyStaticContractTests(SimpleTestCase):
         self.assertNotIn("暂未实现落地", source)
         for action in (
             'action == "CREATE_ORG"',
+            'action == "CHANGE_ORG_TYPE"',
             'action == "REPARENT_ORG"',
+            'action == "DEACTIVATE_ORG"',
+            'action == "REACTIVATE_ORG"',
             'action == "MOVE_POSITION"',
+            'action == "CHANGE_POSITION"',
             'action == "CREATE_POSITION"',
             'action == "CLOSE_POSITION"',
+            'action == "MERGE_ORGS"',
+            'action == "SPLIT_ORG"',
         ):
             self.assertIn(action, source)
-        self.assertIn("REORG_MAPPING_CONTRACT_UNAVAILABLE", source)
+        for action in (
+            'action in {"CREATE_RELATION", "CHANGE_RELATION"}',
+            'action in {"ADJUST_STAFFING_QUOTA", "ADJUST_POSITION_QUOTA"}',
+        ):
+            self.assertIn(action, source)
+        self.assertNotIn("REORG_MAPPING_CONTRACT_UNAVAILABLE", source)
         self.assertIn("errorCode", source)
 
 
@@ -233,7 +248,7 @@ class ReorganizationApplyActionTests(TestCase):
             HrPosition.LifecycleStatus.CLOSED,
         )
 
-    def test_missing_payload_and_merge_split_are_stable_submit_blockers(self):
+    def test_missing_payload_and_incomplete_merge_are_stable_submit_blockers(self):
         missing = self._case(
             "REORG-MISSING-802", status=HrStructureChangeCase.Status.DRAFT
         )
@@ -251,8 +266,226 @@ class ReorganizationApplyActionTests(TestCase):
         self._item(merge, 1, "MERGE_ORGS", "org", self.parent_a.id, {})
         impact = self.service.impact_analysis(merge)
         self.assertIn(
-            "REORG_MAPPING_CONTRACT_UNAVAILABLE",
+            "MERGE_TARGET_REQUIRED",
             {row["code"] for row in impact["checks"]},
+        )
+
+        fractional = self._case(
+            "REORG-FRACTIONAL-802", status=HrStructureChangeCase.Status.DRAFT
+        )
+        self._item(
+            fractional,
+            1,
+            "CREATE_POSITION",
+            "position",
+            payload={
+                "positionCode": "POS-FRACTIONAL-802",
+                "organizationId": self.parent_a.id,
+                "postCatalogVersionId": self.catalog_version.id,
+                "maxIncumbents": "1.5",
+            },
+        )
+        impact = self.service.impact_analysis(fractional)
+        self.assertIn(
+            "CREATE_POSITION_CAPACITY_INVALID",
+            {row["code"] for row in impact["checks"]},
+        )
+
+    def test_org_type_deactivate_and_reactivate_preserve_history(self):
+        type_case = self._case("REORG-TYPE-802")
+        self._item(
+            type_case,
+            1,
+            "CHANGE_ORG_TYPE",
+            "org",
+            self.child.id,
+            {"orgType": HrOrganizationVersion.OrgType.OFFICE},
+        )
+        result = self.service.execute_effective(type_case, "exec-type-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        self.assertEqual(
+            org_version_as_of(self.tenant_id, self.child.id, self.today).org_type,
+            HrOrganizationVersion.OrgType.OFFICE,
+        )
+
+        empty_org = self._org("EMPTY-802", "待停用单位", "OFFICE", self.school.id)
+        deactivate = self._case("REORG-DEACTIVATE-802")
+        self._item(deactivate, 1, "DEACTIVATE_ORG", "org", empty_org.id)
+        result = self.service.execute_effective(deactivate, "exec-deactivate-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        empty_org.refresh_from_db()
+        self.assertEqual(empty_org.identity_status, HrOrganization.IdentityStatus.CLOSED)
+        self.assertIsNone(org_version_as_of(self.tenant_id, empty_org.id, self.today))
+
+        reactivate = self._case("REORG-REACTIVATE-802")
+        self._item(
+            reactivate,
+            1,
+            "REACTIVATE_ORG",
+            "org",
+            empty_org.id,
+            {"name": "恢复单位", "parentOrganizationId": self.school.id},
+        )
+        result = self.service.execute_effective(reactivate, "exec-reactivate-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        empty_org.refresh_from_db()
+        self.assertEqual(empty_org.identity_status, HrOrganization.IdentityStatus.ACTIVE)
+        self.assertEqual(
+            org_version_as_of(self.tenant_id, empty_org.id, self.today).name,
+            "恢复单位",
+        )
+
+    def test_create_and_change_relation_preserve_relation_history(self):
+        create = self._case("REORG-REL-CREATE-802")
+        self._item(
+            create,
+            1,
+            "CREATE_RELATION",
+            "relation",
+            self.parent_a.id,
+            {
+                "relationType": HrOrganizationRelation.RelationType.TEMP_COORDINATION,
+                "targetOrganizationId": self.parent_b.id,
+            },
+        )
+        result = self.service.execute_effective(create, "exec-rel-create-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        relation = HrOrganizationRelation.objects.get(
+            tenant_id=self.tenant_id,
+            source_org_id=self.parent_a,
+            relation_type=HrOrganizationRelation.RelationType.TEMP_COORDINATION,
+        )
+
+        change = self._case("REORG-REL-CHANGE-802")
+        self._item(
+            change,
+            1,
+            "CHANGE_RELATION",
+            "relation",
+            relation.id,
+            {
+                "relationType": HrOrganizationRelation.RelationType.TEMP_COORDINATION,
+                "targetOrganizationId": self.school.id,
+            },
+        )
+        result = self.service.execute_effective(change, "exec-rel-change-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        relation.refresh_from_db()
+        self.assertEqual(relation.status, HrOrganizationRelation.Status.CLOSED)
+        self.assertTrue(
+            HrOrganizationRelation.objects.filter(
+                tenant_id=self.tenant_id,
+                source_org_id=self.parent_a,
+                target_org_id=self.school,
+                relation_type=HrOrganizationRelation.RelationType.TEMP_COORDINATION,
+                status=HrOrganizationRelation.Status.ACTIVE,
+            ).exists()
+        )
+
+    def test_change_position_and_draft_quota_adjustments_are_real(self):
+        position = HrPosition.objects.create(
+            tenant_id=self.tenant_id,
+            position_code="POS-CHANGE-802",
+            organization_id=self.parent_a,
+            post_catalog_version_id=self.catalog_version,
+            validity_from=self.today - timedelta(days=20),
+            lifecycle_status=HrPosition.LifecycleStatus.ACTIVE,
+        )
+        plan = HrStaffingPlan.objects.create(
+            tenant_id=self.tenant_id,
+            code="PLAN-802",
+            name="测试编制方案",
+            plan_year=self.today.year,
+            validity_from=self.today,
+            status=HrStaffingPlan.Status.DRAFT,
+        )
+        headcount = HrHeadcountQuotaLine.objects.create(
+            plan_id=plan,
+            tenant_id=self.tenant_id,
+            organization_id=self.parent_a,
+            authorized_headcount=10,
+        )
+        position_quota = HrPositionQuotaLine.objects.create(
+            plan_id=plan,
+            tenant_id=self.tenant_id,
+            organization_id=self.parent_a,
+            post_category="TEACHING",
+            authorized_positions=8,
+            authorized_fte="8.00",
+        )
+        case = self._case("REORG-CHANGE-QUOTA-802")
+        self._item(
+            case,
+            1,
+            "CHANGE_POSITION",
+            "position",
+            position.id,
+            {
+                "plannedFte": "0.50",
+                "maxIncumbents": 2,
+                "allowMultipleIncumbents": "true",
+                "lifecycleStatus": HrPosition.LifecycleStatus.FROZEN,
+                "freezeReason": "暂停补员",
+            },
+        )
+        self._item(
+            case,
+            2,
+            "ADJUST_STAFFING_QUOTA",
+            "quota",
+            headcount.id,
+            {"authorizedHeadcount": 12, "reserveHeadcount": 1},
+        )
+        self._item(
+            case,
+            3,
+            "ADJUST_POSITION_QUOTA",
+            "quota",
+            position_quota.id,
+            {"authorizedPositions": 9, "authorizedFte": "8.50"},
+        )
+        result = self.service.execute_effective(case, "exec-change-quota-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        position.refresh_from_db()
+        headcount.refresh_from_db()
+        position_quota.refresh_from_db()
+        self.assertEqual(position.planned_fte, Decimal("0.50"))
+        self.assertEqual(position.max_incumbents, 2)
+        self.assertTrue(position.allow_multiple_incumbents)
+        self.assertEqual(position.lifecycle_status, HrPosition.LifecycleStatus.FROZEN)
+        self.assertEqual(position.history_versions.count(), 2)
+        self.assertEqual(headcount.authorized_headcount, 12)
+        self.assertEqual(headcount.reserve_headcount, 1)
+        self.assertEqual(position_quota.authorized_positions, 9)
+        self.assertEqual(position_quota.authorized_fte, Decimal("8.50"))
+
+    def test_merge_executes_only_after_explicit_child_mapping(self):
+        case = self._case("REORG-MERGE-MAPPED-802")
+        self._item(
+            case,
+            1,
+            "REPARENT_ORG",
+            "org",
+            self.child.id,
+            {"targetParentId": self.parent_b.id},
+        )
+        self._item(
+            case,
+            2,
+            "MERGE_ORGS",
+            "org",
+            self.parent_a.id,
+            {"targetOrganizationId": self.parent_b.id},
+        )
+        result = self.service.execute_effective(case, "exec-merge-mapped-802")
+        self.assertEqual(result.status, HrStructureChangeCase.Status.EFFECTIVE)
+        self.parent_a.refresh_from_db()
+        self.assertEqual(
+            self.parent_a.identity_status, HrOrganization.IdentityStatus.CLOSED
+        )
+        self.assertEqual(
+            org_version_as_of(self.tenant_id, self.child.id, self.today).parent_organization_id_id,
+            self.parent_b.id,
         )
 
     def test_late_failure_rolls_back_all_prior_items(self):

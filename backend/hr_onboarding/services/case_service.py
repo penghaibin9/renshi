@@ -192,6 +192,46 @@ class CaseService:
             case.save(update_fields=["updated_at"])
         return case
 
+    def mark_ready_to_report(self, case: HrOnboardingCase) -> HrOnboardingCase:
+        """Complete the normal CREATED → PREPARING → READY_TO_REPORT path with ledger rows."""
+        with transaction.atomic():
+            case = self._case_for_update(case.id)
+            if case.status == CaseStatus.CREATED:
+                assert_case_transition(case.status, CaseStatus.PREPARING)
+                self._transition_locked(
+                    case, CaseStatus.PREPARING, "CONFIRM_INTENT", "候选人确认入职意愿"
+                )
+            if case.status == CaseStatus.PREPARING:
+                assert_case_transition(case.status, CaseStatus.READY_TO_REPORT)
+                self._transition_locked(
+                    case, CaseStatus.READY_TO_REPORT, "READY_TO_REPORT", "入职准备完成，可办理报到"
+                )
+            elif case.status != CaseStatus.READY_TO_REPORT:
+                from hr_onboarding.api.exceptions import InvalidStateTransitionError
+
+                raise InvalidStateTransitionError(f"当前状态 {case.status} 不可标记为可报到")
+        return case
+
+    def mark_ready_for_activation(self, case: HrOnboardingCase) -> HrOnboardingCase:
+        """Advance a reported case through explicit verification stages."""
+        with transaction.atomic():
+            case = self._case_for_update(case.id)
+            if case.status == CaseStatus.REPORTED:
+                assert_case_transition(case.status, CaseStatus.VERIFYING)
+                self._transition_locked(
+                    case, CaseStatus.VERIFYING, "START_ACTIVATION_VERIFICATION", "开始正式生效前核验"
+                )
+            if case.status == CaseStatus.VERIFYING:
+                assert_case_transition(case.status, CaseStatus.READY_FOR_ACTIVATION)
+                self._transition_locked(
+                    case, CaseStatus.READY_FOR_ACTIVATION, "READY_FOR_ACTIVATION", "正式生效条件核验完成"
+                )
+            elif case.status != CaseStatus.READY_FOR_ACTIVATION:
+                from hr_onboarding.api.exceptions import InvalidStateTransitionError
+
+                raise InvalidStateTransitionError(f"当前状态 {case.status} 不可进入待生效")
+        return case
+
     def request_delay(
         self, case: HrOnboardingCase, *, new_date: date, reason: str
     ) -> HrReportDelay:

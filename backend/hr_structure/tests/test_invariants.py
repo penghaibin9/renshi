@@ -10,6 +10,7 @@ from django.test import TestCase
 
 from hr_structure.models import (
     HrOrganization,
+    HrOrganizationRelation,
     HrOrganizationVersion,
     HrPosition,
     HrPostCatalog,
@@ -23,6 +24,7 @@ from hr_structure.services.organization_change import (
     OrganizationChangeService,
     Hr02ServiceError,
 )
+from hr_structure.services.relation import RelationService, RelationServiceError
 
 
 class HrOrganizationModelTests(TestCase):
@@ -131,3 +133,54 @@ class HrOrganizationModelTests(TestCase):
         children = children_as_of(1, self.school.id, self.today, dimension="ADMIN")
         ids = [v.organization_id_id for v in children]
         self.assertIn(self.college.id, ids)
+
+    def test_organization_and_subtree_scopes_do_not_widen_to_whole_school(self):
+        department = self.svc.create_organization(
+            stable_code="CS-DEPT",
+            name="计算机系",
+            org_type="DEPARTMENT",
+            dimension="ADMIN",
+            parent_id=self.college.id,
+            validity_from=self.today,
+        )
+
+        exact = OrganizationSelector(
+            Hr02Scope("ORGANIZATION", tenant_id=1, org_id=self.college.id)
+        )
+        self.assertEqual(exact.get_root().organization_id_id, self.college.id)
+        self.assertIsNotNone(exact.get_organization(self.college.id))
+        self.assertIsNone(exact.get_organization(self.school.id))
+        self.assertFalse(exact.get_children(self.college.id).exists())
+
+        subtree = OrganizationSelector(
+            Hr02Scope("ORG_SUBTREE", tenant_id=1, org_id=self.college.id)
+        )
+        self.assertIsNotNone(subtree.get_organization(department.id))
+        self.assertIsNone(subtree.get_organization(self.school.id))
+        self.assertEqual(
+            set(subtree.search("").values_list("organization_id", flat=True)),
+            {self.college.id, department.id},
+        )
+
+        assigned = OrganizationSelector(Hr02Scope("ASSIGNED_ORGS", tenant_id=1))
+        self.assertFalse(assigned.search("").exists())
+
+    def test_relation_service_rejects_self_reference_and_cycle(self):
+        relation_service = RelationService(self.scope, actor="tester")
+        with self.assertRaises(RelationServiceError) as self_error:
+            relation_service.create_relation(
+                source_org_id=self.college.id,
+                target_org_id=self.college.id,
+                relation_type=HrOrganizationRelation.RelationType.TEMP_COORDINATION,
+                validity_from=self.today,
+            )
+        self.assertEqual(self_error.exception.code, "HR02_RELATION_SELF_REFERENCE")
+
+        with self.assertRaises(RelationServiceError) as cycle_error:
+            relation_service.create_relation(
+                source_org_id=self.school.id,
+                target_org_id=self.college.id,
+                relation_type=HrOrganizationRelation.RelationType.ADMIN_PARENT,
+                validity_from=self.today,
+            )
+        self.assertEqual(cycle_error.exception.code, "HR02_RELATION_CYCLE")

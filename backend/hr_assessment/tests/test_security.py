@@ -50,7 +50,9 @@ class CollegeScopeTest(TestCase):
         from hr_assessment.models.cycle import HrAssessmentCycle
         cycle = HrAssessmentCycle.objects.create(
             tenant_id=tenant_id, cycle_no="2026-ANNUAL-01", assessment_type="ANNUAL",
-            name="2026年度", start_at="2026-01-01", end_at="2026-12-31",
+            name="2026年度",
+            start_at="2026-01-01T00:00:00Z",
+            end_at="2026-12-31T00:00:00Z",
             policy_version_id=uuid.uuid4(),
         )
         HrAssessmentCase.objects.create(tenant_id=tenant_id, assessment_type="ANNUAL", cycle=cycle, staff_id=uuid.uuid4(), status="DRAFT")
@@ -63,11 +65,17 @@ class CollegeScopeTest(TestCase):
         tenant_id = 10001
         cycle_a = HrAssessmentCycle.objects.create(
             tenant_id=tenant_id, cycle_no="CY-A", assessment_type="ANNUAL",
-            name="A", start_at="2026-01-01", end_at="2026-12-31", policy_version_id=uuid.uuid4(),
+            name="A",
+            start_at="2026-01-01T00:00:00Z",
+            end_at="2026-12-31T00:00:00Z",
+            policy_version_id=uuid.uuid4(),
         )
         cycle_b = HrAssessmentCycle.objects.create(
             tenant_id=tenant_id, cycle_no="CY-B", assessment_type="ANNUAL",
-            name="B", start_at="2026-07-01", end_at="2027-06-30", policy_version_id=uuid.uuid4(),
+            name="B",
+            start_at="2026-07-01T00:00:00Z",
+            end_at="2027-06-30T00:00:00Z",
+            policy_version_id=uuid.uuid4(),
         )
         HrAssessmentPopulationSnapshot.objects.create(
             tenant_id=tenant_id, cycle=cycle_a, staff_id=uuid.uuid4(),

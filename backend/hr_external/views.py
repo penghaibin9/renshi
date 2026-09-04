@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
 
 from hr_external.context import resolve_tenant_from_request
 from hr_external.display_labels import (
@@ -117,9 +118,17 @@ _COMMON = {
 
 
 def _require_tenant(request):
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        raise PermissionDenied("UNAUTHENTICATED")
     tenant_id = resolve_tenant_from_request(request)
     if tenant_id is None:
         raise PermissionDenied("TENANT_CONTEXT_REQUIRED")
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        if tenant_id not in (get_allowed_company_ids(user) or ()):
+            raise PermissionDenied("TENANT_CONTEXT_REQUIRED")
     return tenant_id
 
 
@@ -158,7 +167,7 @@ def _organization_labels(tenant_id, organization_ids, as_of=None):
         evidence = get_organization_evidence(
             tenant_id=tenant_id,
             organization_ids=ids,
-            as_of=as_of or date.today(),
+            as_of=as_of or timezone.localdate(),
         )
     except Exception:  # HR02 unavailable must stay explicit and must not leak an internal id.
         return {str(value): "组织信息暂不可用" for value in ids}
@@ -232,7 +241,7 @@ def external_teachers_home(request):
     pending_hiring_count = HrExternalHiringCase.objects.filter(tenant_id=tenant_id).exclude(
         status__in=["ACTIVATED", "REJECTED", "WITHDRAWN", "CANCELLED"]
     ).count()
-    today = date.today()
+    today = timezone.localdate()
     expiring_15_count = HrExternalEngagement.objects.filter(
         tenant_id=tenant_id,
         status__in=_ACTIVE_ENGAGEMENT_STATUSES,
@@ -549,7 +558,7 @@ def tasks_home(request):
     counts = {
         "in_progress": qs.filter(status__in=["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]).count(),
         "under_review": qs.filter(status="UNDER_REVIEW").count(),
-        "overdue": qs.filter(planned_end__lt=date.today(), status__in=["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]).count(),
+        "overdue": qs.filter(planned_end__lt=timezone.localdate(), status__in=["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]).count(),
         "completed": qs.filter(status="COMPLETED").count(),
     }
     return render(

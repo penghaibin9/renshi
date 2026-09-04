@@ -80,7 +80,12 @@ class MaterialTicketTests(TestCase):
         token = self.service.sign_token(
             tenant_id=self.tenant, material_id=str(self.material.id)
         )
-        self.service.issue_ticket(tenant_id=self.tenant, material=self.material, token=token)
+        self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="下载材料",
+            token=token,
+        )
         self.service.redeem_ticket(token=token, actor_user_id=1)
         # 一次性票据重复使用 → 拒绝
         with self.assertRaises(TicketInvalid):
@@ -90,7 +95,12 @@ class MaterialTicketTests(TestCase):
         token = self.service.sign_token(
             tenant_id=self.tenant, material_id=str(self.material.id)
         )
-        self.service.issue_ticket(tenant_id=self.tenant, material=self.material, token=token)
+        self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="下载材料",
+            token=token,
+        )
         # 显式传错误 tenant 做双保险校验 → 拒绝（公开入口不传 tenant，由 ticket 自身绑定）
         with self.assertRaises(TicketInvalid):
             self.service.redeem_ticket(token=token, actor_user_id=1, tenant_id=999)
@@ -99,7 +109,12 @@ class MaterialTicketTests(TestCase):
         token = self.service.sign_token(
             tenant_id=self.tenant, material_id=str(self.material.id)
         )
-        ticket = self.service.issue_ticket(tenant_id=self.tenant, material=self.material, token=token)
+        ticket = self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="下载材料",
+            token=token,
+        )
         ticket.expires_at = timezone.now() - timedelta(seconds=1)
         ticket.save(update_fields=["expires_at"])
         with self.assertRaises(TicketInvalid):
@@ -111,6 +126,26 @@ class MaterialTicketTests(TestCase):
         token = self.service.sign_token(
             tenant_id=self.tenant, material_id=str(self.material.id)
         )
-        self.service.issue_ticket(tenant_id=self.tenant, material=self.material, token=token)
+        self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="下载材料",
+            token=token,
+        )
         with self.assertRaises(MaterialAccessDenied):
             self.service.redeem_ticket(token=token, actor_user_id=1)
+
+    def test_ticket_is_bound_to_material_version(self):
+        token = self.service.sign_token(
+            tenant_id=self.tenant, material_id=str(self.material.id)
+        )
+        self.service.issue_ticket(
+            tenant_id=self.tenant,
+            material=self.material,
+            purpose="核对版本",
+            token=token,
+        )
+        self.material.version_no += 1
+        self.material.save(update_fields=["version_no"])
+        with self.assertRaises(TicketInvalid):
+            self.service.redeem_ticket(token=token)

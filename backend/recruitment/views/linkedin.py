@@ -59,6 +59,7 @@ def delete_linkedin_account(request, pk, return_redirect=True):
 
 
 @login_required
+@permission_required("recruitment.view_linkedinaccount")
 def validate_linkedin_token(request, pk):
     linkedin_account = LinkedInAccount.find(pk)
     if not linkedin_account:
@@ -69,7 +70,12 @@ def validate_linkedin_token(request, pk):
     access_token = linkedin_account.api_token
     url = "https://api.linkedin.com/v2/userinfo"
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.get(url, headers=headers)
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+    except requests.RequestException:
+        logger.exception("Unable to validate LinkedIn credentials")
+        messages.error(request, _("LinkedIn connection is temporarily unavailable."))
+        return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
     if response.status_code == 200:
         messages.success(request, _("LinkedIn connection success."))
     else:
@@ -128,17 +134,25 @@ def post_recruitment_in_linkedin(
         "Authorization": f"Bearer {linkedin_acc.api_token}",
         "Content-Type": "application/json",
     }
-    response = requests.post(url, headers=headers, data=payload)
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+    except requests.RequestException:
+        logger.exception("Unable to publish recruitment to LinkedIn")
+        recruitment.publish_in_linkedin = False
+        recruitment.save(update_fields=["publish_in_linkedin"])
+        return False
     if response.status_code == 201:
         response_data = response.json()
         recruitment.linkedin_post_id = response_data.get("id")  # Store post ID
         recruitment.save()
+        return True
     else:
         recruitment.publish_in_linkedin = False
-        recruitment.save()
+        recruitment.save(update_fields=["publish_in_linkedin"])
+        return False
 
 
-def delete_post(recruitment):
+def delete_post(recruitment, *, persist=True):
     """Delete recruitment post from LinkedIn"""
     linkedin_post_id = recruitment.linkedin_post_id
     if not linkedin_post_id:
@@ -150,10 +164,17 @@ def delete_post(recruitment):
         "Content-Type": "application/json",
     }
 
-    response = requests.delete(url, headers=headers)
+    try:
+        response = requests.delete(url, headers=headers, timeout=10)
+    except requests.RequestException:
+        logger.exception("Unable to delete LinkedIn recruitment post")
+        return False
     if response.status_code == 204:
-        recruitment.linkedin_post_id = None
-        recruitment.save()
+        if persist:
+            type(recruitment).objects.filter(pk=recruitment.pk).update(
+                linkedin_post_id=None
+            )
+            recruitment.linkedin_post_id = None
         return True
 
     return False

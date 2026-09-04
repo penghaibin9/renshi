@@ -17,7 +17,7 @@
             {% include "animation.html" %}
         </div>
     </div>
-    <span hx-delete="{% url 'delete-etimeoffice-user' %}" hx-vals="" id="deleteETimeOfficeUsers"></span>
+    <span hx-post="{% url 'delete-etimeoffice-user' %}" hx-vals="" id="deleteETimeOfficeUsers"></span>
 </div>
 <script src="{% static 'actions.js' %}"></script>
 {% endblock %}

@@ -1,8 +1,7 @@
 """
 hr_recruitment/views.py
 
-HR04 页面视图（Django Template 渲染，数据走 JSON API，模板薄）。
-S1 阶段：招聘控制台占位页（数据接 HR04-02 后填充）。
+HR04 正式页面视图（Django Template 渲染，数据走 JSON API，模板薄）。
 """
 
 from django.contrib.auth.decorators import login_required
@@ -22,7 +21,18 @@ def hr04_campaigns(request):
 @require_hr04_permission("hr04.plan.view")
 def hr04_plans(request):
     """HR04-01 年度用人计划页面。"""
-    return render(request, "hr/recruitment/plans/plans.html")
+    return render(
+        request,
+        "hr/recruitment/plans/plans.html",
+        {
+            "can_plan_create": bool(
+                request.user.is_superuser or request.user.has_perm("hr04.plan.create")
+            ),
+            "can_plan_approve": bool(
+                request.user.is_superuser or request.user.has_perm("hr04.plan.approve")
+            ),
+        },
+    )
 
 
 @login_required

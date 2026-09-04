@@ -27,13 +27,7 @@ def scan(request):
     except HrStaffContextError as exc:
         return error_response(request, exc.code, exc.message, status=403)
 
-    as_of = None
-    if request.GET.get("as_of"):
-        from django.utils.dateparse import parse_date
-
-        as_of = parse_date(request.GET["as_of"])
-
-    result = DataQualityService(context.tenant_id, as_of=as_of).scan()
+    result = DataQualityService(context.tenant_id, as_of=context.as_of).scan()
     payload = api_root(request)
     payload["data"] = result
     return json_response(request, payload)

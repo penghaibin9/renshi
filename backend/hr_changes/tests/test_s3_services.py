@@ -1,8 +1,9 @@
 """S3 服务契约测试：ChangeService / ApprovalService / ImpactService / ValidationService。"""
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.test import TestCase
+from django.utils import timezone
 
 from hr_changes.constants import CaseStatus, ChangeActionCode
 from hr_changes.services.approval_service import ApprovalService
@@ -20,6 +21,7 @@ from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
 FIXTURE_SOURCE = "MIGRATION_VERIFIED"
+EFFECTIVE_DATE = timezone.localdate() + timedelta(days=30)
 
 
 class ChangeServiceCreateTests(TestCase):
@@ -41,7 +43,7 @@ class ChangeServiceCreateTests(TestCase):
             staff_master_id=self.staff,
             action_id=self.action,
             reason_id=self.reason,
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             proposals=[
                 {
                     "domain": "assignment",
@@ -125,7 +127,7 @@ class ChangeServiceWorkflowTests(TestCase):
         self.assertEqual(case.status, CaseStatus.UNDER_APPROVAL)
         case = self.svc.approve(case.id)
         self.assertEqual(case.status, CaseStatus.APPROVED_WAITING_EFFECTIVE)
-        self.assertEqual(case.approved_effective_at, date(2026, 9, 1))
+        self.assertEqual(case.approved_effective_at, EFFECTIVE_DATE)
 
     def test_return_then_resubmit(self):
         case = self.svc.submit(self.case.id)

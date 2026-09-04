@@ -12,7 +12,9 @@ HR03～HR18 的正式事实使用 MySQL Trigger 作为数据库层防篡改兜�
 make dev
 ```
 
-首次构建会安装依赖、启动 MySQL/Redis、执行入口脚本并启动 Web。浏览器访问 `http://localhost:8000`。常用命令：
+首次构建会安装依赖、启动 MySQL/Redis、执行入口脚本并启动 Web。浏览器访问 `http://localhost:18000`。如需改端口，启动前设置 `HR_HTTP_PORT`。常用命令：
+
+本地 Web 默认 3 个 Gunicorn worker，完整七服务栈适配常见的 8 GiB Docker Desktop 内存上限。不要按 CPU 数盲目增加；如需调整，先监测全栈峰值内存后设置 `GUNICORN_WORKERS`。
 
 ```bash
 make status       # 查看服务状态
@@ -37,6 +39,9 @@ docker compose -f docker-compose.yml -f docker-compose.dbport.yml up -d db
 
 ## 生产 Compose
 
+完整上线、备份恢复、故障演练和回滚步骤见
+[`docs/PRODUCTION_RUNBOOK.md`](../../docs/PRODUCTION_RUNBOOK.md)。
+
 生产环境使用基础文件加生产 overlay：
 
 ```bash
@@ -51,6 +56,7 @@ make prod
 - 先运行唯一的 `release` 任务完成 migration、静态文件收集和 Django check；
 - `release` 成功后才启动 Web；
 - 使用 MySQL 8.4 和带密码的 Redis；
+- 使用私网 ClamAV 扫描所有上传，扫描器不可用时 `/ready/` 失败并拒绝上传；
 - 不向宿主机暴露 Django 8000 或 MySQL 3306；
 - 由 Nginx 暴露入口，TLS 应在可信反向代理/负载均衡器终止。
 
@@ -59,22 +65,22 @@ make prod
 ## 健康检查
 
 - `/health/`：进程存活检查，不访问依赖。
-- `/ready/`：验证签字数据库为 MySQL，并在配置 Redis 时验证缓存读写。
+- `/ready/`：验证签字数据库为 MySQL、Redis 缓存可读写，并在生产配置下验证 ClamAV 可用。
 
-生产发布只有在 `/ready/` 返回 `status=ok` 且 `database_vendor=mysql` 后才可接流量。
+生产发布只有在 `/ready/` 返回 `status=ok`、`database_vendor=mysql`、`cache=ok` 和 `malware_scanner=ok` 后才可接流量。
 
 ## 备份与恢复
 
-CI 使用真实 `mysqldump`/`mysql` 执行备份恢复演练。生产备份必须使用专用凭据、加密存储、保留策略和定期恢复演练；仅生成备份文件不算验收。
+`backup-scheduler` 会生成 AES-256-GCM 加密的 MySQL + media 备份包并保留至少两份。`BACKUP_STORAGE_PATH` 必须是宿主机持久目录，且还要由基础设施复制到异机/对象存储。恢复命令禁止覆盖当前签字数据库，只允许恢复到名称不同的空数据库。完整命令和季度演练记录要求见生产运行手册。
 
 ## 故障定位
 
 ```bash
 docker compose ps
 docker compose logs --tail=200 db redis web
-docker compose exec -T db mysqladmin ping -h 127.0.0.1 -uhorilla_user -p
-curl http://localhost:8000/health/
-curl http://localhost:8000/ready/
+docker compose exec -T db mysqladmin ping -h 127.0.0.1 -urenshi_user -p
+curl http://localhost:18000/health/
+curl http://localhost:18000/ready/
 ```
 
 常见问题：

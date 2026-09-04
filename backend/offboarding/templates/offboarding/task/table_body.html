@@ -45,7 +45,8 @@
             <div class="oh-sticky-table__td dateformat_changer">{{ employee.notice_period_ends }}</div>
             {% if request.user.employee_get|is_any_stage_manager or perms.offboarding.change_offboarding or	perms.offboarding.change_offboardingemployee %}
             <div class="oh-sticky-table__td" onclick="event.stopPropagation()">
-                <form hx-get="{% url "offboarding-change-stage" %}?employee_ids={{employee.id}}"
+                <form hx-post="{% url "offboarding-change-stage" %}"
+                    hx-vals='{"employee_ids":"{{ employee.id }}"}'
                     hx-target="#offboardingBody{{offboarding.offboarding.id}}">
                     {{ stage_forms|stages:employee.stage_id }}
                     <input type="submit" hidden />
@@ -88,7 +89,7 @@
                         {% if stage.grouper.type == "archived" %}
                         <a
                             type="button"
-                            hx-get="{% url 'employee-archive' employee.employee_id.id %}"
+                            hx-post="{% url 'employee-archive' employee.employee_id.id %}"
                             hx-target="#objectDetailsModalTarget"
                             data-toggle="oh-modal-toggle"
                             data-target="#objectDetailsModal"
@@ -131,7 +132,8 @@
                             type="button"
                             style="flex: 1 0 auto; width: 20px; height: 40.68px; padding: 0"
                             hx-confirm="{% trans 'Do you want to delete this offboarding user?' %}"
-                            hx-post="{% url "delete-offboarding-employee" %}?employee_ids={{employee.id}}"
+                            hx-post="{% url "delete-offboarding-employee" %}"
+                            hx-vals='{"employee_ids":"{{ employee.id }}"}'
                             hx-target = "#offboardingContainer"
                             title="{% trans 'Delete' %}"
                             class="oh-btn oh-btn--light"
@@ -159,7 +161,8 @@
                 <div class="oh-sticky-table__td">
                 {% for assinged_tasks in employee|get_assigned_task:task %}
                 <select
-                    hx-get="{% url "update-task-status" %}?stage_id={{stage.grouper.id}}&employee_ids={{employee.id}}&task_id={{assinged_tasks.task_id.id}}"
+                    hx-post="{% url "update-task-status" %}"
+                    hx-vals='{"stage_id":"{{ stage.grouper.id }}","employee_ids":"{{ employee.id }}","task_id":"{{ assinged_tasks.task_id.id }}"}'
                     hx-target="#offboardingBody{{offboarding.offboarding.id}}"
                     name="task_status"
                     id="task_status{{assinged_tasks.id}}"
@@ -181,7 +184,8 @@
                 {% if perms.offboarding.add_offboardingtask or request.user.employee_get|any_manager %}
                     <div class="oh-sticky-table__td">
                     <button
-                        hx-get="{% url "offboarding-assign-task" %}?employee_ids={{employee.id}}&task_id={{task.id}}"
+                        hx-post="{% url "offboarding-assign-task" %}"
+                        hx-vals='{"employee_ids":"{{ employee.id }}","task_id":"{{ task.id }}"}'
                         hx-target="#offboardingBody{{offboarding.offboarding.id}}"
                         class="oh-checkpoint-badge text-info"
                         data-toggle="oh-modal-toggle"

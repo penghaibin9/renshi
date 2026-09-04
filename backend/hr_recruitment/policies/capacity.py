@@ -8,7 +8,8 @@ HR02 依赖硬门（总册 1.2）：
 - 未就绪时招聘岗位额度一律使用 LEGACY_CURRENT_SNAPSHOT 降级（显式 UNAVAILABLE），
   不得固化为权威外键。
 
-S1 提供容量查询接口契约 + LEGACY_CURRENT_SNAPSHOT 占位实现。
+本模块保留 Provider 契约和旧系统兼容的 fail-closed 基类；生产默认实现为
+``hr_recruitment.integrations.hr02.Hr02CapacityProvider``。
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ class CapacityProviderError(Exception):
 
 class CapacityProvider:
     """
-    HR02 容量 Provider 接口（S1 契约；S4 接 hr_structure 后替换实现）。
+    HR02 容量 Provider 接口及旧系统兼容基类。
 
     V1（LEGACY_CURRENT_SNAPSHOT）：返回 UNAVAILABLE 或显式快照，
     禁止臆造可用额度。正式录用动作绝不依赖缓存。
@@ -84,7 +85,7 @@ class CapacityProvider:
                 },
             )
         raise CapacityProviderError(
-            "HR02 capacity provider not wired: S4 依赖硬门未达成"
+            "HR02 authority capacity provider is required"
         )
 
 

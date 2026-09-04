@@ -5,12 +5,13 @@ from pathlib import Path
 from django.test import SimpleTestCase
 
 
-ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_ROOT = BACKEND_ROOT.parent / "frontend"
 
 
 class Hr09WorkspaceStaticContractTests(SimpleTestCase):
     def test_shared_workspace_keeps_six_canonical_sections(self):
-        template = (ROOT / "hr_qualification/templates/hr_qualification/workspace.html").read_text(
+        template = (BACKEND_ROOT / "hr_qualification/templates/hr_qualification/workspace.html").read_text(
             encoding="utf-8"
         )
         for section in (
@@ -27,7 +28,7 @@ class Hr09WorkspaceStaticContractTests(SimpleTestCase):
         self.assertIn('json_script:"hr09-rule-version-options"', template)
 
     def test_action_layer_has_no_raw_internal_identifier_inputs(self):
-        script = (ROOT / "static/hr/js/pages/hr09-actions.js").read_text(encoding="utf-8")
+        script = (FRONTEND_ROOT / "static/hr/js/pages/hr09-actions.js").read_text(encoding="utf-8")
         forbidden = (
             "Person UUID",
             "Staff UUID",
@@ -45,7 +46,7 @@ class Hr09WorkspaceStaticContractTests(SimpleTestCase):
         self.assertIn("/resubmit", script)
 
     def test_action_layer_does_not_fabricate_navigation_or_submit(self):
-        script = (ROOT / "static/hr/js/pages/hr09-actions.js").read_text(encoding="utf-8")
+        script = (FRONTEND_ROOT / "static/hr/js/pages/hr09-actions.js").read_text(encoding="utf-8")
         self.assertNotIn('href="#"', script)
         self.assertNotIn("Math.random", script)
         self.assertNotIn("localStorage", script)

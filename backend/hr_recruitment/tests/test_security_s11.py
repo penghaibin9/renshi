@@ -11,19 +11,22 @@ HR04 S11 安全测试矩阵（《04_HR04_总册》§33）。
 - candidate self scope：候选人只能看本人申请；
 - 高敏 exact-search 权限隔离。
 
-注意：TenantIsolationSecurityTests 在 PG 下因 Horilla 遗留 Company.created_by FK 
-约束与 setUpTestData 事务冲突(SQLite 宽松不触发)，标记为 PG-only skip。
-权限 fail-closed 测试不受影响。
+租户隔离用例使用真实 Company 主键作为 tenant_id，并在 MySQL 验收库中执行；
+不得以数据库类型或历史夹具问题永久跳过安全门禁。
 """
 
 import json
-import unittest
 from datetime import date
+from unittest import skipUnless
 from uuid import uuid4
 
+from django.apps import apps
+from django.contrib.auth.models import Group
 from django.test import Client, TestCase, override_settings
 
-from base.models import Company
+LEGACY_SECURITY_AVAILABLE = apps.is_installed("base") and apps.is_installed("employee")
+if LEGACY_SECURITY_AVAILABLE:
+    from base.models import Company, CompanyGroupAssignment
 
 from hr_recruitment.services.application_service import ApplicationService
 from hr_recruitment.services.campaign_service import CampaignService
@@ -33,8 +36,8 @@ TENANT_A = 10001
 TENANT_B = 10002
 
 
-@unittest.skip("PG FK constraint: Company.created_by in Horilla legacy model conflicts with setUpTestData transaction")
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+@skipUnless(LEGACY_SECURITY_AVAILABLE, "requires installed legacy identity apps")
 class TenantIsolationSecurityTests(TestCase):
     """tenant 隔离：A 校数据不可被 B 校看到。"""
 
@@ -53,12 +56,12 @@ class TenantIsolationSecurityTests(TestCase):
             is_staff=True,
         )
         cls.company_a = Company.objects.create(
+            id=TENANT_A,
             company="甲大学", hq=True, address="A", country="CN", state="S", city="C", zip="1",
-            created_by=cls.admin_user,
         )
         cls.company_b = Company.objects.create(
+            id=TENANT_B,
             company="乙大学", hq=True, address="B", country="CN", state="S", city="C", zip="1",
-            created_by=cls.admin_user,
         )
         emp = Employee.objects.create(
             employee_user_id=cls.admin_user,
@@ -69,6 +72,15 @@ class TenantIsolationSecurityTests(TestCase):
         )
         EmployeeWorkInformation.objects.filter(employee_id=emp).update(
             company_id_id=cls.company_a.pk,
+        )
+        # This account is intentionally authorized for both schools so the
+        # assertions below exercise row isolation and IDOR handling rather
+        # than the outer tenant-membership gate.
+        membership_group = Group.objects.create(name=f"HR04 cross-tenant {uuid4().hex}")
+        CompanyGroupAssignment.objects.create(
+            user=cls.admin_user,
+            company=cls.company_b,
+            group=membership_group,
         )
 
     def setUp(self):
@@ -149,15 +161,26 @@ class TenantIsolationSecurityTests(TestCase):
         resp = self.client.post(
             "/recruit/my-applications",
             data=json.dumps(
-                {"primary_email": cand_b.primary_email, "primary_mobile": "13800005555"}
+                {
+                    "primary_email": cand_b.primary_email,
+                    "primary_mobile": "13800005555",
+                    "access_token": self._candidate_receipt(cand_b),
+                }
             ),
             content_type="application/json",
         )
         payload = json.loads(resp.content)
         self.assertEqual(payload["data"]["applications"], [])
 
+    @staticmethod
+    def _candidate_receipt(candidate):
+        from hr_recruitment.public.views import _issue_candidate_receipt
+
+        return _issue_candidate_receipt(candidate)
+
 
 @override_settings(ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+@skipUnless(LEGACY_SECURITY_AVAILABLE, "requires installed legacy identity apps")
 class PermissionFailClosedTests(TestCase):
     """权限 fail-closed：无权限 → 403（不 200+empty 伪装）。"""
 
@@ -174,7 +197,6 @@ class PermissionFailClosedTests(TestCase):
         )
         cls.company = Company.objects.create(
             company="丙大学", hq=True, address="C", country="CN", state="S", city="C", zip="1",
-            created_by=cls.no_perm_user,
         )
         emp = Employee.objects.create(
             employee_user_id=cls.no_perm_user,

@@ -243,9 +243,9 @@ class PlanService:
         """单行额度：优先 HR02 容量 Provider；STALE/UNAVAILABLE/ERROR 一律 fail-closed。"""
         provider = capacity_provider
         if provider is None:
-            from hr_recruitment.policies.capacity import CapacityProvider
+            from hr_recruitment.integrations.hr02 import Hr02CapacityProvider
 
-            provider = CapacityProvider()
+            provider = Hr02CapacityProvider(tenant_id=tenant_id)
         try:
             snapshot = provider.query_capacity(
                 tenant_id=tenant_id,
@@ -255,7 +255,7 @@ class PlanService:
                 position_pool_id=line.position_pool_id,
             )
         except Exception as exc:  # noqa: BLE001
-            # HR02 未接线/查询失败 → fail-closed，禁止批准
+            # HR02 查询失败 → fail-closed，禁止批准
             raise PositionCapacityConflictError(
                 f"计划批准需要 HR02 岗位额度校验，当前额度不可用（{getattr(exc, 'code', 'HR02_CAPACITY_ERROR')}），禁止批准"
             ) from exc

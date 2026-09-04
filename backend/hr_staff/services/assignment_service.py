@@ -23,6 +23,7 @@ from typing import Optional
 
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from hr_staff.constants import AssignmentType
 from hr_staff.models import HrStaffAssignment, HrStaffMaster
@@ -111,6 +112,7 @@ class AssignmentService:
         legacy_department_id: Optional[int] = None,
         legacy_job_position_id: Optional[int] = None,
         assignment_role_code: str = "",
+        location_code: str = "",
         fte: Decimal = Decimal("1.00"),
         reporting_staff_id=None,
         source_business_type: str = "",
@@ -165,6 +167,7 @@ class AssignmentService:
             legacy_job_position_id=legacy_job_position_id,
             assignment_type=assignment_type,
             assignment_role_code=assignment_role_code,
+            location_code=str(location_code or "")[:128],
             fte=fte,
             effective_from=effective_from,
             effective_to=effective_to,
@@ -221,6 +224,7 @@ class AssignmentService:
         legacy_department_id: Optional[int] = None,
         legacy_job_position_id: Optional[int] = None,
         assignment_role_code: str = "",
+        location_code: str = "",
         fte: Decimal = Decimal("1.00"),
         reporting_staff_id=None,
         source_business_type: str = "",
@@ -275,7 +279,7 @@ class AssignmentService:
 
         # 3) 关闭旧段：在 T 结束（P1-8：未来生效时旧段保持 ACTIVE，仅计划 end，
         #    避免今天→T 之间出现"无主岗"空档；同日开始段按 CANCELLED 处理）
-        today = date.today()
+        today = timezone.localdate()
         if current is not None:
             if current.effective_from >= effective_from:
                 current.status = "CANCELLED"  # [T,T) 空段
@@ -303,6 +307,7 @@ class AssignmentService:
             legacy_job_position_id=legacy_job_position_id,
             assignment_type=AssignmentType.PRIMARY,
             assignment_role_code=assignment_role_code,
+            location_code=str(location_code or "")[:128],
             fte=fte,
             effective_from=effective_from,
             effective_to=None,
@@ -386,7 +391,7 @@ class AssignmentService:
         ).first()
         if staff is None:
             return
-        today = date.today()
+        today = timezone.localdate()
         qs = EffectiveDatedQueryService(self.tenant_id)
         current_primary = qs.primary_assignment_as_of(staff.id, today)
         staff.primary_assignment_id = current_primary.id if current_primary else None
@@ -403,7 +408,7 @@ class AssignmentService:
         ).first()
         if staff is None:
             return
-        today = date.today()
+        today = timezone.localdate()
         if effective_from > today:
             return  # 未来生效，暂不投影
         qs = EffectiveDatedQueryService(self.tenant_id)

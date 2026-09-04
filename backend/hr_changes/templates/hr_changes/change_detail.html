@@ -72,6 +72,18 @@
     {% endif %}
   </section>
 
+  <section class="hr06-panel" aria-labelledby="hr06-action-title">
+    <div class="hr06-section-head"><div><h2 id="hr06-action-title">办理操作</h2><p>操作项依据案件当前状态实时提供；提交、审批和生效都会再次执行服务端业务校验。</p></div></div>
+    <div id="hr06-case-actions" class="hr06-detail-actions" aria-live="polite">
+      <div class="hr06-state"><strong>正在读取可办理操作</strong><span>请稍候…</span></div>
+    </div>
+  </section>
+
   <div class="hr06-truth-note"><strong>办理说明</strong><span>可执行操作会根据当前状态和本人权限显示；尚未满足条件的提交、审批、退回或生效操作不会提前开放。</span></div>
 </div>
 {% endblock content %}
+{% block scripts %}
+{{ block.super }}
+<script src="{% static 'hr/js/core/api-client.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr06-change-detail.js' %}?v=20260901-1"></script>
+{% endblock scripts %}

@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.backends.db import SessionStore
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, TestCase, override_settings
@@ -192,6 +193,31 @@ class PlatformTenantElevationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(request.platform_tenant_elevation_active)
         self.assertEqual(request.write_company_id, self.company.id)
+
+    def test_anonymous_hr_workspace_redirects_to_login(self):
+        request = self.factory.get("/hr/payroll/")
+        request.user = AnonymousUser()
+        request.session = SessionStore()
+
+        response = PlatformTenantElevationMiddleware(
+            lambda _request: self.fail("anonymous HR UI must not reach the view")
+        )(request)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/login?next=/hr/payroll/")
+        self.assertIsNone(request.write_company_id)
+
+    def test_anonymous_hr_api_keeps_json_fail_closed_path(self):
+        request = self.factory.get("/api/v1/hr/payroll/dashboard/")
+        request.user = AnonymousUser()
+        request.session = SessionStore()
+
+        response = PlatformTenantElevationMiddleware(
+            lambda _request: type("Response", (), {"status_code": 401})()
+        )(request)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIsNone(request.write_company_id)
 
     @patch("platform_access.middleware.get_allowed_company_ids")
     def test_school_superuser_cannot_cross_into_unassigned_school(self, allowed_ids):

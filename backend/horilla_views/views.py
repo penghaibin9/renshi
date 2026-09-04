@@ -1,6 +1,7 @@
 import csv
 import importlib
 import json
+import logging
 import os
 import re
 from collections import defaultdict
@@ -16,8 +17,8 @@ from django.contrib.admin.utils import NestedObjects
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.staticfiles import finders
 from django.core.cache import cache as CACHE
-from django.core.exceptions import FieldDoesNotExist
-from django.db import connection, router
+from django.core.exceptions import FieldDoesNotExist, PermissionDenied
+from django.db import connection, router, transaction
 from django.db.models.fields.related import ForeignKey, OneToOneField
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import render
@@ -49,6 +50,8 @@ from horilla_views.generic.cbv.views import HorillaFormView, HorillaListView
 from horilla_views.templatetags.generic_template_filters import getattribute
 
 # Create your views here.
+
+logger = logging.getLogger(__name__)
 
 
 reshaper = ArabicReshaper(
@@ -288,9 +291,16 @@ class DeleteSavedFilter(View):
     Delete saved filter
     """
 
-    def get(self, *args, **kwargs):
+    def post(self, *args, **kwargs):
         pk = kwargs["pk"]
-        models.SavedFilter.objects.filter(created_by=self.request.user, pk=pk).delete()
+        with transaction.atomic():
+            saved_filter = (
+                models.SavedFilter.objects.select_for_update()
+                .filter(created_by=self.request.user, pk=pk)
+                .first()
+            )
+            if saved_filter:
+                saved_filter.delete()
         return HttpResponse("")
 
 
@@ -300,23 +310,30 @@ class ActiveView(View):
     ActiveView CBV
     """
 
-    def get(self, *args, **kwargs):
-        path = self.request.GET.get("path")
-        view_type = self.request.GET.get("view")
+    def post(self, *args, **kwargs):
+        path = self.request.POST.get("path", "")
+        view_type = self.request.POST.get("view", "")
 
-        if not path:
+        if (
+            not path.startswith("/")
+            or len(path) > 256
+            or not view_type
+            or len(view_type) > 50
+        ):
             return HorillaRedirect(
                 self.request,
                 message=_("No matching query found."),
             )
-        active_view = models.ActiveView.objects.filter(
-            path=path, created_by=self.request.user
-        ).first()
-
-        active_view = active_view if active_view else models.ActiveView()
-        active_view.path = path
-        active_view.type = view_type
-        active_view.save()
+        with transaction.atomic():
+            active_view = (
+                models.ActiveView.objects.select_for_update()
+                .filter(path=path, created_by=self.request.user)
+                .first()
+            )
+            active_view = active_view if active_view else models.ActiveView()
+            active_view.path = path
+            active_view.type = view_type
+            active_view.save()
         return HttpResponse("")
 
 
@@ -390,24 +407,47 @@ class HorillaDeleteConfirmationView(View):
     # URL name used by delete_confirmation.html for hx-get / hx-post on this flow
     generic_delete_url_name = "generic-delete"
 
+    def _resolve_model(self):
+        """Resolve a model path without allowing malformed or unknown models."""
+        model_path = self.request.GET.get("model", "")
+        parts = model_path.split(".")
+        if len(parts) != 2 or not all(parts):
+            raise ValueError("Invalid model parameter format.")
+        try:
+            model = apps.get_model(parts[0], parts[1])
+        except LookupError as exc:
+            raise ValueError("Unknown model.") from exc
+        if model is None or model._meta.abstract:
+            raise ValueError("Unknown model.")
+        return model
+
+    def _can_delete(self, model):
+        permission = f"{model._meta.app_label}.delete_{model._meta.model_name}"
+        return self.request.user.has_perm(permission)
+
     def get(self, *args, **kwargs):
         """
         GET method
         """
         from horilla.urls import path, urlpatterns
 
-        pk = self.request.GET.get("pk")
         try:
-            app, MODEL_NAME = self.request.GET.get("model").split(".")
-        except:
-            messages.error(self.request, _("Invalid model parameter format."))
+            model = self._resolve_model()
+            pk = self.request.GET.get("pk")
+            if not pk:
+                raise ValueError("Missing primary key.")
+        except ValueError as exc:
+            messages.error(self.request, _(str(exc)))
             return HorillaFormView.HttpResponse()
 
-        if not self.request.user.has_perm(app + ".delete_" + MODEL_NAME.lower()):
+        if not self._can_delete(model):
             return render(self.request, "no_perm.html")
-        model = apps.get_model(app, MODEL_NAME)
 
-        delete_object = model.objects.get(pk=pk)
+        delete_object = model.objects.filter(pk=pk).first()
+        if delete_object is None:
+            messages.error(self.request, _("Matching record does not exist."))
+            return HorillaFormView.HttpResponse()
+        MODEL_NAME = model._meta.model_name
         objs = [delete_object]
         using = router.db_for_write(delete_object._meta.model)
         collector = NestedObjects(using=using, origin=objs)
@@ -643,57 +683,81 @@ class HorillaDeleteConfirmationView(View):
             )
             return self.get(*args, **kwargs)
 
-        pk = self.request.GET["pk"]
-        app, MODEL_NAME = self.request.GET["model"].split(".")
-        if not self.request.user.has_perm(app + ".delete_" + MODEL_NAME.lower()):
+        try:
+            model = self._resolve_model()
+            pk = self.request.GET.get("pk")
+            if not pk:
+                raise ValueError("Missing primary key.")
+        except ValueError as exc:
+            messages.error(self.request, _(str(exc)))
+            return HorillaFormView.HttpResponse()
+
+        if not self._can_delete(model):
             return render(self.request, "no_perm.html")
-        model = apps.get_model(app, MODEL_NAME)
-        delete_object = model.objects.get(pk=pk)
-        objs = [delete_object]
-        using = router.db_for_write(delete_object._meta.model)
-        collector = NestedObjects(using=using, origin=objs)
-        collector.collect(objs)
+
+        deleted_instances = []
 
         def delete_callback(instance, protected=False):
-            try:
-                if self.request.user.has_perm(
-                    f"{instance._meta.app_label}.delete_{instance._meta.model.__name__.lower()}"
-                ):
-                    pre_generic_delete.send(
-                        sender=instance._meta.model,
-                        instance=instance,
-                        args=args,
-                        view_instance=self,
-                        kwargs=kwargs,
-                    )
-                    instance.delete()
-                    post_generic_delete.send(
-                        sender=instance._meta.model,
-                        instance=instance,
-                        args=args,
-                        view_instance=self,
-                        kwargs=kwargs,
-                    )
-                    messages.success(
-                        self.request, _("Deleted %(instance)s") % {"instance": instance}
-                    )
-                else:
-                    messages.info(
-                        self.request,
-                        _("You don't have permission to delete %(instance)s")
-                        % {"instance": instance},
-                    )
-            except:
-                messages.error(
-                    self.request,
-                    _("Cannot delete : %(instance)s") % {"instance": instance},
-                )
+            # Cascading rows are covered by the root object's delete permission.
+            # PROTECT rows are independent records and need their own grant.
+            if protected and not self._can_delete(instance._meta.model):
+                raise PermissionDenied
+            label = str(instance)
+            pre_generic_delete.send(
+                sender=instance._meta.model,
+                instance=instance,
+                args=args,
+                view_instance=self,
+                kwargs=kwargs,
+            )
+            instance.delete()
+            post_generic_delete.send(
+                sender=instance._meta.model,
+                instance=instance,
+                args=args,
+                view_instance=self,
+                kwargs=kwargs,
+            )
+            deleted_instances.append(label)
 
-        # deleting protected objects
-        for obj in collector.protected:
-            delete_callback(obj, protected=True)
-        # deleting related objects
-        collector.nested(delete_callback)
+        try:
+            with transaction.atomic():
+                delete_object = (
+                    model.objects.select_for_update().filter(pk=pk).first()
+                )
+                if delete_object is None:
+                    raise model.DoesNotExist
+                objs = [delete_object]
+                using = router.db_for_write(delete_object._meta.model)
+                collector = NestedObjects(using=using, origin=objs)
+                collector.collect(objs)
+
+                for obj in collector.protected:
+                    delete_callback(obj, protected=True)
+                collector.nested(delete_callback)
+        except PermissionDenied:
+            messages.error(
+                self.request,
+                _("You don't have permission to delete every related record."),
+            )
+            return render(self.request, "no_perm.html")
+        except model.DoesNotExist:
+            messages.error(self.request, _("Matching record does not exist."))
+            return HorillaFormView.HttpResponse()
+        except Exception:
+            logger.exception(
+                "Generic delete failed for %s pk=%s",
+                model._meta.label,
+                pk,
+            )
+            messages.error(self.request, _("Cannot delete the selected record."))
+            return HorillaFormView.HttpResponse()
+
+        for instance_label in deleted_instances:
+            messages.success(
+                self.request,
+                _("Deleted %(instance)s") % {"instance": instance_label},
+            )
         reload_target = self.request.GET.get("reload_target")
         script = ""
         if reload_target:

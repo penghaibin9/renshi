@@ -49,7 +49,7 @@ class HrExternalTeacherProfile(models.Model):
     # ---- 资质（§16/§10）----
     highest_professional_title = models.CharField(max_length=120, blank=True, default="")
     highest_skill_level = models.CharField(max_length=120, blank=True, default="")
-    # 引用 HR09 已核验教师资格事实（Provider 占位；HR09 未交付则为空）
+    # 引用 HR09 已核验教师资格事实；来源不可用时保持显式不可用语义
     teacher_qualification_ref = models.CharField(max_length=64, blank=True, default="")
     # ---- 合规状态（§36/§25）----
     ethics_status = models.CharField(

@@ -14,10 +14,11 @@ import os
 import secrets
 import uuid
 from datetime import timedelta
-from typing import Optional
 
-from django.core.cache import cache
+from django.conf import settings
 from django.core.files.storage import default_storage
+from django.db import transaction
+from django.utils import timezone
 
 TICKET_TTL_SECONDS = 60 * 5  # 5 分钟短时效
 
@@ -96,6 +97,10 @@ def store_material_file(
     格式/大小白名单由 requirement 提供，缺省仅做双扩展名防护。
     注意：storage_path 不写入持久化 meta（避免泄漏内部路径），下载时按 file_version_id 重建。
     """
+    if getattr(settings, "MALWARE_SCAN_REQUIRED", False) and not getattr(
+        uploaded_file, "_malware_scan_complete", False
+    ):
+        raise ValueError("MALWARE_SCAN_REQUIRED")
     meta = validate_upload(
         uploaded_file, allowed_formats=allowed_formats, max_size_mb=max_size_mb
     )
@@ -110,24 +115,84 @@ def store_material_file(
 
 def material_storage_path(*, tenant_id: int, case_id, material_id, file_version_id, ext) -> str:
     """按持久化元数据重建内部存储路径（下载用，不暴露给业务层）。"""
-    return f"hr05/{tenant_id}/{case_id}/{material_id}/{file_version_id}.{ext}"
+    try:
+        tenant_id = int(tenant_id)
+        case_id = uuid.UUID(str(case_id))
+        material_id = uuid.UUID(str(material_id))
+        file_version_id = uuid.UUID(str(file_version_id))
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ValueError("MATERIAL_STORAGE_ID_INVALID") from exc
+    ext = str(ext or "").strip().lower().lstrip(".")
+    if ext not in EXT_MIME_WHITELIST:
+        raise ValueError("MATERIAL_STORAGE_EXTENSION_INVALID")
+    return (
+        f"hr05/{tenant_id}/{case_id}/{material_id}/"
+        f"{file_version_id.hex}.{ext}"
+    )
 
 
-def issue_download_ticket(*, tenant_id: int, material_id) -> str:
-    """短时效一次性下载 ticket（不暴露存储路径）。"""
+def _ticket_hash(ticket: str) -> str:
+    return hashlib.sha256(str(ticket or "").encode("utf-8")).hexdigest()
+
+
+def issue_download_ticket(
+    *,
+    tenant_id: int,
+    material,
+    actor_user_id: int,
+    purpose: str,
+    request_id: str = "",
+) -> str:
+    """签发持久化、账号绑定、文件版本绑定的一次性下载票据。"""
+
+    from hr_onboarding.models import HrOnboardingMaterialDownloadTicket
+
+    purpose = str(purpose or "").strip()
+    if not purpose:
+        raise ValueError("MATERIAL_DOWNLOAD_PURPOSE_REQUIRED")
+    if len(purpose) > 500:
+        raise ValueError("MATERIAL_DOWNLOAD_PURPOSE_INVALID")
+    if material is None or int(material.tenant_id) != int(tenant_id):
+        raise ValueError("MATERIAL_DOWNLOAD_SCOPE_INVALID")
+    if not material.file_version_id:
+        raise ValueError("MATERIAL_DOWNLOAD_FILE_MISSING")
     ticket = secrets.token_urlsafe(24)
-    cache.set(
-        f"hr05:fileticket:{ticket}",
-        {"tenant_id": tenant_id, "material_id": str(material_id)},
-        timeout=TICKET_TTL_SECONDS,
+    HrOnboardingMaterialDownloadTicket.objects.create(
+        tenant_id=int(tenant_id),
+        material=material,
+        file_version_id=material.file_version_id,
+        token_hash=_ticket_hash(ticket),
+        actor_user_id=int(actor_user_id),
+        purpose=purpose,
+        request_id=str(request_id or "")[:64],
+        expires_at=timezone.now() + timedelta(seconds=TICKET_TTL_SECONDS),
     )
     return ticket
 
 
-def resolve_download_ticket(ticket: str) -> Optional[dict]:
-    return cache.get(f"hr05:fileticket:{ticket}")
+@transaction.atomic
+def consume_download_ticket(*, ticket: str, tenant_id: int, actor_user_id: int):
+    """原子消费一次性票据；过期、跨账号、跨学校或旧文件版本均拒绝。"""
 
+    from hr_onboarding.models import HrOnboardingMaterialDownloadTicket
 
-def consume_download_ticket(ticket: str) -> None:
-    """一次性消费：删除 ticket，防止复用。"""
-    cache.delete(f"hr05:fileticket:{ticket}")
+    record = (
+        HrOnboardingMaterialDownloadTicket.objects.select_for_update()
+        .select_related("material")
+        .filter(token_hash=_ticket_hash(ticket))
+        .first()
+    )
+    now = timezone.now()
+    if (
+        record is None
+        or record.consumed_at is not None
+        or record.expires_at <= now
+        or int(record.tenant_id) != int(tenant_id)
+        or int(record.actor_user_id) != int(actor_user_id)
+        or record.material.tenant_id != record.tenant_id
+        or record.material.file_version_id != record.file_version_id
+    ):
+        raise ValueError("MATERIAL_DOWNLOAD_TICKET_INVALID")
+    record.consumed_at = now
+    record.save(update_fields=["consumed_at"])
+    return record

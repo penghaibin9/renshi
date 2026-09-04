@@ -57,7 +57,8 @@
                                 >
                                     <select
                                         hx-swap="none"
-                                        hx-get="{% url 'change-task-status' %}?task_id={{task.id}}"
+                                        hx-post="{% url 'change-task-status' %}"
+                                        hx-vals='{"task_id":"{{task.id}}"}'
                                         name="status"
                                         style="width: 150px"
                                         id="task_status{{task.id}}"

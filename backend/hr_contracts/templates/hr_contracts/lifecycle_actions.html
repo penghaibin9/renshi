@@ -12,7 +12,8 @@
   <input name="versionId" type="hidden">
   <label><span>执行日期</span><input name="asOf" type="date"><small>留空时由后端按当前学校日期判断。</small></label>
   <label><span>签署时间</span><input name="signedAt" type="datetime-local"><small>仅“签署新版本”使用。</small></label>
-  <label><span>签署文件凭证</span><input name="signedDocumentRef" placeholder="例如电子签回执号或受控文件编号"></label>
+  <label><span>已签合同 PDF</span><input name="signedDocumentFile" type="file" accept="application/pdf,.pdf"></label>
+  <label><span>电子签回执号（可选）</span><input name="signedDocumentRef" placeholder="未上传 PDF 时必须填写"></label>
   <label class="is-wide"><span>已签署内容摘要</span><textarea name="contentSnapshot" placeholder="记录已签署版本的条款摘要；正式文件由受控凭证关联。"></textarea></label>
   <div class="hr07-form-actions hr07-form-actions--wrap">
     <button class="hr07-btn" type="button" data-case-action="submit">提交 Case</button>

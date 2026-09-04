@@ -422,7 +422,9 @@
                                                     {% if leave_allocation_request.status == 'requested' %}
                                                         <a
                                                             type="submit"
-                                                            href="{% url 'leave-allocation-request-approve' leave_allocation_request.id %}"
+                                                            href="#"
+                                                            hx-post="{% url 'leave-allocation-request-approve' leave_allocation_request.id %}"
+                                                            hx-swap="none"
                                                             onclick="return confirm('{% trans "Do you want to approve this request?" %}')"
                                                             title="{% trans 'Approve' %}"
                                                             class="oh-btn oh-btn--success w-100"

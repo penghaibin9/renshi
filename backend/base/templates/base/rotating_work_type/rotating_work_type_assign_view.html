@@ -149,7 +149,7 @@
                                     {% if perms.base.change_rotatingworktypeassign or request.user|is_reportingmanager %}
                                         {% if rwork_type.is_active %}
                                             <form hx-confirm="{% trans 'Do you want to archive this rotating work type assign?' %}"
-                                                hx-get="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
+                                                hx-post="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
                                                 hx-target="#view-container" style="width:100%">
                                                 <button class="oh-btn oh-btn--danger w-100"
                                                     title="{% trans 'Archive' %}">
@@ -158,7 +158,7 @@
                                             </form>
                                         {% else %}
                                             <form hx-confirm="{% trans 'Do you want to un-archive this rotating work type assign?' %}"
-                                                hx-get="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
+                                                hx-post="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
                                                 hx-target="#view-container" style="width:100%">
                                                 <button class="oh-btn oh-btn--danger w-100"
                                                     title="{% trans 'Un-Archive' %}">

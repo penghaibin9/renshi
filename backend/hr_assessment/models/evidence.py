@@ -10,7 +10,32 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from hr_assessment.models.base import TenantScopedModel
+from hr_assessment.models.base import TenantManager, TenantScopedModel
+
+
+class _SealedEvaluationQuerySet(models.QuerySet):
+    """Keep submitted reviewer opinions append-only, including bulk ORM paths."""
+
+    immutable_code = "HR12_SUBMITTED_EVALUATION_IMMUTABLE"
+
+    def update(self, **kwargs):
+        if "submitted_at" in kwargs or self.filter(submitted_at__isnull=False).exists():
+            raise ValueError(self.immutable_code)
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(submitted_at__isnull=False).exists():
+            raise ValueError(self.immutable_code)
+        return super().delete()
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValueError(self.immutable_code)
+
+
+class _SealedEvaluationManager(
+    TenantManager.from_queryset(_SealedEvaluationQuerySet)
+):
+    pass
 
 
 class HrAssessmentEvidenceRef(TenantScopedModel):
@@ -105,9 +130,29 @@ class HrReviewerEvaluation(TenantScopedModel):
     submitted_at = models.DateTimeField(null=True, verbose_name=_("提交时间"))
     revision_no = models.PositiveSmallIntegerField(default=1, verbose_name=_("修订号"))
 
+    objects = _SealedEvaluationManager()
+
+    def save(self, *args, **kwargs) -> None:
+        if not self._state.adding:
+            old = type(self).objects.filter(pk=self.pk).only("submitted_at").first()
+            if old is not None and old.submitted_at is not None:
+                raise ValueError("HR12_SUBMITTED_EVALUATION_IMMUTABLE")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.submitted_at is not None:
+            raise ValueError("HR12_SUBMITTED_EVALUATION_IMMUTABLE")
+        return super().delete(*args, **kwargs)
+
     class Meta:
         db_table = "hr_assessment_reviewer_evaluation"
         verbose_name = _("评议人评价")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("assignment", "revision_no"),
+                name="hr12_evaluation_assignment_revision_uq",
+            )
+        ]
 
 
 class HrQuestionnaireVersion(TenantScopedModel):

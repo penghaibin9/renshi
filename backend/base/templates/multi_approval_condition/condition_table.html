@@ -71,7 +71,7 @@
                                     {% if request.user|is_reportingmanager or perms.base.delete_multipleapprovalcondition %}
                                         <a
                                             hx-confirm="{% trans 'Are you sure you want to delete ?' %}"
-                                            hx-get='{% url "multiple-level-approval-delete" condition.id %}'
+                                            hx-post='{% url "multiple-level-approval-delete" condition.id %}'
                                             hx-target="#multipleApproveCondition"
                                             class="oh-btn oh-btn--danger-outline oh-btn--light-bkg w-100"
                                             id="delete-link"

@@ -10,7 +10,6 @@ Excel 导入 API（总册 §42 · V1 最小实现）：
 from __future__ import annotations
 
 from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_onboarding.api import base as api_base
@@ -45,7 +44,6 @@ def excel_template_download(request):
 
 @require_POST
 @require_hr05_permission("hr05.case.create")
-@csrf_exempt
 def excel_upload(request):
     """上传 Excel 并校验。返回 job_id + 校验结果/error workbook。"""
     try:
@@ -81,7 +79,6 @@ def excel_upload(request):
 
 @require_POST
 @require_hr05_permission("hr05.case.create")
-@csrf_exempt
 def excel_confirm(request):
     """确认执行导入（幂等逐行建 case，不绕过 Activation Service）。"""
     try:

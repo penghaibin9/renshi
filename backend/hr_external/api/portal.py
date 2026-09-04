@@ -8,6 +8,8 @@ hr_external/api/portal.py —— 外聘本人门户 API（B6，总册 §90/§55�
 
 from __future__ import annotations
 
+from django.views.decorators.http import require_GET, require_POST
+
 from hr_external.api.base import (
     api_root,
     error_response,
@@ -21,13 +23,14 @@ from hr_external.services.portal_service import PortalService, PortalTokenInvali
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
         return None, error_response(request, code, str(exc), status)
 
 
+@require_POST
 @require_hr_external_permission("hr08.access.manage")
 def portal_token_issue(request):
     """POST .../portal/tokens body: {profileId} —— 签发本人门户 token（明文只返回一次）。"""
@@ -77,6 +80,7 @@ def _extract_token(request) -> str:
     return (request.GET.get("token") or "").strip()
 
 
+@require_GET
 def portal_me(request):
     """GET .../portal/me —— 本人视图（公开入口，token 鉴权）。
 

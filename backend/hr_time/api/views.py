@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import uuid
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
@@ -70,7 +71,20 @@ def _make_context(request):
             "TENANT_CONTEXT_REQUIRED", "请选择当前学校（多学校账号需明确学校上下文）"
         )
 
-    user_id = request.user.id if getattr(request.user, "is_authenticated", False) else None
+    user = getattr(request, "user", None)
+    if not getattr(user, "is_authenticated", False):
+        raise HrTimeContextError(TimeErrorCode.UNAUTHENTICATED, "未登录", status=401)
+    if not getattr(user, "is_superuser", False):
+        from base.auth_backends import get_allowed_company_ids
+
+        if tenant_id not in (get_allowed_company_ids(user) or ()):
+            raise HrTimeContextError(
+                TimeErrorCode.TENANT_CONTEXT_REQUIRED,
+                "当前账号无权访问该学校数据",
+                status=403,
+            )
+
+    user_id = user.id
 
     scope_id = request.GET.get("scope_id")
     if scope_id in (None, "", "null"):
@@ -85,14 +99,14 @@ def _make_context(request):
 
     return build_hr_time_context(
         tenant_id=tenant_id,
-        school_timezone=request.GET.get("school_timezone") or "Asia/Shanghai",
+        school_timezone=settings.TIME_ZONE,
         user_id=user_id,
         as_of=request.GET.get("as_of"),
         period_from=request.GET.get("period_from"),
         period_to=request.GET.get("period_to"),
         scope_type=request.GET.get("scope_type", "TENANT_ALL"),
         scope_org_id=scope_id,
-        authority_mode=request.GET.get("authority_mode", "LEGACY_ONLY"),
+        authority_mode="HR11_AUTHORITY",
     )
 
 

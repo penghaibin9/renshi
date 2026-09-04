@@ -206,13 +206,13 @@ def candidate_login_required(view_func):
                 func = view_func(request, *args, **kwargs)
             except KeyError:
                 raise
-            except Exception as e:
-                logger.error(e)
+            except Exception:
+                logger.exception("Candidate tracking view failed")
                 if not settings.DEBUG:
-                    messages.error(request, str(e))
+                    messages.error(request, "页面暂时无法处理，请稍后重试。")
                     return render(request, "went_wrong.html", status=404)
-                raise e
+                raise
             return func
-        return redirect("candidate-login/")
+        return redirect("candidate-login")
 
     return _wrapped_view

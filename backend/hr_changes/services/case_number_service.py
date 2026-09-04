@@ -9,6 +9,7 @@ hr_changes/services/case_number_service.py —— case_no 生成（并发安全�
 from __future__ import annotations
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_changes.models import HrPersonnelChangeCase
 from hr_staff.models import HrStaffNumberSequence
@@ -28,9 +29,7 @@ class CaseNumberService:
         self.width = max(4, width)
 
     def next_no(self) -> str:
-        import datetime
-
-        year = datetime.date.today().year
+        year = timezone.localdate().year
         seq, _ = HrStaffNumberSequence.objects.select_for_update().get_or_create(
             tenant_id=self.tenant_id,
             prefix=self.PREFIX,

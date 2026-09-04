@@ -5,12 +5,14 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
+from hr_staff.services.assignment_service import AssignmentService
+from hr_staff.services.employment_service import EmploymentService
 
 from hr_changes.api import changes as changes_api
 from hr_changes.constants import (
+    HR_CHANGE_PERMISSIONS,
     CaseStatus,
     ChangeActionCode,
-    HR_CHANGE_PERMISSIONS,
 )
 from hr_changes.context import HrChangeRequestContext, HrChangeScope
 from hr_changes.models import HrChangeEffectiveSnapshot, HrPersonnelChangeCase
@@ -29,8 +31,6 @@ from hr_changes.tests.factories import (
     make_reason,
     make_staff,
 )
-from hr_staff.services.assignment_service import AssignmentService
-from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
 TENANT_B = 2
@@ -62,8 +62,6 @@ class TenantIsolationTests(TestCase):
     def test_future_list_tenant_scoped(self):
         make_case(TENANT, status=CaseStatus.APPROVED_WAITING_EFFECTIVE)
         make_case(TENANT_B, status=CaseStatus.APPROVED_WAITING_EFFECTIVE)
-        from hr_changes.models import HrPersonnelChangeCase
-
         count_a = HrPersonnelChangeCase.objects.filter(
             tenant_id=TENANT, status=CaseStatus.APPROVED_WAITING_EFFECTIVE
         ).count()

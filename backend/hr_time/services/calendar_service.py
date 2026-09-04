@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import date
+from datetime import date, timedelta
 
 from django.db import transaction
 from django.utils import timezone
-
 from horilla.hr_event_service import emit_registered_event
+
 from hr_time.enums import CalendarDayType
 from hr_time.models.calendar import (
     HrCalendarDay,
@@ -34,14 +34,41 @@ class CalendarServiceError(Exception):
 
 
 def _days_hash(version: HrWorkCalendarVersion) -> str:
-    """按 (date, day_type, is_working_day) 排序后哈希日集。"""
+    """Hash every business-significant day field, including work minutes."""
     days = (
         HrCalendarDay.objects.filter(calendar_version=version)
         .order_by("date")
-        .values_list("date", "day_type", "is_working_day")
+        .values_list(
+            "date",
+            "day_type",
+            "is_working_day",
+            "expected_work_minutes",
+            "statutory_holiday_code",
+            "makeup_for_date",
+            "note",
+        )
     )
     payload = json.dumps(
-        [(d.isoformat(), t, w) for d, t, w in days],
+        [
+            (
+                day.isoformat(),
+                day_type,
+                is_working,
+                expected_minutes,
+                holiday_code,
+                makeup_for.isoformat() if makeup_for else None,
+                note,
+            )
+            for (
+                day,
+                day_type,
+                is_working,
+                expected_minutes,
+                holiday_code,
+                makeup_for,
+                note,
+            ) in days
+        ],
         sort_keys=True,
         ensure_ascii=False,
     )
@@ -49,6 +76,202 @@ def _days_hash(version: HrWorkCalendarVersion) -> str:
 
 
 class CalendarService:
+    @staticmethod
+    def _validated_annual_days(*, year: int, rows: list[dict]) -> list[dict]:
+        """Validate a complete explicit annual calendar before any row is written."""
+        if not isinstance(rows, list):
+            raise CalendarServiceError("CALENDAR_IMPORT_INVALID", "日历明细必须是数组")
+        expected_dates = []
+        current = date(year, 1, 1)
+        while current.year == year:
+            expected_dates.append(current)
+            current += timedelta(days=1)
+        if len(rows) != len(expected_dates):
+            raise CalendarServiceError(
+                "CALENDAR_IMPORT_INCOMPLETE",
+                f"{year} 年日历必须完整包含 {len(expected_dates)} 天，当前收到 {len(rows)} 天",
+            )
+
+        allowed_types = {value for value, _label in CalendarDayType.choices}
+        parsed = {}
+        for index, raw in enumerate(rows, start=2):
+            if not isinstance(raw, dict):
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID", f"第 {index} 行不是有效记录"
+                )
+            try:
+                day = date.fromisoformat(str(raw.get("date") or ""))
+            except ValueError as exc:
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID", f"第 {index} 行日期无效"
+                ) from exc
+            if day.year != year or day in parsed:
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID", f"第 {index} 行日期重复或不属于 {year} 年"
+                )
+            day_type = str(raw.get("dayType") or "").strip().upper()
+            if day_type not in allowed_types:
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID", f"第 {index} 行日类型无效"
+                )
+            is_working = raw.get("isWorkingDay")
+            if not isinstance(is_working, bool):
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID",
+                    f"第 {index} 行 isWorkingDay 必须明确填写 true 或 false",
+                )
+            try:
+                minutes_raw = raw.get("expectedWorkMinutes")
+                minutes = int(minutes_raw) if minutes_raw not in (None, "") else None
+            except (TypeError, ValueError) as exc:
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID", f"第 {index} 行应工作分钟数无效"
+                ) from exc
+            if is_working and (minutes is None or not 1 <= minutes <= 1440):
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID",
+                    f"第 {index} 行为工作日，必须填写 1–1440 的应工作分钟数",
+                )
+            if not is_working and minutes not in (None, 0):
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID",
+                    f"第 {index} 行为非工作日，应工作分钟数必须为空或 0",
+                )
+            holiday_code = str(raw.get("statutoryHolidayCode") or "").strip()[:32]
+            if day_type == CalendarDayType.STATUTORY_HOLIDAY and not holiday_code:
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID",
+                    f"第 {index} 行为法定节假日，必须填写法定节假日编码",
+                )
+            makeup_raw = str(raw.get("makeupForDate") or "").strip()
+            makeup_for = None
+            if makeup_raw:
+                try:
+                    makeup_for = date.fromisoformat(makeup_raw)
+                except ValueError as exc:
+                    raise CalendarServiceError(
+                        "CALENDAR_IMPORT_INVALID", f"第 {index} 行调休对应日期无效"
+                    ) from exc
+            if day_type == CalendarDayType.MAKEUP_WORKDAY and makeup_for is None:
+                raise CalendarServiceError(
+                    "CALENDAR_IMPORT_INVALID",
+                    f"第 {index} 行为调休工作日，必须填写调休对应日期",
+                )
+            parsed[day] = {
+                "date": day,
+                "day_type": day_type,
+                "is_working_day": is_working,
+                "expected_work_minutes": minutes,
+                "statutory_holiday_code": holiday_code or None,
+                "makeup_for_date": makeup_for,
+                "note": str(raw.get("note") or "").strip()[:255],
+            }
+
+        missing = [day for day in expected_dates if day not in parsed]
+        if missing:
+            preview = "、".join(day.isoformat() for day in missing[:5])
+            raise CalendarServiceError(
+                "CALENDAR_IMPORT_INCOMPLETE", f"年度日历缺少日期：{preview}"
+            )
+        return [parsed[day] for day in expected_dates]
+
+    @staticmethod
+    @transaction.atomic
+    def import_and_publish_annual_calendar(
+        *,
+        tenant_id: int,
+        code: str,
+        name: str,
+        year: int,
+        source_ref: str,
+        rows: list[dict],
+        actor_user=None,
+        calendar_type: str = "SCHOOL_ADMIN",
+        source_type: str = "OFFICIAL_IMPORT",
+    ) -> HrWorkCalendarVersion:
+        """Create an immutable full-year version and publish it atomically."""
+        from django.db.models import Max
+
+        from hr_time.enums import CalendarType
+
+        if not tenant_id:
+            raise CalendarServiceError("TENANT_CONTEXT_REQUIRED", "请选择当前学校")
+        code = (code or "").strip().upper()
+        name = (name or "").strip()
+        source_ref = (source_ref or "").strip()
+        source_type = (source_type or "OFFICIAL_IMPORT").strip()
+        if not code or len(code) > 64 or not name or len(name) > 128:
+            raise CalendarServiceError(
+                "CALENDAR_IMPORT_INVALID", "日历代码或名称不符合要求"
+            )
+        if not source_ref or len(source_ref) > 128:
+            raise CalendarServiceError(
+                "CALENDAR_SOURCE_REQUIRED", "必须填写国务院通知或学校校历等正式来源"
+            )
+        if source_type and len(source_type) > 32:
+            raise CalendarServiceError("CALENDAR_IMPORT_INVALID", "来源类型过长")
+        if calendar_type not in {value for value, _label in CalendarType.choices}:
+            raise CalendarServiceError("CALENDAR_IMPORT_INVALID", "日历类型无效")
+        if not 2000 <= int(year) <= 2200:
+            raise CalendarServiceError("CALENDAR_IMPORT_INVALID", "日历年度无效")
+
+        validated = CalendarService._validated_annual_days(year=int(year), rows=rows)
+        calendar, _created = HrWorkCalendar.objects.get_or_create(
+            tenant_id=tenant_id,
+            code=code,
+            defaults={
+                "name": name,
+                "calendar_type": calendar_type,
+                "active": True,
+            },
+        )
+        calendar = HrWorkCalendar.objects.select_for_update().get(
+            tenant_id=tenant_id, id=calendar.id
+        )
+        existing = (
+            HrWorkCalendarVersion.objects.select_for_update()
+            .filter(
+                tenant_id=tenant_id,
+                calendar=calendar,
+                year=year,
+                status="PUBLISHED",
+            )
+            .order_by("-version_no")
+            .first()
+        )
+        next_version = (
+            HrWorkCalendarVersion.objects.filter(
+                tenant_id=tenant_id, calendar=calendar, year=year
+            ).aggregate(value=Max("version_no"))["value"]
+            or 0
+        ) + 1
+        version = HrWorkCalendarVersion.objects.create(
+            tenant_id=tenant_id,
+            calendar=calendar,
+            year=year,
+            version_no=next_version,
+            source_type=source_type,
+            source_ref=source_ref,
+            status="DRAFT",
+            supersedes_version_id=existing.id if existing else None,
+            created_by=actor_user,
+            updated_by=actor_user,
+        )
+        HrCalendarDay.objects.bulk_create(
+            [
+                HrCalendarDay(
+                    tenant_id=tenant_id,
+                    calendar_version=version,
+                    created_by=actor_user,
+                    updated_by=actor_user,
+                    **row,
+                )
+                for row in validated
+            ],
+            batch_size=500,
+        )
+        return CalendarService.publish_version(version, actor_user=actor_user)
+
     @staticmethod
     @transaction.atomic
     def publish_version(

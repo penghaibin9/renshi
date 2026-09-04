@@ -5,10 +5,13 @@ from urllib.parse import parse_qs, urlparse
 from django.apps import apps
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.http import HttpResponse, JsonResponse
+from django.db import transaction
+from django.db.models import ProtectedError, Q
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_http_methods
 
 from base.context_processors import intial_notice_period
 from base.methods import closest_numbers, eval_validate, paginator_qry, sortby
@@ -74,6 +77,77 @@ def any_manager(employee: Employee):
         | OffboardingStage.objects.filter(managers=employee).exists()
         | OffboardingTask.objects.filter(managers=employee).exists()
     )
+
+
+def _can_manage_offboarding_task(request, task, permission):
+    """Return whether the actor may manage this exact offboarding task."""
+    if request.user.has_perm(permission):
+        return True
+    employee = request.user.employee_get
+    stage = task.stage_id
+    return (
+        task.managers.filter(id=employee.id).exists()
+        or bool(
+            stage
+            and (
+                stage.managers.filter(id=employee.id).exists()
+                or stage.offboarding_id.managers.filter(id=employee.id).exists()
+            )
+        )
+    )
+
+
+def _can_manage_offboarding(request, offboarding, *permissions):
+    if any(request.user.has_perm(permission) for permission in permissions):
+        return True
+    return offboarding.managers.filter(id=request.user.employee_get.id).exists()
+
+
+def _can_manage_offboarding_stage(request, stage, *permissions):
+    if any(request.user.has_perm(permission) for permission in permissions):
+        return True
+    employee_id = request.user.employee_get.id
+    return (
+        stage.managers.filter(id=employee_id).exists()
+        or stage.offboarding_id.managers.filter(id=employee_id).exists()
+    )
+
+
+def _can_access_offboarding_employee(request, offboarding_employee, *permissions):
+    """Check access against the exact employee and their current process."""
+    if any(request.user.has_perm(permission) for permission in permissions):
+        return True
+    if not offboarding_employee or not offboarding_employee.employee_id_id:
+        return False
+    actor = request.user.employee_get
+    if offboarding_employee.employee_id_id == actor.id:
+        return True
+    work_info = getattr(offboarding_employee.employee_id, "employee_work_info", None)
+    if work_info and work_info.reporting_manager_id_id == actor.id:
+        return True
+    stage = offboarding_employee.stage_id
+    return bool(
+        stage
+        and (
+            stage.managers.filter(id=actor.id).exists()
+            or stage.offboarding_id.managers.filter(id=actor.id).exists()
+        )
+    )
+
+
+def _can_move_offboarding_employees(request, target_stage, employees):
+    """Authorize a move only inside the actor's exact offboarding scope."""
+    if request.user.has_perm("offboarding.change_offboarding") or request.user.has_perm(
+        "offboarding.change_offboardingemployee"
+    ):
+        return True
+    employee = request.user.employee_get
+    if (
+        target_stage.managers.filter(id=employee.id).exists()
+        or target_stage.offboarding_id.managers.filter(id=employee.id).exists()
+    ):
+        return True
+    return not employees.exclude(stage_id__managers=employee).exists()
 
 
 def pipeline_grouper(filters={}, offboardings=[]):
@@ -222,6 +296,7 @@ def filter_pipeline(request):
 @login_required
 @hx_request_required
 @permission_required("offboarding.add_offboarding")
+@transaction.atomic
 def create_offboarding(request):
     """
     Create offboarding view
@@ -239,16 +314,18 @@ def create_offboarding(request):
             users = [
                 employee.employee_user_id for employee in off_boarding.managers.all()
             ]
-            notify.send(
-                request.user.employee_get,
-                recipient=users,
-                verb="You are chosen as an offboarding manager",
-                verb_ar="لقد تم اختيارك كمدير عملية المغادرة",
-                verb_de="Sie wurden als Offboarding-Manager ausgewählt",
-                verb_es="Has sido elegido como gerente de offboarding",
-                verb_fr="Vous avez été choisi comme responsable du processus de départ",
-                icon="people-circle",
-                redirect=reverse("offboarding-pipeline"),
+            transaction.on_commit(
+                lambda: notify.send(
+                    request.user.employee_get,
+                    recipient=users,
+                    verb="You are chosen as an offboarding manager",
+                    verb_ar="لقد تم اختيارك كمدير عملية المغادرة",
+                    verb_de="Sie wurden als Offboarding-Manager ausgewählt",
+                    verb_es="Has sido elegido como gerente de offboarding",
+                    verb_fr="Vous avez été choisi comme responsable du processus de départ",
+                    icon="people-circle",
+                    redirect=reverse("offboarding-pipeline"),
+                )
             )
 
             return HorillaRedirect(request)
@@ -264,31 +341,55 @@ def create_offboarding(request):
 
 @login_required
 @permission_required("offboarding.delete_offboarding")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_offboarding(request, id):
     """
     This method is used to delete offboardings
     """
     try:
-        offboarding = Offboarding.objects.get(id=id)
+        offboarding = Offboarding.objects.select_for_update().get(id=id)
         offboarding.delete()
         messages.success(request, _("Offboarding deleted"))
     except (Offboarding.DoesNotExist, OverflowError):
         messages.error(request, _("Offboarding not found"))
+    except ProtectedError:
+        messages.error(request, _("Delete the protected offboarding tasks first."))
     return redirect(filter_pipeline)
 
 
 @login_required
-@offboarding_manager_can_enter("offboarding.add_offboardingstage")
+@any_manager_can_enter(
+    ("offboarding.add_offboardingstage", "offboarding.change_offboardingstage")
+)
+@transaction.atomic
 def create_stage(request):
     """
     This method is used to create stages for offboardings
     """
-    offboarding_id = request.GET["offboarding_id"]
+    offboarding_id = request.GET.get("offboarding_id")
+    if not str(offboarding_id or "").isdigit():
+        return JsonResponse({"error": "Invalid offboarding process."}, status=400)
     instance_id = eval_validate(str(request.GET.get("instance_id")))
+    offboarding = (
+        Offboarding.objects.select_for_update().filter(id=offboarding_id).first()
+    )
+    if not offboarding:
+        return HorillaRedirect(request, message=_("Offboarding not found"))
+    if not _can_manage_offboarding(
+        request,
+        offboarding,
+        "offboarding.add_offboardingstage",
+        "offboarding.change_offboardingstage",
+    ):
+        return HttpResponseForbidden(_("You don't have permission."))
     instance = None
     if instance_id and isinstance(instance_id, int):
-        instance = OffboardingStage.objects.get(id=instance_id)
-    offboarding = Offboarding.objects.get(id=offboarding_id)
+        instance = OffboardingStage.objects.select_for_update().filter(
+            id=instance_id, offboarding_id=offboarding
+        ).first()
+        if not instance:
+            return HorillaRedirect(request, message=_("Stage not found"))
     form = OffboardingStageForm(instance=instance)
     form.instance.offboarding_id = offboarding
     if request.method == "POST":
@@ -300,16 +401,18 @@ def create_stage(request):
             instance.managers.set(form.data.getlist("managers"))
             messages.success(request, _("Stage saved"))
             users = [employee.employee_user_id for employee in instance.managers.all()]
-            notify.send(
-                request.user.employee_get,
-                recipient=users,
-                verb="You are chosen as offboarding stage manager",
-                verb_ar="لقد تم اختيارك كمدير لمرحلة عملية المغادرة",
-                verb_de="Sie wurden als Manager der Offboarding-Phase ausgewählt",
-                verb_es="Has sido elegido como gerente de la etapa de offboarding",
-                verb_fr="Vous avez été choisi comme responsable de l'étape de départ",
-                icon="people-circle",
-                redirect=reverse("offboarding-pipeline"),
+            transaction.on_commit(
+                lambda: notify.send(
+                    request.user.employee_get,
+                    recipient=users,
+                    verb="You are chosen as offboarding stage manager",
+                    verb_ar="لقد تم اختيارك كمدير لمرحلة عملية المغادرة",
+                    verb_de="Sie wurden als Manager der Offboarding-Phase ausgewählt",
+                    verb_es="Has sido elegido como gerente de la etapa de offboarding",
+                    verb_fr="Vous avez été choisi comme responsable du processus de départ",
+                    icon="people-circle",
+                    redirect=reverse("offboarding-pipeline"),
+                )
             )
             return HorillaRedirect(request)
 
@@ -318,26 +421,46 @@ def create_stage(request):
 
 @login_required
 @offboarding_manager_can_enter("offboarding.change_offboardingstage")
+@transaction.atomic
 def update_stage_order(request, pk):
     """
     This method is used to update the stage sequence of the offboarding
     """
-    offboarding = Offboarding.find(pk)
+    offboarding = Offboarding.objects.select_for_update().filter(id=pk).first()
     if not offboarding:
         return HorillaRedirect(request, message=_("Offboarding not found"))
+    if not _can_manage_offboarding(
+        request, offboarding, "offboarding.change_offboardingstage"
+    ):
+        return HttpResponseForbidden(_("You don't have permission."))
 
     if request.method == "POST":
         try:
             order = json.loads(request.POST.get("order", "[]"))
-            for index, stage_id in enumerate(order):
-                stage = offboarding.offboardingstage_set.get(id=stage_id)
-                stage.sequence = index + 1
-                stage.save()
-            messages.success(request, _("Sequence Updated Successfully"))
-            return JsonResponse({"status": "success"})
-        except Exception as e:
+        except (TypeError, json.JSONDecodeError):
             messages.error(request, _("Error Updating Sequence.."))
-            return JsonResponse({"status": "error", "message": str(e)}, status=400)
+            return JsonResponse({"status": "error"}, status=400)
+        if not isinstance(order, list) or len(order) > 500:
+            return JsonResponse({"status": "error"}, status=400)
+        try:
+            order = [int(stage_id) for stage_id in order]
+        except (TypeError, ValueError):
+            return JsonResponse({"status": "error"}, status=400)
+        stages = list(
+            OffboardingStage.objects.select_for_update().filter(
+                offboarding_id=offboarding
+            )
+        )
+        if len(set(order)) != len(order) or set(order) != {
+            stage.id for stage in stages
+        }:
+            return JsonResponse({"status": "error"}, status=400)
+        positions = {stage_id: index + 1 for index, stage_id in enumerate(order)}
+        for stage in stages:
+            stage.sequence = positions[stage.id]
+        OffboardingStage.objects.bulk_update(stages, ["sequence"])
+        messages.success(request, _("Sequence Updated Successfully"))
+        return JsonResponse({"status": "success"})
 
     stages = offboarding.offboardingstage_set.order_by("sequence")
 
@@ -352,7 +475,10 @@ def update_stage_order(request, pk):
 
 
 @login_required
-@any_manager_can_enter("offboarding.add_offboardingemployee")
+@any_manager_can_enter(
+    ("offboarding.add_offboardingemployee", "offboarding.change_offboardingemployee")
+)
+@transaction.atomic
 def add_employee(request):
     """
     This method is used to add employee to the stage
@@ -363,12 +489,27 @@ def add_employee(request):
         else 0
     )
     end_date = datetime.today() + timedelta(days=default_notice_period)
-    stage_id = request.GET["stage_id"]
+    stage_id = request.GET.get("stage_id")
+    if not str(stage_id or "").isdigit():
+        return JsonResponse({"error": "Invalid stage."}, status=400)
     instance_id = eval_validate(str(request.GET.get("instance_id")))
+    stage = OffboardingStage.objects.select_for_update().filter(id=stage_id).first()
+    if not stage:
+        return HorillaRedirect(request, message=_("Stage not found"))
+    if not _can_manage_offboarding_stage(
+        request,
+        stage,
+        "offboarding.add_offboardingemployee",
+        "offboarding.change_offboardingemployee",
+    ):
+        return HttpResponseForbidden(_("You don't have permission."))
     instance = None
     if instance_id and isinstance(instance_id, int):
-        instance = OffboardingEmployee.objects.get(id=instance_id)
-    stage = OffboardingStage.objects.get(id=stage_id)
+        instance = OffboardingEmployee.objects.select_for_update().filter(
+            id=instance_id, stage_id__offboarding_id=stage.offboarding_id
+        ).first()
+        if not instance:
+            return HorillaRedirect(request, message=_("Employee not found"))
     form = OffboardingEmployeeForm(
         initial={"stage_id": stage, "notice_period_ends": end_date}, instance=instance
     )
@@ -381,16 +522,19 @@ def add_employee(request):
             instance.save()
             messages.success(request, _("Employee saved"))
             if not instance_id:
-                notify.send(
-                    request.user.employee_get,
-                    recipient=instance.employee_id.employee_user_id,
-                    verb=f"You have been added to the {stage} of {stage.offboarding_id}",
-                    verb_ar=f"لقد تمت إضافتك إلى {stage} من {stage.offboarding_id}",
-                    verb_de=f"Du wurdest zu {stage} von {stage.offboarding_id} hinzugefügt",
-                    verb_es=f"Has sido añadido a {stage} de {stage.offboarding_id}",
-                    verb_fr=f"Vous avez été ajouté à {stage} de {stage.offboarding_id}",
-                    redirect=reverse("offboarding-pipeline"),
-                    icon="information",
+                recipient = instance.employee_id.employee_user_id
+                transaction.on_commit(
+                    lambda: notify.send(
+                        request.user.employee_get,
+                        recipient=recipient,
+                        verb=f"You have been added to the {stage} of {stage.offboarding_id}",
+                        verb_ar=f"لقد تمت إضافتك إلى {stage} من {stage.offboarding_id}",
+                        verb_de=f"Du wurdest zu {stage} von {stage.offboarding_id} hinzugefügt",
+                        verb_es=f"Has sido añadido a {stage} de {stage.offboarding_id}",
+                        verb_fr=f"Vous avez été ajouté à {stage} de {stage.offboarding_id}",
+                        redirect=reverse("offboarding-pipeline"),
+                        icon="information",
+                    )
                 )
             return HorillaRedirect(request)
 
@@ -399,27 +543,38 @@ def add_employee(request):
 
 @login_required
 @permission_required("offboarding.delete_offboardingemployee")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_employee(request):
     """
     This method is used to delete the offboarding employee
     """
-    employee_ids = request.GET.getlist("employee_ids")
-    instances = OffboardingEmployee.objects.filter(id__in=employee_ids)
+    employee_ids = [
+        value for value in request.POST.getlist("employee_ids") if value.isdigit()
+    ]
+    if not employee_ids or len(employee_ids) > 500:
+        return JsonResponse({"error": "Invalid employee IDs."}, status=400)
+    instances = OffboardingEmployee.objects.select_for_update().filter(
+        id__in=employee_ids
+    )
     if instances:
+        recipient_ids = list(
+            instances.values_list("employee_id__employee_user_id", flat=True)
+        )
         instances.delete()
         messages.success(request, _("Offboarding employee deleted"))
-        notify.send(
-            request.user.employee_get,
-            recipient=HorillaUser.objects.filter(
-                id__in=instances.values_list("employee_id__employee_user_id", flat=True)
-            ),
-            verb=f"You have been removed from the offboarding",
-            verb_ar=f"لقد تمت إزالتك من إنهاء الخدمة",
-            verb_de=f"Du wurdest aus dem Offboarding entfernt",
-            verb_es=f"Has sido eliminado del offboarding",
-            verb_fr=f"Vous avez été retiré de l'offboarding",
-            redirect=reverse("offboarding-pipeline"),
-            icon="information",
+        transaction.on_commit(
+            lambda: notify.send(
+                request.user.employee_get,
+                recipient=HorillaUser.objects.filter(id__in=recipient_ids),
+                verb="You have been removed from the offboarding",
+                verb_ar="لقد تمت إزالتك من إنهاء الخدمة",
+                verb_de="Du wurdest aus dem Offboarding entfernt",
+                verb_es="Has sido eliminado del offboarding",
+                verb_fr="Vous avez été retiré de l'offboarding",
+                redirect=reverse("offboarding-pipeline"),
+                icon="information",
+            )
         )
     else:
         messages.error(request, _("Employees not found"))
@@ -428,19 +583,23 @@ def delete_employee(request):
 
 @login_required
 @permission_required("offboarding.delete_offboardingstage")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_stage(request):
     """
     This method  is used to delete the offboarding stage
     """
-    ids = request.GET.getlist("ids")
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    if not ids or len(ids) > 500:
+        return JsonResponse({"error": "Invalid stage IDs."}, status=400)
     try:
-        instances = OffboardingStage.objects.filter(id__in=ids)
+        instances = OffboardingStage.objects.select_for_update().filter(id__in=ids)
         if instances:
             instances.delete()
             messages.success(request, _("Stage deleted"))
         else:
             messages.error(request, _("Stage not found"))
-    except OverflowError:
+    except (OverflowError, ProtectedError):
         messages.error(request, _("Stage not found"))
     return HorillaRedirect(request)
 
@@ -487,15 +646,33 @@ def _swal_error_script(message):
 
 @login_required
 @hx_request_required
-@any_manager_can_enter("offboarding.change_offboarding")
+@any_manager_can_enter(
+    ("offboarding.change_offboarding", "offboarding.change_offboardingemployee")
+)
+@require_http_methods(["POST"])
+@transaction.atomic
 def change_stage(request):
     """
     This method is used to update the stages of the employee
     """
-    employee_ids = request.GET.getlist("employee_ids")
-    stage_id = request.GET["stage_id"]
-    employees = OffboardingEmployee.objects.filter(id__in=employee_ids)
-    stage = OffboardingStage.objects.get(id=stage_id)
+    employee_ids = [
+        value for value in request.POST.getlist("employee_ids") if value.isdigit()
+    ]
+    stage_id = request.POST.get("stage_id")
+    if not employee_ids or len(employee_ids) > 500 or not str(stage_id or "").isdigit():
+        return JsonResponse({"error": "Invalid stage change."}, status=400)
+    stage = OffboardingStage.objects.select_for_update().filter(id=stage_id).first()
+    if not stage:
+        return HorillaRedirect(request, message=_("Stage not found"))
+    employees = OffboardingEmployee.objects.select_for_update().filter(
+        id__in=employee_ids, stage_id__offboarding_id=stage.offboarding_id
+    )
+    if set(str(value) for value in employees.values_list("id", flat=True)) != set(
+        employee_ids
+    ):
+        return JsonResponse({"error": "Employees must belong to this offboarding."}, status=400)
+    if not _can_move_offboarding_employees(request, stage, employees):
+        return HttpResponseForbidden(_("You don't have permission."))
 
     blocked_message = _blocked_required_tasks_message(employees, stage)
     if blocked_message:
@@ -535,18 +712,21 @@ def change_stage(request):
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(
         offboarding=stage.offboarding_id
     )
-    notify.send(
-        request.user.employee_get,
-        recipient=HorillaUser.objects.filter(
-            id__in=employees.values_list("employee_id__employee_user_id", flat=True)
-        ),
-        verb=f"Offboarding stage has been changed",
-        verb_ar=f"تم تغيير مرحلة إنهاء الخدمة",
-        verb_de=f"Die Offboarding-Stufe wurde geändert",
-        verb_es=f"Se ha cambiado la etapa de offboarding",
-        verb_fr=f"L'étape d'offboarding a été changée",
-        redirect=reverse("offboarding-pipeline"),
-        icon="information",
+    recipient_ids = list(
+        employees.values_list("employee_id__employee_user_id", flat=True)
+    )
+    transaction.on_commit(
+        lambda: notify.send(
+            request.user.employee_get,
+            recipient=HorillaUser.objects.filter(id__in=recipient_ids),
+            verb="Offboarding stage has been changed",
+            verb_ar="تم تغيير مرحلة إنهاء الخدمة",
+            verb_de="Die Offboarding-Stufe wurde geändert",
+            verb_es="Se ha cambiado la etapa de offboarding",
+            verb_fr="L'étape d'offboarding a été changée",
+            redirect=reverse("offboarding-pipeline"),
+            icon="information",
+        )
     )
     groups = pipeline_grouper({}, [stage.offboarding_id])
     for item in groups:
@@ -565,15 +745,33 @@ def change_stage(request):
 
 @login_required
 @hx_request_required
-@any_manager_can_enter("offboarding.change_offboarding")
+@any_manager_can_enter(
+    ("offboarding.change_offboarding", "offboarding.change_offboardingemployee")
+)
+@require_http_methods(["POST"])
+@transaction.atomic
 def change_offboarding_stage(request):
     """
     This method is used to update the stages of the employee
     """
-    employee_ids = request.GET.getlist("employee_ids")
-    stage_id = request.GET["stage_id"]
-    employees = OffboardingEmployee.objects.filter(id__in=employee_ids)
-    stage = OffboardingStage.objects.get(id=stage_id)
+    employee_ids = [
+        value for value in request.POST.getlist("employee_ids") if value.isdigit()
+    ]
+    stage_id = request.POST.get("stage_id")
+    if not employee_ids or len(employee_ids) > 500 or not str(stage_id or "").isdigit():
+        return JsonResponse({"error": "Invalid stage change."}, status=400)
+    stage = OffboardingStage.objects.select_for_update().filter(id=stage_id).first()
+    if not stage:
+        return HorillaRedirect(request, message=_("Stage not found"))
+    employees = OffboardingEmployee.objects.select_for_update().filter(
+        id__in=employee_ids, stage_id__offboarding_id=stage.offboarding_id
+    )
+    if set(str(value) for value in employees.values_list("id", flat=True)) != set(
+        employee_ids
+    ):
+        return JsonResponse({"error": "Employees must belong to this offboarding."}, status=400)
+    if not _can_move_offboarding_employees(request, stage, employees):
+        return HttpResponseForbidden(_("You don't have permission."))
 
     blocked_message = _blocked_required_tasks_message(employees, stage)
     if blocked_message:
@@ -599,18 +797,21 @@ def change_offboarding_stage(request):
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(
         offboarding=stage.offboarding_id
     )
-    notify.send(
-        request.user.employee_get,
-        recipient=HorillaUser.objects.filter(
-            id__in=employees.values_list("employee_id__employee_user_id", flat=True)
-        ),
-        verb=f"Offboarding stage has been changed",
-        verb_ar=f"تم تغيير مرحلة إنهاء الخدمة",
-        verb_de=f"Die Offboarding-Stufe wurde geändert",
-        verb_es=f"Se ha cambiado la etapa de offboarding",
-        verb_fr=f"L'étape d'offboarding a été changée",
-        redirect=reverse("offboarding-pipeline"),
-        icon="information",
+    recipient_ids = list(
+        employees.values_list("employee_id__employee_user_id", flat=True)
+    )
+    transaction.on_commit(
+        lambda: notify.send(
+            request.user.employee_get,
+            recipient=HorillaUser.objects.filter(id__in=recipient_ids),
+            verb="Offboarding stage has been changed",
+            verb_ar="تم تغيير مرحلة إنهاء الخدمة",
+            verb_de="Die Offboarding-Stufe wurde geändert",
+            verb_es="Se ha cambiado la etapa de offboarding",
+            verb_fr="L'étape d'offboarding a été changée",
+            redirect=reverse("offboarding-pipeline"),
+            icon="information",
+        )
     )
     groups = pipeline_grouper({}, [stage.offboarding_id])
     for item in groups:
@@ -621,18 +822,33 @@ def change_offboarding_stage(request):
 
 @login_required
 @hx_request_required
-@owner_can_enter("view_offboardingnote", OffboardingNote)
-@any_manager_can_enter(
-    "offboarding.view_offboardingnote", offboarding_employee_can_enter=True
-)
+@transaction.atomic
 def view_notes(request, employee_id=None):
     """
     This method is used to render all the notes of the employee
     """
-    if request.FILES:
+    employee = OffboardingEmployee.objects.select_for_update().filter(
+        id=employee_id
+    ).first()
+    if not employee:
+        return HorillaRedirect(request, message=_("Employee not found."))
+    if not _can_access_offboarding_employee(
+        request,
+        employee,
+        "offboarding.view_offboardingnote",
+        "offboarding.add_offboardingnote",
+        "offboarding.change_offboardingnote",
+    ):
+        return HttpResponseForbidden(_("You don't have permission."))
+    if request.method == "POST" and request.FILES:
         files = request.FILES.getlist("files")
-        note_id = request.GET["note_id"]
-        note = OffboardingNote.objects.get(id=note_id)
+        if not files or len(files) > 20:
+            return JsonResponse({"error": "Invalid attachments."}, status=400)
+        note = OffboardingNote.objects.select_for_update().filter(
+            id=request.POST.get("note_id"), employee_id=employee
+        ).first()
+        if not note:
+            return HorillaRedirect(request, message=_("Note not found."))
         attachments = []
         for file in files:
             attachment = OffboardingStageMultipleFile()
@@ -640,9 +856,6 @@ def view_notes(request, employee_id=None):
             attachment.save()
             attachments.append(attachment)
         note.attachments.add(*attachments)
-    offboarding_employee_id = employee_id
-    employee = OffboardingEmployee.objects.get(id=offboarding_employee_id)
-
     return render(
         request,
         "offboarding/note/view_notes.html",
@@ -653,18 +866,27 @@ def view_notes(request, employee_id=None):
 
 
 @login_required
-@owner_can_enter("add_offboardingnote", OffboardingNote)
-# @any_manager_can_enter("offboarding.add_offboardingnote")
+@transaction.atomic
 def add_note(request):
     """
     This method is used to create note for the offboarding employee
     """
-    employee_id = request.GET.get("employee_id")
+    employee_id = (
+        request.POST.get("employee_id")
+        if request.method == "POST"
+        else request.GET.get("employee_id")
+    )
     if not employee_id:
         return HorillaRedirect(request, message=_("Missing required parameter."))
-    employee = OffboardingEmployee.find(employee_id)
+    employee = OffboardingEmployee.objects.select_for_update().filter(
+        id=employee_id
+    ).first()
     if not employee:
         return HorillaRedirect(request, message=_("Employee not found."))
+    if not _can_access_offboarding_employee(
+        request, employee, "offboarding.add_offboardingnote"
+    ):
+        return HttpResponseForbidden(_("You don't have permission."))
     form = NoteForm()
     if request.method == "POST":
         form = NoteForm(request.POST, request.FILES)
@@ -684,14 +906,24 @@ def add_note(request):
 
 
 @login_required
-@manager_can_enter(perm="offboarding.delete_offboardingnote")
+@require_http_methods(["POST"])
+@transaction.atomic
 def offboarding_note_delete(request, note_id):
     """
     This method is used to delete the offboarding note
     """
     script = ""
     try:
-        note = OffboardingNote.objects.get(id=note_id)
+        note = OffboardingNote.objects.select_for_update().select_related(
+            "employee_id"
+        ).get(id=note_id)
+        if (
+            note.note_by_id != request.user.employee_get.id
+            and not _can_access_offboarding_employee(
+                request, note.employee_id, "offboarding.delete_offboardingnote"
+            )
+        ):
+            return HttpResponseForbidden(_("You don't have permission."))
         note.delete()
         messages.success(request, _("The note has been successfully deleted."))
     except OffboardingNote.DoesNotExist:
@@ -701,14 +933,34 @@ def offboarding_note_delete(request, note_id):
 
 @login_required
 @hx_request_required
-@permission_required("offboarding.delete_offboardingnote")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_attachment(request):
     """
     Used to delete attachment
     """
     script = ""
-    ids = request.GET.getlist("ids")
-    OffboardingStageMultipleFile.objects.filter(id__in=ids).delete()
+    ids = [value for value in request.POST.getlist("ids") if value.isdigit()]
+    employee_id = request.POST.get("employee_id")
+    if not ids or len(ids) > 500 or not str(employee_id or "").isdigit():
+        return JsonResponse({"error": "Invalid attachment request."}, status=400)
+    note = OffboardingNote.objects.select_for_update().filter(
+        id=request.POST.get("note_id"), employee_id_id=employee_id
+    ).first()
+    if not note:
+        return HorillaRedirect(request, message=_("Note not found."))
+    if (
+        note.note_by_id != request.user.employee_get.id
+        and not _can_access_offboarding_employee(
+            request, note.employee_id, "offboarding.delete_offboardingnote"
+        )
+    ):
+        return HttpResponseForbidden(_("You don't have permission."))
+    records = list(note.attachments.select_for_update().filter(id__in=ids))
+    note.attachments.remove(*records)
+    OffboardingStageMultipleFile.objects.filter(
+        id__in=[record.id for record in records], offboardingnote__isnull=True
+    ).delete()
     messages.success(request, _("File deleted successfully"))
     return HttpResponse(script)
 
@@ -756,35 +1008,63 @@ def add_task(request):
 @any_manager_can_enter(
     "offboarding.change_employeetask", offboarding_employee_can_enter=True
 )
+@require_http_methods(["POST"])
+@transaction.atomic
 def update_task_status(request, *args, **kwargs):
     """
     This method is used to update the assigned tasks status
     """
-    stage_id = request.GET.get("stage_id")
-    employee_ids = request.GET.getlist("employee_ids")
-    task_id = request.GET.get("task_id")
-    status = request.GET.get("task_status")
+    stage_id = request.POST.get("stage_id")
+    employee_ids = [
+        value for value in request.POST.getlist("employee_ids") if value.isdigit()
+    ]
+    task_id = request.POST.get("task_id")
+    status = request.POST.get("task_status")
     if not task_id or not status or not stage_id or not employee_ids:
         return HorillaRedirect(request, message=_("Missing required parameters."))
-    employee_task = EmployeeTask.objects.filter(
-        employee_id__id__in=employee_ids, task_id__id=task_id
+    if status not in dict(EmployeeTask.statuses):
+        return JsonResponse({"error": "Invalid task status."}, status=400)
+    if len(employee_ids) > 500:
+        return JsonResponse({"error": "Too many employees."}, status=400)
+    task = OffboardingTask.objects.select_for_update().filter(
+        id=task_id, stage_id=stage_id
+    ).first()
+    if not task:
+        return HorillaRedirect(request, message=_("Task not found"))
+    employees = OffboardingEmployee.objects.select_for_update().filter(
+        id__in=employee_ids, stage_id=stage_id
+    )
+    requested_ids = set(employee_ids)
+    if set(str(value) for value in employees.values_list("id", flat=True)) != requested_ids:
+        return JsonResponse({"error": "Invalid employee selection."}, status=400)
+    if not _can_manage_offboarding_task(
+        request, task, "offboarding.change_employeetask"
+    ):
+        actor_id = request.user.employee_get.id
+        if employees.exclude(employee_id_id=actor_id).exists():
+            return HttpResponseForbidden(_("You don't have permission."))
+    employee_task = EmployeeTask.objects.select_for_update().filter(
+        employee_id__in=employees, task_id=task
     )
     employee_task.update(status=status)
     messages.success(request, _("Task status updated successfully..."))
-    notify.send(
-        request.user.employee_get,
-        recipient=HorillaUser.objects.filter(
-            id__in=employee_task.values_list(
-                "task_id__managers__employee_user_id", flat=True
-            )
-        ),
-        verb=f"Offboarding Task status has been updated",
-        verb_ar=f"تم تحديث حالة مهمة إنهاء الخدمة",
-        verb_de=f"Der Status der Offboarding-Aufgabe wurde aktualisiert",
-        verb_es=f"Se ha actualizado el estado de la tarea de offboarding",
-        verb_fr=f"Le statut de la tâche d'offboarding a été mis à jour",
-        redirect=reverse("offboarding-pipeline"),
-        icon="information",
+    recipient_ids = list(
+        employee_task.values_list(
+            "task_id__managers__employee_user_id", flat=True
+        ).distinct()
+    )
+    transaction.on_commit(
+        lambda: notify.send(
+            request.user.employee_get,
+            recipient=HorillaUser.objects.filter(id__in=recipient_ids),
+            verb="Offboarding Task status has been updated",
+            verb_ar="تم تحديث حالة مهمة إنهاء الخدمة",
+            verb_de="Der Status der Offboarding-Aufgabe wurde aktualisiert",
+            verb_es="Se ha actualizado el estado de la tarea de offboarding",
+            verb_fr="Le statut de la tâche d'offboarding a été mis à jour",
+            redirect=reverse("offboarding-pipeline"),
+            icon="information",
+        )
     )
     stage = OffboardingStage.find(stage_id)
     if not stage:
@@ -809,24 +1089,34 @@ def update_task_status(request, *args, **kwargs):
 
 @login_required
 @any_manager_can_enter("offboarding.add_employeetask")
+@require_http_methods(["POST"])
+@transaction.atomic
 def task_assign(request):
     """
     This method is used to assign task to employees
     """
-    employee_ids = request.GET.getlist("employee_ids")
-    task_id = request.GET.get("task_id")
-    employees = OffboardingEmployee.objects.filter(id__in=employee_ids)
-    task = OffboardingTask.find(task_id)
+    employee_ids = [
+        value for value in request.POST.getlist("employee_ids") if value.isdigit()
+    ]
+    task_id = request.POST.get("task_id")
+    if not employee_ids or len(employee_ids) > 500 or not str(task_id or "").isdigit():
+        return JsonResponse({"error": "Invalid task assignment."}, status=400)
+    task = OffboardingTask.objects.select_for_update().filter(id=task_id).first()
     if not task:
         return HorillaRedirect(request, message=_("Task not found"))
+    if not _can_manage_offboarding_task(request, task, "offboarding.add_employeetask"):
+        return HttpResponseForbidden(_("You don't have permission."))
+    employees = OffboardingEmployee.objects.select_for_update().filter(
+        id__in=employee_ids, stage_id=task.stage_id
+    )
+    if set(str(value) for value in employees.values_list("id", flat=True)) != set(
+        employee_ids
+    ):
+        return JsonResponse({"error": "Invalid employee selection."}, status=400)
     for employee in employees:
-        try:
-            assigned_task = EmployeeTask()
-            assigned_task.employee_id = employee
-            assigned_task.task_id = task
-            assigned_task.save()
-        except:
-            pass
+        EmployeeTask.objects.select_for_update().get_or_create(
+            employee_id=employee, task_id=task
+        )
     offboarding = employees.first().stage_id.offboarding_id
     stage_forms = {}
     stage_forms[str(offboarding.id)] = StageSelectForm(offboarding=offboarding)
@@ -847,12 +1137,25 @@ def task_assign(request):
 
 @login_required
 @offboarding_or_stage_manager_can_enter("offboarding.delete_offboardingtask")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_task(request):
     """
     This method is used to delete the task
     """
-    task_ids = request.GET.getlist("task_ids")
-    tasks = OffboardingTask.objects.filter(id__in=task_ids)
+    task_ids = [value for value in request.POST.getlist("task_ids") if value.isdigit()]
+    if not task_ids or len(task_ids) > 500:
+        return JsonResponse({"error": "Invalid task IDs."}, status=400)
+    tasks = OffboardingTask.objects.select_for_update().filter(id__in=task_ids)
+    if not request.user.has_perm("offboarding.delete_offboardingtask"):
+        actor_id = request.user.employee_get.id
+        tasks = tasks.filter(
+            Q(managers=actor_id)
+            | Q(stage_id__managers=actor_id)
+            | Q(stage_id__offboarding_id__managers=actor_id)
+        ).distinct()
+    if tasks.count() != len(set(task_ids)):
+        return HttpResponseForbidden(_("You don't have permission."))
     if tasks:
         tasks.delete()
         messages.success(request, _("Task deleted"))
@@ -1058,18 +1361,26 @@ def resignation_list_swap_response(original_request):
 
 @login_required
 @check_feature_enabled("resignation_request")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_resignation_request(request):
     """
     This method is used to delete resignation letter instance
     """
-    ids = request.GET.getlist("letter_ids")
+    ids = [value for value in request.POST.getlist("letter_ids") if value.isdigit()]
+    if not ids or len(ids) > 500:
+        return JsonResponse({"error": "Invalid resignation IDs."}, status=400)
     if request.user.has_perm("offboarding.delete_resignationletter"):
-        ResignationLetter.objects.filter(id__in=ids).delete()
+        letters = ResignationLetter.objects.select_for_update().filter(id__in=ids)
     else:
-        ResignationLetter.objects.filter(
+        letters = ResignationLetter.objects.select_for_update().filter(
             id__in=ids, employee_id__employee_user_id=request.user
-        ).delete()
-    messages.success(request, _("Resignation letter deleted"))
+        )
+    deleted_count, _ = letters.delete()
+    if deleted_count:
+        messages.success(request, _("Resignation letter deleted"))
+    else:
+        messages.error(request, _("Resignation letter not found"))
     if request.META.get("HTTP_REFERER") and request.META.get("HTTP_REFERER").endswith(
         "employee-profile/"
     ):
@@ -1139,47 +1450,50 @@ def create_resignation_request(request):
 @login_required
 @check_feature_enabled("resignation_request")
 @permission_required("offboarding.change_resignationletter")
+@require_http_methods(["POST"])
+@transaction.atomic
 def update_status(request):
     """
     This method is used to update the status of resignation letter
     """
-    ids = request.GET.getlist("letter_ids")
-    status = request.GET.get("status")
-    employee_id = request.GET.get("employee_id")
-    offboarding_id = request.GET.get("offboarding_id")
-    contract_notice_end_date = (
-        get_horilla_model_class(app_label="payroll", model="contract")
-        .objects.filter(employee_id=employee_id, contract_status="active")
-        .first()
-        if apps.is_installed("payroll")
-        else None
-    )
-
+    ids = [value for value in request.POST.getlist("letter_ids") if value.isdigit()]
+    status = request.POST.get("status")
+    offboarding_id = request.POST.get("offboarding_id")
+    if not ids or len(ids) > 500:
+        return JsonResponse({"error": "Invalid resignation IDs."}, status=400)
+    if status not in {"approved", "rejected"}:
+        return JsonResponse({"error": "Invalid resignation status."}, status=400)
+    if status == "approved" and not offboarding_id:
+        return JsonResponse({"error": "Offboarding process is required."}, status=400)
+    offboarding = None
     if offboarding_id:
-        offboarding = Offboarding.objects.get(id=offboarding_id)
-        notice_period_starts = request.GET.get("notice_period_starts")
-        notice_period_ends = request.GET.get("notice_period_ends", None)
-        if notice_period_starts:
-            notice_period_starts = datetime.strptime(
-                notice_period_starts, "%Y-%m-%d"
-            ).date()
-        today = datetime.today()
-        if notice_period_ends:
-            notice_period_ends = datetime.strptime(
-                notice_period_ends, "%Y-%m-%d"
-            ).date()
-        else:
-            if contract_notice_end_date:
-                notice_period_ends = notice_period_starts + timedelta(
-                    days=contract_notice_end_date.notice_period_in_days
-                )
-            else:
-                notice_period_ends = None
+        offboarding = (
+            Offboarding.objects.select_for_update().filter(id=offboarding_id).first()
+        )
+        if not offboarding:
+            return JsonResponse({"error": "Offboarding process not found."}, status=404)
 
-        if not notice_period_starts:
-            notice_period_starts = today
+    try:
+        starts_value = request.POST.get("notice_period_starts")
+        ends_value = request.POST.get("notice_period_ends")
+        notice_period_starts = (
+            datetime.strptime(starts_value, "%Y-%m-%d").date()
+            if starts_value
+            else datetime.today().date()
+        )
+        requested_notice_end = (
+            datetime.strptime(ends_value, "%Y-%m-%d").date() if ends_value else None
+        )
+    except ValueError:
+        return JsonResponse({"error": "Invalid notice period date."}, status=400)
+    if requested_notice_end and requested_notice_end < notice_period_starts:
+        return JsonResponse(
+            {"error": "Notice period end cannot be before its start."}, status=400
+        )
 
-    letters = ResignationLetter.objects.filter(id__in=ids)
+    letters = ResignationLetter.objects.select_for_update().filter(id__in=ids)
+    if letters.count() != len(set(ids)):
+        return JsonResponse({"error": "Resignation request not found."}, status=404)
     # if use update method instead of save then save method will not trigger
     if status in ["approved", "rejected"]:
         for letter in letters:
@@ -1195,6 +1509,24 @@ def update_status(request):
             letter.status = status
             letter.save()
             if status == "approved":
+                contract = (
+                    get_horilla_model_class(app_label="payroll", model="contract")
+                    .objects.filter(
+                        employee_id=letter.employee_id, contract_status="active"
+                    )
+                    .first()
+                    if apps.is_installed("payroll")
+                    else None
+                )
+                notice_period_ends = requested_notice_end
+                if (
+                    not notice_period_ends
+                    and contract
+                    and contract.notice_period_in_days
+                ):
+                    notice_period_ends = notice_period_starts + timedelta(
+                        days=contract.notice_period_in_days
+                    )
                 letter.to_offboarding_employee(
                     offboarding, notice_period_starts, notice_period_ends
                 )
@@ -1203,16 +1535,20 @@ def update_status(request):
                 _("Resignation request has been %(status)s")
                 % {"status": letter.get_status_display()},
             )
-            notify.send(
-                request.user.employee_get,
-                recipient=letter.employee_id.employee_user_id,
-                verb=f"Resignation request has been {letter.get_status_display()}",
-                verb_ar=f"تم {letter.get_status_display()} طلب الاستقالة",
-                verb_de=f"Der Rücktrittsantrag wurde {letter.get_status_display()}",
-                verb_es=f"La solicitud de renuncia ha sido {letter.get_status_display()}",
-                verb_fr=f"La demande de démission a été {letter.get_status_display()}",
-                redirect="#",
-                icon="information",
+            recipient = letter.employee_id.employee_user_id
+            display_status = letter.get_status_display()
+            transaction.on_commit(
+                lambda recipient=recipient, display_status=display_status: notify.send(
+                    request.user.employee_get,
+                    recipient=recipient,
+                    verb=f"Resignation request has been {display_status}",
+                    verb_ar=f"تم {display_status} طلب الاستقالة",
+                    verb_de=f"Der Rücktrittsantrag wurde {display_status}",
+                    verb_es=f"La solicitud de renuncia ha sido {display_status}",
+                    verb_fr=f"La demande de démission a été {display_status}",
+                    redirect="#",
+                    icon="information",
+                )
             )
     if request.headers.get("HX-Request"):
         return resignation_list_swap_response(request)
@@ -1222,6 +1558,8 @@ def update_status(request):
 @login_required
 @hx_request_required
 @permission_required("offboarding.add_offboardinggeneralsetting")
+@require_http_methods(["POST"])
+@transaction.atomic
 def enable_resignation_request(request):
     """
     Enable disable resignation letter feature
@@ -1229,20 +1567,24 @@ def enable_resignation_request(request):
     selected_company = request.session.get("selected_company")
 
     if selected_company and selected_company != "all":
-        resignation_request_feature = OffboardingGeneralSetting.objects.filter(
-            company_id=selected_company
-        ).first()
+        resignation_request_feature = (
+            OffboardingGeneralSetting.objects.select_for_update()
+            .filter(company_id=selected_company)
+            .first()
+        )
         if not resignation_request_feature:
             resignation_request_feature = OffboardingGeneralSetting(
                 company_id_id=selected_company
             )
     else:
-        resignation_request_feature = OffboardingGeneralSetting.objects.first()
+        resignation_request_feature = (
+            OffboardingGeneralSetting.objects.select_for_update().first()
+        )
         if not resignation_request_feature:
             resignation_request_feature = OffboardingGeneralSetting()
 
     resignation_request_feature.resignation_request = (
-        "resignation_request" in request.GET.keys()
+        "resignation_request" in request.POST
     )
     resignation_request_feature.save()
     message_text = (

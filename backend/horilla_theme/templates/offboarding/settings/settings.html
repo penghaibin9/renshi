@@ -1,7 +1,7 @@
 {% load i18n %}
 <div class="col-span-12 lg:col-span-6">
     <form
-        hx-get="{% url 'enable-resignation-request' %}"
+        hx-post="{% url 'enable-resignation-request' %}"
         hx-trigger="change from:#enableResignationRequest"
         hx-swap="afterend"
         hx-on-htmx-after-request="reloadMessage(this);"

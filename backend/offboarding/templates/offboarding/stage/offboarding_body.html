@@ -46,7 +46,8 @@
                 {% endif %}
                 {% if perms.offboarding.delete_offboarding %}
                   <li class="oh-dropdown__item">
-                    <a hx-confirm='{% trans "Are you sure want to delete this stage?" %}' hx-post="{% url "delete-offboarding-stage" %}?ids={{stage.grouper.id}}"
+                    <a hx-confirm='{% trans "Are you sure want to delete this stage?" %}' hx-post="{% url "delete-offboarding-stage" %}"
+                    hx-vals='{"ids":"{{ stage.grouper.id }}"}'
                     hx-target="#objectDetailsModalTarget"
                     class="oh-dropdown__link oh-dropdown__link--danger">{% trans "Delete" %}</a>
                   </li>
@@ -92,7 +93,7 @@
                             {% endif %}
                             {% if perms.offboarding.delete_offboardingtask or request.user.employee_get|is_stage_manager:stage.grouper.title or request.user.employee_get|is_task_manager:task.title or request.user.employee_get|is_offboarding_manager %}
                               <li class="oh-dropdown__item">
-                                <a class="oh-dropdown__link oh-dropdown__link--danger" hx-confirm = "{% trans 'Do you want to delete task?' %}" hx-post="{% url 'delete-offboarding-task' %}?task_ids={{task.id}}" hx-target="#offboardingContainer" title="{% trans 'Delete' %}">{% trans "Delete" %}</a>
+                                <a class="oh-dropdown__link oh-dropdown__link--danger" hx-confirm = "{% trans 'Do you want to delete task?' %}" hx-post="{% url 'delete-offboarding-task' %}" hx-vals='{"task_ids":"{{ task.id }}"}' hx-target="#offboardingContainer" title="{% trans 'Delete' %}">{% trans "Delete" %}</a>
                               </li>
                             {% endif %}
                          </ul>

@@ -87,26 +87,29 @@
         {% for note in notes %}
             <div id="employeeNote{{note.id}}">
                 <li class="oh-activity-sidebar__qa-item">
-                    <span class="oh-activity-sidebar__q">{{ note.description }}
-                        {% if perms.employee.delete_employeenote or request.user|is_reportingmanager %}
-                            <span
-                                class="float-end"
-                                hx-get="{% url 'employee-note-delete' note.id %}"
-                                hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
-                                hx-target="#employeeNote{{note.id}}"
-                                hx-swap="delete"
-                                id="deleteNote"
-                            >
+                    <span class="oh-activity-sidebar__q">{{ note.description }}</span>
+                    {% if perms.employee.delete_employeenote or request.user|is_reportingmanager %}
+                        <form
+                            method="post"
+                            class="float-end"
+                            hx-post="{% url 'employee-note-delete' note.id %}"
+                            hx-on:click="setTimeout(() => {reloadMessage(this);},100);"
+                            hx-target="#employeeNote{{note.id}}"
+                            hx-swap="delete"
+                            id="deleteNote"
+                        >
+                            {% csrf_token %}
+                            <button type="submit" class="oh-btn oh-btn--transparent p-0" aria-label="{% trans 'Delete note' %}">
                                 <ion-icon
                                     name="close-outline"
                                     style="font-size: 24px"
                                     role="img"
                                     class="md hydrated"
                                     aria-label="{% trans 'close outline' %}"
-                                ></ion-icon></span>
-                            </span>
-                        {% endif %}
-                    </span>
+                                ></ion-icon>
+                            </button>
+                        </form>
+                    {% endif %}
                     {% if perms.employee.view_notefiles or request.user|is_reportingmanager %}
                         <div class="d-flex mt-2 mb-2">
                             {% for file in note.note_files.all %}
@@ -123,7 +126,7 @@
                                                 src="{% static 'images/ui/minus-icon.png' %}"
                                                 style="display: block; width: 50%; height: 50%"
                                                 hx-swap="delete"
-                                                hx-get="{% url 'delete-employee-note-file' file.id %}"
+                                                hx-post="{% url 'delete-employee-note-file' file.id %}"
                                                 hx-target="#noteFile{{file.id}}"
                                                 onclick="event.stopPropagation();event.preventDefault()"
                                             >

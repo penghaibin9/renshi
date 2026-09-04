@@ -357,6 +357,8 @@ class AssetAllocationForm(ModelForm):
         exclude = [
             "return_date",
             "return_condition",
+            "return_status",
+            "return_request",
             "assigned_date",
             "return_images",
             "assign_images",
@@ -444,6 +446,15 @@ class AssetReturnForm(ModelForm):
 
         if return_date and return_date > date.today():
             raise forms.ValidationError(_("Return date cannot be in the future."))
+        if (
+            return_date
+            and self.instance.pk
+            and self.instance.assigned_date
+            and return_date < self.instance.assigned_date
+        ):
+            raise forms.ValidationError(
+                _("Return date cannot be earlier than the assigned date.")
+            )
 
         return return_date
 

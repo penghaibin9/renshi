@@ -1,16 +1,19 @@
 """S4 校内调动契约测试：create_transfer / validate_transfer / PositionGate / Before-After / API。"""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
+from hr_staff.services.assignment_service import AssignmentService
+from hr_staff.services.employment_service import EmploymentService
 
 from hr_changes.api import transfers as transfers_api
 from hr_changes.constants import CaseStatus, ChangeActionCode
 from hr_changes.context import HrChangeRequestContext, HrChangeScope
-from hr_changes.integrations.hr02 import PositionGate
+from hr_changes.integrations.hr02 import Hr02GateError, PositionGate
 from hr_changes.models import HrPersonnelChangeCase
 from hr_changes.services.change_service import ChangeServiceError
 from hr_changes.services.transfer_service import TransferService
@@ -23,11 +26,10 @@ from hr_changes.tests.factories import (
     make_reason,
     make_staff,
 )
-from hr_staff.services.assignment_service import AssignmentService
-from hr_staff.services.employment_service import EmploymentService
 
 TENANT = 1
 FIXTURE_SOURCE = "MIGRATION_VERIFIED"
+EFFECTIVE_DATE = timezone.localdate() + timedelta(days=30)
 
 
 def ctx():
@@ -59,7 +61,7 @@ class TransferServiceTests(TestCase):
             staff_master_id=self.staff,
             action_id=self.action,
             reason_id=self.reason,
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             source_org_id=self.source_org,
             target_org_id=self.target_org,
             target_position_id=self.target_pos,
@@ -76,7 +78,7 @@ class TransferServiceTests(TestCase):
                 staff_master_id=self.staff,
                 action_id=manager_action,
                 reason_id=self.reason,
-                requested_effective_at=date(2026, 9, 1),
+                requested_effective_at=EFFECTIVE_DATE,
                 target_org_id=self.target_org,
             )
         self.assertEqual(cm.exception.code, "CHANGE_INVALID_ACTION")
@@ -89,7 +91,7 @@ class TransferServiceTests(TestCase):
                 staff_master_id=self.staff,
                 action_id=org_action,
                 reason_id=org_reason,
-                requested_effective_at=date(2026, 9, 1),
+                requested_effective_at=EFFECTIVE_DATE,
             )
         self.assertEqual(cm.exception.code, "CHANGE_TARGET_ORG_INVALID")
 
@@ -115,7 +117,7 @@ class TransferServiceTests(TestCase):
             staff_master_id=self.staff,
             action_id=self.action,
             reason_id=self.reason,
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             source_org_id=self.source_org,
             target_org_id=self.target_org,
             target_position_id=self.target_pos,
@@ -129,7 +131,7 @@ class TransferServiceTests(TestCase):
             staff_master_id=self.staff,
             action_id=self.action,
             reason_id=self.reason,
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             source_org_id=self.source_org,
             target_org_id=self.target_org,
             target_position_id=self.target_pos,
@@ -149,7 +151,7 @@ class PositionGateTests(TestCase):
             staff_master_id=make_staff(TENANT, make_person(TENANT, "王某某"), "T9003"),
             action_id=make_action(TENANT, ChangeActionCode.POSITION_TRANSFER),
             reason_id=make_reason(TENANT, ChangeActionCode.POSITION_TRANSFER),
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             target_position_id=pos,
         )
         case.save()
@@ -176,7 +178,7 @@ class PositionGateTests(TestCase):
             staff_master_id=make_staff(TENANT, make_person(TENANT, "赵某某"), "T9004"),
             action_id=make_action(TENANT, ChangeActionCode.POSITION_TRANSFER),
             reason_id=make_reason(TENANT, ChangeActionCode.POSITION_TRANSFER),
-            requested_effective_at=date(2026, 9, 1),
+            requested_effective_at=EFFECTIVE_DATE,
             target_position_id=pos,
         )
         case.save()
@@ -236,7 +238,7 @@ class TransferApiTests(TestCase):
             "staffMasterId": str(self.staff.id),
             "actionId": str(self.action.id),
             "reasonId": str(self.reason.id),
-            "requestedEffectiveAt": "2026-09-01",
+            "requestedEffectiveAt": EFFECTIVE_DATE.isoformat(),
             "sourceOrgId": self.source_org.id,
             "targetOrgId": self.target_org.id,
             "targetPositionId": self.target_pos.id,
@@ -259,3 +261,35 @@ class TransferApiTests(TestCase):
             resp = transfers_api.transfer_list(self._req("get", "/api/hr/v1/changes/transfers"))
         body = json.loads(resp.content)
         self.assertEqual(body["data"]["total"], 1)
+
+    def test_reserve_maps_position_gate_error_to_api_error(self):
+        case = TransferService(TENANT, actor_user_id=self.user.id).create_transfer(
+            staff_master_id=self.staff,
+            action_id=self.action,
+            reason_id=self.reason,
+            requested_effective_at=EFFECTIVE_DATE,
+            source_org_id=self.source_org,
+            target_org_id=self.target_org,
+            target_position_id=self.target_pos,
+        )
+        request = self._req(
+            "post", f"/api/hr/v1/changes/transfers/{case.id}/reserve"
+        )
+        with (
+            mock.patch(
+                "hr_changes.api.transfers.make_hr_change_context", return_value=ctx()
+            ),
+            mock.patch(
+                "hr_changes.api.transfers.PositionGate.reserve_for_case",
+                side_effect=Hr02GateError(
+                    "CHANGE_POSITION_CAPACITY_CONFLICT", "目标岗位已满编"
+                ),
+            ),
+        ):
+            response = transfers_api.transfer_reserve(request, case.id)
+
+        self.assertEqual(response.status_code, 400)
+        payload = json.loads(response.content)
+        self.assertEqual(
+            payload["error"]["code"], "CHANGE_POSITION_CAPACITY_CONFLICT"
+        )

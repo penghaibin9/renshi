@@ -51,8 +51,12 @@ class MaterialFileRejected(Exception):
     code = "MATERIAL_FILE_REJECTED"
 
 
-def validate_material_file(*, filename: str, content: bytes) -> str:
-    """校验扩展名 + magic bytes + 大小，返回规范化 mime_type。失败抛 MaterialFileRejected。"""
+def validate_material_file(
+    *, filename: str, content: bytes, declared_mime: str = ""
+) -> str:
+    """校验扩展名、声明 MIME、magic bytes 和大小，返回可信 MIME。"""
+    if not filename or len(filename) > 255:
+        raise MaterialFileRejected("文件名不能为空且不得超过 255 个字符")
     if len(content) > MAX_MATERIAL_SIZE:
         raise MaterialFileRejected("文件超过 50MB 限制")
 
@@ -70,11 +74,22 @@ def validate_material_file(*, filename: str, content: bytes) -> str:
         # 允许 office 系列共享 PK 头（docx/xlsx 同族）；正文 mime 以扩展名为准
         if ext not in (".docx", ".xlsx"):
             raise MaterialFileRejected("文件内容与扩展名不匹配（magic bytes 校验失败）")
+    normalized_declared = str(declared_mime or "").split(";", 1)[0].strip().lower()
+    if normalized_declared and normalized_declared != "application/octet-stream":
+        accepted = {mime.lower()}
+        if ext in (".jpg", ".jpeg"):
+            accepted.add("image/jpg")
+        if normalized_declared not in accepted:
+            raise MaterialFileRejected("文件声明 MIME 与扩展名不匹配")
     return mime
 
 
 class MaterialAccessDenied(Exception):
     code = "MATERIAL_ACCESS_DENIED"
+
+
+class MaterialInputInvalid(Exception):
+    code = "INVALID_REQUEST"
 
 
 class TicketInvalid(Exception):
@@ -87,9 +102,10 @@ class MaterialService:
         return getattr(settings, "SECRET_KEY", "hr08-insecure-fallback")
 
     def sign_token(self, *, tenant_id: int, material_id: str) -> str:
-        """HMAC 签名：token = material_id.expiry_ts.signature。"""
+        """HMAC 签名：绑定租户、材料、时效和随机数，避免同秒重复 token。"""
         expires_ts = int(timezone.now().timestamp()) + TICKET_TTL_SECONDS
-        payload = f"{material_id}.{expires_ts}"
+        nonce = secrets.token_urlsafe(18)
+        payload = f"{tenant_id}.{material_id}.{expires_ts}.{nonce}"
         sig = hmac.new(
             self._secret().encode("utf-8"),
             payload.encode("utf-8"),
@@ -119,13 +135,22 @@ class MaterialService:
         )
         if material is None:
             raise MaterialAccessDenied("material not found inside tenant")
+        purpose = str(purpose or "").strip()
+        if not purpose:
+            raise MaterialAccessDenied("download purpose is required")
+        if not material.storage_ref:
+            raise MaterialAccessDenied("material file is not available")
         token = token or self.sign_token(tenant_id=tenant_id, material_id=str(material.id))
+        token_tenant, token_material, _expires_ts = self._verify_signed_token(token)
+        if token_tenant != tenant_id or token_material != str(material.id):
+            raise MaterialAccessDenied("ticket scope mismatch")
         return HrExternalFileTicket.objects.create(
             tenant_id=tenant_id,
             material_id=material,
             actor_user_id=actor_user_id,
             purpose=purpose,
             token_hash=self._hash_token(token),
+            material_version_no=material.version_no,
             expires_at=timezone.now() + timedelta(seconds=TICKET_TTL_SECONDS),
             max_uses=DEFAULT_MAX_USES,
         )
@@ -143,22 +168,7 @@ class MaterialService:
         tenant_id 为可选双保险：公开入口（外聘本人）不传，由 ticket 自身绑定 tenant；
         HR 管理入口可显式传 tenant 做二次校验。
         """
-        try:
-            material_id, expires_ts, sig = token.rsplit(".", 2)
-        except (ValueError, AttributeError):
-            raise TicketInvalid("malformed ticket")
-
-        # HMAC 签名校验
-        payload = f"{material_id}.{expires_ts}"
-        expected = hmac.new(
-            self._secret().encode("utf-8"),
-            payload.encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            raise TicketInvalid("ticket signature invalid")
-        if int(expires_ts) < int(timezone.now().timestamp()):
-            raise TicketInvalid("ticket expired")
+        token_tenant, material_id, expires_ts = self._verify_signed_token(token)
 
         ticket = (
             HrExternalFileTicket.objects.select_for_update()
@@ -168,6 +178,8 @@ class MaterialService:
         )
         if ticket is None:
             raise TicketInvalid("ticket not found")
+        if ticket.tenant_id != token_tenant:
+            raise TicketInvalid("ticket tenant mismatch")
         if tenant_id is not None and ticket.tenant_id != tenant_id:
             raise TicketInvalid("ticket tenant mismatch")
         if ticket.revoked:
@@ -178,26 +190,51 @@ class MaterialService:
             raise TicketInvalid("ticket expired")
 
         material = ticket.material_id
+        if str(material.id) != material_id:
+            raise TicketInvalid("ticket material mismatch")
         if material.tenant_id != ticket.tenant_id:
             raise TicketInvalid("material tenant mismatch")
-        if material.status == "REJECTED":
-            raise MaterialAccessDenied("material rejected")
+        if material.version_no != ticket.material_version_no:
+            raise TicketInvalid("material version changed")
+        if not material.storage_ref:
+            raise MaterialAccessDenied("material file is not available")
+        if material.status in ("REJECTED", "SUPERSEDED"):
+            raise MaterialAccessDenied("material is not downloadable")
 
-        # 使用记账 + 下载审计（§92 download audit）
-        ticket.used_count += 1
+        # 使用记账 + 下载审计同属一个事务；审计失败时不得放行下载。
+        ticket.used_count = 1
         ticket.used_at = timezone.now()
         ticket.save(update_fields=["used_count", "used_at"])
         write_external_audit(
             tenant_id=ticket.tenant_id,
             action="ExternalMaterialDownload",
-            actor_user_id=actor_user_id,
+            actor_user_id=ticket.actor_user_id,
             external_profile_id=material.external_profile_id_id,
             business_type="HR08_MATERIAL",
             business_id=str(material.id),
-            reason=ticket.purpose or "material download",
+            reason=ticket.purpose,
             source="file_ticket",
         )
         return material
+
+    def _verify_signed_token(self, token: str) -> tuple[int, str, int]:
+        try:
+            tenant_text, material_id, expires_text, nonce, sig = token.rsplit(".", 4)
+            token_tenant = int(tenant_text)
+            expires_ts = int(expires_text)
+        except (TypeError, ValueError, AttributeError):
+            raise TicketInvalid("malformed ticket")
+        payload = f"{token_tenant}.{material_id}.{expires_ts}.{nonce}"
+        expected = hmac.new(
+            self._secret().encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            raise TicketInvalid("ticket signature invalid")
+        if expires_ts < int(timezone.now().timestamp()):
+            raise TicketInvalid("ticket expired")
+        return token_tenant, material_id, expires_ts
 
     def create_material(
         self,
@@ -214,6 +251,19 @@ class MaterialService:
         sensitivity_level: str = "SENSITIVE",
         uploaded_by: Optional[int] = None,
     ) -> HrExternalMaterial:
+        from hr_external.models.material import MaterialCategory
+
+        title = str(title or "").strip()
+        category = str(category or "").strip().upper()
+        sensitivity_level = str(sensitivity_level or "").strip().upper()
+        if not title or len(title) > 250:
+            raise MaterialInputInvalid("材料标题不能为空且不得超过 250 个字符")
+        if category not in MaterialCategory.values:
+            raise MaterialInputInvalid("材料分类无效")
+        from hr_external.constants import SensitivityLevel
+
+        if sensitivity_level not in SensitivityLevel.values:
+            raise MaterialInputInvalid("材料敏感等级无效")
         profile = HrExternalTeacherProfile.objects.filter(
             tenant_id=tenant_id, id=external_profile_id
         ).first()
@@ -261,28 +311,47 @@ class MaterialService:
 
         # 生产级：文件类型/大小校验（A1）—— 任何写私有存储的文件都必须过白名单
         verified_mime = validate_material_file(
-            filename=original_filename, content=content
+            filename=original_filename,
+            content=content,
+            declared_mime=mime_type,
         )
-        if not mime_type:
-            mime_type = verified_mime
 
         backend = storage or get_material_storage()
+        if material.status in ("VERIFIED", "SUPERSEDED"):
+            raise MaterialAccessDenied("verified or superseded material cannot be overwritten")
+        old_ref = material.storage_ref
         storage_ref = backend.save_bytes(str(material.id), content, original_filename)
-        material.storage_ref = storage_ref
-        material.original_filename = original_filename or material.original_filename
-        material.mime_type = mime_type or verified_mime
-        material.size_bytes = len(content)
-        material.sha256 = hashlib.sha256(content).hexdigest()
-        material.save(
-            update_fields=[
-                "storage_ref",
-                "original_filename",
-                "mime_type",
-                "size_bytes",
-                "sha256",
-                "updated_at",
-            ]
-        )
+        try:
+            material.storage_ref = storage_ref
+            material.original_filename = original_filename or material.original_filename
+            material.mime_type = verified_mime
+            material.size_bytes = len(content)
+            material.sha256 = hashlib.sha256(content).hexdigest()
+            material.version_no += 1 if old_ref else 0
+            material.version += 1
+            material.status = "UPLOADED"
+            material.verified_by = None
+            material.verified_at = None
+            material.save(
+                update_fields=[
+                    "storage_ref",
+                    "original_filename",
+                    "mime_type",
+                    "size_bytes",
+                    "sha256",
+                    "version_no",
+                    "version",
+                    "status",
+                    "verified_by",
+                    "verified_at",
+                    "updated_at",
+                ]
+            )
+        except Exception:
+            backend.delete(storage_ref)
+            raise
+        if old_ref and old_ref != storage_ref:
+            transaction.on_commit(lambda: backend.delete(old_ref), robust=True)
         return material
 
     def open_authorized_stream(self, material: HrExternalMaterial, storage=None):

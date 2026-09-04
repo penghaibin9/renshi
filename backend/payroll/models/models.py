@@ -2589,7 +2589,7 @@ class Reimbursement(HorillaModel):
             elif self.status == "rejected" and self.allowance_id is not None:
                 cfd_days = self.cfd_to_encash
                 available_days = self.ad_to_encash
-                if self.type == "leave encashment":
+                if self.type == "leave_encashment":
                     if assigned_leave:
                         assigned_leave.available_days = (
                             assigned_leave.available_days + available_days
@@ -2598,7 +2598,12 @@ class Reimbursement(HorillaModel):
                             assigned_leave.carryforward_days + cfd_days
                         )
                         assigned_leave.save()
-                    self.allowance_id.delete()
+                elif self.type == "bonus_encashment":
+                    bonus_points = BonusPoint.objects.get(employee_id=self.employee_id)
+                    bonus_points.points += self.bonus_to_encash
+                    bonus_points.reason = "Bonus points restored after reimbursement rejection."
+                    bonus_points.save()
+                self.allowance_id.delete()
 
     def delete(self, *args, **kwargs):
         request = getattr(horilla_middlewares._thread_locals, "request", None)
@@ -2613,8 +2618,9 @@ class Reimbursement(HorillaModel):
         else:
             if self.allowance_id:
                 self.allowance_id.delete()
-                super().delete(*args, **kwargs)
-                message = messages.success(request, _("Reimbursement deleted"))
+            result = super().delete(*args, **kwargs)
+            messages.success(request, _("Reimbursement deleted"))
+            return result
 
         return message
 

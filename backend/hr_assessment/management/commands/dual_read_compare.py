@@ -44,7 +44,7 @@ class Command(BaseCommand):
             report["domains"]["periods"] = {"status": "SKIPPED", "reason": "pms or hr_assessment not installed"}
             return
 
-        legacy_count = Period.objects.filter(company_id__isnull=False).count()
+        legacy_count = Period.objects.filter(company_id__id=tenant_id).distinct().count()
         new_count = HrAssessmentCycle.objects.filter(tenant_id=tenant_id).count()
         report["domains"]["periods"] = {
             "legacy_count": legacy_count,
@@ -62,7 +62,7 @@ class Command(BaseCommand):
             report["domains"]["goals"] = {"status": "SKIPPED"}
             return
 
-        legacy_count = Objective.objects.count()
+        legacy_count = Objective.objects.filter(company_id_id=tenant_id).count()
         new_count = HrAssessmentGoal.objects.filter(tenant_id=tenant_id).count()
         report["domains"]["goals"] = {
             "legacy_count": legacy_count,
@@ -80,7 +80,9 @@ class Command(BaseCommand):
             report["domains"]["feedback"] = {"status": "SKIPPED"}
             return
 
-        legacy_count = Feedback.objects.count()
+        legacy_count = Feedback.objects.filter(
+            employee_id__employee_work_info__company_id_id=tenant_id
+        ).count()
         new_count = HrMultiRaterSession.objects.filter(tenant_id=tenant_id).count()
         report["domains"]["feedback"] = {
             "legacy_count": legacy_count,
@@ -98,7 +100,9 @@ class Command(BaseCommand):
             report["domains"]["employee_mapping"] = {"status": "SKIPPED"}
             return
 
-        legacy_emp_count = Employee.objects.count()
+        legacy_emp_count = Employee.objects.filter(
+            employee_work_info__company_id_id=tenant_id
+        ).count()
         staff_count = HrStaffMaster.objects.filter(tenant_id=tenant_id).count()
         unmapped = abs(legacy_emp_count - staff_count)
         report["domains"]["employee_mapping"] = {

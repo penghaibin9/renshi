@@ -201,7 +201,7 @@ class BusinessEventService:
     def _on_hr07_contract(self, payload):
         """HR07 合同生效：更新关系有效事实（不复制合同正文）。"""
         rel_id = payload.get("employment_relationship_id")
-        # [总控占位] 合同到期日投影到关系段；正文归 HR07，HR03 只收生效事实
+        # 合同正文归 HR07；HR03 仅接收已生效的关系期限事实投影。
         if payload.get("contract_end_date"):
             from hr_staff.models import HrEmploymentRelationship
 

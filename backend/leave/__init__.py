@@ -1,1 +1,1 @@
-from . import scheduler
+"""Leave package; scheduled jobs run in the dedicated scheduler service."""

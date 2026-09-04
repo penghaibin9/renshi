@@ -16,11 +16,21 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from base.horilla_company_manager import HorillaCompanyManager
+from base.token_security import TOKEN_DIGEST_PREFIX, bearer_token_digest
 from employee.models import Employee
 from horilla.models import HorillaModel
 from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
 from horilla_views.cbv_methods import render_template
 from recruitment.models import Candidate, Recruitment
+
+
+PORTAL_TOKEN_PREFIX = TOKEN_DIGEST_PREFIX
+
+
+def onboarding_portal_token_digest(raw_token):
+    """Return a stable one-way lookup digest for a high-entropy portal token."""
+
+    return bearer_token_digest(raw_token, namespace="onboarding-portal")
 
 
 class OnboardingStage(HorillaModel):
@@ -280,11 +290,15 @@ class OnboardingPortal(HorillaModel):
     candidate_id = models.OneToOneField(
         Candidate, on_delete=models.PROTECT, related_name="onboarding_portal"
     )
-    token = models.CharField(max_length=200)
+    token = models.CharField(max_length=71, unique=True)
     used = models.BooleanField(default=False)
     count = models.IntegerField(default=0)
     profile = models.ImageField(upload_to="employee/profile", null=True, blank=True)
     objects = HorillaCompanyManager("candidate_id__recruitment_id__company_id")
 
+    def save(self, *args, **kwargs):
+        self.token = onboarding_portal_token_digest(self.token)
+        return super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"{self.candidate_id} | {self.token}"
+        return str(self.candidate_id)

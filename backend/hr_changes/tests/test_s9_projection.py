@@ -1,21 +1,28 @@
 """S9 Legacy Projection + 直接编辑封堵契约测试。"""
 
 from datetime import date
+from unittest import skipUnless
 
+from django.apps import apps
 from django.test import TestCase
 from django.utils.translation import gettext_lazy as _
 
-from employee.models import Employee, EmployeeWorkInformation
-from base.models import Company, Department, EmployeeType, JobPosition
-from horilla.horilla_middlewares import tenant_context
+LEGACY_PROJECTION_AVAILABLE = apps.is_installed("base") and apps.is_installed(
+    "employee"
+)
+if LEGACY_PROJECTION_AVAILABLE:
+    from base.models import Company, Department, EmployeeType, JobPosition
+    from employee.models import Employee, EmployeeWorkInformation
+    from horilla.horilla_middlewares import tenant_context
 
-from hr_changes.projections.horilla_work_info import project_staff_work_info
 from hr_staff.models import HrStaffMaster
-from hr_staff.tests.factories import make_org, make_person
 from hr_staff.services.assignment_service import AssignmentService
 from hr_staff.services.employment_service import EmploymentService
 from hr_staff.services.staff_master_service import StaffMasterService
+from hr_staff.tests.factories import make_org, make_person
 from hr_structure.models import HrPosition
+
+from hr_changes.projections.horilla_work_info import project_staff_work_info
 from hr_changes.tests.factories import make_catalog_version
 
 TENANT = 1
@@ -31,6 +38,10 @@ class _BackgroundTenantTestCase(TestCase):
         super().setUp()
 
 
+@skipUnless(
+    LEGACY_PROJECTION_AVAILABLE,
+    "requires the complete MySQL legacy Employee projection runtime",
+)
 class LegacyProjectionTests(_BackgroundTenantTestCase):
     """HR03 facts → EmployeeWorkInformation 投影（单向，禁止反向）。"""
 
@@ -124,6 +135,10 @@ class LegacyProjectionTests(_BackgroundTenantTestCase):
         self.assertIn("legacy_employee_id", result["unmapped"])
 
 
+@skipUnless(
+    LEGACY_PROJECTION_AVAILABLE,
+    "requires the complete MySQL legacy Employee projection runtime",
+)
 class DirectEditBlockTests(_BackgroundTenantTestCase):
     """S9 封堵：表单禁用受管字段、bulk 拒绝、delete 拒绝。"""
 
@@ -148,7 +163,9 @@ class DirectEditBlockTests(_BackgroundTenantTestCase):
         from employee.forms import HR06_MANAGED_BULK_FIELDS, BulkUpdateFieldForm
 
         form = BulkUpdateFieldForm()
-        choices = {value for value, _ in form.fields["update_fields"].choices}
+        choices = {
+            value for value, _choice_label in form.fields["update_fields"].choices
+        }
         for managed in HR06_MANAGED_BULK_FIELDS:
             self.assertNotIn(managed, choices)
 
@@ -166,7 +183,6 @@ class DirectEditBlockTests(_BackgroundTenantTestCase):
         # not tenant-manager visibility.
         work_info = EmployeeWorkInformation._base_manager.get(employee_id=employee)
         from django.test import RequestFactory
-
         from employee import views as employee_views
 
         factory = RequestFactory()

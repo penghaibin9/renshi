@@ -272,10 +272,11 @@ $("#archiveObjectives").click(function (e) {
                 ids = JSON.parse($("#selectedObjectives").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/pms/objective-bulk-archive/?is_active=False",
+                    url: "/pms/objective-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -320,10 +321,11 @@ $("#unArchiveObjectives").click(function (e) {
                 ids = JSON.parse($("#selectedObjectives").attr("data-ids"));
                 $.ajax({
                     type: "POST",
-                    url: "/pms/objective-bulk-archive/?is_active=True",
+                    url: "/pms/objective-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {

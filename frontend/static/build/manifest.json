@@ -1,16 +1,16 @@
 {
-    "name": "Horilla",
-    "short_name": "Horilla",
-    "description": "Free and Open Source HR Software",
+    "name": "高校人事一体化平台",
+    "short_name": "高校人事",
+    "description": "面向高校的人事一体化管理平台",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "orangered",
-    "theme_color": "orangered",
+    "background_color": "#F4F7FB",
+    "theme_color": "#1649D8",
     "icons": [
       {
-        "src": "/static/favicons/apple-touch-icon.png",
+        "src": "/static/images/ui/university-seal.jpg",
         "sizes": "192x192",
-        "type": "image/png"
+        "type": "image/jpeg"
       }
     ]
   }

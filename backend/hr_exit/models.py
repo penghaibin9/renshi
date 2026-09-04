@@ -650,6 +650,9 @@ class RetirementPolicy(HrVersionedModel):
     relationship_type = models.CharField(max_length=32, blank=True, default="")
     special_condition_code = models.CharField(max_length=64, blank=True, default="")
     retirement_age_months = models.PositiveIntegerField()
+    transition_birth_start = models.DateField(null=True, blank=True)
+    delay_step_birth_months = models.PositiveSmallIntegerField(default=0)
+    max_retirement_age_months = models.PositiveIntegerField(null=True, blank=True)
     minimum_service_months = models.PositiveIntegerField(default=0)
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
@@ -666,6 +669,9 @@ class RetirementPolicy(HrVersionedModel):
         "relationship_type",
         "special_condition_code",
         "retirement_age_months",
+        "transition_birth_start",
+        "delay_step_birth_months",
+        "max_retirement_age_months",
         "minimum_service_months",
         "effective_from",
         "effective_to",
@@ -685,6 +691,21 @@ class RetirementPolicy(HrVersionedModel):
             models.CheckConstraint(
                 condition=models.Q(retirement_age_months__gt=0),
                 name="ck_hr16_retire_age_positive",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        transition_birth_start__isnull=True,
+                        delay_step_birth_months=0,
+                        max_retirement_age_months__isnull=True,
+                    )
+                    | models.Q(
+                        transition_birth_start__isnull=False,
+                        delay_step_birth_months__gt=0,
+                        max_retirement_age_months__gte=models.F("retirement_age_months"),
+                    )
+                ),
+                name="ck_hr16_retire_transition_shape",
             ),
             models.CheckConstraint(
                 condition=models.Q(effective_to__isnull=True)

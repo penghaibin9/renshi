@@ -14,16 +14,23 @@ class ApplyServiceReservationGuardTests(SimpleTestCase):
     @patch("hr_changes.services.apply_service._resolve_catalog", return_value=None)
     @patch("hr_changes.services.apply_service._resolve_position")
     @patch("hr_changes.services.apply_service._resolve_org", return_value=None)
+    @patch("hr_changes.services.apply_service._primary_assignment_as_of")
     @patch("hr_staff.services.assignment_service.AssignmentService")
     def test_position_transfer_requires_reservation_commit_after_switch_primary(
         self,
         assignment_service_cls,
+        primary_assignment_as_of,
         resolve_org,
         resolve_position,
         resolve_catalog,
         resolve_staff,
     ):
-        resolve_position.return_value = SimpleNamespace(id=5)
+        primary_assignment_as_of.return_value = SimpleNamespace(
+            organization_id=3,
+            location_code="",
+            reporting_staff_id=None,
+        )
+        resolve_position.return_value = SimpleNamespace(id=5, post_catalog_version_id=7)
         assignment_service_cls.return_value.switch_primary.return_value = SimpleNamespace(id=100)
 
         service = object.__new__(ApplyService)
@@ -57,16 +64,23 @@ class ApplyServiceReservationGuardTests(SimpleTestCase):
     @patch("hr_changes.services.apply_service._resolve_catalog", return_value=None)
     @patch("hr_changes.services.apply_service._resolve_position", return_value=None)
     @patch("hr_changes.services.apply_service._resolve_org", return_value=None)
+    @patch("hr_changes.services.apply_service._primary_assignment_as_of")
     @patch("hr_staff.services.assignment_service.AssignmentService")
     def test_org_only_transfer_does_not_require_position_reservation(
         self,
         assignment_service_cls,
+        primary_assignment_as_of,
         resolve_org,
         resolve_position,
         resolve_catalog,
         resolve_staff,
     ):
         resolve_org.return_value = SimpleNamespace(id=3)
+        primary_assignment_as_of.return_value = SimpleNamespace(
+            organization_id=3,
+            location_code="",
+            reporting_staff_id=None,
+        )
         assignment_service_cls.return_value.switch_primary.return_value = SimpleNamespace(id=100)
 
         service = object.__new__(ApplyService)

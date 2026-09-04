@@ -14,7 +14,7 @@ class HorillaAuditConfig(AppConfig):
         # Register the built-in defaults immediately so audit logging works
         # even before any database I/O. The post_migrate hook below will
         # re-apply once user configuration is readable.
-        registry.apply_audit_configuration()
+        registry.apply_default_configuration()
 
         def _reapply_after_migrate(sender, **kwargs):
             registry.apply_audit_configuration()

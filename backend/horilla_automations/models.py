@@ -37,7 +37,7 @@ class MailAutomation(HorillaModel):
         ("both", _("Send as Email and Notification")),
     ]
 
-    title = models.CharField(max_length=256, unique=True)
+    title = models.CharField(max_length=255, unique=True)
     method_title = models.CharField(max_length=100, editable=False)
     model = models.CharField(
         max_length=100, choices=MODEL_CHOICES, null=False, verbose_name=_("Model")

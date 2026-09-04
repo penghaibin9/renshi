@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from base.encrypted_fields import EncryptedTextField
+
 # Create your models here.
 
 
@@ -58,10 +60,10 @@ class GoogleDriveBackup(models.Model):
             "Google Drive folder ID where backups will be stored. The authenticated user must have write access to this folder."
         ),
     )
-    access_token = models.TextField(
+    access_token = EncryptedTextField(
         blank=True, null=True, help_text=_("OAuth access token (automatically managed)")
     )
-    refresh_token = models.TextField(
+    refresh_token = EncryptedTextField(
         blank=True,
         null=True,
         help_text=_("OAuth refresh token (automatically managed)"),

@@ -17,6 +17,7 @@ from datetime import date
 from typing import List
 
 from django.db import transaction
+from django.utils import timezone
 
 from hr_structure.scope import Hr02Scope
 from hr_structure.services.organization_change import (
@@ -78,7 +79,7 @@ class OrganizationImportService:
                     org_type=org_type,
                     dimension=dimension,
                     parent_code=str(row.get("上级组织代码", "") or "").strip(),
-                    validity_from=date.today(),
+                    validity_from=timezone.localdate(),
                     sort_order=int(row.get("排序", 0) or 0),
                 )
             )

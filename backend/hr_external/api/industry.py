@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_GET, require_POST
 
 from hr_external.api.base import (
     api_root,
@@ -44,13 +45,14 @@ from hr_external.services.industry_service import (
 
 def _ctx(request):
     try:
-        return make_external_context(request, authority_mode="LEGACY_EMPLOYEE_TAG_ONLY"), None
+        return make_external_context(request), None
     except Exception as exc:  # noqa: BLE001
         code = getattr(exc, "code", "INVALID_REQUEST")
         status = 403 if code == "TENANT_CONTEXT_REQUIRED" else 400
         return None, error_response(request, code, str(exc), status)
 
 
+@require_GET
 @require_hr_external_permission("hr08.industry.view")
 def industry_list(request):
     """产业类别人才列表。"""
@@ -94,6 +96,7 @@ def industry_list(request):
     return json_response(request, body)
 
 
+@require_GET
 @require_hr_external_permission("hr08.industry.view")
 def industry_engagement_detail(request, engagement_id):
     """产业专家详情：专项 profile + 成果 + 工作室。"""
@@ -151,6 +154,7 @@ def industry_engagement_detail(request, engagement_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.industry.manage")
 def industry_profile_create(request, profile_id):
     """POST /industry/profiles/{profile_id} 创建专项 Profile（§27.3）。"""
@@ -192,6 +196,7 @@ def industry_profile_create(request, profile_id):
     return json_response(request, body, status=201)
 
 
+@require_GET
 @require_hr_external_permission("hr08.industry.view")
 def workspace_list(request):
     ctx, err = _ctx(request)
@@ -217,6 +222,7 @@ def workspace_list(request):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.industry.manage")
 def workspace_create(request):
     ctx, err = _ctx(request)
@@ -254,6 +260,7 @@ def workspace_create(request):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.industry.manage")
 def contribution_create(request, engagement_id):
     ctx, err = _ctx(request)
@@ -284,6 +291,7 @@ def contribution_create(request, engagement_id):
     return json_response(request, body, status=201)
 
 
+@require_POST
 @require_hr_external_permission("hr08.industry.manage")
 def contribution_submit(request, contribution_id):
     ctx, err = _ctx(request)
@@ -303,6 +311,7 @@ def contribution_submit(request, contribution_id):
     return json_response(request, body)
 
 
+@require_POST
 @require_hr_external_permission("hr08.industry.manage")
 def contribution_verify(request, contribution_id):
     ctx, err = _ctx(request)

@@ -453,12 +453,13 @@
                         }
 
                         $.ajax({
-                            type: "get",
+                            type: "post",
                             url: "{% url 'update-candidate-sequence' %}",
                             traditional: true,
                             data: {
                                 order: values,
                                 stage_id: stageId,
+                                csrfmiddlewaretoken: getCookie("csrftoken"),
                             },
                             success: function (response) {
                                 $(`.reload-badge`).click();
@@ -479,12 +480,13 @@
                         values.push($(array[index]).val());
                     }
                     $.ajax({
-                        type: "get",
+                        type: "post",
                         url: "{% url 'update-candidate-stage-and-sequence' %}",
                         data: {
                             stage_id: stageId,
                             candidate_id: candidateId,
                             order: values,
+                            csrfmiddlewaretoken: getCookie("csrftoken"),
                         },
                         success: function (response) {
                             row.find('[name="stage_id"]').val(stageId);
@@ -521,11 +523,12 @@
         isDrag = $(event.target).attr("data-drag-htmx");
         if (isDrag == "true") {
             $.ajax({
-                type: "get",
+                type: "post",
                 url: "{% url 'update-candidate-sequence' %}",
                 traditional: true,
                 data: {
                     order: values,
+                    csrfmiddlewaretoken: getCookie("csrftoken"),
                 },
                 success: function (response) {},
             });

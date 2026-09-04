@@ -93,11 +93,12 @@ $(document).on('click', '#archiveFeedback', function (e) {
             if (result.isConfirmed) {
                 $.ajax({
                     type: "POST",
-                    url: "/pms/feedback-bulk-archive/?is_active=False",
+                    url: "/pms/feedback-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
                         announy_ids: JSON.stringify(announy_ids),
+                        is_active: "False",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {
@@ -141,11 +142,12 @@ $(document).on('click', '#UnarchiveFeedback', function (e) {
             if (result.isConfirmed) {
                 $.ajax({
                     type: "POST",
-                    url: "/pms/feedback-bulk-archive/?is_active=True",
+                    url: "/pms/feedback-bulk-archive/",
                     data: {
                         csrfmiddlewaretoken: getCookie("csrftoken"),
                         ids: JSON.stringify(ids),
                         announy_ids: JSON.stringify(announy_ids),
+                        is_active: "True",
                     },
                     success: function (response, textStatus, jqXHR) {
                         if (jqXHR.status === 200) {

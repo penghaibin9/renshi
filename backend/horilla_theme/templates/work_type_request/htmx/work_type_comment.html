@@ -157,7 +157,8 @@
 									<img
 										src="{% static 'images/ui/minus-icon.png' %}"
 										style="display: block; width: 50%; height: 50%"
-										hx-get="{% url 'delete-work-type-comment-file' %}?ids={{ file.id }}&request_id={{ request_id }}&comment_id={{comment.id}}"
+										hx-post="{% url 'delete-work-type-comment-file' %}"
+										hx-vals='{"ids":"{{file.id}}","request_id":"{{request_id}}","comment_id":"{{comment.id}}"}'
 										hx-target="#workTypeReqCommentFile{{file.id}}"
 										hx-swap="delete"
 										onclick="event.stopPropagation();event.preventDefault()"

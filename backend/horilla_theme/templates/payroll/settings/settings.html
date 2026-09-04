@@ -1,7 +1,7 @@
 {% load i18n %}
 
 <div class="col-span-12 lg:col-span-6">
-    <form  hx-get="{% url 'initial-notice-period' %}" hx-swap="none"
+    <form  hx-post="{% url 'initial-notice-period' %}" hx-swap="none"
     hx-on-htmx-after-request="setTimeout(() => { reloadMessage(); }, 100);">
         {% csrf_token %}
     <div class="flex space-x-2 pb-2">

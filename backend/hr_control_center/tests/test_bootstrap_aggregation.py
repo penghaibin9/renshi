@@ -67,3 +67,20 @@ class BootstrapAggregationTests(SimpleTestCase):
         self.assertEqual(payload["todoSummary"]["status"], "FILTERED")
         self.assertEqual(payload["alertSummary"]["status"], "FILTERED")
         self.assertEqual(payload["quickActions"], [])
+
+    def test_quick_action_failure_is_disclosed_as_partial_not_fake_empty(self):
+        todo = Mock()
+        todo.get_summary.return_value = {"status": "OK", "total": 0}
+        alert = Mock()
+        alert.get_summary.return_value = {"critical": 0}
+        quick = Mock()
+        quick.get_catalog.side_effect = RuntimeError("catalog unavailable")
+        service = self._service(todo=todo, alert=alert, quick=quick)
+
+        with patch.object(service, "get_metric") as get_metric:
+            get_metric.side_effect = lambda key, _ctx: {"metricKey": key, "status": "OK"}
+            payload = service.get_bootstrap(self.context, user=self.user)
+
+        self.assertEqual(payload["quickActions"], [])
+        self.assertIn("quickActions", payload["partialSources"])
+        self.assertEqual(payload["consistency"], "PARTIAL")

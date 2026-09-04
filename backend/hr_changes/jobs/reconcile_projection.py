@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from django.utils import timezone
+
 from hr_staff.models import HrStaffMaster
 from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
@@ -22,7 +24,7 @@ def reconcile_staff_projection(
     """对账单个 staff；返回 {matched, drifts: [...]}。"""
     from employee.models import EmployeeWorkInformation
 
-    as_of = as_of or date.today()
+    as_of = as_of or timezone.localdate()
     qs = EffectiveDatedQueryService(staff.tenant_id)
     primary = qs.primary_assignment_as_of(staff.id, as_of)
 
@@ -73,12 +75,11 @@ def reconcile_staff_projection(
     return {"matched": len(drifts) == 0, "drifts": drifts}
 
 
-def run_reconcile(*, tenant_id: int = None, only_drift: bool = True) -> dict:
+def run_reconcile(*, tenant_id: int, only_drift: bool = True) -> dict:
     """全校对账；返回 {checked, drifted, staffDrifts}。"""
-    staffs = HrStaffMaster.objects.all()
-    if tenant_id:
-        staffs = staffs.filter(tenant_id=tenant_id)
-    staffs = staffs.select_related("person_id")
+    if not tenant_id:
+        raise ValueError("tenant_id is required for HR06 reconciliation")
+    staffs = HrStaffMaster.objects.filter(tenant_id=tenant_id).select_related("person_id")
 
     checked = 0
     drifted = 0

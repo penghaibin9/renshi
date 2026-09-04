@@ -2,7 +2,7 @@
  * Academic HR workspace completion layer (HR01-HR18)
  *
  * This stylesheet is intentionally scoped to [data-module^="HR"] so the
- * upstream Horilla screens keep their existing visual contract. Individual
+ * retired compatibility screens keep their existing visual contract. Individual
  * module templates still own their domain colours and information hierarchy;
  * this layer supplies the shared production UI behaviour that every academic
  * HR workspace needs: focus visibility, responsive navigation, safe overflow,

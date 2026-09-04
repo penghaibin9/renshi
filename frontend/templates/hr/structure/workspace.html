@@ -67,9 +67,9 @@
     </div>
     <div class="hr-v2-panel hr02-card">
       <form class="hr02-form" id="hr02-relation-form">
-        <label><span>来源机构编号</span><input name="sourceOrgId" type="number" min="1" required></label>
-        <label><span>目标机构编号</span><input name="targetOrgId" type="number" min="1" required></label>
-        <label><span>关系类型</span><input name="relationType" required placeholder="例如：党组织领导关系"></label>
+        <label><span>来源机构</span><select name="sourceOrgId" data-org-options required><option value="">正在读取机构…</option></select></label>
+        <label><span>目标机构</span><select name="targetOrgId" data-org-options required><option value="">正在读取机构…</option></select></label>
+        <label><span>关系类型</span><select name="relationType" required><option value="ADMIN_PARENT">行政隶属</option><option value="PARTY_PARENT">党组织隶属</option><option value="TEACHING_PARENT">教学隶属</option><option value="PARTY_COVERS">党组织覆盖</option><option value="ADMIN_MATCH">行政对应</option><option value="TEACHING_BELONGS_TO">教学归属</option><option value="BUSINESS_REPORTS_TO">业务汇报</option><option value="BUSINESS_MANAGED_BY">业务管理</option><option value="SHARED_SERVICE_FOR">共享服务</option><option value="TEMP_COORDINATION">临时协同</option></select></label>
         <label><span>生效日期</span><input name="validityFrom" type="date" required></label>
         <label><span>失效日期</span><input name="validityTo" type="date"></label>
         <div class="hr02-form__actions">
@@ -77,9 +77,13 @@
           <span id="hr02-form-message" role="status" aria-live="polite"></span>
         </div>
       </form>
-      <div class="hr02-boundary">
-        <strong>当前读接口边界</strong>
-        <span>当前系统已具备关系列表读取能力，但尚未开放对应查询入口。页面不会绕过正式接口直接读取数据库，因此这里不伪造关系台账；创建成功后会给出明确结果。</span>
+      <div class="hr02-toolbar">
+        <label class="hr02-search-label" for="hr02-search">筛选关系台账</label>
+        <input type="search" id="hr02-search" placeholder="搜索来源、目标、关系类型或生效日期">
+        <button type="button" class="hr02-btn" id="hr02-refresh">刷新</button>
+      </div>
+      <div id="hr02-list" class="hr02-list" aria-live="polite">
+        <div class="hr02-state">正在读取正式组织关系…</div>
       </div>
     </div>
   </section>
@@ -93,6 +97,55 @@
       <button type="button" class="hr02-btn" id="hr02-refresh">刷新</button>
     </div>
     <div class="hr-v2-panel hr02-card">
+      {% if section == 'staffing-plans' %}
+      <details class="hr02-editor">
+        <summary>新建编制方案</summary>
+        <form class="hr02-form" id="hr02-plan-form">
+          <label><span>方案编码</span><input name="code" required placeholder="例如：BZ-2026"></label>
+          <label><span>方案名称</span><input name="name" required placeholder="例如：2026年度编制方案"></label>
+          <label><span>年度</span><input name="planYear" type="number" min="2000" max="2100" required></label>
+          <label><span>生效日期</span><input name="validityFrom" type="date" required></label>
+          <label><span>批复文号</span><input name="basisDocumentNo" placeholder="可选"></label>
+          <div class="hr02-form__actions"><button class="hr02-btn hr02-btn--primary" type="submit">保存草稿</button><span data-form-message role="status"></span></div>
+        </form>
+      </details>
+      <details class="hr02-editor">
+        <summary>录入编制明细</summary>
+        <form class="hr02-form" id="hr02-plan-line-form">
+          <label><span>编制方案</span><select name="planId" required><option value="">请先选择草稿方案</option></select></label>
+          <label><span>明细类型</span><select name="lineType" required><option value="HEADCOUNT">人员编制</option><option value="POSITION">岗位编制</option><option value="LEADERSHIP">领导职数</option></select></label>
+          <label><span>机构</span><select name="organizationId" data-org-options required><option value="">正在读取机构…</option></select></label>
+          <label><span>核定数量</span><input name="authorizedValue" type="number" min="0" step="0.01" required></label>
+          <label><span>依据/类别/职级</span><input name="classification" required placeholder="人员依据、岗位类别或领导职级"></label>
+          <div class="hr02-form__actions"><button class="hr02-btn hr02-btn--primary" type="submit">添加明细</button><span data-form-message role="status"></span></div>
+        </form>
+      </details>
+      {% elif section == 'post-catalogs' %}
+      <details class="hr02-editor">
+        <summary>新建岗位目录</summary>
+        <form class="hr02-form" id="hr02-catalog-form">
+          <label><span>岗位编码</span><input name="stableCode" required placeholder="例如：JS-JX"></label>
+          <label><span>岗位名称</span><input name="name" required placeholder="例如：教学科研岗"></label>
+          <label><span>岗位类别</span><select name="category" required><option value="PROFESSIONAL_TECHNICAL">专业技术岗</option><option value="MANAGEMENT">管理岗</option><option value="SKILLED_WORKER">工勤技能岗</option><option value="SPECIAL">特设岗位</option></select></label>
+          <label><span>岗位子类</span><select name="subcategory"><option value="">不细分</option><option value="TEACHER">教师</option><option value="ENGINEERING_TECHNICAL">工程技术</option><option value="LABORATORY">实验技术</option><option value="LIBRARY_ARCHIVES">图书档案</option><option value="ACCOUNTING_AUDIT">会计审计</option><option value="MEDICAL_HEALTH">医疗卫生</option><option value="EDITORIAL_PUBLICATION">编辑出版</option><option value="OTHER_PROFESSIONAL">其他专业技术</option></select></label>
+          <div class="hr02-form__actions"><button class="hr02-btn hr02-btn--primary" type="submit">创建岗位目录</button><span data-form-message role="status"></span></div>
+        </form>
+      </details>
+      {% elif section == 'history' %}
+      <details class="hr02-editor">
+        <summary>发起组织岗位变更</summary>
+        <form class="hr02-form" id="hr02-change-form">
+          <label><span>事项名称</span><input name="title" required placeholder="例如：计算机学院更名"></label>
+          <label><span>变更动作</span><select name="actionType" required><option value="RENAME_ORG">机构更名</option><option value="REPARENT_ORG">调整上级机构</option><option value="CHANGE_ORG_TYPE">调整机构类型</option><option value="DEACTIVATE_ORG">停用机构</option><option value="REACTIVATE_ORG">启用机构</option></select></label>
+          <label><span>机构</span><select name="entityId" data-org-options required><option value="">正在读取机构…</option></select></label>
+          <label><span>新名称/新类型</span><input name="newValue" placeholder="停用、启用时可不填"></label>
+          <label><span>新上级机构</span><select name="parentId" data-org-options><option value="">调整上级时填写</option></select></label>
+          <label><span>计划生效日期</span><input name="effectiveDate" type="date" required></label>
+          <label><span>变更原因</span><input name="reason" required></label>
+          <div class="hr02-form__actions"><button class="hr02-btn hr02-btn--primary" type="submit">保存变更草稿</button><span data-form-message role="status"></span></div>
+        </form>
+      </details>
+      {% endif %}
       <div class="hr02-toolbar">
         <label class="hr02-search-label" for="hr02-search">筛选当前台账</label>
         <input type="search" id="hr02-search" placeholder="搜索编号、名称、状态或类型">

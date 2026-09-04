@@ -51,7 +51,7 @@
             });
 
             $.ajax({
-                url: "{% url 'onboarding-stage-sequence-update' recruitment.id %}",
+                url: "{% url 'onboarding-stage-order' recruitment.id %}",
                 method: "POST",
                 data: {
                     order: JSON.stringify(order),

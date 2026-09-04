@@ -31,6 +31,10 @@ from hr_data.models import (
     ExchangeReconciliation,
     ExchangeTargetMappingVersion,
 )
+from hr_data.standards.china_education import (
+    ChinaEducationStandardError,
+    normalize_exchange_schema,
+)
 
 _CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -115,6 +119,10 @@ class ExchangeDefinitionService:
         payload_hash = _sha256(payload_hash, "PAYLOAD_HASH")
         if isinstance(record_count, bool) or not isinstance(record_count, int) or record_count < 0:
             raise ExchangeError("EXCHANGE_RECORD_COUNT_INVALID", "record_count is invalid")
+        try:
+            schema = normalize_exchange_schema(schema, record_count=record_count)
+        except ChinaEducationStandardError as exc:
+            raise ExchangeError(exc.code, str(exc)) from exc
         frozen_at = frozen_at or timezone.now()
         content = {
             "name": name,

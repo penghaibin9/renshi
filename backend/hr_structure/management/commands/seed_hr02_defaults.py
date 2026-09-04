@@ -11,6 +11,7 @@ HR02 默认字典种子（幂等）：
 from datetime import date
 
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from hr_structure.models import HrPostGrade, HrPostGradeScheme
 
@@ -32,7 +33,7 @@ class Command(BaseCommand):
             defaults={
                 "name": "专业技术岗位等级",
                 "category": "PROFESSIONAL_TECHNICAL",
-                "validity_from": date.today(),
+                "validity_from": timezone.localdate(),
             },
         )
         if was_created:
@@ -61,7 +62,7 @@ class Command(BaseCommand):
             defaults={
                 "name": "管理岗位等级",
                 "category": "MANAGEMENT",
-                "validity_from": date.today(),
+                "validity_from": timezone.localdate(),
             },
         )
         if was2:
@@ -84,7 +85,7 @@ class Command(BaseCommand):
             defaults={
                 "name": "工勤技能岗位等级",
                 "category": "SKILLED_WORKER",
-                "validity_from": date.today(),
+                "validity_from": timezone.localdate(),
             },
         )
         if was3:

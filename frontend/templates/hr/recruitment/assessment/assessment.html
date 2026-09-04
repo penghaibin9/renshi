@@ -44,6 +44,11 @@
     <article class="hr04-assessment__step"><span class="hr04-assessment__step-no">04</span><h3>冻结岗位结果</h3><p>正式汇总后再进入体检、考察、拟录用与公示。</p></article>
   </section>
 
+  <section class="hr04-panel" aria-labelledby="hr04-assessment-workbench-title">
+    <div class="hr04-panel__head"><div><h2 id="hr04-assessment-workbench-title">待评审候选人</h2><p>从资格通过的申请创建评分方案、评审场次与责任到人的评分表。</p></div></div>
+    <div id="hr04-assessment-workbench" class="hr04-table-wrap" aria-live="polite"><div class="hr04-assessment__empty">正在读取待评审申请…</div></div>
+  </section>
+
   <div class="hr04-assessment__grid">
     <section class="hr04-panel" aria-labelledby="hr04-score-query-title">
       <div class="hr04-panel__head"><div><h2 id="hr04-score-query-title">评分表查询</h2><p>输入评分表编号查看正式评分数据。</p></div></div>
@@ -75,5 +80,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/recruitment-assessment.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-assessment.js' %}?v=20260901-2"></script>
 {% endblock scripts %}

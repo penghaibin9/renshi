@@ -43,6 +43,24 @@ class ExternalParticipantProviderTests(SimpleTestCase):
         self.assertIn("URL/token is not configured", str(cm.exception))
 
     @override_settings(
+        DEBUG=False,
+        HR16_EXIT_EXTERNAL_PROVIDERS={
+            "IAM": {
+                "url": "http://iam.example.test/v1/exit-effects",
+                "token": "provider-token",
+            }
+        },
+    )
+    def test_production_provider_rejects_plain_http(self):
+        with self.assertRaisesMessage(ExitParticipantUnavailable, "must use HTTPS"):
+            iam_participant_provider(
+                tenant_id=7,
+                case=self.case,
+                effect=self.effect,
+                actor_user_id=88,
+            )
+
+    @override_settings(
         HR16_EXIT_EXTERNAL_PROVIDERS={
             "ASSET": {
                 "url": "https://asset.example.test/v1/exit-effects",

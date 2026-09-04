@@ -202,16 +202,10 @@
                                                         <div class="oh-btn-group">
                                                             {% if perms.recruitment.change_candidate %}
                                                                 {% if not cand.email in emp_list and not cand.start_onboard %}
-                                                                    <a
-                                                                        href="{% url 'candidate-conversion' cand.id %}"
-                                                                        onclick="return confirm('{% trans "Are you sure you want to convert this candidate into an employee?" %}')"
-                                                                        class="oh-btn oh-btn--light-bkg w-100"
-                                                                        title='{% trans "To employee " %}'
-                                                                        style="padding: 0.8rem 1rem"
-                                                                    >
-                                                                        <ion-icon
-                                                                            name="person-circle-outline"
-                                                                        ></ion-icon></a>
+                                                                    <form method="post" action="{% url 'candidate-conversion' cand.id %}"
+                                                                        onsubmit="return confirm('{% trans "Are you sure you want to convert this candidate into an employee?" %}')" style="display:contents">
+                                                                        {% csrf_token %}<button type="submit" class="oh-btn oh-btn--light-bkg w-100" title='{% trans "To employee " %}' style="padding: 0.8rem 1rem"><ion-icon name="person-circle-outline"></ion-icon></button>
+                                                                    </form>
                                                                 {% elif cand.email in emp_list %}
                                                                     <button
                                                                         class="oh-btn oh-btn--light-bkg w-100"

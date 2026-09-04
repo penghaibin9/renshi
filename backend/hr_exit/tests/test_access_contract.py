@@ -1,8 +1,15 @@
+import json
 from unittest.mock import patch
 
+from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase
 
-from hr_exit.api import HrExitAccessError, READ_PERMISSION, resolve_request_tenant
+from hr_exit.api import (
+    HrExitAccessError,
+    READ_PERMISSION,
+    dashboard,
+    resolve_request_tenant,
+)
 
 
 class UserStub:
@@ -41,3 +48,13 @@ class Hr16AccessContractTests(SimpleTestCase):
     def test_member_with_read_permission_is_allowed(self, _allowed, _tenant):
         self.request.user = UserStub({READ_PERMISSION})
         self.assertEqual(resolve_request_tenant(self.request), 7)
+
+    @patch("hr_exit.api.resolve_request_tenant", return_value=7)
+    @patch("hr_exit.api.dashboard_snapshot", side_effect=DatabaseError("offline"))
+    def test_dashboard_storage_failure_is_structured_503(self, _snapshot, _tenant):
+        response = dashboard(self.request)
+
+        self.assertEqual(response.status_code, 503)
+        payload = json.loads(response.content)
+        self.assertEqual(payload["error"]["code"], "EXIT_STORAGE_UNAVAILABLE")
+        self.assertIn("数据库升级状态", payload["error"]["message"])

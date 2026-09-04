@@ -112,7 +112,7 @@
                             role="button"
                             data-toggle="oh-modal-toggle"
                             data-target="#objectCreateModal"
-                            hx-get="{%url 'asset-allocate-return'  asset_id=asset.id %}"
+                            hx-get="{%url 'asset-allocate-return' asset_id=asset_assignment.id %}"
                             hx-target="#objectCreateModalTarget"
                         >
                             <ion-icon name="return-down-back-sharp"></ion-icon>{% trans "Return" %}
@@ -122,6 +122,7 @@
                             <form
                                 class="w-100"
                                 action="{% url 'asset-allocate-return-request' asset_id=asset_assignment.id %}"
+                                method="post"
                                 onsubmit="return confirm('{% trans "Are you sure you want to return this asset?" %}')"
                             >
                                 {% csrf_token %}

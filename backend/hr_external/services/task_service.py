@@ -10,6 +10,8 @@ hr_external/services/task_service.py —— 教学与服务任务（S7，总册 
 
 from __future__ import annotations
 
+import calendar
+import re
 from datetime import date
 from typing import Optional
 
@@ -45,6 +47,9 @@ class WorkloadOverCap(Exception):
 
 class TaskStateConflict(Exception):
     code = "VERSION_CONFLICT"
+
+
+_SETTLEMENT_PERIOD = re.compile(r"^(20\d{2})-(0[1-9]|1[0-2])$")
 
 
 _TASK_TRANSITIONS = {
@@ -156,7 +161,15 @@ class TaskService:
     @transaction.atomic
     def assign(self, task: HrExternalServiceTask, *, tenant_id: int):
         task = self._lock_task(task, tenant_id=tenant_id)
-        return self._transition_locked(task, ExternalTaskStatus.ASSIGNED)
+        task = self._transition_locked(task, ExternalTaskStatus.ASSIGNED)
+        if task.source_domain == "ACADEMIC" and task.source_object_id:
+            from hr_external.services.access_service import AccessService
+
+            AccessService().provision_engagement_access(
+                tenant_id=tenant_id,
+                engagement=task.engagement_id,
+            )
+        return task
 
     @transaction.atomic
     def accept(
@@ -356,13 +369,23 @@ class TaskService:
         policy_ref: str = "",
     ) -> HrExternalSettlementBasis:
         """聚合 verified workload → SettlementBasis（§53/§100）。"""
-        eng = HrExternalEngagement.objects.filter(
+        period = str(period or "").strip()
+        match = _SETTLEMENT_PERIOD.fullmatch(period)
+        if not match:
+            raise ValueError("period must use YYYY-MM")
+        year, month = (int(value) for value in match.groups())
+        period_start = date(year, month, 1)
+        period_end = date(year, month, calendar.monthrange(year, month)[1])
+        eng = HrExternalEngagement.objects.select_for_update().filter(
             tenant_id=tenant_id, id=engagement_id
         ).first()
         if eng is None:
             raise TaskOutsideEngagement("engagement not found in tenant")
 
-        verified = eng.workload_records.filter(verification_status="VERIFIED")
+        verified = eng.workload_records.filter(
+            verification_status="VERIFIED",
+            service_date__range=(period_start, period_end),
+        ).order_by("service_date", "id")
         total = sum((r.quantity for r in verified), 0)
         items = [
             {
@@ -373,21 +396,44 @@ class TaskService:
             }
             for r in verified
         ]
-        basis, created = HrExternalSettlementBasis.objects.get_or_create(
-            tenant_id=tenant_id,
-            engagement_id=eng,
-            period=period,
-            defaults={
-                "verified_workload": total,
-                "eligible_items": items,
-                "policy_ref": policy_ref,
-                "status": SettlementStatus.READY,
-            },
-        )
-        if not created:
+        basis = HrExternalSettlementBasis.objects.select_for_update().filter(
+            tenant_id=tenant_id, engagement_id=eng, period=period
+        ).first()
+        if basis is None:
+            basis = HrExternalSettlementBasis.objects.create(
+                tenant_id=tenant_id,
+                engagement_id=eng,
+                period=period,
+                verified_workload=total,
+                eligible_items=items,
+                policy_ref=policy_ref,
+                status=SettlementStatus.READY,
+            )
+        elif (
+            basis.verified_workload != total
+            or basis.eligible_items != items
+            or (policy_ref and basis.policy_ref != policy_ref)
+        ):
             basis.verified_workload = total
             basis.eligible_items = items
             basis.policy_ref = policy_ref or basis.policy_ref
             basis.status = SettlementStatus.READY
-            basis.save(update_fields=["verified_workload", "eligible_items", "policy_ref", "status", "updated_at"])
+            basis.version += 1
+            basis.save(update_fields=["verified_workload", "eligible_items", "policy_ref", "status", "version", "updated_at"])
+
+        from hr_external.integrations.hr15 import SettlementProvider
+
+        delivery = SettlementProvider().notify_settlement_basis(
+            tenant_id=tenant_id,
+            engagement_id=str(eng.id),
+            period=period,
+            verified_workload={"total": str(basis.verified_workload)},
+            eligible_items=basis.eligible_items,
+            policy_ref=basis.policy_ref,
+            source_version=basis.version,
+            idempotency_key=f"hr08-settlement:{basis.id}:v{basis.version}",
+        )
+        if delivery.is_available and basis.status != SettlementStatus.LOCKED:
+            basis.status = SettlementStatus.LOCKED
+            basis.save(update_fields=["status", "updated_at"])
         return basis

@@ -1,4 +1,4 @@
-{% load i18n %}
+{% load i18n email_log_filters %}
 <div class="oh-modal__dialog-header">
     <button class="oh-modal__close" aria-label="{% trans 'Close' %}">
       <ion-icon name="close-outline"></ion-icon>
@@ -27,30 +27,16 @@
     </button>
   </div>
   {% endif %}
-<iframe id="myIframe"  height="500" width="600" src="about:blank" marginwidth="50" ></iframe>
-
-
-
-<script>
-    // Get the iframe element
-    var iframe = document.getElementById('myIframe');
-
-    // Access the iframe's document
-    var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-
-    var logSubject = "{{ log.subject|escapejs }}";
-    var logBody = "{{ log.body|escapejs }}";
-    var trimmedBody = logBody.trim();
-    var hasContent = trimmedBody.length > 0;
-
-    if (hasContent) {
-      content = '<div class="oh-modal__dialog-body">' + logBody + '</div>';
-    } else {
-      content = '<div class="oh-modal__dialog-title" style="padding:25px;">' + logSubject + '</div>';
-    }
-
-    // Write the content into the iframe
-    iframeDoc.open();
-    iframeDoc.write(content);
-    iframeDoc.close();
-  </script>
+{% if log.body %}
+  <iframe
+    title="{% trans 'Mail content' %}"
+    height="500"
+    width="100%"
+    sandbox
+    referrerpolicy="no-referrer"
+    srcdoc="{{ log|safe_email_log_body|force_escape }}"
+    style="border: 0"
+  ></iframe>
+{% else %}
+  <div class="oh-modal__dialog-title" style="padding:25px;">{{ log.subject }}</div>
+{% endif %}

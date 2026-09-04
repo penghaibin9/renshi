@@ -1,11 +1,12 @@
 """S3 API 契约测试：创建/详情/动作/envelope/中文 label 成对。"""
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 
 from hr_changes.api import changes as changes_api
 from hr_changes.constants import CaseStatus, ChangeActionCode
@@ -21,6 +22,7 @@ from hr_changes.tests.factories import (
 )
 
 TENANT = 1
+EFFECTIVE_DATE = timezone.localdate() + timedelta(days=30)
 
 
 def ctx():
@@ -38,11 +40,16 @@ class ChangeApiTests(TestCase):
         self.org = make_org(TENANT, "RGXY", "人工智能学院", date(2020, 1, 1))
         self.staff = make_staff(TENANT, make_person(TENANT, "张某某"), "T8001")
 
-    def _req(self, method, path, body=None):
+    def _req(self, method, path, body=None, *, headers=None):
         if body is not None:
-            request = getattr(self.factory, method)(path, data=json.dumps(body), content_type="application/json")
+            request = getattr(self.factory, method)(
+                path,
+                data=json.dumps(body),
+                content_type="application/json",
+                headers=headers,
+            )
         else:
-            request = getattr(self.factory, method)(path)
+            request = getattr(self.factory, method)(path, headers=headers)
         request.user = self.user
         return request
 
@@ -54,7 +61,7 @@ class ChangeApiTests(TestCase):
             "staffMasterId": str(self.staff.id),
             "actionId": str(self.action.id),
             "reasonId": str(self.reason.id),
-            "requestedEffectiveAt": "2026-09-01",
+            "requestedEffectiveAt": EFFECTIVE_DATE.isoformat(),
             "proposals": [
                 {
                     "domain": "assignment",
@@ -96,7 +103,14 @@ class ChangeApiTests(TestCase):
         case = make_case(TENANT, status=CaseStatus.READY_TO_SUBMIT)
         with mock.patch("hr_changes.api.changes.make_hr_change_context", return_value=ctx()):
             resp = changes_api.change_action(
-                self._req("post", f"/api/hr/v1/changes/{case.id}/submit?version=99", {}), case.id, "submit"
+                self._req(
+                    "post",
+                    f"/api/hr/v1/changes/{case.id}/submit",
+                    {},
+                    headers={"If-Match": "99"},
+                ),
+                case.id,
+                "submit",
             )
         body = self._body(resp)
         self.assertEqual(resp.status_code, 409)

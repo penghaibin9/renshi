@@ -6,7 +6,7 @@ hr_external/integrations/academic.py —— 教务系统 Provider（S2，总册 
 
 契约：
   activate_teacher_identity(*, tenant_id, external_teacher_no, academic_teacher_id, valid_from, valid_to)
-  deactivate_teacher_identity(*, tenant_id, academic_teacher_id)
+  deactivate_teacher_identity(*, tenant_id, external_teacher_no, academic_teacher_id)
   fetch_teaching_assignments(*, tenant_id, academic_teacher_id, term)
   幂等键：调用方传 idempotency_key；服务端重复请求返回同一业务回执。
 """
@@ -54,6 +54,7 @@ class AcademicProvider(ConfiguredJsonProvider):
         *,
         tenant_id: int,
         academic_teacher_id: str,
+        external_teacher_no: str = "",
         idempotency_key: str = "",
     ) -> ProviderResult:
         self._require_tenant(tenant_id)
@@ -62,7 +63,10 @@ class AcademicProvider(ConfiguredJsonProvider):
             method="POST",
             path="teacher-identities/deactivate",
             idempotency_key=idempotency_key,
-            payload={"academicTeacherId": academic_teacher_id},
+            payload={
+                "academicTeacherId": academic_teacher_id,
+                "externalTeacherNo": external_teacher_no,
+            },
             receipt_required=True,
         )
 

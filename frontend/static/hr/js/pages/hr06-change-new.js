@@ -402,6 +402,10 @@
       if (code === "ORG_TRANSFER" || code === "ORG_POSITION_TRANSFER") {
         body.targetOrgId = targetOrgSelect.value;
       }
+      if (code === "POSITION_TRANSFER" && primary && primary.orgId) {
+        // 岗位调动仍需把当前组织作为新主岗的权威组织事实提交，不能只传岗位。
+        body.targetOrgId = primary.orgId;
+      }
       if (code === "POSITION_TRANSFER" || code === "ORG_POSITION_TRANSFER") {
         body.targetPositionId = targetPositionSelect.value;
       }

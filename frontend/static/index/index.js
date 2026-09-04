@@ -131,7 +131,7 @@ function clearSelection(storeKey) {
 }
 
 /**
- * Clear list-row selections when switching Horilla tabs. Lists may use a
+ * Clear list-row selections when switching compatibility tabs. Lists may use a
  * custom store (#selectedTickets, etc.) instead of #selectedInstances — the
  * generic tab onclick used to only clear selectedInstances, so selections
  * from one tab (e.g. My Tickets) leaked into another (Suggested Tickets).
@@ -328,7 +328,7 @@ function syncBulkSelectAllCheckbox(viewId) {
 // hx-on::after-request). Column *reordering* (drag-and-drop) still reloads
 // normally, since re-ordering actual table cells isn't a simple show/hide.
 function toggleColumnVisibility(checkboxEl, fieldName, visible) {
-    // Scope to this list only. HorillaTabView keeps visited tabs in the DOM,
+    // Scope to this list only. The tab view keeps visited tabs in the DOM,
     // so a global th[id$=...] lookup can match History (or any column) from
     // another tab and wrongly skip the reload this list needs.
     // Group-by tables also use .hlv-container; fall back to [data-list-path]

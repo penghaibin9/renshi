@@ -19,7 +19,8 @@
                         name="is_live"
                         hx-trigger="change"
                         hx-target="#BiometricDeviceTestFormTarget"
-                        hx-get="{% url 'biometric-device-live-capture' %}?deviceId={{ device.id }}"
+                        hx-post="{% url 'biometric-device-live-capture' %}"
+                        hx-vals='{"deviceId": "{{ device.id }}"}'
                         hx-on:change="document.getElementById('BiometricDeviceTestModal').classList.add('oh-modal--show')"
                     >
                 </div>

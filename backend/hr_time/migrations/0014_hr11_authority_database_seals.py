@@ -903,5 +903,9 @@ class Migration(migrations.Migration):
         ),
         migrations.RunPython(quarantine_unsealed_overtime, migrations.RunPython.noop),
         migrations.RunPython(validate_existing_close_periods, migrations.RunPython.noop),
-        migrations.RunPython(install_mysql_seals, remove_mysql_seals),
+        migrations.RunPython(
+            install_mysql_seals,
+            remove_mysql_seals,
+            atomic=False,
+        ),
     ]

@@ -81,6 +81,12 @@ class HrLeaveRequest(TimeTenantModel):
     calculated_amount = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True, verbose_name=_("计算数量")
     )
+    calculation_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_("请假时长计算快照"),
+        help_text=_("冻结提交时采用的工作日历、排班和工作日明细，审批后不得重新解释。"),
+    )
     unit = models.CharField(
         max_length=16,
         choices=[("DAYS", _("天")), ("HOURS", _("小时")), ("MINUTES", _("分钟"))],
@@ -285,6 +291,15 @@ class HrLeaveEvidence(TimeTenantModel):
         HrLeaveRequest, on_delete=models.PROTECT, related_name="evidences"
     )
     document_id = models.CharField(max_length=64, verbose_name=_("文档 id"))
+    storage_key = models.CharField(
+        max_length=512,
+        verbose_name=_("私有存储键"),
+        help_text=_("仅供服务端鉴权下载使用，不得作为公开 URL 返回。"),
+    )
+    original_name = models.CharField(max_length=255, blank=True, default="")
+    content_type = models.CharField(max_length=127, blank=True, default="")
+    file_size = models.PositiveBigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True, default="")
     evidence_type = models.CharField(max_length=32, blank=True, default="")
     verification_status = models.CharField(
         max_length=16,
@@ -316,6 +331,12 @@ class HrLeaveEvidence(TimeTenantModel):
     class Meta:
         verbose_name = _("Leave Evidence")
         verbose_name_plural = _("Leave Evidences")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "document_id"],
+                name="uniq_hr11_leave_evidence_doc",
+            )
+        ]
 
     def __str__(self):
         return f"[{self.tenant_id}] request={self.leave_request_id} {self.evidence_type}"
@@ -324,7 +345,70 @@ class HrLeaveEvidence(TimeTenantModel):
         super().clean()
         if self.leave_request_id and self.leave_request.tenant_id != self.tenant_id:
             raise ValidationError(_("请假证明与请假申请必须属于同一租户"))
+        if not self.document_id or not self.storage_key:
+            raise ValidationError(_("请假证明必须关联私有存储文件"))
+        expected_prefix = f"protected/hr11/{self.tenant_id}/{self.leave_request_id}/"
+        if not self.storage_key.startswith(expected_prefix):
+            raise ValidationError(_("请假证明存储路径与学校或申请不一致"))
+        if (
+            self.file_size <= 0
+            or len(self.sha256) != 64
+            or any(char not in "0123456789abcdef" for char in self.sha256.lower())
+        ):
+            raise ValidationError(_("请假证明缺少完整性校验信息"))
 
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class _AppendOnlyLeaveEvidenceAccessQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError(_("请假证明访问审计不可修改"))
+
+    def delete(self):
+        raise ValidationError(_("请假证明访问审计不可删除"))
+
+
+class HrLeaveEvidenceAccessAudit(TimeTenantModel):
+    """每次成功下载请假证明形成一条不可变审计记录。"""
+
+    evidence = models.ForeignKey(
+        HrLeaveEvidence,
+        on_delete=models.PROTECT,
+        related_name="access_audits",
+    )
+    actor_user_id = models.PositiveBigIntegerField()
+    purpose = models.CharField(max_length=500)
+    request_id = models.CharField(max_length=128, blank=True, default="")
+
+    objects = _AppendOnlyLeaveEvidenceAccessQuerySet.as_manager()
+
+    class Meta:
+        db_table = "hr11_leave_evidence_access_audit"
+        indexes = [
+            models.Index(
+                fields=("tenant_id", "evidence", "created_at"),
+                name="idx_hr11_leave_evid_access",
+            ),
+            models.Index(
+                fields=("tenant_id", "actor_user_id", "created_at"),
+                name="idx_hr11_leave_actor_access",
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(purpose__gt=""),
+                name="ck_hr11_leave_access_purpose",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self)._base_manager.filter(pk=self.pk).exists():
+            raise ValidationError(_("请假证明访问审计不可修改"))
+        if not str(self.purpose or "").strip():
+            raise ValidationError(_("请填写请假证明查阅事由"))
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("请假证明访问审计不可删除"))

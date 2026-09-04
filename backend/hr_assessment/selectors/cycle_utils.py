@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Dict, List, Optional
+
+from django.db.models import Q
+from django.utils.dateparse import parse_date
 
 from hr_assessment.models.cycle import HrAssessmentCycle
 
@@ -12,12 +16,15 @@ from hr_assessment.models.cycle import HrAssessmentCycle
 @dataclass
 class SubjectAsOfSnapshot:
     staff_id: uuid.UUID
-    org_id: Optional[uuid.UUID] = None
+    employment_relationship_id: Optional[uuid.UUID] = None
+    primary_assignment_id: Optional[uuid.UUID] = None
+    org_id: Optional[int] = None
     org_name: str = ""
-    position_id: Optional[uuid.UUID] = None
+    position_id: Optional[int] = None
     position_name: str = ""
     job_category: str = ""
     teacher_type: str = ""
+    direct_manager_id: Optional[uuid.UUID] = None
     as_of_date: str = ""
 
 
@@ -34,45 +41,92 @@ class OrgAsOfResolver:
     """从 HR03 解析 as-of 时的组织/岗位/评审线快照。"""
 
     def resolve(self, tenant_id: int, staff_id: uuid.UUID, as_of: str) -> SubjectAsOfSnapshot:
-        try:
-            from hr_staff.models.staff import HrStaffMaster
-            master = HrStaffMaster.objects.filter(
-                tenant_id=tenant_id, id=staff_id,
-            ).select_related("person").first()
-            if not master:
-                return SubjectAsOfSnapshot(staff_id=staff_id, as_of_date=as_of)
-            return SubjectAsOfSnapshot(
-                staff_id=staff_id,
-                org_id=master.department_id,
-                org_name=master.get_department() or "",
-                position_id=master.position_id,
-                position_name=master.get_job_position() or "",
-                job_category=master.worker_category or "",
-                as_of_date=as_of,
+        from hr_staff.models import HrStaffAssignment, HrStaffMaster
+        from hr_structure.selectors.effective import org_version_as_of
+
+        as_of_date = as_of if isinstance(as_of, date) else parse_date(str(as_of))
+        if as_of_date is None:
+            raise ValueError("ASSESSMENT_SUBJECT_AS_OF_INVALID")
+        master = HrStaffMaster.objects.filter(
+            tenant_id=tenant_id,
+            id=staff_id,
+        ).first()
+        if master is None:
+            raise ValueError("ASSESSMENT_SUBJECT_STAFF_NOT_FOUND")
+        assignments = list(
+            HrStaffAssignment.objects.filter(
+                tenant_id=tenant_id,
+                employment_relationship_id__staff_id=staff_id,
+                assignment_type="PRIMARY",
+                status="ACTIVE",
+                effective_from__lte=as_of_date,
             )
-        except ImportError:
-            return SubjectAsOfSnapshot(staff_id=staff_id, as_of_date=as_of)
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=as_of_date))
+            .select_related(
+                "organization_id",
+                "position_id__post_catalog_version_id",
+                "reporting_staff_id",
+            )
+            .order_by("-effective_from", "-version", "id")[:2]
+        )
+        if len(assignments) > 1:
+            raise ValueError("ASSESSMENT_SUBJECT_PRIMARY_ASSIGNMENT_AMBIGUOUS")
+        assignment = assignments[0] if assignments else None
+        organization_id = assignment.organization_id_id if assignment else None
+        position_id = assignment.position_id_id if assignment else None
+        organization = (
+            org_version_as_of(tenant_id, organization_id, as_of_date)
+            if organization_id
+            else None
+        )
+        position = assignment.position_id if assignment else None
+        post_catalog = position.post_catalog_version_id if position else None
+        return SubjectAsOfSnapshot(
+            staff_id=staff_id,
+            employment_relationship_id=(
+                assignment.employment_relationship_id_id if assignment else None
+            ),
+            primary_assignment_id=assignment.id if assignment else None,
+            org_id=organization_id,
+            org_name=organization.name if organization else "",
+            position_id=position_id,
+            position_name=post_catalog.name if post_catalog else "",
+            job_category=post_catalog.category if post_catalog else "",
+            teacher_type=master.staff_category_code,
+            direct_manager_id=(
+                assignment.reporting_staff_id_id if assignment else None
+            ),
+            as_of_date=as_of_date.isoformat(),
+        )
 
     def build_reviewer_baseline(
         self, tenant_id: int, case_id: uuid.UUID, staff_id: uuid.UUID, as_of: str,
     ) -> ReviewerBaseline:
         """从 HR03 的主管/组织关系构建评审人基线。"""
-        try:
-            from hr_staff.models.staff import HrStaffMaster
-            master = HrStaffMaster.objects.filter(
-                tenant_id=tenant_id, id=staff_id,
-            ).first()
-            if not master:
-                return ReviewerBaseline(case_id=case_id, staff_id=staff_id)
-            manager_id = None
-            if hasattr(master, "reporting_manager_id") and master.reporting_manager_id:
-                manager_id = master.reporting_manager_id
-            return ReviewerBaseline(
-                case_id=case_id, staff_id=staff_id,
-                direct_manager_id=manager_id,
+        from hr_staff.models import HrStaffAssignment
+
+        as_of_date = as_of if isinstance(as_of, date) else parse_date(str(as_of))
+        if as_of_date is None:
+            raise ValueError("ASSESSMENT_REVIEWER_AS_OF_INVALID")
+        assignment = (
+            HrStaffAssignment.objects.filter(
+                tenant_id=tenant_id,
+                employment_relationship_id__staff_id=staff_id,
+                assignment_type="PRIMARY",
+                status="ACTIVE",
+                effective_from__lte=as_of_date,
             )
-        except ImportError:
-            return ReviewerBaseline(case_id=case_id, staff_id=staff_id)
+            .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=as_of_date))
+            .order_by("-effective_from", "-version", "id")
+            .first()
+        )
+        return ReviewerBaseline(
+            case_id=case_id,
+            staff_id=staff_id,
+            direct_manager_id=(
+                assignment.reporting_staff_id_id if assignment else None
+            ),
+        )
 
 
 class AmbiguousPolicyDetector:

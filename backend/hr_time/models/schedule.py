@@ -194,6 +194,14 @@ class HrScheduleAssignment(TimeTenantModel):
             raise ValidationError(_("失效日早于生效日"))
         if not self.calendar_version_id and not self.shift_version_id and not self.work_pattern_id:
             raise ValidationError(_("排班必须至少绑定日历/班次/轮班之一"))
+        for relation_name, label in (
+            ("calendar_version", _("工作日历版本")),
+            ("shift_version", _("班次版本")),
+            ("work_pattern", _("轮班模式")),
+        ):
+            relation_id = getattr(self, f"{relation_name}_id")
+            if relation_id and getattr(self, relation_name).tenant_id != self.tenant_id:
+                raise ValidationError(_("排班与%(label)s必须属于同一租户") % {"label": label})
 
     def __str__(self):
         return f"[{self.tenant_id}] staff={self.staff_master_id} {self.effective_from}~{self.effective_to}"

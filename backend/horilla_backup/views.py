@@ -1,7 +1,8 @@
 from django.contrib import messages
-from django.db import connection
+from django.db import connection, transaction
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
+from django.views.decorators.http import require_POST
 
 from horilla.decorators import (
     hx_request_required,
@@ -97,7 +98,7 @@ from .zip import *
 
 
 @login_required
-@permission_required("horilla_backup.add_localbackup")
+@permission_required("horilla_backup.add_googledrivebackup")
 def gdrive_setup(request):
     """
     function used to setup gdrive backup.
@@ -148,7 +149,9 @@ def gdrive_setup(request):
 
 
 @login_required
-@permission_required("horilla_backup.change_localbackup")
+@permission_required("horilla_backup.change_googledrivebackup")
+@require_POST
+@transaction.atomic
 def gdrive_Backup_stop_or_start(request):
     """
     function used to stop or start gdrive backup.
@@ -161,22 +164,24 @@ def gdrive_Backup_stop_or_start(request):
     POST : return gdrive backup update template
     """
     if GoogleDriveBackup.objects.exists():
-        gdive_backup = GoogleDriveBackup.objects.first()
+        gdive_backup = GoogleDriveBackup.objects.select_for_update().first()
         if gdive_backup.active == True:
             gdive_backup.active = False
-            stop_gdrive_backup_job()
+            transaction.on_commit(stop_gdrive_backup_job)
             message = "Google Drive Backup Automation Stopped Successfully."
         else:
             gdive_backup.active = True
-            start_gdrive_backup_job()
+            transaction.on_commit(start_gdrive_backup_job)
             message = "Google Drive Backup Automation Started Successfully."
-        gdive_backup.save()
+        gdive_backup.save(update_fields=["active"])
         messages.success(request, _(message))
     return redirect("gdrive")
 
 
 @login_required
-@permission_required("horilla_backup.delete_localbackup")
+@permission_required("horilla_backup.delete_googledrivebackup")
+@require_POST
+@transaction.atomic
 def gdrive_Backup_delete(request):
     """
     function used to delete gdrive backup.
@@ -188,9 +193,9 @@ def gdrive_Backup_delete(request):
     GET : return gdrive backup setup template
     """
     if GoogleDriveBackup.objects.exists():
-        gdrive_backup = GoogleDriveBackup.objects.first()
+        gdrive_backup = GoogleDriveBackup.objects.select_for_update().first()
         gdrive_backup.delete()
-        stop_gdrive_backup_job()
+        transaction.on_commit(stop_gdrive_backup_job)
         messages.success(
             request, _("Google Drive Backup Automation Removed Successfully.")
         )

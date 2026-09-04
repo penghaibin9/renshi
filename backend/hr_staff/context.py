@@ -24,9 +24,10 @@ DEFAULT_SCHOOL_TZ = "Asia/Shanghai"
 class HrStaffContextError(Exception):
     """HR03 上下文错误（tenant/scope 解析失败）。"""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, *, status: int = 403):
         self.code = code
         self.message = message
+        self.status = status
         super().__init__(message)
 
 

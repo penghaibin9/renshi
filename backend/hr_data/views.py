@@ -21,6 +21,7 @@ ACTION_PERMISSIONS = {
     "can_submit": "hr.data.submit",
     "can_approve": "hr.data.approve",
     "can_receipt": "hr.data.receipt",
+    "can_exchange": "hr.data.exchange",
 }
 
 

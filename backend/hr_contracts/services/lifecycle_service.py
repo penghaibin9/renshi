@@ -20,6 +20,10 @@ from hr_contracts.events import (
     EVENT_AGREEMENT_SIGNED,
     EVENT_AGREEMENT_TERMINATED,
 )
+from hr_contracts.services.document_binding import (
+    ContractDocumentBindingError,
+    bind_signed_document_reference,
+)
 from hr_contracts.models import HrContractAgreement, HrContractCase, HrContractVersion
 from hr_contracts.services.agreement_service import AgreementService, ContractServiceError
 
@@ -303,6 +307,18 @@ class ContractLifecycleService:
             created_by=self.actor_user_id,
             updated_by=self.actor_user_id,
         )
+        try:
+            bind_signed_document_reference(
+                tenant_id=self.tenant_id,
+                agreement_id=agreement.id,
+                version=version,
+                signed_document_ref=signed_document_ref,
+                actor_id=self.actor_user_id,
+            )
+        except ContractDocumentBindingError as exc:
+            raise ContractServiceError(
+                "CONTRACT_SIGNED_DOCUMENT_INVALID", str(exc)
+            ) from exc
         agreement.current_version_no = next_no
         agreement.status = HrContractAgreement.Status.SIGNED_WAITING_EFFECTIVE
         agreement.updated_by = self.actor_user_id

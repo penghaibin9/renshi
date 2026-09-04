@@ -193,9 +193,9 @@
                               {% endif %}
                               {% if perms.recruitment.delete_recruitment %}
                                 {% if rec.is_active %}
-                                  <a href="{% url 'recruitment-archive' rec.id %}" class="oh-btn oh-btn--light-bkg w-100" title="{% trans 'Archive' %}"><ion-icon name="archive"></ion-icon></a>
+                                  <form method="post" action="{% url 'recruitment-archive' rec.id %}" style="display:contents">{% csrf_token %}<button type="submit" class="oh-btn oh-btn--light-bkg w-100" title="{% trans 'Archive' %}"><ion-icon name="archive"></ion-icon></button></form>
                                   {% else %}
-                                  <a href="{% url 'recruitment-archive' rec.id %}" class="oh-btn oh-btn--light-bkg w-100" title="{% trans 'Unarchive' %}"><ion-icon name="archive"></ion-icon></a>
+                                  <form method="post" action="{% url 'recruitment-archive' rec.id %}" style="display:contents">{% csrf_token %}<button type="submit" class="oh-btn oh-btn--light-bkg w-100" title="{% trans 'Unarchive' %}"><ion-icon name="archive"></ion-icon></button></form>
                                 {% endif %}
                                 <span>
                                   <form

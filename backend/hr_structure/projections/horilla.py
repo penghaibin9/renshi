@@ -30,6 +30,24 @@ class LegacyProjectionError(Exception):
     pass
 
 
+def _legacy_department_model():
+    from base.models import Department
+
+    return Department
+
+
+def _legacy_job_position_model():
+    from base.models import JobPosition
+
+    return JobPosition
+
+
+def _legacy_work_info_model():
+    from employee.models import EmployeeWorkInformation
+
+    return EmployeeWorkInformation
+
+
 class HorillaStructureProjectionService:
     def __init__(self, tenant_id: int):
         if not tenant_id:
@@ -60,8 +78,6 @@ class HorillaStructureProjectionService:
 
     def project_organization(self, version: HrOrganizationVersion) -> HrLegacyObjectLink:
         """权威组织 → Horilla Department 投影（单向，幂等，tenant fail-closed）。"""
-        from base.models import Department
-
         self._assert_version_in_tenant(version)
 
         link = HrLegacyObjectLink.objects.filter(
@@ -84,14 +100,14 @@ class HorillaStructureProjectionService:
         legacy_pk = link.legacy_pk if link else None
         if legacy_pk:
             # 关键：不能只按 PK 取 Department，否则坏映射可能更新别的学校数据。
-            dept = Department.objects.filter(
+            dept = _legacy_department_model().objects.filter(
                 id=int(legacy_pk),
                 company_id=self.tenant_id,
             ).first()
             if dept is None:
                 raise LegacyProjectionError("HR02_LEGACY_LINK_TENANT_MISMATCH")
         else:
-            dept = Department.objects.create(department=version.name)
+            dept = _legacy_department_model().objects.create(department=version.name)
             # Department.company_id 是 M2M；新投影必须立刻绑定当前 tenant，
             # 禁止生成“无学校归属”的全局 legacy 部门。
             dept.company_id.add(self.tenant_id)
@@ -119,8 +135,6 @@ class HorillaStructureProjectionService:
 
     def project_position(self, position: HrPosition) -> HrLegacyObjectLink:
         """权威岗位 → Horilla JobPosition 投影，要求组织先完成 tenant-safe Department 映射。"""
-        from base.models import Department, JobPosition
-
         self._assert_position_in_tenant(position)
 
         org_link = HrLegacyObjectLink.objects.filter(
@@ -139,7 +153,7 @@ class HorillaStructureProjectionService:
         except (TypeError, ValueError) as exc:
             raise LegacyProjectionError("HR02_POSITION_ORG_LEGACY_LINK_INVALID") from exc
 
-        department = Department.objects.filter(
+        department = _legacy_department_model().objects.filter(
             id=legacy_department_id,
             company_id=self.tenant_id,
         ).first()
@@ -169,7 +183,7 @@ class HorillaStructureProjectionService:
                 legacy_position_id = int(link.legacy_pk)
             except (TypeError, ValueError) as exc:
                 raise LegacyProjectionError("HR02_POSITION_LEGACY_LINK_INVALID") from exc
-            legacy_position = JobPosition.objects.filter(
+            legacy_position = _legacy_job_position_model().objects.filter(
                 id=legacy_position_id,
                 company_id=self.tenant_id,
             ).first()
@@ -179,7 +193,7 @@ class HorillaStructureProjectionService:
             legacy_position.department_id = department
             legacy_position.save(update_fields=["job_position", "department_id"])
         else:
-            legacy_position = JobPosition.objects.create(
+            legacy_position = _legacy_job_position_model().objects.create(
                 job_position=position.post_catalog_version_id.name,
                 department_id=department,
             )
@@ -236,7 +250,7 @@ class HorillaStructureProjectionService:
             tenant_id=self.tenant_id,
             name=company.company,
             org_type=HrOrganizationVersion.OrgType.SCHOOL,
-            validity_from=date.today(),
+            validity_from=timezone.localdate(),
             status=HrOrganizationVersion.Status.EFFECTIVE,
             created_by="migration-m1",
         )
@@ -254,14 +268,11 @@ class HorillaStructureProjectionService:
 
     def reconcile_report(self) -> dict:
         """对账（总册 30.2 DUAL_READ_COMPARE 维度），严格按 tenant 隔离。"""
-        from base.models import Department, JobPosition
-        from employee.models import EmployeeWorkInformation
-
-        active_depts = Department.objects.filter(
+        active_depts = _legacy_department_model().objects.filter(
             company_id=self.tenant_id,
             is_active=True,
         ).count()
-        active_job_positions = JobPosition.objects.filter(
+        active_job_positions = _legacy_job_position_model().objects.filter(
             company_id=self.tenant_id,
             is_active=True,
         ).count()
@@ -279,7 +290,7 @@ class HorillaStructureProjectionService:
         ).count()
         # Employee current org mapping（EmployeeWorkInformation.department → HR02 org）
         # 必须显式 company/tenant 过滤，禁止依赖 Horilla request thread-local manager。
-        unmapped_employees = EmployeeWorkInformation.objects.filter(
+        unmapped_employees = _legacy_work_info_model().objects.filter(
             company_id_id=self.tenant_id,
             employee_id__is_active=True,
         ).filter(department_id__isnull=True).count()

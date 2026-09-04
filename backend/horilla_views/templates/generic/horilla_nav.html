@@ -84,7 +84,7 @@
       {% if view_types %}
       <ul class="oh-view-types">
         {% for type in view_types %}
-        <li class="oh-view-type" data-url="{{type.url}}" data-type="{{type.type}}" hx-get="{% url "active-hnv-view-type" %}?view={{type.type}}&path={{request.path}}" hx-swap="none" onclick="$(this).closest('form').attr('hx-get','{{type.url}}?&referrer={{request.META.HTTP_REFERER}}&{{request.GET.urlencode}}');$(this).closest('form').find('#applyFilter').click();
+        <li class="oh-view-type" data-url="{{type.url}}" data-type="{{type.type}}" hx-post="{% url "active-hnv-view-type" %}" hx-vals='{"view":"{{type.type|escapejs}}","path":"{{request.path|escapejs}}"}' hx-swap="none" onclick="$(this).closest('form').attr('hx-get','{{type.url}}?&referrer={{request.META.HTTP_REFERER}}&{{request.GET.urlencode}}');$(this).closest('form').find('#applyFilter').click();
            ">
           <a class="oh-btn oh-btn--view" {{type.attrs|safe}}
           ><ion-icon name="{{type.icon}}"></ion-icon

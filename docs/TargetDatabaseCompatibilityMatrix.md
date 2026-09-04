@@ -1,6 +1,6 @@
 # TargetDatabaseCompatibilityMatrix
 
-> 来源：00_高校人事系统全局架构与Horilla接管合同.md §26（PATCH-00 冻结：MySQL-only）
+> 来源：00_高校人事系统全局架构与旧系统接管合同.md §26（PATCH-00 冻结：MySQL-only）
 > 生成指令：§160 Global-S0
 > 生成日期：2026-08-09
 
@@ -133,4 +133,4 @@ MYSQL FULL REGRESSION GREEN
 
 ---
 
-*由 00_高校人事系统全局架构与Horilla接管合同.md §160 自动生成。*
+*由 00_高校人事系统全局架构与旧系统接管合同.md §160 自动生成。*

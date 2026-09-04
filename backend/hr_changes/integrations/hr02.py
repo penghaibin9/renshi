@@ -56,6 +56,8 @@ class PositionGate:
             ChangeActionCode.ORG_POSITION_TRANSFER,
             ChangeActionCode.PRIMARY_ASSIGNMENT_SWITCH,
             ChangeActionCode.ADD_SECONDARY_ASSIGNMENT,
+            ChangeActionCode.TEMPORARY_SECONDMENT,
+            ChangeActionCode.TEMPORARY_ATTACHMENT,
         )
 
     def target_position(self, case):

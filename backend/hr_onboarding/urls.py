@@ -1,8 +1,7 @@
 """
 hr_onboarding/urls.py
 
-HR05 页面路由（挂载 /hr/onboarding/ 下）。
-S1 阶段：占位骨架；S3-S7 逐模块挂载：
+HR05 正式页面路由（挂载 /hr/onboarding/ 下）：
   /hr/onboarding/prehires           → HR05-01 待报到人员
   /hr/onboarding/prehires/:caseId    → case 详情
   /hr/onboarding/reporting          → HR05-02 报到登记
@@ -13,7 +12,7 @@ S1 阶段：占位骨架；S3-S7 逐模块挂载：
   /hr/onboarding/probations/:id     → 试用详情
 
 API 路由见 hr_onboarding/api/urls.py（独立前缀 /api/hr/v1/onboarding/）。
-Portal 路由（公开，token 鉴权）S3 单独挂载，禁带 tenant_id。
+Portal 路由（公开，token 鉴权）单独挂载，禁带 tenant_id。
 """
 
 from django.urls import path

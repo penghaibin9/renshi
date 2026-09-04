@@ -11,7 +11,8 @@ from typing import Any
 from bs4 import BeautifulSoup
 from django import forms
 from django.contrib import messages
-from django.db.models import Min
+from django.db import transaction
+from django.db.models import Min, Q
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -28,6 +29,7 @@ from xhtml2pdf import pisa
 from employee.forms import BulkUpdateFieldForm
 from horilla.horilla_middlewares import _thread_locals
 from horilla.http.response import HorillaRedirect
+from horilla.methods import handle_no_permission
 from horilla_views.cbv_methods import (
     export_xlsx,
     hx_request_required,
@@ -961,14 +963,36 @@ class RejectReasonFormView(HorillaFormView):
     dynamic_create_fields = [("reject_reason_id", DynamicRejectReasonFormView)]
     template_name = "candidate/candidate_rejection_form.html"
 
+    def dispatch(self, request, *args, **kwargs):
+        candidate_id = request.GET.get("candidate_id")
+        candidates = Candidate.objects.all()
+        if not request.user.has_perm("recruitment.change_candidate"):
+            employee = request.user.employee_get
+            candidates = candidates.filter(
+                Q(recruitment_id__recruitment_managers=employee)
+                | Q(stage_id__stage_managers=employee)
+                | Q(
+                    onboarding_stage__onboarding_stage_id__employee_id=employee
+                )
+                | Q(cand_onboarding_task__employee_id=employee)
+            ).distinct()
+        self.target_candidate = candidates.filter(id=candidate_id).first()
+        if self.target_candidate is None:
+            return handle_no_permission(request)
+        return super().dispatch(request, *args, **kwargs)
+
     def get_initial(self) -> dict:
         initial = super().get_initial()
-        initial["candidate_id"] = self.request.GET.get("candidate_id")
+        initial["candidate_id"] = self.target_candidate.id
         return initial
 
     def init_form(self, *args, data={}, files={}, instance=None, **kwargs):
-        candidate_id = self.request.GET.get("candidate_id")
-        instance = RejectedCandidate.objects.filter(candidate_id=candidate_id).first()
+        if data:
+            data = data.copy()
+            data["candidate_id"] = self.target_candidate.id
+        instance = RejectedCandidate.objects.filter(
+            candidate_id=self.target_candidate
+        ).first()
         return super().init_form(
             *args, data=data, files=files, instance=instance, **kwargs
         )
@@ -980,6 +1004,15 @@ class RejectReasonFormView(HorillaFormView):
         if form.is_valid():
             message = "Candidate reject reason saved"
             messages.success(self.request, _(message))
-            form.save()
+            with transaction.atomic():
+                rejection = (
+                    RejectedCandidate.objects.select_for_update()
+                    .filter(candidate_id=self.target_candidate)
+                    .first()
+                    or RejectedCandidate(candidate_id=self.target_candidate)
+                )
+                rejection.description = form.cleaned_data["description"]
+                rejection.save()
+                rejection.reject_reason_id.set(form.cleaned_data["reject_reason_id"])
             return self.HttpResponse()
         return super().form_valid(form)

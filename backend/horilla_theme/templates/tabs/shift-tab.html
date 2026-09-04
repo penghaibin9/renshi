@@ -25,36 +25,6 @@
 		<ion-icon name="add-sharp" class="mr-1 md hydrated" role="img" aria-label="{% trans 'add sharp' %}"></ion-icon>{% trans "Reallocate Shift." %}
 	</button>
 	{% endif %}
-
-  <div class="oh-tabs mt-3">
-    <ul class="oh-tabs__tablist">
-      <li class="oh-tabs__tab oh-tabs__tab--active" data-target="#shift_tab_1">
-        <div>
-          <img
-            src="{% static 'images/ui/work-from-home (1).png' %}"
-            alt=""
-            style="width: 25px; height: 25px; margin-right: 3px"
-          />
-          {% trans "Work type request" %}
-        </div>
-        <button
-            style="display: inline-block"
-            class="oh-btn oh-btn--secondary ms-3"
-            data-toggle="oh-modal-toggle"
-            data-target="#shiftRequestModal"
-            hx-get="{% url 'shift-request-reallocate' %}?emp_id={{request.user.employee_get.id}}"
-            hx-target="#shiftRequestTargetModal"
-        >
-            <ion-icon
-                name="add-sharp"
-                class="mr-1 md hydrated"
-                role="img"
-                aria-label="{% trans 'add sharp' %}"
-            ></ion-icon
-            >{% trans "Reallocate Shift." %}
-        </button>
-    {% endif %}
-
     <div class="oh-tabs mt-3">
         <ul class="oh-tabs__tablist">
             <li
@@ -566,7 +536,7 @@
                                                         {% if rshift.is_active %}
                                                             <form
                                                                 hx-confirm="{% trans 'Do you want to archive this rotating shift assign?' %}"
-                                                                hx-get="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
+                                                                hx-post="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
                                                                 hx-target="#shift_target"
                                                                 style="width: 100%"
                                                             >
@@ -588,7 +558,7 @@
                                                         {% else %}
                                                             <form
                                                                 hx-confirm="{% trans 'Do you Want to un-archive this rotating shift assign?' %}"
-                                                                hx-get="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
+                                                                hx-post="{% url 'rotating-shift-assign-archive' rshift.id %}?{{pd}}"
                                                                 hx-target="#shift_target"
                                                                 style="width: 100%"
                                                             >
@@ -791,7 +761,7 @@
                                                             {% if rwork_type.is_active %}
                                                                 <form
                                                                     hx-confirm="{% trans 'Do you want to archive this rotating work type assign?' %}"
-                                                                    hx-get="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
+                                                                    hx-post="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
                                                                     hx-target="#shift_target"
                                                                     style="width: 100%"
                                                                 >
@@ -805,7 +775,7 @@
                                                             {% else %}
                                                                 <form
                                                                     hx-confirm="{% trans 'Do you want to un-archive this rotating work type assign?' %}"
-                                                                    hx-get="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
+                                                                    hx-post="{% url 'rotating-work-type-assign-archive' rwork_type.id %}?{{pd}}"
                                                                     hx-target="#shift_target"
                                                                     style="width: 100%"
                                                                 >
@@ -1014,7 +984,7 @@
                                                 >
                                                     <div class="oh-btn-group">
                                                         {% if shift_request.approved == False and shift_request.canceled == False %}
-                                                            <a  href="{% url 'shift-request-approve' shift_request.id %}"
+                                                            <a href="#" hx-post="{% url 'shift-request-approve' shift_request.id %}" hx-swap="none" hx-on::after-request="window.location.reload()"
                                                                 title="{% trans 'Approve' %}"
                                                                 onclick="return confirm('{% trans "Do you want to approve this request?" %}')"
                                                                 class="oh-btn oh-btn--success">
@@ -1034,7 +1004,10 @@
                                                         {% endif %}
                                                         {% if shift_request.canceled == False %}
                                                             <a
-                                                                href="{% url 'shift-request-cancel' shift_request.id %}"
+                                                                href="#"
+                                                                hx-post="{% url 'shift-request-cancel' shift_request.id %}"
+                                                                hx-swap="none"
+                                                                hx-on::after-request="window.location.reload()"
                                                                 title="{% trans 'Reject' %}"
                                                                 onclick="return confirm('{% trans "Do you want to reject this request?" %}')"
                                                                 class="oh-btn oh-btn--danger">

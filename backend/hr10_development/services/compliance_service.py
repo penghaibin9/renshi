@@ -10,11 +10,28 @@ as-of 评估：按规则有效期版本计算教师企业实践/培训学时合�
 from datetime import date
 from decimal import Decimal
 
-from hr10_development.constants import TimeWindowType, FactType
+from django.db.models import Q
+
+from hr10_development.constants import FactType, TimeWindowType, VerificationStatus
 
 
 class ComplianceService:
     """企业实践/培训合规评估。"""
+
+    TRUST_LEVEL_BY_VERIFICATION_STATUS = {
+        VerificationStatus.SYSTEM_PROVIDER_VERIFIED: 5,
+        VerificationStatus.TRAINING_PROVIDER_VERIFIED: 4,
+        VerificationStatus.INTERNAL_INSTRUCTOR_VERIFIED: 4,
+        VerificationStatus.HR_VERIFIED: 5,
+        VerificationStatus.DOCUMENT_VERIFIED: 3,
+        VerificationStatus.MANUAL_COMMITTEE_VERIFIED: 2,
+        VerificationStatus.MIGRATED_VERIFIED: 3,
+        VerificationStatus.MIGRATED_PARTIAL: 1,
+        VerificationStatus.MIGRATED_UNVERIFIED: 0,
+        VerificationStatus.SELF_REPORTED: 1,
+        VerificationStatus.UNAVAILABLE: 0,
+        VerificationStatus.UNKNOWN: 0,
+    }
 
     @staticmethod
     def evaluate_compliance(
@@ -39,8 +56,7 @@ class ComplianceService:
             status="PUBLISHED",
             effective_from__lte=as_of,
         ).filter(
-            __import__("django").db.models.Q(effective_to__isnull=True)
-            | __import__("django").db.models.Q(effective_to__gte=as_of)
+            Q(effective_to__isnull=True) | Q(effective_to__gte=as_of)
         )
 
         results = []
@@ -72,7 +88,24 @@ class ComplianceService:
             tenant_id=tenant_id,
             staff_master_id=staff_master_id,
             fact_type=FactType.ENTERPRISE_PRACTICE,
+            valid_from__lte=as_of,
+        ).filter(Q(valid_to__isnull=True) | Q(valid_to__gte=as_of))
+
+        eligible_activity_types = tuple(
+            value
+            for value in (rule.eligible_activity_types or ())
+            if isinstance(value, str) and value.strip()
         )
+        if eligible_activity_types:
+            facts = facts.filter(activity_type__in=eligible_activity_types)
+
+        minimum_trust_level = int(rule.minimum_trust_level or 0)
+        trusted_statuses = tuple(
+            status
+            for status, trust_level in ComplianceService.TRUST_LEVEL_BY_VERIFICATION_STATUS.items()
+            if trust_level >= minimum_trust_level
+        )
+        facts = facts.filter(verification_status__in=trusted_statuses)
 
         if rule.time_window_type == TimeWindowType.CALENDAR_YEAR:
             facts = facts.filter(valid_from__year=as_of.year)

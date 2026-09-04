@@ -12,17 +12,21 @@ from datetime import date
 
 from django.db import transaction
 from django.utils import timezone
-
 from horilla.hr_event_service import emit_registered_event
-from hr_structure.authority_registry import EVENT_ORGANIZATION_CREATED
 
-from hr_structure.models import HrOrganization, HrOrganizationVersion, HrStructureChangeCase
+from hr_structure.authority_registry import EVENT_ORGANIZATION_CREATED
+from hr_structure.models import (
+    HrOrganization,
+    HrOrganizationVersion,
+    HrStructureChangeCase,
+)
 from hr_structure.scope import Hr02Scope
 
 
 class Hr02ServiceError(Exception):
     def __init__(self, code: str, message: str, *, http_status: int = 422):
         self.code = code
+        self.message = message
         self.http_status = http_status
         super().__init__(message)
 
@@ -73,7 +77,7 @@ class OrganizationChangeService:
         short_name: str = "",
     ) -> HrOrganization:
         """新建组织（CREATE_ORG）。"""
-        if validity_from < date.today():
+        if validity_from < timezone.localdate():
             raise Hr02ServiceError("HR02_EFFECTIVE_RANGE_OVERLAP", "生效日期不能早于今天")
         # parent 必须属于本 tenant（INV-01），否则跨租户引用
         if parent_id:
@@ -147,7 +151,7 @@ class OrganizationChangeService:
         items: list,
     ) -> HrStructureChangeCase:
         """创建变更 case（总册 14.3）。写操作需 Idempotency-Key（调用方保证）。"""
-        if requested_effective_date < date.today():
+        if requested_effective_date < timezone.localdate():
             raise Hr02ServiceError("HR02_EFFECTIVE_RANGE_OVERLAP", "生效日期不能早于今天")
         case_no = f"CASE-{timezone.now().strftime('%Y%m%d%H%M%S')}"
         case = HrStructureChangeCase.objects.create(

@@ -2,9 +2,11 @@ from datetime import datetime
 
 from django.apps import apps
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.utils.translation import gettext as _
+from django.views.decorators.http import require_POST
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 
@@ -97,9 +99,11 @@ def google_auth_callback(request):
 
 @login_required
 @permission_required("horilla_meet.delete_googlecloudcredentials")
+@require_POST
+@transaction.atomic
 def delete_google_credentials(request, obj_id):
     try:
-        GoogleCloudCredential.objects.get(id=obj_id).delete()
+        GoogleCloudCredential.objects.select_for_update().get(id=obj_id).delete()
         messages.success(request, _("Google Cloud Credential deleted successfully."))
         return HorillaRedirect(request)
     except GoogleCloudCredential.DoesNotExist:
@@ -130,8 +134,9 @@ def create_google_meet_link(request):
 @login_required
 @permission_required("horilla_meet.delete_googlemeeting")
 @check_integration_enabled(app_name="horilla_meet")
+@require_POST
 def delete_google_meet(request, id):
-    meeting = get_object_or_404(GoogleMeeting, id=id)
+    meeting = get_object_or_404(GoogleMeeting.objects.only("id", "event_id"), id=id)
     try:
         event_id = meeting.event_id
         if event_id:
@@ -140,9 +145,14 @@ def delete_google_meet(request, id):
             service = build("calendar", "v3", credentials=credentials)
             service.events().delete(calendarId="primary", eventId=event_id).execute()
 
-        meeting.delete()
+        with transaction.atomic():
+            locked_meeting = GoogleMeeting.objects.select_for_update().filter(id=id).first()
+            if locked_meeting is None:
+                messages.info(request, _("Google Meeting was already deleted."))
+                return HttpResponse("")
+            locked_meeting.delete()
         messages.success(request, _("Google Meet deleted successfully."))
-        if request.GET.get("detail_view", False):
+        if request.POST.get("detail_view") == "true":
             return redirect("gmeet-list-view")
         return HttpResponse("")
     except GoogleMeeting.DoesNotExist:

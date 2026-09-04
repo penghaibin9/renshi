@@ -8,7 +8,7 @@ import logging
 from django.core.mail import EmailMessage
 from django.core.mail.backends.smtp import EmailBackend
 
-from base.models import EmailLog
+from base.email_logging import record_email_log, resolve_email_log_company
 from horilla.horilla_middlewares import _thread_locals
 from outlook_auth import models
 from outlook_auth.views import send_outlook_email
@@ -55,12 +55,12 @@ def __init__(
     subject="",
     body="",
     from_email=None,
-    to=[],
-    bcc=[],
+    to=None,
+    bcc=None,
     connection=None,
     attachments=None,
     headers=None,
-    cc=[],
+    cc=None,
     reply_to=None,
     *args,
     **kwargs,
@@ -161,14 +161,15 @@ def send_mail(self, *args, **kwargs):
         self.email_data["message"]["attachments"] = outlook_attachments
     response, _ = send_outlook_email(self.request, self.email_data)
 
-    email_log = EmailLog(
+    record_email_log(
         subject=self.subject,
         from_email=self.from_email,
         to=self.to,
         body=self.body,
         status="sent" if response else "failed",
+        company=resolve_email_log_company(self.request)
+        or getattr(self.api, "company", None),
     )
-    email_log.save()
 
 
 EmailMessage.__init__ = __init__

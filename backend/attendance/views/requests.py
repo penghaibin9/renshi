@@ -10,6 +10,7 @@ from datetime import date, datetime, time
 from urllib.parse import parse_qs
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -69,6 +70,36 @@ def _clean_requested_data_none_strings(requested_data):
     return {
         key: None if value == "None" else value for key, value in requested_data.items()
     }
+
+
+def _posted_ids(request):
+    try:
+        values = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(values, list):
+        return []
+    result = []
+    for value in values:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in result:
+            result.append(value)
+    return result
+
+
+def _can_manage_attendance_request(request, attendance, *, allow_owner=False):
+    actor = request.user.employee_get
+    if allow_owner and attendance.employee_id_id == actor.id:
+        return True
+    if request.user.is_superuser or request.user.has_perm("attendance.change_attendance"):
+        return True
+    return Employee.objects.filter(
+        id=attendance.employee_id_id,
+        employee_work_info__reporting_manager_id=actor,
+    ).exists()
 
 
 @login_required
@@ -288,10 +319,16 @@ def update_title(request):
 
 @login_required
 @permission_required("attendance.delete_batchattendance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def delete_batch(request, batch_id):
     try:
-        batch_name = BatchAttendance.objects.filter(id=batch_id).first().__str__()
-        BatchAttendance.objects.filter(id=batch_id).first().delete()
+        batch = BatchAttendance.objects.select_for_update().filter(id=batch_id).first()
+        if batch is None:
+            messages.error(request, _("Batch not found."))
+            return redirect(reverse("get-batches"))
+        batch_name = str(batch)
+        batch.delete()
         messages.success(
             request, _(f"{batch_name} - batch has been deleted sucessfully")
         )
@@ -465,11 +502,12 @@ def validate_attendance_request(request, attendance_id):
 @login_required
 @manager_can_enter("attendance.change_attendance")
 @require_http_methods(["POST"])
+@transaction.atomic
 def approve_validate_attendance_request(request, attendance_id):
     """
     This method is used to validate the attendance requests
     """
-    attendance = Attendance.find(attendance_id)
+    attendance = Attendance.objects.select_for_update().filter(id=attendance_id).first()
     if not attendance:
         return HorillaRedirect(
             request, message=_("No Attendance found matching the query.")
@@ -602,17 +640,19 @@ def approve_validate_attendance_request(request, attendance_id):
 
 @login_required
 @require_http_methods(["POST"])
+@transaction.atomic
 def cancel_attendance_request(request, attendance_id):
     """
     This method is used to cancel attendance request
     """
     try:
-        attendance = Attendance.objects.get(id=attendance_id)
+        attendance = Attendance.objects.select_for_update().get(id=attendance_id)
         if (
             attendance.employee_id.employee_user_id == request.user
             or is_reportingmanager(request)
             or request.user.has_perm("attendance.change_attendance")
         ):
+            original_request_type = attendance.request_type
             attendance.is_validate_request_approved = False
             attendance.is_validate_request = False
             attendance.request_description = None
@@ -620,7 +660,7 @@ def cancel_attendance_request(request, attendance_id):
             attendance.request_type = None
 
             attendance.save()
-            if attendance.request_type == "create_request":
+            if original_request_type == "create_request":
                 attendance.delete()
                 messages.success(request, _("The requested attendance is removed."))
             else:
@@ -701,20 +741,48 @@ def select_all_filter_attendance_request(request):
 
 @login_required
 @manager_can_enter("attendance.change_attendance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def bulk_approve_attendance_request(request):
     """
     This method is used to validate the attendance requests
     """
-    ids = json.loads(request.POST.get("ids", "[]"))
-    filtered_ids = []
-    for attendance_id in ids:
-        attendance = Attendance.objects.get(id=attendance_id)
-        if attendance.employee_id != request.user.employee_get:
-            filtered_ids.append(attendance_id)
-    if request.user.is_superuser:
-        filtered_ids = ids
-    for attendance_id in filtered_ids:
-        attendance = Attendance.objects.get(id=attendance_id)
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": "Invalid attendance IDs"}, status=400)
+    attendances = list(
+        Attendance.objects.select_for_update()
+        .select_related(
+            "employee_id",
+            "employee_id__employee_user_id",
+            "employee_id__employee_work_info__reporting_manager_id__employee_user_id",
+        )
+        .filter(id__in=ids, is_validate_request=True)
+    )
+    for attendance in attendances:
+        if not _can_manage_attendance_request(request, attendance) or (
+            not request.user.is_superuser
+            and attendance.employee_id_id == request.user.employee_get.id
+        ):
+            messages.error(request, _("You cannot approve this attendance request."))
+            continue
+        shift = attendance.shift_id
+        if shift is None:
+            messages.error(request, _("Attendance shift is missing."))
+            continue
+        try:
+            requested_data = (
+                _clean_requested_data_none_strings(json.loads(attendance.requested_data))
+                if attendance.requested_data is not None
+                else None
+            )
+            EmployeeShiftDay.objects.get(
+                day=attendance.attendance_date.strftime("%A").lower()
+            )
+        except (TypeError, json.JSONDecodeError, EmployeeShiftDay.DoesNotExist):
+            messages.error(request, _("Attendance request data is invalid."))
+            continue
+        attendance_id = attendance.id
         prev_attendance_date = attendance.attendance_date
         prev_attendance_clock_in_date = attendance.attendance_clock_in_date
         prev_attendance_clock_in = attendance.attendance_clock_in
@@ -724,13 +792,18 @@ def bulk_approve_attendance_request(request):
         attendance.request_description = None
         attendance.approved_by = request.user.employee_get
         attendance.save()
-        if attendance.requested_data is not None:
-            requested_data = _clean_requested_data_none_strings(
-                json.loads(attendance.requested_data)
-            )
+        if requested_data is not None:
+            valid_field_names = {
+                field.name for field in Attendance._meta.concrete_fields
+            }
+            requested_data = {
+                key: value
+                for key, value in requested_data.items()
+                if key in valid_field_names and key not in {"id", "employee_id"}
+            }
             Attendance.objects.filter(id=attendance_id).update(**requested_data)
             # DUE TO AFFECT THE OVERTIME CALCULATION ON SAVE METHOD, SAVE THE INSTANCE ONCE MORE
-            attendance = Attendance.objects.get(id=attendance_id)
+            attendance.refresh_from_db()
             attendance.save()
         if (
             attendance.attendance_clock_out is None
@@ -761,10 +834,10 @@ def bulk_approve_attendance_request(request):
 
         # Create late come or early out objects
         shift = attendance.shift_id
-        day = attendance.attendance_date.strftime("%A").lower()
-        day = EmployeeShiftDay.objects.get(day=day)
-
-        minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
+        day = EmployeeShiftDay.objects.get(
+            day=attendance.attendance_date.strftime("%A").lower()
+        )
+        _minimum_hour, start_time_sec, end_time_sec = shift_schedule_today(
             day=day, shift=shift
         )
         if attendance.attendance_clock_in:
@@ -826,44 +899,53 @@ def bulk_approve_attendance_request(request):
 
 @login_required
 @manager_can_enter("attendance.delete_attendance")
+@require_http_methods(["POST"])
+@transaction.atomic
 def bulk_reject_attendance_request(request):
     """
     This method is used to delete bulk attendance request
     """
-    ids = json.loads(request.POST.get("ids", "[]"))
-    for attendance_id in ids:
+    ids = _posted_ids(request)
+    if not ids:
+        return JsonResponse({"message": "Invalid attendance IDs"}, status=400)
+    attendances = list(
+        Attendance.objects.select_for_update()
+        .select_related("employee_id", "employee_id__employee_user_id")
+        .filter(id__in=ids, is_validate_request=True)
+    )
+    for attendance in attendances:
         try:
-            attendance = Attendance.objects.get(id=attendance_id)
-            if (
-                attendance.employee_id.employee_user_id == request.user
-                or is_reportingmanager(request)
-                or request.user.has_perm("attendance.change_attendance")
+            if _can_manage_attendance_request(
+                request, attendance, allow_owner=True
             ):
+                original_request_type = attendance.request_type
+                attendance_id = attendance.id
+                attendance_date = attendance.attendance_date
+                employee = attendance.employee_id
                 attendance.is_validate_request_approved = False
                 attendance.is_validate_request = False
                 attendance.request_description = None
                 attendance.requested_data = None
                 attendance.request_type = None
                 attendance.save()
-                if attendance.request_type == "create_request":
+                if original_request_type == "create_request":
                     attendance.delete()
                     messages.success(request, _("The requested attendance is removed."))
                 else:
                     messages.success(
                         request, _("The requested attendance is rejected.")
                     )
-                employee = attendance.employee_id
                 notify.send(
                     request.user,
                     recipient=employee.employee_user_id,
-                    verb=f"Your attendance request for {attendance.attendance_date} is rejected",
-                    verb_ar=f"تم رفض طلبك للحضور في تاريخ {attendance.attendance_date}",
-                    verb_de=f"Ihre Anwesenheitsanfrage für {attendance.attendance_date} wurde abgelehnt",
-                    verb_es=f"Tu solicitud de asistencia para el {attendance.attendance_date} ha sido rechazada",
-                    verb_fr=f"Votre demande de présence pour le {attendance.attendance_date} est rejetée",
+                    verb=f"Your attendance request for {attendance_date} is rejected",
+                    verb_ar=f"تم رفض طلبك للحضور في تاريخ {attendance_date}",
+                    verb_de=f"Ihre Anwesenheitsanfrage für {attendance_date} wurde abgelehnt",
+                    verb_es=f"Tu solicitud de asistencia para el {attendance_date} ha sido rechazada",
+                    verb_fr=f"Votre demande de présence pour le {attendance_date} est rejetée",
                     icon="close-circle-outline",
                     redirect=reverse("request-attendance-view")
-                    + f"?id={attendance.id}",
+                    + f"?id={attendance_id}",
                 )
         except (Attendance.DoesNotExist, OverflowError):
             messages.error(request, _("Attendance request not found"))

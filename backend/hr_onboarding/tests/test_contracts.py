@@ -179,9 +179,11 @@ class TenantFailClosedTests(TestCase):
             make_hr05_context(request)
 
 
-class HandoffIdempotencyTests(TestCase):
-    def test_repeated_handoff_returns_same_case_request(self):
-        """同一 HANDOFF 重复调用 → 幂等返回先前结果，不生成第二份。"""
+class HandoffRequestMapperTests(TestCase):
+    def test_repeated_mapping_is_deterministic_without_cache_authority(self):
+        """相同事实映射结果稳定；持久幂等由 CaseService 测试覆盖。"""
+        import uuid
+
         provider = Hr04HandoffProvider()
         payload = HandoffPayload(
             tenant_id=1,
@@ -190,13 +192,14 @@ class HandoffIdempotencyTests(TestCase):
             reservation_id=10,
             legal_name="张三",
         )
-        request1, replay1 = provider.consume_handoff(payload, idempotency_key="k-handoff-1")
+        idempotency_key = f"k-handoff-contract-{uuid.uuid4().hex}"
+        request1, replay1 = provider.consume_handoff(payload, idempotency_key=idempotency_key)
         self.assertFalse(replay1)
         self.assertEqual(request1["source_type"], "HR04_HIRE")
         self.assertEqual(request1["source_id"], "ph-001")
 
-        request2, replay2 = provider.consume_handoff(payload, idempotency_key="k-handoff-1")
-        self.assertTrue(replay2)
+        request2, replay2 = provider.consume_handoff(payload, idempotency_key=idempotency_key)
+        self.assertFalse(replay2)
         self.assertEqual(request1, request2)
 
     def test_missing_proposed_hire_rejected(self):

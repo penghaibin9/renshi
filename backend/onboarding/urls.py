@@ -26,7 +26,7 @@ urlpatterns = [
     path(
         "onboarding-stage-sequence-update/<int:pk>/",
         views.update_stage_order,
-        name="onboarding-stage-sequence-update",
+        name="onboarding-stage-order",
     ),
     path(
         "task-creation/<int:obj_id>/",

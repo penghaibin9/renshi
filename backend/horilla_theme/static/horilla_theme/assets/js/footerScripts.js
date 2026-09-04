@@ -106,7 +106,7 @@ async function loadComponent(elementId, path) {
 //         "DM Dept",
 //         "SEO Dept",
 //         "Odoo Dept",
-//         "Horilla Dept",
+//         "Example Department",
 //     ];
 
 //     const departmentColors = [

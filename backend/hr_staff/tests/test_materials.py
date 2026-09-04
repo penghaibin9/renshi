@@ -9,7 +9,11 @@ from hr_staff.constants import (
     MaterialVersionStatus,
     SensitivityLevel,
 )
-from hr_staff.models import HrStaffMaterial, HrStaffMaterialVersion
+from hr_staff.models import (
+    HrMaterialDownloadTicket,
+    HrStaffMaterial,
+    HrStaffMaterialVersion,
+)
 from hr_staff.services.material_service import (
     MaterialAccessDenied,
     MaterialService,
@@ -73,6 +77,11 @@ class MaterialServiceTests(TestCase):
         )
         self.assertIn("ticket", ticket)
         self.assertNotIn("/media/", ticket["originalFilename"] or "")
+        stored_ticket = HrMaterialDownloadTicket.objects.get(
+            tenant_id=TENANT, material_id=material
+        )
+        self.assertTrue(stored_ticket.token.startswith("sha256$"))
+        self.assertNotEqual(stored_ticket.token, ticket["ticket"])
         # DB 票据一次性：第二次消费被拒
         payload = self.svc.consume_download_ticket(ticket["ticket"])
         self.assertIsNotNone(payload)

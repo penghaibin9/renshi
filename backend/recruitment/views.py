@@ -20,6 +20,7 @@ from django.contrib.auth.models import Permission
 from django.core import serializers
 from django.core.mail import send_mail
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -1163,27 +1164,30 @@ def candidate_bulk_delete(request):
 @login_required
 @permission_required(perm="recruitment.delete_candidate")
 @require_http_methods(["POST"])
+@transaction.atomic
 def candidate_bulk_archive(request):
     """
     This method is used to archive/un-archive bulk candidates
     """
-    ids = request.POST["ids"]
-    ids = json.loads(ids)
-    is_active = True
-    message = "un-archived"
-    if request.GET.get("is_active") == "False":
-        is_active = False
-        message = "archived"
-    for cand_id in ids:
-        candidate_obj = Candidate.objects.get(id=cand_id)
-        candidate_obj.is_active = is_active
-        candidate_obj.save()
-        messages.success(
-            request,
-            _("%(candidate_obj)s is %(message)s")
-            % {"candidate_obj": candidate_obj, "message": message},
-        )
-    return JsonResponse({"message": "Success"})
+    try:
+        raw_ids = json.loads(request.POST.get("ids", "[]"))
+    except (TypeError, json.JSONDecodeError):
+        return JsonResponse({"error": "Invalid candidate IDs."}, status=400)
+    if not isinstance(raw_ids, list) or len(raw_ids) > 500:
+        return JsonResponse({"error": "Invalid candidate IDs."}, status=400)
+    try:
+        ids = list(dict.fromkeys(int(value) for value in raw_ids if int(value) > 0))
+    except (TypeError, ValueError):
+        return JsonResponse({"error": "Invalid candidate IDs."}, status=400)
+    state_value = request.POST.get("is_active", "").lower()
+    if not ids or state_value not in {"true", "false"}:
+        return JsonResponse({"error": "Invalid archive request."}, status=400)
+    candidates = Candidate.objects.select_for_update().filter(id__in=ids)
+    if candidates.count() != len(ids):
+        return JsonResponse({"error": "Candidate not found."}, status=404)
+    candidates.update(is_active=state_value == "true")
+    messages.success(request, _("Selected candidates updated successfully."))
+    return JsonResponse({"message": "Success", "updated": len(ids)})
 
 
 @login_required

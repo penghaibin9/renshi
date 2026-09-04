@@ -1,7 +1,4 @@
-from datetime import datetime, timedelta
-
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
+from django.utils import timezone
 
 from notifications.signals import notify
 
@@ -9,7 +6,7 @@ from notifications.signals import notify
 def cyclic_feedback_creation():
     from pms.models import Feedback
 
-    feedbacks = Feedback.objects.filter(cyclic_next_start_date=datetime.today().date())
+    feedbacks = Feedback.objects.filter(cyclic_next_start_date=timezone.localdate())
     for feedback in feedbacks:
         if feedback.cyclic_feedback:
             feedback_obj = Feedback()
@@ -35,13 +32,3 @@ def cyclic_feedback_creation():
             feedback.save()
 
     return
-
-
-scheduler = BackgroundScheduler()
-cron_trigger = CronTrigger(hour=8)
-grace_time_seconds = int(timedelta(days=1).total_seconds())
-scheduler.add_job(
-    cyclic_feedback_creation, cron_trigger, misfire_grace_time=grace_time_seconds
-)
-
-scheduler.start()

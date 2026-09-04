@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+from base.encrypted_fields import EncryptedTextField
 from base.horilla_company_manager import HorillaCompanyManager
 from horilla import horilla_middlewares
 from horilla.horilla_middlewares import _thread_locals
@@ -2051,9 +2052,8 @@ class DynamicEmailConfiguration(HorillaModel):
         verbose_name=_("Display Name"),
     )
 
-    password = models.CharField(
+    password = EncryptedTextField(
         null=True,
-        max_length=256,
         verbose_name=_("Email Authentication Password"),
     )
 
@@ -2574,6 +2574,19 @@ class AnnouncementView(models.Model):
         )
 
 
+class EmailLogQuerySet(models.QuerySet):
+    """Email audit rows are append-only after delivery is attempted."""
+
+    def update(self, **kwargs):
+        raise ValidationError(_("Email audit logs cannot be modified."))
+
+    def delete(self):
+        raise ValidationError(_("Email audit logs cannot be deleted."))
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError(_("Email audit logs cannot be modified."))
+
+
 class EmailLog(models.Model):
     """
     EmailLog Keeping model
@@ -2586,10 +2599,18 @@ class EmailLog(models.Model):
     to = models.EmailField()
     status = models.CharField(max_length=6, choices=statuses)
     created_at = models.DateTimeField(auto_now_add=True)
-    objects = models.Manager()
+    objects = models.Manager.from_queryset(EmailLogQuerySet)()
     company_id = models.ForeignKey(
-        Company, on_delete=models.CASCADE, null=True, editable=False
+        Company, on_delete=models.PROTECT, null=True, editable=False
     )
+
+    def save(self, *args, **kwargs):
+        if self.pk and type(self).objects.filter(pk=self.pk).exists():
+            raise ValidationError(_("Email audit logs cannot be modified."))
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(_("Email audit logs cannot be deleted."))
 
     def __str__(self) -> str:
         return f"{self.subject} {self.to}"

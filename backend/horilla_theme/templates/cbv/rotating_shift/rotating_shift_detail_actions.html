@@ -19,7 +19,7 @@
 				{% trans 'Do you want to un-archive this rotating shift assign?' %}
 			{% endif %}
 		"
-        hx-get="{% url 'rotating-shift-assign-archive' instance.id %}?instances_ids={{ instance.ordered_ids }}"
+        hx-post="{% url 'rotating-shift-assign-archive' instance.id %}?instances_ids={{ instance.ordered_ids }}"
         hx-target="#genericModalBody"
     >
         <img

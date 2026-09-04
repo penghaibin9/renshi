@@ -61,9 +61,9 @@
     population: ['统计范围与分析维度', '统计对象和分析维度使用版本化定义；历史口径与当前口径分离。'],
     asof: ['历史时点证据', '只展示可信重建产生的证据；证据不完整或来源异常时不进入正式报送。'],
     quality: ['数据质量治理', '质量规则、执行结果和问题发现分层展示；事实错误必须回到源域修复。'],
-    exchange: ['数据交换', '交换能力必须异步、可追踪、可失败重试；未接通时保持不可用。'],
+    exchange: ['数据交换', '冻结数据集和目标映射后进入持久队列，并保留传输、回执、对账与失败重试证据。'],
     submissions: ['正式报送快照', '正式报送冻结口径、版本和历史日期；派发、提交、回执是不同状态。'],
-    corrections: ['回执与更正', '拒收、回执和更正保留原快照；更正能力未接通时不会伪造操作入口。']
+    corrections: ['回执与更正', '拒收、回执和更正保留原快照；更正草稿以父子链追加，不覆盖历史。']
   };
 
   let rows = [];
@@ -195,18 +195,18 @@
     else if (section === 'quality') rows = qualityRows(data);
     else if (section === 'submissions') rows = submissionRows(data);
     else if (section === 'corrections') {
-      rows = submissionRows(data).filter((item) => ['REJECTED', 'CORRECTED'].includes(item.status) || item.kind === '更正快照');
+      rows = submissionRows(data).filter((item) => ['ACCEPTED', 'REJECTED', 'CORRECTED'].includes(item.status) || item.kind === '更正快照');
       if (data.capabilities?.correctionWorkflow !== true && boundary) {
         boundary.hidden = false;
-        boundary.textContent = '更正流程当前暂未开放：这里只展示已有拒收和更正快照，不提供“发起更正”操作。';
+        boundary.textContent = '更正流程当前不可用，请检查服务配置。';
       }
     } else if (section === 'exchange') {
       rows = [];
       if (boundary) {
         boundary.hidden = false;
         boundary.textContent = data.capabilities?.asyncExchange === true
-          ? '异步交换能力已开放，但当前服务尚未提供交换任务台账；页面不会制造伪记录。'
-          : '异步数据交换当前暂未开放；同步导出不会伪装成交换任务中心。';
+          ? '请在下方操作区冻结数据集、配置目标并查看真实异步任务台账。'
+          : '异步数据交换当前不可用，请检查服务配置。';
       }
     } else rows = overviewRows(data);
 

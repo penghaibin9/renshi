@@ -109,7 +109,7 @@
                             <button
                                 class="w-8 h-8 rounded-md flex items-center justify-center transition-all bg-red-50 text-red-600 hover:bg-red-100"
                                 title="{% trans 'Delete' %}"
-                                hx-get="{% url 'delete-interview' interview_schedule.id %}?view=false"
+                                hx-post="{% url 'delete-interview' interview_schedule.id %}?view=false"
                                 data-target="#activitySidebar"
                                 hx-swap="innerHTML"
                                 hx-target="#interview"

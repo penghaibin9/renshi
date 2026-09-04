@@ -7,28 +7,9 @@ from django.views.decorators.http import require_http_methods
 
 from horilla.decorators import login_required
 from report.models import ReportTemplate
-
-
-def _legacy_write_block_response(request):
-    """Fail closed on writes after an evidence-backed HR18 tenant cutover."""
-
-    tenant_id = getattr(request, "tenant_id", None)
-    if not tenant_id:
-        return None
-    from hr_data.services.legacy_report_asset_service import legacy_report_write_block
-
-    block = legacy_report_write_block(tenant_id)
-    if not block:
-        return None
-    return JsonResponse(
-        {
-            "error": "LEGACY_REPORT_WRITES_BLOCKED",
-            "message": "Legacy report template writes are disabled after HR18 cutover.",
-            "cutoverCode": block.cutover_step.cutover_code,
-            "evidenceHash": block.evidence_hash,
-        },
-        status=409,
-    )
+from report.write_guard import (
+    legacy_report_write_block_response as _legacy_write_block_response,
+)
 
 
 @login_required

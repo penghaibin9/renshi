@@ -9,6 +9,7 @@ from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 
 from base.cbv.mail_log_tab import MailLogTabList
+from base.email_logging import email_log_recipient_q
 from horilla_views.cbv_methods import login_required
 from horilla_views.generic.cbv.views import HorillaListView
 from recruitment.cbv_decorators import all_manager_can_enter
@@ -45,7 +46,10 @@ class CandidateMailLogTabList(MailLogTabList):
         candidate_obj = Candidate.objects.get(id=pk)
         return (
             HorillaListView.get_queryset(self)
-            .filter(to__icontains=candidate_obj.email)
+            .filter(
+                email_log_recipient_q(candidate_obj.email),
+                company_id=candidate_obj.recruitment_id.company_id,
+            )
             .order_by("-created_at")
         )
 

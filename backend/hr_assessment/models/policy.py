@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import hashlib
-
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
@@ -25,7 +23,7 @@ class HrAssessmentPolicyPack(TenantScopedModel):
     code = models.CharField(max_length=50, verbose_name=_("政策编码"))
     name = models.CharField(max_length=200, verbose_name=_("政策名称"))
     assessment_domain = models.CharField(max_length=50, verbose_name=_("考核域"))
-    owner_org_id = models.UUIDField(null=True, blank=True, verbose_name=_("归属组织 ID"))
+    owner_org_id = models.BigIntegerField(null=True, blank=True, verbose_name=_("HR02 归属组织 ID"))
     current_published_version_id = models.UUIDField(null=True, blank=True)
     source_policy_refs = models.JSONField(default=dict, blank=True)
 
@@ -108,12 +106,6 @@ class HrAssessmentPolicyVersion(VersionedModel):
             raise ValidationError(_("已发布版本不可修改 — 请创建新版本"))
 
     def save(self, *args, **kwargs) -> None:
-        if self.status == "PUBLISHED" and not self.content_hash:
-            raw = (
-                f"{self.policy_pack_id}:{self.version_no}:"
-                f"{self.effective_from}:{self.assessment_types}"
-            )
-            self.content_hash = hashlib.sha256(raw.encode()).hexdigest()
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:

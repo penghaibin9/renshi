@@ -8,15 +8,15 @@ from hr_assessment.models.goal import HrAssessmentGoalPlan, HrAssessmentGoal, Hr
 from hr_assessment.models.result import HrFinalAssessmentResult, HrResultNotice, HrAcknowledgement, HrAssessmentArchivePackage
 from hr_assessment.models.evidence import HrSelfAssessment, HrReviewerAssignment, HrReviewerEvaluation
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 class E2EAnnualMainChainTest(TestCase):
     def setUp(self):
         self.tenant_id = 10001
         self.staff_id = uuid.uuid4()
-        self.org_id = uuid.uuid4()
-        self.now = datetime(2026, 6, 15, 10, 0)
+        self.org_id = 1001
+        self.now = datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
 
     def test_step01_policy_pack_resolved(self):
         pack = HrAssessmentPolicyPack.objects.create(tenant_id=self.tenant_id, code="C01", name="教师年度考核", assessment_domain="ANNUAL")

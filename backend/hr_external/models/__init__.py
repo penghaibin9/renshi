@@ -15,7 +15,10 @@ from hr_external.models.access import (
     HrExternalAccessGrant,
     HrExternalProvisioningRequest,
 )
-from hr_external.models.academic import HrExternalAcademicIdentity
+from hr_external.models.academic import (
+    HrExternalAcademicIdentity,
+    HrExternalAcademicProvisioningRequest,
+)
 from hr_external.models.assignment import HrExternalEngagementAssignment
 from hr_external.models.audit import HrExternalAuditEvent, HrSensitiveExternalAccessLog
 from hr_external.models.authority import HrExternalAuthorityConfig
@@ -56,6 +59,7 @@ __all__ = [
     "HrExternalAccessGrant",
     "HrExternalProvisioningRequest",
     "HrExternalAcademicIdentity",
+    "HrExternalAcademicProvisioningRequest",
     "HrExternalLifecycleEvent",
     "HrExternalAuditEvent",
     "HrSensitiveExternalAccessLog",

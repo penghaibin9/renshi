@@ -18,6 +18,12 @@ from hr_staff.models import HrLegacyProjectionState
 from hr_staff.services.effective_dated_query_service import EffectiveDatedQueryService
 
 
+def _legacy_employee_model():
+    from employee.models import Employee
+
+    return Employee
+
+
 class LegacyProjectionError(Exception):
     code = "LEGACY_PROJECTION_FAILED"
 
@@ -55,12 +61,9 @@ class LegacyEmployeeProjectionService:
     def _get_legacy_employee(self, legacy_employee_id):
         if not legacy_employee_id:
             return None
-        try:
-            from employee.models import Employee
-
-            return Employee.objects.filter(id=legacy_employee_id).first()
-        except Exception:
-            return None
+        # “没有映射”与“旧表查询失败”必须区分。后者由 project_staff 转成
+        # LEGACY_PROJECTION_FAILED 进入重试/告警，不能伪装成 NO_LEGACY_LINK。
+        return _legacy_employee_model().objects.filter(id=legacy_employee_id).first()
 
     def _project_person(self, staff, legacy_emp):
         """姓名/性别等 Person 层投影（单向，不碰 email 唯一身份）。"""

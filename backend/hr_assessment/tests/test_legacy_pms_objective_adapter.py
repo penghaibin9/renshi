@@ -6,8 +6,9 @@ from hr_assessment.legacy.pms import PmsLegacyObjectiveAdapter
 
 
 class PmsLegacyObjectiveAdapterTests(SimpleTestCase):
-    @patch("pms.models.EmployeeObjective.objects")
-    def test_objective_read_is_tenant_scoped_bounded_and_non_authoritative(self, objective_objects):
+    @patch("hr_assessment.legacy.pms._employee_objective_model")
+    def test_objective_read_is_tenant_scoped_bounded_and_non_authoritative(self, model_loader):
+        objective_objects = model_loader.return_value.objects
         scoped = MagicMock()
         ordered = MagicMock()
         values_qs = MagicMock()

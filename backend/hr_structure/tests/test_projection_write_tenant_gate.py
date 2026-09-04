@@ -28,9 +28,10 @@ class ProjectionWriteTenantGateTests(SimpleTestCase):
             )
         link_objects.filter.assert_not_called()
 
-    @patch("base.models.Department.objects")
+    @patch("hr_structure.projections.horilla._legacy_department_model")
     @patch("hr_structure.projections.horilla.HrLegacyObjectLink.objects")
-    def test_existing_legacy_link_can_only_resolve_inside_tenant(self, link_objects, department_objects):
+    def test_existing_legacy_link_can_only_resolve_inside_tenant(self, link_objects, department_model):
+        department_objects = department_model.return_value.objects
         link = SimpleNamespace(legacy_pk="9", projection_hash="old")
         link_objects.filter.return_value.first.return_value = link
         department_objects.filter.return_value.first.return_value = None
@@ -40,9 +41,10 @@ class ProjectionWriteTenantGateTests(SimpleTestCase):
 
         department_objects.filter.assert_called_once_with(id=9, company_id=77)
 
-    @patch("base.models.Department.objects")
+    @patch("hr_structure.projections.horilla._legacy_department_model")
     @patch("hr_structure.projections.horilla.HrLegacyObjectLink.objects")
-    def test_new_legacy_department_is_bound_to_current_tenant(self, link_objects, department_objects):
+    def test_new_legacy_department_is_bound_to_current_tenant(self, link_objects, department_model):
+        department_objects = department_model.return_value.objects
         link_objects.filter.return_value.first.return_value = None
         department = MagicMock()
         department.id = 9

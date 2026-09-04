@@ -1,89 +1,39 @@
-# Contributing Guidelines for Horilla
+# 高校人事系统贡献指南
 
-Thank you for considering contributing to Horilla! We welcome your input and appreciate the community effort to make this project even better.
+本仓库维护 HR01～HR18 高校人事业务模块。提交修改前，请先阅读 `README.md`、`docs/README_新手入口.md` 和对应模块施工总册。
 
-## Branches
+## 分支与提交
 
-- **`dev/v2.0`** — the active integration branch. Always clone this and always open PRs against this — never against `2.0` directly.
-- **`2.0`** — the repository’s default branch: a periodic public snapshot for running/deploying, not where day-to-day development happens. GitHub pre-selects this as the PR base, so change it to `dev/v2.0` before submitting.
-- **`1.0`/`master`** — v1, now deprioritized. See "Contributing to v1" below and [Discussion #1127](https://github.com/horilla/horilla-hr/discussions/1127) for full background.
+- `main` 是唯一正式集成分支；不要从旧上游分支或额外克隆目录施工。
+- 一次只处理一个明确模块或一类基础设施问题，避免无关改动混入同一提交。
+- 提交信息应说明业务结果和原因，例如：`[FIX] HR04: 修复招聘项目筛选`。
 
-## How to Contribute
+## 本地开发
 
-1. **Fork the Repository**
-   - Fork [horilla/horilla-hr](https://github.com/horilla/horilla-hr) on GitHub.
+1. 使用 `Renshi-18模块.code-workspace` 打开正式仓库。
+2. 复制 `.env.dist` 为本机 `.env`，不要提交真实密钥。
+3. 安装 `requirements.txt` 中的依赖。
+4. 使用 MySQL 作为开发、测试和验收数据库。
+5. 本地启动优先使用工作区外层的 `03_启动工具/1_启动人事系统.cmd`。
 
-2. **Clone the Repository**
+## 代码要求
 
-     ```bash
-     git clone -b dev/v2.0 https://github.com/YOUR_USERNAME/horilla-hr.git
-     cd horilla-hr
-     git remote add upstream https://github.com/horilla/horilla-hr.git
-     ```
+- Python 遵循 PEP 8，并通过 Black、isort 与仓库现有质量门禁。
+- 新业务只使用 `/hr/...` 页面和 `/api/v1/hr/...` 正式接口。
+- 租户、权限、审计和历史时点必须 fail-closed，禁止用默认学校或全量范围兜底。
+- 不得恢复旧前端入口、旧英文导航或旧业务写入路径。
+- 不得提交 `.env`、API 密钥、证书、数据库转储、上传文件或本机运行数据。
 
-3. **Create a Branch**
+## 验收
 
-     ```bash
-     git checkout -b feature-or-bugfix-branch
-     ```
+至少完成与改动相称的检查：
 
-4. **Set Up Locally**
+- `python manage.py check`
+- `python manage.py makemigrations --check`
+- 对应模块测试
+- 租户与权限负向测试
+- 涉及页面时完成浏览器回归
 
-     ```bash
-     python3 -m venv venv
-     source venv/bin/activate
-     pip install -r requirements.txt
-     pip install pre-commit
-     pre-commit install
-     # Optional Docker stack:
-     make dev
-     ```
+提交 Pull Request 时，请说明改动范围、风险、验证结果和相关问题。
 
-5. **Make Changes**
-   - Follow Horilla coding conventions (extend `HorillaModel`, use Horilla decorators, HTMX patterns).
-   - Run formatters via pre-commit (Black + isort).
-
-6. **Commit Changes**
-
-     ```bash
-     git commit -m "[ADD] APP: clear description of why"
-     ```
-
-     Allowed tags: `[ADD]`, `[FIX]`, `[UPDT]`, `[REMOVE]` (and existing `[FEAT]` where used).
-
-7. **Push and Open a Pull Request**
-   - Target branch: **`dev/v2.0`**
-   - GitHub defaults your PR’s base branch to `2.0` — manually change it to `dev/v2.0` before submitting.
-   - Provide a clear title/description and link related issues
-   - CI should stay green: **Docker CI** + **Quality**
-
-## Code Style and Guidelines
-
-- Follow [PEP 8](https://pep8.org/); format with Black; sort imports with isort (`--profile black`).
-- Keep changes focused; prefer small PRs for reviewability.
-- Never commit secrets: `.env`, API keys, TLS keys, database dumps, or local SQLite files.
-- Use `.env.dist` as the public template (`cp .env.dist .env`); keep real `.env` files local only.
-
-## CI Expectations
-
-| Workflow | What it checks |
-|----------|----------------|
-| `Docker CI` | Image build, migrate, collectstatic, `/health/`, `/ready/` |
-| `Quality` | Black/isort on `horilla/settings` + `horilla/urls.py`, `manage.py check`, production settings gate |
-
-## Issues
-
-- Bugs and features: open a public GitHub issue with reproduction steps.
-- **Security vulnerabilities:** do **not** open a public issue — use [GitHub Private Vulnerability Reporting](https://github.com/horilla/horilla-hr/security/advisories/new), not email. See [SECURITY.md](SECURITY.md) for full details.
-
-### Contributing to v1 (1.0/master)
-
-v1 is now deprioritized: fixes are considered case-by-case at maintainer discretion, with no guaranteed timeline and no new features backported. If you'd like to contribute a v1 fix, please open an issue first to confirm interest before submitting a PR.
-
-## Community Guidelines
-
-- Be respectful and considerate of others.
-- Provide constructive feedback.
-- Encourage a positive and inclusive community.
-
-Thank you for your contributions to Horilla!
+安全漏洞不要提交公开 Issue，请按 `SECURITY.md` 的私密报告方式处理。
