@@ -64,7 +64,7 @@ def api_request(
           }
           const options = {method, credentials: 'same-origin', headers};
           if (body !== null) {
-            headers['Content-Type']'] = 'application/json';
+            headers['Content-Type'] = 'application/json';
             options.body = JSON.stringify(body);
           }
           const response = await fetch(path, options);
@@ -164,8 +164,6 @@ def main() -> None:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             try:
-                # A same-tenant read-only auditor can inspect the case, but every
-                # write and the approve-only agreement inventory fail closed.
                 role = "read_only_auditor"
                 with authenticated_page(browser, role) as page:
                     response = page.goto(
@@ -214,9 +212,6 @@ def main() -> None:
                         full_page=True,
                     )
 
-                # A fully privileged operator in a different school reaches the
-                # permission checks, but object lookup must conceal the target
-                # tenant's case with 404 across both UI and API surfaces.
                 role = "cross_tenant_operator"
                 with authenticated_page(browser, role) as page:
                     own_list = page.goto(
@@ -274,8 +269,6 @@ def main() -> None:
                         full_page=True,
                     )
 
-                # The agreement approver performs the real form interaction but
-                # remains unable to activate the engagement.
                 role = "agreement_approver"
                 with authenticated_page(browser, role) as page:
                     response = page.goto(
@@ -358,8 +351,6 @@ def main() -> None:
                         full_page=True,
                     )
 
-                # The activation operator cannot reconfirm the agreement, but
-                # can click the one permitted state transition to ACTIVATED.
                 role = "activation_operator"
                 with authenticated_page(browser, role) as page:
                     response = page.goto(
