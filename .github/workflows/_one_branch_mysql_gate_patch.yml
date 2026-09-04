@@ -1,0 +1,104 @@
+name: One-branch MySQL gate patch
+
+on:
+  push:
+    branches:
+      - fix/production-readiness-20260904
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-branch-mysql-gate-patch
+  cancel-in-progress: false
+
+jobs:
+  patch-exact-targets:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/production-readiness-20260904
+          fetch-depth: 0
+
+      - name: Patch exact MySQL gates and remove this one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          step = r'''      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+                shell: bash
+                run: |
+                  set -euo pipefail
+                  mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+                  test -n "$mysql_container"
+                  docker exec "$mysql_container" sh -c \
+                    'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
+
+          '''
+
+          quality_marker = '''      - name: Install dependencies
+                run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.lock
+                  pip install "black==24.4.2" "isort==5.13.2" "ruff==0.16.5"
+
+          '''
+          baseline_marker = '''      - name: Install base dependencies
+                run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.lock
+                  # Keep the gate able to materialize an older PR base even if that
+                  # historical requirements file did not yet declare the MySQL driver.
+                  pip install "mysqlclient>=2.2,<3"
+
+          '''
+          browser_marker = '''      - name: Install application and Chromium
+                run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                    default-libmysqlclient-dev pkg-config curl \
+                    libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+                    libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.lock
+                  pip install playwright
+                  python -m playwright install --with-deps chromium
+
+          '''
+
+          targets = {
+              Path('.github/workflows/quality.yml'): quality_marker,
+              Path('.github/workflows/previous-baseline-upgrade.yml'): baseline_marker,
+              Path('.github/workflows/hr-browser-flow.yml'): browser_marker,
+              Path('.github/workflows/hr-w-b-browser.yml'): browser_marker,
+          }
+
+          for path, marker in targets.items():
+              text = path.read_text(encoding='utf-8')
+              if 'Authorize immutable-fact trigger DDL in ephemeral MySQL' in text:
+                  raise SystemExit(f'{path}: target step already exists')
+              if text.count(marker) != 1:
+                  raise SystemExit(f'{path}: insertion contract changed')
+              path.write_text(text.replace(marker, marker + step, 1), encoding='utf-8')
+              print(f'patched {path}')
+
+          Path('.github/workflows/_one_branch_mysql_gate_patch.yml').unlink()
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            .github/workflows/quality.yml \
+            .github/workflows/previous-baseline-upgrade.yml \
+            .github/workflows/hr-browser-flow.yml \
+            .github/workflows/hr-w-b-browser.yml \
+            .github/workflows/_one_branch_mysql_gate_patch.yml
+          git diff --cached --check
+          git commit -m "ci(mysql): authorize immutable fact trigger DDL"
+          git push origin HEAD:fix/production-readiness-20260904
