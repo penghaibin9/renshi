@@ -401,7 +401,7 @@ jobs:
 
       - name: Upload HR12 Annual browser evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hr12-annual-browser-${{ github.run_id }}
           path: tests/artifacts/hr12-annual-browser/
