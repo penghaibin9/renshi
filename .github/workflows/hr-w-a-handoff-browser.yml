@@ -87,11 +87,12 @@ jobs:
           test -n "$mysql_container"
           docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
 
-      - name: Ensure local settings stub
+      - name: Ensure local settings and evidence directory
         run: |
           if [ ! -f backend/horilla/settings/local_settings.py ]; then
             printf '%s\n' '# Ephemeral for W-A browser gate' > backend/horilla/settings/local_settings.py
           fi
+          mkdir -p tests/artifacts/hr-w-a-handoff-browser
 
       - name: Migrate fresh MySQL
         run: |
@@ -108,8 +109,14 @@ jobs:
 
           expected_leaf = (
               "hr_onboarding",
-              "0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx",
+              "0016_material_download_ticket",
           )
+          required_history = {
+              (
+                  "hr_onboarding",
+                  "0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx",
+              ),
+          }
           executor = MigrationExecutor(connection)
           leaves = [
               node
@@ -126,6 +133,11 @@ jobs:
               "HR05 exact-head migration was not recorded as applied",
               expected_leaf,
           )
+          missing_history = required_history - applied
+          assert not missing_history, (
+              "HR05 critical historical migrations were not recorded as applied",
+              sorted(missing_history),
+          )
 
           tables = set(connection.introspection.table_names())
           required_tables = {
@@ -141,6 +153,7 @@ jobs:
           print(
               "HR05 migration materialization PASS",
               f"leaf={expected_leaf[1]}",
+              f"history={sorted(node[1] for node in required_history)}",
               f"tables={sorted(required_tables)}",
           )
           PY
@@ -234,7 +247,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p tests/artifacts/hr-w-a-handoff-browser
           python manage.py runserver 127.0.0.1:8000 --noreload \
             > tests/artifacts/hr-w-a-handoff-browser/django-runserver.log 2>&1 &
           server_pid=$!
