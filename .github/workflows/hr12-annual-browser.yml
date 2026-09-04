@@ -192,6 +192,7 @@ jobs:
               HrIndicatorVersion,
               HrReviewerAssignment,
               HrReviewerEvaluation,
+              HrSubjectSnapshot,
           )
           from hr_assessment.models.policy import HrIndicatorBinding
           from hr_staff.models import HrPerson, HrStaffMaster
@@ -323,6 +324,18 @@ jobs:
               status="PROPOSED",
               business_year=2026,
           )
+          subject_snapshot = HrSubjectSnapshot.objects.create(
+              tenant_id=company.pk,
+              case_id=case.id,
+              staff_id=subject_staff.id,
+              display_name=subject_person.legal_name,
+              staff_code=subject_staff.staff_no,
+              worker_category=subject_staff.staff_category_code,
+              reviewer_line_json={"source": "HR12_REAL_BROWSER_SEED"},
+              snapshot_at=now,
+          )
+          case.subject_snapshot = subject_snapshot
+          case.save(update_fields=["subject_snapshot"])
           assignment = HrReviewerAssignment.objects.create(
               tenant_id=company.pk,
               case_id=case.id,
