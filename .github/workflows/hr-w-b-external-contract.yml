@@ -108,17 +108,36 @@ jobs:
           from django.db.migrations.executor import MigrationExecutor
           from django.db.migrations.recorder import MigrationRecorder
 
-          expected = {
+          expected_leaves = {
+              ("hr_contracts", "0008_contract_document_path_length"),
+              ("hr_external", "0021_external_file_ticket_version_binding"),
+          }
+          required_history = {
               ("hr_contracts", "0002_external_workforce_agreement_subject"),
               ("hr_external", "0016_external_hiring_agreement_id"),
           }
           executor = MigrationExecutor(connection)
-          leaves = set(executor.loader.graph.leaf_nodes())
-          missing_leaves = expected - leaves
-          assert not missing_leaves, ("W-B migration leaf missing", sorted(missing_leaves))
+          authority_apps = {"hr_contracts", "hr_external"}
+          actual_leaves = {
+              node
+              for node in executor.loader.graph.leaf_nodes()
+              if node[0] in authority_apps
+          }
+          assert actual_leaves == expected_leaves, (
+              "W-B migration graph is split or not at the expected exact heads",
+              sorted(actual_leaves),
+          )
           applied = set(MigrationRecorder(connection).applied_migrations())
-          missing_applied = expected - applied
-          assert not missing_applied, ("W-B migration not applied", sorted(missing_applied))
+          missing_leaves = expected_leaves - applied
+          assert not missing_leaves, (
+              "W-B current migration leaves were not applied",
+              sorted(missing_leaves),
+          )
+          missing_history = required_history - applied
+          assert not missing_history, (
+              "W-B critical historical migrations were not applied",
+              sorted(missing_history),
+          )
 
           with connection.cursor() as cursor:
               contract_cols = {
@@ -138,7 +157,11 @@ jobs:
               "subject_reference_id",
           } <= contract_cols, contract_cols
           assert "agreement_id" in hiring_cols, hiring_cols
-          print("W-B schema materialization PASS")
+          print(
+              "W-B schema materialization PASS",
+              f"leaves={sorted(expected_leaves)}",
+              f"history={sorted(required_history)}",
+          )
           PY
 
       - name: Provision focused test database from verified schema
