@@ -1,3 +1,4 @@
+import inspect
 from importlib import import_module
 from types import SimpleNamespace
 from unittest import TestCase
@@ -45,17 +46,30 @@ class ObjectionMigrationRuntimeContractTests(TestCase):
 
 
 class ProviderSnapshotTriggerMigrationContractTests(TestCase):
-    def test_case_scope_comparison_is_binary_and_collation_independent(self):
+    def test_repair_is_collation_safe_and_restores_complete_item_seals(self):
         migration = import_module(
             "hr_assessment.migrations."
             "0028_repair_provider_snapshot_item_trigger_collation"
         )
+        source = inspect.getsource(
+            migration.install_collation_safe_snapshot_item_seals
+        )
 
         self.assertIn(
             "CAST(parent_case AS BINARY) <> CAST(NEW.case_id AS BINARY)",
-            migration.CREATE_TRIGGER_SQL,
+            source,
         )
-        self.assertNotIn(
-            "OR parent_case <> NEW.case_id",
-            migration.CREATE_TRIGGER_SQL,
+        self.assertNotIn("OR parent_case <> NEW.case_id", source)
+        self.assertIn("parent_status <> 'CAPTURING'", source)
+        self.assertIn(
+            "hr_assessment_provider_snapshot_item_no_update",
+            source,
+        )
+        self.assertIn(
+            "hr_assessment_provider_snapshot_item_no_delete",
+            source,
+        )
+        self.assertIn(
+            "hr_assessment_provider_snapshot_item_seal_insert",
+            source,
         )
