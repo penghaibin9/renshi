@@ -38,8 +38,22 @@ jobs:
           fi
           rm -f .env
 
-      - name: Build web image
-        run: docker compose -f "$COMPOSE_FILE" build web
+      - name: Build web image with bounded registry retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            if docker compose -f "$COMPOSE_FILE" build web; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "Docker image build failed after $attempt attempts"
+              exit 1
+            fi
+            delay=$((attempt * 15))
+            echo "Docker registry/build attempt $attempt failed; retrying in ${delay}s"
+            sleep "$delay"
+          done
 
       - name: Ensure local settings stub
         run: |

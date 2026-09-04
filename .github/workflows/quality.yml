@@ -22,6 +22,7 @@ env:
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
   MYSQL_CI_ROOT_PASSWORD: renshi_root_pass
+  PYTHONPATH: backend
 
 jobs:
   django-contract:

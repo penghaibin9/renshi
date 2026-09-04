@@ -80,9 +80,7 @@ def validate_production_secrets(
     elif len(secret_key) < 50:
         errors.append("SECRET_KEY must contain at least 50 characters in production.")
     elif len(set(secret_key)) < 12:
-        errors.append(
-            "SECRET_KEY has insufficient character diversity for production."
-        )
+        errors.append("SECRET_KEY has insufficient character diversity for production.")
 
     hosts = list(allowed_hosts or [])
     if not hosts or hosts == ["*"] or set(hosts) == {"*"}:
@@ -127,9 +125,10 @@ def validate_production_secrets(
     elif parsed_redis.password and parsed_redis.password != str(redis_password):
         errors.append("REDIS_PASSWORD must match the password embedded in REDIS_URL.")
 
-    if _is_placeholder(backup_encryption_key) or len(
-        str(backup_encryption_key).encode("utf-8")
-    ) < 32:
+    if (
+        _is_placeholder(backup_encryption_key)
+        or len(str(backup_encryption_key).encode("utf-8")) < 32
+    ):
         errors.append(
             "PRODUCTION_BACKUP_ENCRYPTION_KEY must contain at least 32 non-placeholder bytes."
         )
@@ -176,7 +175,12 @@ def validate_malware_scanner_configuration(
 
 
 def validate_hr04_privacy_configuration(
-    *, notice_version, retention_days, privacy_contact, material_max_bytes, scan_max_bytes
+    *,
+    notice_version,
+    retention_days,
+    privacy_contact,
+    material_max_bytes,
+    scan_max_bytes,
 ):
     """Reject a public recruitment notice that cannot identify its real policy."""
     errors = []
@@ -196,7 +200,9 @@ def validate_hr04_privacy_configuration(
         or "example.edu.cn" in contact.lower()
         or contact.lower().startswith(("change-me", "replace-with"))
     ):
-        errors.append("HR04_PRIVACY_CONTACT must contain the school's real rights channel.")
+        errors.append(
+            "HR04_PRIVACY_CONTACT must contain the school's real rights channel."
+        )
     try:
         material_limit = int(material_max_bytes)
         scan_limit = int(scan_max_bytes)
@@ -209,8 +215,7 @@ def validate_hr04_privacy_configuration(
         )
     if errors:
         raise ImproperlyConfigured(
-            "Horilla HR04 privacy configuration check failed:\n- "
-            + "\n- ".join(errors)
+            "Horilla HR04 privacy configuration check failed:\n- " + "\n- ".join(errors)
         )
 
 
@@ -300,7 +305,9 @@ def validate_mfa_email_configuration(
     if enabled and _is_placeholder(email_host_user):
         errors.append("EMAIL_HOST_USER must contain the production SMTP account.")
     if enabled and _is_placeholder(email_host_password):
-        errors.append("EMAIL_HOST_PASSWORD must contain the production SMTP credential.")
+        errors.append(
+            "EMAIL_HOST_PASSWORD must contain the production SMTP credential."
+        )
     try:
         validate_email(str(from_email or ""))
     except Exception:
@@ -362,9 +369,7 @@ def validate_field_encryption_configuration(raw_keys, *, production=False):
             or len(key_id) > 32
             or not all(char.isalnum() or char in "_-" for char in key_id)
         ):
-            errors.append(
-                "FIELD_ENCRYPTION_KEYS entries must use key-id:fernet-key."
-            )
+            errors.append("FIELD_ENCRYPTION_KEYS entries must use key-id:fernet-key.")
             continue
         if key_id in seen:
             errors.append(f"FIELD_ENCRYPTION_KEYS repeats key id {key_id!r}.")
@@ -377,13 +382,10 @@ def validate_field_encryption_configuration(raw_keys, *, production=False):
             if len(decoded) != 32:
                 raise ValueError
         except (ValueError, UnicodeEncodeError):
-            errors.append(
-                f"FIELD_ENCRYPTION_KEYS key {key_id!r} must be a Fernet key."
-            )
+            errors.append(f"FIELD_ENCRYPTION_KEYS key {key_id!r} must be a Fernet key.")
     if errors:
         raise ImproperlyConfigured(
-            "Horilla database field encryption check failed:\n- "
-            + "\n- ".join(errors)
+            "Horilla database field encryption check failed:\n- " + "\n- ".join(errors)
         )
 
 
@@ -433,7 +435,9 @@ KNOWN_EXTERNAL_INTEGRATIONS = frozenset(
 def validate_required_external_integrations(required, configured):
     """Fail production startup when a declared authority boundary is incomplete."""
     required_names = {
-        str(name or "").strip().upper() for name in (required or ()) if str(name).strip()
+        str(name or "").strip().upper()
+        for name in (required or ())
+        if str(name).strip()
     }
     errors = []
     unknown = required_names - KNOWN_EXTERNAL_INTEGRATIONS
@@ -476,9 +480,10 @@ def validate_required_external_integrations(required, configured):
         if name in {"HR15_PAYMENT", "HR18_SUBMISSION"}:
             receipt_secret = str(item.get("receipt_secret", "") or "")
             receipt_key_id = str(item.get("receipt_key_id", "") or "").strip()
-            if _is_placeholder(receipt_secret) or len(
-                receipt_secret.encode("utf-8")
-            ) < 32:
+            if (
+                _is_placeholder(receipt_secret)
+                or len(receipt_secret.encode("utf-8")) < 32
+            ):
                 errors.append(
                     f"{name} receipt HMAC secret must contain at least 32 "
                     "non-placeholder bytes."
