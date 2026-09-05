@@ -15,9 +15,15 @@
     PARTY: "党组织", OTHER: "其他组织",
   };
   const STATUS_LABELS = {
-    DRAFT: "草稿", ACTIVE: "有效", INACTIVE: "停用",
+    DRAFT: "草稿", ACTIVE: "有效", EFFECTIVE: "有效", APPROVED: "已批准", SUPERSEDED: "历史版本", INACTIVE: "停用",
     PENDING: "待生效", CLOSED: "已关闭",
   };
+
+  function esc(value) {
+    return String(value ?? "").replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  }
 
   function orgTypeLabel(value) {
     return ORG_TYPE_LABELS[value] || "其他组织";
@@ -43,9 +49,9 @@
         }
         return;
       }
-      treeEl.innerHTML = `<div class="hr-org-node is-root" data-org-id="${root.id}">
+      treeEl.innerHTML = `<div class="hr-org-node is-root" data-org-id="${esc(root.id)}">
         <button class="hr-org-node__row" data-action="select" aria-expanded="true">
-          <span class="hr-org-node__name">${root.name}</span>
+          <span class="hr-org-node__name">${esc(root.name)}</span>
           <span class="hr-scope-chip">${orgTypeLabel(root.org_type || "SCHOOL")}</span>
         </button>
         <div class="hr-org-node__children" data-children></div>
@@ -53,7 +59,7 @@
       await loadChildren(root.id);
       selectNode(root.id);
     } catch (e) {
-      treeEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
+      treeEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${esc(window.HrApi.apiErrorToMessage(e))}</div></div>`;
     }
   }
 
@@ -70,16 +76,16 @@
         ? nodes.map(nodeRow).join("")
         : `<div class="hr-org-node__empty hr-meta">无下级机构</div>`;
     } catch (e) {
-      if (container) container.innerHTML = `<div class="hr-meta">${window.HrApi.apiErrorToMessage(e)}</div>`;
+      if (container) container.innerHTML = `<div class="hr-meta">${esc(window.HrApi.apiErrorToMessage(e))}</div>`;
     }
   }
 
   function nodeRow(n) {
-    return `<div class="hr-org-node" data-org-id="${n.id}" data-has-children="${n.has_children}">
+    return `<div class="hr-org-node" data-org-id="${esc(n.id)}" data-has-children="${n.has_children === true}">
       <button class="hr-org-node__row" data-action="select" aria-expanded="false">
         ${n.has_children ? '<span class="hr-org-node__twisty">▸</span>' : '<span class="hr-org-node__twisty"></span>'}
-        <span class="hr-org-node__name">${n.name}</span>
-        <span class="hr-org-node__code hr-meta">${n.stable_code || ""}</span>
+        <span class="hr-org-node__name">${esc(n.name)}</span>
+        <span class="hr-org-node__code hr-meta">${esc(n.stable_code || "")}</span>
       </button>
       <div class="hr-org-node__children" data-children></div>
     </div>`;
@@ -102,19 +108,19 @@
       detailEl.innerHTML = `
         <div class="hr-section-card hr-card">
           <header class="hr-section-card__header">
-            <h2 class="hr-section-card__title">${d.name}</h2>
+            <h2 class="hr-section-card__title">${esc(d.name)}</h2>
             <span class="hr-scope-chip">${orgTypeLabel(d.org_type)}</span>
           </header>
           <div class="hr-section-card__body hr-org-detail-grid">
-            <div class="hr-meta">稳定编码</div><div>${d.stable_code || "—"}</div>
+            <div class="hr-meta">稳定编码</div><div>${esc(d.stable_code || "—")}</div>
             <div class="hr-meta">组织类型</div><div>${orgTypeLabel(d.org_type)}</div>
-            <div class="hr-meta">生效日期</div><div>${d.validity_from || "—"}</div>
+            <div class="hr-meta">生效日期</div><div>${esc(d.validity_from || "—")}</div>
             <div class="hr-meta">状态</div><div>${statusLabel(d.status)}</div>
-            <div class="hr-meta">下级机构</div><div>${d.child_count ?? 0}</div>
+            <div class="hr-meta">下级机构</div><div>${esc(d.child_count ?? 0)}</div>
           </div>
         </div>`;
     } catch (e) {
-      detailEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
+      detailEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${esc(window.HrApi.apiErrorToMessage(e))}</div></div>`;
     }
   }
 

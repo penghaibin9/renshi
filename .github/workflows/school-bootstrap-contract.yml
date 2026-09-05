@@ -6,6 +6,11 @@ on:
     paths:
       - '.github/workflows/school-bootstrap-contract.yml'
       - 'backend/base/**'
+      - 'backend/hr_structure/**'
+      - 'frontend/templates/hr/structure/**'
+      - 'frontend/static/hr/js/structure/**'
+      - 'frontend/static/hr/css/structure-setup.css'
+      - 'scripts/school_structure_browser.py'
       - 'backend/platform_access/**'
       - 'backend/horilla/menu/**'
       - 'backend/horilla/urls.py'
@@ -128,6 +133,7 @@ jobs:
                             'E9,F821,F601,F811,PLE,B012,B018,B023,B026,B035,B039,SIM220,SIM221,SIM222,SIM223']),
               ('django-tests.log', [sys.executable, 'manage.py', 'test',
                                    'base.test_school_management',
+                                   'hr_structure.tests.test_initial_setup',
                                    'base.test_account_bootstrap',
                                    'base.test_legacy_initialization_boundary',
                                    'base.test_tenant_selection_envelope',
@@ -172,8 +178,33 @@ jobs:
           PY
           python scripts/school_bootstrap_browser.py browser 2>&1 | tee tests/artifacts/school-bootstrap-browser/browser.log
       - name: Seal school and audit facts from MySQL
+        id: bootstrap_seal
         if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
         run: python scripts/school_bootstrap_browser.py seal
+      - name: Real school structure creation through the browser
+        id: structure_browser
+        if: ${{ !cancelled() && steps.bootstrap_seal.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/school-structure-browser
+          python scripts/school_structure_browser.py seed 2>&1 | tee tests/artifacts/school-structure-browser/seed.log
+          python manage.py runserver 127.0.0.1:8000 --noreload > tests/artifacts/school-structure-browser/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/ready/ > tests/artifacts/school-structure-browser/readiness.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          python scripts/school_structure_browser.py browser 2>&1 | tee tests/artifacts/school-structure-browser/browser.log
+      - name: Independently seal initial HR02 structure and outbox
+        if: ${{ !cancelled() && steps.structure_browser.outcome == 'success' }}
+        run: python scripts/school_structure_browser.py seal
       - name: Upload bootstrap contract and browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -182,5 +213,6 @@ jobs:
           path: |
             tests/artifacts/school-bootstrap-contract/
             tests/artifacts/school-bootstrap-browser/
+            tests/artifacts/school-structure-browser/
           if-no-files-found: error
           retention-days: 3
