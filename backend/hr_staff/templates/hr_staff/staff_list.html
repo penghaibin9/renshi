@@ -158,6 +158,7 @@
     const statusLabels = {ACTIVE:["在职","active"],PENDING_ENTRY:["待入职","pending"],DEPARTED:["已离职","departed"],RETIRED:["已退休","retired"]};
     let importBusy = false;
     let importState = null;
+    let rosterRequestSequence = 0;
 
     function escapeHtml(s) {
       return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -182,52 +183,92 @@
       el.className = `hr03-notice show ${kind}`;
     }
 
+    function validRosterResponse(body) {
+      return body && Array.isArray(body.items) && body.items.length <= pageSize &&
+        Number.isSafeInteger(body.page) && body.page >= 1 &&
+        Number.isSafeInteger(body.total) && body.total >= body.items.length &&
+        typeof body.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.asOf) &&
+        typeof body.dataBasis === "string" && body.dataBasis.length > 0 &&
+        body.items.every(row => row && ["staff_id", "staff_no", "legal_name"].every(
+          key => typeof row[key] === "string" && row[key].length > 0
+        ));
+    }
+
     async function loadRows(p) {
-      if (p < 1) return;
-      page = p;
+      if (!Number.isSafeInteger(p) || p < 1) return false;
+      const sequence = ++rosterRequestSequence;
+      const tbody = document.getElementById("rows");
+      const stats = document.getElementById("stats");
+      // A pending/failed query has no current export selection. Never reuse the
+      // previous school's or previous filter's displayed identities as results.
+      lastItems = [];
+      document.getElementById("exportCurrent").disabled = true;
+      document.getElementById("prev").disabled = true;
+      document.getElementById("next").disabled = true;
+      document.getElementById("asOf").textContent = "—";
+      document.getElementById("pageInfo").textContent = "正在读取…";
+      tbody.setAttribute("aria-busy", "true");
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">正在读取当前查询结果…</td></tr>';
+      stats.innerHTML = '<div class="hr-v2-state"><strong>正在读取正式名册</strong><span>查询完成前不会保留旧人数或导出选择。</span></div>';
       const q = new URLSearchParams({
-        page, pageSize,
+        page: p, pageSize,
         keyword: document.getElementById("keyword").value,
         status: document.getElementById("status").value,
         category: document.getElementById("category").value,
       });
-      const resp = await fetch("/api/v1/hr/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}, credentials:"same-origin"});
-      const body = await parseJson(resp);
-      if (!resp.ok) {
+      try {
+        const resp = await fetch("/api/v1/hr/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}, credentials:"same-origin"});
+        const body = await parseJson(resp);
+        // A later successful or failed query owns the display. Old failures
+        // must not clear a newer result, just as old successes cannot replace it.
+        if (sequence !== rosterRequestSequence) return null;
+        if (!resp.ok) throw new Error(apiMessage(body, `查询失败（${resp.status}）`));
+        if (!validRosterResponse(body)) throw new Error("名册响应不完整，请重新查询或重新登录。");
+        page = body.page;
+        document.getElementById("asOf").textContent = body.asOf;
+        stats.innerHTML =
+          `<div class="hr-v2-summary-cell"><strong>${body.total}</strong><span>符合当前条件的教职工</span></div>` +
+          `<div class="hr-v2-summary-cell"><strong>${page}</strong><span>当前页</span></div>` +
+          `<div class="hr-v2-summary-cell"><strong>${escapeHtml(body.dataBasis)}</strong><span>数据口径</span></div>`;
+        lastItems = body.items;
+        document.getElementById("exportCurrent").disabled = lastItems.length === 0;
+        if (!lastItems.length) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无符合条件的教职工</td></tr>';
+        } else {
+          tbody.innerHTML = lastItems.map(r => {
+            const [label, cls] = statusLabels[r.current_employment_status] || [escapeHtml(r.current_employment_status), ""];
+            return `<tr data-id="${escapeHtml(r.staff_id)}">
+              <td><a class="name link" href="/hr/staff/${encodeURIComponent(r.staff_id)}/">${escapeHtml(r.legal_name)}</a> <span class="hr-meta">${escapeHtml(r.staff_no)}</span></td>
+              <td>${escapeHtml(r.org_name || "—")}</td>
+              <td>${escapeHtml(r.position_name || "—")}</td>
+              <td>${escapeHtml(r.staff_category_code || "—")}</td>
+              <td><span class="badge ${cls}">${label}</span></td>
+              <td>${escapeHtml(r.date_joining || "—")}</td>
+              <td>${r.has_future_change ? "有未来变更" : "—"}</td>
+            </tr>`;
+          }).join("");
+        }
+        const pages = Math.max(1, Math.ceil(body.total / pageSize));
+        document.getElementById("pageInfo").textContent = `第 ${page} / ${pages} 页 · 共 ${body.total} 人`;
+        document.getElementById("prev").disabled = page <= 1;
+        document.getElementById("next").disabled = page >= pages;
+        return true;
+      } catch (err) {
+        if (sequence !== rosterRequestSequence) return null;
         lastItems = [];
-        document.getElementById("rows").innerHTML = `<tr><td colspan="7" class="empty">${escapeHtml(apiMessage(body, `查询失败（${resp.status}）`))}</td></tr>`;
-        document.getElementById("stats").innerHTML = `<div class="hr-v2-state" data-state="error"><strong>名册读取失败</strong><span>${escapeHtml(apiMessage(body, `HTTP ${resp.status}`))}</span></div>`;
+        const message = escapeHtml(err instanceof TypeError ? "网络连接失败，请重新查询。" :
+          (err.message || "名册暂时无法读取，请重新查询。"));
+        tbody.innerHTML = `<tr><td colspan="7" class="empty">${message}</td></tr>`;
+        stats.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>名册读取失败</strong><span>${message}</span></div>`;
+        document.getElementById("pageInfo").textContent = "查询未完成，请重试";
+        document.getElementById("asOf").textContent = "—";
         document.getElementById("exportCurrent").disabled = true;
-        return;
+        document.getElementById("prev").disabled = true;
+        document.getElementById("next").disabled = true;
+        return false;
+      } finally {
+        if (sequence === rosterRequestSequence) tbody.setAttribute("aria-busy", "false");
       }
-      document.getElementById("asOf").textContent = body.asOf || "—";
-      document.getElementById("stats").innerHTML =
-        `<div class="hr-v2-summary-cell"><strong>${body.total ?? "—"}</strong><span>符合当前条件的教职工</span></div>` +
-        `<div class="hr-v2-summary-cell"><strong>${body.page ?? "—"}</strong><span>当前页</span></div>` +
-        `<div class="hr-v2-summary-cell"><strong>${escapeHtml(body.dataBasis ?? "—")}</strong><span>数据口径</span></div>`;
-      const tbody = document.getElementById("rows");
-      lastItems = Array.isArray(body.items) ? body.items : [];
-      document.getElementById("exportCurrent").disabled = lastItems.length === 0;
-      if (!lastItems.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="empty">暂无符合条件的教职工</td></tr>`;
-      } else {
-        tbody.innerHTML = lastItems.map(r => {
-          const [label, cls] = statusLabels[r.current_employment_status] || [escapeHtml(r.current_employment_status), ""];
-          return `<tr data-id="${escapeHtml(r.staff_id)}">
-            <td><a class="name link" href="/hr/staff/${encodeURIComponent(r.staff_id)}/">${escapeHtml(r.legal_name)}</a> <span class="hr-meta">${escapeHtml(r.staff_no)}</span></td>
-            <td>${escapeHtml(r.org_name || "—")}</td>
-            <td>${escapeHtml(r.position_name || "—")}</td>
-            <td>${escapeHtml(r.staff_category_code || "—")}</td>
-            <td><span class="badge ${cls}">${label}</span></td>
-            <td>${escapeHtml(r.date_joining || "—")}</td>
-            <td>${r.has_future_change ? "有未来变更" : "—"}</td>
-          </tr>`;
-        }).join("");
-      }
-      const pages = Math.max(1, Math.ceil((body.total || 0) / pageSize));
-      document.getElementById("pageInfo").textContent = `第 ${body.page} / ${pages} 页 · 共 ${body.total || 0} 人`;
-      document.getElementById("prev").disabled = page <= 1;
-      document.getElementById("next").disabled = page >= pages;
     }
 
     async function exportCurrentPage() {
@@ -351,7 +392,8 @@
         renderImport(body.data);
         showNotice(body.data.pendingRows ? `本段已保存。累计成功 ${body.data.committed} 行，剩余 ${body.data.pendingRows} 行，请勾选后继续提交。` : `正式提交完成：成功 ${body.data.committed} 行，失败 ${body.data.failed} 行。请核对重新读取的名册。`, body.data.failed || body.data.pendingRows ? "info" : "success");
         try {
-          await loadRows(1);
+          const refreshed = await loadRows(1);
+          if (refreshed === false) throw new Error("Roster refresh did not complete");
         } catch (_refreshError) {
           // The commit response is already authoritative. A subsequent roster
           // fetch failure must not turn a confirmed write into UNKNOWN.
