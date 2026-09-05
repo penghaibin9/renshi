@@ -13,6 +13,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import close_old_connections, connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
+from django.urls import resolve, reverse
 from openpyxl import load_workbook
 
 from employee.models import Employee
@@ -68,7 +69,7 @@ class ImportFixture(Fixture):
         return out.getvalue()
 
     def upload(self, browser, rows):
-        return browser.post("/api/hr/v1/staff/import", {"file": SimpleUploadedFile("staff.xlsx", self.xlsx(rows))},
+        return browser.post("/api/v1/hr/staff/import", {"file": SimpleUploadedFile("staff.xlsx", self.xlsx(rows))},
                             HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
 
 
@@ -246,6 +247,68 @@ class FormalStaffImportTests(ImportFixture, TestCase):
         self.assertEqual(len(set(applied)), 5)
         self.assertEqual(HrStaffAuditEvent.objects.filter(action="StaffImportCompleted").count(), 1)
 
+    def test_status_exposes_recovery_only_for_stale_lease_and_owner_can_resume(self):
+        service, job = self.ready([self.row()])
+        job.status = ImportJobStatus.COMMITTING
+        job.checkpoint = {**job.checkpoint, "commit_token": "lost-process",
+                          "commit_heartbeat_at": (timezone.now() - timedelta(hours=1)).isoformat()}
+        job.save(update_fields=["status", "checkpoint"])
+        browser = self.login(self.admin)
+        path = "/api/v1/hr/staff/import/" + str(job.pk)
+        before = browser.get(path)
+        self.assertEqual(before.status_code, 200)
+        self.assertTrue(before.json()["data"]["canResume"])
+        self.assertNotIn("lost-process", before.content.decode())
+        resumed = browser.post(path + "/commit", HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
+        self.assertEqual(resumed.status_code, 200, resumed.content)
+        self.assertEqual(resumed.json()["data"]["committedRows"], 1)
+        self.assertFalse(resumed.json()["data"]["canResume"])
+        self.assertEqual(HrStaffMaster.objects.count(), 1)
+
+    def test_final_audit_failure_can_resume_without_recreating_committed_person(self):
+        from hr_staff.services.audit_service import write_audit_event
+        service, job = self.ready([self.row()])
+        def fail_final_only(**kwargs):
+            if kwargs["action"] == "StaffImportCompleted":
+                raise RuntimeError("completion audit unavailable")
+            return write_audit_event(**kwargs)
+        with patch("hr_staff.services.audit_service.write_audit_event", side_effect=fail_final_only):
+            with self.assertRaises(RuntimeError):
+                self.commit(service, job)
+        job.refresh_from_db()
+        self.assertEqual(job.status, ImportJobStatus.COMMITTING)
+        self.assertEqual(job.rows.filter(commit_status="COMMITTED").count(), 1)
+        self.assertEqual(HrStaffMaster.objects.count(), 1)
+        self.assertFalse(HrStaffAuditEvent.objects.filter(action="StaffImportCompleted").exists())
+        job.checkpoint = {**job.checkpoint,
+                          "commit_heartbeat_at": (timezone.now() - timedelta(hours=1)).isoformat()}
+        job.save(update_fields=["checkpoint"])
+        browser = self.login(self.admin)
+        path = "/api/v1/hr/staff/import/" + str(job.pk)
+        observed = browser.get(path).json()["data"]
+        self.assertTrue(observed["canResume"])
+        self.assertEqual(observed["pendingRows"], 0)
+        response = browser.post(path + "/commit", HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["data"]["status"], "COMPLETED")
+        self.assertEqual(HrPerson.objects.count(), 1)
+        self.assertEqual(HrStaffMaster.objects.count(), 1)
+        self.assertEqual(HrStaffAssignment.objects.count(), 1)
+        self.assertEqual(HrStaffAuditEvent.objects.filter(action="StaffImportCompleted").count(), 1)
+
+    def test_active_executor_remains_busy_despite_status_read(self):
+        service, job = self.ready([self.row()])
+        job.status = ImportJobStatus.COMMITTING
+        job.checkpoint = {**job.checkpoint, "commit_token": "active-process",
+                          "commit_heartbeat_at": timezone.now().isoformat()}
+        job.save(update_fields=["status", "checkpoint"])
+        browser = self.login(self.admin)
+        path = "/api/v1/hr/staff/import/" + str(job.pk)
+        self.assertFalse(browser.get(path).json()["data"]["canResume"])
+        denied = browser.post(path + "/commit", HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
+        self.assertEqual(denied.status_code, 409)
+        self.assertFalse(HrPerson.objects.exists())
+
     def test_peak_usage_counts_interval_overlap_not_lifetime_sum(self):
         tomorrow = self.today + timedelta(days=1)
         self.assertEqual(peak_usage([(self.today, tomorrow, Decimal("1")), (tomorrow, None, Decimal("1"))], self.today), (1, Decimal("1")))
@@ -253,7 +316,7 @@ class FormalStaffImportTests(ImportFixture, TestCase):
 
     def test_real_api_template_upload_commit_and_status_use_current_school(self):
         browser = self.login(self.admin)
-        template = browser.get("/api/hr/v1/staff/import/template")
+        template = browser.get("/api/v1/hr/staff/import/template")
         self.assertEqual(template.status_code, 200)
         self.assertIn("spreadsheetml", template["Content-Type"])
         uploaded = self.upload(browser, [self.row(), self.row("BAD", legal_name="")])
@@ -261,7 +324,7 @@ class FormalStaffImportTests(ImportFixture, TestCase):
         data = uploaded.json()["data"]
         self.assertEqual((data["validRows"], data["failedRows"]), (1, 1))
         self.assertFalse(HrStaffMaster.objects.exists())
-        path = "/api/hr/v1/staff/import/" + data["jobId"]
+        path = "/api/v1/hr/staff/import/" + data["jobId"]
         committed = browser.post(path + "/commit", HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
         self.assertEqual(committed.status_code, 200, committed.content)
         self.assertEqual(committed.json()["data"]["committed"], 1)
@@ -278,21 +341,21 @@ class FormalStaffImportTests(ImportFixture, TestCase):
     def test_api_rejects_missing_csrf_and_foreign_jobs_and_viewer_writes(self):
         owner = self.login(self.admin)
         upload = self.upload(owner, [self.row()])
-        path = "/api/hr/v1/staff/import/" + upload.json()["data"]["jobId"]
+        path = "/api/v1/hr/staff/import/" + upload.json()["data"]["jobId"]
         self.assertEqual(owner.post(path + "/commit").status_code, 403)
         foreign = self.login(self.other_admin)
         for tail in ("", "/errors"):
             self.assertEqual(foreign.get(path + tail).status_code, 404)
         self.assertEqual(foreign.post(path + "/commit", HTTP_X_CSRFTOKEN=foreign.cookies["csrftoken"].value).status_code, 404)
         viewer = self.login(self.viewer)
-        self.assertEqual(viewer.get("/api/hr/v1/staff/import/template").status_code, 403)
+        self.assertEqual(viewer.get("/api/v1/hr/staff/import/template").status_code, 403)
         self.assertEqual(viewer.post(path + "/commit", HTTP_X_CSRFTOKEN=viewer.cookies["csrftoken"].value).status_code, 403)
         self.assertFalse(HrPerson.objects.exists())
 
     def test_same_school_other_importer_cannot_read_or_commit_owner_task(self):
         owner = self.login(self.admin)
         response = self.upload(owner, [self.row()])
-        path = "/api/hr/v1/staff/import/" + response.json()["data"]["jobId"]
+        path = "/api/v1/hr/staff/import/" + response.json()["data"]["jobId"]
         self.viewer.company_group_assignments.get().group.permissions.add(
             Permission.objects.get(codename="hr.staff.import"))
         other = self.login(self.viewer)
@@ -300,6 +363,22 @@ class FormalStaffImportTests(ImportFixture, TestCase):
             self.assertEqual(other.get(path + tail).status_code, 404)
         self.assertEqual(other.post(path + "/commit", HTTP_X_CSRFTOKEN=other.cookies["csrftoken"].value).status_code, 404)
         self.assertFalse(HrStaffMaster.objects.exists())
+
+    def test_public_import_routes_are_canonical_and_legacy_is_redirect_only(self):
+        from hr_staff.models import HrImportJob
+        browser = self.login(self.admin)
+        canonical = reverse("hr03-api-staff-import-template")
+        self.assertEqual(canonical, "/api/v1/hr/staff/import/template")
+        self.assertEqual(resolve(canonical).func.__module__, "hr_staff.api.imports")
+        response = browser.get("/api/hr/v1/staff/import/template")
+        self.assertEqual(response.status_code, 308)
+        self.assertEqual(response["Location"], canonical)
+        response = browser.post("/api/hr/v1/staff/import", {},
+            HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
+        self.assertEqual(response.status_code, 308)
+        self.assertEqual(response["Location"], "/api/v1/hr/staff/import")
+        self.assertFalse(HrImportJob.objects.exists())
+        self.assertFalse(HrPerson.objects.exists())
 
     def test_api_status_has_no_plaintext_document_or_birth_date(self):
         browser = self.login(self.admin)

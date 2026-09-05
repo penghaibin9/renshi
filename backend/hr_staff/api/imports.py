@@ -50,9 +50,15 @@ def _owned_job(service, job_id):
 
 
 def _summary(job):
+    # Only a stale executor lease is recoverable. This is UI guidance, not an
+    # authorization token: commit() rechecks the live lease under its job lock.
+    can_resume = job.status == "COMMITTING" and ImportService._commit_lease_is_stale(
+        job, dict(job.checkpoint or {}), timezone.now()
+    )
     return {
         "jobId": str(job.pk), "templateKey": job.template_key, "status": job.status,
         "totalRows": job.total_rows, "validRows": job.valid_rows, "failedRows": job.failed_rows,
+        "canResume": can_resume,
         "pendingRows": job.rows.filter(tenant_id=job.tenant_id, is_valid=True, commit_status="PENDING").count(),
         "committedRows": job.rows.filter(tenant_id=job.tenant_id, commit_status="COMMITTED").count(),
         "committedBy": job.committed_by,
