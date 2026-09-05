@@ -1,4 +1,11 @@
-"""W-B multi-role Chromium proof for HR07 agreement confirmation and HR08 activation."""
+"""W-B multi-role Chromium proof for HR07 agreement and HR08 activation.
+
+Each role signs in through the production form with an explicit ``next`` target.
+This prevents narrow HR08 roles from being redirected through the HR01 dashboard,
+which they are deliberately not authorised to open.  Every role owns an isolated
+browser context; no cookies, superuser privileges, or test-client sessions are
+shared.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +14,7 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import quote, urlsplit
 
 from playwright.sync_api import Browser, Page, sync_playwright
 
@@ -16,7 +24,6 @@ ARTIFACT_DIR = Path(
     os.getenv("HR_BROWSER_ARTIFACT_DIR", "tests/artifacts/hr-w-b-browser")
 )
 SEED_PATH = ARTIFACT_DIR / "seed.json"
-
 ROLE_CREDENTIALS = {
     "agreement_approver": (
         os.environ["HR_WB_APPROVER_USERNAME"],
@@ -49,7 +56,7 @@ def api_request(
     method: str = "GET",
     body: dict | None = None,
 ) -> dict:
-    """Issue an API call from the authenticated browser origin, including CSRF."""
+    """Call a canonical HR API from the authenticated browser origin."""
 
     return page.evaluate(
         """async ({path, method, body}) => {
@@ -91,14 +98,21 @@ def record(evidence: list[dict], role: str, assertion: str, result: dict) -> Non
 
 
 @contextmanager
-def authenticated_page(browser: Browser, role: str) -> Iterator[Page]:
+def authenticated_page(
+    browser: Browser,
+    role: str,
+    destination_path: str,
+) -> Iterator[Page]:
+    """Create one isolated role session and land only in its authorised area."""
+
     username, password = ROLE_CREDENTIALS[role]
     context = browser.new_context(viewport={"width": 1440, "height": 1000})
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
     page = context.new_page()
     try:
+        login_path = f"/login/?next={quote(destination_path, safe='/')}"
         login_response = page.goto(
-            BASE_URL + "/login/",
+            BASE_URL + login_path,
             wait_until="domcontentloaded",
         )
         require(
@@ -109,20 +123,23 @@ def authenticated_page(browser: Browser, role: str) -> Iterator[Page]:
         page.locator("#password").fill(password)
         login_button = page.locator("button.yk-login-submit")
         require(
-            login_button.count() == 1,
-            f"{role}: expected one visible production login control, "
-            f"got {login_button.count()}",
+            login_button.count() == 1 and login_button.is_visible(),
+            f"{role}: visible production login control is missing or ambiguous",
         )
-        require(login_button.is_visible(), f"{role}: login control is not visible")
         with page.expect_navigation(wait_until="domcontentloaded") as login_nav:
             login_button.click()
+        login_result = login_nav.value
         require(
-            login_nav.value is not None and login_nav.value.status < 400,
+            login_result is not None and login_result.status < 400,
             f"{role}: login click failed",
         )
         require(
-            "/login" not in page.url,
-            f"{role}: authentication did not establish a browser session",
+            urlsplit(page.url).path == destination_path,
+            f"{role}: login landed on {page.url}, expected {destination_path}",
+        )
+        require(
+            any(cookie["name"] == "sessionid" for cookie in context.cookies()),
+            f"{role}: login did not establish a session cookie",
         )
         yield page
     except BaseException:
@@ -148,16 +165,11 @@ def main() -> None:
     agreement_id = seed["agreement_id"]
 
     detail_path = f"/hr/external-teachers/hiring/{case_id}/"
+    list_path = "/hr/external-teachers/hiring/"
     api_detail = f"/api/v1/hr/external-teachers/hiring-cases/{case_id}"
-    api_options = (
-        f"/api/v1/hr/external-teachers/hiring-cases/{case_id}/agreement-options"
-    )
-    api_agreement = (
-        f"/api/v1/hr/external-teachers/hiring-cases/{case_id}/agreement"
-    )
-    api_activation = (
-        f"/api/v1/hr/external-teachers/hiring-cases/{case_id}/activate"
-    )
+    api_options = f"{api_detail}/agreement-options"
+    api_agreement = f"{api_detail}/agreement"
+    api_activation = f"{api_detail}/activate"
 
     evidence: list[dict] = []
     failure: BaseException | None = None
@@ -167,97 +179,52 @@ def main() -> None:
             browser = playwright.chromium.launch(headless=True)
             try:
                 role = "read_only_auditor"
-                with authenticated_page(browser, role) as page:
-                    response = page.goto(
-                        BASE_URL + detail_path,
-                        wait_until="domcontentloaded",
-                    )
-                    require(
-                        response is not None and response.status == 200,
-                        f"{role}: detail page failed",
-                    )
+                with authenticated_page(browser, role, detail_path) as page:
                     page.wait_for_selector(
                         '[data-agreement-workspace]'
                         '[data-case-status="WAITING_AGREEMENT"]',
                         timeout=10000,
                     )
-                    options = api_request(page, api_options)
-                    require(
-                        options["status"] == 403,
-                        f"{role}: agreement options must be 403, got {options}",
-                    )
-                    record(evidence, role, "agreement-options-denied", options)
-                    confirm = api_request(
-                        page,
-                        api_agreement,
-                        method="POST",
-                        body={"agreementId": agreement_id},
-                    )
-                    require(
-                        confirm["status"] == 403,
-                        f"{role}: agreement confirmation must be 403, got {confirm}",
-                    )
-                    record(evidence, role, "agreement-confirm-denied", confirm)
-                    activate = api_request(
-                        page,
-                        api_activation,
-                        method="POST",
-                        body={},
-                    )
-                    require(
-                        activate["status"] == 403,
-                        f"{role}: activation must be 403, got {activate}",
-                    )
-                    record(evidence, role, "activation-denied", activate)
+                    for assertion, path, method, body in (
+                        ("agreement-options-denied", api_options, "GET", None),
+                        (
+                            "agreement-confirm-denied",
+                            api_agreement,
+                            "POST",
+                            {"agreementId": agreement_id},
+                        ),
+                        ("activation-denied", api_activation, "POST", {}),
+                    ):
+                        result = api_request(page, path, method=method, body=body)
+                        require(
+                            result["status"] == 403,
+                            f"{role}: {assertion} expected 403, got {result}",
+                        )
+                        record(evidence, role, assertion, result)
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "01-read-only-auditor.png"),
                         full_page=True,
                     )
 
                 role = "cross_tenant_operator"
-                with authenticated_page(browser, role) as page:
-                    own_list = page.goto(
-                        BASE_URL + "/hr/external-teachers/hiring/",
-                        wait_until="domcontentloaded",
-                    )
-                    require(
-                        own_list is not None and own_list.status == 200,
-                        f"{role}: own-tenant workspace failed",
-                    )
-                    detail = api_request(page, api_detail)
-                    require(
-                        detail["status"] == 404,
-                        f"{role}: cross-tenant detail must be 404, got {detail}",
-                    )
-                    record(evidence, role, "detail-concealed", detail)
-                    options = api_request(page, api_options)
-                    require(
-                        options["status"] == 404,
-                        f"{role}: cross-tenant options must be 404, got {options}",
-                    )
-                    record(evidence, role, "agreement-options-concealed", options)
-                    confirm = api_request(
-                        page,
-                        api_agreement,
-                        method="POST",
-                        body={"agreementId": agreement_id},
-                    )
-                    require(
-                        confirm["status"] == 404,
-                        f"{role}: cross-tenant confirm must be 404, got {confirm}",
-                    )
-                    record(evidence, role, "agreement-confirm-concealed", confirm)
-                    activate = api_request(
-                        page,
-                        api_activation,
-                        method="POST",
-                        body={},
-                    )
-                    require(
-                        activate["status"] == 404,
-                        f"{role}: cross-tenant activate must be 404, got {activate}",
-                    )
-                    record(evidence, role, "activation-concealed", activate)
+                with authenticated_page(browser, role, list_path) as page:
+                    for assertion, path, method, body in (
+                        ("detail-concealed", api_detail, "GET", None),
+                        ("agreement-options-concealed", api_options, "GET", None),
+                        (
+                            "agreement-confirm-concealed",
+                            api_agreement,
+                            "POST",
+                            {"agreementId": agreement_id},
+                        ),
+                        ("activation-concealed", api_activation, "POST", {}),
+                    ):
+                        result = api_request(page, path, method=method, body=body)
+                        require(
+                            result["status"] == 404,
+                            f"{role}: {assertion} expected 404, got {result}",
+                        )
+                        record(evidence, role, assertion, result)
                     html_response = page.goto(
                         BASE_URL + detail_path,
                         wait_until="domcontentloaded",
@@ -272,42 +239,30 @@ def main() -> None:
                     )
 
                 role = "agreement_approver"
-                with authenticated_page(browser, role) as page:
-                    response = page.goto(
-                        BASE_URL + detail_path,
-                        wait_until="domcontentloaded",
-                    )
-                    require(
-                        response is not None and response.status == 200,
-                        f"{role}: detail page failed",
-                    )
+                with authenticated_page(browser, role, detail_path) as page:
                     page.wait_for_selector(
                         '[data-agreement-workspace]'
                         '[data-case-status="WAITING_AGREEMENT"]',
                         timeout=10000,
                     )
-                    page.wait_for_selector("[data-agreement-form]", timeout=10000)
-                    page.locator(
-                        '[data-agreement-form] select[name="agreementId"]'
-                    ).select_option(agreement_id)
+                    form = page.locator("[data-agreement-form]")
+                    form.wait_for(state="visible", timeout=10000)
+                    form.locator('select[name="agreementId"]').select_option(
+                        agreement_id
+                    )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "03-approver-before-confirm.png"),
                         full_page=True,
                     )
                     with page.expect_response(
-                        lambda api_response: (
-                            api_agreement in api_response.url
-                            and api_response.request.method == "POST"
-                        )
+                        lambda response: api_agreement in response.url
+                        and response.request.method == "POST"
                     ) as response_info:
-                        page.locator(
-                            '[data-agreement-form] button[type="submit"]'
-                        ).click()
-                    confirmed_response = response_info.value
+                        form.locator('button[type="submit"]').click()
+                    confirmed = response_info.value
                     require(
-                        confirmed_response.status == 200,
-                        f"{role}: agreement confirm HTTP "
-                        f"{confirmed_response.status}",
+                        confirmed.status == 200,
+                        f"{role}: agreement confirmation HTTP {confirmed.status}",
                     )
                     page.wait_for_selector(
                         '[data-agreement-workspace]'
@@ -318,31 +273,26 @@ def main() -> None:
                         evidence,
                         role,
                         "agreement-confirmed",
-                        {"status": confirmed_response.status},
+                        {"status": confirmed.status},
                     )
-                    denied_activation = api_request(
+                    denied = api_request(
                         page,
                         api_activation,
                         method="POST",
                         body={},
                     )
                     require(
-                        denied_activation["status"] == 403,
-                        f"{role}: activation must be 403, got {denied_activation}",
+                        denied["status"] == 403,
+                        f"{role}: activation expected 403, got {denied}",
                     )
-                    record(
-                        evidence,
-                        role,
-                        "activation-denied",
-                        denied_activation,
-                    )
+                    record(evidence, role, "activation-denied", denied)
                     require(
                         page.get_by_role(
                             "button",
                             name="正式激活聘期",
                         ).count()
                         == 0,
-                        f"{role}: activation button must not be rendered",
+                        f"{role}: activation control must not be rendered",
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "04-approver-ready.png"),
@@ -350,37 +300,23 @@ def main() -> None:
                     )
 
                 role = "activation_operator"
-                with authenticated_page(browser, role) as page:
-                    response = page.goto(
-                        BASE_URL + detail_path,
-                        wait_until="domcontentloaded",
-                    )
-                    require(
-                        response is not None and response.status == 200,
-                        f"{role}: detail page failed",
-                    )
+                with authenticated_page(browser, role, detail_path) as page:
                     page.wait_for_selector(
                         '[data-agreement-workspace]'
                         '[data-case-status="READY_TO_ACTIVATE"]',
                         timeout=10000,
                     )
-                    denied_confirm = api_request(
+                    denied = api_request(
                         page,
                         api_agreement,
                         method="POST",
                         body={"agreementId": agreement_id},
                     )
                     require(
-                        denied_confirm["status"] == 403,
-                        f"{role}: agreement confirmation must be 403, got "
-                        f"{denied_confirm}",
+                        denied["status"] == 403,
+                        f"{role}: agreement confirmation expected 403, got {denied}",
                     )
-                    record(
-                        evidence,
-                        role,
-                        "agreement-confirm-denied",
-                        denied_confirm,
-                    )
+                    record(evidence, role, "agreement-confirm-denied", denied)
                     activation_button = page.get_by_role(
                         "button",
                         name="正式激活聘期",
@@ -391,16 +327,14 @@ def main() -> None:
                         full_page=True,
                     )
                     with page.expect_response(
-                        lambda api_response: (
-                            api_activation in api_response.url
-                            and api_response.request.method == "POST"
-                        )
+                        lambda response: api_activation in response.url
+                        and response.request.method == "POST"
                     ) as response_info:
                         activation_button.click()
-                    activated_response = response_info.value
+                    activated = response_info.value
                     require(
-                        activated_response.status == 200,
-                        f"{role}: activation HTTP {activated_response.status}",
+                        activated.status == 200,
+                        f"{role}: activation HTTP {activated.status}",
                     )
                     page.wait_for_selector(
                         '[data-agreement-workspace]'
@@ -411,7 +345,7 @@ def main() -> None:
                         evidence,
                         role,
                         "engagement-activated",
-                        {"status": activated_response.status},
+                        {"status": activated.status},
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "06-activated.png"),
