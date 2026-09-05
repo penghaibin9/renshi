@@ -147,6 +147,7 @@ jobs:
                                    'base.test_school_management',
                                    'hr_staff.tests.test_import_workbook',
                                    'hr_staff.tests.test_import_hr02',
+                                   'hr_staff.tests.test_staff_list_readback',
                                    'hr_staff.tests.test_imports',
                                    'hr_staff.tests.test_round4_export_import',
                                    'hr_staff.tests.test_production_closure',
