@@ -6,6 +6,7 @@
             action="{% url 'save_date_format' %}"
             method="post"
             data-settings-form="date"
+            data-settings-native="true"
         >
             {% csrf_token %}
             <div class="flex space-x-2 pb-1">
@@ -69,6 +70,7 @@
             action="{% url 'save_time_format' %}"
             method="post"
             data-settings-form="time"
+            data-settings-native="true"
         >
             {% csrf_token %}
             <div class="flex space-x-2 pb-1">
