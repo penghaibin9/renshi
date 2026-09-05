@@ -1,5 +1,8 @@
+import uuid
+
 from django.contrib.auth.views import redirect_to_login
 from django.http import JsonResponse
+from django.utils import timezone
 
 from base.auth_backends import company_scoped_active, get_allowed_company_ids
 from base.context_processors import AllCompany
@@ -47,6 +50,30 @@ def _reset_to_all_scope(request):
     set_selected_company("all")
 
 
+def _tenant_selection_denied():
+    """Reject before dispatch without breaking the canonical API error contract.
+
+    Keep the legacy detail for HTML clients. API clients must still receive the
+    machine-readable TENANT_CONTEXT_REQUIRED code when the shared preflight
+    stops a request before its module callback can construct the error envelope.
+    No selected school ID, permissions or submitted values are reflected.
+    """
+    message = "Select an authorized school before continuing."
+    response = JsonResponse(
+        {
+            "apiVersion": "1",
+            "schemaVersion": "1.0",
+            "requestId": uuid.uuid4().hex,
+            "generatedAt": timezone.now().isoformat(),
+            "error": {"code": "TENANT_CONTEXT_REQUIRED", "message": message, "details": None},
+            "detail": message,
+        },
+        status=403,
+    )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 class SafeCompanyMiddleware(LegacyCompanyMiddleware):
     """A school account can exist before the first personnel record.
 
@@ -74,10 +101,7 @@ class SafeCompanyMiddleware(LegacyCompanyMiddleware):
                     token = set_selected_company(None)
                     try:
                         _reset_to_all_scope(request)
-                        return JsonResponse(
-                            {"detail": "Select an authorized school before continuing."},
-                            status=403,
-                        )
+                        return _tenant_selection_denied()
                     finally:
                         current_company_id.reset(token)
         return super().__call__(request)

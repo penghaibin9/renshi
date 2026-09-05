@@ -130,6 +130,8 @@ jobs:
                                    'base.test_school_management',
                                    'base.test_account_bootstrap',
                                    'base.test_legacy_initialization_boundary',
+                                   'base.test_tenant_selection_envelope',
+                                   'hr_time.tests.test_s1.HrTimeS1TenantFailClosedTests.test_invalid_company_id_fail_closed',
                                    'base.test_settings_runtime_contract',
                                    'base.test_settings_center_contract',
                                    'platform_access', '--keepdb', '--noinput', '--verbosity', '2']),

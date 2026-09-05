@@ -2,8 +2,8 @@
 
 日期：2026-09-05。仓库：`penghaibin9/renshi`。只在 PR #53 的
 `fix/production-readiness-20260904` 施工，不合并、不改学生仓库。
-本轮续施工父提交：`32ba6e80191dba6343f14a2dbb65ab21a7cac180`。
-验证使用的旧 PR 合并快照：`ae496cad7a2e73dd450db5a4dac36aeda58ef302`；两者文件差异为空。
+本轮续施工父提交：`f3be6fb1e76c87092c2aeb76f61ba8dd2eb41d10`。
+该父提交实际测试快照：`7843ad6a3ccede964044ebe2d6e77489ad1e1ebe`；后续修复必须重跑。
 本文件不覆盖 CURRENT_STATE / CORE_BUSINESS_FLOW_ACCEPTANCE 的发布门禁。
 
 ## 已写入的代码
@@ -132,6 +132,26 @@ MySQL 封存必须以新提交的 Actions 输出为准；代码写入不等于�
 首管邀请、改密、MFA、组织岗位生效、教职工导入和角色审批完整业务仍待验收。
 学生仓库和跨产品开户编排未修改，发布签字仍 PENDING。
 
+旧安装入口封闭提交 `f3be6fb1e76c87092c2aeb76f61ba8dd2eb41d10` 的运行
+`33962599361` 已成功，实际测试快照 `7843ad6a3ccede964044ebe2d6e77489ad1e1ebe`：
+77 项 Django 测试全部通过，其中包含上述 4 类身份的 80 次旧入口 GET/POST
+与数据库不变性校验；18 条真实浏览器断言和独立 MySQL 封存再次全部通过。
+不把本次封闭结果当作尚未实现的首管邀请或自动开通服务。
+
+### 同轮全量回归发现：拒绝规则正确，接口错误格式不完整
+
+`0672359` 的 Quality 运行 `33961727960` 执行了 3260 项注册测试，3259 项
+通过，唯一错误是 `hr_time.tests.test_s1...test_invalid_company_id_fail_closed`。
+新学校中间件在业务函数之前正确返回 403，但只有 `detail`，导致业务客户端
+无法读取既定 `error.code = TENANT_CONTEXT_REQUIRED`。
+
+补齐共用拒绝响应的错误码、错误消息、版本、请求标识、生成时间和 no-store；
+保留 detail 兼容旧页面，仍在业务调用之前拒绝，不放行外校，不自动换学校。
+新增 `base.test_tenant_selection_envelope` 的 2 项中间件响应/ContextVar 回归，
+本地 10 项实际函数隔离检查通过；在学校初始化门直接纳入原 HR11 失败
+用例；不修改、更不删除原 HR11 测试。这是公共边界修复，不扩展考勤业务。
+当前新增结果仍须绑定后续提交实际 CI，不把前一提交的绿灯移用。
+
 ## 前一轮离线证据边界
 
 本地执行：Python 语法编译；24 项隔离函数逻辑检查；系统 Chromium 在
@@ -146,7 +166,7 @@ MySQL 封存必须以新提交的 Actions 输出为准；代码写入不等于�
 已有环境完成迁移后，应在隔离 MySQL 测试库执行：
 
 ```sh
-python manage.py test base.test_school_management base.test_account_bootstrap base.test_legacy_initialization_boundary base.test_settings_runtime_contract base.test_settings_center_contract platform_access --keepdb --noinput --verbosity 2
+python manage.py test base.test_school_management base.test_account_bootstrap base.test_legacy_initialization_boundary base.test_tenant_selection_envelope hr_time.tests.test_s1.HrTimeS1TenantFailClosedTests.test_invalid_company_id_fail_closed base.test_settings_runtime_contract base.test_settings_center_contract platform_access --keepdb --noinput --verbosity 2
 ```
 
 本命令必须遵循既有 CI 测试库创建/迁移约定；不要指向生产业务库。
