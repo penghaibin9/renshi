@@ -3,13 +3,14 @@
 Three ordinary, company-scoped users are exercised in isolated browser
 contexts:
 
-* School A settings administrator clicks the real top-right gear and persists
-  pagination, date and time preferences.
+* School A settings administrator clicks the real top-right gear, persists
+  display preferences, opens the company table, edits the selected school and
+  proves that the saved profile survives a server reload.
 * School A teacher has no gear and all direct settings writes fail closed.
-* School B settings administrator persists different values and cannot address
-  School A's company form.
+* School B settings administrator persists different values, sees only School B
+  and cannot address either School A company-edit URL.
 
-The workflow companion performs the final MySQL readback.  This browser harness
+The workflow companion performs the final MySQL readback. This browser harness
 never uses ``force_login``, superuser privileges, shared cookies, or direct ORM
 writes after the server starts.
 """
@@ -39,6 +40,7 @@ SEED_PATH = ARTIFACT_DIR / "seed.json"
 BUSINESS_PATH = "/hr/external-teachers/hiring/"
 SETTINGS_ROOT = "/settings/"
 SYSTEM_PREFERENCES_PATH = "/settings/system-preferences-view/"
+COMPANY_SETTINGS_PATH = "/settings/company-view/"
 
 ROLE_CREDENTIALS = {
     "school_a_admin": (
@@ -83,17 +85,21 @@ def api_request(
     *,
     method: str = "GET",
     body: dict[str, str] | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict:
     """Call a same-origin settings endpoint with the browser's real CSRF token."""
 
     return page.evaluate(
-        """async ({path, method, body}) => {
+        """async ({path, method, body, extraHeaders}) => {
           const cookie = (name) => document.cookie
             .split(';')
             .map((item) => item.trim())
             .find((item) => item.startsWith(`${name}=`))
             ?.slice(name.length + 1) || '';
-          const headers = {'X-Requested-With': 'XMLHttpRequest'};
+          const headers = {
+            'X-Requested-With': 'XMLHttpRequest',
+            ...(extraHeaders || {})
+          };
           let encodedBody = undefined;
           if (method !== 'GET') {
             headers['X-CSRFToken'] = decodeURIComponent(cookie('csrftoken'));
@@ -111,7 +117,12 @@ def api_request(
           try { payload = JSON.parse(text); } catch (_error) {}
           return {status: response.status, payload, text};
         }""",
-        {"path": path, "method": method, "body": body},
+        {
+            "path": path,
+            "method": method,
+            "body": body,
+            "extraHeaders": extra_headers,
+        },
     )
 
 
@@ -328,7 +339,7 @@ def click_company_settings(
     expected_company: str,
     forbidden_company: str,
 ) -> None:
-    link = page.locator('.accordion-panel a[href="/settings/company-view/"]')
+    link = page.locator(f'.accordion-panel a[href="{COMPANY_SETTINGS_PATH}"]')
     require(link.count() == 1, f"{role}: company settings link is missing")
     panel = link.locator("xpath=ancestor::div[contains(@class, 'accordion-panel')]")
     if not link.is_visible():
@@ -336,14 +347,17 @@ def click_company_settings(
     link.wait_for(state="visible", timeout=5000)
     with page.expect_response(
         lambda response: (
-            "/settings/company-view/" in response.url
+            COMPANY_SETTINGS_PATH in response.url
             and response.request.method == "GET"
         )
     ) as response_info:
         link.click()
     response = response_info.value
     require(response.status == 200, f"{role}: company settings HTTP {response.status}")
-    page.wait_for_timeout(700)
+    page.locator("#listContainer tr[data-instance-id]").wait_for(
+        state="visible",
+        timeout=15000,
+    )
     container_text = page.locator("#settingsContainer").inner_text()
     require(
         expected_company in container_text,
@@ -353,12 +367,109 @@ def click_company_settings(
         forbidden_company not in container_text,
         f"{role}: other tenant leaked into company settings",
     )
+    require(
+        page.locator("#listContainer tr[data-instance-id]").count() == 1,
+        f"{role}: company table must contain exactly the selected school",
+    )
     record(
         evidence,
         role=role,
         assertion="company-settings-scoped-to-selected-school",
         status=response.status,
         detail=expected_company,
+    )
+
+
+def edit_company_profile(
+    page: Page,
+    role: str,
+    evidence: list[dict],
+    *,
+    company_id: int,
+    updated_name: str,
+    updated_address: str,
+) -> None:
+    edit_url = f"/settings/company-update/{company_id}/"
+    edit = page.locator(f'[hx-get="{edit_url}"]')
+    require(edit.count() == 1, f"{role}: selected-school edit action is missing")
+    require(edit.is_visible(), f"{role}: selected-school edit action is hidden")
+    with page.expect_response(
+        lambda response: edit_url in response.url
+        and response.request.method == "GET"
+    ) as form_info:
+        edit.click()
+    form_response = form_info.value
+    require(
+        form_response.status == 200,
+        f"{role}: company edit form HTTP {form_response.status}",
+    )
+
+    form = page.locator(f'form[hx-post="{edit_url}"]')
+    form.wait_for(state="visible", timeout=10000)
+    form.locator('[name="company"]').fill(updated_name)
+    form.locator('[name="address"]').fill(updated_address)
+    form.locator('[name="city"]').fill("Changsha")
+    form.locator('[name="zip"]').fill("410000")
+    page.wait_for_function(
+        """() => {
+          const form = document.querySelector('#genericModalBody form');
+          if (!form) return false;
+          const country = form.querySelector('select[name="country"]');
+          const state = form.querySelector('select[name="state"]');
+          return Boolean(country && country.value && state && state.value);
+        }""",
+        timeout=10000,
+    )
+
+    page.screenshot(
+        path=str(ARTIFACT_DIR / "02a-school-a-company-before-save.png"),
+        full_page=True,
+    )
+    with page.expect_response(
+        lambda response: edit_url in response.url
+        and response.request.method == "POST"
+    ) as save_info:
+        form.locator('button[type="submit"]').click()
+    save_response = save_info.value
+    headers = save_response.headers
+    require(
+        save_response.status == 200 and bool(headers.get("hx-redirect")),
+        f"{role}: company save did not return a successful HX redirect "
+        f"(status={save_response.status}, headers={headers})",
+    )
+    record(
+        evidence,
+        role=role,
+        assertion="company-profile-saved-from-ui",
+        status=save_response.status,
+        detail={"company": updated_name, "address": updated_address},
+    )
+
+    response = page.goto(
+        BASE_URL + SYSTEM_PREFERENCES_PATH,
+        wait_until="domcontentloaded",
+    )
+    require(
+        response is not None and response.status == 200,
+        f"{role}: preferences reload after company save failed",
+    )
+    click_company_settings(
+        page,
+        role,
+        evidence,
+        expected_company=updated_name,
+        forbidden_company="__no_other_company_expected__",
+    )
+    require(
+        updated_address in page.locator("#settingsContainer").inner_text(),
+        f"{role}: updated school address did not survive reload",
+    )
+    record(
+        evidence,
+        role=role,
+        assertion="company-profile-reloaded-from-server",
+        status=200,
+        detail=updated_name,
     )
 
 
@@ -393,6 +504,14 @@ def main() -> None:
                         evidence,
                         expected_company=seed["school_a_name"],
                         forbidden_company=seed["school_b_name"],
+                    )
+                    edit_company_profile(
+                        page,
+                        role,
+                        evidence,
+                        company_id=seed["school_a_id"],
+                        updated_name=seed["school_a_updated_name"],
+                        updated_address=seed["school_a_updated_address"],
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "02-school-a-company.png"),
@@ -440,11 +559,19 @@ def main() -> None:
                         status=preferences.status,
                     )
                     for assertion, path, value in (
-                        ("pagination-write-denied", "/settings/pagination-settings-view/", "99"),
+                        (
+                            "pagination-write-denied",
+                            "/settings/pagination-settings-view/",
+                            "99",
+                        ),
                         ("date-write-denied", "/settings/save-date/", "MM/DD/YYYY"),
                         ("time-write-denied", "/settings/save-time/", "hh:mm A"),
                     ):
-                        key = "pagination" if "pagination" in assertion else "selected_format"
+                        key = (
+                            "pagination"
+                            if "pagination" in assertion
+                            else "selected_format"
+                        )
                         result = api_request(
                             page,
                             path,
@@ -461,6 +588,21 @@ def main() -> None:
                             assertion=assertion,
                             status=result["status"],
                         )
+                    company_list = api_request(
+                        page,
+                        "/company-list/",
+                        extra_headers={"HX-Request": "true"},
+                    )
+                    require(
+                        company_list["status"] == 403,
+                        f"{role}: company list expected 403, got {company_list}",
+                    )
+                    record(
+                        evidence,
+                        role=role,
+                        assertion="company-list-denied",
+                        status=company_list["status"],
+                    )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "03-teacher-denied.png"),
                         full_page=True,
@@ -477,27 +619,37 @@ def main() -> None:
                         date_format="DD/MM/YYYY",
                         time_format="hh:mm A",
                     )
-                    cross_tenant = page.goto(
-                        BASE_URL
-                        + f"/settings/company-update/{seed['school_a_id']}/",
-                        wait_until="domcontentloaded",
-                    )
-                    require(
-                        cross_tenant is not None and cross_tenant.status == 404,
-                        f"{role}: cross-tenant company form expected 404",
-                    )
-                    record(
-                        evidence,
-                        role=role,
-                        assertion="cross-tenant-company-form-concealed",
-                        status=cross_tenant.status,
-                    )
+                    for assertion, path in (
+                        (
+                            "cross-tenant-company-form-concealed",
+                            f"/settings/company-update/{seed['school_a_id']}/",
+                        ),
+                        (
+                            "cross-tenant-legacy-company-form-concealed",
+                            f"/company-update-form/{seed['school_a_id']}/",
+                        ),
+                    ):
+                        cross_tenant = page.goto(
+                            BASE_URL + path,
+                            wait_until="domcontentloaded",
+                        )
+                        require(
+                            cross_tenant is not None and cross_tenant.status == 404,
+                            f"{role}: {assertion} expected 404",
+                        )
+                        record(
+                            evidence,
+                            role=role,
+                            assertion=assertion,
+                            status=cross_tenant.status,
+                        )
                     own_preferences = page.goto(
                         BASE_URL + SYSTEM_PREFERENCES_PATH,
                         wait_until="domcontentloaded",
                     )
                     require(
-                        own_preferences is not None and own_preferences.status == 200,
+                        own_preferences is not None
+                        and own_preferences.status == 200,
                         f"{role}: own preferences failed after concealment check",
                     )
                     click_company_settings(
@@ -505,7 +657,7 @@ def main() -> None:
                         role,
                         evidence,
                         expected_company=seed["school_b_name"],
-                        forbidden_company=seed["school_a_name"],
+                        forbidden_company=seed["school_a_updated_name"],
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "04-school-b-company.png"),
