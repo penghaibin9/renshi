@@ -22,6 +22,11 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from base import views as legacy_views
 from base.auth_backends import get_allowed_company_ids
+from base.cbv.company import (
+    CompanyCreateForm as LegacyCompanyCreateForm,
+    CompanyListView as LegacyCompanyListView,
+    CompanyNavView as LegacyCompanyNavView,
+)
 from base.forms import CompanyForm, DynamicPaginationForm
 from base.models import Company, DynamicPagination
 from horilla.http.response import HorillaRedirect
@@ -102,7 +107,7 @@ def system_preferences_settings_view(request):
     _require_any_permission(request, SYSTEM_PREFERENCES_VIEW_PERMISSIONS)
     _selected_company(request)
     if request.method == "POST":
-        # Announcement expiry is a platform singleton.  A tenant role may view
+        # Announcement expiry is a platform singleton. A tenant role may view
         # the merged page but only the platform superuser can mutate it.
         if not request.user.is_superuser:
             raise PermissionDenied
@@ -252,6 +257,78 @@ def company_view(request):
     )
 
 
+class ScopedCompanyListView(LegacyCompanyListView):
+    """Render exactly the selected school in the HTMX company table."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # The generic row action historically used Company.get_update_url(),
+        # which points at an unscoped legacy CBV. Route edits to the locked
+        # settings handler instead. Keep tenant deletion unavailable even when
+        # a role was accidentally granted the legacy delete permission.
+        for action in self.actions:
+            attrs = str(action.get("attrs") or "")
+            if "{get_update_url}" in attrs:
+                action["attrs"] = attrs.replace(
+                    "{get_update_url}",
+                    "/settings/company-update/{pk}/",
+                )
+        if not self.request.user.is_superuser:
+            self.actions = [
+                action
+                for action in self.actions
+                if str(action.get("action") or "").lower() != str(_("Delete")).lower()
+            ]
+            self.bulk_update = False
+
+    def get_queryset(self, queryset=None, filtered=False, *args, **kwargs):
+        selected = _selected_company(self.request)
+        scoped = Company.objects.filter(id=selected.id)
+        return super().get_queryset(
+            queryset=scoped,
+            filtered=filtered,
+            *args,
+            **kwargs,
+        )
+
+
+class ScopedCompanyNavView(LegacyCompanyNavView):
+    """Keep tenant admins from creating additional SaaS tenants."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        _selected_company(self.request)
+        if not self.request.user.is_superuser:
+            self.create_attrs = ""
+
+
+@login_required
+@require_GET
+def company_list(request, *args, **kwargs):
+    _require_permission(request, "base.view_company")
+    _selected_company(request)
+    return ScopedCompanyListView.as_view()(request, *args, **kwargs)
+
+
+@login_required
+@require_GET
+def company_navbar(request, *args, **kwargs):
+    _require_permission(request, "base.view_company")
+    _selected_company(request)
+    return ScopedCompanyNavView.as_view()(request, *args, **kwargs)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def company_create_form(request, *args, **kwargs):
+    """Tenant creation is a platform operation, never a school setting."""
+
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    _require_permission(request, "base.add_company")
+    return LegacyCompanyCreateForm.as_view()(request, *args, **kwargs)
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def company_update(request, id, **kwargs):
@@ -278,3 +355,11 @@ def company_update(request, id, **kwargs):
         "base/company/company_form.html",
         {"form": form, "company": company},
     )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def company_update_form(request, pk, **kwargs):
+    """Compatibility alias for row actions; retain the locked update path."""
+
+    return company_update(request, id=pk, **kwargs)
