@@ -125,10 +125,13 @@ class AssignmentService:
                 "EFFECTIVE_DATE_INVALID", "effective_to 必须晚于 effective_from"
             )
         self._assert_relationship_tenant(employment_relationship_id)  # P1-6
+        self.policy.validate_cross_tenant_ref(organization_id=organization_id, position_id=position_id)
+        if position_id is not None:
+            from hr_structure.models import HrPosition
+            position_id = HrPosition.objects.select_for_update().get(
+                tenant_id=self.tenant_id, pk=position_id.pk
+            )
         self.policy.validate_fte(fte)
-        self.policy.validate_cross_tenant_ref(
-            organization_id=organization_id, position_id=position_id
-        )
         # 权威组织/岗位必须 as_of 有效；无权威引用则必须给 legacy 映射（LEGACY_CURRENT_SNAPSHOT 预览）
         if organization_id is None and legacy_department_id is None:
             raise AssignmentPolicyViolation(
@@ -231,10 +234,13 @@ class AssignmentService:
         source_business_id: str = "",
     ) -> HrStaffAssignment:
         self._assert_relationship_tenant(employment_relationship_id)  # P1-6
+        self.policy.validate_cross_tenant_ref(organization_id=organization_id, position_id=position_id)
+        if position_id is not None:
+            from hr_structure.models import HrPosition
+            position_id = HrPosition.objects.select_for_update().get(
+                tenant_id=self.tenant_id, pk=position_id.pk
+            )
         self.policy.validate_fte(fte)
-        self.policy.validate_cross_tenant_ref(
-            organization_id=organization_id, position_id=position_id
-        )
         if organization_id is None and legacy_department_id is None:
             raise AssignmentPolicyViolation(
                 "ORG_MAPPING_MISSING", "任职必须绑定 HR02 组织或 legacy 映射"

@@ -28,6 +28,8 @@ from hr_staff.api import staff as staff_api
 from hr_staff.api import profile as profile_api
 
 urlpatterns = [
+    path("api/hr/v1/staff/import/template", imports_api.import_template, name="hr03-api-staff-import-template"),
+    path("api/hr/v1/staff/import/<uuid:job_id>/errors", imports_api.import_errors, name="hr03-api-staff-import-errors"),
     path(
         "api/hr/v1/staff/contract",
         api_views.contract_probe,

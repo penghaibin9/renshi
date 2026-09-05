@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr03-page" data-module="HR03" data-section="roster">
+<div class="hr-v2-page hr03-page" data-module="HR03" data-section="roster" data-tenant-id="{{ tenant_id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR03 教职工主档</span>
     <strong>教职工名册</strong>
@@ -36,7 +36,7 @@
 
   <div class="hr03-actions" aria-label="名册操作">
     <a class="btn primary" href="/hr/onboarding/">入职建档</a>
-    <button class="btn" type="button" id="importToggle">批量导入</button>
+    <button class="btn" type="button" id="importToggle" {% if not can_import_staff %}disabled title="需要学校级人员导入权限"{% endif %}>批量导入</button>
     <button class="btn" type="button" id="exportCurrent">导出当前页</button>
   </div>
 
@@ -46,17 +46,21 @@
     <div class="hr-v2-panel__head">
       <div>
         <h3 id="hr03-import-title">批量导入教职工</h3>
-        <p>先上传 CSV 到校验区，确认有效行与错误行后再正式提交。单次最多 5000 行、5 MB；身份证明等敏感字段不会在错误提示中回显。</p>
+        <p>先下载带本校组织岗位参考的 xlsx 模板，再上传预检，核对有效行后明确提交。单次最多 5000 行、5 MB；新招聘请走入职建档，此处仅导入已核验在职教职工，不创建登录账号。</p>
       </div>
     </div>
     <div class="hr03-import-actions">
-      <div class="hr03-import-file"><input type="file" id="importFile" accept=".csv,text/csv"></div>
+      <div class="hr03-import-file"><input type="file" id="importFile" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" aria-label="选择人员导入文件"></div>
       <button class="btn primary" type="button" id="importValidate">上传并校验</button>
       <button class="btn" type="button" id="importCommit" disabled>确认提交有效行</button>
-      <button class="btn" type="button" id="downloadTemplate">下载 CSV 模板</button>
+      <button class="btn" type="button" id="downloadTemplate">下载 xlsx 模板</button>
+      <button class="btn" type="button" id="downloadImportErrors" disabled>下载错误清单</button>
+      <button class="btn" type="button" id="refreshImport" disabled>重新读取任务</button>
       <button class="btn" type="button" id="importClose">关闭</button>
     </div>
-    <div id="importSummary" class="hr03-import-summary"></div>
+    <div id="importSummary" class="hr03-import-summary" role="status" aria-live="polite"></div>
+    <label><input type="checkbox" id="importConfirmed" disabled> 我已核对预检结果，确认只提交有效行。错误行不写入正式档案。</label>
+    <p class="hr-meta">错误清单按原始文件行号定位。请在原文件修正失败行后重新上传，不要把错误清单作为导入文件。预检后仍会重新检查岗位容量和版本。</p>
     <ol id="importIssues" class="hr03-issue-list"></ol>
   </section>
 
@@ -152,7 +156,8 @@
     let currentImportJobId = null;
     const pageSize = 50;
     const statusLabels = {ACTIVE:["在职","active"],PENDING_ENTRY:["待入职","pending"],DEPARTED:["已离职","departed"],RETIRED:["已退休","retired"]};
-    const importColumns = ["staff_no","legal_name","gender_code","birth_date","document_number","staff_category_code","relationship_type","effective_from","legacy_department_id"];
+    let importBusy = false;
+    let importState = null;
 
     function escapeHtml(s) {
       return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -266,73 +271,105 @@
       }
     }
 
-    async function validateImport() {
-      const file = document.getElementById("importFile").files[0];
-      if (!file) { showNotice("请选择 CSV 文件。", "error"); return; }
-      const button = document.getElementById("importValidate");
-      button.disabled = true;
-      currentImportJobId = null;
-      document.getElementById("importCommit").disabled = true;
-      document.getElementById("importIssues").innerHTML = "";
+    function importControls() {
+      const ready = importState?.status === "READY_TO_COMMIT" && importState?.validRows > 0;
+      document.getElementById("importFile").disabled = importBusy;
+      document.getElementById("importValidate").disabled = importBusy;
+      document.getElementById("importConfirmed").disabled = importBusy || !ready;
+      document.getElementById("importCommit").disabled = importBusy || !ready || !document.getElementById("importConfirmed").checked;
+      document.getElementById("downloadImportErrors").disabled = importBusy || !currentImportJobId || !importState?.issueCount;
+      document.getElementById("refreshImport").disabled = importBusy || !currentImportJobId;
+    }
+
+    function rememberImport(jobId) {
+      const url = new URL(location.href);
+      if (jobId) url.searchParams.set("importJob", jobId); else url.searchParams.delete("importJob");
+      history.replaceState(null, "", url);
+    }
+
+    function renderImport(data) {
+      importState = data;
+      currentImportJobId = data.jobId;
+      document.getElementById("importConfirmed").checked = false;
+      const terminal = ["COMPLETED", "PARTIAL_FAILED"].includes(data.status);
+      const labels = {READY_TO_COMMIT: data.committedRows ? "已分段保存，请核对后继续提交剩余有效行" : "预检完成，尚未写入正式人事数据", VALIDATION_FAILED:"没有可提交的有效行，请修正后重新上传", COMMITTING:"正在提交，请读取任务状态，不要重复上传", COMPLETED:"正式提交完成", PARTIAL_FAILED:"部分行未写入，请下载错误清单核对"};
+      document.getElementById("importSummary").textContent = `${labels[data.status] || data.status}。共 ${data.totalRows} 行；${terminal ? "已成功" : "预检有效"} ${terminal ? data.committedRows : data.validRows} 行；已保存 ${data.committedRows || 0} 行，待提交 ${data.pendingRows || 0} 行；失败 ${data.failedRows} 行。任务编号：${data.jobId}`;
+      document.getElementById("importIssues").innerHTML = (data.issues || []).map(issue => `<li>第 ${escapeHtml(issue.rowNo)} 行 · ${escapeHtml(issue.field || "整行")}: ${escapeHtml(issue.error)}</li>`).join("");
+      if (data.issueCount > (data.issues || []).length) {
+        const item = document.createElement("li"); item.textContent = `页面显示前 50 项；共 ${data.issueCount} 项，请下载完整错误清单。`;
+        document.getElementById("importIssues").appendChild(item);
+      }
+      document.getElementById("importCommit").textContent = data.committedRows && data.pendingRows ? "继续提交剩余有效行" : "提交有效行";
+      importControls();
+    }
+
+    async function readImportStatus() {
+      if (!currentImportJobId || importBusy) return;
+      const target = currentImportJobId;
+      importBusy = true; importControls();
       try {
-        const form = new FormData();
-        form.append("file", file);
-        const resp = await fetch("/api/hr/v1/staff/import", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {"X-CSRFToken": csrfToken(), "X-Requested-With":"XMLHttpRequest"},
-          body: form
-        });
+        const resp = await fetch(`/api/hr/v1/staff/import/${encodeURIComponent(target)}`, {credentials:"same-origin"});
+        const body = await parseJson(resp);
+        if (!resp.ok) throw new Error(apiMessage(body, `读取任务失败（${resp.status}）`));
+        if (target === currentImportJobId) renderImport(body.data);
+      } catch (err) { showNotice(err.message || "任务暂不可读取", "error"); }
+      finally { importBusy = false; importControls(); }
+    }
+
+    async function validateImport() {
+      if (importBusy) return;
+      const file = document.getElementById("importFile").files[0];
+      if (!file) { showNotice("请选择 xlsx 或 UTF-8 CSV 文件。", "error"); return; }
+      if (file.size > 5 * 1024 * 1024) { showNotice("文件不能超过 5 MB。", "error"); return; }
+      importBusy = true; currentImportJobId = null; importState = null;
+      rememberImport(null); importControls();
+      document.getElementById("importIssues").textContent = "";
+      document.getElementById("importSummary").textContent = "正在预检，尚未写入正式档案…";
+      try {
+        const form = new FormData(); form.append("file", file);
+        const resp = await fetch("/api/hr/v1/staff/import", {method:"POST", credentials:"same-origin", headers:{"X-CSRFToken":csrfToken(),"X-Requested-With":"XMLHttpRequest"}, body:form});
         const body = await parseJson(resp);
         if (!resp.ok) throw new Error(apiMessage(body, `校验失败（${resp.status}）`));
-        const data = body.data || {};
-        currentImportJobId = data.jobId || null;
-        document.getElementById("importSummary").textContent = `共 ${data.totalRows ?? 0} 行；有效 ${data.validRows ?? 0} 行；错误 ${data.failedRows ?? 0} 行。当前仅在校验区，尚未写入正式人事数据。`;
-        document.getElementById("importIssues").innerHTML = (data.issues || []).map(issue => `<li>第 ${escapeHtml(issue.rowNo)} 行 · ${escapeHtml(issue.field || "整行")}: ${escapeHtml(issue.error)}</li>`).join("");
-        document.getElementById("importCommit").disabled = !currentImportJobId || !(data.validRows > 0) || data.status !== "READY_TO_COMMIT";
-        showNotice("CSV 校验完成，请核对结果后再确认提交。", data.failedRows ? "info" : "success");
+        renderImport(body.data); rememberImport(currentImportJobId);
+        showNotice("预检完成，请核对有效行及错误信息，勾选确认后再提交。", "info");
       } catch (err) {
-        document.getElementById("importSummary").textContent = "";
-        showNotice(err.message || "导入校验失败", "error");
-      } finally {
-        button.disabled = false;
-      }
+        document.getElementById("importSummary").textContent = "本次上传未完成预检，不会写入正式档案。";
+        showNotice(err.message || "导入预检失败", "error");
+      } finally { importBusy = false; importControls(); }
     }
 
     async function commitImport() {
-      if (!currentImportJobId) return;
-      const button = document.getElementById("importCommit");
-      button.disabled = true;
+      if (importBusy || !currentImportJobId || !document.getElementById("importConfirmed").checked) return;
+      importBusy = true; importControls();
       try {
         const resp = await fetch(`/api/hr/v1/staff/import/${encodeURIComponent(currentImportJobId)}/commit`, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {"X-CSRFToken": csrfToken(), "X-Requested-With":"XMLHttpRequest"}
-        });
+          method:"POST", credentials:"same-origin", headers:{"X-CSRFToken":csrfToken(),"X-Requested-With":"XMLHttpRequest"}});
         const body = await parseJson(resp);
         if (!resp.ok) throw new Error(apiMessage(body, `提交失败（${resp.status}）`));
-        const data = body.data || {};
-        document.getElementById("importSummary").textContent = `正式提交完成：成功 ${data.committed ?? 0} 行，失败 ${data.failed ?? 0} 行，共 ${data.total ?? 0} 行。`;
-        currentImportJobId = null;
-        showNotice("导入已提交，名册已重新读取正式数据。", data.failed ? "info" : "success");
+        renderImport(body.data);
+        showNotice(body.data.pendingRows ? `本段已保存。累计成功 ${body.data.committed} 行，剩余 ${body.data.pendingRows} 行，请勾选后继续提交。` : `正式提交完成：成功 ${body.data.committed} 行，失败 ${body.data.failed} 行。请核对重新读取的名册。`, body.data.failed || body.data.pendingRows ? "info" : "success");
         await loadRows(1);
       } catch (err) {
-        showNotice(err.message || "导入提交失败", "error");
-        button.disabled = false;
-      }
+        // A network failure does not prove that the server rolled back. Keep
+        // the job and require a status read before allowing another commit.
+        importState = {...(importState || {}), status:"UNKNOWN"};
+        showNotice((err.message || "提交结果暂时未知") + "。请点击重新读取任务；不要重新上传同一批人员。", "error");
+      } finally { importBusy = false; importControls(); }
+    }
+
+    async function importDownload(path, filename) {
+      try {
+        const response = await fetch(path, {credentials:"same-origin"});
+        if (!response.ok) throw new Error(apiMessage(await parseJson(response), "下载失败"));
+        const blob = await response.blob(); const url = URL.createObjectURL(blob);
+        const link = document.createElement("a"); link.href = url; link.download = filename;
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (error) { showNotice(error.message || "下载失败", "error"); }
     }
 
     function downloadTemplate() {
-      const csv = "\ufeff" + importColumns.join(",") + "\n";
-      const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "hr03_staff_import_template.csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      return importDownload("/api/hr/v1/staff/import/template", "hr03_staff_import_template.xlsx");
     }
 
     document.getElementById("searchBtn").addEventListener("click", () => loadRows(1));
@@ -345,6 +382,23 @@
     document.getElementById("importValidate").addEventListener("click", validateImport);
     document.getElementById("importCommit").addEventListener("click", commitImport);
     document.getElementById("downloadTemplate").addEventListener("click", downloadTemplate);
+    document.getElementById("importConfirmed").addEventListener("change", importControls);
+    document.getElementById("refreshImport").addEventListener("click", readImportStatus);
+    document.getElementById("downloadImportErrors").addEventListener("click", () => {
+      if (currentImportJobId) importDownload(`/api/hr/v1/staff/import/${encodeURIComponent(currentImportJobId)}/errors`, `hr03_import_errors_${currentImportJobId}.xlsx`);
+    });
+    document.getElementById("importFile").addEventListener("change", () => {
+      if (importBusy) return;
+      currentImportJobId = null; importState = null; rememberImport(null);
+      document.getElementById("importSummary").textContent = "请上传新选择的文件进行预检。";
+      document.getElementById("importIssues").textContent = ""; importControls();
+    });
+    const resumeJob = new URL(location.href).searchParams.get("importJob");
+    if (resumeJob && /^[0-9a-f-]{36}$/i.test(resumeJob) && !document.getElementById("importToggle").disabled) {
+      currentImportJobId = resumeJob;
+      document.getElementById("importPanel").classList.add("open");
+      readImportStatus();
+    }
     loadRows(1);
   })();
 </script>

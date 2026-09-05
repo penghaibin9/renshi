@@ -7,6 +7,8 @@ on:
       - '.github/workflows/school-bootstrap-contract.yml'
       - 'backend/base/**'
       - 'backend/hr_structure/**'
+      - 'backend/hr_staff/**'
+      - 'scripts/school_staff_import_*.py'
       - 'frontend/templates/hr/structure/**'
       - 'frontend/static/hr/js/structure/**'
       - 'frontend/static/hr/css/structure-setup.css'
@@ -49,8 +51,7 @@ jobs:
           mkdir -p source-context
           git rev-parse HEAD > source-context/tested-commit.txt
           printf '%s\n' "$PRODUCT_HEAD_SHA" > source-context/product-head.txt
-          # Only tracked application sources: no .git, untracked settings,
-          # runtime environments, databases, user uploads or dependency caches.
+          # Tracked source only; no .git, runtime settings, database or uploads.
           git archive --format=tar.gz --output=source-context/source.tar.gz \
             HEAD backend frontend scripts .github/workflows requirements.lock manage.py sitecustomize.py
       - uses: actions/upload-artifact@v4
@@ -62,7 +63,7 @@ jobs:
 
   school-bootstrap-mysql:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     services:
       mysql:
         image: mysql:8.4
@@ -110,6 +111,12 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/school_structure_navigation_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/navigation-contract.log
+      - name: Check import decision logic and offline workbench interactions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/school_staff_import_math_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/import-decision.log
+          python scripts/school_staff_import_offline_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/import-offline-ui.log
       - name: Prepare isolated MySQL schema
         id: runtime
         shell: bash
@@ -138,6 +145,12 @@ jobs:
                             'E9,F821,F601,F811,PLE,B012,B018,B023,B026,B035,B039,SIM220,SIM221,SIM222,SIM223']),
               ('django-tests.log', [sys.executable, 'manage.py', 'test',
                                    'base.test_school_management',
+                                   'hr_staff.tests.test_import_workbook',
+                                   'hr_staff.tests.test_import_hr02',
+                                   'hr_staff.tests.test_imports',
+                                   'hr_staff.tests.test_round4_export_import',
+                                   'hr_staff.tests.test_production_closure',
+                                   'hr_staff.tests.test_v2_roster_contract',
                                    'hr_structure.tests.test_initial_setup',
                                    'hr_structure.tests.test_position_names',
                                    'hr_structure.tests.test_position_real_occupancy',
@@ -211,8 +224,33 @@ jobs:
           test "$ready" = 1
           python scripts/school_structure_browser.py browser 2>&1 | tee tests/artifacts/school-structure-browser/browser.log
       - name: Independently seal initial HR02 structure and outbox
+        id: structure_seal
         if: ${{ !cancelled() && steps.structure_browser.outcome == 'success' }}
         run: python scripts/school_structure_browser.py seal
+      - name: Import verified personnel from the real XLSX workbench
+        id: staff_browser
+        if: ${{ !cancelled() && steps.structure_seal.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/school-staff-import-browser
+          python scripts/school_staff_import_browser.py seed 2>&1 | tee tests/artifacts/school-staff-import-browser/seed.log
+          python manage.py runserver 127.0.0.1:8000 --noreload > tests/artifacts/school-staff-import-browser/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/ready/ > tests/artifacts/school-staff-import-browser/readiness.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          python scripts/school_staff_import_browser.py browser 2>&1 | tee tests/artifacts/school-staff-import-browser/browser.log
+      - name: Independently seal personnel import and real position occupancy
+        if: ${{ !cancelled() && steps.staff_browser.outcome == 'success' }}
+        run: python scripts/school_staff_import_browser.py seal
       - name: Upload bootstrap contract and browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -222,5 +260,7 @@ jobs:
             tests/artifacts/school-bootstrap-contract/
             tests/artifacts/school-bootstrap-browser/
             tests/artifacts/school-structure-browser/
+            tests/artifacts/school-staff-import-browser/
+            tests/artifacts/school-staff-import-offline/
           if-no-files-found: error
           retention-days: 3

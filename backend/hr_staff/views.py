@@ -41,6 +41,7 @@ def staff_list(request):
         {
             "tenant_id": context.tenant_id,
             "authority_mode": context.authority_mode,
+            "can_import_staff": request.user.has_perm("hr.staff.import"),
         },
     )
 
