@@ -128,7 +128,7 @@ jobs:
               leaves,
           )
 
-          applied = MigrationRecorder(connection).applied_migrations()
+          applied = set(MigrationRecorder(connection).applied_migrations())
           assert expected_leaf in applied, (
               "HR05 exact-head migration was not recorded as applied",
               expected_leaf,
@@ -157,6 +157,9 @@ jobs:
               f"tables={sorted(required_tables)}",
           )
           PY
+          printf '%s\n' \
+            '{"stage":"hr05-migration-contract","status":"passed","leaf":"0016_material_download_ticket"}' \
+            > tests/artifacts/hr-w-a-handoff-browser/migration-contract.json
 
       - name: Seed browser identity and handoff-ready W-A hire
         shell: bash
@@ -176,7 +179,6 @@ jobs:
           username = os.environ["HR_BROWSER_USERNAME"]
           password = os.environ["HR_BROWSER_PASSWORD"]
 
-          # Match the browser user's company context to the canonical W-A tenant.
           company = Company.objects.create(
               id=TENANT,
               company="跃科 W-A 浏览器验收学校",
@@ -226,9 +228,6 @@ jobs:
               legacy_employee_id=employee.pk,
           )
 
-          # Reuse the canonical real-service fixture constructor from the W-A DB
-          # contract. Only setUp is called: no TestCase runner or test transaction
-          # wraps it, so the handoff-ready facts persist in this ephemeral MySQL.
           fixture = WAHireToStaffDatabaseChainTests(
               methodName="test_real_handoff_activation_commits_capacity_after_hr03_facts"
           )
