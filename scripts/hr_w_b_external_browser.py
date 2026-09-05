@@ -91,10 +91,7 @@ def record(evidence: list[dict], role: str, assertion: str, result: dict) -> Non
 
 
 @contextmanager
-def authenticated_page(
-    browser: Browser,
-    role: str,
-) -> Iterator[Page]:
+def authenticated_page(browser: Browser, role: str) -> Iterator[Page]:
     username, password = ROLE_CREDENTIALS[role]
     context = browser.new_context(viewport={"width": 1440, "height": 1000})
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
@@ -110,8 +107,15 @@ def authenticated_page(
         )
         page.locator("#username").fill(username)
         page.locator("#password").fill(password)
+        login_button = page.locator("button.yk-login-submit")
+        require(
+            login_button.count() == 1,
+            f"{role}: expected one visible production login control, "
+            f"got {login_button.count()}",
+        )
+        require(login_button.is_visible(), f"{role}: login control is not visible")
         with page.expect_navigation(wait_until="domcontentloaded") as login_nav:
-            page.locator("button[type='submit']").click()
+            login_button.click()
         require(
             login_nav.value is not None and login_nav.value.status < 400,
             f"{role}: login click failed",
@@ -132,9 +136,7 @@ def authenticated_page(
         raise
     finally:
         try:
-            context.tracing.stop(
-                path=str(ARTIFACT_DIR / f"trace-{role}.zip")
-            )
+            context.tracing.stop(path=str(ARTIFACT_DIR / f"trace-{role}.zip"))
         finally:
             context.close()
 
@@ -284,10 +286,7 @@ def main() -> None:
                         '[data-case-status="WAITING_AGREEMENT"]',
                         timeout=10000,
                     )
-                    page.wait_for_selector(
-                        "[data-agreement-form]",
-                        timeout=10000,
-                    )
+                    page.wait_for_selector("[data-agreement-form]", timeout=10000)
                     page.locator(
                         '[data-agreement-form] select[name="agreementId"]'
                     ).select_option(agreement_id)
@@ -296,9 +295,9 @@ def main() -> None:
                         full_page=True,
                     )
                     with page.expect_response(
-                        lambda response: (
-                            api_agreement in response.url
-                            and response.request.method == "POST"
+                        lambda api_response: (
+                            api_agreement in api_response.url
+                            and api_response.request.method == "POST"
                         )
                     ) as response_info:
                         page.locator(
@@ -329,8 +328,7 @@ def main() -> None:
                     )
                     require(
                         denied_activation["status"] == 403,
-                        f"{role}: activation must be 403, got "
-                        f"{denied_activation}",
+                        f"{role}: activation must be 403, got {denied_activation}",
                     )
                     record(
                         evidence,
@@ -393,17 +391,16 @@ def main() -> None:
                         full_page=True,
                     )
                     with page.expect_response(
-                        lambda response: (
-                            api_activation in response.url
-                            and response.request.method == "POST"
+                        lambda api_response: (
+                            api_activation in api_response.url
+                            and api_response.request.method == "POST"
                         )
                     ) as response_info:
                         activation_button.click()
                     activated_response = response_info.value
                     require(
                         activated_response.status == 200,
-                        f"{role}: activation HTTP "
-                        f"{activated_response.status}",
+                        f"{role}: activation HTTP {activated_response.status}",
                     )
                     page.wait_for_selector(
                         '[data-agreement-workspace]'
