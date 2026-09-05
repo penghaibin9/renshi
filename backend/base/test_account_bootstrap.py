@@ -5,7 +5,7 @@ password backend and sessions. No force_login or artificial Employee fixture.
 """
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
@@ -16,6 +16,7 @@ from django.urls import resolve, reverse
 
 from base import account_views, dashboard, school_management
 from base.models import Company, CompanyGroupAssignment, SetupChecklistDismissal
+from horilla import config as legacy_navigation
 from horilla.horilla_middlewares import get_selected_company, tenant_context
 
 
@@ -204,3 +205,56 @@ class SchoolAccountEntryMySQLTests(TestCase):
         with tenant_context(self.other.pk), self.assertRaises(PermissionDenied):
             dashboard.dismiss_setup_checklist(request)
         self.assertFalse(SetupChecklistDismissal.objects.exists())
+
+
+class LegacySidebarAccountBoundaryTests(SimpleTestCase):
+    """Shared context must not call personnel-only providers for school accounts."""
+
+    def test_account_without_employee_skips_legacy_provider_discovery(self):
+        for user in (
+            None,
+            SimpleNamespace(is_anonymous=True),
+            SimpleNamespace(is_anonymous=False),
+            SimpleNamespace(is_anonymous=False, employee_get=None),
+        ):
+            request = SimpleNamespace(user=user, MENUS=["stale"])
+            with patch.object(legacy_navigation, "get_apps_in_base_dir") as providers:
+                self.assertEqual(legacy_navigation.sidebar(request), [])
+            self.assertEqual(request.MENUS, [])
+            providers.assert_not_called()
+
+    def test_account_only_context_drops_stale_session_menu(self):
+        request = SimpleNamespace(
+            user=SimpleNamespace(is_anonymous=False),
+            session=SimpleNamespace(session_key="account-only-sidebar-contract"),
+        )
+        with patch.dict(legacy_navigation.ALL_MENUS, {request.session.session_key: ["stale"]}):
+            self.assertEqual(legacy_navigation.get_MENUS(request), {"sidebar": []})
+            self.assertEqual(legacy_navigation.ALL_MENUS[request.session.session_key], [])
+            self.assertEqual(legacy_navigation.get_MENUS(request), {"sidebar": []})
+
+    def _employee_sidebar(self, allowed):
+        user = SimpleNamespace(is_anonymous=False, employee_get=SimpleNamespace())
+        request = SimpleNamespace(user=user)
+        provider = SimpleNamespace(
+            MENU="Personnel module", IMG_SRC="module.png", SUBMENUS=[],
+            ACCESSIBILITY="test_provider.allowed",
+        )
+        permission = Mock(return_value=allowed)
+        with (
+            patch.object(legacy_navigation, "get_apps_in_base_dir", return_value=["test_provider"]),
+            patch.object(legacy_navigation.apps, "is_installed", return_value=True),
+            patch.object(legacy_navigation.importlib, "import_module", return_value=provider),
+            patch.object(legacy_navigation, "import_method", return_value=permission),
+        ):
+            result = legacy_navigation.sidebar(request)
+        permission.assert_called_once()
+        return result
+
+    def test_employee_without_permission_still_has_no_legacy_menu(self):
+        self.assertEqual(self._employee_sidebar(False), [])
+
+    def test_employee_with_permission_keeps_existing_legacy_menu(self):
+        result = self._employee_sidebar(True)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["app"], "test_provider")

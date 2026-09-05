@@ -301,7 +301,7 @@ def open_company_settings(
 
 def edit_school(page, role, *, company_id, name, address, forbidden):
     path = f"/settings/company-update/{company_id}/"
-    action = page.locator(f'[hx-get="{path}"]')
+    action = page.locator(f'[hx-get^="{path}"]')
     require(
         action.count() == 1 and action.is_visible(),
         f"{role}: school edit action missing",
@@ -319,17 +319,29 @@ def edit_school(page, role, *, company_id, name, address, forbidden):
     form.wait_for(state="visible", timeout=10000)
     form.locator('[name="company"]').fill(name)
     form.locator('[name="address"]').fill(address)
+    # The production country widget uses country names, not ISO fixture codes.
+    # Exercise its actual change event and dependent state options.
+    form.locator('[name="country"]').select_option("China")
+    form.locator('[name="state"]').select_option("Hunan")
     form.locator('[name="city"]').fill("Changsha")
     form.locator('[name="zip"]').fill("410000")
-    with page.expect_response(
-        lambda response: path in response.url
-        and response.request.method == "POST"
-    ) as info:
-        form.locator('button[type="submit"]').click()
+    require(form.evaluate("form => form.checkValidity()"), f"{role}: edit form invalid")
+    # HTMX follows HX-Redirect. Wait for that real navigation before making a
+    # fresh verification request instead of racing it with page.goto().
+    with page.expect_navigation(wait_until="domcontentloaded") as navigation:
+        with page.expect_response(
+            lambda response: path in response.url
+            and response.request.method == "POST"
+        ) as info:
+            form.locator('button[type="submit"]').click()
     response = info.value
     require(
         response.status == 200 and response.headers.get("hx-redirect"),
         f"{role}: school save failed",
+    )
+    require(
+        navigation.value is not None and navigation.value.status == 200,
+        f"{role}: school redirect failed",
     )
 
     loaded = page.goto(BASE_URL + PREFERENCES_PATH, wait_until="domcontentloaded")
@@ -386,6 +398,13 @@ def main() -> None:
                         name=seed["school_a_updated_name"],
                         address=seed["school_a_updated_address"],
                         forbidden=seed["school_b_name"],
+                    )
+                    record(
+                        evidence,
+                        role,
+                        "school-profile-edited-and-reloaded",
+                        200,
+                        seed["school_a_updated_name"],
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "01-school-a-settings.png"),

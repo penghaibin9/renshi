@@ -38,6 +38,7 @@ env:
   CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
+  PRODUCT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
   SETTINGS_BROWSER_BASE_URL: http://127.0.0.1:8000
   SETTINGS_BROWSER_ARTIFACT_DIR: tests/artifacts/system-settings-browser
   SETTINGS_ADMIN_A_USERNAME: settings-school-a-admin
@@ -125,6 +126,7 @@ jobs:
             base.test_settings_runtime_contract \
             base.test_settings_center_contract \
             base.test_settings_mutation_security_contract \
+            base.test_system_settings_browser_gate_contract \
             --noinput --verbosity 2
 
       - name: Seed two schools and three ordinary browser roles
@@ -303,8 +305,11 @@ jobs:
                   {
                       "school_a_id": school_a.pk,
                       "school_a_name": school_a.company,
+                      "school_a_updated_name": "跃科系统设置验收学校 A（资料已修改）",
+                      "school_a_updated_address": "长沙市系统设置验收路 A 更新号",
                       "school_b_id": school_b.pk,
                       "school_b_name": school_b.company,
+                      "school_b_original_address": school_b.address,
                       "admin_a_user_id": admin_a.pk,
                       "teacher_user_id": teacher.pk,
                       "admin_b_user_id": admin_b.pk,
@@ -355,6 +360,8 @@ jobs:
         run: |
           python manage.py shell <<'PY'
           import json
+          import os
+          import subprocess
           from pathlib import Path
 
           from base.models import (
@@ -377,6 +384,10 @@ jobs:
 
           school_a = Company.objects.get(id=seed["school_a_id"])
           school_b = Company.objects.get(id=seed["school_b_id"])
+          assert school_a.company == seed["school_a_updated_name"], school_a.company
+          assert school_a.address == seed["school_a_updated_address"], school_a.address
+          assert school_b.company == seed["school_b_name"], school_b.company
+          assert school_b.address == seed["school_b_original_address"], school_b.address
           assert school_a.date_format == "YYYY-MM-DD", school_a.date_format
           assert school_a.time_format == "HH:mm:ss", school_a.time_format
           assert school_b.date_format == "DD/MM/YYYY", school_b.date_format
@@ -414,12 +425,14 @@ jobs:
               ("school_a_admin", "time-format-saved-from-ui"): 200,
               ("school_a_admin", "preferences-reloaded-from-server"): 200,
               ("school_a_admin", "company-settings-scoped-to-selected-school"): 200,
+              ("school_a_admin", "school-profile-edited-and-reloaded"): 200,
               ("school_a_teacher", "settings-gear-not-rendered"): 200,
               ("school_a_teacher", "settings-root-denied"): 403,
               ("school_a_teacher", "system-preferences-denied"): 403,
               ("school_a_teacher", "pagination-write-denied"): 403,
               ("school_a_teacher", "date-write-denied"): 403,
               ("school_a_teacher", "time-write-denied"): 403,
+              ("school_a_teacher", "company-list-denied"): 403,
               ("school_b_admin", "top-right-gear-opens-system-preferences"): 200,
               ("school_b_admin", "pagination-saved-from-ui"): 200,
               ("school_b_admin", "date-format-saved-from-ui"): 200,
@@ -432,9 +445,21 @@ jobs:
               (row["role"], row["assertion"]): row.get("http_status")
               for row in evidence
           }
-          assert actual == expected, (
+          assert actual == expected and len(evidence) == len(expected), (
               "System Settings browser evidence matrix mismatch",
               actual,
+          )
+          Path("tests/artifacts/system-settings-browser/mysql-seal.json").write_text(
+              json.dumps(
+                  {"status": "PASS", "browserAssertions": len(actual),
+                   "productHead": os.environ["PRODUCT_HEAD_SHA"],
+                   "testedCommit": subprocess.check_output(
+                       ["git", "rev-parse", "HEAD"], text=True
+                   ).strip(),
+                   "schoolAId": school_a.pk, "schoolBId": school_b.pk,
+                   "schoolAProfileReloaded": True, "schoolBProfileUnchanged": True},
+                  ensure_ascii=False, indent=2,
+              ), encoding="utf-8",
           )
           print(
               "System Settings multi-role browser and MySQL seal PASS",

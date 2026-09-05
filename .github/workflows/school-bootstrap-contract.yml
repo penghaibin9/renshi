@@ -9,6 +9,7 @@ on:
       - 'backend/platform_access/**'
       - 'backend/horilla/menu/**'
       - 'backend/horilla/urls.py'
+      - 'backend/horilla/config.py'
       - 'backend/horilla_theme/templates/**'
       - 'scripts/school_bootstrap_*.py'
   workflow_dispatch:
