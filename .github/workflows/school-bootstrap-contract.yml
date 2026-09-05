@@ -1,0 +1,128 @@
+name: School Bootstrap / MySQL Contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/school-bootstrap-contract.yml'
+      - 'backend/base/**'
+      - 'backend/platform_access/**'
+      - 'backend/horilla/menu/**'
+      - 'backend/horilla_theme/templates/**'
+      - 'scripts/school_bootstrap_*.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: school-bootstrap-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4
+  DB_INIT_PASSWORD: init-${{ github.run_id }}
+  SECRET_KEY: ci-secret-${{ github.repository_id }}-${{ github.run_id }}
+  ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: 'True'
+  TENANT_FAIL_CLOSED: 'True'
+  PYTHONPATH: backend
+  PRODUCT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  school-bootstrap-mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: renshi_db
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: db-${{ github.run_id }}
+          MYSQL_ROOT_PASSWORD: root-${{ github.run_id }}
+          MYSQL_ROOT_HOST: '%'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Initialize exact-source evidence
+        run: |
+          mkdir -p tests/artifacts/school-bootstrap-contract
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          Path('tests/artifacts/school-bootstrap-contract/provenance.json').write_text(
+              json.dumps({'productHead': os.environ['PRODUCT_HEAD_SHA'],
+                          'testedCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                          'runId': os.environ['GITHUB_RUN_ID']}, indent=2), encoding='utf-8')
+          PY
+      - name: Install locked application dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install -r requirements.lock
+          python -m pip install 'ruff==0.16.5'
+      - name: Prepare isolated MySQL schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter ancestor=mysql:8.4 --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators=1; CREATE DATABASE test_renshi_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON test_renshi_db.* TO '\''renshi_user'\''@'\''%'\'';"'
+          test -f backend/horilla/settings/local_settings.py || printf '%s\n' '# Ephemeral bootstrap test settings' > backend/horilla/settings/local_settings.py
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+          docker exec "$mysql_container" sh -c 'exec mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers --no-tablespaces renshi_db' \
+            | docker exec -i "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_renshi_db'
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" python manage.py migrate --run-syncdb --noinput
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" python manage.py migrate --check
+      - name: Collect lint and execute real bootstrap contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          out = Path('tests/artifacts/school-bootstrap-contract')
+          checks = [
+              ('ruff.json', ['ruff', 'check', 'backend', '--output-format=json', '--select',
+                            'E9,F821,F601,F811,PLE,B012,B018,B023,B026,B035,B039,SIM220,SIM221,SIM222,SIM223']),
+              ('django-tests.log', [sys.executable, 'manage.py', 'test',
+                                   'base.test_school_management',
+                                   'base.test_settings_runtime_contract',
+                                   'base.test_settings_center_contract',
+                                   'platform_access', '--keepdb', '--noinput', '--verbosity', '2']),
+          ]
+          results = []
+          for filename, command in checks:
+              result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+              (out / filename).write_text(result.stdout, encoding='utf-8')
+              print(result.stdout, flush=True)
+              results.append({'artifact': filename, 'exitCode': result.returncode})
+          (out / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+          # Both checks run for diagnosis, but either failure still fails the job.
+          sys.exit(1 if any(item['exitCode'] != 0 for item in results) else 0)
+          PY
+      - name: Preserve exact tracked sources for failed-run diagnosis
+        if: failure()
+        run: |
+          # Tracked application sources only: no .git, environment secrets,
+          # database, uploads, dependency caches, or untracked runtime settings.
+          git archive --format=tar.gz --output=tests/artifacts/school-bootstrap-contract/source.tar.gz \
+            HEAD backend frontend scripts .github/workflows requirements.lock manage.py sitecustomize.py
+      - name: Upload bootstrap contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: school-bootstrap-contract-${{ github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/school-bootstrap-contract/
+          if-no-files-found: error
+          retention-days: 1
