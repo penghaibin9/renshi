@@ -13,4 +13,6 @@ urlpatterns = [
     path("login/", account_views.login_user, name="login"),
     path("notifications/", account_views.notifications, name="notifications"),
     path("all-notifications/", account_views.all_notifications, name="all-notifications"),
+    path("get-horilla-installed-apps/", account_views.get_horilla_installed_apps,
+         name="get-horilla-installed-apps"),
 ]

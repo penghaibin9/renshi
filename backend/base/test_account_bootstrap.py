@@ -4,6 +4,7 @@ The MySQL gate executes these against the real URL configuration, templates,
 password backend and sessions. No force_login or artificial Employee fixture.
 """
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -17,7 +18,21 @@ from django.urls import resolve, reverse
 from base import account_views, dashboard, school_management
 from base.models import Company, CompanyGroupAssignment, SetupChecklistDismissal
 from horilla import config as legacy_navigation
-from horilla.horilla_middlewares import get_selected_company, tenant_context
+from horilla.horilla_middlewares import current_company_id, get_selected_company, tenant_context
+
+
+@contextmanager
+def web_company_scope(value):
+    """Model middleware scope in tests; tenant_context stays concrete-only.
+
+    An explicit web union is valid as a read-only selection, whereas the job
+    helper intentionally rejects it. Restore the ContextVar even on failure.
+    """
+    token = current_company_id.set(value)
+    try:
+        yield
+    finally:
+        current_company_id.reset(token)
 
 
 @override_settings(ALLOWED_HOSTS=["testserver"])
@@ -42,7 +57,8 @@ class AccountAdmissionPolicyTests(SimpleTestCase):
                 account_views.account_can_sign_in(self.user(is_superuser=False))
 
     def test_reverse_and_resolution_use_canonical_account_callbacks(self):
-        for name in ("login", "home-page", "notifications", "all-notifications"):
+        for name in ("login", "home-page", "notifications", "all-notifications",
+                     "get-horilla-installed-apps"):
             self.assertEqual(resolve(reverse(name)).func.__module__, "base.account_views")
 
     def test_safe_next_preserves_existing_query_and_multi_values(self):
@@ -53,6 +69,18 @@ class AccountAdmissionPolicyTests(SimpleTestCase):
         for target in ("https://foreign.invalid/", "//foreign.invalid/", "http://testserver/settings/"):
             request = RequestFactory().get("/login/", {"next": target}, secure=True)
             self.assertEqual(account_views._next_url(request), "/")
+
+
+    def test_job_scope_remains_concrete_only_and_web_scope_restores(self):
+        original = get_selected_company()
+        with self.assertRaises(ValueError):
+            with tenant_context("all"):
+                self.fail("Job scope must not accept a tenant union")
+        with self.assertRaisesRegex(RuntimeError, "scope failure"):
+            with web_company_scope("all"):
+                self.assertEqual(get_selected_company(), "all")
+                raise RuntimeError("scope failure")
+        self.assertEqual(get_selected_company(), original)
 
 
 @override_settings(COMPANY_SCOPED_PERMISSIONS=True, TENANT_FAIL_CLOSED=True,
@@ -178,7 +206,7 @@ class SchoolAccountEntryMySQLTests(TestCase):
         self.assertEqual(self.browser.get(reverse("school-management")).status_code, 403)
         self.assertEqual(self.browser.session["selected_company"], "all")
         request = self.request_as_admin()
-        with tenant_context("all"):
+        with web_company_scope("all"):
             self.assertIsNone(dashboard._resolve_checklist_company(request))
             self.assertFalse(dashboard._get_setup_checklist_context(request)["show_setup_checklist"])
 
@@ -199,12 +227,51 @@ class SchoolAccountEntryMySQLTests(TestCase):
         request = self.request_as_admin(reverse("dashboard-dismiss-setup-checklist"))
         request.method = "POST"
         request.session["selected_company"] = "all"
-        with tenant_context("all"), self.assertRaises(PermissionDenied):
+        with web_company_scope("all"), self.assertRaises(PermissionDenied):
             dashboard.dismiss_setup_checklist(request)
         request.session["selected_company"] = str(self.other.pk)
         with tenant_context(self.other.pk), self.assertRaises(PermissionDenied):
             dashboard.dismiss_setup_checklist(request)
         self.assertFalse(SetupChecklistDismissal.objects.exists())
+
+
+    @override_settings(APPS=["base", "employee"])
+    def test_account_asset_manifest_is_json_without_personnel_or_refresh(self):
+        self.sign_in()
+        response = self.browser.get(reverse("get-horilla-installed-apps"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"installed_apps": ["base", "employee"]})
+        self.assertIn("application/json", response.headers["Content-Type"])
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        self.assertNotIn("HX-Refresh", response.headers)
+        self.assertNotIn("HX-Redirect", response.headers)
+        self.assertIsNone(getattr(self.user, "employee_get", None))
+
+    def test_account_manifest_rejects_anonymous_and_post(self):
+        self.assertEqual(self.browser.get(reverse("get-horilla-installed-apps")).status_code, 302)
+        self.sign_in()
+        response = self.browser.post(reverse("get-horilla-installed-apps"), {},
+            HTTP_X_CSRFTOKEN=self.browser.cookies["csrftoken"].value)
+        self.assertEqual(response.status_code, 405)
+
+    def test_revoked_school_cannot_read_asset_manifest(self):
+        self.sign_in()
+        self.browser.get(reverse("school-management"))
+        CompanyGroupAssignment.objects.filter(user=self.user).delete()
+        response = self.browser.get(reverse("get-horilla-installed-apps"))
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b'"installed_apps"', response.content)
+
+    def test_profile_fields_have_form_owned_ids_and_original_post_names(self):
+        self.sign_in()
+        response = self.browser.get(reverse("school-management"))
+        self.assertEqual(response.status_code, 200)
+        for name in school_management.PROFILE_FIELDS:
+            self.assertContains(response, f'id="school-profile-{name}"')
+            self.assertContains(response, f'for="school-profile-{name}"')
+            self.assertContains(response, f'name="{name}"')
+        self.assertNotContains(response, 'id="id_country"')
+        self.assertNotContains(response, 'id="id_state"')
 
 
 class LegacySidebarAccountBoundaryTests(SimpleTestCase):

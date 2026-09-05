@@ -78,6 +78,14 @@ def _token_matches(request, company):
 
 
 class SchoolProfileForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        # This form accepts a country code as text; it does not use the legacy
+        # country-name/select widget. Give every field a form-owned DOM id so
+        # country.js cannot mistake this input for its global id_country select.
+        # Field names, POST contracts and label associations remain unchanged.
+        kwargs.setdefault("auto_id", "school-profile-%s")
+        super().__init__(*args, **kwargs)
+
     class Meta:
         model = Company
         fields = PROFILE_FIELDS

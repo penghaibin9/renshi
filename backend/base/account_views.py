@@ -7,10 +7,12 @@ Employee, a staff master, an organization, or a platform elevation.
 
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -114,3 +116,18 @@ def all_notifications(request):
     return render(request, "notification/all_notifications.html", {
         "notifications": request.user.notifications.all(),
     })
+
+
+@never_cache
+@login_required(login_url="login")
+@require_safe
+def get_horilla_installed_apps(request):
+    """Return the shared asset manifest to an admitted account, not an Employee.
+
+    HTMX consumes a JSON array from this URL after each swap. The old
+    personnel-only decorator returned an HTML login script to first-school
+    accounts, leaving installed_apps undefined in the Select2 loader. This is
+    asset discovery only: listing an app never grants its business permissions.
+    """
+    _require_account(request)
+    return JsonResponse({"installed_apps": list(settings.APPS)})
