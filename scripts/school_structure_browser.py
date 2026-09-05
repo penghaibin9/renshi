@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from contextlib import contextmanager
 from urllib.parse import quote, urlsplit
 
@@ -165,7 +166,16 @@ def browser_proof():
                     page.screenshot(path=str(OUT / "structure-receipt-desktop.png"), full_page=True)
                     click_document(page, page.get_by_role("link", name="查看正式组织树", exact=True), base + "/hr/structure/organizations")
                     page.locator("#hr-org-tree .is-root").wait_for(state="visible")
-                    page.get_by_role("button").filter(has_text="教务处").click()
+                    department_button = page.get_by_role("button").filter(has_text="教务处")
+                    department_button.wait_for(state="visible")
+                    root_button = page.locator("#hr-org-tree .is-root > .hr-org-node__row")
+                    root_button.click()
+                    require(department_button.count() == 0, "Root collapse left visible departments")
+                    root_button.click()
+                    department_button.wait_for(state="visible")
+                    require(root_button.get_attribute("aria-expanded") == "true", "Root did not expand again")
+                    record(role, "formal-root-collapse-expand", 200)
+                    department_button.click()
                     page.locator("#hr-org-detail").get_by_role("heading", name="教务处", exact=True).wait_for(state="visible")
                     require("有效" in page.locator("#hr-org-detail").inner_text(), "Formal organization status was not rendered")
                     record(role, "formal-tree-and-department-read-back", 200)
@@ -225,6 +235,7 @@ def seal():
                 ("admin_a", "confirmed-real-structure-saved"): 200,
                 ("admin_a", "same-request-retry-no-duplicate"): 200,
                 ("admin_a", "changed-request-rejected"): 409,
+                ("admin_a", "formal-root-collapse-expand"): 200,
                 ("admin_a", "formal-tree-and-department-read-back"): 200,
                 ("admin_a", "formal-position-read-back-vacant"): 200,
                 ("viewer_a", "receipt-read-back-write-denied"): 403,
@@ -254,4 +265,9 @@ def seal():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("phase", choices=("seed", "browser", "seal"))
-    {"seed": seed, "browser": browser_proof, "seal": seal}[parser.parse_args().phase]()
+    phase = parser.parse_args().phase
+    if phase == "browser":
+        # Component race cases use a fixture API and write separate evidence;
+        # the real three-role/MySQL journey below remains mandatory.
+        subprocess.run([sys.executable, str(ROOT / "scripts/school_structure_tree_contract.py")], check=True)
+    {"seed": seed, "browser": browser_proof, "seal": seal}[phase]()
