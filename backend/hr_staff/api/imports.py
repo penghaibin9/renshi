@@ -186,9 +186,13 @@ def import_errors(request, job_id):
     issues = list(job.issues.filter(tenant_id=context.tenant_id).order_by("row_no", "field_code").values_list(
         "row_no", "field_code", "error_code", "message"))
     content = error_workbook(issues)
+    request_id = api_root(request)["requestId"]
     write_audit_event(tenant_id=context.tenant_id, actor_user_id=request.user.pk, action="StaffImportIssuesDownloaded",
-                     business_type="STAFF_IMPORT", business_id=str(job.pk), reason=f"issues={len(issues)}")
-    return _download(content, f"hr03_import_errors_{job.pk}.xlsx")
+                     business_type="STAFF_IMPORT", business_id=str(job.pk), reason=f"issues={len(issues)}",
+                     request_id=request_id)
+    response = _download(content, f"hr03_import_errors_{job.pk}.xlsx")
+    response["X-HR-Request-ID"] = request_id
+    return response
 
 
 def _validate_row(row):
