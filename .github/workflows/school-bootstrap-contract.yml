@@ -134,6 +134,8 @@ jobs:
               ('django-tests.log', [sys.executable, 'manage.py', 'test',
                                    'base.test_school_management',
                                    'hr_structure.tests.test_initial_setup',
+                                   'hr_structure.tests.test_position_names',
+                                   'hr_structure.tests.test_position_real_occupancy',
                                    'base.test_account_bootstrap',
                                    'base.test_legacy_initialization_boundary',
                                    'base.test_tenant_selection_envelope',

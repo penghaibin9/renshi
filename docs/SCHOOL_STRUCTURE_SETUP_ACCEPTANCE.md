@@ -47,6 +47,11 @@
 `hr_structure.tests.test_initial_setup`：实际 MySQL 下 17 个测试方法覆盖权限、重试、已存在数据、失败回滚、CSRF、真实登录/模板、版本事件和
 两个线程同时首次提交。不得以 SQLite 或 mock 数据库替代并发结果。
 
+`hr_structure.tests.test_position_names` 新增 3 项正式名称回读测试，覆盖当前/未来/
+草稿版本、跨校异常引用、列表及详情一致性；保留原岗位占用套件及四次 SQL 查询上限。
+岗位 DTO 原来误以稳定编码填充 organizationName，现按相同 as-of 用关联子查询解析
+本校正式版本名称，并单列 organizationCode；不对每行追加 SQL。
+
 既有 School Bootstrap 工作流先完成学校资料的 18 条断言和 MySQL 封存，
 再由 `scripts/school_structure_browser.py` 对同两所学校执行新增 8 条浏览器断言。
 只给原三名普通账号追加所需权限；不在 seed 中创建任何组织、岗位、人员记录。
