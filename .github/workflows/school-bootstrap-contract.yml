@@ -8,6 +8,7 @@ on:
       - 'backend/base/**'
       - 'backend/platform_access/**'
       - 'backend/horilla/menu/**'
+      - 'backend/horilla/urls.py'
       - 'backend/horilla_theme/templates/**'
       - 'scripts/school_bootstrap_*.py'
   workflow_dispatch:
@@ -126,6 +127,7 @@ jobs:
                             'E9,F821,F601,F811,PLE,B012,B018,B023,B026,B035,B039,SIM220,SIM221,SIM222,SIM223']),
               ('django-tests.log', [sys.executable, 'manage.py', 'test',
                                    'base.test_school_management',
+                                   'base.test_account_bootstrap',
                                    'base.test_settings_runtime_contract',
                                    'base.test_settings_center_contract',
                                    'platform_access', '--keepdb', '--noinput', '--verbosity', '2']),

@@ -138,6 +138,9 @@ def browser_proof():
             require(page.locator("#school-management").get_attribute("data-school-id") == str(data["roles"][role]["school_id"]),
                     f"{role}: wrong school rendered")
             record(role, "login-without-employee", 200)
+            notification_read = api(page, "/notifications/")
+            require(notification_read["status"] == 200, f"{role}: account notification read failed")
+            record(role, "header-notifications-readable", 200)
             yield page
             require(not errors, f"{role}: JavaScript errors {errors}")
         except BaseException:
@@ -169,6 +172,10 @@ def browser_proof():
                 role = "admin_a"
                 with login(browser, role) as page:
                     assert_summary(page, role, "MISSING")
+                    home = page.goto(base + "/", wait_until="domcontentloaded")
+                    require(home is not None and home.status == 200 and urlsplit(page.url).path == PATH,
+                            "Default home did not reach the school center")
+                    record(role, "default-home-opens-school-center", 200)
                     with page.expect_navigation(wait_until="domcontentloaded"):
                         page.locator('#settingsMenu:visible, a[href="/settings/"]:visible').first.click()
                     link = page.locator(f'.accordion-panel a[href="{PATH}"]')
@@ -215,6 +222,11 @@ def browser_proof():
 
                 role = "viewer_a"
                 with login(browser, role) as page:
+                    require(page.locator('#school-profile-form [name="company"]').input_value() == NEW_NAME,
+                            "Read-only role did not read back the saved school name")
+                    require(page.locator('#school-profile-form [name="address"]').input_value() == NEW_ADDRESS,
+                            "Read-only role did not read back the saved school address")
+                    record(role, "saved-profile-read-back-by-viewer", 200)
                     require(page.get_by_role("button", name="保存学校资料", exact=True).count() == 0, "Read-only save control rendered")
                     token = page.locator('[name="profile_token"]').input_value()
                     denied = api(page, PATH, {"profile_token": token, "company": "不能更改", "address": "不能更改"})
@@ -255,15 +267,20 @@ def seal():
     evidence = json.loads((OUT / "evidence.json").read_text(encoding="utf-8"))
     expected = {
         ("admin_a", "login-without-employee"): 200,
+        ("admin_a", "header-notifications-readable"): 200,
         ("admin_a", "own-school-status-missing"): 200,
         ("admin_a", "gear-to-school-management"): 200,
+        ("admin_a", "default-home-opens-school-center"): 200,
         ("admin_a", "profile-saved-and-reloaded"): 200,
         ("admin_a", "own-school-status-recorded"): 200,
         ("admin_a", "stale-edit-denied"): 409,
         ("admin_a", "mobile-save-from-ui"): 200,
         ("viewer_a", "login-without-employee"): 200,
+        ("viewer_a", "header-notifications-readable"): 200,
         ("viewer_a", "profile-write-denied"): 403,
+        ("viewer_a", "saved-profile-read-back-by-viewer"): 200,
         ("admin_b", "login-without-employee"): 200,
+        ("admin_b", "header-notifications-readable"): 200,
         ("admin_b", "own-school-status-missing"): 200,
         ("admin_b", "foreign-school-writes-concealed"): 404,
         ("admin_b", "platform-create-denied"): 403,

@@ -5,7 +5,9 @@ from base.auth_backends import company_scoped_active, get_allowed_company_ids
 from base.context_processors import AllCompany
 from base.middleware import CompanyMiddleware as LegacyCompanyMiddleware
 from base.models import Company
-from horilla.horilla_middlewares import get_selected_company, set_selected_company
+from horilla.horilla_middlewares import (
+    current_company_id, get_selected_company, set_selected_company,
+)
 from platform_access.services import (
     clear_elevation_session,
     get_active_tenant_elevation,
@@ -52,6 +54,38 @@ class SafeCompanyMiddleware(LegacyCompanyMiddleware):
     an artificial Employee merely to get through middleware is not onboarding.
     The final elevation middleware still validates the concrete school.
     """
+
+    def __call__(self, request):
+        # Validate BEFORE the legacy middleware can silently clamp an invalid
+        # selection to the first allowed school, including on a POST.
+        if getattr(request.user, "is_authenticated", False):
+            selected = request.session.get("selected_company")
+            if selected not in (None, "", "all"):
+                try:
+                    company_id = int(selected)
+                except (TypeError, ValueError, OverflowError):
+                    company_id = 0
+                valid_id = (not isinstance(selected, (bool, float)) and 0 < company_id <= 9223372036854775807)
+                authorized = valid_id and (
+                    is_platform_operator(request.user)
+                    or company_id in get_allowed_company_ids(request.user)
+                )
+                if not authorized or not Company.objects.filter(pk=company_id).exists():
+                    token = set_selected_company(None)
+                    try:
+                        _reset_to_all_scope(request)
+                        return JsonResponse(
+                            {"detail": "Select an authorized school before continuing."},
+                            status=403,
+                        )
+                    finally:
+                        current_company_id.reset(token)
+        return super().__call__(request)
+
+    def _clamp_to_allowed(self, request, company_id):
+        # Preflight has validated explicit IDs; the default resolver chooses
+        # only an authorized school. Union/no-selection must stay non-writable.
+        return company_id
 
     def _get_user_default_company(self, request):
         if is_platform_operator(request.user):

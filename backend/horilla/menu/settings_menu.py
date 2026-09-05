@@ -48,9 +48,11 @@ def get_settings_menu(request):
     if (selected not in (None, "", "all") and user
             and getattr(user, "is_authenticated", False)
             and user.has_perm("base.view_company")):
-        # Keep the established preferences landing page, bookmarks and browser
-        # assertions. The school center is the next explicit settings section.
-        entries.insert(min(1, len(entries)), {
+        # Personnel accounts retain their established preferences landing.
+        # The first school administrator has no Employee yet: its gear must
+        # open the account-safe school center, not an Employee-only old page.
+        index = min(1, len(entries)) if getattr(user, "employee_get", None) else 0
+        entries.insert(index, {
             "key": "school-management", "title": "学校管理中心", "icon": "",
             "items": [{"label": "首次配置与学校资料", "url": reverse("school-management")}],
         })

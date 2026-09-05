@@ -103,6 +103,8 @@ urlpatterns = [
     # Settings keeps legacy public paths/names but its tenant-safe handlers must
     # win URL resolution before the broad compatibility routes in base.urls.
     path("", include("base.settings_urls")),
+    # Account authentication/notifications must not depend on an Employee row.
+    path("", include("base.account_urls")),
     path("", include("base.urls")),
     path("", include("horilla_automations.urls")),
     path("", include("horilla_views.urls")),
