@@ -2,16 +2,15 @@
 
 The settings UI predates tenant-scoped RBAC and several endpoints trusted the
 session value without proving that it named an authorised concrete company.
-These views preserve the existing templates and URL contracts while enforcing
-one school per write, object-level concealment, method restrictions, row locks,
-and separate view/change permissions.
+These views preserve existing public URLs while enforcing one school per write,
+object concealment, method restrictions, row locks, and separate view/change
+permissions.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
@@ -39,6 +38,21 @@ SYSTEM_PREFERENCES_VIEW_PERMISSIONS = (
     "base.view_companylanguagesetting",
 )
 
+DATE_FORMATS = frozenset(
+    {
+        "DD-MM-YYYY",
+        "DD.MM.YYYY",
+        "DD/MM/YYYY",
+        "MM/DD/YYYY",
+        "YYYY-MM-DD",
+        "YYYY/MM/DD",
+        "MMMM D, YYYY",
+        "DD MMMM, YYYY",
+        "MMM. D, YYYY",
+        "D MMM. YYYY",
+        "dddd, MMMM D, YYYY",
+    }
+)
 TIME_FORMATS = frozenset({"HH:mm", "hh:mm A", "HH:mm:ss", "hh:mm:ss A"})
 
 
@@ -80,17 +94,6 @@ def _locked_selected_company(request) -> Company:
     return Company.objects.select_for_update().get(id=selected.id)
 
 
-def _date_formats() -> set[str]:
-    values = set()
-    for item in getattr(settings, "HORILLA_DATE_FORMATS", ()):
-        if isinstance(item, (tuple, list)):
-            if item:
-                values.add(str(item[0]))
-        else:
-            values.add(str(item))
-    return values
-
-
 @login_required
 @require_http_methods(["GET", "POST"])
 def system_preferences_settings_view(request):
@@ -99,9 +102,10 @@ def system_preferences_settings_view(request):
     _require_any_permission(request, SYSTEM_PREFERENCES_VIEW_PERMISSIONS)
     _selected_company(request)
     if request.method == "POST":
-        # Announcement expiry is a singleton platform preference.  A tenant
-        # role may view other controls on the merged page but cannot mutate it
-        # unless it owns the explicit change permission in the selected school.
+        # Announcement expiry is a platform singleton.  A tenant role may view
+        # the merged page but only the platform superuser can mutate it.
+        if not request.user.is_superuser:
+            raise PermissionDenied
         _require_permission(request, "base.change_announcementexpire")
     return legacy_views.system_preferences_settings_view(request)
 
@@ -115,10 +119,11 @@ def pagination_settings_view(request):
     if request.method == "GET":
         _require_permission(request, "base.view_dynamicpagination")
         instance = DynamicPagination.objects.filter(user_id=request.user).first()
+        form = DynamicPaginationForm(instance=instance)
         return render(
             request,
             "base/dynamic_pagination/pagination_settings.html",
-            {"form": DynamicPaginationForm(instance=instance)},
+            {"form": form, "pagination_form": form},
         )
 
     _require_permission(request, "base.change_dynamicpagination")
@@ -148,7 +153,7 @@ def pagination_settings_view(request):
 def save_date_format(request):
     _require_permission(request, "base.change_company")
     selected_format = (request.POST.get("selected_format") or "").strip()
-    if selected_format not in _date_formats():
+    if selected_format not in DATE_FORMATS:
         return JsonResponse(
             {"success": False, "error": "Invalid date format."},
             status=400,
@@ -221,8 +226,6 @@ def default_export_access_settings_view(request):
 @require_POST
 def enable_default_export_access(request):
     _require_permission(request, "base.change_defaultexportpermission")
-    # Locking the tenant row serialises competing toggles and guarantees the
-    # legacy implementation cannot create a company=NULL global setting.
     with transaction.atomic():
         _locked_selected_company(request)
         return legacy_views.enable_default_export_access(request)
@@ -255,8 +258,6 @@ def company_update(request, id, **kwargs):
     del kwargs
     _require_permission(request, "base.change_company")
     selected = _selected_company(request)
-    # Settings writes are bound to the selected school, even when the user has
-    # memberships in more than one school.  A mismatched identifier is hidden.
     if int(id) != selected.id:
         raise Http404
 
