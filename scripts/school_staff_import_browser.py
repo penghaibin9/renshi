@@ -19,7 +19,7 @@ from school_structure_browser import click_document
 
 OUT = ROOT / "tests/artifacts/school-staff-import-browser"
 ROSTER = "/hr/staff/"
-API = "/api/hr/v1/staff/import"
+API = "/api/v1/hr/staff/import"
 STAFF_NO = "IMPORT-0001"
 NAME = "首次建档教职工甲"
 DOCUMENT = "000000000000000009"  # synthetic fixture; never a real teacher
@@ -196,7 +196,7 @@ def browser_proof():
 
                 role = "admin_b"
                 with login(browser, role) as page:
-                    own = api(page, "/api/hr/v1/staff?page=1")
+                    own = api(page, "/api/v1/hr/staff?page=1")
                     require(own["status"] == 200 and own["payload"]["total"] == 0, "Foreign school roster leaked")
                     for suffix, post in (("", False), ("/errors", False), ("/commit", True)):
                         denied = api(page, API + f"/{job_id}" + suffix, post=post)

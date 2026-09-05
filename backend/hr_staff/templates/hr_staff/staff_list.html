@@ -191,7 +191,7 @@
         status: document.getElementById("status").value,
         category: document.getElementById("category").value,
       });
-      const resp = await fetch("/api/hr/v1/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}, credentials:"same-origin"});
+      const resp = await fetch("/api/v1/hr/staff?" + q, {headers: {"X-Requested-With":"XMLHttpRequest"}, credentials:"same-origin"});
       const body = await parseJson(resp);
       if (!resp.ok) {
         lastItems = [];
@@ -235,7 +235,7 @@
       const button = document.getElementById("exportCurrent");
       button.disabled = true;
       try {
-        const createResp = await fetch("/api/hr/v1/staff/export", {
+        const createResp = await fetch("/api/v1/hr/staff/export", {
           method: "POST",
           credentials: "same-origin",
           headers: {"Content-Type":"application/json", "X-CSRFToken": csrfToken(), "X-Requested-With":"XMLHttpRequest"},
@@ -249,7 +249,7 @@
         if (!createResp.ok) throw new Error(apiMessage(createBody, `创建导出失败（${createResp.status}）`));
         const job = createBody.data || {};
         if (!job.jobId || !job.downloadToken) throw new Error("导出任务返回不完整");
-        const downloadResp = await fetch(`/api/hr/v1/staff/export/${encodeURIComponent(job.jobId)}/download?ticket=${encodeURIComponent(job.downloadToken)}`, {credentials:"same-origin"});
+        const downloadResp = await fetch(`/api/v1/hr/staff/export/${encodeURIComponent(job.jobId)}/download?ticket=${encodeURIComponent(job.downloadToken)}`, {credentials:"same-origin"});
         if (!downloadResp.ok) {
           const errorBody = await parseJson(downloadResp);
           throw new Error(apiMessage(errorBody, `下载失败（${downloadResp.status}）`));
@@ -272,7 +272,8 @@
     }
 
     function importControls() {
-      const ready = importState?.status === "READY_TO_COMMIT" && importState?.validRows > 0;
+      const ready = importState?.validRows > 0 && (importState?.status === "READY_TO_COMMIT" ||
+        (importState?.status === "COMMITTING" && importState?.canResume === true));
       document.getElementById("importFile").disabled = importBusy;
       document.getElementById("importValidate").disabled = importBusy;
       document.getElementById("importConfirmed").disabled = importBusy || !ready;
@@ -292,14 +293,15 @@
       currentImportJobId = data.jobId;
       document.getElementById("importConfirmed").checked = false;
       const terminal = ["COMPLETED", "PARTIAL_FAILED"].includes(data.status);
-      const labels = {READY_TO_COMMIT: data.committedRows ? "已分段保存，请核对后继续提交剩余有效行" : "预检完成，尚未写入正式人事数据", VALIDATION_FAILED:"没有可提交的有效行，请修正后重新上传", COMMITTING:"正在提交，请读取任务状态，不要重复上传", COMPLETED:"正式提交完成", PARTIAL_FAILED:"部分行未写入，请下载错误清单核对"};
+      const labels = {READY_TO_COMMIT: data.committedRows ? "已分段保存，请核对后继续提交剩余有效行" : "预检完成，尚未写入正式人事数据", VALIDATION_FAILED:"没有可提交的有效行，请修正后重新上传", COMMITTING: data.canResume === true ? "原提交已失去响应，可核对已保存行后恢复同一任务" : "正在提交，请读取任务状态，不要重复上传", COMPLETED:"正式提交完成", PARTIAL_FAILED:"部分行未写入，请下载错误清单核对"};
       document.getElementById("importSummary").textContent = `${labels[data.status] || data.status}。共 ${data.totalRows} 行；${terminal ? "已成功" : "预检有效"} ${terminal ? data.committedRows : data.validRows} 行；已保存 ${data.committedRows || 0} 行，待提交 ${data.pendingRows || 0} 行；失败 ${data.failedRows} 行。任务编号：${data.jobId}`;
       document.getElementById("importIssues").innerHTML = (data.issues || []).map(issue => `<li>第 ${escapeHtml(issue.rowNo)} 行 · ${escapeHtml(issue.field || "整行")}: ${escapeHtml(issue.error)}</li>`).join("");
       if (data.issueCount > (data.issues || []).length) {
         const item = document.createElement("li"); item.textContent = `页面显示前 50 项；共 ${data.issueCount} 项，请下载完整错误清单。`;
         document.getElementById("importIssues").appendChild(item);
       }
-      document.getElementById("importCommit").textContent = data.committedRows && data.pendingRows ? "继续提交剩余有效行" : "提交有效行";
+      document.getElementById("importCommit").textContent = data.status === "COMMITTING" && data.canResume === true
+        ? "恢复原任务并继续" : data.committedRows && data.pendingRows ? "继续提交剩余有效行" : "提交有效行";
       importControls();
     }
 
@@ -308,7 +310,7 @@
       const target = currentImportJobId;
       importBusy = true; importControls();
       try {
-        const resp = await fetch(`/api/hr/v1/staff/import/${encodeURIComponent(target)}`, {credentials:"same-origin"});
+        const resp = await fetch(`/api/v1/hr/staff/import/${encodeURIComponent(target)}`, {credentials:"same-origin"});
         const body = await parseJson(resp);
         if (!resp.ok) throw new Error(apiMessage(body, `读取任务失败（${resp.status}）`));
         if (target === currentImportJobId) renderImport(body.data);
@@ -327,7 +329,7 @@
       document.getElementById("importSummary").textContent = "正在预检，尚未写入正式档案…";
       try {
         const form = new FormData(); form.append("file", file);
-        const resp = await fetch("/api/hr/v1/staff/import", {method:"POST", credentials:"same-origin", headers:{"X-CSRFToken":csrfToken(),"X-Requested-With":"XMLHttpRequest"}, body:form});
+        const resp = await fetch("/api/v1/hr/staff/import", {method:"POST", credentials:"same-origin", headers:{"X-CSRFToken":csrfToken(),"X-Requested-With":"XMLHttpRequest"}, body:form});
         const body = await parseJson(resp);
         if (!resp.ok) throw new Error(apiMessage(body, `校验失败（${resp.status}）`));
         renderImport(body.data); rememberImport(currentImportJobId);
@@ -342,13 +344,19 @@
       if (importBusy || !currentImportJobId || !document.getElementById("importConfirmed").checked) return;
       importBusy = true; importControls();
       try {
-        const resp = await fetch(`/api/hr/v1/staff/import/${encodeURIComponent(currentImportJobId)}/commit`, {
+        const resp = await fetch(`/api/v1/hr/staff/import/${encodeURIComponent(currentImportJobId)}/commit`, {
           method:"POST", credentials:"same-origin", headers:{"X-CSRFToken":csrfToken(),"X-Requested-With":"XMLHttpRequest"}});
         const body = await parseJson(resp);
         if (!resp.ok) throw new Error(apiMessage(body, `提交失败（${resp.status}）`));
         renderImport(body.data);
         showNotice(body.data.pendingRows ? `本段已保存。累计成功 ${body.data.committed} 行，剩余 ${body.data.pendingRows} 行，请勾选后继续提交。` : `正式提交完成：成功 ${body.data.committed} 行，失败 ${body.data.failed} 行。请核对重新读取的名册。`, body.data.failed || body.data.pendingRows ? "info" : "success");
-        await loadRows(1);
+        try {
+          await loadRows(1);
+        } catch (_refreshError) {
+          // The commit response is already authoritative. A subsequent roster
+          // fetch failure must not turn a confirmed write into UNKNOWN.
+          showNotice("本次提交结果已确认；名册暂时无法刷新，请稍后点击查询。原导入任务和已保存行仍保留。", "info");
+        }
       } catch (err) {
         // A network failure does not prove that the server rolled back. Keep
         // the job and require a status read before allowing another commit.
@@ -369,7 +377,7 @@
     }
 
     function downloadTemplate() {
-      return importDownload("/api/hr/v1/staff/import/template", "hr03_staff_import_template.xlsx");
+      return importDownload("/api/v1/hr/staff/import/template", "hr03_staff_import_template.xlsx");
     }
 
     document.getElementById("searchBtn").addEventListener("click", () => loadRows(1));
@@ -385,7 +393,7 @@
     document.getElementById("importConfirmed").addEventListener("change", importControls);
     document.getElementById("refreshImport").addEventListener("click", readImportStatus);
     document.getElementById("downloadImportErrors").addEventListener("click", () => {
-      if (currentImportJobId) importDownload(`/api/hr/v1/staff/import/${encodeURIComponent(currentImportJobId)}/errors`, `hr03_import_errors_${currentImportJobId}.xlsx`);
+      if (currentImportJobId) importDownload(`/api/v1/hr/staff/import/${encodeURIComponent(currentImportJobId)}/errors`, `hr03_import_errors_${currentImportJobId}.xlsx`);
     });
     document.getElementById("importFile").addEventListener("change", () => {
       if (importBusy) return;

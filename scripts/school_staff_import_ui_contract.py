@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright
 
 OUT = ROOT / "tests/artifacts/school-staff-import-ui"
 JOB = "00000000-0000-4000-8000-000000000001"
-API = "/api/hr/v1/staff/import"
+API = "/api/v1/hr/staff/import"
 BASE = "http://import-contract.test"
 
 
@@ -55,7 +55,9 @@ class Fixture:
         self.calls.append((request.method, path))
         if path == '/hr/staff/':
             route.fulfill(status=200, content_type='text/html', body=html(allowed=self.allowed)); return
-        if path == '/api/hr/v1/staff':
+        if path == '/api/v1/hr/staff':
+            if self.mode == 'roster-refresh-failure' and self.state['committedRows']:
+                route.abort('failed'); return
             items = [] if not self.state['committedRows'] else [{"staff_id":"staff-a","staff_no":"IMPORT-001","legal_name":"已建档教师甲","org_name":"教务处","position_name":"EDU-ADMIN-001","current_employment_status":"ACTIVE"}]
             body = {"items":items,"page":1,"total":len(items),"asOf":"2026-09-06","dataBasis":"HR03_AUTHORITY"}
         elif path == API and request.method == 'POST':
@@ -73,7 +75,7 @@ class Fixture:
         elif path == API + '/' + JOB + '/commit':
             if self.mode == 'network-failure':
                 self.finish(); route.abort('failed'); return
-            if self.mode == 'segmented':
+            if self.mode in ('segmented', 'roster-refresh-failure'):
                 self.state.update(status='READY_TO_COMMIT', totalRows=4, validRows=3, committedRows=1, pendingRows=2)
             else: self.finish()
             body = {'data':{**self.state,'committed':self.state['committedRows'],'failed':self.state['failedRows']}}
@@ -94,6 +96,8 @@ class Fixture:
         self.page.locator('#importValidate').click()
         if self.mode == 'invalid-upload':
             self.page.wait_for_function("document.getElementById('importSummary').innerText.includes('未完成')")
+        elif self.state['status'] == 'COMMITTING' and not self.state.get('canResume'):
+            self.page.wait_for_function("document.getElementById('importSummary').innerText.includes('正在提交')")
         else:
             self.page.wait_for_function("document.getElementById('importConfirmed').disabled === false")
 
@@ -157,6 +161,31 @@ def check_segment(f):
     require(f.page.locator('#importCommit').is_enabled(), 'cannot continue remaining rows')
 
 
+def check_busy_lease(f):
+    f.state.update(status='COMMITTING', canResume=False)
+    f.open(); f.preview()
+    require(f.page.locator('#importConfirmed').is_disabled(), 'active lease can be acknowledged')
+    require(f.page.locator('#importCommit').is_disabled(), 'active lease can be stolen')
+
+
+def check_stale_lease(f):
+    f.state.update(status='COMMITTING', canResume=True)
+    f.open(); f.preview()
+    require(f.page.locator('#importCommit').is_disabled(), 'recovery bypasses confirmation')
+    require('恢复原任务' in f.page.locator('#importCommit').inner_text(), 'stale lease has no recovery action')
+    f.commit()
+    require('部分行未写入' in f.page.locator('#importSummary').inner_text(), 'stale task did not recover')
+
+
+def check_roster_failure_after_commit(f):
+    f.open(); f.preview(); f.commit()
+    f.page.wait_for_function("document.getElementById('notice').innerText.includes('结果已确认')")
+    require(f.page.locator('#importConfirmed').is_enabled(), 'confirmed chunk was incorrectly changed to UNKNOWN')
+    f.page.locator('#importConfirmed').check()
+    require(f.page.locator('#importCommit').is_enabled(), 'roster failure prevented explicit next chunk')
+    require(sum(method=='POST' and path.endswith('/commit') for method,path in f.calls)==1, 'roster failure repeated a write')
+
+
 def check_large_upload(f):
     f.open()
     f.page.locator('#importFile').set_input_files({'name':'large.xlsx','mimeType':'application/octet-stream','buffer':b'0'*(5*1024*1024+1)})
@@ -191,7 +220,8 @@ def main():
     cases = [(check_confirmation,{}),(check_resume,{}),(check_network,{'mode':'network-failure'}),
              (check_changed_file,{}),(check_xss,{'mode':'malicious-message'}),(check_segment,{'mode':'segmented'}),
              (check_large_upload,{}),(check_rejected_upload,{'mode':'invalid-upload'}),
-             (check_viewer,{'allowed':False}),(check_downloads,{})]
+             (check_viewer,{'allowed':False}),(check_downloads,{}),(check_busy_lease,{}),(check_stale_lease,{}),
+             (check_roster_failure_after_commit,{'mode':'roster-refresh-failure'})]
     results=[]
     with sync_playwright() as pw:
         options={'headless':True}

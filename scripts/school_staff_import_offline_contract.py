@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright
 from school_staff_import_ui_contract import (
     ROOT, Fixture, BASE, html, require, check_confirmation, check_network,
     check_xss, check_segment, check_large_upload, check_rejected_upload, check_downloads,
+    check_busy_lease, check_stale_lease, check_roster_failure_after_commit,
 )
 
 OUT = ROOT / "tests/artifacts/school-staff-import-offline"
@@ -82,7 +83,9 @@ def main():
     tests=[(check_confirmation,{}),(check_network,{'mode':'network-failure'}),(check_new_file,{}),
            (check_xss,{'mode':'malicious-message'}),(check_segment,{'mode':'segmented'}),
            (check_large_upload,{}),(check_rejected_upload,{'mode':'invalid-upload'}),
-           (check_readonly,{'allowed':False}),(check_downloads,{})]
+           (check_readonly,{'allowed':False}),(check_downloads,{}),
+           (check_busy_lease,{}),(check_stale_lease,{}),
+           (check_roster_failure_after_commit,{'mode':'roster-refresh-failure'})]
     results=[]
     with sync_playwright() as pw:
         options={'headless':True}
