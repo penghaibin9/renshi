@@ -129,6 +129,7 @@ jobs:
               ('django-tests.log', [sys.executable, 'manage.py', 'test',
                                    'base.test_school_management',
                                    'base.test_account_bootstrap',
+                                   'base.test_legacy_initialization_boundary',
                                    'base.test_settings_runtime_contract',
                                    'base.test_settings_center_contract',
                                    'platform_access', '--keepdb', '--noinput', '--verbosity', '2']),

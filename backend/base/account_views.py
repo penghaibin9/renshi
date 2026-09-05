@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import authenticate, get_user_model, login
+from django.contrib.auth import authenticate, login
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
@@ -58,9 +58,9 @@ def _next_url(request):
 def login_user(request):
     if request.method == "GET":
         return render(request, "login.html", {
-            # Existing school accounts must never be offered a database reset
-            # just because their optional Employee relation is still absent.
-            "initialize_database": not get_user_model().objects.exists(),
+            # Initial platform credentials are a deployment operation. The
+            # legacy HTTP installer is retired, including its public children.
+            "initialize_database": False,
         })
 
     user = authenticate(request, username=request.POST.get("username"),

@@ -4,11 +4,12 @@ Keep public paths and reverse names unchanged, like base.settings_urls. The
 legacy Employee-only account callbacks are not selected by URL resolution.
 """
 
-from django.urls import path
+from django.urls import include, path
 
 from base import account_views
 
 urlpatterns = [
+    path("", include("base.legacy_initialization")),
     path("", account_views.home, name="home-page"),
     path("login/", account_views.login_user, name="login"),
     path("notifications/", account_views.notifications, name="notifications"),

@@ -74,6 +74,64 @@ MySQL 封存必须以新提交的 Actions 输出为准；代码写入不等于�
 当前这些后续修复仅有本地隔离与结构检查；新 SHA 的数据库、浏览器和封存结果
 仍须单独读取，不能沿用 155fbfd 的部分绿灯。
 
+## 2026-09-05 本轮：账号资源、表单隔离与安装入口边界
+
+本轮沿用 PR #53。父基线 `cca0147e63abb4fd7acf9de0a34b50ee2fcead34`，
+其被测试合并快照 `3cce868a73eb9941d6ee397482cbe3f233106927` 与产品基线树一致。
+
+### 已核验的旧基线结果
+
+- 系统设置多角色运行 `33959686761` 已成功：三名普通角色、真实 Chromium、
+  21 条证据及独立 MySQL 核验全部通过。不能扩大解释为“所有设置入口通过”；
+  同基线的设置全量入口巡检仍失败。
+- 空学校运行 `33959686745` 为失败：64 项 Django 测试中 62 通过、2 个夹具错误；
+  两个测试错误地用仅允许具体学校的 `tenant_context("all")` 表示网页联合范围。
+- 空学校浏览器已完成管理员 A 的 9 条断言，包括资料保存回读、过期页面 409、
+  手机宽度实际保存；随后因页面错误中止，其他角色和 MySQL 封存尚未运行。
+  错误来自旧 `country.js` 把新文本字段当下拉框，以及旧安装应用资源接口
+  对合法无 Employee 账号返回 HTML，导致前端 `installed_apps.includes` 报错。
+
+### 修复提交 `06723597df26bd9cbc516c584444ccadd8958c7e`
+
+- SchoolProfileForm 使用独立 `school-profile-*` 字段 ID；保留原字段名称、
+  POST 协议、label 关联及原生校验，不改旧国家下拉框脚本。
+- 同路径 `get-horilla-installed-apps/` 由账号入口返回 JSON 资源清单；保留有效
+  账号准入和只读方法，不授予人员模块权限，不返回登录 HTML 冒充资源结果。
+- 网页联合范围测试使用可恢复的 ContextVar 设置；生产 `tenant_context` 继续
+  拒绝联合范围，新增断言确认这个拒绝未被放宽。
+- 账户测试由 21 项增加至 26 项，集中合同预计 69 项；既有空学校浏览器 18 条
+  和系统设置 21 条均未删除。14 项隔离函数/真实 Chromium 组件检查本地通过，
+  不作为完整 Django/MySQL 或网站端到端通过的证据。
+- 精确提交运行 `33961727944` 已成功，实际测试快照为
+  `45c208a9c09d09be6a6b17d2e5104f43b2b80527`：Ruff 通过，69 项 Django
+  测试全部通过；三名普通账号的 18 条真实 Chromium 断言全完成且页面错误为零。
+  独立 `mysql-seal.json` 为 PASS：2 所学校，0 伪造人员档案，1 条实际资料修改审计。
+  A 校资料保存/回读、另一只读角色回读及写入 403、B 校隔离和跨校写入 404、
+  学校账号创建平台学校被 403 拒绝、过期页 409、移动宽度实际保存均已覆盖。
+  这只证明已激活账号的学校资料办理闭环，不是整校开户或所有业务可投产。
+
+### 本轮继续封闭旧安装写入口
+
+旧 `base.views.initialize_database_user` 等子处理器只有 HX 请求标记检查，
+无法用父页面上的初始化/DEBUG 判断保护直接访问。它们可创建或删除账号、
+建立学校及更改旧组织，不应成为第二套学校开通机制。
+
+- 精确保留 10 个旧 URL/反向名称，由 `base.legacy_initialization` 统一返回
+  `410 / LEGACY_INITIALIZATION_RETIRED`；不读取表单口令、不调用写入器，
+  DEBUG 和平台身份均不能重开。没有创建账号、学校或真实人事业务数据。
+- 正常 CSRF 中间件保留；缺少 CSRF 的 POST 返回 403，而不是绕过安全校验。
+- 登录页面不再向空库展示旧安装向导。初始平台凭证通过受控部署管理命令建立；
+  后续学校开户仍需正式平台服务与首管邀请，不用这批旧网页替代。
+- 新增 8 项回归：精确 URL 归属、无数据库方法响应、匿名空库、学校普通账号、
+  历史学校超级管理员、平台操作员、DEBUG 不重开及 CSRF。
+  四类身份对 10 路由执行 GET/POST，共 80 次请求，并逐次比较 User、Company、
+  Department、JobPosition、Employee 全表事实无变化。这些 MySQL 断言须以新
+  提交实际运行结果为准，本地只执行 14 项隔离策略/路由与工作流语法检查。
+
+本次封闭的是这 10 个已核实的安装入口，不表示全部遗留写入口已审完。
+首管邀请、改密、MFA、组织岗位生效、教职工导入和角色审批完整业务仍待验收。
+学生仓库和跨产品开户编排未修改，发布签字仍 PENDING。
+
 ## 前一轮离线证据边界
 
 本地执行：Python 语法编译；24 项隔离函数逻辑检查；系统 Chromium 在
@@ -88,7 +146,7 @@ MySQL 封存必须以新提交的 Actions 输出为准；代码写入不等于�
 已有环境完成迁移后，应在隔离 MySQL 测试库执行：
 
 ```sh
-python manage.py test base.test_school_management base.test_account_bootstrap base.test_settings_runtime_contract base.test_settings_center_contract platform_access --keepdb --noinput --verbosity 2
+python manage.py test base.test_school_management base.test_account_bootstrap base.test_legacy_initialization_boundary base.test_settings_runtime_contract base.test_settings_center_contract platform_access --keepdb --noinput --verbosity 2
 ```
 
 本命令必须遵循既有 CI 测试库创建/迁移约定；不要指向生产业务库。
