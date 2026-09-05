@@ -21,6 +21,28 @@ VALUES = {"root_code": "SCHOOL-A", "department_code": "TEACHING-OFFICE",
           "planned_fte": "1.00", "confirmed": "on"}
 
 
+def click_document(page, control, destination, *, status=200):
+    """Require an actual main-frame document response, not History API noise.
+
+    Shared shell scripts call replaceState after loading. That produces a
+    same-document navigation with no response and can race expect_navigation.
+    This still requires the real click, exact URL, HTTP status and loaded DOM;
+    an XHR to the same URL cannot satisfy the assertion.
+    """
+    with page.expect_response(lambda response: (
+        response.request.is_navigation_request()
+        and response.frame == page.main_frame
+        and response.request.method == "GET"
+        and response.url == destination
+    )) as received:
+        control.click()
+    response = received.value
+    require(response.status == status,
+            f"Document {destination} returned {response.status}, expected {status}")
+    page.wait_for_url(destination, wait_until="domcontentloaded")
+    return response
+
+
 def write(name, value):
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -83,9 +105,7 @@ def browser_proof():
             page.goto(base + "/login/?next=" + quote("/settings/school-management/", safe="/"))
             page.locator("#username").fill(data["roles"][role]["username"])
             page.locator("#password").fill(os.environ["SCHOOL_BOOTSTRAP_PASSWORD"] + role)
-            with page.expect_navigation(wait_until="domcontentloaded") as nav:
-                page.locator("button.yk-login-submit").click()
-            require(nav.value is not None and nav.value.status == 200, f"{role}: real login failed")
+            click_document(page, page.locator("button.yk-login-submit"), base + "/settings/school-management/")
             require(any(cookie["name"] == "sessionid" for cookie in context.cookies()), "Session not established")
             yield page
             require(not errors, f"{role}: JavaScript failures {errors}")
@@ -104,14 +124,8 @@ def browser_proof():
                 role = "admin_a"
                 with login(browser, role) as page:
                     link = page.locator('[data-setup-step="organizations"] a')
-                    with page.expect_navigation(wait_until="domcontentloaded") as nav:
-                        link.click()
-                    require(nav.value is not None and nav.value.status == 200,
-                            "School center did not open the organization workspace")
-                    with page.expect_navigation(wait_until="domcontentloaded") as started:
-                        page.get_by_role("link", name="学校首次建立组织与岗位", exact=True).click()
-                    require(started.value is not None and started.value.status == 200 and urlsplit(page.url).path == PATH,
-                            "Organization workspace did not lead to first-structure workbench")
+                    click_document(page, link, base + "/hr/structure/organizations")
+                    click_document(page, page.get_by_role("link", name="学校首次建立组织与岗位", exact=True), base + PATH)
                     record(role, "school-center-to-structure", 200)
                     form = page.locator("#initial-structure-form")
                     form.wait_for(state="visible")
@@ -124,9 +138,13 @@ def browser_proof():
                             locator.select_option(value)
                         else:
                             locator.fill(value)
-                    with page.expect_navigation(wait_until="domcontentloaded") as saved:
-                        form.get_by_role("button", name="确认并建立组织岗位", exact=True).click()
-                    require(saved.value is not None and saved.value.status == 200, "Initial structure save failed")
+                    with page.expect_response(lambda response: (
+                        response.request.is_navigation_request()
+                        and response.request.method == "POST"
+                        and response.url == base + PATH
+                    )) as submitted:
+                        click_document(page, form.get_by_role("button", name="确认并建立组织岗位", exact=True), base + PATH)
+                    require(submitted.value.status == 302, "Initial structure POST did not commit and redirect")
                     page.locator("#structure-setup-receipt").wait_for(state="visible")
                     require("教务处" in page.locator("#structure-setup-receipt").inner_text(), "Receipt did not read back the department")
                     record(role, "confirmed-real-structure-saved", 200)
@@ -140,16 +158,14 @@ def browser_proof():
                     record(role, "changed-request-rejected", 409)
                     write("receipt.json", {"receipt_id": page.locator("#structure-setup-receipt").get_attribute("data-receipt-id")})
                     page.screenshot(path=str(OUT / "structure-receipt-desktop.png"), full_page=True)
-                    with page.expect_navigation(wait_until="domcontentloaded"):
-                        page.get_by_role("link", name="查看正式组织树", exact=True).click()
+                    click_document(page, page.get_by_role("link", name="查看正式组织树", exact=True), base + "/hr/structure/organizations")
                     page.locator("#hr-org-tree .is-root").wait_for(state="visible")
                     page.get_by_role("button").filter(has_text="教务处").click()
                     page.locator("#hr-org-detail").get_by_role("heading", name="教务处", exact=True).wait_for(state="visible")
                     require("有效" in page.locator("#hr-org-detail").inner_text(), "Formal organization status was not rendered")
                     record(role, "formal-tree-and-department-read-back", 200)
                     page.goto(base + PATH)
-                    with page.expect_navigation(wait_until="domcontentloaded"):
-                        page.get_by_role("link", name="查看岗位台账", exact=True).click()
+                    click_document(page, page.get_by_role("link", name="查看岗位台账", exact=True), base + "/hr/structure/positions")
                     row = page.locator("#hr-position-table tbody tr").filter(has_text="EDU-ADMIN-001")
                     row.wait_for(state="visible")
                     require("教务处" in row.inner_text() and "空缺" in row.inner_text(), "Position not connected to formal organization/vacancy")

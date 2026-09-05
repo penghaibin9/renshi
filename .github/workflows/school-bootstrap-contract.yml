@@ -10,7 +10,7 @@ on:
       - 'frontend/templates/hr/structure/**'
       - 'frontend/static/hr/js/structure/**'
       - 'frontend/static/hr/css/structure-setup.css'
-      - 'scripts/school_structure_browser.py'
+      - 'scripts/school_structure_*.py'
       - 'backend/platform_access/**'
       - 'backend/horilla/menu/**'
       - 'backend/horilla/urls.py'
@@ -105,6 +105,11 @@ jobs:
           python -m pip install -r requirements.lock
           python -m pip install 'ruff==0.16.5' playwright
           python -m playwright install --with-deps chromium
+      - name: Check document navigation synchronization in Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/school_structure_navigation_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/navigation-contract.log
       - name: Prepare isolated MySQL schema
         id: runtime
         shell: bash
