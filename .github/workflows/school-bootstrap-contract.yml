@@ -29,11 +29,33 @@ env:
   TENANT_FAIL_CLOSED: 'True'
   PYTHONPATH: backend
   PRODUCT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  SCHOOL_BOOTSTRAP_ACCEPTANCE: '1'
 
 jobs:
+  exact-source-context:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve tested source context without runtime data
+        run: |
+          mkdir -p source-context
+          git rev-parse HEAD > source-context/tested-commit.txt
+          printf '%s\n' "$PRODUCT_HEAD_SHA" > source-context/product-head.txt
+          # Only tracked application sources: no .git, untracked settings,
+          # runtime environments, databases, user uploads or dependency caches.
+          git archive --format=tar.gz --output=source-context/source.tar.gz \
+            HEAD backend frontend scripts .github/workflows requirements.lock manage.py sitecustomize.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: school-bootstrap-source-${{ github.sha }}
+          path: source-context/
+          if-no-files-found: error
+          retention-days: 1
+
   school-bootstrap-mysql:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     services:
       mysql:
         image: mysql:8.4
@@ -55,23 +77,29 @@ jobs:
           cache: pip
       - name: Initialize exact-source evidence
         run: |
-          mkdir -p tests/artifacts/school-bootstrap-contract
+          mkdir -p tests/artifacts/school-bootstrap-contract tests/artifacts/school-bootstrap-browser
           python - <<'PY'
-          import json, os, subprocess
+          import json, os, subprocess, secrets
           from pathlib import Path
           Path('tests/artifacts/school-bootstrap-contract/provenance.json').write_text(
               json.dumps({'productHead': os.environ['PRODUCT_HEAD_SHA'],
                           'testedCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                           'runId': os.environ['GITHUB_RUN_ID']}, indent=2), encoding='utf-8')
+          password = secrets.token_urlsafe(40)
+          print('::add-mask::' + password)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write('SCHOOL_BOOTSTRAP_PASSWORD=' + password + '\n')
           PY
-      - name: Install locked application dependencies
+      - name: Install locked application dependencies and Chromium
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config \
             libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
           python -m pip install -r requirements.lock
-          python -m pip install 'ruff==0.16.5'
+          python -m pip install 'ruff==0.16.5' playwright
+          python -m playwright install --with-deps chromium
       - name: Prepare isolated MySQL schema
+        id: runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -86,6 +114,7 @@ jobs:
           DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" python manage.py migrate --run-syncdb --noinput
           DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" python manage.py migrate --check
       - name: Collect lint and execute real bootstrap contracts
+        id: contracts
         shell: bash
         run: |
           python - <<'PY'
@@ -108,21 +137,44 @@ jobs:
               print(result.stdout, flush=True)
               results.append({'artifact': filename, 'exitCode': result.returncode})
           (out / 'results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
-          # Both checks run for diagnosis, but either failure still fails the job.
           sys.exit(1 if any(item['exitCode'] != 0 for item in results) else 0)
           PY
-      - name: Preserve exact tracked sources for failed-run diagnosis
-        if: failure()
+      - name: Real browser first configuration without Employee fixtures
+        id: browser
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+        shell: bash
         run: |
-          # Tracked application sources only: no .git, environment secrets,
-          # database, uploads, dependency caches, or untracked runtime settings.
-          git archive --format=tar.gz --output=tests/artifacts/school-bootstrap-contract/source.tar.gz \
-            HEAD backend frontend scripts .github/workflows requirements.lock manage.py sitecustomize.py
-      - name: Upload bootstrap contract evidence
+          set -euo pipefail
+          python scripts/school_bootstrap_browser.py seed 2>&1 | tee tests/artifacts/school-bootstrap-browser/seed.log
+          python manage.py runserver 127.0.0.1:8000 --noreload > tests/artifacts/school-bootstrap-browser/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/ready/ > tests/artifacts/school-bootstrap-browser/readiness.json; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.loads(Path('tests/artifacts/school-bootstrap-browser/readiness.json').read_text())
+          assert value.get('status') == 'ok' and value.get('database_vendor') == 'mysql', value
+          PY
+          python scripts/school_bootstrap_browser.py browser 2>&1 | tee tests/artifacts/school-bootstrap-browser/browser.log
+      - name: Seal school and audit facts from MySQL
+        if: ${{ !cancelled() && steps.browser.outcome == 'success' }}
+        run: python scripts/school_bootstrap_browser.py seal
+      - name: Upload bootstrap contract and browser evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: school-bootstrap-contract-${{ github.run_id }}-${{ github.sha }}
-          path: tests/artifacts/school-bootstrap-contract/
+          path: |
+            tests/artifacts/school-bootstrap-contract/
+            tests/artifacts/school-bootstrap-browser/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
