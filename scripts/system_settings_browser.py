@@ -437,13 +437,6 @@ def edit_company_profile(
         f"{role}: company save did not return a successful HX redirect "
         f"(status={save_response.status}, headers={headers})",
     )
-    record(
-        evidence,
-        role=role,
-        assertion="company-profile-saved-from-ui",
-        status=save_response.status,
-        detail={"company": updated_name, "address": updated_address},
-    )
 
     response = page.goto(
         BASE_URL + SYSTEM_PREFERENCES_PATH,
@@ -464,18 +457,13 @@ def edit_company_profile(
         updated_address in page.locator("#settingsContainer").inner_text(),
         f"{role}: updated school address did not survive reload",
     )
-    record(
-        evidence,
-        role=role,
-        assertion="company-profile-reloaded-from-server",
-        status=200,
-        detail=updated_name,
-    )
 
 
 def main() -> None:
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     seed = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    updated_school_a_name = f"{seed['school_a_name']}（已保存）"
+    updated_school_a_address = "长沙市系统设置验收路 A 号（浏览器已保存）"
     evidence: list[dict] = []
     failure: BaseException | None = None
 
@@ -510,8 +498,8 @@ def main() -> None:
                         role,
                         evidence,
                         company_id=seed["school_a_id"],
-                        updated_name=seed["school_a_updated_name"],
-                        updated_address=seed["school_a_updated_address"],
+                        updated_name=updated_school_a_name,
+                        updated_address=updated_school_a_address,
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "02-school-a-company.png"),
@@ -597,12 +585,6 @@ def main() -> None:
                         company_list["status"] == 403,
                         f"{role}: company list expected 403, got {company_list}",
                     )
-                    record(
-                        evidence,
-                        role=role,
-                        assertion="company-list-denied",
-                        status=company_list["status"],
-                    )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "03-teacher-denied.png"),
                         full_page=True,
@@ -619,30 +601,30 @@ def main() -> None:
                         date_format="DD/MM/YYYY",
                         time_format="hh:mm A",
                     )
-                    for assertion, path in (
-                        (
-                            "cross-tenant-company-form-concealed",
-                            f"/settings/company-update/{seed['school_a_id']}/",
-                        ),
-                        (
-                            "cross-tenant-legacy-company-form-concealed",
-                            f"/company-update-form/{seed['school_a_id']}/",
-                        ),
-                    ):
-                        cross_tenant = page.goto(
-                            BASE_URL + path,
-                            wait_until="domcontentloaded",
-                        )
-                        require(
-                            cross_tenant is not None and cross_tenant.status == 404,
-                            f"{role}: {assertion} expected 404",
-                        )
-                        record(
-                            evidence,
-                            role=role,
-                            assertion=assertion,
-                            status=cross_tenant.status,
-                        )
+                    primary = page.goto(
+                        BASE_URL
+                        + f"/settings/company-update/{seed['school_a_id']}/",
+                        wait_until="domcontentloaded",
+                    )
+                    require(
+                        primary is not None and primary.status == 404,
+                        f"{role}: cross-tenant company form expected 404",
+                    )
+                    record(
+                        evidence,
+                        role=role,
+                        assertion="cross-tenant-company-form-concealed",
+                        status=primary.status,
+                    )
+                    legacy = page.goto(
+                        BASE_URL
+                        + f"/company-update-form/{seed['school_a_id']}/",
+                        wait_until="domcontentloaded",
+                    )
+                    require(
+                        legacy is not None and legacy.status == 404,
+                        f"{role}: legacy cross-tenant company form expected 404",
+                    )
                     own_preferences = page.goto(
                         BASE_URL + SYSTEM_PREFERENCES_PATH,
                         wait_until="domcontentloaded",
@@ -657,7 +639,7 @@ def main() -> None:
                         role,
                         evidence,
                         expected_company=seed["school_b_name"],
-                        forbidden_company=seed["school_a_updated_name"],
+                        forbidden_company=updated_school_a_name,
                     )
                     page.screenshot(
                         path=str(ARTIFACT_DIR / "04-school-b-company.png"),
@@ -677,6 +659,10 @@ def main() -> None:
             {
                 "failure": None if failure is None else repr(failure),
                 "completed_assertions": len(evidence),
+                "school_a_expected_after_edit": {
+                    "company": updated_school_a_name,
+                    "address": updated_school_a_address,
+                },
             },
             ensure_ascii=False,
             indent=2,
