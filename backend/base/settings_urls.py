@@ -2,14 +2,14 @@
 
 These patterns intentionally precede ``base.urls`` in the root resolver. Their
 public paths and names stay unchanged, while incoming requests are handled by
-tenant-safe views in ``base.settings_center``. Child HTMX routes are included:
-hardening only the outer settings page would still allow list and modal calls
-to escape the selected-school boundary.
+tenant-safe views. Child HTMX routes are included: hardening only the outer
+settings page would still allow list and navbar calls to escape the selected-
+school boundary.
 """
 
 from django.urls import path
 
-from base import settings_center
+from base import settings_center, settings_company_children
 
 
 urlpatterns = [
@@ -65,12 +65,12 @@ urlpatterns = [
     ),
     path(
         "company-navbar/",
-        settings_center.company_navbar,
+        settings_company_children.company_navbar,
         name="company-navbar",
     ),
     path(
         "company-list/",
-        settings_center.company_list,
+        settings_company_children.company_list,
         name="company-list",
     ),
     path(
