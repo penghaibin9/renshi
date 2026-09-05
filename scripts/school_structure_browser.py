@@ -107,6 +107,11 @@ def browser_proof():
             page.locator("#password").fill(os.environ["SCHOOL_BOOTSTRAP_PASSWORD"] + role)
             click_document(page, page.locator("button.yk-login-submit"), base + "/settings/school-management/")
             require(any(cookie["name"] == "sessionid" for cookie in context.cookies()), "Session not established")
+            avatar = page.locator("[data-account-avatar]")
+            avatar.wait_for(state="visible")
+            require(avatar.inner_text().strip(), "School account avatar fallback is empty")
+            require(data["roles"][role]["username"] in page.locator("[data-account-menu-toggle]").inner_text(),
+                    "Shared header did not identify the signed-in school account")
             yield page
             require(not errors, f"{role}: JavaScript failures {errors}")
         except BaseException:
