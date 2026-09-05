@@ -1,8 +1,10 @@
 """Canonical hardened routes for the legacy System Settings surface.
 
-These patterns intentionally precede ``base.urls`` in the root resolver.  Their
+These patterns intentionally precede ``base.urls`` in the root resolver. Their
 public paths and names stay unchanged, while incoming requests are handled by
-tenant-safe views in ``base.settings_center``.
+tenant-safe views in ``base.settings_center``. Child HTMX routes are included:
+hardening only the outer settings page would still allow list and modal calls
+to escape the selected-school boundary.
 """
 
 from django.urls import path
@@ -62,8 +64,28 @@ urlpatterns = [
         name="company-view",
     ),
     path(
+        "company-navbar/",
+        settings_center.company_navbar,
+        name="company-navbar",
+    ),
+    path(
+        "company-list/",
+        settings_center.company_list,
+        name="company-list",
+    ),
+    path(
+        "company-create-form/",
+        settings_center.company_create_form,
+        name="company-create-form",
+    ),
+    path(
         "settings/company-update/<int:id>/",
         settings_center.company_update,
         name="company-update",
+    ),
+    path(
+        "company-update-form/<int:pk>/",
+        settings_center.company_update_form,
+        name="company-update-form",
     ),
 ]
