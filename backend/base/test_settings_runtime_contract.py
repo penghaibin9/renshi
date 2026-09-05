@@ -1,10 +1,15 @@
+import inspect
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from django.urls import resolve
 
-from base.settings_center import DATE_FORMATS, TIME_FORMATS
+from base.settings_center import (
+    DATE_FORMATS,
+    TIME_FORMATS,
+    ScopedCompanyListView,
+)
 from base.settings_visibility import settings_menu_visible
 
 
@@ -21,12 +26,23 @@ class SettingsRouteResolutionContractTests(SimpleTestCase):
             "/enable-default-export-access/",
             "/settings/update-language-settings/",
             "/settings/company-view/",
+            "/company-navbar/",
+            "/company-list/",
+            "/company-create-form/",
             "/settings/company-update/1/",
+            "/company-update-form/1/",
         )
         for path in paths:
             with self.subTest(path=path):
                 match = resolve(path)
                 self.assertEqual(match.func.__module__, "base.settings_center")
+
+    def test_company_table_never_uses_the_global_company_queryset(self):
+        source = inspect.getsource(ScopedCompanyListView)
+        self.assertIn("selected = _selected_company(self.request)", source)
+        self.assertIn("Company.objects.filter(id=selected.id)", source)
+        self.assertIn("/settings/company-update/{pk}/", source)
+        self.assertIn("self.bulk_update = False", source)
 
     def test_display_format_allowlists_match_rendered_business_choices(self):
         self.assertIn("YYYY-MM-DD", DATE_FORMATS)
