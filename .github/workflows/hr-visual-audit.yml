@@ -145,6 +145,45 @@ jobs:
           DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --check
 
+      - name: Allow Django flush in disposable visual test database
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute(
+                  """
+                  SELECT TRIGGER_NAME
+                  FROM information_schema.TRIGGERS
+                  WHERE TRIGGER_SCHEMA = %s
+                    AND EVENT_MANIPULATION = 'DELETE'
+                  ORDER BY TRIGGER_NAME
+                  """,
+                  ("test_renshi_db",),
+              )
+              trigger_names = [row[0] for row in cursor.fetchall()]
+              for trigger_name in trigger_names:
+                  safe_name = trigger_name.replace("`", "``")
+                  cursor.execute(
+                      f"DROP TRIGGER `test_renshi_db`.`{safe_name}`"
+                  )
+              print(
+                  "Dropped DELETE-only immutability triggers from disposable "
+                  f"visual test database: {len(trigger_names)}"
+              )
+          finally:
+              connection.close()
+          PY
+
       - name: Capture real Chromium screenshots
         env:
           HR_VISUAL_AUDIT: "1"
