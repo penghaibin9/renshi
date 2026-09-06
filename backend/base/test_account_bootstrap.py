@@ -1,0 +1,327 @@
+"""Real-login and full-middleware regression tests for school-account bootstrap.
+
+The MySQL gate executes these against the real URL configuration, templates,
+password backend and sessions. No force_login or artificial Employee fixture.
+"""
+
+from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group, Permission
+from django.core.exceptions import PermissionDenied
+from django.db import DatabaseError
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
+from django.urls import resolve, reverse
+
+from base import account_views, dashboard, school_management
+from base.models import Company, CompanyGroupAssignment, SetupChecklistDismissal
+from horilla import config as legacy_navigation
+from horilla.horilla_middlewares import current_company_id, get_selected_company, tenant_context
+
+
+@contextmanager
+def web_company_scope(value):
+    """Model middleware scope in tests; tenant_context stays concrete-only.
+
+    An explicit web union is valid as a read-only selection, whereas the job
+    helper intentionally rejects it. Restore the ContextVar even on failure.
+    """
+    token = current_company_id.set(value)
+    try:
+        yield
+    finally:
+        current_company_id.reset(token)
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+class AccountAdmissionPolicyTests(SimpleTestCase):
+    def user(self, **kwargs):
+        return SimpleNamespace(is_active=True, is_authenticated=True, **kwargs)
+
+    def test_archived_employee_is_not_resurrected_by_school_grants(self):
+        user = self.user(employee_get=SimpleNamespace(is_active=False))
+        with patch.object(account_views, "get_assigned_company_ids") as grants:
+            self.assertFalse(account_views.account_can_sign_in(user))
+        grants.assert_not_called()
+
+    def test_staff_flag_alone_is_not_school_access(self):
+        user = self.user(is_staff=True, is_superuser=False)
+        with patch.object(account_views, "get_assigned_company_ids", return_value=set()):
+            self.assertFalse(account_views.account_can_sign_in(user))
+
+    def test_missing_membership_database_does_not_grant_access(self):
+        with patch.object(account_views, "get_assigned_company_ids", side_effect=DatabaseError):
+            with self.assertRaises(DatabaseError):
+                account_views.account_can_sign_in(self.user(is_superuser=False))
+
+    def test_reverse_and_resolution_use_canonical_account_callbacks(self):
+        for name in ("login", "home-page", "notifications", "all-notifications",
+                     "get-horilla-installed-apps"):
+            self.assertEqual(resolve(reverse(name)).func.__module__, "base.account_views")
+
+    def test_safe_next_preserves_existing_query_and_multi_values(self):
+        request = RequestFactory().get("/login/", {"next": "/settings/?tab=school#profile", "filter": ["a", "b"]})
+        self.assertEqual(account_views._next_url(request), "/settings/?tab=school&filter=a&filter=b#profile")
+
+    def test_external_and_insecure_next_are_rejected(self):
+        for target in ("https://foreign.invalid/", "//foreign.invalid/", "http://testserver/settings/"):
+            request = RequestFactory().get("/login/", {"next": target}, secure=True)
+            self.assertEqual(account_views._next_url(request), "/")
+
+
+    def test_job_scope_remains_concrete_only_and_web_scope_restores(self):
+        original = get_selected_company()
+        with self.assertRaises(ValueError):
+            with tenant_context("all"):
+                self.fail("Job scope must not accept a tenant union")
+        with self.assertRaisesRegex(RuntimeError, "scope failure"):
+            with web_company_scope("all"):
+                self.assertEqual(get_selected_company(), "all")
+                raise RuntimeError("scope failure")
+        self.assertEqual(get_selected_company(), original)
+
+
+@override_settings(COMPANY_SCOPED_PERMISSIONS=True, TENANT_FAIL_CLOSED=True,
+                   ALLOWED_HOSTS=["testserver", "localhost", "127.0.0.1"])
+class SchoolAccountEntryMySQLTests(TestCase):
+    password = "only-used-in-isolated-contract-tests"
+
+    def setUp(self):
+        self.school = Company.objects.create(company="Account School A", address="", country="CN",
+                                             state="", city="", zip="")
+        self.other = Company.objects.create(company="Account School B", address="", country="CN",
+                                            state="", city="", zip="")
+        self.user = get_user_model().objects.create_user(username="account-bootstrap", password=self.password)
+        self.user.is_new_employee = False
+        self.user.save(update_fields=["is_new_employee"])
+        self.group = Group.objects.create(name="account-bootstrap-school-admin")
+        self.group.permissions.set(Permission.objects.filter(content_type__app_label="base",
+            codename__in=["view_company", "change_company"]))
+        self.assertEqual(self.group.permissions.count(), 2)
+        CompanyGroupAssignment.objects.create(user=self.user, company=self.school, group=self.group)
+        CompanyGroupAssignment.sync_user_group_membership(self.user, self.group)
+        self.browser = Client(enforce_csrf_checks=True)
+
+    def sign_in(self, *, next_url="/settings/school-management/", password=None, remember=False):
+        self.assertEqual(self.browser.get("/login/").status_code, 200)
+        csrf = self.browser.cookies["csrftoken"].value
+        data = {"username": self.user.username, "password": password or self.password}
+        if remember:
+            data["remember_me"] = "on"
+        return self.browser.post("/login/?next=" + next_url, data,
+                                  HTTP_X_CSRFTOKEN=csrf)
+
+    def request_as_admin(self, path="/dashboard/"):
+        request = RequestFactory().get(path)
+        request.user = self.user
+        request.session = self.browser.session
+        return request
+
+    def test_real_login_full_school_page_and_no_employee_created(self):
+        response = self.sign_in()
+        self.assertEqual(response.status_code, 302)
+        page = self.browser.get(response["Location"])
+        self.assertContains(page, 'id="school-management"')
+        self.assertEqual(self.browser.session["selected_company"], str(self.school.pk))
+        self.assertIsNone(getattr(self.user, "employee_get", None))
+        self.assertContains(page, self.school.company)
+        self.assertNotContains(page, self.other.company)
+        self.assertTrue(self.browser.session.get_expire_at_browser_close())
+
+    def test_default_home_and_settings_gear_do_not_loop_to_employee_login(self):
+        self.sign_in(next_url="/")
+        home = self.browser.get("/")
+        self.assertEqual(home.status_code, 302)
+        self.assertEqual(home["Location"], reverse("school-management"))
+        settings = self.browser.get("/settings/")
+        self.assertEqual(settings.status_code, 302)
+        self.assertEqual(settings["Location"], reverse("school-management"))
+
+    def test_header_notification_load_is_account_scoped_without_refresh_loop(self):
+        self.sign_in()
+        response = self.browser.get(reverse("notifications"), HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("HX-Refresh", response.headers)
+        self.assertNotIn("HX-Redirect", response.headers)
+
+    def test_login_requires_csrf_and_rejects_bad_password(self):
+        self.assertEqual(self.browser.post("/login/", {"username": self.user.username,
+            "password": self.password}).status_code, 403)
+        self.sign_in(password="definitely-wrong")
+        self.assertNotIn("_auth_user_id", self.browser.session)
+
+    def test_unassigned_and_inactive_accounts_cannot_log_in(self):
+        CompanyGroupAssignment.objects.filter(user=self.user).delete()
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        self.sign_in()
+        self.assertNotIn("_auth_user_id", self.browser.session)
+        CompanyGroupAssignment.objects.create(user=self.user, company=self.school, group=self.group)
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        self.sign_in()
+        self.assertNotIn("_auth_user_id", self.browser.session)
+
+    def test_remember_me_uses_the_existing_bounded_policy(self):
+        self.sign_in(remember=True)
+        self.assertFalse(self.browser.session.get_expire_at_browser_close())
+        self.assertGreater(self.browser.session.get_expiry_age(), 0)
+        self.assertLessEqual(self.browser.session.get_expiry_age(), 14 * 24 * 60 * 60)
+
+    def test_forged_or_invalid_school_never_retargets_a_write(self):
+        for selected in (str(self.other.pk), "not-an-id", True, 1.5, "9" * 100):
+            self.sign_in()
+            session = self.browser.session
+            session["selected_company"] = selected
+            session.save()
+            response = self.browser.post(reverse("school-management"), {"company": "Must not save"},
+                HTTP_X_CSRFTOKEN=self.browser.cookies["csrftoken"].value)
+            self.assertEqual(response.status_code, 403, repr(selected))
+            self.assertEqual(self.browser.session["selected_company"], "all")
+            self.school.refresh_from_db()
+            self.other.refresh_from_db()
+            self.assertEqual(self.school.company, "Account School A")
+            self.assertEqual(self.other.company, "Account School B")
+            self.assertIsNone(get_selected_company())
+
+    def test_revoked_membership_and_historical_superuser_remain_school_bound(self):
+        self.sign_in()
+        self.browser.get(reverse("school-management"))
+        CompanyGroupAssignment.objects.filter(user=self.user).delete()
+        self.assertEqual(self.browser.get(reverse("school-management")).status_code, 403)
+        CompanyGroupAssignment.objects.create(user=self.user, company=self.school, group=self.group)
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
+        self.sign_in()
+        session = self.browser.session
+        session["selected_company"] = str(self.other.pk)
+        session.save()
+        self.assertEqual(self.browser.get(reverse("school-management")).status_code, 403)
+
+    def test_union_and_ambiguous_school_do_not_choose_first_database_row(self):
+        CompanyGroupAssignment.objects.create(user=self.user, company=self.other, group=self.group)
+        self.sign_in()
+        self.assertEqual(self.browser.get(reverse("school-management")).status_code, 403)
+        self.assertEqual(self.browser.session["selected_company"], "all")
+        request = self.request_as_admin()
+        with web_company_scope("all"):
+            self.assertIsNone(dashboard._resolve_checklist_company(request))
+            self.assertFalse(dashboard._get_setup_checklist_context(request)["show_setup_checklist"])
+
+    def test_dashboard_uses_school_center_summary_and_never_claims_production_ready(self):
+        self.sign_in()
+        self.browser.get(reverse("school-management"))
+        request = self.request_as_admin()
+        with tenant_context(self.school.pk):
+            expected = school_management.setup_summary(request, self.school)
+            actual = dashboard._get_setup_checklist_context(request)
+        self.assertTrue(actual["show_setup_checklist"])
+        self.assertEqual(actual["setup"], expected)
+        self.assertFalse(actual["setup"]["productionReady"])
+        self.assertEqual(actual["setup_center_url"], reverse("school-management"))
+
+    def test_dismissal_cannot_write_null_or_foreign_school_preferences(self):
+        self.sign_in()
+        request = self.request_as_admin(reverse("dashboard-dismiss-setup-checklist"))
+        request.method = "POST"
+        request.session["selected_company"] = "all"
+        with web_company_scope("all"), self.assertRaises(PermissionDenied):
+            dashboard.dismiss_setup_checklist(request)
+        request.session["selected_company"] = str(self.other.pk)
+        with tenant_context(self.other.pk), self.assertRaises(PermissionDenied):
+            dashboard.dismiss_setup_checklist(request)
+        self.assertFalse(SetupChecklistDismissal.objects.exists())
+
+
+    @override_settings(APPS=["base", "employee"])
+    def test_account_asset_manifest_is_json_without_personnel_or_refresh(self):
+        self.sign_in()
+        response = self.browser.get(reverse("get-horilla-installed-apps"), HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"installed_apps": ["base", "employee"]})
+        self.assertIn("application/json", response.headers["Content-Type"])
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        self.assertNotIn("HX-Refresh", response.headers)
+        self.assertNotIn("HX-Redirect", response.headers)
+        self.assertIsNone(getattr(self.user, "employee_get", None))
+
+    def test_account_manifest_rejects_anonymous_and_post(self):
+        self.assertEqual(self.browser.get(reverse("get-horilla-installed-apps")).status_code, 302)
+        self.sign_in()
+        response = self.browser.post(reverse("get-horilla-installed-apps"), {},
+            HTTP_X_CSRFTOKEN=self.browser.cookies["csrftoken"].value)
+        self.assertEqual(response.status_code, 405)
+
+    def test_revoked_school_cannot_read_asset_manifest(self):
+        self.sign_in()
+        self.browser.get(reverse("school-management"))
+        CompanyGroupAssignment.objects.filter(user=self.user).delete()
+        response = self.browser.get(reverse("get-horilla-installed-apps"))
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b'"installed_apps"', response.content)
+
+    def test_profile_fields_have_form_owned_ids_and_original_post_names(self):
+        self.sign_in()
+        response = self.browser.get(reverse("school-management"))
+        self.assertEqual(response.status_code, 200)
+        for name in school_management.PROFILE_FIELDS:
+            self.assertContains(response, f'id="school-profile-{name}"')
+            self.assertContains(response, f'for="school-profile-{name}"')
+            self.assertContains(response, f'name="{name}"')
+        self.assertNotContains(response, 'id="id_country"')
+        self.assertNotContains(response, 'id="id_state"')
+
+
+class LegacySidebarAccountBoundaryTests(SimpleTestCase):
+    """Shared context must not call personnel-only providers for school accounts."""
+
+    def test_account_without_employee_skips_legacy_provider_discovery(self):
+        for user in (
+            None,
+            SimpleNamespace(is_anonymous=True),
+            SimpleNamespace(is_anonymous=False),
+            SimpleNamespace(is_anonymous=False, employee_get=None),
+        ):
+            request = SimpleNamespace(user=user, MENUS=["stale"])
+            with patch.object(legacy_navigation, "get_apps_in_base_dir") as providers:
+                self.assertEqual(legacy_navigation.sidebar(request), [])
+            self.assertEqual(request.MENUS, [])
+            providers.assert_not_called()
+
+    def test_account_only_context_drops_stale_session_menu(self):
+        request = SimpleNamespace(
+            user=SimpleNamespace(is_anonymous=False),
+            session=SimpleNamespace(session_key="account-only-sidebar-contract"),
+        )
+        with patch.dict(legacy_navigation.ALL_MENUS, {request.session.session_key: ["stale"]}):
+            self.assertEqual(legacy_navigation.get_MENUS(request), {"sidebar": []})
+            self.assertEqual(legacy_navigation.ALL_MENUS[request.session.session_key], [])
+            self.assertEqual(legacy_navigation.get_MENUS(request), {"sidebar": []})
+
+    def _employee_sidebar(self, allowed):
+        user = SimpleNamespace(is_anonymous=False, employee_get=SimpleNamespace())
+        request = SimpleNamespace(user=user)
+        provider = SimpleNamespace(
+            MENU="Personnel module", IMG_SRC="module.png", SUBMENUS=[],
+            ACCESSIBILITY="test_provider.allowed",
+        )
+        permission = Mock(return_value=allowed)
+        with (
+            patch.object(legacy_navigation, "get_apps_in_base_dir", return_value=["test_provider"]),
+            patch.object(legacy_navigation.apps, "is_installed", return_value=True),
+            patch.object(legacy_navigation.importlib, "import_module", return_value=provider),
+            patch.object(legacy_navigation, "import_method", return_value=permission),
+        ):
+            result = legacy_navigation.sidebar(request)
+        permission.assert_called_once()
+        return result
+
+    def test_employee_without_permission_still_has_no_legacy_menu(self):
+        self.assertEqual(self._employee_sidebar(False), [])
+
+    def test_employee_with_permission_keeps_existing_legacy_menu(self):
+        result = self._employee_sidebar(True)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["app"], "test_provider")

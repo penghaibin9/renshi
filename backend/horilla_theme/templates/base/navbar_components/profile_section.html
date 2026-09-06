@@ -1,9 +1,11 @@
-{% load static i18n i18n %}
-<button>
+{% load static i18n %}
+{% with employee=request.user.employee_get %}
+<button type="button" data-account-menu-toggle aria-label="账户菜单">
     <div class="flex gap-3">
         <div class="relative flex items-center cursor-pointer w-max">
+            {% if employee %}
             <img
-                src="{{request.user.employee_get.get_avatar}}"
+                src="{{ employee.get_avatar }}"
                 alt="用户头像"
                 class="w-11 h-11 rounded-full"
                 loading="lazy"
@@ -14,12 +16,21 @@
                     {% if user.employee_get.check_online %} bg-[#1dd75b] {% else %} bg-[red] {% endif %}
                 "
             ></span>
+            {% else %}
+            <span data-account-avatar role="img" aria-label="账户头像"
+                  class="w-11 h-11 rounded-full flex items-center justify-center font-semibold text-primary-600 bg-primary-50"
+                  style="width:44px;height:44px;flex-shrink:0">
+                {{ request.user.username|default:"账号"|slice:":1"|upper }}
+            </span>
+            {% endif %}
         </div>
         <div class="hidden md:block">
             <div class="flex flex-col justify-center items-start h-full">
-                <h5 class="font-semibold text-sm">{{ user.employee_get.get_full_name|title }}</h5>
+                <h5 class="font-semibold text-sm">{% if employee %}{{ employee.get_full_name|title }}{% else %}{{ request.user.username }}{% endif %}</h5>
                 <p class="text-xs text-dark-200">
-                    {% if user.employee_get.check_online %}
+                    {% if not employee %}
+                        账号已登录
+                    {% elif employee.check_online %}
                         在线
                     {% else %}
                         离线
@@ -39,7 +50,8 @@
 
 <div class="dropdown-content absolute z-10 bg-white rounded-lg [box-shadow:0px_0px_20px_0px_rgb(0_0_0_/_8%)] min-w-[170px] py-2 px-4 right-0">
     <ul>
-        {% if request.session.selected_company == "all" or request.user.employee_get.employee_work_info.company_id.id == request.session.selected_company|default:"-1"|add:"0" %}
+        {% if employee %}
+        {% if request.session.selected_company == "all" or employee.employee_work_info.company_id.id == request.session.selected_company|default:"-1"|add:"0" %}
             <li>
                 <button class="py-1.5 hover:text-primary-600 transition duration-300 text-sm gap-4 items-center flex w-full">
                     <a
@@ -81,6 +93,7 @@
             </li>
         {% endif %}
 
+        {% endif %}
         <hr class="text-[#1c1c1c] my-2">
         <li>
             <button class="py-1.5 hover:text-primary-600 transition duration-300 text-sm gap-4 items-center flex w-full">
@@ -89,3 +102,4 @@
         </li>
     </ul>
 </div>
+{% endwith %}

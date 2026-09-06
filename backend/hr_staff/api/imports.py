@@ -1,241 +1,203 @@
-"""
-hr_staff/api/imports.py —— 权威导入 API（§24，P1-i）。
+"""HR03 imports: bounded XLSX/CSV -> encrypted staging -> explicit row commit.
 
-POST /api/hr/v1/staff/import                     上传受限 CSV → staging → 校验预览
-POST /api/hr/v1/staff/import/{job_id}/commit      显式提交有效行（逐行原子）
-GET  /api/hr/v1/staff/import/{job_id}             导入进度/结果
+Public import URLs are retained. Only confirmed HR02 codes identify placement;
+no tenant ID, raw ORM ID or legacy department field selects another authority.
 """
-
 from __future__ import annotations
 
-import csv
-import io
-from datetime import datetime
+import hashlib
 
+from django.db import transaction
+from django.http import HttpResponse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from hr_staff.api.base import (
-    api_root,
-    error_response,
-    json_response,
-    make_staff_context,
-)
-from hr_staff.constants import RelationshipType, StaffCategoryCode
+from hr_staff.api.base import api_root, error_response, json_response, make_staff_context
 from hr_staff.context import HrStaffContextError
 from hr_staff.permissions import require_hr_staff_permission
-from hr_staff.services.import_service import (
-    ImportService,
-    ImportStateConflict,
-    StaffMasterRowApplier,
+from hr_staff.services.audit_service import write_audit_event
+from hr_staff.services.import_service import ImportService, ImportStateConflict, StaffMasterRowApplier
+from hr_staff.services.import_validation import StaffImportValidator, basic_errors, parse_date
+from hr_staff.services.import_workbook import (
+    COLUMNS, MAX_IMPORT_BYTES, ImportFileError,
+    error_workbook, parse_upload, template_workbook,
 )
 
-SCHEMA_IMPORT = "hr03.import.1"
-MAX_IMPORT_BYTES = 5 * 1024 * 1024
-MAX_IMPORT_ROWS = 5000
-
-EXPECTED_COLUMNS = [
-    "staff_no",
-    "legal_name",
-    "gender_code",
-    "birth_date",
-    "document_number",
-    "staff_category_code",
-    "relationship_type",
-    "effective_from",
-    "legacy_department_id",
-]
+SCHEMA_IMPORT = "hr03.import.2"
+EXPECTED_COLUMNS = list(COLUMNS)
 
 
 def _make(request):
     try:
-        return make_staff_context(request)
+        context = make_staff_context(request)
+        if not request.user.is_active or context.scope.scope_type != "SCHOOL":
+            raise HrStaffContextError("SCOPE_NOT_ALLOWED", "批量建档需要明确的学校级导入授权")
+        return context
     except HrStaffContextError as exc:
-        return error_response(request, exc.code, exc.message, status=403)
+        return error_response(request, exc.code, exc.message, status=exc.status)
+
+
+def _owned_job(service, job_id):
+    job = service.job_for_id(job_id)
+    if job is None:
+        return None
+    # New transport jobs are uploader-bound. Existing jobs without this marker
+    # retain the old permission-only behavior; no new job may omit the marker.
+    owner = (job.checkpoint or {}).get("upload_actor_user_id")
+    if owner is not None and owner != service.actor_user_id:
+        return None
+    return job
+
+
+def _summary(job):
+    # Only a stale executor lease is recoverable. This is UI guidance, not an
+    # authorization token: commit() rechecks the live lease under its job lock.
+    can_resume = job.status == "COMMITTING" and ImportService._commit_lease_is_stale(
+        job, dict(job.checkpoint or {}), timezone.now()
+    )
+    return {
+        "jobId": str(job.pk), "templateKey": job.template_key, "status": job.status,
+        "totalRows": job.total_rows, "validRows": job.valid_rows, "failedRows": job.failed_rows,
+        "canResume": can_resume,
+        "pendingRows": job.rows.filter(tenant_id=job.tenant_id, is_valid=True, commit_status="PENDING").count(),
+        "committedRows": job.rows.filter(tenant_id=job.tenant_id, commit_status="COMMITTED").count(),
+        "committedBy": job.committed_by,
+        "committedAt": job.committed_at.isoformat() if job.committed_at else None,
+        "issueCount": job.issues.filter(tenant_id=job.tenant_id).count(),
+        "issues": [{"rowNo": issue.row_no, "field": issue.field_code, "error": issue.message}
+                   for issue in job.issues.filter(tenant_id=job.tenant_id).order_by("row_no", "field_code")[:50]],
+        "resultRows": [{"rowNo": row.row_no, "staffId": row.data_json.get("_result_staff_id")}
+                       for row in job.rows.filter(tenant_id=job.tenant_id, commit_status="COMMITTED").order_by("row_no")[:50]],
+    }
+
+
+def _download(content, filename):
+    response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Cache-Control"] = "no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@require_GET
+@require_hr_staff_permission("hr.staff.import")
+def import_template(request):
+    context = _make(request)
+    if not hasattr(context, "tenant_id"):
+        return context
+    refs = []
+    if all(request.user.has_perm(code) for code in ("hr.structure.organization.view", "hr.structure.position.view")):
+        from django.db.models import Q
+        from hr_structure.models import HrPosition, HrOrganizationVersion
+        positions = HrPosition.objects.filter(tenant_id=context.tenant_id, lifecycle_status="ACTIVE",
+            organization_id__tenant_id=context.tenant_id, post_catalog_version_id__tenant_id=context.tenant_id,
+            validity_from__lte=context.today()).filter(Q(validity_to__isnull=True) | Q(validity_to__gt=context.today()))
+        positions = list(positions.select_related("organization_id", "post_catalog_version_id").order_by("position_code")[:2000])
+        names, ambiguous = {}, set()
+        versions = HrOrganizationVersion.objects.filter(
+            tenant_id=context.tenant_id, organization_id_id__in={p.organization_id_id for p in positions},
+            status__in=("APPROVED", "EFFECTIVE", "SUPERSEDED"), validity_from__lte=context.today()
+        ).filter(Q(validity_to__isnull=True) | Q(validity_to__gt=context.today()))
+        for version in versions:
+            if version.organization_id_id in names:
+                ambiguous.add(version.organization_id_id)
+            names[version.organization_id_id] = version.name
+        for position in positions:
+            org_id = position.organization_id_id
+            if org_id in names and org_id not in ambiguous:
+                refs.append((position.organization_id.stable_code, names[org_id], position.position_code,
+                             position.post_catalog_version_id.name, context.today().isoformat()))
+    return _download(template_workbook(refs), "hr03_staff_import_template.xlsx")
 
 
 @require_POST
 @require_hr_staff_permission("hr.staff.import")
 def upload_import(request):
-    resp = _make(request)
-    if not hasattr(resp, "tenant_id"):
-        return resp
-    file = request.FILES.get("file")
-    if file is None:
+    context = _make(request)
+    if not hasattr(context, "tenant_id"):
+        return context
+    upload = request.FILES.get("file")
+    if upload is None:
         return error_response(request, "INVALID_REQUEST", "缺少上传文件", status=400)
-    filename = (file.name or "").replace("\\", "/").rsplit("/", 1)[-1][:255]
-    if not filename.lower().endswith(".csv"):
-        return error_response(request, "INVALID_REQUEST", "仅支持 CSV 文件", status=400)
-    if getattr(file, "size", 0) > MAX_IMPORT_BYTES:
-        return error_response(
-            request,
-            "INVALID_REQUEST",
-            f"文件不能超过 {MAX_IMPORT_BYTES // 1024 // 1024} MB",
-            status=400,
-        )
-
-    raw = file.read(MAX_IMPORT_BYTES + 1)
-    if len(raw) > MAX_IMPORT_BYTES:
-        return error_response(request, "INVALID_REQUEST", "上传文件过大", status=400)
+    filename = (upload.name or "").replace("\\", "/").rsplit("/", 1)[-1][:255]
+    if getattr(upload, "size", 0) > MAX_IMPORT_BYTES:
+        return error_response(request, "INVALID_REQUEST", "文件不能超过 5 MB", status=400)
+    raw = upload.read(MAX_IMPORT_BYTES + 1)
     try:
-        content = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        return error_response(request, "INVALID_REQUEST", "文件编码必须是 UTF-8", status=400)
-
-    reader = csv.DictReader(io.StringIO(content))
-    fieldnames = [str(name or "").strip() for name in (reader.fieldnames or [])]
-    if not fieldnames:
-        return error_response(request, "INVALID_REQUEST", "CSV 缺少表头", status=400)
-    if len(fieldnames) != len(set(fieldnames)):
-        return error_response(request, "INVALID_REQUEST", "CSV 存在重复列名", status=400)
-    unknown = [name for name in fieldnames if name not in EXPECTED_COLUMNS]
-    if unknown:
-        return error_response(
-            request,
-            "INVALID_REQUEST",
-            "CSV 含未支持列：" + ",".join(unknown[:10]),
-            status=400,
-        )
-    if "legal_name" not in fieldnames:
-        return error_response(
-            request,
-            "INVALID_REQUEST",
-            f"CSV 必须包含 legal_name 列（支持列：{','.join(EXPECTED_COLUMNS)}）",
-            status=400,
-        )
-
-    rows = []
-    for row in reader:
-        if len(rows) >= MAX_IMPORT_ROWS:
-            return error_response(
-                request,
-                "INVALID_REQUEST",
-                f"单次导入最多 {MAX_IMPORT_ROWS} 行",
-                status=400,
-            )
-        # DictReader 在多余列时会产生 None key；前面的表头白名单不足以覆盖
-        # 行内列数错误，因此这里继续 fail-closed。
-        if None in row:
-            return error_response(request, "INVALID_REQUEST", "CSV 行列数与表头不一致", status=400)
-        rows.append({key: (value or "").strip() for key, value in row.items()})
-    if not rows:
-        return error_response(request, "INVALID_REQUEST", "CSV 为空", status=400)
-
-    svc = ImportService(resp.tenant_id, actor_user_id=request.user.id)
-    job = svc.create_job(template_key="staff_master", original_filename=filename)
-    svc.parse_rows(job, rows)
-    svc.validate_rows(job, row_validator=_validate_row)
-
-    payload = api_root(request)
-    payload["schemaVersion"] = SCHEMA_IMPORT
-    payload["data"] = {
-        "jobId": str(job.id),
-        "templateKey": job.template_key,
-        "totalRows": job.total_rows,
-        "validRows": job.valid_rows,
-        "failedRows": job.failed_rows,
-        "status": job.status,
-        "issues": [
-            {"rowNo": issue.row_no, "field": issue.field_code, "error": issue.message}
-            for issue in job.issues.all()[:50]
-        ],
-    }
-    return json_response(request, payload, status=201)
+        rows = parse_upload(raw, filename)
+    except ImportFileError as exc:
+        return error_response(request, "INVALID_REQUEST", str(exc), status=400)
+    service = ImportService(context.tenant_id, actor_user_id=request.user.pk)
+    validator = StaffImportValidator(context.tenant_id, rows, today=context.today())
+    with transaction.atomic():
+        job = service.create_job(template_key="staff_master_hr02", original_filename=filename)
+        job.checkpoint = {"upload_actor_user_id": request.user.pk, "upload_sha256": hashlib.sha256(raw).hexdigest(),
+                          "schema": SCHEMA_IMPORT, "uploaded_at": timezone.now().isoformat()}
+        job.save(update_fields=["checkpoint"])
+        service.parse_rows(job, rows)
+        service.validate_rows(job, row_validator=validator, row_enricher=validator.enrich)
+        write_audit_event(tenant_id=context.tenant_id, actor_user_id=request.user.pk,
+                         action="StaffImportValidated", business_type="STAFF_IMPORT", business_id=str(job.pk),
+                         reason=f"total={job.total_rows} valid={job.valid_rows} failed={job.failed_rows}")
+    return json_response(request, {**api_root(request), "schemaVersion": SCHEMA_IMPORT, "data": _summary(job)}, status=201)
 
 
 @require_POST
 @require_hr_staff_permission("hr.staff.import")
 def commit_import(request, job_id):
-    resp = _make(request)
-    if not hasattr(resp, "tenant_id"):
-        return resp
-    svc = ImportService(resp.tenant_id, actor_user_id=request.user.id)
-    job = svc.job_for_id(job_id)
+    context = _make(request)
+    if not hasattr(context, "tenant_id"):
+        return context
+    service = ImportService(context.tenant_id, actor_user_id=request.user.pk)
+    job = _owned_job(service, job_id)
     if job is None:
-        return error_response(request, "IMPORT_NOT_FOUND", "导入任务不存在", status=404)
-    applier = StaffMasterRowApplier(resp.tenant_id, actor_user_id=request.user.id)
+        return error_response(request, "IMPORT_NOT_FOUND", "导入任务不存在或不属于当前账号", status=404)
     try:
-        result = svc.commit(job, applier)
+        result = service.commit(job, StaffMasterRowApplier(context.tenant_id, actor_user_id=request.user.pk, today=context.today()))
     except ImportStateConflict as exc:
         return error_response(request, exc.code, str(exc), status=409)
-    payload = api_root(request)
-    payload["schemaVersion"] = SCHEMA_IMPORT
-    payload["data"] = result
-    return json_response(request, payload)
+    job.refresh_from_db()
+    return json_response(request, {**api_root(request), "schemaVersion": SCHEMA_IMPORT,
+                                   "data": {**result, **_summary(job)}})
 
 
 @require_GET
 @require_hr_staff_permission("hr.staff.import")
 def import_status(request, job_id):
-    resp = _make(request)
-    if not hasattr(resp, "tenant_id"):
-        return resp
-    from hr_staff.models import HrImportJob
-
-    job = HrImportJob.objects.filter(tenant_id=resp.tenant_id, id=job_id).first()
+    context = _make(request)
+    if not hasattr(context, "tenant_id"):
+        return context
+    job = _owned_job(ImportService(context.tenant_id, actor_user_id=request.user.pk), job_id)
     if job is None:
-        return error_response(request, "IMPORT_NOT_FOUND", "导入任务不存在", status=404)
-    payload = api_root(request)
-    payload["schemaVersion"] = SCHEMA_IMPORT
-    payload["data"] = {
-        "jobId": str(job.id),
-        "status": job.status,
-        "totalRows": job.total_rows,
-        "validRows": job.valid_rows,
-        "failedRows": job.failed_rows,
-        "committedBy": job.committed_by,
-        "committedAt": job.committed_at.isoformat() if job.committed_at else None,
-        "issues": [
-            {"rowNo": issue.row_no, "field": issue.field_code, "error": issue.message}
-            for issue in job.issues.all()[:50]
-        ],
-    }
-    return json_response(request, payload)
+        return error_response(request, "IMPORT_NOT_FOUND", "导入任务不存在或不属于当前账号", status=404)
+    return json_response(request, {**api_root(request), "schemaVersion": SCHEMA_IMPORT, "data": _summary(job)})
 
 
-def _validate_row(row: dict) -> dict:
-    errors = {}
-    legal_name = (row.get("legal_name") or "").strip()
-    if not legal_name:
-        errors["legal_name"] = "必填"
-    elif len(legal_name) > 200:
-        errors["legal_name"] = "不能超过 200 个字符"
-
-    staff_no = (row.get("staff_no") or "").strip()
-    if len(staff_no) > 64:
-        errors["staff_no"] = "不能超过 64 个字符"
-
-    gender = (row.get("gender_code") or "").strip()
-    if gender and gender not in {"M", "F", "O", "U"}:
-        errors["gender_code"] = "只允许 M/F/O/U"
-
-    category = (row.get("staff_category_code") or "TEACHER").strip()
-    if category not in {code for code, _ in StaffCategoryCode.choices}:
-        errors["staff_category_code"] = "人员类别代码无效"
-
-    relationship = (row.get("relationship_type") or "REGULAR_EMPLOYMENT").strip()
-    if relationship not in {code for code, _ in RelationshipType.choices}:
-        errors["relationship_type"] = "聘用关系代码无效"
-
-    for key in ("birth_date", "effective_from"):
-        value = (row.get(key) or "").strip()
-        if value and not _is_supported_date(value):
-            errors[key] = "日期格式应为 YYYY-MM-DD、YYYY/MM/DD 或 DD/MM/YYYY"
-
-    legacy_department_id = (row.get("legacy_department_id") or "").strip()
-    if legacy_department_id:
-        try:
-            if int(legacy_department_id) <= 0:
-                raise ValueError
-        except ValueError:
-            errors["legacy_department_id"] = "必须是正整数"
-    return errors
+@require_GET
+@require_hr_staff_permission("hr.staff.import")
+def import_errors(request, job_id):
+    context = _make(request)
+    if not hasattr(context, "tenant_id"):
+        return context
+    job = _owned_job(ImportService(context.tenant_id, actor_user_id=request.user.pk), job_id)
+    if job is None:
+        return error_response(request, "IMPORT_NOT_FOUND", "导入任务不存在或不属于当前账号", status=404)
+    issues = list(job.issues.filter(tenant_id=context.tenant_id).order_by("row_no", "field_code").values_list(
+        "row_no", "field_code", "error_code", "message"))
+    content = error_workbook(issues)
+    request_id = api_root(request)["requestId"]
+    write_audit_event(tenant_id=context.tenant_id, actor_user_id=request.user.pk, action="StaffImportIssuesDownloaded",
+                     business_type="STAFF_IMPORT", business_id=str(job.pk), reason=f"issues={len(issues)}",
+                     request_id=request_id)
+    response = _download(content, f"hr03_import_errors_{job.pk}.xlsx")
+    response["X-HR-Request-ID"] = request_id
+    return response
 
 
-def _is_supported_date(value: str) -> bool:
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
-        try:
-            datetime.strptime(value, fmt)
-            return True
-        except ValueError:
-            continue
-    return False
+def _validate_row(row):
+    return basic_errors(row)
+
+
+def _is_supported_date(value):
+    return parse_date(value) is not None

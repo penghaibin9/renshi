@@ -12,9 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_upgrade?charset=utf8mb4
-  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
-  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_upgrade?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
@@ -30,13 +30,13 @@ jobs:
         env:
           MYSQL_DATABASE: renshi_upgrade
           MYSQL_USER: renshi_user
-          MYSQL_PASSWORD: renshi_pass
-          MYSQL_ROOT_PASSWORD: renshi_root_pass
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -69,6 +69,14 @@ jobs:
           # historical requirements file did not yet declare the MySQL driver.
           pip install "mysqlclient>=2.2,<3"
 
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
+
       - name: Apply baseline-only MySQL migration compatibility shims
         shell: bash
         run: |
@@ -80,10 +88,10 @@ jobs:
 
 
           TARGETS = {
-              "base/migrations/0002_initial.py": {
+              "backend/base/migrations/0002_initial.py": {
                   ("company", ("company", "address")),
               },
-              "payroll/migrations/0001_initial.py": {
+              "backend/payroll/migrations/0001_initial.py": {
                   (
                       "allowance",
                       (
@@ -210,8 +218,8 @@ jobs:
               print(f"Applied targeted MySQL state-only shim: {path_text} {sorted(transformer.seen)!r}")
           PY
           python -m py_compile \
-            base/migrations/0002_initial.py \
-            payroll/migrations/0001_initial.py
+            backend/base/migrations/0002_initial.py \
+            backend/payroll/migrations/0001_initial.py
 
       - name: Materialize previous production baseline schema
         shell: bash

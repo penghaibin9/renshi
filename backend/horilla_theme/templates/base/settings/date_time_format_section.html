@@ -1,83 +1,126 @@
 {% load i18n %}
 <div class="col-span-12 lg:col-span-6" id="setting-date-format">
     {% if perms.base.change_company %}
-        <div class="flex space-x-2 pb-1">
-            <label>{% trans "Date Format" %}</label>
-            <span
-                class="oh-info mr-2"
-                title="{% trans 'Select how dates are displayed across the system.' %}"
-                data-doc-url="{{ DOC_BASE_URL }}/blogs/how-horilla-hrms-empowers-global-teams-with-flexible-date-time-formatting/"
-            ></span>
-        </div>
-        <p class="text-xs text-gray-500 mt-1 pb-2">
-            {% trans "How dates are displayed across the system for the selected company." %}
-        </p>
-        <div class="flex gap-2 pb-3 items-center">
-            <div class="flex-1">
-                <select id="dateFormat" name="dateFormat" class="oh-select oh-select-2">
-                    <option value="">--------------</option>
-                    <option value="DD-MM-YYYY">{% trans "Day, Month, Year (e.g., 30-12-2023)" %}</option>
-                    <option value="DD.MM.YYYY">{% trans "Day, Month, Year (e.g., 30.12.2023)" %}</option>
-                    <option value="DD/MM/YYYY">{% trans "Day, Month, Year (e.g., 30/12/2023)" %}</option>
-                    <option value="MM/DD/YYYY">{% trans "Month, Day, Year (e.g., 12/30/2023)" %}</option>
-                    <option value="YYYY-MM-DD">{% trans "Year, Month, Day (e.g., 2023-12-30)" %}</option>
-                    <option value="YYYY/MM/DD">{% trans "Year, Month, Day (e.g., 2023/12/30)" %}</option>
-                    <option value="MMMM D, YYYY">
-                        {% trans "Full Month Name, Day, Year (e.g., January 1, 2023)" %}
-                    </option>
-                    <option value="DD MMMM, YYYY">
-                        {% trans "Day, Full Month Name, Year (e.g., 1 January, 2023)" %}
-                    </option>
-                    <option value="MMM. D, YYYY">
-                        {% trans "Abbreviated Month Name, Day, Year (e.g., Jan. 1, 2023)" %}
-                    </option>
-                    <option value="D MMM. YYYY">
-                        {% trans "Day, Abbreviated Month Name, Year (e.g., 1 Jan. 2023)" %}
-                    </option>
-                    <option value="dddd, MMMM D, YYYY">
-                        {% trans "Full Day Name, Full Month Name, Day, Year (e.g., Monday, January 1, 2023)" %}
-                    </option>
-                </select>
+        <form
+            id="date-format-form"
+            action="{% url 'save_date_format' %}"
+            method="post"
+            data-settings-form="date"
+            data-settings-native="true"
+        >
+            {% csrf_token %}
+            <div class="flex space-x-2 pb-1">
+                <label for="dateFormat">{% trans "Date Format" %}</label>
+                <span
+                    class="oh-info mr-2"
+                    title="{% trans 'Select how dates are displayed across the system.' %}"
+                ></span>
             </div>
-            <button onclick="saveDateFormat()" class="btn h-[35px] flex items-center">{% trans "Save" %}</button>
-        </div>
+            <p class="text-xs text-gray-500 mt-1 pb-2">
+                {% trans "How dates are displayed across the system for the selected company." %}
+            </p>
+            <div class="flex gap-2 pb-3 items-center">
+                <div class="flex-1">
+                    <select
+                        id="dateFormat"
+                        name="selected_format"
+                        class="oh-select oh-select-2"
+                        required
+                    >
+                        <option value="">--------------</option>
+                        <option value="DD-MM-YYYY">{% trans "Day, Month, Year (e.g., 30-12-2023)" %}</option>
+                        <option value="DD.MM.YYYY">{% trans "Day, Month, Year (e.g., 30.12.2023)" %}</option>
+                        <option value="DD/MM/YYYY">{% trans "Day, Month, Year (e.g., 30/12/2023)" %}</option>
+                        <option value="MM/DD/YYYY">{% trans "Month, Day, Year (e.g., 12/30/2023)" %}</option>
+                        <option value="YYYY-MM-DD">{% trans "Year, Month, Day (e.g., 2023-12-30)" %}</option>
+                        <option value="YYYY/MM/DD">{% trans "Year, Month, Day (e.g., 2023/12/30)" %}</option>
+                        <option value="MMMM D, YYYY">
+                            {% trans "Full Month Name, Day, Year (e.g., January 1, 2023)" %}
+                        </option>
+                        <option value="DD MMMM, YYYY">
+                            {% trans "Day, Full Month Name, Year (e.g., 1 January, 2023)" %}
+                        </option>
+                        <option value="MMM. D, YYYY">
+                            {% trans "Abbreviated Month Name, Day, Year (e.g., Jan. 1, 2023)" %}
+                        </option>
+                        <option value="D MMM. YYYY">
+                            {% trans "Day, Abbreviated Month Name, Year (e.g., 1 Jan. 2023)" %}
+                        </option>
+                        <option value="dddd, MMMM D, YYYY">
+                            {% trans "Full Day Name, Full Month Name, Day, Year (e.g., Monday, January 1, 2023)" %}
+                        </option>
+                    </select>
+                </div>
+                <button
+                    type="submit"
+                    class="btn h-[35px] flex items-center"
+                    data-settings-save="date"
+                >
+                    {% trans "Save" %}
+                </button>
+                <span class="text-xs" role="status" data-settings-status="date"></span>
+            </div>
+        </form>
     {% endif %}
 </div>
 <div class="col-span-12 lg:col-span-6" id="setting-time-format">
     {% if perms.base.change_company %}
-        <div class="flex space-x-2 pb-1">
-            <label>{% trans "Time Format" %}</label>
-            <span
-                class="oh-info mr-2"
-                title="{% trans 'Select how times are displayed across the system.' %}"
-                data-doc-url="{{ DOC_BASE_URL }}/blogs/how-horilla-hrms-empowers-global-teams-with-flexible-date-time-formatting/"
-            ></span>
-        </div>
-        <p class="text-xs text-gray-500 mt-1 pb-2">
-            {% trans "How times are displayed across the system for the selected company." %}
-        </p>
-        <div class="flex gap-2 pb-3 items-center">
-            <div class="flex-1">
-                <select id="timeFormat" name="timeFormat" class="oh-select oh-select-2">
-                    <option value="">--------------</option>
-                    <option value="hh:mm A">{% trans "12 Hr. (e.g., 06:00 AM or 06:00 PM)" %}</option>
-                    <option value="HH:mm">{% trans "24 Hr. (e.g., 06:00 or 18:00)" %}</option>
-                </select>
+        <form
+            id="time-format-form"
+            action="{% url 'save_time_format' %}"
+            method="post"
+            data-settings-form="time"
+            data-settings-native="true"
+        >
+            {% csrf_token %}
+            <div class="flex space-x-2 pb-1">
+                <label for="timeFormat">{% trans "Time Format" %}</label>
+                <span
+                    class="oh-info mr-2"
+                    title="{% trans 'Select how times are displayed across the system.' %}"
+                ></span>
             </div>
-            <button onclick="saveTimeFormat()" class="btn h-[35px] flex items-center">{% trans "Save" %}</button>
-        </div>
+            <p class="text-xs text-gray-500 mt-1 pb-2">
+                {% trans "How times are displayed across the system for the selected company." %}
+            </p>
+            <div class="flex gap-2 pb-3 items-center">
+                <div class="flex-1">
+                    <select
+                        id="timeFormat"
+                        name="selected_format"
+                        class="oh-select oh-select-2"
+                        required
+                    >
+                        <option value="">--------------</option>
+                        <option value="hh:mm A">{% trans "12 Hr. (e.g., 06:00 AM or 06:00 PM)" %}</option>
+                        <option value="HH:mm">{% trans "24 Hr. (e.g., 06:00 or 18:00)" %}</option>
+                        <option value="hh:mm:ss A">{% trans "12 Hr. with seconds" %}</option>
+                        <option value="HH:mm:ss">{% trans "24 Hr. with seconds" %}</option>
+                    </select>
+                </div>
+                <button
+                    type="submit"
+                    class="btn h-[35px] flex items-center"
+                    data-settings-save="time"
+                >
+                    {% trans "Save" %}
+                </button>
+                <span class="text-xs" role="status" data-settings-status="time"></span>
+            </div>
+        </form>
     {% endif %}
 </div>
 <script>
     (function () {
-        var dateFormatValue = "{{current_company.date_format|default_if_none:'' }}";
-        var timeFormatValue = "{{current_company.time_format|default_if_none:'' }}";
+        var dateFormatValue = "{{ current_company.date_format|default_if_none:''|escapejs }}";
+        var timeFormatValue = "{{ current_company.time_format|default_if_none:''|escapejs }}";
 
         function applySelection($el, value) {
+            if (!$el.length) return;
             $el.val(value);
             if ($el.hasClass("select2-hidden-accessible")) {
                 $el.trigger("change");
-            } else {
+            } else if (typeof $el.select2 === "function") {
                 $el.select2({ width: "100%" }).trigger("change");
             }
         }
@@ -86,6 +129,56 @@
             applySelection($("#dateFormat"), dateFormatValue);
             applySelection($("#timeFormat"), timeFormatValue);
         }
+
+        async function submitPreference(form) {
+            var kind = form.dataset.settingsForm;
+            var button = form.querySelector("[data-settings-save]");
+            var status = form.querySelector("[data-settings-status]");
+            button.disabled = true;
+            button.dataset.state = "saving";
+            status.textContent = "{% trans 'Saving…' %}";
+            try {
+                var response = await fetch(form.action, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "X-CSRFToken": form.querySelector(
+                            "input[name='csrfmiddlewaretoken']"
+                        ).value,
+                        "X-Requested-With": "XMLHttpRequest"
+                    },
+                    body: new FormData(form)
+                });
+                var payload = await response.json();
+                if (!response.ok || !payload.success) {
+                    throw new Error(payload.error || "{% trans 'Save failed' %}");
+                }
+                button.dataset.state = "saved";
+                button.dataset.savedValue = payload.selected_format;
+                status.textContent = "{% trans 'Saved' %}";
+                form.dispatchEvent(
+                    new CustomEvent("settings:saved", {
+                        bubbles: true,
+                        detail: { kind: kind, payload: payload }
+                    })
+                );
+            } catch (error) {
+                button.dataset.state = "failed";
+                status.textContent = error.message || "{% trans 'Save failed' %}";
+                throw error;
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        document.querySelectorAll("[data-settings-form]").forEach(function (form) {
+            if (form.dataset.bound === "true") return;
+            form.dataset.bound = "true";
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                submitPreference(form);
+            });
+        });
 
         $(setInitialFormatValues);
         $(window).on("load", setInitialFormatValues);

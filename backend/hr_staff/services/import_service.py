@@ -9,7 +9,11 @@ hr_staff/services/import_service.py —— 导入 staging 服务（总册 §24�
 from __future__ import annotations
 
 import logging
+import json
+import uuid
+import time
 from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from django.db import transaction
@@ -21,7 +25,8 @@ from hr_staff.models import HrImportIssue, HrImportJob, HrImportRow
 logger = logging.getLogger(__name__)
 
 COMMIT_LEASE_SECONDS = 30 * 60
-COMMIT_HEARTBEAT_EVERY_ROWS = 25
+COMMIT_BATCH_LIMIT = 100
+COMMIT_TIME_BUDGET_SECONDS = 8
 
 
 class ImportStateConflict(Exception):
@@ -33,9 +38,6 @@ class ImportService:
         self.tenant_id = tenant_id
         self.actor_user_id = actor_user_id
 
-    # ------------------------------------------------------------------
-    # Job 生命周期
-    # ------------------------------------------------------------------
     def create_job(self, *, template_key: str, original_filename: str = "") -> HrImportJob:
         return HrImportJob.objects.create(
             tenant_id=self.tenant_id,
@@ -46,11 +48,13 @@ class ImportService:
     def job_for_id(self, job_id) -> Optional[HrImportJob]:
         return HrImportJob.objects.filter(tenant_id=self.tenant_id, id=job_id).first()
 
+    @transaction.atomic
     def parse_rows(self, job: HrImportJob, rows: list[dict]):
         """把上传行解析进 staging（不写 authority）。"""
         if job.tenant_id != self.tenant_id:
             raise ImportStateConflict("导入任务不属于当前学校")
-        if job.status != ImportJobStatus.UPLOADED or job.rows.exists():
+        locked = HrImportJob.objects.select_for_update().get(tenant_id=self.tenant_id, id=job.pk)
+        if locked.status != ImportJobStatus.UPLOADED or locked.rows.exists():
             raise ImportStateConflict("导入任务已经解析，禁止重复写入 staging")
         job.status = ImportJobStatus.VALIDATING
         job.total_rows = len(rows)
@@ -61,7 +65,7 @@ class ImportService:
                     tenant_id=self.tenant_id,
                     job_id=job,
                     row_no=idx,
-                    data_json=row,
+                    data_json=self._encode_row(job, idx, row),
                 )
                 for idx, row in enumerate(rows, start=2)
             ],
@@ -69,48 +73,58 @@ class ImportService:
         )
         return job
 
-    def validate_rows(self, job: HrImportJob, row_validator) -> HrImportJob:
+    @transaction.atomic
+    def validate_rows(self, job: HrImportJob, row_validator, *, row_enricher=None) -> HrImportJob:
         """逐行校验；不通过标记 is_valid=False + 写精确失败行。"""
         if job.tenant_id != self.tenant_id:
             raise ImportStateConflict("导入任务不属于当前学校")
-        if job.status not in (ImportJobStatus.VALIDATING, ImportJobStatus.UPLOADED):
+        locked = HrImportJob.objects.select_for_update().get(tenant_id=self.tenant_id, id=job.pk)
+        if locked.status not in (ImportJobStatus.VALIDATING, ImportJobStatus.UPLOADED):
             raise ImportStateConflict(f"当前状态 {job.status} 不允许重新校验")
 
-        for row in job.rows.all().iterator(chunk_size=500):
-            errors = row_validator(dict(row.data_json or {}))
-            if errors:
-                row.is_valid = False
-                row.error_summary = "; ".join(errors.values())[:500]
-                row.save(update_fields=["is_valid", "error_summary"])
-                HrImportIssue.objects.bulk_create(
-                    [
-                        HrImportIssue(
-                            tenant_id=self.tenant_id,
-                            job_id=job,
-                            row_id=row,
-                            row_no=row.row_no,
-                            field_code=field,
-                            error_code="VALIDATION_ERROR",
-                            message=str(message)[:500],
-                        )
-                        for field, message in errors.items()
-                    ]
+        # Staging is not a formal business model. Batch preview changes while
+        # keeping the surrounding job transaction atomic.
+        dirty, issues = [], []
+
+        def flush():
+            if dirty:
+                HrImportRow.objects.filter(tenant_id=self.tenant_id, job_id=job).bulk_update(
+                    dirty, ["is_valid", "error_summary", "data_json"], batch_size=250
                 )
-        valid = job.rows.filter(is_valid=True).count()
-        failed = job.rows.filter(is_valid=False).count()
+                dirty.clear()
+            if issues:
+                HrImportIssue.objects.bulk_create(issues, batch_size=250)
+                issues.clear()
+
+        job.issues.filter(tenant_id=self.tenant_id, error_code="VALIDATION_ERROR").delete()
+        for row in job.rows.filter(tenant_id=self.tenant_id).order_by("row_no").iterator(chunk_size=250):
+            payload = self._decode_row(row)
+            errors = row_validator(payload)
+            row.is_valid = not bool(errors)
+            row.error_summary = "; ".join(str(message) for message in errors.values())[:500]
+            if errors:
+                issues.extend(
+                    HrImportIssue(
+                        tenant_id=self.tenant_id, job_id=job, row_id=row,
+                        row_no=row.row_no, field_code=field,
+                        error_code="VALIDATION_ERROR", message=str(message)[:500],
+                    )
+                    for field, message in errors.items()
+                )
+            elif row_enricher is not None:
+                row.data_json = {**row.data_json, **row_enricher(payload)}
+            dirty.append(row)
+            if len(dirty) >= 250:
+                flush()
+        flush()
+        valid = job.rows.filter(tenant_id=self.tenant_id, is_valid=True).count()
+        failed = job.rows.filter(tenant_id=self.tenant_id, is_valid=False).count()
         job.valid_rows = valid
         job.failed_rows = failed
-        job.status = (
-            ImportJobStatus.READY_TO_COMMIT
-            if valid > 0
-            else ImportJobStatus.VALIDATION_FAILED
-        )
+        job.status = ImportJobStatus.READY_TO_COMMIT if valid > 0 else ImportJobStatus.VALIDATION_FAILED
         job.save(update_fields=["valid_rows", "failed_rows", "status"])
         return job
 
-    # ------------------------------------------------------------------
-    # Commit（逐行独立事务 + checkpoint；同人员多表由 row_applier 内部原子）
-    # ------------------------------------------------------------------
     @staticmethod
     def _checkpoint_time(value):
         if not value:
@@ -129,39 +143,20 @@ class ImportService:
         if heartbeat is None:
             heartbeat = cls._checkpoint_time(checkpoint.get("commit_started_at"))
         if heartbeat is None:
-            # Backward-compatible recovery for jobs left COMMITTING before the
-            # lease fields existed. updated_at is the best durable heartbeat.
             heartbeat = job.updated_at
         if heartbeat is None:
             return True
         return heartbeat <= now - timedelta(seconds=COMMIT_LEASE_SECONDS)
 
-    def _save_commit_heartbeat(self, locked, checkpoint):
-        checkpoint["commit_heartbeat_at"] = timezone.now().isoformat()
-        checkpoint["commit_actor_user_id"] = self.actor_user_id
-        locked.checkpoint = checkpoint
-        locked.save(update_fields=["checkpoint"])
-
     def commit(self, job: HrImportJob, row_applier, batch_size: int = 100) -> dict:
-        """提交 READY_TO_COMMIT job，并可安全恢复失联的 COMMITTING job。
-
-        ``row_applier`` 收到 staging 数据副本，并附加两个仅服务端生成的保留键：
-        ``_import_job_id`` / ``_import_row_no``。它们形成稳定、job-scoped 的业务来源
-        id，避免不同导入任务把 ``import-row-0`` 当成同一来源。
-
-        每一行的 authority 写入与 ``commit_status=COMMITTED`` 在同一个数据库事务
-        内完成，因此进程崩溃不会留下“事实已写、staging 未记账”的半行。COMMITTING
-        状态用 30 分钟持久 heartbeat 租约防止并发执行；租约过期后可从未提交行恢复。
-        """
+        """Fence every row by a short job lock; authority and row state commit together."""
+        started = time.monotonic()
         now = timezone.now()
+        token = uuid.uuid4().hex
         with transaction.atomic():
-            locked = HrImportJob.objects.select_for_update().get(
-                tenant_id=self.tenant_id,
-                id=job.id,
-            )
+            locked = HrImportJob.objects.select_for_update().get(tenant_id=self.tenant_id, id=job.id)
             if locked.status in (ImportJobStatus.COMPLETED, ImportJobStatus.PARTIAL_FAILED):
                 return self._result_for_job(locked)
-
             checkpoint = dict(locked.checkpoint or {})
             if locked.status == ImportJobStatus.COMMITTING:
                 if not self._commit_lease_is_stale(locked, checkpoint, now):
@@ -170,120 +165,137 @@ class ImportService:
                 checkpoint["resume_count"] = int(checkpoint.get("resume_count", 0) or 0) + 1
             elif locked.status != ImportJobStatus.READY_TO_COMMIT:
                 raise ImportStateConflict(f"当前状态 {locked.status} 不允许提交")
-
             checkpoint.setdefault("commit_started_at", now.isoformat())
-            checkpoint["commit_heartbeat_at"] = now.isoformat()
-            checkpoint["commit_actor_user_id"] = self.actor_user_id
+            checkpoint.update(commit_token=token, commit_heartbeat_at=now.isoformat(),
+                              commit_actor_user_id=self.actor_user_id)
             locked.status = ImportJobStatus.COMMITTING
             locked.checkpoint = checkpoint
-            locked.save(update_fields=["status", "checkpoint"])
+            locked.save(update_fields=["status", "checkpoint", "updated_at"])
 
-        processed = 0
-        valid_rows = locked.rows.filter(is_valid=True).order_by("row_no")
-        for row in valid_rows.iterator(chunk_size=max(1, min(batch_size, 500))):
-            if row.commit_status == "COMMITTED":
-                continue
-            try:
-                row_payload = dict(row.data_json or {})
-                row_payload["_import_job_id"] = str(locked.id)
-                row_payload["_import_row_no"] = row.row_no
-                with transaction.atomic():
-                    row_applier(row_payload, checkpoint)
-                    row.commit_status = "COMMITTED"
-                    row.save(update_fields=["commit_status"])
-                checkpoint["last_committed_row"] = row.row_no
-            except Exception as exc:
-                # Do not persist raw database/service exception text into a row
-                # ledger that is returned to HR users. It can contain SQL object
-                # names, infrastructure details or uploaded identity values.
-                logger.warning(
-                    "HR03 import row commit failed tenant=%s job=%s row=%s class=%s",
-                    self.tenant_id,
-                    locked.id,
-                    row.row_no,
-                    exc.__class__.__name__,
-                )
-                safe_message = self._safe_commit_error(exc)
-                with transaction.atomic():
-                    row.commit_status = "FAILED"
-                    row.is_valid = False
-                    row.error_summary = safe_message[:500]
+        identifiers = list(locked.rows.filter(tenant_id=self.tenant_id, is_valid=True, commit_status="PENDING")
+                           .order_by("row_no").values_list("pk", flat=True)[:max(1, min(batch_size, COMMIT_BATCH_LIMIT))])
+        for index, row_id in enumerate(identifiers):
+            if index and time.monotonic() - started >= COMMIT_TIME_BUDGET_SECONDS:
+                break
+            with transaction.atomic():
+                current = HrImportJob.objects.select_for_update().get(tenant_id=self.tenant_id, pk=job.pk)
+                checkpoint = dict(current.checkpoint or {})
+                self._assert_executor(current, checkpoint, token)
+                row = HrImportRow.objects.select_for_update().get(tenant_id=self.tenant_id, job_id_id=job.pk, pk=row_id)
+                if row.commit_status == "COMMITTED" or not row.is_valid:
+                    continue
+                try:
+                    # Catch outside the savepoint. A failure rolls back the
+                    # complete person, while the outer job lock remains held.
+                    with transaction.atomic():
+                        payload = self._decode_row(row)
+                        payload.update(_import_job_id=str(job.pk), _import_row_no=row.row_no)
+                        result = row_applier(payload, checkpoint)
+                        row.commit_status = "COMMITTED"
+                        if getattr(result, "staff_no", None):
+                            row.data_json = {**row.data_json, "_result_staff_id": str(result.pk)}
+                        row.save(update_fields=["commit_status", "data_json"])
+                    checkpoint["last_committed_row"] = row.row_no
+                except Exception as exc:
+                    logger.warning("HR03 import row failed tenant=%s job=%s row=%s class=%s",
+                                   self.tenant_id, job.pk, row.row_no, exc.__class__.__name__)
+                    safe_message = self._safe_commit_error(exc)
+                    row.commit_status, row.is_valid, row.error_summary = "FAILED", False, safe_message[:500]
                     row.save(update_fields=["commit_status", "is_valid", "error_summary"])
-                    HrImportIssue.objects.create(
-                        tenant_id=self.tenant_id,
-                        job_id=locked,
-                        row_id=row,
-                        row_no=row.row_no,
-                        error_code="COMMIT_FAILED",
-                        message=safe_message[:500],
-                    )
-            processed += 1
-            if processed % COMMIT_HEARTBEAT_EVERY_ROWS == 0:
-                self._save_commit_heartbeat(locked, checkpoint)
+                    HrImportIssue.objects.create(tenant_id=self.tenant_id, job_id=current, row_id=row,
+                        row_no=row.row_no, field_code=getattr(exc, "field", "")[:64],
+                        error_code="COMMIT_FAILED", message=safe_message[:500])
+                checkpoint["commit_heartbeat_at"] = timezone.now().isoformat()
+                current.checkpoint = checkpoint
+                current.save(update_fields=["checkpoint", "updated_at"])
 
-        # Recount durable row state rather than relying on counters from this
-        # process. That makes stale-lease resume and idempotent replay correct.
-        committed = locked.rows.filter(commit_status="COMMITTED").count()
-        failed = locked.rows.filter(is_valid=False).count()
-        checkpoint["committed_rows"] = committed
-        checkpoint["failed_rows"] = failed
-        checkpoint["commit_finished_at"] = timezone.now().isoformat()
-        checkpoint.pop("commit_heartbeat_at", None)
-        checkpoint.pop("commit_actor_user_id", None)
+        with transaction.atomic():
+            current = HrImportJob.objects.select_for_update().get(tenant_id=self.tenant_id, pk=job.pk)
+            checkpoint = dict(current.checkpoint or {})
+            self._assert_executor(current, checkpoint, token)
+            result = self._result_for_job(current)
+            pending = current.rows.filter(tenant_id=self.tenant_id, is_valid=True, commit_status="PENDING").count()
+            if pending:
+                for key in ("commit_token", "commit_heartbeat_at", "commit_actor_user_id"):
+                    checkpoint.pop(key, None)
+                checkpoint.update(committed_rows=result["committed"], failed_rows=result["failed"])
+                current.checkpoint, current.status = checkpoint, ImportJobStatus.READY_TO_COMMIT
+                current.failed_rows = result["failed"]
+                current.save(update_fields=["checkpoint", "status", "failed_rows", "updated_at"])
+                return {**result, "pending": pending}
+            checkpoint.update(committed_rows=result["committed"], failed_rows=result["failed"],
+                              commit_finished_at=timezone.now().isoformat())
+            for key in ("commit_token", "commit_heartbeat_at", "commit_actor_user_id"):
+                checkpoint.pop(key, None)
+            current.checkpoint = checkpoint
+            current.committed_by, current.committed_at = self.actor_user_id, timezone.now()
+            current.failed_rows = result["failed"]
+            current.status = ImportJobStatus.COMPLETED if not result["failed"] else ImportJobStatus.PARTIAL_FAILED
+            current.save(update_fields=["checkpoint", "committed_by", "committed_at", "failed_rows", "status", "updated_at"])
+            from hr_staff.services.audit_service import write_audit_event
+            write_audit_event(tenant_id=self.tenant_id, actor_user_id=self.actor_user_id,
+                              action="StaffImportCompleted", business_type="STAFF_IMPORT", business_id=str(job.pk),
+                              reason=f"committed={result['committed']} failed={result['failed']}")
+            return result
 
-        locked.checkpoint = checkpoint
-        locked.committed_by = self.actor_user_id
-        locked.committed_at = timezone.now()
-        locked.failed_rows = failed
-        locked.status = (
-            ImportJobStatus.COMPLETED
-            if failed == 0
-            else ImportJobStatus.PARTIAL_FAILED
-        )
-        locked.save(
-            update_fields=[
-                "checkpoint",
-                "committed_by",
-                "committed_at",
-                "failed_rows",
-                "status",
-            ]
-        )
-        return self._result_for_job(locked)
+    @staticmethod
+    def _assert_executor(job, checkpoint, token):
+        if job.status != ImportJobStatus.COMMITTING or checkpoint.get("commit_token") != token:
+            raise ImportStateConflict("提交执行权已变化，请重新读取任务状态")
+
+    def _encode_row(self, job, row_no, source):
+        from hr_staff.services.crypto import encrypt_document_number
+        payload = dict(source)
+        document = payload.pop("document_number", "")
+        if document:
+            envelope = json.dumps({"tenant": self.tenant_id, "job": str(job.pk), "row": row_no, "value": document})
+            payload["_document_ciphertext"] = encrypt_document_number(self.tenant_id, envelope)
+        return payload
+
+    def _decode_row(self, row):
+        from hr_staff.services.crypto import decrypt_document_number
+        from hr_staff.services.import_validation import ImportRowError
+        payload = dict(row.data_json or {})
+        ciphertext = payload.pop("_document_ciphertext", None)
+        if ciphertext:
+            try:
+                envelope = json.loads(decrypt_document_number(ciphertext))
+                if (envelope["tenant"] != self.tenant_id or envelope["job"] != str(row.job_id_id)
+                        or envelope["row"] != row.row_no):
+                    raise ValueError
+                payload["document_number"] = envelope["value"]
+            except (ValueError, TypeError, KeyError):
+                raise ImportRowError("document_number", "证件暂存数据无法安全读取，请重新上传") from None
+        return payload
 
     @staticmethod
     def _safe_commit_error(exc: Exception) -> str:
         """Return an actionable but non-secret error suitable for HR ledgers."""
+        from hr_staff.services.import_validation import ImportRowError
+        if isinstance(exc, ImportRowError):
+            return exc.message
         text = str(exc)
         lowered = text.lower()
-        if (
-            "document" in lowered
-            or "identity" in lowered
-            or "证件" in text
-            or "身份证" in text
-        ):
+        if "document" in lowered or "identity" in lowered or "证件" in text or "身份证" in text:
             return f"{exc.__class__.__name__}: 身份信息校验失败，请检查该行证件字段"
-
-        # These messages are generated locally by StaffMasterRowApplier and do
-        # not echo uploaded values or backend internals.
         if text == "legal_name 必填" or text.startswith("无效日期格式"):
             return f"{exc.__class__.__name__}: {text}"[:500]
-
         return f"{exc.__class__.__name__}: 导入写入失败，请检查该行数据或联系管理员"
 
     @staticmethod
     def _result_for_job(job: HrImportJob) -> dict:
-        committed = job.rows.filter(commit_status="COMMITTED").count()
-        failed = job.rows.filter(is_valid=False).count()
+        committed = job.rows.filter(tenant_id=job.tenant_id, commit_status="COMMITTED").count()
+        failed = job.rows.filter(tenant_id=job.tenant_id, is_valid=False).count()
         return {"committed": committed, "failed": failed, "total": job.total_rows}
 
 
 class StaffMasterRowApplier:
-    """真实 row_applier：一行 = Person + StaffMaster + Relationship + Assignment 原子写。"""
+    """One verified row atomically creates Person, Staff, relationship and assignment."""
 
-    def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
+    def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None, *, today=None):
         self.tenant_id = tenant_id
         self.actor_user_id = actor_user_id
+        self.today = today or timezone.localdate()
 
     @transaction.atomic
     def __call__(self, row_data: dict, checkpoint: dict):
@@ -296,58 +308,64 @@ class StaffMasterRowApplier:
         legal_name = (row_data.get("legal_name") or "").strip()
         if not legal_name:
             raise ValueError("legal_name 必填")
+        references = None
+        if row_data.get("organization_code") or row_data.get("position_code"):
+            from hr_staff.services.import_validation import basic_errors, ImportRowError, StructureReferences
+            errors = basic_errors(row_data, today=self.today)
+            if errors:
+                field, message = next(iter(errors.items()))
+                raise ImportRowError(field, message)
+            references = StructureReferences(self.tenant_id, [row_data], lock=True).resolve(row_data)
 
         person = PersonIdentityService().create_person_with_identity(
-            tenant_id=self.tenant_id,
-            legal_name=legal_name,
+            tenant_id=self.tenant_id, legal_name=legal_name,
+            audit_actor_user_id=self.actor_user_id,
             gender_code=(row_data.get("gender_code") or "").strip() or None,
             birth_date=self._parse_date(row_data.get("birth_date")),
             document_number=(row_data.get("document_number") or "").strip() or None,
         )
         staff = StaffMasterService().create_staff(
-            tenant_id=self.tenant_id,
-            person_id=person,
+            tenant_id=self.tenant_id, person_id=person,
             staff_no=(row_data.get("staff_no") or "").strip() or None,
             staff_category_code=(row_data.get("staff_category_code") or "TEACHER").strip(),
-            source="MIGRATED",
+            source="MIGRATED", audit_actor_user_id=self.actor_user_id,
         )
-        # Default business date must follow the configured school timezone, not
-        # the container host's calendar date around midnight.
-        effective_from = self._parse_date(row_data.get("effective_from")) or timezone.localdate()
+        effective_from = self._parse_date(row_data.get("effective_from")) or self.today
         job_id = str(row_data.get("_import_job_id") or "direct")
         row_no = row_data.get("_import_row_no")
         if row_no is None:
             row_no = int(checkpoint.get("last_committed_row", 0) or 0) + 1
         source_business_id = f"import:{job_id}:row:{row_no}"
-        rel = EmploymentService(self.tenant_id).start_relationship(
+        rel = EmploymentService(self.tenant_id, audit_actor_user_id=self.actor_user_id).start_relationship(
             staff_id=staff,
             relationship_type=(row_data.get("relationship_type") or "REGULAR_EMPLOYMENT").strip(),
             effective_from=effective_from,
-            source_business_type="MIGRATION_VERIFIED",
-            source_business_id=source_business_id,
+            source_business_type="MIGRATION_VERIFIED", source_business_id=source_business_id,
         )
         legacy_dept = row_data.get("legacy_department_id")
-        AssignmentService(
-            self.tenant_id, audit_actor_user_id=self.actor_user_id
-        ).create_assignment(
-            employment_relationship_id=rel,
-            assignment_type=AssignmentType.PRIMARY,
+        AssignmentService(self.tenant_id, audit_actor_user_id=self.actor_user_id).create_assignment(
+            employment_relationship_id=rel, assignment_type=AssignmentType.PRIMARY,
             effective_from=effective_from,
-            organization_id=None,
-            legacy_department_id=int(legacy_dept) if legacy_dept else None,
-            source_business_type="MIGRATION_VERIFIED",
-            source_business_id=source_business_id,
+            organization_id=references[0] if references else None,
+            position_id=references[1] if references else None,
+            post_catalog_id=references[2] if references else None,
+            fte=Decimal(row_data.get("fte") or "1.00"),
+            legacy_department_id=int(legacy_dept) if legacy_dept and not references else None,
+            source_business_type="MIGRATION_VERIFIED", source_business_id=source_business_id,
         )
+        from hr_staff.services.audit_service import write_audit_event
+        write_audit_event(tenant_id=self.tenant_id, actor_user_id=self.actor_user_id,
+                          staff_id=staff.pk, action="StaffImportRowCommitted",
+                          business_type="STAFF_IMPORT", business_id=source_business_id)
         return staff
 
     @staticmethod
     def _parse_date(value):
         if not value:
             return None
-
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y"):
             try:
                 return datetime.strptime(str(value).strip(), fmt).date()
             except ValueError:
                 continue
-        raise ValueError("无效日期格式，要求 YYYY-MM-DD、YYYY/MM/DD 或 DD/MM/YYYY")
+        raise ValueError("无效日期格式，支持 YYYY-MM-DD、YYYY/MM/DD 或 DD/MM/YYYY")

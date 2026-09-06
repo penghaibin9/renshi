@@ -139,7 +139,12 @@ def main() -> None:
                     require(hub_response.status == 200, f"{code} hub HTTP {hub_response.status}")
                     settle(page, f"{code}-hub")
 
-                entry_selector = f'a[href="{entry_href}"]'
+                # The sidebar module anchors intentionally intercept clicks to
+                # expand their tertiary navigation. Scope the test to the visible
+                # HR01 business card so a menu toggle cannot masquerade as module
+                # entry or leave Playwright waiting for a navigation that will
+                # never happen.
+                entry_selector = f'.hr-home__module[href="{entry_href}"]'
                 entry_link = page.locator(entry_selector).first
                 require(
                     entry_link.count() > 0,
@@ -179,7 +184,7 @@ def main() -> None:
                     query_button = page.locator('button:has-text("查询")').first
                     require(query_button.count() > 0, "HR03 rendered no 查询 button")
                     with page.expect_response(
-                        lambda response: "/api/hr/v1/staff?" in response.url
+                        lambda response: "/api/v1/hr/staff?" in response.url
                     ) as query_response_info:
                         query_button.click()
                     query_response = query_response_info.value
@@ -207,7 +212,7 @@ def main() -> None:
                     profile_href = profile_link.get_attribute("href")
                     require(
                         bool(profile_href) and profile_href != "/hr/staff/data-quality/",
-                        f"HR03 profile link is invalid: {profile_href}",
+                        f"HR03 profile href is invalid: {profile_href}",
                     )
                     with page.expect_navigation(wait_until="domcontentloaded") as profile_navigation:
                         profile_link.click()
@@ -324,7 +329,10 @@ def main() -> None:
                             f"HR03 {child_slug} return redirected to {page.url}",
                         )
 
-                target_selector = f'a[href="{target_path}"]'
+                # Prefer a business-workspace link in the main content. The
+                # sidebar may expose the same href for menu expansion and must
+                # not be used as proof that the page's own workflow is usable.
+                target_selector = f'.oh-main-content a[href="{target_path}"]'
                 target_link = page.locator(target_selector).first
                 target_count = target_link.count()
                 if require_secondary:

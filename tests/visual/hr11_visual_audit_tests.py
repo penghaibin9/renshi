@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import base64
+import os
 from datetime import date, time, timedelta
 from pathlib import Path
 from unittest import skipUnless
@@ -24,9 +24,11 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
         from hr_staff.models import HrPerson, HrStaffMaster
+        from hr_time.enums import CalendarDayType
         from hr_time.models import (
             HrAttendanceDayFact,
             HrAttendanceException,
+            HrCalendarDay,
             HrLeaveAccount,
             HrLeaveRequest,
             HrLeaveType,
@@ -38,6 +40,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             HrWorkCalendar,
             HrWorkCalendarVersion,
         )
+        from hr_time.services.calendar_service import CalendarService
         from hr_time.services.leave_account_service import LeaveAccountService
         from hr_time.services.leave_request_service import LeaveRequestService
 
@@ -97,8 +100,22 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             calendar=self.calendar,
             year=today.year,
             version_no=1,
-            status="PUBLISHED",
-            published_at=timezone.now(),
+            source_type="VISUAL_TEST",
+            source_ref="HR11 visual authority seed",
+            status="DRAFT",
+        )
+        for calendar_day in (today, today + timedelta(days=1)):
+            HrCalendarDay.objects.create(
+                tenant_id=self.company.pk,
+                calendar_version=self.calendar_version,
+                date=calendar_day,
+                day_type=CalendarDayType.REGULAR_WORKDAY,
+                is_working_day=True,
+                expected_work_minutes=480,
+            )
+        self.calendar_version = CalendarService.publish_version(
+            self.calendar_version,
+            actor_user=self.user,
         )
         self.shift = HrShiftDefinition.objects.create(
             tenant_id=self.company.pk,

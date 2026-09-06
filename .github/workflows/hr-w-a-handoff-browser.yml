@@ -23,15 +23,15 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
-  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
-  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
   HR_BROWSER_USERNAME: hr-wa-browser-auditor
-  HR_BROWSER_PASSWORD: hr-wa-browser-only-password
+  HR_BROWSER_PASSWORD: "browser-${{ github.run_id }}"
   HR_BROWSER_BASE_URL: http://127.0.0.1:8000
   HR_WA_BROWSER_ARTIFACT_DIR: tests/artifacts/hr-w-a-handoff-browser
 
@@ -45,13 +45,13 @@ jobs:
         env:
           MYSQL_DATABASE: renshi_db
           MYSQL_USER: renshi_user
-          MYSQL_PASSWORD: renshi_pass
-          MYSQL_ROOT_PASSWORD: renshi_root_pass
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -79,11 +79,20 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
-      - name: Ensure local settings stub
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
+
+      - name: Ensure local settings and evidence directory
         run: |
           if [ ! -f backend/horilla/settings/local_settings.py ]; then
             printf '%s\n' '# Ephemeral for W-A browser gate' > backend/horilla/settings/local_settings.py
           fi
+          mkdir -p tests/artifacts/hr-w-a-handoff-browser
 
       - name: Migrate fresh MySQL
         run: |
@@ -100,8 +109,14 @@ jobs:
 
           expected_leaf = (
               "hr_onboarding",
-              "0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx",
+              "0016_material_download_ticket",
           )
+          required_history = {
+              (
+                  "hr_onboarding",
+                  "0012_rename_hr_ob_outbox_tenant_status_at_hr_onboardi_tenant__8d1b93_idx",
+              ),
+          }
           executor = MigrationExecutor(connection)
           leaves = [
               node
@@ -113,10 +128,15 @@ jobs:
               leaves,
           )
 
-          applied = MigrationRecorder(connection).applied_migrations()
+          applied = set(MigrationRecorder(connection).applied_migrations())
           assert expected_leaf in applied, (
               "HR05 exact-head migration was not recorded as applied",
               expected_leaf,
+          )
+          missing_history = required_history - applied
+          assert not missing_history, (
+              "HR05 critical historical migrations were not recorded as applied",
+              sorted(missing_history),
           )
 
           tables = set(connection.introspection.table_names())
@@ -133,9 +153,13 @@ jobs:
           print(
               "HR05 migration materialization PASS",
               f"leaf={expected_leaf[1]}",
+              f"history={sorted(node[1] for node in required_history)}",
               f"tables={sorted(required_tables)}",
           )
           PY
+          printf '%s\n' \
+            '{"stage":"hr05-migration-contract","status":"passed","leaf":"0016_material_download_ticket"}' \
+            > tests/artifacts/hr-w-a-handoff-browser/migration-contract.json
 
       - name: Seed browser identity and handoff-ready W-A hire
         shell: bash
@@ -155,7 +179,6 @@ jobs:
           username = os.environ["HR_BROWSER_USERNAME"]
           password = os.environ["HR_BROWSER_PASSWORD"]
 
-          # Match the browser user's company context to the canonical W-A tenant.
           company = Company.objects.create(
               id=TENANT,
               company="跃科 W-A 浏览器验收学校",
@@ -205,9 +228,6 @@ jobs:
               legacy_employee_id=employee.pk,
           )
 
-          # Reuse the canonical real-service fixture constructor from the W-A DB
-          # contract. Only setUp is called: no TestCase runner or test transaction
-          # wraps it, so the handoff-ready facts persist in this ephemeral MySQL.
           fixture = WAHireToStaffDatabaseChainTests(
               methodName="test_real_handoff_activation_commits_capacity_after_hr03_facts"
           )
@@ -226,7 +246,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p tests/artifacts/hr-w-a-handoff-browser
           python manage.py runserver 127.0.0.1:8000 --noreload \
             > tests/artifacts/hr-w-a-handoff-browser/django-runserver.log 2>&1 &
           server_pid=$!

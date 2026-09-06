@@ -8,6 +8,8 @@
 
   const treeEl = document.getElementById("hr-org-tree");
   const detailEl = document.getElementById("hr-org-detail");
+  const childRequestVersions = new WeakMap();
+  let detailRequestVersion = 0;
 
   const ORG_TYPE_LABELS = {
     SCHOOL: "学校", COLLEGE: "学院", DEPARTMENT: "系部",
@@ -15,9 +17,15 @@
     PARTY: "党组织", OTHER: "其他组织",
   };
   const STATUS_LABELS = {
-    DRAFT: "草稿", ACTIVE: "有效", INACTIVE: "停用",
+    DRAFT: "草稿", ACTIVE: "有效", EFFECTIVE: "有效", APPROVED: "已批准", SUPERSEDED: "历史版本", INACTIVE: "停用",
     PENDING: "待生效", CLOSED: "已关闭",
   };
+
+  function esc(value) {
+    return String(value ?? "").replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  }
 
   function orgTypeLabel(value) {
     return ORG_TYPE_LABELS[value] || "其他组织";
@@ -43,43 +51,54 @@
         }
         return;
       }
-      treeEl.innerHTML = `<div class="hr-org-node is-root" data-org-id="${root.id}">
+      treeEl.innerHTML = `<div class="hr-org-node is-root" data-org-id="${esc(root.id)}" data-has-children="${Number(root.childCount || 0) > 0}">
         <button class="hr-org-node__row" data-action="select" aria-expanded="true">
-          <span class="hr-org-node__name">${root.name}</span>
+          <span class="hr-org-node__name">${esc(root.name)}</span>
           <span class="hr-scope-chip">${orgTypeLabel(root.org_type || "SCHOOL")}</span>
         </button>
         <div class="hr-org-node__children" data-children></div>
       </div>`;
-      await loadChildren(root.id);
       selectNode(root.id);
+      await loadChildren(root.id);
     } catch (e) {
-      treeEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
+      treeEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${esc(window.HrApi.apiErrorToMessage(e))}</div></div>`;
     }
   }
 
   async function loadChildren(parentId, container) {
+    const target = container || treeEl?.querySelector("[data-children]");
+    if (!target) return;
+    const version = (childRequestVersions.get(target) || 0) + 1;
+    childRequestVersions.set(target, version);
+    const isCurrent = () => target.isConnected && childRequestVersions.get(target) === version;
     try {
       const res = await window.HrApi.request("/api/hr/v1/structure/organizations/tree", {
         params: { parent_id: parentId },
       });
+      // A collapsed/replaced node must not be repopulated by an earlier request.
+      if (!isCurrent()) return;
       if (!res.ok) throw new Error("tree failed");
       const nodes = res.data.nodes || [];
-      const target = container || treeEl.querySelector(`[data-children]`);
-      if (!target) return;
       target.innerHTML = nodes.length
         ? nodes.map(nodeRow).join("")
         : `<div class="hr-org-node__empty hr-meta">无下级机构</div>`;
+      const owner = target.parentElement;
+      if (owner?.classList.contains("hr-org-node")) {
+        owner.dataset.hasChildren = String(nodes.length > 0);
+      }
     } catch (e) {
-      if (container) container.innerHTML = `<div class="hr-meta">${window.HrApi.apiErrorToMessage(e)}</div>`;
+      if (isCurrent()) {
+        target.innerHTML = `<div class="hr-meta">${esc(window.HrApi.apiErrorToMessage(e))}</div>`;
+      }
     }
   }
 
   function nodeRow(n) {
-    return `<div class="hr-org-node" data-org-id="${n.id}" data-has-children="${n.has_children}">
+    return `<div class="hr-org-node" data-org-id="${esc(n.id)}" data-has-children="${n.has_children === true}">
       <button class="hr-org-node__row" data-action="select" aria-expanded="false">
-        ${n.has_children ? '<span class="hr-org-node__twisty">▸</span>' : '<span class="hr-org-node__twisty"></span>'}
-        <span class="hr-org-node__name">${n.name}</span>
-        <span class="hr-org-node__code hr-meta">${n.stable_code || ""}</span>
+        ${n.has_children === true ? '<span class="hr-org-node__twisty">▸</span>' : '<span class="hr-org-node__twisty"></span>'}
+        <span class="hr-org-node__name">${esc(n.name)}</span>
+        <span class="hr-org-node__code hr-meta">${esc(n.stable_code || "")}</span>
       </button>
       <div class="hr-org-node__children" data-children></div>
     </div>`;
@@ -94,38 +113,42 @@
 
   async function loadDetail(orgId) {
     if (!detailEl) return;
+    const version = ++detailRequestVersion;
     detailEl.innerHTML = `<div class="hr-skeleton hr-skeleton--panel"></div>`;
     try {
       const res = await window.HrApi.request(`/api/hr/v1/structure/organizations/${orgId}`);
+      // The last selected organization owns the detail panel.
+      if (version !== detailRequestVersion) return;
       if (!res.ok) throw new Error("detail failed");
       const d = res.data;
       detailEl.innerHTML = `
         <div class="hr-section-card hr-card">
           <header class="hr-section-card__header">
-            <h2 class="hr-section-card__title">${d.name}</h2>
+            <h2 class="hr-section-card__title">${esc(d.name)}</h2>
             <span class="hr-scope-chip">${orgTypeLabel(d.org_type)}</span>
           </header>
           <div class="hr-section-card__body hr-org-detail-grid">
-            <div class="hr-meta">稳定编码</div><div>${d.stable_code || "—"}</div>
+            <div class="hr-meta">稳定编码</div><div>${esc(d.stable_code || "—")}</div>
             <div class="hr-meta">组织类型</div><div>${orgTypeLabel(d.org_type)}</div>
-            <div class="hr-meta">生效日期</div><div>${d.validity_from || "—"}</div>
+            <div class="hr-meta">生效日期</div><div>${esc(d.validity_from || "—")}</div>
             <div class="hr-meta">状态</div><div>${statusLabel(d.status)}</div>
-            <div class="hr-meta">下级机构</div><div>${d.child_count ?? 0}</div>
+            <div class="hr-meta">下级机构</div><div>${esc(d.child_count ?? 0)}</div>
           </div>
         </div>`;
     } catch (e) {
-      detailEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${window.HrApi.apiErrorToMessage(e)}</div></div>`;
+      if (version !== detailRequestVersion) return;
+      detailEl.innerHTML = `<div class="hr-empty-state"><div class="hr-empty-state__title">${esc(window.HrApi.apiErrorToMessage(e))}</div></div>`;
     }
   }
 
   // 事件委托
-  treeEl.addEventListener("click", (ev) => {
+  if (treeEl) treeEl.addEventListener("click", (ev) => {
     const row = ev.target.closest("[data-action='select']");
     if (!row) return;
     const node = row.closest(".hr-org-node");
     const orgId = node.dataset.orgId;
     const hasChildren = node.dataset.hasChildren === "true";
-    const twisty = node.querySelector(".hr-org-node__twisty");
+    const twisty = row.querySelector(".hr-org-node__twisty");
     const children = node.querySelector("[data-children]");
     const expanded = row.getAttribute("aria-expanded") === "true";
 
@@ -136,7 +159,10 @@
     } else if (expanded) {
       row.setAttribute("aria-expanded", "false");
       if (twisty) twisty.textContent = "▸";
-      if (children) children.innerHTML = "";
+      if (children) {
+        childRequestVersions.set(children, (childRequestVersions.get(children) || 0) + 1);
+        children.innerHTML = "";
+      }
     }
     selectNode(orgId);
   });

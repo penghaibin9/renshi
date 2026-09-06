@@ -1,0 +1,479 @@
+name: System Settings Multi-Role Real Browser Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/system-settings-browser.yml"
+      - "scripts/system_settings_browser.py"
+      - "backend/base/settings_center.py"
+      - "backend/base/settings_urls.py"
+      - "backend/base/settings_visibility.py"
+      - "backend/base/apps.py"
+      - "backend/base/auth_backends.py"
+      - "backend/base/middleware.py"
+      - "backend/base/sidebar.py"
+      - "backend/base/test_settings_runtime_contract.py"
+      - "backend/horilla/menu/**"
+      - "backend/horilla/urls.py"
+      - "frontend/templates/index.html"
+      - "backend/horilla_theme/templates/settings.html"
+      - "backend/horilla_theme/templates/base/settings/**"
+      - "backend/horilla_theme/templates/base/dynamic_pagination/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: system-settings-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  PRODUCT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  SETTINGS_BROWSER_BASE_URL: http://127.0.0.1:8000
+  SETTINGS_BROWSER_ARTIFACT_DIR: tests/artifacts/system-settings-browser
+  SETTINGS_ADMIN_A_USERNAME: settings-school-a-admin
+  SETTINGS_ADMIN_A_PASSWORD: "admin-a-${{ github.run_id }}-${{ github.run_attempt }}"
+  SETTINGS_TEACHER_USERNAME: settings-school-a-teacher
+  SETTINGS_TEACHER_PASSWORD: "teacher-${{ github.run_id }}-${{ github.run_attempt }}"
+  SETTINGS_ADMIN_B_USERNAME: settings-school-b-admin
+  SETTINGS_ADMIN_B_PASSWORD: "admin-b-${{ github.run_id }}-${{ github.run_attempt }}"
+
+jobs:
+  top-right-settings-and-tenant-boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: renshi_db
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Syntax and route ownership gate
+        run: |
+          python -m py_compile \
+            backend/base/settings_center.py \
+            backend/base/settings_urls.py \
+            backend/base/settings_visibility.py \
+            backend/base/test_settings_runtime_contract.py \
+            scripts/system_settings_browser.py
+
+      - name: Install application and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
+
+      - name: Ensure local settings and evidence directory
+        run: |
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for System Settings browser gate' \
+              > backend/horilla/settings/local_settings.py
+          fi
+          mkdir -p tests/artifacts/system-settings-browser
+
+      - name: Fresh MySQL migration and drift gate
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+          python manage.py makemigrations --check --dry-run --noinput
+
+      - name: Run focused settings contracts
+        run: |
+          python manage.py test \
+            base.test_settings_runtime_contract \
+            base.test_settings_center_contract \
+            base.test_settings_mutation_security_contract \
+            base.test_system_settings_browser_gate_contract \
+            --noinput --verbosity 2
+
+      - name: Seed two schools and three ordinary browser roles
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from django.contrib.auth import get_user_model
+          from django.contrib.auth.models import Group, Permission
+          from django.core.files.uploadedfile import SimpleUploadedFile
+
+          from base.models import Company, CompanyGroupAssignment
+          from employee.models import Employee, EmployeeWorkInformation
+          from horilla.horilla_middlewares import tenant_context
+          from hr_staff.models import HrPerson, HrStaffMaster
+
+          User = get_user_model()
+          school_a = Company.objects.create(
+              company="跃科系统设置验收学校 A",
+              hq=True,
+              address="长沙市系统设置验收路 A 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              date_format="MMM. D, YYYY",
+              time_format="hh:mm A",
+              icon=SimpleUploadedFile(
+                  "settings-a.png",
+                  b"settings-a",
+                  content_type="image/png",
+              ),
+          )
+          school_b = Company.objects.create(
+              company="跃科系统设置验收学校 B",
+              hq=False,
+              address="长沙市系统设置隔离路 B 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410001",
+              date_format="MMM. D, YYYY",
+              time_format="hh:mm A",
+              icon=SimpleUploadedFile(
+                  "settings-b.png",
+                  b"settings-b",
+                  content_type="image/png",
+              ),
+          )
+
+          base_codes = {
+              "view_dynamicpagination",
+              "change_dynamicpagination",
+              "view_company",
+              "change_company",
+          }
+          base_permissions = {
+              permission.codename: permission
+              for permission in Permission.objects.filter(
+                  content_type__app_label="base",
+                  codename__in=base_codes,
+              )
+          }
+          assert set(base_permissions) == base_codes, (
+              "Required System Settings permissions were not materialized",
+              sorted(base_permissions),
+          )
+          review_permission = Permission.objects.get(
+              content_type__app_label="hr_external",
+              content_type__model="hrexternalpermissionmeta",
+              codename="hr.external.hiring.review",
+          )
+
+          def create_role(
+              *,
+              role,
+              company,
+              username,
+              password,
+              phone,
+              staff_no,
+              settings_admin,
+          ):
+              user = User.objects.create_user(
+                  username=username,
+                  email=f"{role}@example.invalid",
+                  password=password,
+              )
+              user.is_new_employee = False
+              user.save(update_fields=["is_new_employee"])
+              employee = Employee.objects.create(
+                  employee_user_id=user,
+                  employee_first_name="系统设置",
+                  employee_last_name=role,
+                  email=f"{role}-employee@example.invalid",
+                  phone=phone,
+                  is_active=True,
+              )
+              work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
+                  employee_id=employee,
+              )
+              work_info.company_id = company
+              work_info.save(update_fields=["company_id"])
+              person = HrPerson.objects.create(
+                  tenant_id=company.pk,
+                  legal_name=f"系统设置 {role}",
+                  status="ACTIVE",
+              )
+              HrStaffMaster.objects.create(
+                  tenant_id=company.pk,
+                  person_id=person,
+                  staff_no=staff_no,
+                  current_employment_status="ACTIVE",
+                  legacy_employee_id=employee.pk,
+              )
+
+              group = Group.objects.create(
+                  name=f"System Settings {role} @ {company.pk}"
+              )
+              permissions = [review_permission]
+              if settings_admin:
+                  permissions.extend(base_permissions.values())
+              group.permissions.set(permissions)
+              CompanyGroupAssignment.objects.create(
+                  user=user,
+                  company=company,
+                  group=group,
+              )
+              CompanyGroupAssignment.sync_user_group_membership(user, group)
+
+              with tenant_context(company.pk):
+                  assert user.has_perm("hr08.hiring.review")
+                  for code in base_codes:
+                      has_permission = user.has_perm(f"base.{code}")
+                      assert has_permission is settings_admin, (
+                          role,
+                          company.pk,
+                          code,
+                          has_permission,
+                      )
+              return user
+
+          admin_a = create_role(
+              role="school-a-admin",
+              company=school_a,
+              username=os.environ["SETTINGS_ADMIN_A_USERNAME"],
+              password=os.environ["SETTINGS_ADMIN_A_PASSWORD"],
+              phone="13800009001",
+              staff_no="SETTINGS-A-ADMIN",
+              settings_admin=True,
+          )
+          teacher = create_role(
+              role="school-a-teacher",
+              company=school_a,
+              username=os.environ["SETTINGS_TEACHER_USERNAME"],
+              password=os.environ["SETTINGS_TEACHER_PASSWORD"],
+              phone="13800009002",
+              staff_no="SETTINGS-A-TEACHER",
+              settings_admin=False,
+          )
+          admin_b = create_role(
+              role="school-b-admin",
+              company=school_b,
+              username=os.environ["SETTINGS_ADMIN_B_USERNAME"],
+              password=os.environ["SETTINGS_ADMIN_B_PASSWORD"],
+              phone="13800009003",
+              staff_no="SETTINGS-B-ADMIN",
+              settings_admin=True,
+          )
+
+          Path("tests/artifacts/system-settings-browser/seed.json").write_text(
+              json.dumps(
+                  {
+                      "school_a_id": school_a.pk,
+                      "school_a_name": school_a.company,
+                      "school_a_updated_name": "跃科系统设置验收学校 A（资料已修改）",
+                      "school_a_updated_address": "长沙市系统设置验收路 A 更新号",
+                      "school_b_id": school_b.pk,
+                      "school_b_name": school_b.company,
+                      "school_b_original_address": school_b.address,
+                      "admin_a_user_id": admin_a.pk,
+                      "teacher_user_id": teacher.pk,
+                      "admin_b_user_id": admin_b.pk,
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          print(
+              "System Settings seed PASS",
+              f"school_a={school_a.pk}",
+              f"school_b={school_b.pk}",
+              f"admin_a={admin_a.pk}",
+              f"teacher={teacher.pk}",
+              f"admin_b={admin_b.pk}",
+          )
+          PY
+
+      - name: Boot Django and run three isolated Chromium roles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python manage.py runserver 127.0.0.1:8000 --noreload \
+            > tests/artifacts/system-settings-browser/django-runserver.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/login/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat tests/artifacts/system-settings-browser/django-runserver.log
+            exit 1
+          fi
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
+            | tee tests/artifacts/system-settings-browser/readiness.json
+
+          python scripts/system_settings_browser.py
+
+      - name: Seal settings facts directly from MySQL
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          from base.models import (
+              Company,
+              CompanyGroupAssignment,
+              DefaultExportPermission,
+              DynamicPagination,
+          )
+
+          seed = json.loads(
+              Path("tests/artifacts/system-settings-browser/seed.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          evidence = json.loads(
+              Path("tests/artifacts/system-settings-browser/evidence.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+
+          school_a = Company.objects.get(id=seed["school_a_id"])
+          school_b = Company.objects.get(id=seed["school_b_id"])
+          assert school_a.company == seed["school_a_updated_name"], school_a.company
+          assert school_a.address == seed["school_a_updated_address"], school_a.address
+          assert school_b.company == seed["school_b_name"], school_b.company
+          assert school_b.address == seed["school_b_original_address"], school_b.address
+          assert school_a.date_format == "YYYY-MM-DD", school_a.date_format
+          assert school_a.time_format == "HH:mm:ss", school_a.time_format
+          assert school_b.date_format == "DD/MM/YYYY", school_b.date_format
+          assert school_b.time_format == "hh:mm A", school_b.time_format
+
+          admin_a_pagination = DynamicPagination.objects.get(
+              user_id_id=seed["admin_a_user_id"]
+          )
+          admin_b_pagination = DynamicPagination.objects.get(
+              user_id_id=seed["admin_b_user_id"]
+          )
+          assert admin_a_pagination.pagination == 37
+          assert admin_b_pagination.pagination == 61
+          assert not DynamicPagination.objects.filter(
+              user_id_id=seed["teacher_user_id"]
+          ).exists()
+
+          role_ids = {
+              seed["admin_a_user_id"],
+              seed["teacher_user_id"],
+              seed["admin_b_user_id"],
+          }
+          assignments = CompanyGroupAssignment.objects.filter(user_id__in=role_ids)
+          assert assignments.count() == 3
+          assert assignments.filter(company_id=school_a.id).count() == 2
+          assert assignments.filter(company_id=school_b.id).count() == 1
+          assert not DefaultExportPermission.objects.filter(company_id=None).exists(), (
+              "System Settings must not create a global export-access row"
+          )
+
+          expected = {
+              ("school_a_admin", "top-right-gear-opens-system-preferences"): 200,
+              ("school_a_admin", "pagination-saved-from-ui"): 200,
+              ("school_a_admin", "date-format-saved-from-ui"): 200,
+              ("school_a_admin", "time-format-saved-from-ui"): 200,
+              ("school_a_admin", "preferences-reloaded-from-server"): 200,
+              ("school_a_admin", "company-settings-scoped-to-selected-school"): 200,
+              ("school_a_admin", "school-profile-edited-and-reloaded"): 200,
+              ("school_a_teacher", "settings-gear-not-rendered"): 200,
+              ("school_a_teacher", "settings-root-denied"): 403,
+              ("school_a_teacher", "system-preferences-denied"): 403,
+              ("school_a_teacher", "pagination-write-denied"): 403,
+              ("school_a_teacher", "date-write-denied"): 403,
+              ("school_a_teacher", "time-write-denied"): 403,
+              ("school_a_teacher", "company-list-denied"): 403,
+              ("school_b_admin", "top-right-gear-opens-system-preferences"): 200,
+              ("school_b_admin", "pagination-saved-from-ui"): 200,
+              ("school_b_admin", "date-format-saved-from-ui"): 200,
+              ("school_b_admin", "time-format-saved-from-ui"): 200,
+              ("school_b_admin", "preferences-reloaded-from-server"): 200,
+              ("school_b_admin", "cross-tenant-company-form-concealed"): 404,
+              ("school_b_admin", "company-settings-scoped-to-selected-school"): 200,
+          }
+          actual = {
+              (row["role"], row["assertion"]): row.get("http_status")
+              for row in evidence
+          }
+          assert actual == expected and len(evidence) == len(expected), (
+              "System Settings browser evidence matrix mismatch",
+              actual,
+          )
+          Path("tests/artifacts/system-settings-browser/mysql-seal.json").write_text(
+              json.dumps(
+                  {"status": "PASS", "browserAssertions": len(actual),
+                   "productHead": os.environ["PRODUCT_HEAD_SHA"],
+                   "testedCommit": subprocess.check_output(
+                       ["git", "rev-parse", "HEAD"], text=True
+                   ).strip(),
+                   "schoolAId": school_a.pk, "schoolBId": school_b.pk,
+                   "schoolAProfileReloaded": True, "schoolBProfileUnchanged": True},
+                  ensure_ascii=False, indent=2,
+              ), encoding="utf-8",
+          )
+          print(
+              "System Settings multi-role browser and MySQL seal PASS",
+              f"assertions={len(actual)}",
+              f"school_a={school_a.id}",
+              f"school_b={school_b.id}",
+          )
+          PY
+
+      - name: Upload System Settings browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-settings-browser-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/system-settings-browser/
+          if-no-files-found: error
+          retention-days: 14

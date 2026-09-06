@@ -3,8 +3,8 @@
 import logging
 
 import notifications.urls
-from django.contrib import admin
 from django.conf import settings
+from django.contrib import admin
 from django.core.cache import cache
 from django.db import connection
 from django.http import JsonResponse
@@ -100,6 +100,11 @@ urlpatterns = [
     # Canonical HR routes and legacy-UI retirement adapters must resolve before
     # old app URLConfs registered by compatibility AppConfig.ready() hooks.
     path("", include("horilla.hr_urls")),
+    # Settings keeps legacy public paths/names but its tenant-safe handlers must
+    # win URL resolution before the broad compatibility routes in base.urls.
+    path("", include("base.settings_urls")),
+    # Account authentication/notifications must not depend on an Employee row.
+    path("", include("base.account_urls")),
     path("", include("base.urls")),
     path("", include("horilla_automations.urls")),
     path("", include("horilla_views.urls")),
