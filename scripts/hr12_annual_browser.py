@@ -190,12 +190,25 @@ def prepare_formal_authority(seed: dict) -> dict:
             .first()
         )
         require(evaluation is not None, "HR12 reviewer evaluation seed is missing")
-        evaluation.rating_json = {
+        desired_rating = {
             "totalScore": "80.00",
             "gradeCode": "QUALIFIED",
         }
-        evaluation.comment = "真实年度评议已提交，系统按冻结规则自动计算"
-        evaluation.save(update_fields=["rating_json", "comment", "updated_at"])
+        desired_comment = "真实年度评议已提交，系统按冻结规则自动计算"
+        if (
+            evaluation.rating_json != desired_rating
+            or evaluation.comment != desired_comment
+        ):
+            evaluation = HrReviewerEvaluation.objects.create(
+                tenant_id=tenant_id,
+                assignment=evaluation.assignment,
+                indicator_evaluations_json=evaluation.indicator_evaluations_json,
+                rating_json=desired_rating,
+                comment=desired_comment,
+                recommendation=evaluation.recommendation or "QUALIFIED",
+                submitted_at=now,
+                revision_no=evaluation.revision_no + 1,
+            )
 
         snapshot = HrCycleSnapshot.objects.create(
             tenant_id=tenant_id,
