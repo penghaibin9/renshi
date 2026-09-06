@@ -11,8 +11,15 @@ from hr_self.services.identity_service import (
 
 
 class SelfIdentityServiceTests(SimpleTestCase):
+    def setUp(self):
+        # These pre-existing tests own the legacy path. The native path and
+        # fail-closed behavior are covered by real database/API tests.
+        native = patch.object(SelfIdentityService, "_native_account_context", return_value=None)
+        native.start()
+        self.addCleanup(native.stop)
+
     def _user(self):
-        return SimpleNamespace(id=9, is_authenticated=True)
+        return SimpleNamespace(id=9, is_authenticated=True, is_active=True)
 
     @patch("hr_self.services.identity_service._staff_master_model")
     @patch("hr_self.services.identity_service._legacy_employee_model")

@@ -42,6 +42,8 @@ class HrAccountLink(models.Model):
         indexes = [
             models.Index(fields=["tenant_id", "staff_id", "link_status"]),
             models.Index(fields=["tenant_id", "auth_identifier"]),
+            models.Index(fields=["tenant_id", "auth_user_id", "link_status"],
+                         name="hr_account_tenant_user_status"),
         ]
 
     def __str__(self):

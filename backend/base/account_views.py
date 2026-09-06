@@ -92,6 +92,12 @@ def home(request):
         return redirect("dashboard")
     if is_platform_operator(request.user):
         return redirect("admin:index")
+    # New-school teachers may have a canonical HR03 account link without an
+    # Employee. Their ordinary landing must not be an admin-only settings page.
+    # This is navigation only: HR17 still checks membership, permission and
+    # the explicit identity. Administrators retain the school-center landing.
+    if request.user.has_perm("hr.self.view") and not request.user.has_perm("base.view_company"):
+        return redirect("hr_self:overview")
     # SafeCompanyMiddleware selects only an unambiguous authorized school.
     # With multiple schools, settings remains fail-closed until one is chosen.
     return redirect("school-management")

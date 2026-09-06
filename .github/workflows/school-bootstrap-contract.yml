@@ -8,6 +8,7 @@ on:
       - 'backend/base/**'
       - 'backend/hr_structure/**'
       - 'backend/hr_staff/**'
+      - 'backend/hr_self/**'
       - 'scripts/school_staff_import_*.py'
       - 'frontend/templates/hr/structure/**'
       - 'frontend/static/hr/js/structure/**'
@@ -155,6 +156,7 @@ jobs:
                                    'hr_staff.tests.test_round4_export_import',
                                    'hr_staff.tests.test_production_closure',
                                    'hr_staff.tests.test_v2_roster_contract',
+                                   'hr_self',
                                    'hr_structure.tests.test_initial_setup',
                                    'hr_structure.tests.test_position_names',
                                    'hr_structure.tests.test_position_real_occupancy',
