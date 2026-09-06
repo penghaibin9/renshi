@@ -159,6 +159,8 @@ jobs:
                                    'hr_structure.tests.test_position_names',
                                    'hr_structure.tests.test_position_real_occupancy',
                                    'base.test_account_bootstrap',
+                                   'base.test_account_password',
+                                   'base.test_legacy_htmx_navigation',
                                    'base.test_account_profile_header',
                                    'base.test_legacy_initialization_boundary',
                                    'base.test_tenant_selection_envelope',

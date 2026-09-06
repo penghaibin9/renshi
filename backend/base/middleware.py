@@ -2,15 +2,13 @@
 middleware.py
 """
 
-from urllib.parse import urlparse
-
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.core.cache import cache
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
@@ -390,9 +388,9 @@ class CompanyMiddleware:
         ):
             allowed = get_allowed_company_ids(request.user)
             assigned = get_assigned_company_ids(request.user)
+            # All my companies → filter to assignment companies only
             request.allowed_company_ids = allowed
             request.assigned_company_ids = assigned
-            # All my companies → filter to assignment companies only
             request.all_my_company_ids = assigned if len(assigned) >= 2 else allowed
             request.write_company_id = (
                 get_write_company_id(request.user) if company_id == "all" else None
@@ -432,17 +430,21 @@ class ForcePasswordChangeMiddleware:
 
         if hasattr(request, "user") and request.user.is_authenticated:
             if getattr(request.user, "is_new_employee", True):
-                # HTMX sub-requests that originate from the change-password page
-                # (e.g. the notification button's hx-trigger="load") must be allowed
-                # through. Without this, the middleware redirects those sub-requests
-                # back to /change-password/, HTMX swaps the full page HTML into the
-                # notification container (which contains yet another notification
-                # button), and the loop repeats indefinitely.
-                hx_current_url = request.headers.get("HX-Current-URL", "")
-                if request.headers.get("HX-Request") and hx_current_url:
-                    current_path = urlparse(hx_current_url).path.rstrip("/")
-                    if current_path in excluded_paths:
-                        return self.get_response(request)
+                # HX-Current-URL is client input, not proof that a request is
+                # part of password setup. The standalone credential page has
+                # no business/notification subrequests requiring an exemption.
+                # API and native writes fail explicitly, never replay a POST
+                # through a login redirect or expose protected business data.
+                if (request.path.startswith("/api/")
+                        or "application/json" in request.headers.get("Accept", "")
+                        or (request.method not in {"GET", "HEAD"}
+                            and request.headers.get("HX-Request") != "true")):
+                    response = JsonResponse({"error": {
+                        "code": "PASSWORD_CHANGE_REQUIRED",
+                        "message": "首次使用前须完成密码设置。",
+                    }}, status=403)
+                    response["Cache-Control"] = "no-store"
+                    return response
 
                 # For HTMX navigation requests coming from other pages, respond with
                 # HX-Redirect so the browser performs a proper full-page navigation
@@ -452,12 +454,15 @@ class ForcePasswordChangeMiddleware:
                     request,
                     _("You must change your password before continuing."),
                 )
-                if request.headers.get("HX-Request"):
+                if request.headers.get("HX-Request") == "true":
                     response = HttpResponse(status=204)
                     response["HX-Redirect"] = "/change-password/"
+                    response["Cache-Control"] = "no-store"
                     return response
 
-                return redirect("change-password")
+                response = redirect("change-password")
+                response["Cache-Control"] = "no-store"
+                return response
 
         return self.get_response(request)
 

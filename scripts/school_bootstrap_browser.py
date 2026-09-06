@@ -68,11 +68,13 @@ def seed():
     roles = {}
     for name, school, can_edit in (("admin_a", schools[0], True), ("viewer_a", schools[0], False),
                                    ("admin_b", schools[1], True)):
+        initial_suffix = "-initial" if name == "admin_a" else ""
         user = User.objects.create_user(username="bootstrap-" + name,
-                                        password=os.environ["SCHOOL_BOOTSTRAP_PASSWORD"] + name)
-        # Credential activation/password change is a distinct acceptance lane.
-        # This fixture represents an already activated account, not an invitation.
-        user.is_new_employee = False
+                                        password=os.environ["SCHOOL_BOOTSTRAP_PASSWORD"] + name + initial_suffix)
+        # Only the first admin starts with a required credential change. The
+        # browser must clear it through the real form, not a fixture update.
+        # Issuing/delivering an invitation remains a separate unverified step.
+        user.is_new_employee = name == "admin_a"
         user.save(update_fields=["is_new_employee"])
         group = Group.objects.create(name=f"Bootstrap {name} @ {school.pk}")
         base_codes = {"view_company", "change_company"} if can_edit else {"view_company"}
@@ -106,7 +108,7 @@ def browser_proof():
         return page.evaluate("""async ({path, body}) => {
           const csrf = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith('csrftoken='));
           const headers = {'X-Requested-With':'XMLHttpRequest'};
-          const options = {method: body === null ? 'GET' : 'POST', credentials:'same-origin', headers};
+          const options = {credentials:'same-origin', method:body === null ? 'GET' : 'POST', headers};
           if(body !== null) {
             headers['X-CSRFToken'] = csrf ? decodeURIComponent(csrf.slice(10)) : '';
             headers['Content-Type'] = 'application/x-www-form-urlencoded';
@@ -169,6 +171,9 @@ def browser_proof():
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             try:
+                from school_bootstrap_password import verify_first_password
+                verify_first_password(browser, base=base, data=data, record=record,
+                                      out=OUT, require=require)
                 role = "admin_a"
                 with login(browser, role) as page:
                     assert_summary(page, role, "MISSING")
@@ -266,6 +271,11 @@ def seal():
     data = json.loads((OUT / "seed.json").read_text(encoding="utf-8"))
     evidence = json.loads((OUT / "evidence.json").read_text(encoding="utf-8"))
     expected = {
+        ("admin_a", "first-password-required-before-school-access"): 200,
+        ("admin_a", "first-password-spoofed-page-header-denied"): 204,
+        ("admin_a", "first-password-invalid-old-denied"): 400,
+        ("admin_a", "first-password-weak-password-denied"): 400,
+        ("admin_a", "first-password-saved-and-school-center-reloaded"): 200,
         ("admin_a", "login-without-employee"): 200,
         ("admin_a", "header-notifications-readable"): 200,
         ("admin_a", "own-school-status-missing"): 200,
@@ -302,7 +312,18 @@ def seal():
     require(event.additional_data["tenant_id"] == school_a.pk, "Wrong audit tenant")
     require(not LogEntry.objects.filter(object_pk=str(school_b.pk), additional_data__source="school_management").exists(),
             "School B has unexpected mutation audit")
+    admin = get_user_model().objects.get(pk=data["roles"]["admin_a"]["user_id"])
+    require(not admin.is_new_employee, "First-password requirement was not cleared")
+    require(admin.check_password(os.environ["SCHOOL_BOOTSTRAP_PASSWORD"] + "admin_a"), "Saved password mismatch")
+    password_audits = LogEntry.objects.filter(additional_data__source="account_password")
+    require(password_audits.count() == 1, "Password change was not audited exactly once")
+    password_audit = password_audits.get()
+    require(password_audit.actor_id == admin.pk and password_audit.object_pk == str(admin.pk), "Wrong password audit account")
+    require(password_audit.changes == {"password": ["[REDACTED]", "[REDACTED]"],
+                                      "is_new_employee": [True, False]}, "Password audit content mismatch")
+    require(password_audit.serialized_data is None, "Password audit contains serialized account data")
     write_json("mysql-seal.json", {"status": "PASS", "schoolCount": 2, "fakeStaffCount": 0,
+                                   "firstPasswordAuditCount": 1,
                                    "profileAuditCount": 1, "browserAssertions": len(evidence),
                                    "productHead": os.environ.get("PRODUCT_HEAD_SHA"),
                                    "testedCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()})
