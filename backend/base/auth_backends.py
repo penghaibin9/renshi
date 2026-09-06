@@ -144,7 +144,9 @@ class CompanyScopedBackend(ModelBackend):
             # The old decision intersects the requested alias set with each
             # granted codename's alias set. Alias edges are symmetric but not
             # transitive, so two hops bound candidates, NOT authorization.
-            candidates = {alias for code in required for alias in permission_aliases(code)}
+            candidates = {
+                alias for code in required for alias in permission_aliases(code)
+            }
             candidate |= Q(codename__in=candidates)
         permissions = self._render_permission_strings(
             self._effective_permission_objects(user_obj).filter(candidate)
