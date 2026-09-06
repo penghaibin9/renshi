@@ -98,7 +98,7 @@ class SelfIdentityService:
         legacy_employee_id = None
         if staff.legacy_employee_id is not None:
             verified = list(
-                _legacy_employee_model().objects.filter(
+                _legacy_employee_model()._base_manager.filter(
                     employee_user_id=user,
                     employee_work_info__company_id_id=self.tenant_id,
                     is_active=True,
@@ -130,7 +130,7 @@ class SelfIdentityService:
         # Do not trust Employee.objects request/thread-local company scoping.
         # Explicit company filtering is mandatory for background/mobile/API use.
         employees = list(
-            Employee.objects.filter(
+            Employee._base_manager.filter(
                 employee_user_id=user,
                 employee_work_info__company_id_id=self.tenant_id,
                 is_active=True,
