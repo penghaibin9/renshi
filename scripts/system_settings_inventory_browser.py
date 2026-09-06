@@ -43,11 +43,31 @@ def require(condition: bool, message: str) -> None:
 
 
 def settle(page, label: str, timeouts: list[str]) -> None:
+    """Wait for navigation plus nested HTMX work to become quiescent.
+
+    Playwright's ``networkidle`` load state only describes the document load
+    lifecycle. A settings fragment can mount an ``hx-trigger=load`` child after
+    that state is already satisfied (Companies does this for its navbar/list),
+    so treating networkidle as HTMX-idle races the real UI and can report a
+    false empty page. Observe the HTMX request marker in the settings fragment
+    across several quiet windows instead of sleeping for one fixed interval.
+    """
+
     try:
         page.wait_for_load_state("networkidle", timeout=5000)
     except PlaywrightTimeoutError:
         timeouts.append(label)
-    page.wait_for_timeout(350)
+
+    for _ in range(3):
+        page.wait_for_timeout(250)
+        try:
+            page.wait_for_function(
+                """() => !document.querySelector('#settingsContainer .htmx-request')""",
+                timeout=10000,
+            )
+        except PlaywrightTimeoutError:
+            timeouts.append(f"{label}:htmx")
+            break
 
 
 def settings_link(page):
@@ -198,8 +218,18 @@ def click_item(page, item, failures, timeouts) -> dict[str, object]:
     )
     require(urlsplit(page.url).path.rstrip("/") == target_path.rstrip("/"),
             f"settings URL did not change to the requested page: {item}")
+    try:
+        page.wait_for_function(
+            """() => {
+                const container = document.querySelector('#settingsContainer');
+                return Boolean(container && container.innerText.trim());
+            }""",
+            timeout=15000,
+        )
+    except PlaywrightTimeoutError:
+        pass
     text = container.inner_text().strip()
-    require(text, f"empty settings content: {item}")
+    require(text, f"empty settings content after HTMX settle: {item}")
     for marker in ERROR_MARKERS:
         require(marker not in text, f"error marker {marker!r}: {item}")
     require(
