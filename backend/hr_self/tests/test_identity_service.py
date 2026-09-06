@@ -26,7 +26,10 @@ class SelfIdentityServiceTests(SimpleTestCase):
     def test_resolve_scopes_legacy_user_bridge_to_explicit_tenant(
         self, employee_model, staff_model
     ):
-        employee_objects = employee_model.return_value.objects
+        # The service intentionally bypasses Employee.objects because that
+        # manager is request/thread-local company scoped. Mock the same
+        # non-request manager used by production SELF resolution.
+        employee_objects = employee_model.return_value._base_manager
         staff_objects = staff_model.return_value.objects
         employee = SimpleNamespace(id=55)
         employee_qs = MagicMock()
@@ -58,7 +61,7 @@ class SelfIdentityServiceTests(SimpleTestCase):
 
     @patch("hr_self.services.identity_service._legacy_employee_model")
     def test_cross_tenant_or_missing_employee_fails_closed(self, employee_model):
-        employee_objects = employee_model.return_value.objects
+        employee_objects = employee_model.return_value._base_manager
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = []
         employee_objects.filter.return_value.order_by.return_value = employee_qs
@@ -70,7 +73,7 @@ class SelfIdentityServiceTests(SimpleTestCase):
 
     @patch("hr_self.services.identity_service._legacy_employee_model")
     def test_duplicate_active_employee_bridge_fails_closed(self, employee_model):
-        employee_objects = employee_model.return_value.objects
+        employee_objects = employee_model.return_value._base_manager
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [
             SimpleNamespace(id=55),
@@ -88,7 +91,7 @@ class SelfIdentityServiceTests(SimpleTestCase):
     def test_duplicate_hr03_staff_mapping_fails_closed(
         self, employee_model, staff_model
     ):
-        employee_objects = employee_model.return_value.objects
+        employee_objects = employee_model.return_value._base_manager
         staff_objects = staff_model.return_value.objects
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [SimpleNamespace(id=55)]
@@ -108,7 +111,7 @@ class SelfIdentityServiceTests(SimpleTestCase):
     def test_staff_without_canonical_person_fails_closed(
         self, employee_model, staff_model
     ):
-        employee_objects = employee_model.return_value.objects
+        employee_objects = employee_model.return_value._base_manager
         staff_objects = staff_model.return_value.objects
         employee_qs = MagicMock()
         employee_qs.__getitem__.return_value = [SimpleNamespace(id=55)]
