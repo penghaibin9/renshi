@@ -3,7 +3,7 @@
 from django.conf import settings
 from django.contrib.auth.backends import ModelBackend
 from django.contrib.auth.models import Permission
-from django.db.models import Count
+from django.db.models import Count, Q
 from horilla.horilla_middlewares import _thread_locals, get_selected_company
 from horilla.hr_permissions import (
     is_semantic_hr_permission,
@@ -129,10 +129,30 @@ class CompanyScopedBackend(ModelBackend):
         if obj is not None:
             return False
 
-        permissions = self.get_all_permissions(user_obj)
-        if is_semantic_hr_permission(perm):
-            return bool(permission_aliases(perm) & permissions)
-        return perm in permissions
+        if not isinstance(perm, str) or not perm:
+            return False
+        semantic = is_semantic_hr_permission(perm)
+        required = permission_aliases(perm) if semantic else frozenset({perm})
+        candidate = Q(pk__in=[])
+        for code in required:
+            # Preserve Django's app_label.codename spellings, including a
+            # dotted codename. Do not turn a normal app permission into HR.
+            app_label, separator, codename = code.partition(".")
+            if separator:
+                candidate |= Q(content_type__app_label=app_label, codename=codename)
+        if semantic:
+            # The old decision intersects the requested alias set with each
+            # granted codename's alias set. Alias edges are symmetric but not
+            # transitive, so two hops bound candidates, NOT authorization.
+            candidates = {alias for code in required for alias in permission_aliases(code)}
+            candidate |= Q(codename__in=candidates)
+        permissions = self._render_permission_strings(
+            self._effective_permission_objects(user_obj).filter(candidate)
+        )
+        # Evaluate the original case-sensitive string decision after SQL has
+        # narrowed candidates: a case-insensitive MySQL collation must not
+        # expand grants. No permission cache survives a grant/scope change.
+        return bool(required & permissions)
 
     @staticmethod
     def _resolve_company_id(user_obj):
