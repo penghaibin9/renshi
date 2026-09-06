@@ -1,4 +1,4 @@
-# CURRENT STATE｜2026-09-04
+# CURRENT STATE｜2026-09-04 基线（持续更新）
 
 > 仓库：`penghaibin9/renshi`  
 > 默认分支：`main`  
@@ -6,6 +6,60 @@
 > 单一施工分支：`fix/production-readiness-20260904`  
 > Draft PR：`#53 fix(prod): close HR01–HR18 production gates and documentation truth`  
 > 说明：本文冻结“基线与验收口径”；PR 的实时 exact HEAD 和检查结论以 PR #53 页面为准。
+
+## 0. 2026-09-06 已核验进展与原则采用
+
+产品原则已按负责人要求进入根目录 [AGENTS.md](../AGENTS.md)、[仓库首页](../README.md)、[总索引](00_文档总索引.md)和[原 PR 模板](../.github/PULL_REQUEST_TEMPLATE.md)。业务原则与公开来源继续使用 [UNIVERSITY_HR_PRODUCT_PRIORITIES.md](UNIVERSITY_HR_PRODUCT_PRIORITIES.md)，不另建第二套总册。这是要求采用及入口治理，不是全部 docs 或功能完成证明。
+
+### 0.1 已取得的专项验收
+
+以下结果只属于产品 `bf89188de0a02bc320fdebfeb250941adc5b6dd0`，实际 PR 测试 checkout 为 `493a8e21cd0cea7571e6a6e719623fdbf4a989af`，不能转记到后续提交。
+
+- 运行：[School Bootstrap / MySQL Contracts #34000602769](https://github.com/penghaibin9/renshi/actions/runs/34000602769)，整体 `success`。
+- 工件：`9979708727`；下载 ZIP 的 SHA-256 已与 GitHub digest 对账：`a149ee9e2dc24f1d3b0442fc54181b81c4f97ae10f3f63edb4650a9180a7e534`。
+- `school-bootstrap-contract/django-tests.log`：208 项集中 Django/MySQL 测试通过。
+- 学校资料 18 条、组织岗位 9 条、人员导入 9 条真实 Chromium 断言完成；三阶段 `mysql-seal.json` 均为 `PASS`，预检不写正式人员的独立核验亦为 `PASS`。
+- `school-staff-import-browser/audit-seal.json`：七类写入动作各一次；同一错误工作簿两次成功 GET 对应两条访问审计，合计九条；逐项校验通过，`errors=[]`。不是删除访问日志或跳过审计取得绿灯。
+
+因此，旧 `7cc546f` 的最终审计失败已在上述新版本对应专项中取得通过证据。历史验收文档的失败记录保留，但不再作为这一版本“仍未解决”的结论。
+
+通过范围是两校、三个普通账号的学校资料→首次组织岗位→合成人员导入及回读链，不证明真实学校全部初始配置、教师本人账号开通、全量复杂迁移或全生命周期已完成。
+
+### 0.2 同一产品 SHA 的其他工作流状态
+
+这是 2026-09-06 读取的完成态快照；失败原因尚未逐项在本次文档施工中诊断，不能全部归咎于产品或 Runner，也不能重复运行代替诊断。
+
+| 工作流 | Run ID | 读取结果 |
+|---|---|---|
+| Quality / MySQL Contract | `34000602683` | success |
+| Previous Baseline / MySQL Upgrade | `34000602697` | success |
+| HR Real Browser Click Flow | `34000602719` | success |
+| System Settings Multi-Role Real Browser Gate | `34000602720` | success |
+| W-B HR08 External Agreement Gate | `34000602721` | success |
+| W-B HR08 Multi-Role Real Browser Gate | `34000602705` | success |
+| W-A HR04 to HR05 Browser Gate | `34000602685` | failure，待根因分类 |
+| HR12 Annual Real Browser Gate | `34000602744` | failure，待根因分类 |
+| System Settings Full Inventory Browser Gate | `34000602778` | failure，待根因分类 |
+| Docker / MySQL Smoke | `34000602681` | failure，待根因分类 |
+| HR Visual Audit / Chromium | `34000602690` | failure，待根因分类 |
+
+查询依据为本产品 SHA 的 GitHub Actions 完成记录，可在仓库 Actions 按 Run ID 复核。专项通过不抵消这五项失败。全仓库仍为 `NO-GO`，`productionReady=false`；最终 Release Seal 不填写为通过。
+
+### 0.3 下一唯一业务切片：学校自主启用与本人账号
+
+先读现有平台开户、账号与学校授权服务，沿用原 PR，不直接另造 User/Employee、登录服务或通用审批引擎。优先核查上表中系统设置全量失败与本切片的关联；有关联先修根因，无关联则记录独立发布阻断、按依赖顺序单项处理，不能忽略或临时扩散多模块。
+
+目标链为：平台明确学校并开户 → 首管邀请及首次设置密码 → 本校角色/审批负责人 → 教师档案与本人账号显式关联 → 教师从 HR17 进入一件高频事务。存量人员导入不代替邀请、激活、本人绑定或授权。
+
+后续切片必须补齐：
+
+1. 读取并记录现有按钮、路由、字段、服务、模型及测试，不凭计划虚构接口。
+2. 开户/邀请重试不重复建学校或账号；过期、重放、撤销、错校与错误本人绑定拒绝；学校管理员无权开其他学校或扩大产品授权。
+3. 学校管理员、学院经办人、教师本人、另一学校账号分别登录验证。办结后刷新和跨角色回读一致，拒绝请求无副作用且审计可对账。
+4. 空学校和无历史 Employee 的首管均可完成规定配置；未指定审批人或制度时说明具体缺项，不给假成功。
+5. 用 AGENTS 的 HRP 编号及原 PR 模板记录完整证据；未执行的邀请、真实通知、学生系统联调与运行恢复保留未验收。
+
+本轮仅把已采用原则和新取得的证据落实到五份仓库文档，没有新改业务代码、权限、迁移、工作流或部署配置；下一业务切片仍为待施工/验收。
 
 ## 1. 当前一句话结论
 
@@ -124,7 +178,7 @@ backend/horilla/settings/security.py
 
 ---
 
-## 5. 当前能力分层
+## 5. 2026-09-04 初始能力分层（历史；最新结果见第 0 节）
 
 | 层级 | 当前判断 | 说明 |
 |---|---|---|
