@@ -1,12 +1,15 @@
 """First-password boundary with full MySQL sessions, real CSRF and no Employee."""
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlsplit
 
 from auditlog.models import LogEntry
-from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.contrib.auth import SESSION_KEY, get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.contrib.messages.storage.fallback import FallbackStorage
 from django.http import HttpResponse
+from django.shortcuts import resolve_url
 from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import resolve, reverse
 
@@ -101,7 +104,9 @@ class AccountPasswordMySQLTests(TestCase):
     def post(self, browser=None, **changes):
         browser = browser or self.browser
         payload = {"old_password": self.old, "new_password": self.new, "confirm_password": self.new, **changes}
-        return browser.post("/change-password/", payload, HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value)
+        return browser.post("/change-password/", payload,
+                            HTTP_X_CSRFTOKEN=browser.cookies["csrftoken"].value,
+                            HTTP_ORIGIN="http://testserver")
 
     def audits(self):
         return LogEntry.objects.filter(additional_data__source="account_password")
@@ -114,6 +119,8 @@ class AccountPasswordMySQLTests(TestCase):
         page = self.browser.get("/change-password/")
         self.assertContains(page, 'id="account-password-form"')
         self.assertNotContains(page, 'hx-trigger="load"')
+        self.assertContains(page, '<meta name="referrer" content="same-origin">')
+        self.assertNotContains(page, 'content="no-referrer"')
         self.assertFalse(Employee.objects.exists())
         self.assertFalse(HrStaffMaster.objects.exists())
         self.assertFalse(self.audits().exists())
@@ -131,7 +138,18 @@ class AccountPasswordMySQLTests(TestCase):
         self.assertEqual(self.browser.get("/settings/school-management/").status_code, 200)
         stale = another.get("/settings/school-management/")
         self.assertEqual(stale.status_code, 302)
-        self.assertIn("/login/", stale["Location"])
+        # The middleware uses configured LOGIN_URL, currently /login without a
+        # trailing slash. Verify its identity and return path, not a substring.
+        target = urlsplit(stale["Location"])
+        expected = urlsplit(resolve_url(settings.LOGIN_URL))
+        self.assertEqual((target.scheme, target.netloc, target.path),
+                         (expected.scheme, expected.netloc, expected.path))
+        self.assertEqual(parse_qs(target.query).get("next"), ["/settings/school-management/"])
+        self.assertNotIn(SESSION_KEY, another.session)
+        login_page = another.get(stale["Location"], follow=True)
+        self.assertEqual(login_page.status_code, 200)
+        self.assertEqual(resolve(login_page.wsgi_request.path).url_name, "login")
+        self.assertFalse(login_page.wsgi_request.user.is_authenticated)
         audit = self.audits().get()
         self.assertEqual(audit.actor_id, self.user.pk)
         self.assertEqual(audit.object_pk, str(self.user.pk))
@@ -153,6 +171,50 @@ class AccountPasswordMySQLTests(TestCase):
                 self.assertTrue(self.user.check_password(self.old))
                 self.assertTrue(self.user.is_new_employee)
         self.assertFalse(self.audits().exists())
+
+    def test_native_form_origin_is_checked_even_with_a_valid_csrf_token(self):
+        payload = {"old_password": self.old, "new_password": self.new,
+                   "confirm_password": self.new,
+                   "csrfmiddlewaretoken": self.browser.cookies["csrftoken"].value}
+        for origin in ("null", "https://foreign.invalid"):
+            with self.subTest(origin=origin):
+                response = self.browser.post("/change-password/", payload, HTTP_ORIGIN=origin)
+                self.assertEqual(response.status_code, 403)
+                self.user.refresh_from_db()
+                self.assertTrue(self.user.check_password(self.old))
+                self.assertTrue(self.user.is_new_employee)
+                self.assertFalse(self.audits().exists())
+        invalid = self.browser.post("/change-password/", {**payload, "old_password": "wrong"},
+                                    HTTP_ORIGIN="http://testserver")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("old_password", invalid.context["form"].errors)
+        self.assertContains(invalid, '<meta name="referrer" content="same-origin">', status_code=400)
+        self.assertFalse(self.audits().exists())
+        accepted = self.browser.post("/change-password/", payload, HTTP_ORIGIN="http://testserver")
+        self.assertEqual(accepted.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.new))
+        self.assertEqual(self.audits().count(), 1)
+
+    def test_https_without_origin_requires_same_origin_referer(self):
+        payload = {"old_password": self.old, "new_password": self.new,
+                   "confirm_password": self.new,
+                   "csrfmiddlewaretoken": self.browser.cookies["csrftoken"].value}
+        for referer in (None, "http://testserver/change-password/", "https://foreign.invalid/"):
+            with self.subTest(referer=referer):
+                headers = {} if referer is None else {"HTTP_REFERER": referer}
+                response = self.browser.post("/change-password/", payload, secure=True, **headers)
+                self.assertEqual(response.status_code, 403)
+                self.user.refresh_from_db()
+                self.assertTrue(self.user.check_password(self.old))
+                self.assertTrue(self.user.is_new_employee)
+                self.assertFalse(self.audits().exists())
+        accepted = self.browser.post("/change-password/", payload, secure=True,
+                                     HTTP_REFERER="https://testserver/change-password/")
+        self.assertEqual(accepted.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.new))
+        self.assertEqual(self.audits().count(), 1)
 
     def test_missing_csrf_does_not_change_password(self):
         response = self.browser.post("/change-password/", {"old_password": self.old, "new_password": self.new, "confirm_password": self.new})
