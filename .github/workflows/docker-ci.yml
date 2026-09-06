@@ -158,7 +158,7 @@ jobs:
       - name: Health / readiness must report MySQL
         run: |
           for i in $(seq 1 90); do
-            if curl -sf --max-time 5 http://localhost:8000/health/ | grep -q '"status"'; then
+            if curl -sf --max-time 5 http://localhost:18000/health/ | grep -q '"status"'; then
               break
             fi
             sleep 2
@@ -168,7 +168,7 @@ jobs:
             fi
           done
           for i in $(seq 1 60); do
-            body=$(curl -sf --max-time 5 http://localhost:8000/ready/ || true)
+            body=$(curl -sf --max-time 5 http://localhost:18000/ready/ || true)
             if echo "$body" | grep -q '"database_vendor": "mysql"'; then
               echo "$body"
               exit 0
