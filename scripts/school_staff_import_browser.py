@@ -16,6 +16,7 @@ from urllib.parse import quote, urlsplit
 from openpyxl import load_workbook
 from school_bootstrap_browser import ROOT, django_runtime, require
 from school_structure_browser import click_document
+from school_staff_import_audit import IMPORT_AUDIT_ACTIONS, audit_proof, successful_error_downloads
 
 OUT = ROOT / "tests/artifacts/school-staff-import-browser"
 ROSTER = "/hr/staff/"
@@ -161,7 +162,7 @@ def browser_proof():
                         page.locator("#importCommit").click()
                     require(committed.value.status == 200, f"Commit failed {committed.value.text()}")
                     result = committed.value.json()["data"]
-                    require(result["committedRows"] == 1 and result["status"] == "PARTIAL_FAILED", f"Commit mismatch {result}")
+                    require(result["committedRows"] == 1 and result["status"] == "PARTIAL_FAILED", f"Commit mismatch: {result}")
                     require(result["resultRows"][0]["staffId"], "No committed authority ID")
                     record(role, "confirmed-row-commit-to-formal-staff", 200)
                     row = page.locator("#rows tr").filter(has_text=STAFF_NO)
@@ -254,15 +255,24 @@ def seal():
     for model in (HrPerson, HrStaffMaster, HrEmploymentRelationship, HrStaffAssignment, HrPersonIdentityDocument):
         require(model.objects.filter(tenant_id=tenant).count() == 1, f"Partial/duplicate facts in {model.__name__}")
         require(not model.objects.filter(tenant_id=seed["school_b"]).exists(), "Foreign authority mutated")
-    actions = ("StaffImportValidated", "PersonCreated", "StaffMasterCreated", "EmploymentRelationshipStarted",
-               "AssignmentCreated", "StaffImportRowCommitted", "StaffImportCompleted", "StaffImportIssuesDownloaded")
-    audits = HrStaffAuditEvent.objects.filter(tenant_id=tenant, action__in=actions)
-    require(audits.count() == len(actions) and set(audits.values_list("actor_user_id", flat=True)) == {seed["roles"]["admin_a"]["user_id"]},
-            "Audit actor/actions mismatch")
+    committed_row = job.rows.get(tenant_id=tenant, commit_status="COMMITTED")
+    accesses = successful_error_downloads((OUT / "server.log").read_text(encoding="utf-8"), job_id)
+    audits = HrStaffAuditEvent.objects.filter(tenant_id=tenant, action__in=IMPORT_AUDIT_ACTIONS)
+    proof = audit_proof(
+        audits.values("id", "tenant_id", "actor_user_id", "action", "staff_id", "person_id",
+                      "business_type", "business_id"),
+        tenant_id=tenant, actor_id=seed["roles"]["admin_a"]["user_id"], job_id=job_id,
+        staff_id=staff.pk, person_id=staff.person_id_id,
+        committed_row_no=committed_row.row_no, download_accesses=accesses,
+    )
+    # Preserve bounded, non-sensitive diagnostics before failing the release gate.
+    write("audit-seal.json", proof)
+    require(proof["status"] == "PASS", " | ".join(proof["errors"]))
     require(DOCUMENT not in json.dumps(list(job.rows.values_list("data_json", flat=True))), "Staging identity in plaintext")
     require(not Employee.objects.exists() and not get_user_model().objects.filter(is_superuser=True).exists(), "Legacy fixture/superuser bypass")
     write("mysql-seal.json", {"status": "PASS", "browserAssertions": len(expected), "staffCount": 1, "assignmentCount": 1,
-                              "failedRows": 1, "legacyEmployees": 0, "actorAudits": audits.count(),
+                              "failedRows": 1, "legacyEmployees": 0, "actorAudits": proof["auditRows"],
+                              "writeAuditEvents": 7, "downloadAccessAudits": accesses,
                               "productHead": os.environ["PRODUCT_HEAD_SHA"],
                               "testedCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()})
     print("HR03 XLSX import and formal HR02 placement MySQL seal PASS")

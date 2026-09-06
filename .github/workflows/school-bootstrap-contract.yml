@@ -115,6 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python scripts/school_staff_import_audit_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/import-audit-contract.log
           python scripts/school_staff_import_math_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/import-decision.log
           python scripts/school_staff_import_offline_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/import-offline-ui.log
           python scripts/school_staff_import_readback_contract.py 2>&1 | tee tests/artifacts/school-bootstrap-contract/import-readback-ui.log
@@ -148,6 +149,7 @@ jobs:
                                    'base.test_school_management',
                                    'hr_staff.tests.test_import_workbook',
                                    'hr_staff.tests.test_import_hr02',
+                                   'hr_staff.tests.test_import_download_audit',
                                    'hr_staff.tests.test_staff_list_readback',
                                    'hr_staff.tests.test_imports',
                                    'hr_staff.tests.test_round4_export_import',
