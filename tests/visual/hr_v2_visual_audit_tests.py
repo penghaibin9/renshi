@@ -30,6 +30,7 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
     def setUp(self):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
+        from hr_staff.models import HrPerson, HrStaffMaster
 
         User = get_user_model()
         self.company = Company.objects.create(
@@ -68,6 +69,19 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
         if work_info.company_id_id != self.company.pk:
             work_info.company_id = self.company
             work_info.save(update_fields=["company_id"])
+
+        person = HrPerson.objects.create(
+            tenant_id=self.company.pk,
+            legal_name="V2 视觉验收员",
+            status="ACTIVE",
+        )
+        HrStaffMaster.objects.create(
+            tenant_id=self.company.pk,
+            person_id=person,
+            staff_no="HR12-VISUAL-001",
+            legacy_employee_id=self.employee.pk,
+            current_employment_status="ACTIVE",
+        )
 
         client = Client()
         client.force_login(self.user)
