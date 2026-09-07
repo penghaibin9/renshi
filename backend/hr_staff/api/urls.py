@@ -13,7 +13,7 @@ hr_staff/api/urls.py —— HR03 API 路由。
 
 from django.urls import path
 
-from hr_staff.api import views as api_views
+from hr_staff.api import account_invitations as account_api
 from hr_staff.api import assignments as assignments_api
 from hr_staff.api import backgrounds as backgrounds_api
 from hr_staff.api import corrections as corrections_api
@@ -21,15 +21,24 @@ from hr_staff.api import data_quality as dq_api
 from hr_staff.api import decisions as decisions_api
 from hr_staff.api import export as export_api
 from hr_staff.api import imports as imports_api
-from hr_staff.api import materials as materials_api
 from hr_staff.api import material_requests as mr_api
+from hr_staff.api import materials as materials_api
+from hr_staff.api import profile as profile_api
 from hr_staff.api import sensitive as sensitive_api
 from hr_staff.api import staff as staff_api
-from hr_staff.api import profile as profile_api
+from hr_staff.api import views as api_views
 
 urlpatterns = [
-    path("api/hr/v1/staff/import/template", imports_api.import_template, name="hr03-api-staff-import-template"),
-    path("api/hr/v1/staff/import/<uuid:job_id>/errors", imports_api.import_errors, name="hr03-api-staff-import-errors"),
+    path(
+        "api/hr/v1/staff/import/template",
+        imports_api.import_template,
+        name="hr03-api-staff-import-template",
+    ),
+    path(
+        "api/hr/v1/staff/import/<uuid:job_id>/errors",
+        imports_api.import_errors,
+        name="hr03-api-staff-import-errors",
+    ),
     path(
         "api/hr/v1/staff/contract",
         api_views.contract_probe,
@@ -44,6 +53,16 @@ urlpatterns = [
         "api/hr/v1/staff/<uuid:staff_id>/profile",
         profile_api.profile_bootstrap,
         name="hr03-api-staff-profile",
+    ),
+    path(
+        "api/hr/v1/staff/<uuid:staff_id>/account-invitations",
+        account_api.issue_account_invitation,
+        name="hr03-api-account-invitation-issue",
+    ),
+    path(
+        "api/hr/v1/account-invitations/<uuid:invitation_id>/revoke",
+        account_api.revoke_account_invitation,
+        name="hr03-api-account-invitation-revoke",
     ),
     path(
         "api/hr/v1/staff/<uuid:staff_id>/assignments",

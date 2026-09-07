@@ -20,13 +20,18 @@ from hr_staff.models.correction import (
     HrFieldGovernancePolicy,
 )
 from hr_staff.models.decision import HrPersonnelDecision, HrRewardDisciplinaryCase
-from hr_staff.models.education import HrDegreeRecord, HrEducationExperience, HrWorkExperience
+from hr_staff.models.education import (
+    HrDegreeRecord,
+    HrEducationExperience,
+    HrWorkExperience,
+)
 from hr_staff.models.events import HrBusinessEventInbox, HrOutboxEvent
 from hr_staff.models.export_models import HrExportJob
 from hr_staff.models.employment import HrEmploymentRelationship
 from hr_staff.models.import_models import HrImportIssue, HrImportJob, HrImportRow
 from hr_staff.models.identity import HrPersonIdentityDocument
 from hr_staff.models.mapping import (
+    HrAccountInvitation,
     HrAccountLink,
     HrExternalIdentityMapping,
     HrLegacyProjectionState,
@@ -76,6 +81,7 @@ __all__ = [
     "HrImportJob",
     "HrImportRow",
     "HrImportIssue",
+    "HrAccountInvitation",
     "HrAccountLink",
     "HrExternalIdentityMapping",
     "HrLegacyProjectionState",

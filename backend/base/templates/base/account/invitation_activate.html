@@ -1,0 +1,57 @@
+{% load static %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>激活教职工账号 · 跃科高校人事</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#213047;font:16px/1.6 system-ui,"Microsoft YaHei",sans-serif}
+    main{max-width:560px;margin:7vh auto;padding:32px;background:#fff;border:1px solid #dce5ee;border-radius:12px}
+    .brand{font-size:14px;color:#526681}h1{margin:10px 0;font-size:27px}p{color:#526681;margin:12px 0 22px}
+    .summary{padding:14px 16px;background:#f7f9fc;border:1px solid #dce5ee;border-radius:8px;margin:18px 0}
+    label{display:block;font-weight:600;margin-top:18px}input{width:100%;padding:12px;margin-top:6px;border:1px solid #aabbd0;border-radius:6px;font:inherit}
+    input:focus{outline:3px solid #bed8ff;border-color:#1763b6}button{width:100%;padding:13px;margin-top:24px;border:0;border-radius:6px;background:#175ca8;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+    .error{padding:10px 14px;margin-top:10px;background:#fff1f0;border-left:3px solid #b32e2e;color:#932828;font-size:14px}
+    .note{font-size:13px;margin-bottom:0}a{color:#175ca8}@media(max-width:580px){main{margin:22px 12px;padding:24px}}
+  </style>
+</head>
+<body>
+<main id="account-invitation-page">
+  <div class="brand">跃科 · 高校人事管理与教师发展</div>
+  <h1>激活教职工账号</h1>
+  <p>该链接只用于将学校已有的教职工主档与本人登录账号建立一次性关联，不会修改人事档案。</p>
+
+  {% if errors.__all__ %}
+    <div class="error" role="alert">{{ errors.__all__ }}</div>
+  {% endif %}
+
+  {% if invitation %}
+    <div class="summary">
+      <strong>{{ invitation.staff_id.person_id.legal_name }}</strong><br>
+      工号：{{ invitation.staff_id.staff_no }}<br>
+      核验邮箱：{{ email_masked }}<br>
+      邀请有效期至：{{ invitation.expires_at|date:"Y-m-d H:i" }}
+    </div>
+    <form method="post" id="account-invitation-form" autocomplete="off">
+      {% csrf_token %}
+      <label for="id_username">登录账号</label>
+      <input id="id_username" name="username" maxlength="150" autocomplete="username" required>
+      {% if errors.username %}<div class="error" role="alert">{{ errors.username }}</div>{% endif %}
+
+      <label for="id_password">设置密码</label>
+      <input id="id_password" name="password" type="password" autocomplete="new-password" required>
+      {% if errors.password %}<div class="error" role="alert">{{ errors.password }}</div>{% endif %}
+
+      <label for="id_confirm_password">再次输入密码</label>
+      <input id="id_confirm_password" name="confirm_password" type="password" autocomplete="new-password" required>
+      {% if errors.confirm_password %}<div class="error" role="alert">{{ errors.confirm_password }}</div>{% endif %}
+
+      <p class="note">密码按系统正式密码安全策略校验。激活成功后不会自动登录，请使用新账号和密码重新登录。</p>
+      <button type="submit">完成账号激活</button>
+    </form>
+  {% endif %}
+</main>
+</body>
+</html>

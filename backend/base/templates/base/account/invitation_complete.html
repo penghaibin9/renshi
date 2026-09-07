@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>账号激活完成 · 跃科高校人事</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#213047;font:16px/1.6 system-ui,"Microsoft YaHei",sans-serif}
+    main{max-width:520px;margin:8vh auto;padding:32px;background:#fff;border:1px solid #dce5ee;border-radius:12px}
+    .brand{font-size:14px;color:#526681}h1{margin:10px 0;font-size:27px}p{color:#526681}a{display:inline-block;margin-top:16px;padding:12px 18px;border-radius:6px;background:#175ca8;color:#fff;text-decoration:none;font-weight:600}
+    .account{padding:12px 14px;background:#f7f9fc;border:1px solid #dce5ee;border-radius:8px;color:#213047}@media(max-width:560px){main{margin:24px 12px;padding:24px}}
+  </style>
+</head>
+<body>
+<main id="account-invitation-complete">
+  <div class="brand">跃科 · 高校人事管理与教师发展</div>
+  <h1>账号已激活</h1>
+  <p>教职工身份、学校本人服务权限和登录账号已经建立关联。</p>
+  <div class="account">登录账号：<strong>{{ username }}</strong></div>
+  <p>系统没有自动创建登录会话。请使用刚刚设置的密码重新登录。</p>
+  <a href="{% url 'login' %}">前往登录</a>
+</main>
+</body>
+</html>

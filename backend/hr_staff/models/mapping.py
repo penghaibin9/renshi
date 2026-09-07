@@ -4,7 +4,8 @@ hr_staff/models/mapping.py —— 账号解耦 / 外部身份映射 / Legacy 投
 原则：
 - HrStaffMaster 1 --- 0..n HrAccountLink --- Auth User/SSO；
 - 人员可以尚未开账号、账号停用但人员历史仍在、更换账号、离职后账号回收但主档永久保留；
-- authority model save() 禁止自动创建密码账号。
+- authority model save() 禁止自动创建密码账号；
+- 邀请 token 只保存不可逆摘要，明文 token 仅在签发响应中出现一次。
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ class HrAccountLink(models.Model):
     staff_id = models.ForeignKey(
         "hr_staff.HrStaffMaster", on_delete=models.PROTECT, related_name="account_links"
     )
-    auth_user_id = models.BigIntegerField(null=True, blank=True)  # HorillaUser.id（仅映射，非 FK 耦合）
-    auth_identifier = models.CharField(max_length=254, blank=True, default="")  # username/SSO subject
+    # HorillaUser.id（仅映射，非 FK 耦合）
+    auth_user_id = models.BigIntegerField(null=True, blank=True)
+    # username/SSO subject
+    auth_identifier = models.CharField(max_length=254, blank=True, default="")
     link_status = models.CharField(
         max_length=16, choices=LinkStatus.choices, default=LinkStatus.ACTIVE
     )
@@ -42,12 +45,52 @@ class HrAccountLink(models.Model):
         indexes = [
             models.Index(fields=["tenant_id", "staff_id", "link_status"]),
             models.Index(fields=["tenant_id", "auth_identifier"]),
-            models.Index(fields=["tenant_id", "auth_user_id", "link_status"],
-                         name="hr_account_tenant_user_status"),
+            models.Index(
+                fields=["tenant_id", "auth_user_id", "link_status"],
+                name="hr_account_tenant_user_status",
+            ),
         ]
 
     def __str__(self):
         return f"staff={self.staff_id.staff_no} link={self.link_status}"
+
+
+class HrAccountInvitation(models.Model):
+    """One-time account activation authority for one HR03 staff identity."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant_id = models.BigIntegerField(db_index=True)
+    staff_id = models.ForeignKey(
+        "hr_staff.HrStaffMaster",
+        on_delete=models.PROTECT,
+        related_name="account_invitations",
+    )
+    invited_email = models.EmailField(max_length=254)
+    token_digest = models.CharField(max_length=71, unique=True)
+    expires_at = models.DateTimeField(db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    created_by_user_id = models.BigIntegerField(null=True, blank=True)
+    accepted_user_id = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("HR Account Invitation")
+        verbose_name_plural = _("HR Account Invitations")
+        indexes = [
+            models.Index(
+                fields=["tenant_id", "staff_id", "accepted_at", "revoked_at"],
+                name="hr_invite_staff_state",
+            ),
+            models.Index(
+                fields=["tenant_id", "expires_at"],
+                name="hr_invite_tenant_exp",
+            ),
+        ]
+
+    def __str__(self):
+        return f"staff={self.staff_id.staff_no} invite={self.id}"
 
 
 class HrExternalIdentityMapping(models.Model):
@@ -56,7 +99,9 @@ class HrExternalIdentityMapping(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
     staff_id = models.ForeignKey(
-        "hr_staff.HrStaffMaster", on_delete=models.PROTECT, related_name="external_identities"
+        "hr_staff.HrStaffMaster",
+        on_delete=models.PROTECT,
+        related_name="external_identities",
     )
     system_code = models.CharField(max_length=64)
     external_subject = models.CharField(max_length=254)
@@ -86,7 +131,9 @@ class HrLegacyProjectionState(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant_id = models.BigIntegerField(db_index=True)
     staff_id = models.ForeignKey(
-        "hr_staff.HrStaffMaster", on_delete=models.PROTECT, related_name="legacy_projection_states"
+        "hr_staff.HrStaffMaster",
+        on_delete=models.PROTECT,
+        related_name="legacy_projection_states",
     )
     legacy_employee_id = models.BigIntegerField(db_index=True)
     last_projected_at = models.DateTimeField(null=True, blank=True)

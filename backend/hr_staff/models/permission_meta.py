@@ -18,6 +18,7 @@ class HrStaffPermissionMeta(models.Model):
             ("hr.staff.reveal_high_sensitive", "HR Staff: Reveal High Sensitive"),
             ("hr.staff.create", "HR Staff: Create"),
             ("hr.staff.edit_basic", "HR Staff: Edit Basic"),
+            ("hr.staff.account.manage", "HR Staff: Manage Account Invitations"),
             ("hr.staff.export", "HR Staff: Export"),
             ("hr.staff.export_sensitive", "HR Staff: Export Sensitive"),
             ("hr.staff.import", "HR Staff: Import"),
@@ -28,17 +29,38 @@ class HrStaffPermissionMeta(models.Model):
             ("hr.staff.material.view", "HR Staff: View Material"),
             ("hr.staff.material.upload", "HR Staff: Upload Material"),
             ("hr.staff.material.verify", "HR Staff: Verify Material"),
-            ("hr.staff.material.download_sensitive", "HR Staff: Download Sensitive Material"),
+            (
+                "hr.staff.material.download_sensitive",
+                "HR Staff: Download Sensitive Material",
+            ),
             ("hr.staff.correction.view", "HR Staff: View Correction"),
             ("hr.staff.correction.create", "HR Staff: Create Correction"),
             ("hr.staff.correction.review", "HR Staff: Review Correction"),
-            ("hr.staff.correction.approve_high_risk", "HR Staff: Approve High Risk Correction"),
+            (
+                "hr.staff.correction.approve_high_risk",
+                "HR Staff: Approve High Risk Correction",
+            ),
             ("hr.staff.audit.view", "HR Staff: View Audit"),
             ("hr.staff.data_quality.manage", "HR Staff: Manage Data Quality"),
             ("hr.staff.personnel_decision.view", "HR Staff: View Personnel Decision"),
-            ("hr.staff.personnel_decision.manage", "HR Staff: Manage Personnel Decision"),
-            ("hr.staff.personnel_decision.correct", "HR Staff: Correct Personnel Decision"),
-            ("hr.staff.personnel_decision.revoke", "HR Staff: Revoke Personnel Decision"),
-            ("hr.staff.reward_disciplinary.view", "HR Staff: View Reward / Disciplinary"),
-            ("hr.staff.reward_disciplinary.manage", "HR Staff: Manage Reward / Disciplinary"),
+            (
+                "hr.staff.personnel_decision.manage",
+                "HR Staff: Manage Personnel Decision",
+            ),
+            (
+                "hr.staff.personnel_decision.correct",
+                "HR Staff: Correct Personnel Decision",
+            ),
+            (
+                "hr.staff.personnel_decision.revoke",
+                "HR Staff: Revoke Personnel Decision",
+            ),
+            (
+                "hr.staff.reward_disciplinary.view",
+                "HR Staff: View Reward / Disciplinary",
+            ),
+            (
+                "hr.staff.reward_disciplinary.manage",
+                "HR Staff: Manage Reward / Disciplinary",
+            ),
         )
