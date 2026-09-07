@@ -20,6 +20,7 @@ from platform_access.services import is_platform_operator
 
 
 @override_settings(
+    TENANT_FAIL_CLOSED=True,
     AUTH_PASSWORD_VALIDATORS=[
         {
             "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
@@ -56,7 +57,9 @@ class PlatformOperatorBootstrapTests(TestCase):
         self.assertTrue(user.is_new_employee)
         self.assertTrue(user.check_password(self.password))
         self.assertTrue(is_platform_operator(user))
-        self.assertFalse(Employee.objects.exists())
+        # A platform bootstrap has no school context. Use a test-only
+        # unscoped read so fail-closed filtering cannot conceal personnel rows.
+        self.assertFalse(Employee._base_manager.exists())
         self.assertFalse(CompanyGroupAssignment.objects.exists())
         self.assertEqual(user.groups.count(), 0)
         self.assertIn("without Employee or school membership", output.getvalue())
@@ -134,7 +137,9 @@ class PlatformOperatorBootstrapTests(TestCase):
             email=self.email,
             password=self.password,
         )
-        Employee.objects.create(
+        original_hash = user.password
+        original_first_password_flag = user.is_new_employee
+        employee = Employee.objects.create(
             employee_user_id=user,
             employee_first_name="Legacy",
             employee_last_name="Admin",
@@ -146,8 +151,24 @@ class PlatformOperatorBootstrapTests(TestCase):
         with self.assertRaisesRegex(CommandError, "non-platform identity"):
             self.invoke()
 
+        # Re-fetch both facts independently. The CLI has no school context;
+        # Employee.objects is intentionally empty under TENANT_FAIL_CLOSED.
+        # This test-only database read must not weaken the production manager.
+        user = get_user_model().objects.get(pk=user.pk)
+        persisted_employee = Employee._base_manager.get(pk=employee.pk)
         self.assertFalse(is_platform_operator(user))
-        self.assertEqual(Employee.objects.filter(employee_user_id=user).count(), 1)
+        self.assertEqual(persisted_employee.employee_user_id_id, user.pk)
+        self.assertEqual(
+            Employee._base_manager.filter(employee_user_id=user).count(), 1
+        )
+        self.assertEqual(user.password, original_hash)
+        self.assertEqual(user.is_new_employee, original_first_password_flag)
+        self.assertTrue(user.check_password(self.password))
+        self.assertFalse(
+            LogEntry.objects.filter(
+                additional_data__source="createplatformoperator"
+            ).exists()
+        )
 
     def test_email_collision_never_creates_second_platform_identity(self):
         get_user_model().objects.create_user(
