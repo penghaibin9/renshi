@@ -5,9 +5,11 @@ explicitly instead of falling through to legacy callbacks. The former child
 handlers could create a superuser/company or delete structure records without
 rechecking the installation parent. They must not be a second school-provisioner.
 
-Initial platform credentials are established by the deployment operator's
-management command. School records are configured through the authorized
-platform and school services, never by reopening this wizard with DEBUG.
+Initial platform credentials are established only by the deployment operator's
+``createplatformoperator`` management command. That command deliberately creates
+no Employee, school membership or HR03 fact. School records and school accounts
+are configured through authorized platform/school services, never by reopening
+this wizard with DEBUG.
 """
 
 from django.http import JsonResponse
@@ -22,7 +24,7 @@ def retired_initialization(request, **kwargs):
         {
             "error": {
                 "code": "LEGACY_INITIALIZATION_RETIRED",
-                "message": "旧安装向导已停用。平台初始账号由部署管理员配置；学校资料请通过学校管理中心办理。",
+                "message": "旧安装向导已停用。平台初始账号请使用 createplatformoperator；学校资料请通过学校管理中心办理。",
             }
         },
         status=410,
