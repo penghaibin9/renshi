@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-account-access.css' %}">
 {% endblock styles %}
 
 {% block content %}
@@ -76,7 +77,7 @@
           </div>
           <div class="hr03-profile-boundary" id="qualifications">
             <strong>资格详情不在当前 bootstrap 中读取</strong>
-            <span>教师学历、资格和其他背景事实请进入“教育资格”工作区，以对应 Authority 接口为准。</span>
+            <span>教师学历、资格和兞他背景事实请进入“教育资格”工作区，以对应 Authority 接口为准。</span>
             <a href="/hr/staff/{{ staff_id }}/backgrounds">查看教育资格 →</a>
           </div>
         </article>
@@ -87,6 +88,48 @@
           <div class="hr-v2-panel__head"><div><h3>身份摘要</h3><p>这里只显示脱敏身份信息，不在 bootstrap 中展开高敏明文。</p></div></div>
           <dl class="hr03-kv" id="identity"><dt>状态</dt><dd>加载中…</dd></dl>
         </article>
+
+        {% if can_manage_account %}
+        <article class="hr-v2-panel hr03-account-card" id="accountAccessPanel" data-account-access>
+          <div class="hr-v2-panel__head">
+            <div>
+              <h3>本人账号与服务入口</h3>
+              <p>为该教职工开通本人登录账号；当前账号状态不随历史日期切换。</p>
+            </div>
+            <span class="hr03-account-state is-loading" id="accountAccessState">读取中</span>
+          </div>
+
+          <div class="hr03-account-summary" id="accountAccessSummary" aria-live="polite">
+            正在核对当前账号关联、核验邮箱和邀请状态…
+          </div>
+          <dl class="hr03-kv hr03-account-facts" id="accountAccessFacts">
+            <dt>核验邮箱</dt><dd>读取中…</dd>
+          </dl>
+
+          <div class="hr03-account-actions">
+            <button class="hr03-account-button is-primary" id="accountIssueButton" type="button" disabled>
+              开通本人账号
+            </button>
+            <button class="hr03-account-button is-danger" id="accountRevokeButton" type="button" hidden>
+              撤销当前邀请
+            </button>
+          </div>
+
+          <div class="hr03-invite-secret" id="accountInviteSecret" hidden>
+            <strong>一次性邀请链接</strong>
+            <p>系统当前不会自动发送邮件。请复制后通过学校批准的安全渠道交给本人；重新签发会立即作废旧链接。</p>
+            <label for="accountInviteUrl">邀请链接</label>
+            <div class="hr03-invite-copy">
+              <input id="accountInviteUrl" type="text" readonly autocomplete="off" spellcheck="false">
+              <button class="hr03-account-button" id="accountCopyButton" type="button">复制</button>
+            </div>
+            <span class="hr03-account-feedback" id="accountCopyFeedback" aria-live="polite"></span>
+          </div>
+
+          <div class="hr03-account-feedback" id="accountActionFeedback" aria-live="polite"></div>
+          <p class="hr03-account-note">这里只管理“能否登录本人服务”，不修改教职工主档、任职、合同或其他人事事实。</p>
+        </article>
+        {% endif %}
 
         <article class="hr-v2-panel" id="riskPanel">
           <div class="hr-v2-panel__head"><div><h3>数据质量入口</h3><p>主档 bootstrap 不伪造风险数量。</p></div></div>
@@ -197,4 +240,7 @@
     load();
   })();
 </script>
+{% if can_manage_account %}
+<script defer src="{% static 'hr/js/pages/hr03-account-access.js' %}"></script>
+{% endif %}
 {% endblock scripts %}
