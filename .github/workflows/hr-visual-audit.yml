@@ -67,6 +67,11 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
+      - name: HR11 download dialog UI unit regressions (isolated transport)
+        env:
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python tests/visual/hr11_download_lifecycle_tests.py -v
+
       - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
         shell: bash
         run: |

@@ -150,13 +150,26 @@
     'risk-resolve': {title: '解决考勤风险', fields: textarea('解决说明', 'note', '请记录源事实修复与核验依据。')}
   };
 
+  function releaseDownloadDialog() {
+    if (pending?.kind !== 'evidence-download') return;
+    // Closing the view does not cancel a server-side access audit. The link
+    // remains busy until its request settles, but another action may be opened.
+    pending = null;
+    root.querySelector('[data-dialog-submit]').disabled = false;
+  }
+  dialog?.addEventListener('cancel', releaseDownloadDialog);
+
   root.addEventListener('click', async (event) => {
     const closeButton = event.target.closest('[data-dialog-close]');
-    if (closeButton) { dialog.close(); pending = null; return; }
+    if (closeButton) { releaseDownloadDialog(); dialog.close(); pending = null; return; }
 
     const evidenceLink = event.target.closest('[data-evidence-download]');
     if (evidenceLink) {
       event.preventDefault();
+      if (evidenceLink.getAttribute('aria-disabled') === 'true') {
+        setFeedback('该证明正在下载，请勿重复提交。');
+        return;
+      }
       openDialog({
         kind: 'evidence-download',
         title: '审计下载请假证明',
@@ -359,13 +372,15 @@
         const link = document.createElement('a');
         link.href = blobUrl; link.download = downloadRequest.filename; link.click();
         URL.revokeObjectURL(blobUrl);
-        downloadRequest.link.removeAttribute('aria-disabled');
         if (pending === downloadRequest) { dialog.close(); pending = null; }
-        setFeedback('证明已下载，本次查阅事由已写入审计记录。');
+        if (!pending) setFeedback('证明已下载，本次查阅事由已写入审计记录。');
       } catch (error) {
+        if (!pending || pending === downloadRequest) setFeedback(error.message, true);
+      } finally {
+        // Downloads do not reload this page. Release this request's controls,
+        // never a newer dialog that the user opened while this read was pending.
         downloadRequest.link.removeAttribute('aria-disabled');
-        setFeedback(error.message, true);
-        submit.disabled = false;
+        if (!pending || pending === downloadRequest) submit.disabled = false;
       }
       return;
     }
