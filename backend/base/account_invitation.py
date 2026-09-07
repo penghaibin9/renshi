@@ -14,10 +14,14 @@ from hr_staff.services.account_invitation_service import (
 
 
 def _render(request, *, status=200, errors=None):
+    errors = errors or {}
     response = render(
         request,
         "base/account/invitation_activate.html",
-        {"errors": errors or {}},
+        {
+            "errors": errors,
+            "non_field_error": errors.get("__all__", ""),
+        },
         status=status,
     )
     response["Cache-Control"] = "no-store"

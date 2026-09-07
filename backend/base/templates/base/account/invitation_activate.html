@@ -23,8 +23,8 @@
   <h1>激活教职工账号</h1>
   <p>该链接只用于将学校已有的教职工主档与本人登录账号建立一次性关联，不会修改人事档案。</p>
 
-  {% if errors.__all__ %}
-    <div class="error" role="alert">{{ errors.__all__ }}</div>
+  {% if non_field_error %}
+    <div class="error" role="alert">{{ non_field_error }}</div>
   {% endif %}
   <div class="error" id="activation-token-error" role="alert" hidden>邀请密钥缺失，请重新打开学校管理员提供的完整邀请链接。</div>
 

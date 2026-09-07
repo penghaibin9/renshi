@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from unittest import mock
 from urllib.parse import urlsplit
@@ -278,7 +279,7 @@ class AccountInvitationTests(TestCase):
                 request, self.staff.id
             )
         self.assertEqual(response.status_code, 201)
-        data = response.json()["data"]
+        data = json.loads(response.content)["data"]
         self.assertEqual(data["deliveryMode"], "MANUAL_LINK")
         invite_url = urlsplit(data["inviteUrl"])
         self.assertTrue(invite_url.fragment)
@@ -301,7 +302,9 @@ class AccountInvitationTests(TestCase):
                 override, self.staff.id
             )
         self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["error"]["code"], "INVALID_REQUEST")
+        self.assertEqual(
+            json.loads(response.content)["error"]["code"], "INVALID_REQUEST"
+        )
 
     def test_public_activation_posts_fragment_secret_and_never_auto_logs_in(self):
         invitation, token = self.issue()
