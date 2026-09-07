@@ -238,47 +238,44 @@
     element.innerHTML = `<div class="hr-v2-state hr-home__quick-actions-empty" data-state="error"><strong>${apiMessage(error)}</strong><span>没有根据前端猜测权限生成快捷按钮。</span></div>`;
   }
 
+  async function loadOverviewSection(path, render, renderError) {
+    try {
+      const result = await window.HrApi.request(path, { retries: 1 });
+      render(result.data || {});
+    } catch (error) {
+      renderError(error);
+    }
+  }
+
   async function loadOverview() {
-    const requests = await Promise.allSettled([
-      window.HrApi.request("/api/hr/v1/home/bootstrap", { retries: 1 }),
-      window.HrApi.request("/api/hr/v1/home/todos/summary", { retries: 1 }),
-      window.HrApi.request("/api/hr/v1/home/alerts/summary", { retries: 1 }),
-      window.HrApi.request("/api/hr/v1/home/quick-actions", { retries: 1 }),
+    // Each real response settles its own region immediately. A slow source must
+    // not keep unrelated todos/risks/actions hidden behind the same skeleton.
+    await Promise.allSettled([
+      loadOverviewSection('/api/hr/v1/home/bootstrap', (data) => {
+        renderMetrics(data.metrics || []);
+        renderDataPriority(data);
+      }, (error) => {
+        renderMetricError(error);
+        renderDataPriorityError(error);
+      }),
+      loadOverviewSection('/api/hr/v1/home/todos/summary', (data) => {
+        renderTodoPriority(data);
+        renderTodoSummary(data);
+      }, (error) => {
+        renderTodoPriorityError(error);
+        renderTodoSummaryError(error);
+      }),
+      loadOverviewSection('/api/hr/v1/home/alerts/summary', (data) => {
+        renderRiskPriority(data);
+        renderRiskSummary(data);
+      }, (error) => {
+        renderRiskPriorityError(error);
+        renderRiskSummaryError(error);
+      }),
+      loadOverviewSection('/api/hr/v1/home/quick-actions', (data) => {
+        renderQuickActions(data.items || []);
+      }, renderQuickActionsError),
     ]);
-
-    const bootstrap = requests[0];
-    if (bootstrap.status === "fulfilled") {
-      renderMetrics(bootstrap.value.data.metrics || []);
-      renderDataPriority(bootstrap.value.data || {});
-    } else {
-      renderMetricError(bootstrap.reason);
-      renderDataPriorityError(bootstrap.reason);
-    }
-
-    const todos = requests[1];
-    if (todos.status === "fulfilled") {
-      renderTodoPriority(todos.value.data || {});
-      renderTodoSummary(todos.value.data || {});
-    } else {
-      renderTodoPriorityError(todos.reason);
-      renderTodoSummaryError(todos.reason);
-    }
-
-    const risks = requests[2];
-    if (risks.status === "fulfilled") {
-      renderRiskPriority(risks.value.data || {});
-      renderRiskSummary(risks.value.data || {});
-    } else {
-      renderRiskPriorityError(risks.reason);
-      renderRiskSummaryError(risks.reason);
-    }
-
-    const actions = requests[3];
-    if (actions.status === "fulfilled") {
-      renderQuickActions(actions.value.data.items || []);
-    } else {
-      renderQuickActionsError(actions.reason);
-    }
   }
 
   let overviewStarted = false;

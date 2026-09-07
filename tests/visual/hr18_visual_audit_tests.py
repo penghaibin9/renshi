@@ -273,12 +273,15 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                 )
                 page.screenshot(path=str(self.out_dir / "desktop-real-metric-write.png"), full_page=True)
 
-                page.goto(self.live_server_url + "/hr/data/exchange/", wait_until="networkidle")
-                page.wait_for_function(
-                    """() => document.querySelector('#hr18-boundary')?.textContent.includes('暂未开放')""",
-                    timeout=8000,
-                )
-                self.assertIn("同步导出不会伪装成交换任务中心", page.locator("#hr18-boundary").inner_text())
+                with page.expect_response(lambda response: response.url.endswith("/api/v1/hr/data/dashboard/")) as exchange_dashboard:
+                    page.goto(self.live_server_url + "/hr/data/exchange/", wait_until="networkidle")
+                self.assertEqual(exchange_dashboard.value.status, 200)
+                self.assertTrue(exchange_dashboard.value.json()["capabilities"]["asyncExchange"])
+                expect(page.locator("#hr18-boundary")).to_contain_text("真实异步任务台账")
+                expect(page.get_by_role("heading", name="数据交换与共享工作区", exact=True)).to_be_visible()
+                expect(page.locator("[data-open='hr18-exchange-dataset']")).to_be_enabled()
+                # Rendering the implemented exchange workbench is not a claim
+                # that an external target accepted or transmitted a dataset.
 
                 page.set_viewport_size({"width": 390, "height": 844})
                 for slug, route in routes:

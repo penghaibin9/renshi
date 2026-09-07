@@ -49,3 +49,20 @@ python tests/visual/hr11_download_lifecycle_tests.py -v
 测试截图放在工件中的 `HR11-DOWNLOAD-UI-UNIT/`，明确区别于真实学校页面截图。
 本次回归依据为 PR #53 的 `eacb4318bc156b05fca15465825db40ad1b49cca`；
 不因此上调全仓库生产发布结论。
+
+
+## 请假计薪分类与月结证据
+
+新发布的 `HrLeavePolicyVersion` 将假别的明确计薪分类冻结到
+`interaction_rules.paidClassification`，纳入既有 `content_hash`。批准请假只从申请
+引用的已发布/已退役政策版本读取该分类，随 `HrAbsenceFact.effective_snapshot`
+保存版本号与哈希；不能用今天可变的假别目录重解释历史申请。
+
+`PAID` / `UNPAID` 必须有学校已确认的政策依据；默认仍是 `POLICY_DEPENDENT`。
+旧政策缺失冻结分类、旧申请无政策引用、已存在的缺勤事实均不自动改写。
+分类未决的 ACTIVE 缺勤继续由 `UNRESOLVED_ABSENCE_CLASSIFICATION` 阻止月结。
+已批准事实更正仍需原有受控流程，本次没有提供批量 SQL 修补或默认年休假带薪。
+
+定向验收：`python manage.py test hr_time.tests.test_leave_paid_classification --keepdb --noinput`。
+覆盖带薪/无薪月结依据、未知分类拦截、旧版本与目录变化、重复批准、跨学校/跨假别、
+未发布政策和输入非法值。只以实际 MySQL 运行结果记 PASS，语法检查不是业务通过。

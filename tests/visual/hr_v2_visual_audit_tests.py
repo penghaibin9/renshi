@@ -84,7 +84,7 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
 
     def test_capture_hr01_v2_desktop_and_mobile(self):
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import expect, sync_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
@@ -170,11 +170,12 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page_errors, [], diagnostic)
                 self.assertEqual(static_failures, [], diagnostic)
                 self.assertEqual(api_failures, [], diagnostic)
-                self.assertEqual(
-                    page.locator(".hr-v2-conclusion .hr-skeleton").count(),
-                    0,
-                    diagnostic,
-                )
+                # The API client has a bounded retry; network-idle may occur
+                # between attempts. Verify real region settlement, not a 300ms
+                # photograph, and still reject an indefinitely loading page.
+                expect(page.locator(".hr-v2-conclusion .hr-skeleton")).to_have_count(0, timeout=35000)
+                expect(page.locator(".hr-v2-conclusion__value")).to_have_count(3)
+                self.assertEqual(api_failures, [], diagnostic)
                 page.screenshot(
                     path=str(self.out_dir / "desktop-overview.png"),
                     full_page=True,
@@ -345,6 +346,7 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
         expected_kpi_labels = [
             "当前周期", "参评人数", "整体完成度", "待评议", "师德异常", "待归档",
         ]
+        api_failures: list[str] = []
         page_errors: list[str] = []
         static_failures: list[str] = []
         hr12_dir = self.out_dir.parent / "HR12-V2"
@@ -380,6 +382,8 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
                 def record_response(response):
+                    if "/api/v1/hr/assessments/" in response.url and response.status >= 400:
+                        api_failures.append(f"{response.status} {response.url}")
                     if "/static/hr/css/" in response.url and response.status >= 400:
                         static_failures.append(f"{response.status} {response.url}")
 
@@ -398,11 +402,13 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 expect(page.locator(".hr12-primary-kpis .hr12-kpi > span")).to_have_text(
                     expected_kpi_labels
                 )
-                self.assertNotEqual(
-                    page.locator("#sourceHealth").inner_text().strip(),
-                    "读取中",
-                    "HR12 boot did not settle after network idle",
-                )
+                # Current production UI has a readiness conclusion and source
+                # list; the removed KPI #sourceHealth is not an acceptance target.
+                expect(page.locator("#readinessTitle")).to_be_visible()
+                expect(page.locator("#readinessTitle")).not_to_have_text("正在核对考核依据", timeout=10000)
+                expect(page.locator("#sourceStatus")).to_be_visible()
+                expect(page.locator("#sourceStatus")).not_to_contain_text("正在检查", timeout=10000)
+                expect(page.locator("#workRows")).not_to_contain_text("正在读取", timeout=10000)
 
                 loaded_styles = page.evaluate(
                     """() => Array.from(document.styleSheets)
@@ -477,3 +483,5 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
             [],
             "HR12 static CSS failures: " + " | ".join(static_failures),
         )
+
+        self.assertEqual(api_failures, [], "HR12 API failures: " + " | ".join(api_failures))

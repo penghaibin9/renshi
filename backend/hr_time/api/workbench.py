@@ -318,6 +318,11 @@ def provision_leave_account(request):
             raise HrTimeContextError("INVALID_REQUEST", "请选择人员并填写有效年度、日期和授予额度", status=400) from exc
         if not amount.is_finite() or amount <= 0 or not 2000 <= account_year <= 2200:
             raise HrTimeContextError("INVALID_REQUEST", "账户年度或授予额度无效", status=400)
+        classification = payload.get("paidClassification", "POLICY_DEPENDENT")
+        if not isinstance(classification, str) or classification not in {
+            "PAID", "UNPAID", "POLICY_DEPENDENT"
+        }:
+            raise HrTimeContextError("INVALID_REQUEST", "请选择有效的假别计薪分类", status=400)
         with transaction.atomic():
             staff = HrStaffMaster.objects.select_for_update().filter(
                 tenant_id=ctx.tenant_id,
@@ -349,7 +354,7 @@ def provision_leave_account(request):
                         "name": name,
                         "category": str(payload.get("category") or "OTHER"),
                         "unit": str(payload.get("unit") or "DAYS"),
-                        "paid_classification": str(payload.get("paidClassification") or "POLICY_DEPENDENT"),
+                        "paid_classification": classification,
                         "requires_plan": True,
                         "active": True,
                     },
