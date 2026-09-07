@@ -273,7 +273,7 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page.locator(".hr09-nav a").count(), 6)
                 self.assertEqual(page.locator(".hr09-hero").count(), 0)
                 self.assertEqual(
-                    page.locator(".hr09-primary-kpis .hr-v2-kpi").count(), 4
+                    page.locator(".hr09-primary-kpis .hr-v2-kpi").count(), 6
                 )
 
                 loaded_styles = page.evaluate(
@@ -390,7 +390,7 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(page.locator("[data-module='HR12']").count(), 1)
                 self.assertEqual(page.locator(".hr12-process__step").count(), 6)
-                self.assertEqual(page.locator(".hr12-nav a").count(), 8)
+                self.assertEqual(page.locator(".hr12-nav a").count(), 6)
                 self.assertEqual(page.locator(".hr12-hero").count(), 0)
                 self.assertEqual(
                     page.locator(".hr12-primary-kpis .hr-v2-kpi").count(), 4

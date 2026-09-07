@@ -24,15 +24,18 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
         from base.models import Company
         from employee.models import Employee, EmployeeWorkInformation
         from hr_staff.models import HrPerson, HrStaffMaster
-        from hr_time.enums import CalendarDayType
+        from hr_time.enums import CalendarDayType, PolicyStatus
         from hr_time.models import (
             HrAttendanceDayFact,
             HrAttendanceException,
             HrCalendarDay,
             HrLeaveAccount,
+            HrLeavePolicyPack,
+            HrLeavePolicyVersion,
             HrLeaveRequest,
             HrLeaveType,
             HrOvertimeRequest,
+            HrScheduleAssignment,
             HrShiftDefinition,
             HrShiftVersion,
             HrTimeClosePeriod,
@@ -43,6 +46,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
         from hr_time.services.calendar_service import CalendarService
         from hr_time.services.leave_account_service import LeaveAccountService
         from hr_time.services.leave_request_service import LeaveRequestService
+        from hr_time.services.schedule_service import ScheduleService
 
         self.company = Company.objects.create(
             company="跃科 HR11 视觉验收学校",
@@ -131,6 +135,17 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             effective_from=today.replace(day=1),
             published_at=timezone.now(),
         )
+        ScheduleService.create_assignment(
+            HrScheduleAssignment(
+                tenant_id=self.company.pk,
+                staff_master_id=self.employee.pk,
+                calendar_version=self.calendar_version,
+                shift_version=self.shift_version,
+                effective_from=today.replace(day=1),
+                effective_to=today + timedelta(days=1),
+                source="HR11_VISUAL_BASELINE",
+            )
+        )
         HrAttendanceDayFact.objects.create(
             tenant_id=self.company.pk,
             staff_master_id=self.employee.pk,
@@ -155,6 +170,27 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             category="ANNUAL",
             unit="DAYS",
         )
+        leave_policy_pack = HrLeavePolicyPack.objects.create(
+            tenant_id=self.company.pk,
+            code="HR11-ANNUAL-POLICY",
+            name="年休假政策",
+            jurisdiction="CN-HN",
+            worker_scope="ALL_ACTIVE_STAFF",
+        )
+        leave_policy_version = HrLeavePolicyVersion.objects.create(
+            tenant_id=self.company.pk,
+            leave_policy_pack=leave_policy_pack,
+            leave_type=leave_type,
+            version_no=1,
+            status=PolicyStatus.PUBLISHED,
+            entitlement_mode="GRANT",
+            eligibility_rule={"scope": "MANUAL_ENROLLMENT"},
+            grant_accrual_rule={"annualGrant": "5", "unit": leave_type.unit},
+            effective_from=date(today.year, 1, 1),
+            published_by=self.user,
+        )
+        leave_policy_pack.current_version_id = leave_policy_version.id
+        leave_policy_pack.save(update_fields=["current_version_id", "updated_at"])
         LeaveAccountService.grant(
             tenant_id=self.company.pk,
             staff_master_id=self.employee.pk,
@@ -162,6 +198,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             account_year=today.year,
             amount=5,
             effective_date=today,
+            policy_version_id=leave_policy_version.id,
         )
         account = HrLeaveAccount.objects.get(
             tenant_id=self.company.pk,
@@ -173,6 +210,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             tenant_id=self.company.pk,
             staff_master_id=self.employee.pk,
             leave_type=leave_type,
+            policy_version_id=leave_policy_version.id,
             start_at=today,
             end_at=today,
             requested_amount=1,

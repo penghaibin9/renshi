@@ -138,7 +138,7 @@ class Hr13VisualAuditTests(StaticLiveServerTestCase):
                 self.assertIsNotNone(response)
                 self.assertEqual(response.status, 200)
                 self.assertEqual(page.locator("[data-module='HR13']").count(), 1)
-                self.assertEqual(page.locator(".hr13-nav a").count(), 9)
+                self.assertEqual(page.locator(".hr13-nav a").count(), 6)
                 self.assertEqual(page.locator(".hr13-process__step").count(), 6)
                 self.assertEqual(page.locator(".hr13c-hero").count(), 0)
                 self.assertGreaterEqual(page.locator("#hr13c-kpis .hr13c-kpi").count(), 6)

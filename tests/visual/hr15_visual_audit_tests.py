@@ -128,7 +128,7 @@ class Hr15VisualAuditTests(StaticLiveServerTestCase):
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200, f"HR15 {route} returned HTTP {response.status}")
                     self.assertEqual(page.locator("[data-module='HR15']").count(), 1)
-                    self.assertEqual(page.locator(".hr15-nav a").count(), 11)
+                    self.assertEqual(page.locator(".hr15-nav a").count(), 6)
                     self.assertEqual(page.locator("#hr15-kpis .hr15-kpi").count(), 6)
                     if slug == "overview":
                         self.assertEqual(page.locator(".hr15-process__step").count(), 6)

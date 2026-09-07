@@ -8,7 +8,11 @@ from types import SimpleNamespace
 from django.test import RequestFactory, SimpleTestCase, TestCase
 from django.urls import resolve
 
-from hr10_development.api.programs import create_offering, create_program
+from hr10_development.api.programs import (
+    create_offering,
+    create_program,
+    create_program_version,
+)
 from hr10_development.api.workbench import choices
 from hr10_development.models.learning_program import HrLearningProgram
 from hr10_development.models.program_version import HrLearningProgramVersion
@@ -149,3 +153,41 @@ class Hr10WorkbenchTenantContractTests(TestCase):
             "offeringNo": "FOREIGN-OFFERING",
         }))
         self.assertEqual(response.status_code, 404)
+
+    def test_program_version_accepts_unset_optional_rule_sections(self):
+        program = HrLearningProgram.objects.create(
+            tenant_id=701,
+            program_code="OPTIONAL-RULES",
+            title="可选规则段回归测试",
+        )
+        response = create_program_version(
+            self.request(
+                "POST",
+                f"/api/v1/hr/development/programs/{program.id}/versions",
+                {
+                    "objectivesJson": {"objective": "提升新任主管的带队能力"},
+                    "curriculumJson": {"summary": "目标管理与绩效反馈"},
+                },
+            ),
+            program.id,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+
+        version = HrLearningProgramVersion.objects.get(
+            tenant_id=701,
+            program_id=program.id,
+        )
+        self.assertEqual(
+            version.objectives_json,
+            {"objective": "提升新任主管的带队能力"},
+        )
+        self.assertEqual(
+            version.curriculum_json,
+            {"summary": "目标管理与绩效反馈"},
+        )
+        self.assertEqual(version.completion_rule_json, {})
+        self.assertEqual(version.evaluation_rule_json, {})
+        self.assertEqual(version.credit_rule_json, {})
+        self.assertEqual(version.cost_rule_json, {})
+        self.assertEqual(version.eligibility_rule_json, {})
+        self.assertEqual(version.document_requirement_json, {})

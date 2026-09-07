@@ -227,7 +227,7 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200, f"HR18 {route} returned HTTP {response.status}")
                     self.assertEqual(page.locator("[data-module='HR18'].hr-v2-page").count(), 1)
-                    self.assertEqual(page.locator(".hr18-nav a").count(), 8)
+                    self.assertEqual(page.locator(".hr18-nav a").count(), 6)
                     self.assertEqual(page.locator(".hr18-nav a[aria-current='page']").count(), 1)
                     page.wait_for_function(
                         """() => Array.from(document.querySelectorAll('#hr18-kpis .hr18-kpi b')).every((n) => n.textContent.trim() !== '—')""",

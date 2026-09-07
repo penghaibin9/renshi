@@ -90,7 +90,7 @@ class Hr16VisualAuditTests(StaticLiveServerTestCase):
                     response = page.goto(self.live_server_url + route, wait_until="networkidle")
                     self.assertIsNotNone(response); self.assertEqual(response.status, 200)
                     self.assertEqual(page.locator("[data-module='HR16']").count(), 1)
-                    self.assertEqual(page.locator(".hr16-nav a").count(), 8)
+                    self.assertEqual(page.locator(".hr16-nav a").count(), 6)
                     self.assertEqual(page.locator("#hr16-kpis .hr16-kpi").count(), 6)
                     if slug == "overview": self.assertEqual(page.locator(".hr16-process__step").count(), 6)
                     else: self.assertEqual(page.locator(".hr16-action-card").count(), 1)

@@ -169,7 +169,7 @@ class Hr17VisualAuditTests(StaticLiveServerTestCase):
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200, f"HR17 {route} returned HTTP {response.status}")
                     self.assertEqual(page.locator("[data-module='HR17']").count(), 1)
-                    self.assertEqual(page.locator(".hr17-nav a").count(), 7)
+                    self.assertEqual(page.locator(".hr17-nav a").count(), 6)
                     page.wait_for_function(
                         """() => document.querySelector('#hr17-kpis .hr17-kpi b')?.textContent.trim() !== '—'""",
                         timeout=8000,

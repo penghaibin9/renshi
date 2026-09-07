@@ -44,31 +44,37 @@ class HrLearningProgramVersion(DevelopmentTenantModel):
 
     completion_rule_json = models.JSONField(
         default=dict,
+        blank=True,
         verbose_name=_("完成规则"),
     )
 
     evaluation_rule_json = models.JSONField(
         default=dict,
+        blank=True,
         verbose_name=_("评价规则"),
     )
 
     credit_rule_json = models.JSONField(
         default=dict,
+        blank=True,
         verbose_name=_("学分规则"),
     )
 
     cost_rule_json = models.JSONField(
         default=dict,
+        blank=True,
         verbose_name=_("费用规则"),
     )
 
     eligibility_rule_json = models.JSONField(
         default=dict,
+        blank=True,
         verbose_name=_("资格规则"),
     )
 
     document_requirement_json = models.JSONField(
         default=dict,
+        blank=True,
         verbose_name=_("材料要求"),
     )
 
