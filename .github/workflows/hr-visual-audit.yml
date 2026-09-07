@@ -30,6 +30,58 @@ env:
   MYSQL_CI_ROOT_PASSWORD: "root-${{ github.run_id }}"
 
 jobs:
+  review-source-context:
+    # Exact tracked text inputs for the authorised PR review; no runtime data.
+    if: github.event.pull_request.number == 53
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export tracked review inputs and content manifest
+        env:
+          REVIEW_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+          import subprocess
+          import zipfile
+          from pathlib import Path
+
+          roots = {"backend", "frontend", "tests", "scripts", "docs", ".github"}
+          suffixes = {".py", ".js", ".css", ".html", ".md", ".yml", ".yaml", ".toml"}
+          names = {"AGENTS.md", "CONTRIBUTING.md", "requirements.lock", "requirements.txt", "manage.py", "sitecustomize.py"}
+          excluded = {".runtime", "media", "uploads", "backups", "fixtures", "logs", "node_modules"}
+          entries = []
+          paths = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          with zipfile.ZipFile("hr-review-source.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+              for name in sorted(filter(None, paths)):
+                  path = Path(name)
+                  if path.is_symlink() or not path.is_file():
+                      continue
+                  if any(part in excluded or part.startswith(".env") for part in path.parts):
+                      continue
+                  if path.name == "local_settings.py":
+                      continue
+                  if not (name in names or (path.parts[0] in roots and path.suffix in suffixes)):
+                      continue
+                  content = path.read_bytes()
+                  archive.writestr(name, content)
+                  entries.append({"path": name, "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content)})
+              manifest = {"productSha": os.environ["REVIEW_PRODUCT_SHA"], "checkoutSha": subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip(), "scope": "tracked text source only; no runtime, credentials or font files", "files": entries}
+              archive.writestr("SOURCE-MANIFEST.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+          print("Tracked text inputs:", len(entries))
+          print("Archive SHA256:", hashlib.sha256(Path("hr-review-source.zip").read_bytes()).hexdigest())
+          PYTHON
+      - name: Retain exact review source context
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-review-source-${{ github.sha }}
+          path: hr-review-source.zip
+          retention-days: 3
+          if-no-files-found: error
+
   hr-visual-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -66,6 +118,9 @@ jobs:
           pip install -r requirements.lock
           pip install playwright
           python -m playwright install --with-deps chromium
+
+      - name: HR typography tokens in Chromium
+        run: python tests/visual/hr_typography_contract_tests.py -v
 
       - name: HR11 download dialog UI unit regressions (isolated transport)
         env:
