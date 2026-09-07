@@ -89,6 +89,15 @@ def issue_account_invitation(request, staff_id):
     except AccountInvitationError as exc:
         return _service_error(request, exc)
 
+    # Keep the bearer secret in the URL fragment, not the request path/query.
+    # Browsers never send fragments to reverse proxies/access logs. The public
+    # page's external JS moves it into the POST body and erases the fragment.
+    activation_url = request.build_absolute_uri(
+        reverse(
+            "account-invitation-activate",
+            kwargs={"invitation_id": invitation.id},
+        )
+    )
     payload = {
         "schemaVersion": "hr03.account-invitation.1",
         "data": {
@@ -97,12 +106,7 @@ def issue_account_invitation(request, staff_id):
             "emailMasked": mask_email(invitation.invited_email),
             "expiresAt": invitation.expires_at.isoformat(),
             "deliveryMode": "MANUAL_LINK",
-            "inviteUrl": request.build_absolute_uri(
-                reverse(
-                    "account-invitation-activate",
-                    kwargs={"token": raw_token},
-                )
-            ),
+            "inviteUrl": f"{activation_url}#{raw_token}",
         },
     }
     return json_response(request, payload, status=201)

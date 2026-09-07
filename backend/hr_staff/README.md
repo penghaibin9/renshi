@@ -32,10 +32,12 @@
 - 管理端签发需要语义权限 `hr.staff.account.manage`，并继续受当前学校与 HR03 data scope 约束。
 - 邀请邮箱只读取 HR03 `HrPersonContact` 中已核验且当前有效的工作/个人邮箱；API 不接受收件邮箱覆盖。
 - 邀请 bearer 使用高熵随机值，数据库只保存带 namespace 的 SHA-256 摘要；摘要本身不能作为 bearer 重放。
+- HTTP path/query 只携带非 secret 的 invitation UUID；bearer 仅放在 URL `#fragment`。浏览器 fragment 不会发送给 Nginx/反向代理，激活页外部脚本会把 secret 移入 POST body，并立即从地址栏/history 清除。
 - 同一 staff 重新签发会撤销此前所有未消费邀请；过期、撤销、已使用 token 均 fail-closed。
 - 任意既有 `HrAccountLink`（包括 SUSPENDED / UNLINKED）都会阻止重新开账号，避免静默替换历史关联。
 - 接受邀请时用户、学校 SELF 角色、`CompanyGroupAssignment`、`HrAccountLink`、邀请消费与业务审计在一个事务中完成。
 - 系统保留组 `__system_hr17_self__` 只允许 `hr.self.view`。如果组被人工污染出额外权限，激活直接拒绝而不是扩大权限。
+- 激活 GET 不读取 secret，也不回显姓名、工号或邮箱；POST 使用真实 CSRF、`Cache-Control: no-store` 和 `Referrer-Policy: no-referrer`。
 - 激活页面不自动登录；用户必须用刚设置的密码重新登录，邀请 possession 不升级成长期会话。
 - 当前没有仓库级正式邮件发送 Authority，因此签发 API 明确返回 `deliveryMode=MANUAL_LINK`；不得把“生成邀请链接”描述成“邮件已发送”。
 
@@ -44,4 +46,4 @@
 - `POST /api/v1/hr/staff/{staff_id}/account-invitations`
 - `POST /api/v1/hr/account-invitations/{invitation_id}/revoke`
 
-公开激活入口由签发响应生成，激活页使用真实 CSRF、`Cache-Control: no-store` 和 `Referrer-Policy: no-referrer`。
+签发响应中的完整邀请 URL 只出现一次，响应为 `no-store`；运维层不得记录响应体。

@@ -14,7 +14,7 @@ urlpatterns = [
     path("login/", account_views.login_user, name="login"),
     path("change-password/", account_password.change_password, name="change-password"),
     path(
-        "activate-account/<str:token>/",
+        "activate-account/<uuid:invitation_id>/",
         account_invitation.activate_account_invitation,
         name="account-invitation-activate",
     ),

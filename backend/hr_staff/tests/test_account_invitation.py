@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from unittest import mock
+from urllib.parse import urlsplit
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
@@ -194,6 +195,14 @@ class AccountInvitationTests(TestCase):
             AccountInvitationService.inspect(token)
         self.assertEqual(caught.exception.code, "ACCOUNT_INVITATION_EXPIRED")
 
+        revoked, revoked_token = self.issue()
+        AccountInvitationService(
+            self.company.id, actor_user_id=self.admin.id
+        ).revoke(invitation_id=revoked.id)
+        with self.assertRaises(AccountInvitationError) as caught:
+            AccountInvitationService.inspect(revoked_token)
+        self.assertEqual(caught.exception.code, "ACCOUNT_INVITATION_REVOKED")
+
         other_person = HrPerson.objects.create(
             tenant_id=self.other_company.id,
             legal_name="其他学校教师",
@@ -249,7 +258,7 @@ class AccountInvitationTests(TestCase):
             ).exists()
         )
 
-    def test_admin_api_uses_staff_scope_and_never_accepts_recipient_override(self):
+    def test_admin_api_keeps_bearer_out_of_http_path_and_rejects_override(self):
         request_factory = RequestFactory()
         context = HrStaffRequestContext(
             tenant_id=self.company.id,
@@ -271,7 +280,11 @@ class AccountInvitationTests(TestCase):
         self.assertEqual(response.status_code, 201)
         data = response.json()["data"]
         self.assertEqual(data["deliveryMode"], "MANUAL_LINK")
-        self.assertIn("/activate-account/", data["inviteUrl"])
+        invite_url = urlsplit(data["inviteUrl"])
+        self.assertTrue(invite_url.fragment)
+        self.assertEqual(invite_url.query, "")
+        self.assertIn(f"/activate-account/{data['invitationId']}/", invite_url.path)
+        self.assertNotIn(invite_url.fragment, invite_url.path)
         self.assertNotIn(self.contact.contact_value, data["inviteUrl"])
 
         override = request_factory.post(
@@ -290,20 +303,25 @@ class AccountInvitationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"]["code"], "INVALID_REQUEST")
 
-    def test_public_activation_requires_csrf_and_never_auto_logs_in(self):
-        _invitation, token = self.issue()
-        path = f"/activate-account/{token}/"
+    def test_public_activation_posts_fragment_secret_and_never_auto_logs_in(self):
+        invitation, token = self.issue()
+        path = f"/activate-account/{invitation.id}/"
         browser = Client(enforce_csrf_checks=True)
 
         page = browser.get(path)
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "激活教职工账号")
+        self.assertContains(page, "base/js/account_invitation.js")
+        self.assertNotContains(page, token)
+        self.assertNotContains(page, self.person.legal_name)
+        self.assertNotContains(page, self.staff.staff_no)
         self.assertEqual(page["Referrer-Policy"], "no-referrer")
         self.assertEqual(page["Cache-Control"], "no-store")
 
         missing_csrf = browser.post(
             path,
             {
+                "activation_token": token,
                 "username": "browser-teacher",
                 "password": self.password,
                 "confirm_password": self.password,
@@ -313,9 +331,23 @@ class AccountInvitationTests(TestCase):
         self.assertFalse(User.objects.filter(username="browser-teacher").exists())
 
         csrf = browser.cookies["csrftoken"].value
+        missing_fragment = browser.post(
+            path,
+            {
+                "username": "browser-teacher",
+                "password": self.password,
+                "confirm_password": self.password,
+            },
+            HTTP_X_CSRFTOKEN=csrf,
+            HTTP_ORIGIN="http://testserver",
+        )
+        self.assertEqual(missing_fragment.status_code, 400)
+        self.assertFalse(User.objects.filter(username="browser-teacher").exists())
+
         accepted = browser.post(
             path,
             {
+                "activation_token": token,
                 "username": "browser-teacher",
                 "password": self.password,
                 "confirm_password": self.password,

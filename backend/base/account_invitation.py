@@ -5,26 +5,19 @@ from __future__ import annotations
 from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
-from django.views.decorators.http import require_http_methods, require_GET
+from django.views.decorators.http import require_GET, require_http_methods
 
 from hr_staff.services.account_invitation_service import (
     AccountInvitationError,
     AccountInvitationService,
-    mask_email,
 )
 
 
-def _render(request, *, status=200, invitation=None, errors=None):
+def _render(request, *, status=200, errors=None):
     response = render(
         request,
         "base/account/invitation_activate.html",
-        {
-            "invitation": invitation,
-            "email_masked": mask_email(invitation.invited_email)
-            if invitation
-            else "",
-            "errors": errors or {},
-        },
+        {"errors": errors or {}},
         status=status,
     )
     response["Cache-Control"] = "no-store"
@@ -32,10 +25,10 @@ def _render(request, *, status=200, invitation=None, errors=None):
     return response
 
 
-@sensitive_post_parameters("password", "confirm_password")
+@sensitive_post_parameters("activation_token", "password", "confirm_password")
 @never_cache
 @require_http_methods(["GET", "POST"])
-def activate_account_invitation(request, token):
+def activate_account_invitation(request, invitation_id):
     # Never allow a currently authenticated browser to accidentally consume an
     # invitation and create a second identity under someone else's session.
     if getattr(request.user, "is_authenticated", False):
@@ -45,22 +38,20 @@ def activate_account_invitation(request, token):
             errors={"__all__": "请先退出当前登录账号，再打开教职工账号邀请链接。"},
         )
 
-    try:
-        invitation = AccountInvitationService.inspect(token)
-    except AccountInvitationError:
-        return _render(
-            request,
-            status=400,
-            errors={"__all__": "邀请链接无效、已撤销、已使用或已经过期，请联系学校管理员重新签发。"},
-        )
-
     if request.method == "GET":
-        return _render(request, invitation=invitation)
+        # The bearer secret lives only in the URL fragment. Fragments are not
+        # sent in HTTP requests, so reverse proxies/access logs see only this
+        # non-secret invitation UUID. Browser JS moves the fragment into the
+        # POST body and immediately removes it from the address bar/history.
+        return _render(request)
 
+    raw_token = str(request.POST.get("activation_token") or "")
     username = str(request.POST.get("username") or "").strip()
     password = str(request.POST.get("password") or "")
     confirm_password = str(request.POST.get("confirm_password") or "")
     errors = {}
+    if not raw_token:
+        errors["__all__"] = "邀请密钥缺失，请使用学校管理员提供的完整邀请链接。"
     if not username:
         errors["username"] = "请输入登录账号。"
     if not password:
@@ -68,13 +59,16 @@ def activate_account_invitation(request, token):
     if password != confirm_password:
         errors["confirm_password"] = "两次输入的密码不一致。"
     if errors:
-        return _render(
-            request, status=400, invitation=invitation, errors=errors
-        )
+        return _render(request, status=400, errors=errors)
 
     try:
+        invitation = AccountInvitationService.inspect(raw_token)
+        if invitation.id != invitation_id:
+            raise AccountInvitationError(
+                "ACCOUNT_INVITATION_INVALID", "邀请链接与密钥不匹配"
+            )
         user, _link = AccountInvitationService.accept(
-            token, username=username, password=password
+            raw_token, username=username, password=password
         )
     except AccountInvitationError as exc:
         field = "__all__"
@@ -82,12 +76,6 @@ def activate_account_invitation(request, token):
             field = "username"
         elif exc.code == "ACCOUNT_PASSWORD_INVALID":
             field = "password"
-        elif exc.code in {
-            "ACCOUNT_INVITATION_CONTACT_CHANGED",
-            "ACCOUNT_LINK_EXISTS",
-        }:
-            field = "__all__"
-        # Token state details are intentionally collapsed for the browser.
         message = (
             "邀请链接已失效，请联系学校管理员重新签发。"
             if exc.code
@@ -99,12 +87,7 @@ def activate_account_invitation(request, token):
             }
             else str(exc)
         )
-        return _render(
-            request,
-            status=400,
-            invitation=invitation,
-            errors={field: message},
-        )
+        return _render(request, status=400, errors={field: message})
 
     # Do not authenticate here: possession of the invitation must not become a
     # long-lived browser session. The user proves the new credential at login.
