@@ -74,6 +74,9 @@ jobs:
       - name: HR layout and independent overview UI regressions
         run: python tests/visual/hr_polish_contract_tests.py -v
 
+      - name: HR01 workforce UI regression (isolated transport)
+        run: python tests/visual/hr_workforce_ui_contract_tests.py -v
+
       - name: HR11 download dialog UI unit regressions (isolated transport)
         env:
           HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
@@ -231,6 +234,14 @@ jobs:
             tests.visual.hr18_visual_audit_tests.Hr18VisualAuditTests \
             tests.visual.hr_visual_audit_tests.HrVisualAuditTests \
             --keepdb --noinput --verbosity 2
+
+      - name: HR01 workforce real login and dimension readback
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python manage.py test tests.visual.hr_workforce_visual_audit_tests.HrWorkforceVisualAuditTests --keepdb --noinput --verbosity 2
 
       - name: Real login and registered HR page inventory
         if: always() && steps.prepare-schema.outcome == 'success'
