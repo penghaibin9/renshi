@@ -176,7 +176,7 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
         from hr_data.models import MetricDefinitionVersion
 
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import expect, sync_playwright
         except ImportError as exc:
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
@@ -250,7 +250,9 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                 page.goto(self.live_server_url + "/hr/data/metrics/", wait_until="networkidle")
                 page.locator("[data-open='hr18-metric-form']").click()
                 form = page.locator("#hr18-metric-form")
-                self.assertEqual(page.evaluate("document.activeElement?.name"), "metricCode")
+                # Production transfers focus on requestAnimationFrame; require the
+                # real input to receive focus instead of sampling the preceding frame.
+                expect(form.locator("[name='metricCode']")).to_be_focused()
                 self.assertTrue(
                     form.locator(".hr18-action-field > label[for]").evaluate_all(
                         "labels => labels.every(label => document.getElementById(label.htmlFor))"

@@ -338,10 +338,13 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
     def test_capture_hr12_v2_desktop_and_mobile(self):
         """Verify HR12 uses the shared V2 shell without hiding partial states."""
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import expect, sync_playwright
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
+        expected_kpi_labels = [
+            "当前周期", "参评人数", "整体完成度", "待评议", "师德异常", "待归档",
+        ]
         page_errors: list[str] = []
         static_failures: list[str] = []
         hr12_dir = self.out_dir.parent / "HR12-V2"
@@ -392,8 +395,8 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page.locator(".hr12-process__step").count(), 6)
                 self.assertEqual(page.locator(".hr12-nav a").count(), 6)
                 self.assertEqual(page.locator(".hr12-hero").count(), 0)
-                self.assertEqual(
-                    page.locator(".hr12-primary-kpis .hr-v2-kpi").count(), 4
+                expect(page.locator(".hr12-primary-kpis .hr12-kpi > span")).to_have_text(
+                    expected_kpi_labels
                 )
                 self.assertNotEqual(
                     page.locator("#sourceHealth").inner_text().strip(),
@@ -452,6 +455,9 @@ class HrV2VisualAuditTests(StaticLiveServerTestCase):
                 self.assertEqual(page.locator("[data-module='HR12']").count(), 1)
                 self.assertEqual(
                     page.locator(".hr-v2-mobile-section-switcher").count(), 1
+                )
+                expect(page.locator(".hr12-primary-kpis .hr12-kpi > span")).to_have_text(
+                    expected_kpi_labels
                 )
                 page.screenshot(
                     path=str(hr12_dir / "mobile-overview.png"),

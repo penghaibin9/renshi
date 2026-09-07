@@ -281,7 +281,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
         page.on("response", lambda response: static_failures.append(f"{response.status} {response.url}") if "/static/hr/" in response.url and response.status >= 400 else None)
 
     def test_capture_all_hr11_workspaces_desktop_and_mobile(self):
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import expect, sync_playwright
 
         page_errors, console_errors, api_failures, static_failures = [], [], [], []
         with sync_playwright() as playwright:
@@ -296,7 +296,12 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
                         self.assertIsNotNone(response, route)
                         self.assertEqual(response.status, 200, route)
                         self.assertEqual(page.locator(f'[data-module="HR11"][data-section="{name}"]').count(), 1, route)
-                        self.assertEqual(page.locator(".hr11-nav a").count(), 7, route)
+                        # Six grouped workspaces; all seven canonical/compatibility
+                        # routes above must still render their own business section.
+                        expect(page.locator(".hr11-nav a")).to_have_text([
+                            "01制度与规则", "02校历与排班", "03打卡与工时",
+                            "04异常补卡与加班", "05请假休假", "06月结台账",
+                        ])
                         self.assertEqual(page.locator(".hr-v2-pagehead").count(), 1, route)
                         if mode == "mobile":
                             self.assertEqual(page.locator(".hr-v2-mobile-section-switcher").count(), 1, route)
@@ -310,7 +315,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
         self.assertEqual(static_failures, [], "HR11 static failures: " + " | ".join(static_failures))
 
     def test_real_browser_completes_time_fact_chain(self):
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import expect, sync_playwright
 
         page_errors, console_errors, api_failures, static_failures = [], [], [], []
         with sync_playwright() as playwright:
@@ -322,20 +327,28 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
 
                 page.goto(self.live_server_url + "/hr/time/schedule/", wait_until="networkidle")
                 page.get_by_role("button", name="新建生效排班").click()
-                page.get_by_label("人员").select_option(str(self.employee.pk))
-                page.get_by_label("工作日历版本").select_option(str(self.calendar_version.pk))
-                page.get_by_label("班次版本").select_option(str(self.shift_version.pk))
-                page.get_by_label("生效日期").fill((timezone.localdate() + timedelta(days=1)).isoformat())
+                # Choices arrive asynchronously. Never bind a broad "人员"
+                # label to the hidden global module navigation before the dialog opens.
+                dialog = page.locator(".hr11 [data-dialog]")
+                expect(dialog).to_be_visible(timeout=10000)
+                expect(dialog.locator(".hr11-field > span")).to_have_text([
+                    "人员", "工作日历版本", "班次版本", "生效日期", "失效日期",
+                ])
+                dialog.locator("select[name='staffId']").select_option(str(self.employee.pk))
+                dialog.locator("select[name='calendarVersionId']").select_option(str(self.calendar_version.pk))
+                dialog.locator("select[name='shiftVersionId']").select_option(str(self.shift_version.pk))
+                dialog.locator("input[name='effectiveFrom']").fill((timezone.localdate() + timedelta(days=1)).isoformat())
                 with page.expect_response(lambda response: response.url.endswith("/schedules/create")) as scheduled:
-                    page.get_by_role("button", name="确认办理").click()
+                    dialog.get_by_role("button", name="确认办理", exact=True).click()
                 self.assertEqual(scheduled.value.status, 201)
                 page.wait_for_load_state("networkidle")
 
                 page.goto(self.live_server_url + "/hr/time/attendance/", wait_until="networkidle")
                 page.get_by_role("button", name="解决异常").click()
-                page.get_by_label("处理说明").fill("已核对设备离线记录与教师签退证明")
+                expect(dialog).to_be_visible(timeout=10000)
+                dialog.get_by_label("处理说明").fill("已核对设备离线记录与教师签退证明")
                 with page.expect_response(lambda response: response.url.endswith("/resolve")) as resolved:
-                    page.get_by_role("button", name="确认办理").click()
+                    dialog.get_by_role("button", name="确认办理", exact=True).click()
                 self.assertEqual(resolved.value.status, 200)
                 page.wait_for_load_state("networkidle")
 

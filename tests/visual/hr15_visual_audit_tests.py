@@ -97,7 +97,7 @@ class Hr15VisualAuditTests(StaticLiveServerTestCase):
 
     def test_capture_all_routes_and_append_real_adjustment(self):
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import expect, sync_playwright
         except ImportError as exc:
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
@@ -106,6 +106,10 @@ class Hr15VisualAuditTests(StaticLiveServerTestCase):
         static_failures = []
         api_failures = []
         adjustment_no = "PAY-2026-08-0015-补差-01"
+        expected_kpi_labels = [
+            "活动薪酬档案", "工资期间", "未封板期间", "校外结算依据",
+            "正式/调整结果", "最近期间状态", "最近期间实发",
+        ]
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
@@ -129,7 +133,8 @@ class Hr15VisualAuditTests(StaticLiveServerTestCase):
                     self.assertEqual(response.status, 200, f"HR15 {route} returned HTTP {response.status}")
                     self.assertEqual(page.locator("[data-module='HR15']").count(), 1)
                     self.assertEqual(page.locator(".hr15-nav a").count(), 6)
-                    self.assertEqual(page.locator("#hr15-kpis .hr15-kpi").count(), 6)
+                    # Keep the added HR08 workload KPI distinct from pay amounts.
+                    expect(page.locator("#hr15-kpis .hr15-kpi > span")).to_have_text(expected_kpi_labels)
                     if slug == "overview":
                         self.assertEqual(page.locator(".hr15-process__step").count(), 6)
                     if slug == "results":
@@ -159,6 +164,7 @@ class Hr15VisualAuditTests(StaticLiveServerTestCase):
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200)
                     self.assertEqual(page.locator(".hr-v2-mobile-section-switcher").count(), 1)
+                    expect(page.locator("#hr15-kpis .hr15-kpi > span")).to_have_text(expected_kpi_labels)
                     page.screenshot(path=str(self.out_dir / f"mobile-{slug}.png"), full_page=True)
                 context.close()
             finally:
