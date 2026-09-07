@@ -169,6 +169,7 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
             name="年休假",
             category="ANNUAL",
             unit="DAYS",
+            paid_classification="PAID",
         )
         leave_policy_pack = HrLeavePolicyPack.objects.create(
             tenant_id=self.company.pk,
