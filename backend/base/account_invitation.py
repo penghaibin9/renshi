@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils import translation
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_GET, require_http_methods
@@ -88,9 +89,13 @@ def activate_account_invitation(request, invitation_id):
             raise AccountInvitationError(
                 "ACCOUNT_INVITATION_INVALID", "邀请链接与密钥不匹配"
             )
-        user, _link = AccountInvitationService.accept(
-            raw_token, username=username, password=password
-        )
+        # This public activation surface is explicitly Simplified Chinese.
+        # Use the framework's translated validator messages (including dynamic
+        # policy limits), then restore the request language. Rules are unchanged.
+        with translation.override("zh-hans"):
+            user, _link = AccountInvitationService.accept(
+                raw_token, username=username, password=password
+            )
     except AccountInvitationError as exc:
         field = "__all__"
         if exc.code.startswith("ACCOUNT_USERNAME_"):

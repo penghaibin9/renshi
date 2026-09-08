@@ -20,6 +20,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.test import override_settings
+from django.urls import reverse
 
 
 def _read_on_worker(reader, **identifiers):
@@ -123,6 +124,7 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
         name = f"activation-{mode}-teacher"
         page_errors, unsafe_urls, post_statuses = [], [], []
         completed_gets = []
+        bootstrap_path = reverse("hr_self_api:bootstrap")
         with sync_playwright() as runtime:
             browser = runtime.chromium.launch(headless=True)
             try:
@@ -150,6 +152,8 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
                 self.assert_private(invalid.value)
                 self.assertFalse(invalid.value.json()["ok"])
                 self.assertIn("password", invalid.value.json()["errors"])
+                self.assertIn("密码", invalid.value.json()["errors"]["password"])
+                self.assertNotIn("This password", invalid.value.json()["errors"]["password"])
                 expect(page.locator("#id_password")).to_be_focused()
                 expect(page.locator("#error-password")).to_be_visible()
                 expect(page.locator("#account-invitation-submit")).to_be_enabled()
@@ -216,15 +220,35 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
                 })
                 page.screenshot(path=str(self.out / f"{mode}-complete.png"), full_page=True)
 
-                page.goto(self.live_server_url + "/login/?next=/hr/self/", wait_until="networkidle")
+                # Follow the shipped completion link, not a hand-crafted next URL.
+                page.get_by_role("link", name="前往登录", exact=True).click()
+                expect(page).to_have_url(self.live_server_url + reverse("login"))
                 page.locator("#username").fill(name)
                 page.locator("#password").fill(self.password)
-                with page.expect_response(lambda r: urlsplit(r.url).path == "/hr/self/" and r.request.is_navigation_request()) as self_page:
-                    page.locator("button.yk-login-submit").click()
+                with page.expect_response(
+                    lambda res: res.url == self.live_server_url + bootstrap_path
+                    and res.request.method == "GET"
+                ) as self_bootstrap:
+                    with page.expect_response(lambda res: urlsplit(res.url).path == "/hr/self/" and res.request.is_navigation_request()) as self_page:
+                        page.locator("button.yk-login-submit").click()
                 self.assertEqual(self_page.value.status, 200)
+                self.assertEqual(self_bootstrap.value.status, 200)
+                self_data = self_bootstrap.value.json()
+                self.assertEqual(self_data["identity"]["legalName"], self.person.legal_name)
+                self.assertEqual(self_data["identity"]["staffNo"], self.staff.staff_no)
+                self.assertIn(self_data["primaryStatus"]["status"], {"OK", "PARTIAL", "STALE"})
                 expect(page.locator("[data-module='HR17']")).to_be_visible()
+                expect(page.locator("#hr17-identity")).to_contain_text(self.staff.staff_no, timeout=12000)
+                expect(page.locator("#hr17-identity")).to_contain_text(self.person.legal_name)
+                expect(page.locator("#hr17-kpis .hr17-kpi b")).to_have_count(6)
+                expect(page.locator("#hr17-kpis .hr17-kpi b").first).to_have_text(
+                    str(self_data["summary"]["availableServices"])
+                )
+                expect(page.locator("#hr17-work-desc")).not_to_contain_text("正在读取")
                 self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth-innerWidth"), 1)
                 page.screenshot(path=str(self.out / f"{mode}-self-login.png"), full_page=True)
+                page.locator("#hr17-identity").scroll_into_view_if_needed()
+                page.screenshot(path=str(self.out / f"{mode}-self-identity.png"), full_page=True)
                 context.close()
             finally:
                 browser.close()
@@ -255,6 +279,11 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
             "validationCheckpoint": validation_checkpoint,
             "anonymousSessionCheckpoint": anonymous_checkpoint,
             "readbackExecution": "dedicated-thread-owned-connections",
+            "selfBootstrapHttpStatus": 200,
+            "selfPrimaryStatus": self_data["primaryStatus"]["status"],
+            "selfIdentityVisible": True,
+            "selfPageSettledBeforeCapture": True,
+            "loginRouteFromCompletionLink": True,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def test_desktop_validation_retry_and_self_login(self):
