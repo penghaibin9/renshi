@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-prehires.css' %}">
 {% endblock styles %}
 
 {% block content %}
@@ -29,10 +30,21 @@
 
   <section class="hr05-panel">
     <div class="hr05-toolbar">
-      <div class="hr05-toolbar__copy"><h2>入职单</h2><p>可按入职单编号或来源编号搜索，搜索条件直接发送给服务端。</p></div>
-      <input class="hr05-search" id="hr05-prehire-keyword" placeholder="搜索入职单/来源编号" autocomplete="off">
+      <div class="hr05-toolbar__copy"><h2 id="hr05-prehire-list-title">入职单</h2><p>可按入职单编号或来源编号搜索，搜索条件直接发送给服务端。</p></div>
+      <div class="hr05-prehire-tools" role="group" aria-label="入职单搜索与刷新">
+        <label class="hr05-prehire-search" for="hr05-prehire-keyword">搜索入职单或来源编号
+          <input class="hr05-search" id="hr05-prehire-keyword" type="search" placeholder="搜索入职单/来源编号" autocomplete="off" aria-controls="hr05-prehire-list">
+        </label>
+        <div class="hr05-prehire-buttons">
+          <button class="hr-btn" id="hr05-prehire-clear" type="button" disabled>清空搜索</button>
+          <button class="hr-btn hr-btn--primary" id="hr05-prehire-refresh" type="button" aria-controls="hr05-prehire-list">刷新列表</button>
+        </div>
+      </div>
     </div>
-    <div id="hr05-prehire-list" class="hr05-table-wrap" aria-live="polite">
+    <p class="hr05-prehire-scope">每次最多 100 条；按当前搜索条件查询，保留服务端顺序。详情、报到与材料仍在各自工作区办理。</p>
+    <p id="hr05-prehire-count" class="hr05-prehire-count" role="status" aria-live="polite" aria-atomic="true">正在查询，请稍候…</p>
+    <p id="hr05-prehire-scroll-help" class="hr05-prehire-scroll-help">左右滚动表格，可查看详情、报到与材料入口。</p>
+    <div id="hr05-prehire-list" class="hr05-table-wrap" aria-live="polite" tabindex="0" role="region" aria-labelledby="hr05-prehire-list-title" aria-describedby="hr05-prehire-scroll-help">
       <div class="hr05-state"><strong>正在读取待报到人员</strong><span>等待服务端返回当前学校可见的正式入职单。</span></div>
     </div>
   </section>
