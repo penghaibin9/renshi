@@ -16,6 +16,8 @@
   let selfRecords = null;
   let recordsPending = needsRecords;
   let filtersBound = false;
+  const pendingPins = new Set();
+  let focusIntent = 0;
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -144,48 +146,109 @@
   }
 
   function serviceCard(item) {
-    const pinText = item.pinned ? '★ 已设常用' : '☆ 设为常用';
+    const pending = pendingPins.has(item.service_code);
+    const pinText = pending ? '保存中…' : (item.pinned ? '★ 已设常用' : '☆ 设为常用');
     return `<article class="hr17-service-card">
       <a class="hr17-service" href="${esc(safeRoute(item.route))}">
         <span class="hr17-service-domain">${esc(businessSource(item.source_domain))}</span>
         <b>${esc(item.name || '未命名服务')}</b><small>${esc(item.action_key || '进入办理')}</small>
       </a>
-      <button class="hr17-pin-button${item.pinned ? ' active' : ''}" type="button" data-service-code="${esc(item.service_code)}" aria-pressed="${item.pinned ? 'true' : 'false'}">${pinText}</button>
+      <button class="hr17-pin-button${item.pinned ? ' active' : ''}" type="button" data-service-code="${esc(item.service_code)}" aria-pressed="${item.pinned ? 'true' : 'false'}"${pending ? ' disabled aria-busy="true"' : ''}>${pinText}</button>
     </article>`;
   }
 
-  function renderServices() {
+  function renderServices(restoreCode = null) {
     const target = document.getElementById('hr17-services');
     const search = document.getElementById('hr17-search');
     const domain = document.getElementById('hr17-domain');
     if (!target || !search || !domain) return;
+    const pinned = document.getElementById('hr17-only-pinned');
+    const count = document.getElementById('hr17-service-count');
+    const reset = document.getElementById('hr17-clear-filters');
+    const onlyPinned = pinned?.getAttribute('aria-pressed') === 'true';
     const query = search.value.trim().toLowerCase();
     const selected = domain.value;
-    const rows = (data.services || []).filter((item) => {
+    const catalogue = Array.isArray(data.services) ? data.services : null;
+    const rows = (catalogue || []).filter((item) => {
       const haystack = [item.name, item.source_domain, businessSource(item.source_domain), item.action_key].join(' ').toLowerCase();
-      return (!selected || item.source_domain === selected) && (!query || haystack.includes(query));
+      return (!onlyPinned || item.pinned) && (!selected || item.source_domain === selected) && (!query || haystack.includes(query));
     });
-    target.innerHTML = rows.length ? rows.map(serviceCard).join('') : '<div class="hr17-empty">当前没有符合条件的本人服务。</div>';
+    // Remember the control the user is using now, not the button which started
+    // an earlier request. A late pin response must not steal search focus.
+    const active = document.activeElement;
+    const card = target.contains(active) ? active.closest('.hr17-service-card') : null;
+    const activeCode = card?.querySelector('[data-service-code]')?.dataset.serviceCode;
+    const focusCode = activeCode || (typeof restoreCode === 'string' ? restoreCode : null);
+    const focusLink = !!card && active.matches('.hr17-service');
+    let empty = '当前没有符合条件的本人服务。可清空筛选后重新查找。';
+    if (!catalogue) empty = '本人服务目录暂不可用，请刷新核对。未将来源异常按空目录处理。';
+    else if (!catalogue.length) empty = '当前目录未返回可办理的本人服务，请查看服务开放状态。';
+    else if (onlyPinned && !catalogue.some((item) => item.pinned)) empty = '尚未设置常用服务。关闭“只看常用”，找到服务后点击“设为常用”。';
+    target.innerHTML = rows.length ? rows.map(serviceCard).join('') : `<div class="hr17-empty">${esc(empty)}</div>`;
+    if (count) count.textContent = catalogue ? `显示 ${rows.length} / ${catalogue.length} 项当前目录服务${onlyPinned ? ' · 只看常用' : ''}` : '当前目录暂不可用';
+    if (reset) reset.disabled = !search.value && !selected && !onlyPinned;
+    if (focusCode) {
+      const button = target.querySelector(`[data-service-code="${CSS.escape(focusCode)}"]`);
+      const next = focusLink ? button?.closest('.hr17-service-card')?.querySelector('.hr17-service') : button;
+      (next || pinned || search).focus({preventScroll: true});
+    }
+  }
+
+  function serviceMessage(text, bad = false) {
+    if (!root.isConnected) return;
+    const target = document.getElementById('hr17-service-feedback');
+    if (!target) { if (bad) window.alert(text); return; }
+    target.textContent = text;
+    target.dataset.tone = bad ? 'error' : 'success';
   }
 
   function setupServiceFilters() {
     const domain = document.getElementById('hr17-domain');
     const target = document.getElementById('hr17-services');
     if (!domain || !target) return;
-    const domains = [...new Set((data.services || []).map((item) => item.source_domain).filter(Boolean))].sort();
+    const selected = domain.value;
+    const domains = [...new Set((Array.isArray(data.services) ? data.services : []).map((item) => item.source_domain).filter(Boolean))].sort();
     domain.innerHTML = '<option value="">全部服务类别</option>' + domains.map((value) => (
       `<option value="${esc(value)}">${esc(businessSource(value))}</option>`
     )).join('');
+    if (domains.includes(selected)) domain.value = selected;
     if (filtersBound) return;
     filtersBound = true;
     domain.addEventListener('change', renderServices);
     document.getElementById('hr17-search')?.addEventListener('input', renderServices);
+    document.getElementById('hr17-only-pinned')?.addEventListener('click', (event) => {
+      const button = event.currentTarget;
+      button.setAttribute('aria-pressed', button.getAttribute('aria-pressed') !== 'true' ? 'true' : 'false');
+      renderServices();
+    });
+    document.getElementById('hr17-clear-filters')?.addEventListener('click', () => {
+      const search = document.getElementById('hr17-search');
+      search.value = '';
+      domain.value = '';
+      document.getElementById('hr17-only-pinned')?.setAttribute('aria-pressed', 'false');
+      renderServices();
+      search.focus({preventScroll: true});
+    });
+    // Native disabled buttons lose focus. Restore it only while the user has
+    // not moved on; filtering, tabbing or clicking elsewhere cancels ownership.
+    for (const type of ['pointerdown', 'keydown', 'focusin']) {
+      const trackIntent = () => {
+        if (!root.isConnected) document.removeEventListener(type, trackIntent, true);
+        else focusIntent += 1;
+      };
+      document.addEventListener(type, trackIntent, true);
+    }
     target.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-service-code]');
       if (!button) return;
       const item = (data.services || []).find((row) => row.service_code === button.dataset.serviceCode);
-      if (!item || !pinUrlTemplate) return;
+      if (!item || !pinUrlTemplate || pendingPins.has(item.service_code)) return;
+      const ownedFocus = document.activeElement === button;
+      pendingPins.add(item.service_code);
       button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+      button.textContent = '保存中…';
+      const intent = focusIntent;
       const willPin = !item.pinned;
       try {
         await requestJson(pinUrlTemplate.replace('__service__', encodeURIComponent(item.service_code)), {
@@ -196,15 +259,18 @@
           },
           ...(willPin ? { body: JSON.stringify({ sortOrder: Number(item.sort_order || 100) }) } : {}),
         });
+        if (!root.isConnected) return;
         item.pinned = willPin;
         const summary = data.summary || (data.summary = {});
         summary.pinnedServices = Math.max(0, Number(summary.pinnedServices || 0) + (willPin ? 1 : -1));
         renderKpis();
-        renderServices();
-        root.querySelector(`[data-service-code="${CSS.escape(item.service_code)}"]`)?.focus();
+        serviceMessage(`${item.name || '该服务'}${willPin ? '已设为常用' : '已取消常用'}。`);
       } catch (_error) {
-        button.disabled = false;
-        window.alert('常用服务设置未完成，请稍后重试。');
+        serviceMessage('常用服务设置结果未确认，请刷新核对后再试。当前筛选已保留。', true);
+      } finally {
+        pendingPins.delete(item.service_code);
+        const restore = ownedFocus && intent === focusIntent && button.isConnected && document.activeElement === document.body;
+        if (root.isConnected) renderServices(restore ? item.service_code : null);
       }
     });
   }
