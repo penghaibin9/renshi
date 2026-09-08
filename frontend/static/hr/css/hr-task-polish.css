@@ -41,17 +41,17 @@ body.hr-shell-v3 #sidebar a:focus-visible {
   outline-offset: -2px;
 }
 
-body :is(.hr-v2-page, .hr-page) :is(a[href], button, input, select, textarea, summary, [tabindex]):focus-visible {
+body :is(.hr-v2-page, .hr-page, .hr07-page:where([data-module="HR07"])) :is(a[href], button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--hr-primary-600, #2563eb);
   outline-offset: 2px;
   scroll-margin-block: 96px 24px;
 }
 
-body :is(.hr-v2-page, .hr-page) :is(input, select, textarea)[aria-invalid="true"] {
+body :is(.hr-v2-page, .hr-page, .hr07-page:where([data-module="HR07"])) :is(input, select, textarea)[aria-invalid="true"] {
   border-color: var(--hr-danger, #dc2626);
 }
 
-body :is(.hr-v2-page, .hr-page) :is(button, input, select, textarea):disabled {
+body :is(.hr-v2-page, .hr-page, .hr07-page:where([data-module="HR07"])) :is(button, input, select, textarea):disabled {
   cursor: not-allowed;
 }
 
@@ -98,7 +98,7 @@ body .hr13 .hr13f-form > button {
 /* Mobile editing uses the same controls and submitted values, not a second
  * form. Checkboxes, radios and concealed controls retain their native sizes. */
 @media (max-width: 600px) {
-  body :is(.hr-v2-page, .hr-page) :is(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  body :is(.hr-v2-page, .hr-page, .hr07-page:where([data-module="HR07"])) :is(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
     max-width: 100%;
     min-width: 0;
     font-size: 16px;
@@ -112,7 +112,108 @@ body .hr13 .hr13f-form > button {
 
 @media (forced-colors: active) {
   body.hr-shell-v3 #sidebar a:focus-visible,
-  body :is(.hr-v2-page, .hr-page) :is(a[href], button, input, select, textarea, summary, [tabindex]):focus-visible {
+  body :is(.hr-v2-page, .hr-page, .hr07-page:where([data-module="HR07"])) :is(a[href], button, input, select, textarea, summary, [tabindex]):focus-visible {
     outline-color: Highlight;
+  }
+}
+
+/* HR07 has its own page root; keep its native forms and independent layout.
+ * Grid items must be allowed to shrink before their controls can fit. */
+body .hr07-page[data-module="HR07"] :is(.hr07-form-grid, .hr07-query-row, .hr07-sign-form) > label {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+body .hr07-page[data-module="HR07"] :is(.hr07-search, .hr07-picker-query) {
+  min-width: 0;
+}
+
+body .hr07-page[data-module="HR07"] :is(.hr07-toolbar, .hr07-create, .hr07-query-row, .hr07-sign-form) :where(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+}
+
+body .hr07-page[data-module="HR07"] .hr07-form-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* HR15 setup, independent approval and adjustment forms share these fields.
+ * Constrain the grid track, not just the input: intrinsic select/date widths
+ * can otherwise escape narrow cards even when the outer grid uses 1fr. */
+body .hr15[data-module="HR15"] .hr15-adjust-field {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-field :is(label, .hr15-adjust-help) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-field :where(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+  font: inherit;
+  font-size: 13px;
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-field :is(input, select, textarea)[aria-invalid="true"],
+body .hr07-page[data-module="HR07"] :is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--hr-danger);
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-field input[readonly] {
+  background: var(--hr-canvas);
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-actions {
+  flex-wrap: wrap;
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-actions .hr15-adjust-btn {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body .hr15[data-module="HR15"] .hr15-adjust-result {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  body .hr07-page[data-module="HR07"] :is(.hr07-toolbar, .hr07-create, .hr07-query-row, .hr07-sign-form) :where(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  body .hr07-page[data-module="HR07"] .hr07-btn {
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 680px) {
+  body .hr15[data-module="HR15"] .hr15-adjust-field :where(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  body .hr15[data-module="HR15"] .hr15-adjust-actions .hr15-adjust-btn {
+    min-height: 44px;
   }
 }
