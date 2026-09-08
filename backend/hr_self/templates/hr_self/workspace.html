@@ -52,9 +52,9 @@
         <div class="hr17-identity" id="hr17-identity"><div class="hr17-empty">正在读取本人主档…</div></div>
       </article>
       <article class="hr17-card">
-        <h2>业务来源健康度</h2>
+        <h2 id="hr17-health-title">数据来源状态</h2>
         <p>每个来源独立展示当前状态；暂不可用不会被误报为“没有数据”。</p>
-        <div class="hr17-health" id="hr17-health"><div class="hr17-empty">正在检查数据来源…</div></div>
+        <div class="hr17-health" id="hr17-health" tabindex="0" role="region" aria-labelledby="hr17-health-title"><div class="hr17-empty">正在检查数据来源…</div></div>
       </article>
     </section>
 
@@ -63,8 +63,8 @@
         <h2 id="hr17-work-title">{{ section_title }}</h2>
         <p id="hr17-work-desc">正在读取当前登录人的本人服务事实。</p>
         <div class="hr17-toolbar" id="hr17-service-tools" hidden>
-          <input id="hr17-search" class="hr17-search" type="search" placeholder="搜索我要办的事，例如：合同、职称、岗位聘任…" aria-label="搜索本人服务">
-          <select id="hr17-domain" class="hr17-select" aria-label="按业务域筛选"><option value="">全部业务域</option></select>
+          <input id="hr17-search" class="hr17-search" type="search" placeholder="搜索我要办的事，例如：合同、职称、岗位聘任…" aria-label="搜索本人服务" aria-controls="hr17-services">
+          <select id="hr17-domain" class="hr17-select" aria-label="按服务类别筛选" aria-controls="hr17-services"><option value="">全部服务类别</option></select>
         </div>
         <div id="hr17-services" class="hr17-services" hidden><div class="hr17-empty">正在读取本人服务目录…</div></div>
         <div id="hr17-rows" class="hr17-list"><div class="hr17-empty">正在读取本人记录…</div></div>
