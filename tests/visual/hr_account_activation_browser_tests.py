@@ -172,14 +172,37 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
                 # Same page and original in-memory invitation, no reissue/reload.
                 page.get_by_label("设置密码", exact=True).fill(self.password)
                 page.get_by_label("再次输入密码", exact=True).fill(self.password)
-                with page.expect_response(lambda r: urlsplit(r.url).path == self.path and r.request.method == "POST") as accepted:
-                    page.get_by_role("button", name="完成账号激活", exact=True).click()
+                completion_url = self.live_server_url + "/account-activation-complete/"
+                # Product JS navigates immediately after consuming its JSON.
+                # CDP may discard that body's resource before Python reads it.
+                # Exact JSON shape remains checked by AccountInvitationTests;
+                # here require the real JSON POST and its main-frame completion
+                # response, rendered account, anonymous session and final facts.
+                # Do not intercept/delay navigation or submit a second request.
+                with page.expect_response(
+                    lambda r: r.url == completion_url
+                    and r.request.method == "GET"
+                    and r.request.is_navigation_request()
+                    and r.request.frame == page.main_frame,
+                    timeout=15000,
+                ) as completed:
+                    with page.expect_response(
+                        lambda r: r.url == self.live_server_url + self.path
+                        and r.request.method == "POST"
+                    ) as accepted:
+                        page.get_by_role("button", name="完成账号激活", exact=True).click()
                 post_statuses.append(accepted.value.status)
                 self.assertEqual(accepted.value.status, 200)
-                self.assertEqual(accepted.value.json(), {"ok": True, "next": "/account-activation-complete/"})
+                self.assertEqual(
+                    accepted.value.headers.get("content-type", "").split(";", 1)[0].strip(),
+                    "application/json",
+                )
                 self.assert_private(accepted.value)
-                expect(page).to_have_url(self.live_server_url + "/account-activation-complete/")
+                self.assertEqual(completed.value.status, 200)
+                self.assert_private(completed.value)
+                expect(page).to_have_url(completion_url)
                 expect(page.get_by_role("heading", name="账号已激活", exact=True)).to_be_visible()
+                expect(page.locator("#account-invitation-complete .account strong")).to_have_text(name)
                 self.assertEqual(completed_gets, [200])
                 cookies = {row["name"]: row["value"] for row in context.cookies()}
                 anonymous_checkpoint = _read_on_worker(
