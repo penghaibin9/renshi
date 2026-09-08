@@ -217,3 +217,80 @@ body .hr15[data-module="HR15"] .hr15-adjust-result {
     min-height: 44px;
   }
 }
+
+/* HR14 keeps its own policy, batch, assessment and effect forms. Use the
+ * available work-column width, rather than the browser width, for nesting. */
+body .hr14[data-module="HR14"] .hr14-workflow-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+
+body .hr14[data-module="HR14"] .hr14-term-ledgers {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+}
+
+body .hr14[data-module="HR14"] .hr14-effect-form {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+}
+
+body .hr14[data-module="HR14"] :is(.hr14-workflow-form, .hr14-effect-form) label,
+body .hr14[data-module="HR14"] .hr14-decision-note {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body .hr14[data-module="HR14"] :is(.hr14-workflow-form, .hr14-effect-form),
+body .hr14[data-module="HR14"] :is(.hr14-workflow-row, .hr14-row, .hr14-workflow__head) > *,
+body .hr14[data-module="HR14"] :is(.hr14-form-message, .hr14-workflow__notice) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body .hr14[data-module="HR14"] :is(.hr14-workflow-form, .hr14-effect-form) label > span,
+body .hr14[data-module="HR14"] .hr14-decision-note > span {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+body .hr14[data-module="HR14"] :is(.hr14-workflow-actions, .hr14-workflow-form, .hr14-effect-form) button {
+  min-height: 40px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 681px) {
+  body .hr14[data-module="HR14"] .hr14-row {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, .75fr) minmax(0, .55fr) minmax(0, .6fr);
+  }
+  body .hr14[data-module="HR14"] .hr14-workflow-row:not(.hr14-effect-row) {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, .9fr);
+  }
+  body .hr14[data-module="HR14"] .hr14-term-ledgers .hr14-workflow-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+@media (max-width: 900px) {
+  body .hr14[data-module="HR14"] :is(.hr14-workflow-grid, .hr14-term-ledgers) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body .hr14[data-module="HR14"] .hr14-effect-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  body .hr14[data-module="HR14"] :is(.hr14-workflow-form, .hr14-effect-form) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  body .hr14[data-module="HR14"] :is(.hr14-workflow-form, .hr14-effect-form, .hr14-decision-note) :where(input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  body .hr14[data-module="HR14"] .hr14-workflow-form textarea {
+    min-height: 88px;
+  }
+  body .hr14[data-module="HR14"] :is(.hr14-workflow-actions, .hr14-workflow-form, .hr14-effect-form) button,
+  body .hr14[data-module="HR14"] .hr14-primary-action {
+    min-height: 44px;
+  }
+}
