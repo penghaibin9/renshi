@@ -13,7 +13,23 @@
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>报到登记</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr05-reporting-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-reporting-title">报到登记</h1><p class="hr-v2-subtitle">先选择真实入职单，再进入单人报到页登记正式信息；列表页本身不提供未选择对象的写入操作。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>原则</strong> 先选入职单</span><span class="hr-v2-context__item"><strong>写入</strong> 仅详情页</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="reporting" %}
-  <section class="hr05-panel"><div class="hr05-toolbar"><div class="hr05-toolbar__copy"><h2>选择报到对象</h2><p>列表来自正式入职单数据，已报到时间和当前状态按服务端结果展示。</p></div><input class="hr05-search" id="hr05-reporting-keyword" placeholder="搜索入职单/来源编号" autocomplete="off"></div><div id="hr05-reporting-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取报到对象</strong><span>等待当前学校可见入职单。</span></div></div></section>
+  <section class="hr05-panel" aria-labelledby="hr05-reporting-work-title">
+    <div class="hr05-toolbar">
+      <div class="hr05-toolbar__copy"><h2 id="hr05-reporting-work-title">选择报到对象</h2><p>列表来自正式入职单数据，已报到时间和当前状态按服务端结果展示。</p></div>
+      <div class="hr05-ledger-tools">
+        <label class="hr05-ledger-search" for="hr05-reporting-keyword">搜索入职单或来源编号
+          <input class="hr05-search" id="hr05-reporting-keyword" type="search" placeholder="搜索入职单/来源编号" autocomplete="off" aria-controls="hr05-reporting-list" aria-describedby="hr05-reporting-scope">
+        </label>
+        <div class="hr05-ledger-buttons"><button type="button" class="hr-btn" id="hr05-reporting-clear" disabled>清空搜索</button><button type="button" class="hr-btn" id="hr05-reporting-refresh">刷新列表</button></div>
+      </div>
+    </div>
+    <p class="hr05-ledger-scope" id="hr05-reporting-scope">按入职单或来源编号查询，回车立即搜索；保留现有单次最多 100 条返回范围。</p>
+    <p class="hr05-ledger-count" id="hr05-reporting-count" role="status" aria-live="polite" aria-atomic="true">正在读取报到对象…</p>
+    <div id="hr05-reporting-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="报到对象列表，可横向滚动" aria-describedby="hr05-reporting-scroll-help" aria-live="polite">
+      <div class="hr05-state"><strong>正在读取报到对象</strong><span>等待当前学校可见入职单。</span></div>
+    </div>
+    <p class="hr05-ledger-scope" id="hr05-reporting-scroll-help">窄屏可左右滑动查看完整表格，键盘聚焦列表后可用左右方向键滚动。</p>
+  </section>
   <div class="hr05-truth-note"><strong>写操作边界</strong><span>确认报到与正式生效仍是两个独立动作；本页只负责选择对象，不显示缺少入职单编号的保存或确认按钮。</span></div>
 </div>
 {% endblock content %}
