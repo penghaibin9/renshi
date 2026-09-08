@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from importlib import import_module
 from pathlib import Path
 from unittest import skipUnless
@@ -19,6 +20,58 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.test import override_settings
+
+
+def _read_on_worker(reader, **identifiers):
+    """Keep synchronous DB/session reads outside Playwright's active loop.
+
+    Callers pass scalar identifiers, not model instances, QuerySets or database
+    handles. The worker evaluates the whole checkpoint and owns/closes its DB
+    connections. Only primitive evidence returns to the browser test thread.
+    """
+    def read():
+        from django.db import close_old_connections, connections
+
+        try:
+            close_old_connections()
+            return reader(**identifiers)
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="activation-readback") as worker:
+        return worker.submit(read).result()
+
+
+def _read_validation_checkpoint(*, tenant_id, staff_id, invitation_id, username):
+    from hr_staff.models import HrAccountInvitation, HrAccountLink, HrStaffAuditEvent
+
+    invitation = HrAccountInvitation.objects.values(
+        "accepted_at", "accepted_user_id"
+    ).get(tenant_id=tenant_id, pk=invitation_id)
+    return {
+        "userExists": get_user_model().objects.filter(username=username).exists(),
+        "invitationAccepted": invitation["accepted_at"] is not None,
+        "invitationUserAssigned": invitation["accepted_user_id"] is not None,
+        "accountLinkExists": HrAccountLink.objects.filter(
+            tenant_id=tenant_id, staff_id=staff_id
+        ).exists(),
+        "acceptedAuditCount": HrStaffAuditEvent.objects.filter(
+            tenant_id=tenant_id, business_id=invitation_id,
+            action="StaffAccountInvitationAccepted",
+        ).count(),
+    }
+
+
+def _read_session_checkpoint(*, session_engine, session_key, bearer):
+    # The configured session backend may query MySQL. It must be constructed,
+    # read and discarded on this worker, too. Never return or log the session.
+    store = import_module(session_engine).SessionStore(session_key=session_key)
+    data = store.load()
+    return {
+        "authenticated": "_auth_user_id" in data,
+        "bearerPersisted": bearer in str(data),
+        "completionPending": "account_activation_complete" in data,
+    }
 
 
 @skipUnless(os.getenv("HR_VISUAL_AUDIT") == "1", "explicit real browser gate")
@@ -102,11 +155,19 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
                 expect(page.locator("#account-invitation-submit")).to_be_enabled()
                 self.assertNotIn(self.token, page.content())
                 self.assertEqual(page.evaluate("[localStorage.length,sessionStorage.length]"), [0, 0])
-                self.assertFalse(get_user_model().objects.filter(username=name).exists())
-                self.invitation.refresh_from_db()
-                self.assertIsNone(self.invitation.accepted_at)
-                self.assertFalse(HrAccountLink.objects.filter(staff_id=self.staff).exists())
                 page.screenshot(path=str(self.out / f"{mode}-validation-error.png"), full_page=True)
+                # Check the rejected write BEFORE submitting corrected input;
+                # delaying this checkpoint until the end would hide side effects.
+                validation_checkpoint = _read_on_worker(
+                    _read_validation_checkpoint,
+                    tenant_id=self.company.pk, staff_id=str(self.staff.pk),
+                    invitation_id=str(self.invitation.pk), username=name,
+                )
+                self.assertEqual(validation_checkpoint, {
+                    "userExists": False, "invitationAccepted": False,
+                    "invitationUserAssigned": False, "accountLinkExists": False,
+                    "acceptedAuditCount": 0,
+                })
 
                 # Same page and original in-memory invitation, no reissue/reload.
                 page.get_by_label("设置密码", exact=True).fill(self.password)
@@ -121,11 +182,15 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
                 expect(page.get_by_role("heading", name="账号已激活", exact=True)).to_be_visible()
                 self.assertEqual(completed_gets, [200])
                 cookies = {row["name"]: row["value"] for row in context.cookies()}
-                store = import_module(settings.SESSION_ENGINE).SessionStore(
-                    session_key=cookies.get(settings.SESSION_COOKIE_NAME)
+                anonymous_checkpoint = _read_on_worker(
+                    _read_session_checkpoint, session_engine=settings.SESSION_ENGINE,
+                    session_key=cookies.get(settings.SESSION_COOKIE_NAME),
+                    bearer=self.token,
                 )
-                self.assertNotIn("_auth_user_id", store.load())
-                self.assertNotIn(self.token, str(store.load()))
+                self.assertEqual(anonymous_checkpoint, {
+                    "authenticated": False, "bearerPersisted": False,
+                    "completionPending": False,
+                })
                 page.screenshot(path=str(self.out / f"{mode}-complete.png"), full_page=True)
 
                 page.goto(self.live_server_url + "/login/?next=/hr/self/", wait_until="networkidle")
@@ -164,6 +229,9 @@ class AccountActivationBrowserTests(StaticLiveServerTestCase):
             "mode": mode, "result": "PASS", "activationPostStatuses": post_statuses,
             "acceptedAuditCount": 1, "autoLogin": False, "httpReplacements": False,
             "unsafeUrlCount": 0, "pageErrors": [],
+            "validationCheckpoint": validation_checkpoint,
+            "anonymousSessionCheckpoint": anonymous_checkpoint,
+            "readbackExecution": "dedicated-thread-owned-connections",
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def test_desktop_validation_retry_and_self_login(self):
