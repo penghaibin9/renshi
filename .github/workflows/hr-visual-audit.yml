@@ -225,7 +225,21 @@ jobs:
           HR_VISUAL_AUDIT: "1"
           HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
           HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
-        run: python manage.py test tests.visual.hr_account_activation_browser_tests.AccountActivationBrowserTests --keepdb --noinput --verbosity 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL
+          python manage.py test tests.visual.hr_account_activation_browser_tests.AccountActivationBrowserTests --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/browser-tests.log
+
+      - name: Retain activation evidence before remaining page audits
+        if: always() && steps.prepare-schema.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-activation-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Capture real Chromium screenshots
         if: always() && steps.prepare-schema.outcome == 'success'
