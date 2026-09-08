@@ -9,6 +9,7 @@ on:
       - "frontend/static/hr/**"
       - "backend/hr_*/templates/**"
       - "backend/horilla_theme/templates/hr/**"
+      - "backend/hr_staff/tests/test_account_activation_language.py"
       - "backend/base/account_invitation.py"
       - "backend/base/static/base/js/account_invitation.js"
       - "backend/base/templates/base/account/invitation_*.html"
@@ -84,6 +85,9 @@ jobs:
         env:
           HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
         run: python tests/visual/hr_account_activation_ui_tests.py -v
+
+      - name: HR17 independent first-screen loading (isolated transport)
+        run: python tests/visual/hr17_self_loading_tests.py -v
 
       - name: HR11 download dialog UI unit regressions (isolated transport)
         env:
@@ -218,6 +222,15 @@ jobs:
       - name: HR11 published classification to close basis contracts
         id: classification-contracts
         run: python manage.py test hr_time.tests.test_leave_paid_classification --keepdb --noinput --verbosity 2
+
+      - name: Account activation language and rejected-write MySQL contracts
+        if: always() && steps.prepare-schema.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL
+          python manage.py test hr_staff.tests.test_account_activation_language --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/language-tests.log
 
       - name: Account activation real validation retry and explicit login
         if: always() && steps.prepare-schema.outcome == 'success'

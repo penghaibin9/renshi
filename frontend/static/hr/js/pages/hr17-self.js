@@ -11,7 +11,10 @@
   const recordsUrl = root.dataset.recordsUrl;
   const pinUrlTemplate = root.dataset.pinUrlTemplate;
   const TIMEOUT_MS = 7000;
+  const needsRecords = ['payslips', 'contracts', 'files'].includes(section);
   let data = null;
+  let selfRecords = null;
+  let recordsPending = needsRecords;
   let filtersBound = false;
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -243,6 +246,14 @@
       renderServices();
       return;
     }
+    // A slow records source must not hold the identity/catalogue in loading.
+    // Pending is neither a confirmed empty result nor an unavailable source.
+    if (recordsPending) {
+      title.textContent = { payslips: '我的工资结果', contracts: '我的合同', files: '我的文件' }[section];
+      desc.textContent = '正在读取本人的正式记录，其他服务信息可正常查看。';
+      rows.innerHTML = '<div class="hr17-empty" role="status">正在读取本人记录…</div>';
+      return;
+    }
     if (section === 'payslips') {
       title.textContent = '我的工资结果';
       desc.textContent = '只展示薪酬管理中已经形成的本人正式结果，不在本页面重新计算或推测发放状态。';
@@ -314,14 +325,30 @@
     });
   }
 
-  if (!bootstrapUrl || !recordsUrl) {
+  if (!bootstrapUrl || (needsRecords && !recordsUrl)) {
     fail('页面地址配置缺失');
     return;
   }
-  Promise.all([
-    requestJson(bootstrapUrl),
-    requestJson(recordsUrl).catch(() => null),
-  ]).then(([payload, selfRecords]) => {
+
+  // Only record workspaces need this aggregation. Both requests keep the
+  // existing same-origin transport and timeout; no identity or scope is sent.
+  // Retain either arrival order without letting a late record response replace
+  // a failed bootstrap, and preserve null (unavailable) versus [] (empty).
+  if (needsRecords) {
+    const settleRecords = (payload) => {
+      const records = payload?.[section];
+      selfRecords = Array.isArray(records) && records.every((row) => (
+        row !== null && typeof row === 'object' && !Array.isArray(row)
+      )) ? payload : null;
+      recordsPending = false;
+      if (data) {
+        data.selfRecords = selfRecords;
+        renderSection();
+      }
+    };
+    requestJson(recordsUrl).then(settleRecords).catch(() => settleRecords(null));
+  }
+  requestJson(bootstrapUrl).then((payload) => {
     data = payload;
     data.selfRecords = selfRecords;
     renderKpis();
@@ -329,5 +356,8 @@
     renderHealth();
     renderCapabilities();
     renderSection();
-  }).catch((error) => fail(error.name === 'AbortError' ? '请求超时' : '暂时无法连接服务'));
+  }).catch((error) => {
+    data = null;
+    fail(error.name === 'AbortError' ? '请求超时' : '暂时无法连接服务');
+  });
 })();
