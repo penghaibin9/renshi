@@ -79,7 +79,8 @@ def login_user(request):
     request.session.pop("selected_company", None)
     request.session.pop("selected_company_instance", None)
     clear_elevation_session(request)
-    messages.success(request, _("Login successful."))
+    # The authenticated header and destination confirm success. Avoid a
+    # redundant login toast obscuring the first business action. Errors remain.
     return redirect(_next_url(request))
 
 

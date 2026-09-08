@@ -1,4 +1,6 @@
-{% load i18n %}
+{% load i18n account_display %}
+{% account_self_navigation_only as self_navigation_only %}
+{% if not self_navigation_only %}
 <a class="hr-module-nav__home{% if request.path == '/hr/' or request.path == '/hr/overview' or request.path == '/hr/todos' or request.path == '/hr/alerts' or request.path == '/hr/workforce' or request.path == '/hr/actions' %} is-active{% endif %}" href="/hr/overview">
   <i class="fa-solid fa-table-columns" aria-hidden="true"></i><span>人事工作台</span><small>HR01</small>
 </a>
@@ -143,6 +145,7 @@
   <a href="/hr/exit/settlement/"{% if '/hr/exit/settlement/' in request.path %} aria-current="page"{% endif %}><small>05</small><span>结算证明与关系转移</span></a>
   <a href="/hr/exit/archive/"{% if '/hr/exit/archive/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>离退休档案与返聘衔接</span></a>
 </div>
+{% endif %}
 <a class="hr-module-nav__item{% if '/hr/self/' in request.path %} is-active{% endif %}" href="/hr/self/"><i class="fa-solid fa-hand-holding-heart" aria-hidden="true"></i><span>教职工服务</span><small>HR17</small></a>
 <div class="hr-module-nav__subnav" aria-label="教职工服务二级页面">
   <a href="/hr/self/"{% if request.path == '/hr/self/' %} aria-current="page"{% endif %}><small>01</small><span>我的服务首页</span></a>
@@ -153,6 +156,7 @@
   <a href="/hr/self/services/"{% if '/hr/self/services/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>关怀与退休服务</span></a>
 </div>
 
+{% if not self_navigation_only %}
 <p class="hr-module-nav__group">数据与决策</p>
 <a class="hr-module-nav__item{% if '/hr/data/' in request.path %} is-active{% endif %}" href="/hr/data/"><i class="fa-solid fa-chart-pie" aria-hidden="true"></i><span>人事数据中心</span><small>HR18</small></a>
 <div class="hr-module-nav__subnav" aria-label="人事数据中心二级页面">
@@ -164,6 +168,7 @@
   <a href="/hr/data/submissions/"{% if '/hr/data/submissions/' in request.path or '/hr/data/corrections/' in request.path %} aria-current="page"{% endif %}><small>06</small><span>正式上报与报送档案</span></a>
 </div>
 
+{% endif %}
 <script>
 (() => {
   const script = document.currentScript;

@@ -10,6 +10,13 @@ on:
       - "backend/hr_*/templates/**"
       - "backend/horilla_theme/templates/hr/**"
       - "backend/hr_staff/tests/test_account_activation_language.py"
+      - "backend/base/templatetags/account_display.py"
+      - "backend/base/test_account_display.py"
+      - "backend/base/static/base/*formatting.js"
+      - "backend/base/templates/base/account/display_preferences.html"
+      - "backend/base/account_views.py"
+      - "frontend/templates/index.html"
+      - "backend/horilla_theme/templates/horilla_theme/components/footer_scripts.html"
       - "backend/base/account_invitation.py"
       - "backend/base/static/base/js/account_invitation.js"
       - "backend/base/templates/base/account/invitation_*.html"
@@ -71,6 +78,9 @@ jobs:
           pip install -r requirements.lock
           pip install playwright
           python -m playwright install --with-deps chromium
+
+      - name: Account display formats without admin API or storage
+        run: python tests/visual/account_display_ui_tests.py -v
 
       - name: HR typography tokens in Chromium
         run: python tests/visual/hr_typography_contract_tests.py -v
@@ -251,6 +261,28 @@ jobs:
         with:
           name: hr-activation-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
           path: tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Teacher shell real MySQL and browser contracts
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr-visual/TEACHER-SHELL-REAL
+          python manage.py test base.test_account_display tests.visual.teacher_shell_browser_tests.TeacherShellBrowserTests --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr-visual/TEACHER-SHELL-REAL/tests.log
+
+      - name: Retain teacher shell evidence before full inventory
+        if: always() && steps.prepare-schema.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-teacher-shell-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/hr-visual/TEACHER-SHELL-REAL/
           if-no-files-found: error
           retention-days: 14
 
