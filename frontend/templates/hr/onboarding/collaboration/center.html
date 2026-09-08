@@ -1,13 +1,25 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% block title %}{% trans "入职协同中心" %}{% endblock %}
-{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">{% endblock styles %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-case-workspaces.css' %}">{% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr05-page" data-module="HR05" data-section="collaboration" data-hr-page="onboarding-collaboration">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>协同任务</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-collab-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-collab-title">协同任务</h1><p class="hr-v2-subtitle">按明确入职单读取入职任务；未选择入职单时不生成“本周 0 / 超期 0 / 阻塞 0”的假结论。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>任务</strong> 按入职单读取</span><span class="hr-v2-context__item"><strong>状态</strong> 服务端正式记录</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-collab-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-collab-title">协同任务</h1><p class="hr-v2-subtitle">先确认入职单，再查看任务、责任角色与阻塞项；未读取或读取失败不会显示为零。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>任务</strong> 按入职单读取</span><span class="hr-v2-context__item"><strong>状态</strong> 服务端正式记录</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="collaboration" %}
-  <section class="hr05-panel"><div class="hr05-case-picker"><label>入职单编号<input class="hr05-input" id="hr05-task-case-id" placeholder="输入可见入职单编号" autocomplete="off"></label><button class="hr05-button" id="hr05-load-tasks" type="button">读取任务</button></div><div id="hr05-task-summary" class="hr05-meta"><span>任务统计：未加载</span></div><div id="hr05-task-list" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>请选择入职单</strong><span>读取后展示该入职单的真实任务状态与阻塞级别。</span></div></div></section>
+  <section class="hr05-panel" aria-labelledby="hr05-task-work-title">
+    <div class="hr05-work-heading"><div><h2 id="hr05-task-work-title">当前入职单的协同任务</h2><p>先从入职单详情进入，本页自动带入对应对象。</p></div><a class="hr-btn" href="/hr/onboarding/prehires">选择入职单</a></div>
+    <div class="hr05-case-picker"><label for="hr05-task-case-id">入职单标识<input class="hr05-input" id="hr05-task-case-id" placeholder="从入职单详情进入时自动带入" autocomplete="off" aria-controls="hr05-task-list" aria-describedby="hr05-task-scope"></label><button class="hr05-button" id="hr05-load-tasks" type="button">读取任务</button></div>
+    <p class="hr05-work-note" id="hr05-task-scope">更换对象后点击“读取任务”或按回车；标识来自入职单地址，不是姓名或单号。</p>
+    <div id="hr05-task-summary" class="hr05-meta"><span>任务统计：未加载</span></div>
+    <div class="hr05-work-filters" role="search" aria-label="筛选当前入职单的已载入任务">
+      <label for="hr05-task-keyword">查找任务或责任角色<input class="hr05-input" id="hr05-task-keyword" type="search" placeholder="任务、类别、责任角色…" autocomplete="off" aria-controls="hr05-task-list"></label>
+      <div class="hr05-work-buttons"><button class="hr-btn" id="hr05-task-only-open" type="button" aria-pressed="false" aria-controls="hr05-task-list">只看未完成</button><button class="hr-btn" id="hr05-task-only-hard" type="button" aria-pressed="false" aria-controls="hr05-task-list">只看硬阻塞</button><button class="hr-btn" id="hr05-task-clear" type="button" disabled>清空筛选</button></div>
+    </div>
+    <p class="hr05-work-note">筛选只作用于已载入清单；上方统计保留完整清单口径，不随筛选改变。</p>
+    <p id="hr05-task-count" class="hr05-work-count" role="status" aria-live="polite" aria-atomic="true">尚未读取任务。</p>
+    <div id="hr05-task-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="协同任务表格，可横向滚动" aria-live="polite"><div class="hr05-state"><strong>请选择入职单</strong><span>读取后展示该入职单的真实任务状态与阻塞级别。</span></div></div>
+  </section>
   <div class="hr05-truth-note"><strong>动作边界</strong><span>本轮先恢复真实可见性，不伪造“开始/完成/豁免”成功；写操作将在验证表单编码、权限与审计契约后单独接通。</span></div>
 </div>
 {% endblock content %}

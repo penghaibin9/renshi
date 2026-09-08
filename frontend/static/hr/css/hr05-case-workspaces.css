@@ -1,0 +1,71 @@
+/* HR05 materials/task workspaces only. Do not style reporting or case details. */
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) {
+  --hr05-control-height: 40px;
+  box-sizing: border-box;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) *,
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) *::before,
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) *::after {
+  box-sizing: border-box;
+}
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-panel {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.hr05-work-heading:not([hidden]) { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.hr05-work-heading > div { min-width: 0; flex: 1 1 240px; }
+.hr05-work-heading h2 { margin: 0; font: var(--hr-font-section-title); }
+.hr05-work-heading p { margin: 4px 0 0; color: var(--hr-text-500); font-size: 13px; line-height: 20px; }
+.hr05-work-heading .hr-btn { text-decoration: none; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-case-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-case-picker > label {
+  flex: 1 1 300px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 13px;
+  color: var(--hr-text-700);
+}
+.hr05-work-filters:not([hidden]) { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.hr05-work-filters > label:not([hidden]) { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); min-width: 0; flex: 1 1 230px; font-size: 13px; font-weight: 600; color: var(--hr-text-700); }
+.hr05-work-buttons:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-input {
+  width: 100%; min-width: 0; min-height: var(--hr05-control-height); padding: 9px 12px;
+  font: inherit; font-weight: 400; background: var(--hr-surface); color: var(--hr-text-900);
+}
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) :is(.hr-btn, .hr05-button, .hr05-material-actions button):not([hidden]) {
+  display: inline-flex; align-items: center; justify-content: center; min-height: var(--hr05-control-height);
+  max-width: 100%; font: inherit; font-size: 13px; line-height: 20px; white-space: normal; overflow-wrap: anywhere;
+}
+.hr05-work-buttons [aria-pressed="true"] { border-color: var(--hr-primary-600); color: var(--hr-primary-700); background: var(--hr-primary-50); font-weight: 700; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) button:disabled { cursor: not-allowed; opacity: .6; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) button[aria-busy="true"] { cursor: wait; opacity: .7; }
+.hr05-work-note, .hr05-work-count { margin: 0; font-size: 12px; line-height: 20px; color: var(--hr-text-500); overflow-wrap: anywhere; }
+.hr05-work-count { color: var(--hr-text-700); }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-table-wrap { min-width: 0; max-width: 100%; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr-table { width: 100%; border-collapse: collapse; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr-table :is(th, td) { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hr-border); font-size: 13px; line-height: 20px; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr-table th { background: var(--hr-canvas); white-space: nowrap; color: var(--hr-text-700); }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr-table td { max-width: 22rem; overflow-wrap: anywhere; }
+.hr05-page[data-hr-page="onboarding-materials"] .hr05-material-actions:not([hidden]) { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 240px; }
+.hr05-page[data-hr-page="onboarding-materials"] .hr05-material-actions input[type="file"] { width: 100%; max-width: 260px; min-width: 0; color: var(--hr-text-700); font: inherit; }
+.hr05-page[data-hr-page="onboarding-materials"] .hr05-material-actions button { border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); background: var(--hr-surface); color: var(--hr-primary-700); padding: 7px 10px; cursor: pointer; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) :is(.hr05-state, .hr05-truth-note, .hr05-work-heading) { overflow-wrap: anywhere; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) :is(input, button, a[href], [tabindex]):focus-visible { outline: 2px solid var(--hr-primary-600); outline-offset: 2px; scroll-margin-block: 100px 24px; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-table-wrap:focus-visible { outline-offset: -3px; }
+.hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) input[aria-invalid="true"] { border-color: var(--hr-danger); }
+@media (max-width: 760px) {
+  .hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) { --hr05-control-height: 44px; }
+  .hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-panel { padding: 14px; }
+  .hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-input { font-size: 16px; }
+  .hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) .hr05-truth-note { flex-wrap: wrap; }
+}
+@media (forced-colors: active) {
+  .hr05-page:is([data-hr-page="onboarding-materials"], [data-hr-page="onboarding-collaboration"]) :is(input, button, a[href], [tabindex]):focus-visible { outline-color: Highlight; }
+}
