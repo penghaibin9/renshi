@@ -7,12 +7,17 @@ Browser navigation is covered separately by AccountActivationBrowserTests.
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import Client, TestCase, override_settings
+from django.core.exceptions import ValidationError
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.utils import translation
 
+from base.account_invitation import _password_feedback
 from base.models import Company, CompanyGroupAssignment
 from hr_staff.models import (
     HrAccountLink,
@@ -21,7 +26,7 @@ from hr_staff.models import (
     HrStaffAuditEvent,
     HrStaffMaster,
 )
-from hr_staff.services.account_invitation_service import AccountInvitationService
+from hr_staff.services.account_invitation_service import AccountInvitationError, AccountInvitationService
 
 
 @override_settings(
@@ -80,9 +85,9 @@ class AccountActivationLanguageTests(TestCase):
         self.assertIn(settings.CSRF_COOKIE_NAME, browser.cookies)
         return browser
 
-    def rejected(self, minimum, *, accept, password="short"):
+    def rejected(self, minimum, *, accept, password="short", validator_config=None):
         browser = self.browser()
-        validators = [{
+        validators = validator_config if validator_config is not None else [{
             "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
             "OPTIONS": {"min_length": minimum},
         }]
@@ -143,3 +148,47 @@ class AccountActivationLanguageTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assert_not_accepted()
+
+    def test_other_builtin_policies_keep_rejecting_with_chinese_feedback(self):
+        with tempfile.TemporaryDirectory(prefix="activation-policy-") as directory:
+            # Configure the real common-password validator with a deterministic
+            # test policy rather than depending on a changing bundled wordlist.
+            common = Path(directory) / "common.txt"
+            common.write_text("synthetic-common-example\n", encoding="utf-8")
+            cases = (
+                ("CommonPasswordValidator", "synthetic-common-example", "常见",
+                 {"password_list_path": str(common)}),
+                ("NumericPasswordValidator", "713825940627", "数字", {}),
+                ("UserAttributeSimilarityValidator", "language-check", "个人信息", {}),
+            )
+            for validator, password, fragment, options in cases:
+                with self.subTest(validator=validator):
+                    response = self.rejected(
+                        8, accept="application/json", password=password,
+                        validator_config=[{
+                            "NAME": f"django.contrib.auth.password_validation.{validator}",
+                            "OPTIONS": options,
+                        }],
+                    )
+                    self.assertFalse(response.json()["ok"])
+                    self.assertEqual(set(response.json()["errors"]), {"password"})
+                    self.assertIn(fragment, response.json()["errors"]["password"])
+
+
+class PasswordFeedbackTests(SimpleTestCase):
+    def test_known_limit_and_unknown_rule_retain_order_and_parameters(self):
+        error = AccountInvitationError("ACCOUNT_PASSWORD_INVALID", "original feedback")
+        error.__cause__ = ValidationError([
+            ValidationError("untranslated", code="password_too_short", params={"min_length": 17}),
+            ValidationError("校本口令需符合 %(rule)s", code="school_rule", params={"rule": "禁止保留词"}),
+        ])
+        self.assertEqual(
+            _password_feedback(error),
+            "密码太短，至少需要 17 个字符。；校本口令需符合 禁止保留词",
+        )
+
+    def test_missing_cause_or_limit_preserves_feedback_without_guessing(self):
+        error = AccountInvitationError("ACCOUNT_PASSWORD_INVALID", "original feedback")
+        self.assertEqual(_password_feedback(error), "original feedback")
+        error.__cause__ = ValidationError("Custom length rule", code="password_too_short")
+        self.assertEqual(_password_feedback(error), "Custom length rule")

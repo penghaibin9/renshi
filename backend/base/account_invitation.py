@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -28,6 +29,38 @@ def _private_response(response):
     response["Cache-Control"] = "no-store"
     response["Referrer-Policy"] = "no-referrer"
     return response
+
+
+def _password_feedback(error):
+    """Render an already-rejected password without re-running its validators.
+
+    accept() explicitly chains the original ValidationError. Use its stable
+    codes and configured parameters when a framework catalog leaves English
+    text untranslated. Unknown/custom rules retain their original feedback.
+    This presentation adapter never changes the validation result or policy.
+    """
+    cause = error.__cause__
+    details = getattr(cause, "error_list", None)
+    if not isinstance(cause, ValidationError) or not details:
+        return str(error)
+    labels = {
+        "password_too_common": "密码过于常见，请使用不易被猜到的密码。",
+        "password_entirely_numeric": "密码不能全部为数字。",
+        "password_too_similar": "密码与个人信息过于相似，请使用其他密码。",
+    }
+    messages = []
+    for detail in details:
+        params = detail.params if isinstance(detail.params, dict) else {}
+        minimum = params.get("min_length")
+        if detail.code == "password_too_short" and type(minimum) is int and minimum > 0:
+            message = f"密码太短，至少需要 {minimum} 个字符。"
+        else:
+            message = labels.get(detail.code)
+        if message is None:
+            messages.extend(str(item) for item in detail.messages)
+        else:
+            messages.append(message)
+    return "；".join(messages) or str(error)
 
 
 def _render(request, *, status=200, errors=None):
@@ -111,7 +144,7 @@ def activate_account_invitation(request, invitation_id):
                 "ACCOUNT_INVITATION_REVOKED",
                 "ACCOUNT_INVITATION_ACCEPTED",
             }
-            else str(exc)
+            else (_password_feedback(exc) if field == "password" else str(exc))
         )
         return _render(request, status=400, errors={field: message})
 
