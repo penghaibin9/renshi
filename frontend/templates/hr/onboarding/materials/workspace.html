@@ -1,22 +1,23 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% block title %}{% trans "入职材料核验" %}{% endblock %}
-{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-case-workspaces.css' %}">{% endblock styles %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-case-workspaces.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
+{% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr05-page" data-module="HR05" data-section="materials" data-hr-page="onboarding-materials">
+<div class="hr-v2-page hr05-page hr05-focus-page" data-module="HR05" data-section="materials" data-hr-page="onboarding-materials">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>材料核验</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-materials-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-materials-title">材料核验</h1><p class="hr-v2-subtitle">按明确的入职单读取材料清单；没有选择入职单时保持“未加载”，不把未知统计展示为 0。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>数据</strong> 正式材料清单</span><span class="hr-v2-context__item"><strong>下载</strong> 授权凭证控制</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-materials-title"><div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-materials-title">材料核验</h1><p class="hr-v2-subtitle">选择入职单，上传或核验材料。</p></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="materials" %}
   <section class="hr05-panel" aria-labelledby="hr05-material-work-title">
-    <div class="hr05-work-heading"><div><h2 id="hr05-material-work-title">当前入职单的材料</h2><p>从待报到列表点击“材料”，自动带入对应入职单。</p></div><a class="hr-btn" href="/hr/onboarding/prehires">选择入职单</a></div>
+    <div class="hr05-work-heading"><div><h2 id="hr05-material-work-title">材料清单</h2></div><a class="hr-btn" href="/hr/onboarding/prehires">选择入职单</a></div>
     <div class="hr05-case-picker"><label for="hr05-material-case-id">入职单标识<input class="hr05-input" id="hr05-material-case-id" placeholder="从待报到列表进入时自动带入" autocomplete="off" aria-controls="hr05-material-list" aria-describedby="hr05-material-scope"></label><button class="hr05-button" id="hr05-load-materials" type="button">读取材料</button></div>
-    <p class="hr05-work-note" id="hr05-material-scope">回车读取当前对象；更换入职单会清除尚未上传的文件选择。标识来自入职单地址，不是姓名或单号。</p>
+    <p class="hr05-work-note" id="hr05-material-scope">标识来自入职单链接，非姓名或单号。回车读取；切换将清除未上传文件。</p>
     <div id="hr05-material-summary" class="hr05-meta"><span>统计状态：未加载</span></div>
     <p id="hr05-material-context" class="hr05-work-count" role="status" aria-live="polite" aria-atomic="true">尚未读取材料。</p>
-    <div id="hr05-material-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="入职材料表格，可横向滚动" aria-live="polite"><div class="hr05-state"><strong>请选择入职单</strong><span>从待报到人员页点击“材料”，或在上方输入可见入职单编号。</span></div></div>
-    <p class="hr05-work-note">窄屏可左右滑动查看办理列；下载仍需填写查阅事由并经过授权凭证校验。</p>
+    <div id="hr05-material-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="入职材料表格，可横向滚动" aria-live="polite"><div class="hr05-state"><strong>请选择入职单</strong><span>从待报到列表点击“材料”，可自动带入。</span></div></div>
+    <p class="hr05-work-note">左右滑动查看办理列；下载须填写查阅事由。</p>
   </section>
-  <div class="hr05-truth-note"><strong>真实性边界</strong><span>材料状态仅在服务端成功返回后统计；请求失败不会显示“全部 0”。核验、退回、豁免与下载继续由后端权限和授权凭证规则控制。</span></div>
+  <div class="hr05-truth-note"><strong>核验提示</strong><span>核验、退回、豁免及下载均须授权；未加载或读取失败不计为 0。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-materials.js' %}"></script>{% endblock scripts %}

@@ -1,26 +1,27 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% block title %}{% trans "试用与转正" %}{% endblock %}
-{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">{% endblock styles %}
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
+{% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr05-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probations-list">
+<div class="hr-v2-page hr05-page hr05-focus-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probations-list">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>试用与转正</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-probations-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probations-title">试用与转正</h1><p class="hr-v2-subtitle">读取当前学校试用记录，列表只展示服务端返回的真实状态、计划转正日和延长次数。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>来源</strong> 正式试用记录</span><span class="hr-v2-context__item"><strong>统计</strong> 成功后计算</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-probations-title"><div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-probations-title">试用与转正</h1><p class="hr-v2-subtitle">筛选试用记录，查看转正进度与延期情况。</p></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}
   <section class="hr05-panel" aria-labelledby="hr05-probation-work-title">
-    <div class="hr05-toolbar"><div class="hr05-toolbar__copy"><h2 id="hr05-probation-work-title">试用办理记录</h2><p>按日期、状态或结果查找，进入详情继续办理。</p></div><button class="hr-btn" id="hr05-probation-refresh" type="button">刷新列表</button></div>
+    <div class="hr05-toolbar"><div class="hr05-toolbar__copy"><h2 id="hr05-probation-work-title">试用办理记录</h2></div><button class="hr-btn" id="hr05-probation-refresh" type="button">刷新列表</button></div>
     <div id="hr05-probation-summary" class="hr05-meta"><span>试用统计：正在读取</span></div>
     <div class="hr05-probation-tools" role="search" aria-label="筛选已载入的试用记录">
       <label class="hr05-probation-query" for="hr05-probation-search">查找日期、状态或结果<input class="hr05-search" id="hr05-probation-search" type="search" placeholder="例如：2026-09、试用中" autocomplete="off" aria-controls="hr05-probation-list" aria-describedby="hr05-probation-scope"></label>
       <label for="hr05-probation-status">记录状态<select id="hr05-probation-status" aria-controls="hr05-probation-list"><option value="">全部状态</option></select></label>
       <div class="hr05-probation-buttons"><button class="hr-btn" id="hr05-probation-extended" type="button" aria-pressed="false" aria-controls="hr05-probation-list">只看延期记录</button><button class="hr-btn" id="hr05-probation-clear" type="button" disabled>清空筛选</button></div>
     </div>
-    <p class="hr05-probation-note" id="hr05-probation-scope">筛选仅作用于本次已载入记录；上方统计保持本次完整返回口径，不随筛选改变。</p>
+    <p class="hr05-probation-note" id="hr05-probation-scope">仅筛选本次已载入记录，统计不随筛选改变。</p>
     <p class="hr05-probation-count" id="hr05-probation-count" role="status" aria-live="polite" aria-atomic="true">正在读取试用记录…</p>
-    <div id="hr05-probation-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="试用记录列表，可横向滚动" aria-describedby="hr05-probation-scroll-help" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>等待服务端返回正式试用记录。</span></div></div>
-    <p class="hr05-probation-note" id="hr05-probation-scroll-help">窄屏可左右滑动查看完整表格，键盘聚焦列表后可用左右方向键滚动。</p>
+    <div id="hr05-probation-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="试用记录列表，可横向滚动" aria-describedby="hr05-probation-scroll-help" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>请稍候。</span></div></div>
+    <p class="hr05-probation-note" id="hr05-probation-scroll-help">左右滑动，或聚焦表格后按 ← →。</p>
   </section>
-  <div class="hr05-truth-note"><strong>真实性边界</strong><span>只有服务端成功返回后才计算“试用中/已延期/已结束”等数量；读取失败不会回退成 0。</span></div>
+  <div class="hr05-truth-note"><strong>数据说明</strong><span>仅当前学校授权范围；读取失败不计为 0。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probations.js' %}"></script>{% endblock scripts %}

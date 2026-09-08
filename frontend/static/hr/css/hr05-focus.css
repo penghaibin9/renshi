@@ -1,0 +1,72 @@
+/* HR05 opt-in focus layout. Real statuses, fields, links and guards stay visible.
+ * Reduce duplicate explanation space, not font size or business information.
+ */
+.hr05-page.hr05-focus-page {
+  gap: 12px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.hr05-focus-page > .hr-v2-pagehead {
+  margin-bottom: 0;
+  gap: 12px;
+}
+.hr05-focus-page .hr-v2-subtitle {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.hr05-focus-page .hr-v2-context {
+  min-width: 0;
+  max-width: 100%;
+}
+.hr05-focus-page .hr-v2-context__item {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.hr05-focus-page > .hr05-nav {
+  padding: 4px;
+  gap: 4px;
+}
+.hr05-focus-page > .hr05-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+}
+.hr05-focus-page .hr05-panel {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.hr05-focus-page :is(.hr05-toolbar__copy h2, .hr05-work-heading h2) {
+  margin: 0;
+  font: var(--hr-font-section-title);
+}
+.hr05-focus-page .hr05-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+}
+.hr05-focus-page > .hr05-truth-note {
+  gap: 6px 12px;
+  margin: 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--hr-border);
+  background: transparent;
+  color: var(--hr-text-700);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.hr05-focus-page > .hr05-truth-note > strong {
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .hr05-focus-page > .hr-v2-mobile-section-switcher {
+    margin-bottom: 0;
+  }
+  .hr05-focus-page > .hr05-nav a {
+    min-height: 44px;
+  }
+  .hr05-focus-page > .hr05-truth-note {
+    flex-wrap: wrap;
+  }
+}
