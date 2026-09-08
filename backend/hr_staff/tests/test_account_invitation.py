@@ -319,7 +319,7 @@ class AccountInvitationTests(TestCase):
         self.assertNotContains(page, self.person.legal_name)
         self.assertNotContains(page, self.staff.staff_no)
         self.assertEqual(page["Referrer-Policy"], "no-referrer")
-        self.assertEqual(page["Cache-Control"], "no-store")
+        self.assert_private_activation_response(page)
 
         missing_csrf = browser.post(
             path,
@@ -345,6 +345,7 @@ class AccountInvitationTests(TestCase):
             HTTP_ORIGIN="http://testserver",
         )
         self.assertEqual(missing_fragment.status_code, 400)
+        self.assert_private_activation_response(missing_fragment)
         self.assertFalse(User.objects.filter(username="browser-teacher").exists())
 
         accepted = browser.post(
@@ -359,11 +360,130 @@ class AccountInvitationTests(TestCase):
             HTTP_ORIGIN="http://testserver",
         )
         self.assertEqual(accepted.status_code, 302)
+        self.assert_private_activation_response(accepted)
         self.assertEqual(accepted["Location"], "/account-activation-complete/")
         self.assertNotIn("_auth_user_id", browser.session)
 
         complete = browser.get(accepted["Location"])
         self.assertEqual(complete.status_code, 200)
+        self.assert_private_activation_response(complete)
         self.assertContains(complete, "账号已激活")
         self.assertContains(complete, "browser-teacher")
         self.assertNotIn("_auth_user_id", browser.session)
+
+    def assert_private_activation_response(self, response):
+        # never_cache may add/reorder directives. Verify protection, not order.
+        directives = {
+            value.strip().lower()
+            for value in response["Cache-Control"].split(",")
+        }
+        self.assertTrue({
+            "no-store", "no-cache", "must-revalidate", "private", "max-age=0"
+        }.issubset(directives))
+        self.assertNotIn("public", directives)
+        self.assertEqual(response["Referrer-Policy"], "no-referrer")
+
+    def json_browser(self, invitation):
+        browser = Client(enforce_csrf_checks=True)
+        path = f"/activate-account/{invitation.id}/"
+        browser.get(path)
+        headers = {
+            "HTTP_ACCEPT": "application/json",
+            "HTTP_X_CSRFTOKEN": browser.cookies["csrftoken"].value,
+            "HTTP_ORIGIN": "http://testserver",
+        }
+        return browser, path, headers
+
+    def activation_payload(self, token, username="json-teacher"):
+        return {
+            "activation_token": token,
+            "username": username,
+            "password": self.password,
+            "confirm_password": self.password,
+        }
+
+    def test_json_validation_then_success_preserves_invitation_not_secrets(self):
+        invitation, token = self.issue()
+        browser, path, headers = self.json_browser(invitation)
+        invalid = browser.post(
+            path, self.activation_payload(token, "invalid user"), **headers
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertFalse(invalid.json()["ok"])
+        self.assertIn("username", invalid.json()["errors"])
+        self.assert_private_activation_response(invalid)
+        self.assertNotIn(token, invalid.content.decode())
+        self.assertNotIn(self.password, invalid.content.decode())
+        invitation.refresh_from_db()
+        self.assertIsNone(invitation.accepted_at)
+        self.assertFalse(HrAccountLink.objects.filter(staff_id=self.staff).exists())
+
+        accepted = browser.post(
+            path, self.activation_payload(token), **headers
+        )
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.json(), {
+            "ok": True, "next": "/account-activation-complete/"
+        })
+        self.assert_private_activation_response(accepted)
+        self.assertNotIn("_auth_user_id", browser.session)
+        self.assertIn("account_activation_complete", browser.session)
+        complete = browser.get(accepted.json()["next"])
+        self.assertContains(complete, "json-teacher")
+        self.assert_private_activation_response(complete)
+        self.assertNotIn("_auth_user_id", browser.session)
+        self.assertNotIn("account_activation_complete", browser.session)
+        self.assertEqual(
+            HrStaffAuditEvent.objects.filter(
+                action="StaffAccountInvitationAccepted"
+            ).count(), 1
+        )
+        replay = browser.post(
+            path, self.activation_payload(token, "json-replay"), **headers
+        )
+        self.assertEqual(replay.status_code, 400)
+        self.assertFalse(User.objects.filter(username="json-replay").exists())
+        self.assert_private_activation_response(replay)
+
+    def test_json_accept_header_does_not_bypass_csrf(self):
+        invitation, token = self.issue()
+        browser, path, _headers = self.json_browser(invitation)
+        response = browser.post(
+            path, self.activation_payload(token), HTTP_ACCEPT="application/json"
+        )
+        self.assertEqual(response.status_code, 403)
+        invitation.refresh_from_db()
+        self.assertIsNone(invitation.accepted_at)
+        self.assertFalse(User.objects.filter(username="json-teacher").exists())
+
+    def test_json_rejects_mismatched_uuid_and_revoked_invitation(self):
+        import uuid
+
+        invitation, token = self.issue()
+        browser, path, headers = self.json_browser(invitation)
+        mismatch = browser.post(
+            f"/activate-account/{uuid.uuid4()}/",
+            self.activation_payload(token), **headers
+        )
+        self.assertEqual(mismatch.status_code, 400)
+        self.assert_private_activation_response(mismatch)
+        invitation.refresh_from_db()
+        self.assertIsNone(invitation.accepted_at)
+        AccountInvitationService(self.company.id).revoke(
+            invitation_id=invitation.id
+        )
+        revoked = browser.post(path, self.activation_payload(token), **headers)
+        self.assertEqual(revoked.status_code, 400)
+        self.assert_private_activation_response(revoked)
+        self.assertFalse(User.objects.filter(username="json-teacher").exists())
+
+    def test_json_authenticated_browser_cannot_consume_an_invitation(self):
+        invitation, token = self.issue()
+        browser, path, headers = self.json_browser(invitation)
+        browser.force_login(self.admin)
+        response = browser.post(path, self.activation_payload(token), **headers)
+        self.assertEqual(response.status_code, 409)
+        self.assert_private_activation_response(response)
+        invitation.refresh_from_db()
+        self.assertIsNone(invitation.accepted_at)
+        self.assertFalse(User.objects.filter(username="json-teacher").exists())

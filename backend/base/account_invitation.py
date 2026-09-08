@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from django.http import JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_GET, require_http_methods
@@ -13,20 +15,35 @@ from hr_staff.services.account_invitation_service import (
 )
 
 
-def _render(request, *, status=200, errors=None):
-    errors = errors or {}
-    response = render(
-        request,
-        "base/account/invitation_activate.html",
-        {
-            "errors": errors,
-            "non_field_error": errors.get("__all__", ""),
-        },
-        status=status,
+def _wants_json(request):
+    # Content negotiation only, never an authentication or CSRF exemption.
+    return (
+        request.method == "POST"
+        and request.headers.get("Accept", "") == "application/json"
     )
+
+
+def _private_response(response):
     response["Cache-Control"] = "no-store"
     response["Referrer-Policy"] = "no-referrer"
     return response
+
+
+def _render(request, *, status=200, errors=None):
+    errors = errors or {}
+    if _wants_json(request):
+        response = JsonResponse({"ok": False, "errors": errors}, status=status)
+    else:
+        response = render(
+            request,
+            "base/account/invitation_activate.html",
+            {
+                "errors": errors,
+                "non_field_error": errors.get("__all__", ""),
+            },
+            status=status,
+        )
+    return _private_response(response)
 
 
 @sensitive_post_parameters("activation_token", "password", "confirm_password")
@@ -93,11 +110,17 @@ def activate_account_invitation(request, invitation_id):
         )
         return _render(request, status=400, errors={field: message})
 
-    # Do not authenticate here: possession of the invitation must not become a
-    # long-lived browser session. The user proves the new credential at login.
+    # Keep the existing explicit-login boundary and one-time completion page.
+    # JSON prevents fetch from following (and consuming) that page before the
+    # browser navigates there. Neither response carries the bearer/password.
     request.session["account_activation_complete"] = {"username": user.username}
     request.session.modified = True
-    return redirect("account-invitation-complete")
+    if _wants_json(request):
+        return _private_response(JsonResponse({
+            "ok": True,
+            "next": reverse("account-invitation-complete"),
+        }))
+    return _private_response(redirect("account-invitation-complete"))
 
 
 @never_cache
@@ -111,6 +134,4 @@ def account_invitation_complete(request):
         "base/account/invitation_complete.html",
         {"username": data.get("username", "")},
     )
-    response["Cache-Control"] = "no-store"
-    response["Referrer-Policy"] = "no-referrer"
-    return response
+    return _private_response(response)

@@ -47,3 +47,36 @@
 - `POST /api/v1/hr/account-invitations/{invitation_id}/revoke`
 
 签发响应中的完整邀请 URL 只出现一次，响应为 `no-store`；运维层不得记录响应体。
+
+## 激活页校验恢复与缓存回归（PR #53）
+
+对应 HRP-03 / HRP-06 / HRP-08 / HRP-12；调用链：
+`invitation_activate.html → account_invitation.js → 同一 activate-account POST → AccountInvitationService.accept → 原账号/学校SELF成员/HrAccountLink/审计事务`。
+
+账号或密码校验不通过时，通过同一POST的 `Accept: application/json` 返回字段错误，
+页面不跳走，教师可修改后明确再次提交。普通表单的HTML/302行为继续兼容。
+JSON协商不是鉴权，CSRF照常检查；不新增注册路由、不改人员、权限、迁移或原事务服务。
+成功JSON只返回固定完成页地址，避免fetch提前消费一次性完成页；之后仍需显式登录。
+
+邀请密钥仅在当前页面内存及必要POST body中，不保存到localStorage/sessionStorage、Cookie、
+history state或错误HTML；页面离开/成功/终止时清除。修改失败不要求重新签发邀请。
+处理中禁重交；结果未知、网络中断或超时不自动重放账号写入，也不声称服务端已回滚。
+UI明确提示先核对登录结果；需继续时重开原邀请链接，服务端仍拒绝已使用邀请。
+
+缓存测试按指令核验 `no-store / no-cache / must-revalidate / private / max-age=0`，
+而非将整个头部固定成单个字符串；不移除Django never_cache附加的更严格保护。
+同时覆盖激活GET、失败400、成功响应、完成页及JSON的CSRF/UUID/撤销/已登录拒绝。
+
+验收分开记账：
+
+```bash
+python manage.py test hr_staff.tests.test_account_invitation --keepdb --noinput
+python tests/visual/hr_account_activation_ui_tests.py -v
+HR_VISUAL_AUDIT=1 python manage.py test tests.visual.hr_account_activation_browser_tests.AccountActivationBrowserTests --keepdb --noinput
+```
+
+UI专项使用真实Chromium DOM，但显式隔离location/history/HTTP，不算真实站点导航；
+真实专项使用Django/MySQL服务、一次性邀请、弱密码400后同页修正、显式登录HR17及数据库回读，
+桌面与手机分别执行，不替换HTTP、不注入登录Cookie。合成人员和服务签发邀请仅为前置条件，
+不声称学校管理员的签发/复制UI也由此验收。最终PASS只以对应提交实际运行结果为准。
+xlsx导入导出、外发邮件与全生命周期验收不在该页面切片中，不计为通过。

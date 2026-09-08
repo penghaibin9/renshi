@@ -9,6 +9,9 @@ on:
       - "frontend/static/hr/**"
       - "backend/hr_*/templates/**"
       - "backend/horilla_theme/templates/hr/**"
+      - "backend/base/account_invitation.py"
+      - "backend/base/static/base/js/account_invitation.js"
+      - "backend/base/templates/base/account/invitation_*.html"
       - "tests/visual/**"
       - ".github/workflows/hr-visual-audit.yml"
 
@@ -76,6 +79,11 @@ jobs:
 
       - name: HR01 workforce UI regression (isolated transport)
         run: python tests/visual/hr_workforce_ui_contract_tests.py -v
+
+      - name: Account activation isolated DOM recovery
+        env:
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python tests/visual/hr_account_activation_ui_tests.py -v
 
       - name: HR11 download dialog UI unit regressions (isolated transport)
         env:
@@ -210,6 +218,14 @@ jobs:
       - name: HR11 published classification to close basis contracts
         id: classification-contracts
         run: python manage.py test hr_time.tests.test_leave_paid_classification --keepdb --noinput --verbosity 2
+
+      - name: Account activation real validation retry and explicit login
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python manage.py test tests.visual.hr_account_activation_browser_tests.AccountActivationBrowserTests --keepdb --noinput --verbosity 2
 
       - name: Capture real Chromium screenshots
         if: always() && steps.prepare-schema.outcome == 'success'
