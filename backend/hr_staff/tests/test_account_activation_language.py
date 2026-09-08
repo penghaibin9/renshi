@@ -2,7 +2,9 @@
 
 Only invitation/username lookup is isolated. The production activation view,
 accept service, Django password validator and translation catalog run unchanged.
-These tests stop at password rejection; they do not claim CSRF or DB coverage.
+HTML rendering retains the production context processors, so these cases use
+the test database and a real session backend. They stop at password rejection;
+they do not claim browser navigation, CSRF or account-creation coverage.
 """
 from __future__ import annotations
 
@@ -12,14 +14,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser
-from django.test import RequestFactory, SimpleTestCase, override_settings
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.test import RequestFactory, TestCase, override_settings
 from django.utils import translation
 
 from base.account_invitation import activate_account_invitation
 from hr_staff.services.account_invitation_service import AccountInvitationService
 
 
-class AccountActivationLanguageTests(SimpleTestCase):
+class AccountActivationLanguageTests(TestCase):
     def rejected(self, minimum, *, accept):
         invitation_id = uuid.uuid4()
         request = RequestFactory().post(
@@ -29,6 +32,9 @@ class AccountActivationLanguageTests(SimpleTestCase):
             HTTP_ACCEPT=accept,
         )
         request.user = AnonymousUser()
+        # RequestFactory does not run session middleware; the real HTML context
+        # reads request.session and school data even for an anonymous visitor.
+        SessionMiddleware(lambda _request: None).process_request(request)
         validators = [{
             "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
             "OPTIONS": {"min_length": minimum},
