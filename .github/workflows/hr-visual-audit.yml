@@ -233,6 +233,28 @@ jobs:
         id: classification-contracts
         run: python manage.py test hr_time.tests.test_leave_paid_classification --keepdb --noinput --verbosity 2
 
+      - name: HR11 real write-reload-close checkpoint
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr11-focused
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr11-focused
+          python manage.py test tests.visual.hr11_visual_audit_tests.Hr11VisualAuditTests.test_real_browser_completes_time_fact_chain --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr11-focused/browser-tests.log
+
+      - name: Retain HR11 focused result before full regression
+        if: always() && steps.prepare-schema.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr11-close-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/hr11-focused/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Account activation language and rejected-write MySQL contracts
         if: always() && steps.prepare-schema.outcome == 'success'
         shell: bash

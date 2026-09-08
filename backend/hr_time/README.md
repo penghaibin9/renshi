@@ -66,3 +66,31 @@ python tests/visual/hr11_download_lifecycle_tests.py -v
 定向验收：`python manage.py test hr_time.tests.test_leave_paid_classification --keepdb --noinput`。
 覆盖带薪/无薪月结依据、未知分类拦截、旧版本与目录变化、重复批准、跨学校/跨假别、
 未发布政策和输入非法值。只以实际 MySQL 运行结果记 PASS，语法检查不是业务通过。
+
+## 办理后刷新与月结回读（PR #53）
+
+基线 `7f0cf53213ec24337cdc434364bcb00bfbfc0e6b` 的视觉 Run `34197073603` /
+job `101967079224` 在请假批准后访问加班页时出现 `net::ERR_ABORTED`。
+生产 `hr11-actions.js` 在正式写入成功后延迟刷新原页面；旧验收只等待当前文档的
+`networkidle`，可能在未来的刷新尚未开始时进入下一页。不能用重复业务提交、
+手工 reload、固定延时或吞掉异常来取得绿色。
+
+本次只修验收同步并加强证据，不改生产脚本、政策、计薪分类、权限、租户或月结服务。
+每个会刷新的动作，在一次真实点击前同时订阅精确 POST、同页主框架 GET 和 load 事件，
+随后核验实际办理区状态。预检不刷新，单独验证 ready 和空 blockers。
+调用链仍为 `workspace.html → hr11-actions.js → 原 workbench API → 原服务/事实表`。
+
+原案例的账号、学校、日历、排班、申请与日事实前置及双尺寸页面巡检保持不变。
+新增完整 POST 顺序与次数检查，并在浏览器循环停止后独立读取 MySQL：异常解决、
+请假批准、加班申请批准、风险接单、月结关闭、单份缺勤/额度使用/预占释放/月结快照/
+时间依据。加班申请批准不代表已经核验实际加班；该案例仍是技术管理员定位案例，
+不代替跨角色 UAT、真实请假全生命周期、xlsx 或全站美化验收。
+
+```bash
+HR_VISUAL_AUDIT=1 python manage.py test tests.visual.hr11_visual_audit_tests.Hr11VisualAuditTests.test_real_browser_completes_time_fact_chain --keepdb --noinput --verbosity 2
+```
+
+原视觉工作流保留全部检查和原25项套件，新增同一案例的前置专项及早期证据上传。
+专项工件 `hr11-close-*` 使用独立目录，避免后续全套运行覆盖其记录；包括日志、
+成功或失败截图、`real-time-chain-seal.json`。PASS只在所有浏览器断言与数据库回读
+完成后写入；失败也保存已完成的检查点。证据必须区分产品SHA、测试checkoutSHA及运行。

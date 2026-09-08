@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 from datetime import date, time, timedelta
 from pathlib import Path
@@ -14,6 +15,41 @@ from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
 from django.utils import timezone
+
+
+def _write_and_wait_for_reload(page, button, api_url, expected_status, *, timeout=15000):
+    """Wait for the production POST and its delayed same-page document reload.
+
+    The old document may already be network-idle when its 250ms reload timer
+    is pending. A load-state sample does not await that future navigation.
+    Arm all observers before the one real click; history events, iframe loads,
+    XHR GETs and a different page cannot satisfy this document checkpoint.
+    No sleep, manual reload, intercepted transport or repeated business write.
+    """
+    document_url = page.url
+    with page.expect_event("load", timeout=timeout):
+        with page.expect_response(
+            lambda response: response.url == document_url
+            and response.request.method == "GET"
+            and response.request.is_navigation_request()
+            and response.request.frame == page.main_frame,
+            timeout=timeout,
+        ) as document:
+            with page.expect_response(
+                lambda response: response.url == api_url
+                and response.request.method == "POST",
+                timeout=timeout,
+            ) as written:
+                button.click()
+            assert written.value.status == expected_status, (
+                f"Business write returned HTTP {written.value.status}, expected {expected_status}"
+            )
+    assert document.value.status == 200, f"Reload returned HTTP {document.value.status}"
+    document.value.finished()
+    assert page.url == document_url, "Business action left its original work area"
+    # Response bodies can be discarded on navigation; authoritative facts are
+    # read from MySQL after the browser loop, not from a retried POST.
+    return {"writeStatus": written.value.status, "documentStatus": document.value.status}
 
 
 @skipUnless(os.getenv("HR_VISUAL_AUDIT") == "1", "visual audit is CI-explicit")
@@ -319,73 +355,169 @@ class Hr11VisualAuditTests(StaticLiveServerTestCase):
         from playwright.sync_api import expect, sync_playwright
 
         page_errors, console_errors, api_failures, static_failures = [], [], [], []
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            try:
-                context = self.browser_context(browser, {"width": 1440, "height": 1000})
-                page = context.new_page()
-                self.monitor(page, page_errors, console_errors, api_failures, static_failures)
+        writes, checkpoints, facts = [], [], {}
+        result = "FAIL"
+        api_root = self.live_server_url + "/api/v1/hr/time"
+        expected_writes = [
+            "/schedules/create",
+            f"/exceptions/{self.exception.pk}/resolve",
+            f"/leaves/{self.leave.pk}/approve",
+            f"/overtime/{self.overtime.pk}/approve",
+            f"/risks/{self.risk.pk}/acknowledge",
+            f"/close-periods/{self.period.pk}/precheck",
+            f"/close-periods/{self.period.pk}/close",
+        ]
+        try:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                try:
+                    context = self.browser_context(browser, {"width": 1440, "height": 1000})
+                    page = context.new_page()
+                    self.monitor(page, page_errors, console_errors, api_failures, static_failures)
+                    page.on("request", lambda request: writes.append(request.url[len(api_root):])
+                            if request.method == "POST" and request.url.startswith(api_root + "/") else None)
 
-                page.goto(self.live_server_url + "/hr/time/schedule/", wait_until="networkidle")
-                page.get_by_role("button", name="新建生效排班").click()
-                # Choices arrive asynchronously. Never bind a broad "人员"
-                # label to the hidden global module navigation before the dialog opens.
-                dialog = page.locator(".hr11 [data-dialog]")
-                expect(dialog).to_be_visible(timeout=10000)
-                expect(dialog.locator(".hr11-field > span")).to_have_text([
-                    "人员", "工作日历版本", "班次版本", "生效日期", "失效日期",
-                ])
-                dialog.locator("select[name='staffId']").select_option(str(self.employee.pk))
-                dialog.locator("select[name='calendarVersionId']").select_option(str(self.calendar_version.pk))
-                dialog.locator("select[name='shiftVersionId']").select_option(str(self.shift_version.pk))
-                dialog.locator("input[name='effectiveFrom']").fill((timezone.localdate() + timedelta(days=1)).isoformat())
-                with page.expect_response(lambda response: response.url.endswith("/schedules/create")) as scheduled:
-                    dialog.get_by_role("button", name="确认办理", exact=True).click()
-                self.assertEqual(scheduled.value.status, 201)
-                page.wait_for_load_state("networkidle")
+                    def write(button, suffix, status=200):
+                        checkpoint = _write_and_wait_for_reload(page, button, api_root + suffix, status)
+                        checkpoints.append({"path": suffix, **checkpoint})
+                        expect(page.locator("[data-module='HR11']")).to_be_visible()
 
-                page.goto(self.live_server_url + "/hr/time/attendance/", wait_until="networkidle")
-                page.get_by_role("button", name="解决异常").click()
-                expect(dialog).to_be_visible(timeout=10000)
-                dialog.get_by_label("处理说明").fill("已核对设备离线记录与教师签退证明")
-                with page.expect_response(lambda response: response.url.endswith("/resolve")) as resolved:
-                    dialog.get_by_role("button", name="确认办理", exact=True).click()
-                self.assertEqual(resolved.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                    def row(record_id):
+                        target = page.locator(f".hr11-row[data-record-id='{record_id}']")
+                        expect(target).to_have_count(1)
+                        return target
 
-                page.goto(self.live_server_url + "/hr/time/leave/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/approve")) as leave_approved:
-                    page.get_by_role("button", name="批准", exact=True).click()
-                self.assertEqual(leave_approved.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                    page.goto(self.live_server_url + "/hr/time/schedule/", wait_until="networkidle")
+                    page.get_by_role("button", name="新建生效排班").click()
+                    dialog = page.locator(".hr11 [data-dialog]")
+                    expect(dialog).to_be_visible(timeout=10000)
+                    expect(dialog.locator(".hr11-field > span")).to_have_text([
+                        "人员", "工作日历版本", "班次版本", "生效日期", "失效日期",
+                    ])
+                    dialog.locator("select[name='staffId']").select_option(str(self.employee.pk))
+                    dialog.locator("select[name='calendarVersionId']").select_option(str(self.calendar_version.pk))
+                    dialog.locator("select[name='shiftVersionId']").select_option(str(self.shift_version.pk))
+                    dialog.locator("input[name='effectiveFrom']").fill((timezone.localdate() + timedelta(days=1)).isoformat())
+                    write(dialog.get_by_role("button", name="确认办理", exact=True), expected_writes[0], 201)
+                    expect(page.locator(".hr11-row").filter(has_text="HR11_WORKBENCH")).to_have_count(1)
 
-                page.goto(self.live_server_url + "/hr/time/overtime/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/approve")) as overtime_approved:
-                    page.get_by_role("button", name="批准申请").click()
-                self.assertEqual(overtime_approved.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                    page.goto(self.live_server_url + "/hr/time/attendance/", wait_until="networkidle")
+                    row(self.exception.pk).get_by_role("button", name="解决异常").click()
+                    expect(dialog).to_be_visible(timeout=10000)
+                    dialog.get_by_label("处理说明").fill("已核对设备离线记录与教师签退证明")
+                    write(dialog.get_by_role("button", name="确认办理", exact=True), expected_writes[1])
+                    expect(row(self.exception.pk).locator("[data-action]")).to_have_count(0)
+                    expect(row(self.exception.pk)).to_contain_text("已核对设备离线记录与教师签退证明")
 
-                page.goto(self.live_server_url + "/hr/time/risks/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/acknowledge")) as acknowledged:
-                    page.get_by_role("button", name="确认接单").click()
-                self.assertEqual(acknowledged.value.status, 200)
-                page.wait_for_load_state("networkidle")
+                    page.goto(self.live_server_url + "/hr/time/leave/", wait_until="networkidle")
+                    write(row(self.leave.pk).get_by_role("button", name="批准", exact=True), expected_writes[2])
+                    expect(row(self.leave.pk).get_by_role("button", name="办理销假", exact=True)).to_be_visible()
+                    expect(row(self.leave.pk).locator("[data-action='leave-approve']")).to_have_count(0)
 
-                page.goto(self.live_server_url + "/hr/time/close/", wait_until="networkidle")
-                with page.expect_response(lambda response: response.url.endswith("/precheck")) as prechecked:
-                    page.get_by_role("button", name="关账预检").click()
-                self.assertEqual(prechecked.value.status, 200)
-                self.assertIn("预检通过", page.locator("[data-feedback]").text_content())
-                with page.expect_response(lambda response: response.url.endswith("/close")) as closed:
-                    page.get_by_role("button", name="正式关闭").click()
-                self.assertEqual(closed.value.status, 200)
-                page.locator("[data-status]", has_text="已关闭").wait_for(timeout=10000)
-                page.wait_for_load_state("networkidle")
-                page.screenshot(path=str(self.out_dir / "desktop-real-time-chain-complete.png"), full_page=True)
-                context.close()
-            finally:
-                browser.close()
-        self.assertEqual(page_errors, [], "HR11 page errors: " + " | ".join(page_errors))
-        self.assertEqual(console_errors, [], "HR11 console errors: " + " | ".join(console_errors))
-        self.assertEqual(api_failures, [], "HR11 API failures: " + " | ".join(api_failures))
-        self.assertEqual(static_failures, [], "HR11 static failures: " + " | ".join(static_failures))
+                    page.goto(self.live_server_url + "/hr/time/overtime/", wait_until="networkidle")
+                    write(row(self.overtime.pk).get_by_role("button", name="批准申请", exact=True), expected_writes[3])
+                    expect(row(self.overtime.pk).locator("[data-action]")).to_have_count(0)
+
+                    page.goto(self.live_server_url + "/hr/time/risks/", wait_until="networkidle")
+                    write(row(self.risk.pk).get_by_role("button", name="确认接单", exact=True), expected_writes[4])
+                    expect(row(self.risk.pk).locator("[data-action='risk-acknowledge']")).to_have_count(0)
+                    expect(row(self.risk.pk).get_by_role("button", name="解决风险", exact=True)).to_be_visible()
+
+                    page.goto(self.live_server_url + "/hr/time/close/", wait_until="networkidle")
+                    # Precheck intentionally does not reload or create a close fact.
+                    with page.expect_response(
+                        lambda response: response.url == api_root + expected_writes[5]
+                        and response.request.method == "POST"
+                    ) as prechecked:
+                        row(self.period.pk).get_by_role("button", name="关账预检", exact=True).click()
+                    self.assertEqual(prechecked.value.status, 200)
+                    precheck = prechecked.value.json()["data"]
+                    self.assertTrue(precheck["ready"])
+                    self.assertEqual(precheck["blockers"], [])
+                    expect(page.locator("[data-feedback]")).to_contain_text("预检通过")
+                    checkpoints.append({"path": expected_writes[5], "writeStatus": 200, "ready": True, "blockers": []})
+                    write(row(self.period.pk).get_by_role("button", name="正式关闭", exact=True), expected_writes[6])
+                    expect(row(self.period.pk).locator("[data-status]")).to_have_text("已关闭")
+                    expect(row(self.period.pk).get_by_role("button", name="申请重开", exact=True)).to_be_visible()
+                    page.screenshot(path=str(self.out_dir / "desktop-real-time-chain-complete.png"), full_page=True)
+                    context.close()
+                except Exception:
+                    if "page" in locals() and not page.is_closed():
+                        try:
+                            page.screenshot(path=str(self.out_dir / "desktop-real-time-chain-failed.png"), full_page=True)
+                        except Exception:
+                            pass  # Preserve the original assertion/navigation error.
+                    raise
+                finally:
+                    browser.close()
+
+            # Independent authoritative readbacks only after Playwright's loop
+            # stops. No async-safety bypass and no prefilled final business facts.
+            from hr_time.models import (
+                HrAbsenceFact, HrLeaveLedgerEntry, HrPayrollTimeBasis,
+                HrScheduleAssignment, HrTimeCloseSnapshot,
+            )
+
+            self.exception.refresh_from_db()
+            self.leave.refresh_from_db()
+            self.overtime.refresh_from_db()
+            self.risk.refresh_from_db()
+            self.period.refresh_from_db()
+            self.assertEqual(self.exception.status, "RESOLVED")
+            self.assertEqual(self.leave.status, "APPROVED")
+            self.assertEqual(self.overtime.status, "APPROVED")
+            self.assertEqual(self.risk.status, "ACKNOWLEDGED")
+            self.assertEqual(self.period.status, "CLOSED")
+            self.assertEqual(self.period.closed_by_id, self.user.pk)
+            self.assertIsNotNone(self.period.closed_at)
+            self.assertEqual(HrScheduleAssignment.objects.filter(
+                tenant_id=self.company.pk, staff_master_id=self.employee.pk,
+                source="HR11_WORKBENCH",
+            ).count(), 1)
+            absences = HrAbsenceFact.objects.filter(
+                tenant_id=self.company.pk, leave_request=self.leave,
+            )
+            self.assertEqual(absences.count(), 1)
+            absence = absences.get()
+            self.assertEqual(absence.status, "ACTIVE")
+            self.assertEqual(absence.paid_classification, "PAID")
+            self.assertEqual(absence.policy_version_id, self.leave.policy_version_id)
+            self.assertEqual(absence.scheduled_minutes_impacted, 480)
+            ledger = HrLeaveLedgerEntry.objects.filter(
+                tenant_id=self.company.pk, account_id=self.leave.account_id,
+            )
+            self.assertEqual(ledger.filter(entry_type="USE").count(), 1)
+            self.assertEqual(ledger.filter(entry_type="RESERVATION_RELEASE").count(), 1)
+            self.assertEqual(HrTimeCloseSnapshot.objects.filter(
+                tenant_id=self.company.pk, period=self.period,
+            ).count(), 1)
+            snapshot = HrTimeCloseSnapshot.objects.get(
+                pk=self.period.snapshot_id, tenant_id=self.company.pk, period=self.period,
+            )
+            self.assertEqual(len(snapshot.leave_ledger_hash), 64)
+            self.assertEqual(HrPayrollTimeBasis.objects.filter(
+                tenant_id=self.company.pk, close_snapshot=snapshot,
+                staff_master_id=self.employee.pk,
+            ).count(), 1)
+            self.assertEqual(writes, expected_writes, "Every business POST must occur exactly once, in order")
+            self.assertEqual(len(checkpoints), 7)
+            self.assertEqual(page_errors, [], "HR11 page errors: " + " | ".join(page_errors))
+            self.assertEqual(console_errors, [], "HR11 console errors: " + " | ".join(console_errors))
+            self.assertEqual(api_failures, [], "HR11 API failures: " + " | ".join(api_failures))
+            self.assertEqual(static_failures, [], "HR11 static failures: " + " | ".join(static_failures))
+            facts = {"exception": self.exception.status, "leave": self.leave.status,
+                     "overtimeRequest": self.overtime.status, "risk": self.risk.status,
+                     "period": self.period.status, "absenceCount": 1, "usageCount": 1,
+                     "reservationReleaseCount": 1, "closeSnapshotCount": 1,
+                     "payrollTimeBasisCount": 1, "paidClassification": absence.paid_classification}
+            result = "PASS"
+        finally:
+            (self.out_dir / "real-time-chain-seal.json").write_text(json.dumps({
+                "productSha": os.getenv("HR_PRODUCT_SHA", "UNSPECIFIED"),
+                "checkoutSha": os.getenv("GITHUB_SHA", "LOCAL"),
+                "result": result, "scope": "existing HR11 technical-admin case; synthetic prerequisites; real service writes",
+                "postPaths": writes, "checkpoints": checkpoints, "facts": facts,
+                "pageErrors": page_errors, "consoleErrors": console_errors,
+                "apiFailures": api_failures, "staticFailures": static_failures,
+                "httpReplacements": False, "manualReloads": 0, "writeRetries": 0,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
