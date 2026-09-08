@@ -63,6 +63,10 @@
     }
 </script>
 
+<!-- HR presentation only; selectors remain scoped to existing workspaces. -->
+<link rel="stylesheet" href="{% static 'hr/css/hr-task-polish.css' %}">
+<script src="{% static 'hr/js/core/task-polish.js' %}"></script>
+
 <!-- Product tour engine (horilla_tour) -->
 {% if request.user.is_authenticated %}
 <script>
