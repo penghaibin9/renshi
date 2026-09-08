@@ -6,16 +6,13 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-workforce.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-focus.css' %}">
 
-<main class="hr-v2-page hr-workforce" data-hr-page="workforce" data-module="HR01">
-  <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
-    <span>人事工作台</span><strong>队伍结构</strong>
-  </div>
+<main class="hr-v2-page hr-workforce hr01-focus-page" data-hr-page="workforce" data-module="HR01">
   <header class="hr-v2-pagehead">
     <div class="hr-v2-pagehead__copy">
-      <div class="hr-v2-eyebrow">HR01 · 学校人事工作台</div>
       <h1 class="hr-v2-title">队伍结构</h1>
-      <p class="hr-v2-subtitle">先看人员规模，再按学院、岗位和年龄查看分布，核对队伍结构与数据缺项。</p>
+      <p class="hr-v2-subtitle">查看人员规模、分布与缺项。</p>
     </div>
     <button class="wf-button" type="button" data-workforce-refresh>刷新数据</button>
   </header>
@@ -28,7 +25,7 @@
   </section>
 
   <section class="wf-panel" aria-labelledby="wf-distribution-title">
-    <div class="wf-section-heading"><div><h2 id="wf-distribution-title">人员类别 · 人数分布</h2><p class="wf-meta">按当前账号可查看的范围统计；小样本沿用服务端隐藏结果。</p></div></div>
+    <div class="wf-section-heading"><div><h2 id="wf-distribution-title">人员类别 · 人数分布</h2><p class="wf-meta">按账号可见范围统计；小样本保护不变。</p></div></div>
     <nav id="hr-workforce-tabs" class="wf-tabs" aria-label="队伍结构统计维度">
       <button type="button" data-dim="personnel_category" aria-pressed="true" aria-controls="hr-workforce-dist">人员类别</button>
       <button type="button" data-dim="department" aria-pressed="false" aria-controls="hr-workforce-dist">学院分布</button>

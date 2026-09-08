@@ -13,9 +13,10 @@ HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr01-inbox.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-focus.css' %}">
 
-<div class="hr-page hr-v2-page hr01-inbox" data-hr-page="todos" data-module="HR01">
-  {% include "hr/components/page_header.html" with title="我的待办" subtitle="散落在各模块的、当前由我处理的事项" %}
+<div class="hr-page hr-v2-page hr01-inbox hr01-focus-page" data-hr-page="todos" data-module="HR01">
+  {% include "hr/components/page_header.html" with title="我的待办" subtitle="先处理逾期事项。" %}
 
   <!-- 统计 -->
   {% include "hr/components/section_card.html" with id="hr-todo-summary" title="待办概览" status="loading" %}
@@ -24,7 +25,7 @@ HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
   {% include "hr/components/status_tabs.html" with id="hr-todo-tabs" %}
 
   <div class="hr01-inbox__tools" role="group" aria-label="待办查找与刷新">
-    <label class="hr01-inbox__search" for="hr-todo-search">搜索本次载入的待办
+    <label class="hr01-inbox__search" for="hr-todo-search">查找待办
       <input id="hr-todo-search" type="search" placeholder="搜索事项、姓名、单位或办理阶段" aria-controls="hr-todo-list" autocomplete="off">
     </label>
     <label for="hr-todo-severity">紧急程度
@@ -37,7 +38,7 @@ HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
       <button id="hr-todo-clear" class="hr-btn" type="button" disabled>清空筛选</button>
       <button id="hr-todo-refresh" class="hr-btn hr-btn--primary" type="button" aria-controls="hr-todo-summary hr-todo-list">刷新数据</button>
     </div>
-    <p class="hr01-inbox__scope">搜索和筛选仅作用于本次载入的最多 50 条记录，顺序以服务端返回为准；上方概览不随本次筛选改变。</p>
+    <p class="hr01-inbox__scope">仅筛选已载入的最多 50 条，保留返回顺序；概览不变。</p>
     <p class="hr01-inbox__count" id="hr-todo-count" role="status" aria-live="polite" aria-atomic="true">正在读取待办…</p>
   </div>
 

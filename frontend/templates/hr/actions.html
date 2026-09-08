@@ -12,9 +12,10 @@ HR01-05 快捷办理 —— 已授权高频业务的真实入口
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr01-actions.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-focus.css' %}">
 
-<div class="hr-page hr-v2-page hr01-actions" data-hr-page="actions" data-module="HR01">
-  {% include "hr/components/page_header.html" with title="快捷办理" subtitle="高频业务一键进入真实办理入口" %}
+<div class="hr-page hr-v2-page hr01-actions hr01-focus-page" data-hr-page="actions" data-module="HR01">
+  {% include "hr/components/page_header.html" with title="快捷办理" subtitle="选择事项，直接进入办理。" %}
 
   <div class="hr01-actions__tools" role="group" aria-label="查找快捷办理">
     <label class="hr01-actions__search" for="hr-action-search">搜索办理事项
@@ -24,7 +25,7 @@ HR01-05 快捷办理 —— 已授权高频业务的真实入口
       <button id="hr-action-clear" class="hr-btn" type="button" disabled>清空搜索</button>
       <button id="hr-action-refresh" class="hr-btn hr-btn--primary" type="button" aria-controls="hr-quick-actions">刷新入口</button>
     </div>
-    <p class="hr01-actions__scope">仅查找当前目录中的事项，点击后进入对应业务模块办理。</p>
+    <p class="hr01-actions__scope">仅查找当前目录；点击进入业务模块。</p>
     <p id="hr-action-count" class="hr01-actions__count" role="status" aria-live="polite" aria-atomic="true">正在读取办理入口…</p>
   </div>
 

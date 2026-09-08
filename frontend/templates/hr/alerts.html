@@ -14,16 +14,17 @@ HR01-03 人事预警 —— 风险列表 + 统计 + 详情
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr01-inbox.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-focus.css' %}">
 
-<div class="hr-page hr-v2-page hr01-inbox" data-hr-page="alerts" data-module="HR01">
-  {% include "hr/components/page_header.html" with title="人事预警" subtitle="如果今天不处理，未来会形成管理事故的事项" %}
+<div class="hr-page hr-v2-page hr01-inbox hr01-focus-page" data-hr-page="alerts" data-module="HR01">
+  {% include "hr/components/page_header.html" with title="人事预警" subtitle="先查看严重和高风险事项。" %}
 
   <!-- 顶部统计 -->
   {% include "hr/components/section_card.html" with id="hr-alert-summary" title="风险概览" status="loading" %}
 
   <!-- 过滤条 -->
   <div class="hr01-inbox__tools" role="group" aria-label="预警查找与刷新">
-    <label class="hr01-inbox__search" for="hr-alert-search">搜索本次载入的预警
+    <label class="hr01-inbox__search" for="hr-alert-search">查找预警
       <input id="hr-alert-search" type="search" placeholder="搜索预警标题或说明" aria-controls="hr-alert-list" autocomplete="off">
     </label>
     <label for="hr-alert-severity">风险等级
@@ -35,7 +36,7 @@ HR01-03 人事预警 —— 风险列表 + 统计 + 详情
       <button id="hr-alert-clear" class="hr-btn" type="button" disabled>清空筛选</button>
       <button id="hr-alert-refresh" class="hr-btn hr-btn--primary" type="button" aria-controls="hr-alert-summary hr-alert-list">刷新数据</button>
     </div>
-    <p class="hr01-inbox__scope">搜索和筛选仅作用于本次载入的最多 50 条记录，顺序以服务端返回为准；上方概览不随本次筛选改变。</p>
+    <p class="hr01-inbox__scope">仅筛选已载入的最多 50 条，保留返回顺序；概览不变。</p>
     <p class="hr01-inbox__count" id="hr-alert-count" role="status" aria-live="polite" aria-atomic="true">正在读取预警…</p>
   </div>
 
