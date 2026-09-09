@@ -44,7 +44,7 @@
       host.innerHTML = stateHtml("正在读取报到对象", keyword ? "按当前关键词查询。" : "读取当前学校可见入职单。", false);
       if (count) count.textContent = "正在查询，请稍候…";
       try {
-      const res = await window.HrApi.request("/api/hr/v1/onboarding/cases", { params: { keyword: keyword || "", page: 1, pageSize: 100 } });
+      const res = await window.HrApi.request("/api/v1/hr/onboarding/cases", { params: { keyword: keyword || "", page: 1, pageSize: 100 } });
       if (!current(ticket)) return;
       const items = res.data?.data?.items;
       if (!res.ok || !Array.isArray(items) || items.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
@@ -65,8 +65,6 @@
     function queue(immediate = false) {
       if (!root.isConnected || !host.isConnected) return;
       clearTimeout(timer);
-      // Invalidate on intent, before debounce. A previous query must never
-      // repopulate actionable rows while a different keyword is visible.
       const ticket = ++revision;
       const keyword = (input?.value || "").trim();
       if (clear) clear.disabled = !input?.value;
