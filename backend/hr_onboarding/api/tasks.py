@@ -6,10 +6,18 @@ HR05-04 协同任务 + Provisioning API（总册 §14/§15）。
 
 from __future__ import annotations
 
+import json
+
+from django.db import transaction
 from django.views.decorators.http import require_GET, require_POST
 
 from hr_onboarding.api import base as api_base
-from hr_onboarding.api.exceptions import Hr05ApiError, NotFoundError
+from hr_onboarding.api.exceptions import (
+    Hr05ApiError,
+    NotFoundError,
+    PermissionDeniedError,
+    VersionConflictError,
+)
 from hr_onboarding.api.labels import (
     label_for,
     BLOCKING_LEVEL_LABELS,
@@ -17,8 +25,10 @@ from hr_onboarding.api.labels import (
     RESPONSIBLE_ROLE_LABELS,
     TASK_STATUS_LABELS,
 )
+from hr_onboarding.constants import TaskStatus
 from hr_onboarding.models import HrOnboardingCase, HrOnboardingTaskInstance, HrProvisioningRequest
 from hr_onboarding.permissions import require_hr05_permission
+from hr_onboarding.policies.state_machine import validate_task_transition
 from hr_onboarding.services.provisioning_service import ProvisioningService
 from hr_onboarding.services.task_service import TaskService
 
@@ -33,16 +43,103 @@ def _load_case_or_404(context, case_id: str):
     return case
 
 
-def _load_task_or_404(context, task_id: str):
+def _load_task_or_404(context, task_id: str, *, for_update: bool = False):
     try:
-        instance = HrOnboardingTaskInstance.objects.filter(
-            tenant_id=context.tenant_id, id=task_id
-        ).first()
+        qs = HrOnboardingTaskInstance.objects.filter(tenant_id=context.tenant_id, id=task_id)
+        instance = (qs.select_for_update() if for_update else qs).first()
     except (ValueError, TypeError):
         instance = None
     if instance is None:
         raise NotFoundError("任务不存在或无权访问")
     return instance
+
+
+def _payload(request):
+    content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
+    if content_type != "application/json":
+        return request.POST
+    try:
+        raw = request.body.decode(request.encoding or "utf-8") if request.body else "{}"
+        data = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Hr05ApiError("请求内容不是有效 JSON") from exc
+    if not isinstance(data, dict):
+        raise Hr05ApiError("请求内容必须是对象")
+    return data
+
+
+def _bounded_text(payload, key: str, label: str, *, required: bool = False, max_length: int = 2000):
+    value = str(payload.get(key, "") or "").strip()
+    if required and not value:
+        raise Hr05ApiError(f"{label}必填")
+    if len(value) > max_length:
+        raise Hr05ApiError(f"{label}不能超过 {max_length} 个字符")
+    return value
+
+
+def _check_expected_version(request, payload, task):
+    raw = api_base.get_if_match(request)
+    if raw in (None, ""):
+        raw = payload.get("version")
+    if raw in (None, ""):
+        return
+    text = str(raw).strip()
+    if text.startswith("W/"):
+        text = text[2:].strip()
+    if len(text) >= 2 and text[0] == text[-1] == '"':
+        text = text[1:-1]
+    if not text.isascii() or not text.isdigit():
+        raise Hr05ApiError("If-Match/version 必须是整数")
+    expected = int(text)
+    if expected != task.version:
+        raise VersionConflictError(
+            "任务已被其他经办人更新，请刷新后重试",
+            details={"expectedVersion": expected, "currentVersion": task.version},
+        )
+
+
+def _actor_can_operate(request, context, task):
+    if request.user.is_superuser or request.user.has_perm("hr05.task.manage"):
+        return True
+    return task.assignee_id is None or task.assignee_id == context.user_id
+
+
+def _require_task_actor(request, context, task):
+    if not _actor_can_operate(request, context, task):
+        raise PermissionDeniedError("该任务已分配给其他经办人")
+
+
+def _task_capabilities(request, context, task):
+    assigned = _actor_can_operate(request, context, task)
+    can_complete_perm = bool(
+        request.user.is_superuser or request.user.has_perm("hr05.task.complete")
+    )
+    can_waive_perm = bool(
+        request.user.is_superuser or request.user.has_perm("hr05.task.waive")
+    )
+    start_states = {
+        TaskStatus.NOT_STARTED,
+        TaskStatus.READY,
+        TaskStatus.WAITING_EXTERNAL,
+        TaskStatus.BLOCKED,
+        TaskStatus.FAILED,
+    }
+    return {
+        "start": bool(assigned and can_complete_perm and task.status in start_states),
+        "complete": bool(
+            assigned
+            and can_complete_perm
+            and validate_task_transition(task.status, TaskStatus.COMPLETED).allowed
+        ),
+        "waive": bool(
+            assigned
+            and can_waive_perm
+            and (
+                task.status == TaskStatus.NOT_STARTED
+                or validate_task_transition(task.status, TaskStatus.WAIVED).allowed
+            )
+        ),
+    }
 
 
 @require_GET
@@ -51,7 +148,13 @@ def tasks_list(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
         case = _load_case_or_404(context, case_id)
-        qs = HrOnboardingTaskInstance.objects.filter(case=case).select_related("definition")
+        # Keep both parent and child tenant predicates. Historical/imported
+        # corrupt rows must not leak merely because their FK points to a valid
+        # case in the current school.
+        qs = HrOnboardingTaskInstance.objects.filter(
+            tenant_id=context.tenant_id,
+            case=case,
+        ).select_related("definition")
         items = [
             {
                 "id": str(t.id),
@@ -67,6 +170,8 @@ def tasks_list(request, case_id: str):
                 "statusLabel": label_for(TASK_STATUS_LABELS, t.status),
                 "due_at": t.due_at.isoformat() if t.due_at else None,
                 "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "version": t.version,
+                "actionCapabilities": _task_capabilities(request, context, t),
             }
             for t in qs
         ]
@@ -80,11 +185,18 @@ def tasks_list(request, case_id: str):
 def task_start(request, task_id: str):
     try:
         context = api_base.make_hr05_context(request)
-        instance = _load_task_or_404(context, task_id)
-        updated = TaskService(
-            tenant_id=context.tenant_id, actor_user_id=context.user_id
-        ).start_task(instance)
-        return api_base.ok(request, {"task_id": str(updated.id), "status": updated.status})
+        payload = _payload(request)
+        with transaction.atomic():
+            instance = _load_task_or_404(context, task_id, for_update=True)
+            _require_task_actor(request, context, instance)
+            _check_expected_version(request, payload, instance)
+            updated = TaskService(
+                tenant_id=context.tenant_id, actor_user_id=context.user_id
+            ).start_task(instance)
+        return api_base.ok(
+            request,
+            {"task_id": str(updated.id), "status": updated.status, "version": updated.version},
+        )
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
 
@@ -94,15 +206,24 @@ def task_start(request, task_id: str):
 def task_complete(request, task_id: str):
     try:
         context = api_base.make_hr05_context(request)
-        instance = _load_task_or_404(context, task_id)
-        updated = TaskService(
-            tenant_id=context.tenant_id, actor_user_id=context.user_id
-        ).complete_task(
-            instance,
-            note=request.POST.get("note", ""),
-            evidence={"evidence": request.POST.get("evidence", "")},
+        payload = _payload(request)
+        note = _bounded_text(payload, "note", "完成说明")
+        evidence = _bounded_text(payload, "evidence", "完成凭证")
+        with transaction.atomic():
+            instance = _load_task_or_404(context, task_id, for_update=True)
+            _require_task_actor(request, context, instance)
+            _check_expected_version(request, payload, instance)
+            updated = TaskService(
+                tenant_id=context.tenant_id, actor_user_id=context.user_id
+            ).complete_task(
+                instance,
+                note=note,
+                evidence={"evidence": evidence},
+            )
+        return api_base.ok(
+            request,
+            {"task_id": str(updated.id), "status": updated.status, "version": updated.version},
         )
-        return api_base.ok(request, {"task_id": str(updated.id), "status": updated.status})
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
 
@@ -112,11 +233,19 @@ def task_complete(request, task_id: str):
 def task_waive(request, task_id: str):
     try:
         context = api_base.make_hr05_context(request)
-        instance = _load_task_or_404(context, task_id)
-        updated = TaskService(
-            tenant_id=context.tenant_id, actor_user_id=context.user_id
-        ).waive_task(instance, reason=request.POST.get("reason", ""))
-        return api_base.ok(request, {"task_id": str(updated.id), "status": updated.status})
+        payload = _payload(request)
+        reason = _bounded_text(payload, "reason", "豁免原因", required=True)
+        with transaction.atomic():
+            instance = _load_task_or_404(context, task_id, for_update=True)
+            _require_task_actor(request, context, instance)
+            _check_expected_version(request, payload, instance)
+            updated = TaskService(
+                tenant_id=context.tenant_id, actor_user_id=context.user_id
+            ).waive_task(instance, reason=reason)
+        return api_base.ok(
+            request,
+            {"task_id": str(updated.id), "status": updated.status, "version": updated.version},
+        )
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
 
@@ -134,10 +263,7 @@ def provisioning_request(request, case_id: str):
         operation = request.POST.get("operation")
         if not target or not operation:
             raise Hr05ApiError("target_system/operation 必填")
-        import json
-
         raw_payload = request.POST.get("payload", "{}")
-        # 生产级：payload 大小限制（防恶意超大请求打爆内存/DB）
         if len(raw_payload) > 64 * 1024:
             raise Hr05ApiError("payload 超过 64KB 上限")
         try:

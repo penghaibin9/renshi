@@ -1,15 +1,62 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% block title %}{% trans "试用详情" %}{% endblock %}
-{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
+{% block styles %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-probation-detail.css' %}">
 {% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr05-page hr05-focus-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probation-detail" data-probation-id="{{ probation.id }}">
+<div class="hr-v2-page hr05-page hr05-focus-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probation-detail" data-probation-id="{{ probation.id }}" data-detail-url="{% url 'hr05-api-probation-detail' probation_id=probation.id %}" data-confirm-url="{% url 'hr05-api-probation-confirm' probation_id=probation.id %}" data-extend-url="{% url 'hr05-api-probation-extend' probation_id=probation.id %}" data-fail-url="{% url 'hr05-api-probation-fail' probation_id=probation.id %}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>试用详情</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title"><div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">查看试用摘要；评价、目标与决策明细暂不可用。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>试用记录编号</strong> {{ probation.id }}</span></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title">
+    <div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">先核对目标、评价与延期记录，再处理正式试用决定。</p></div>
+    <a class="hr-btn" href="{% url 'hr05-probations' %}">返回试用列表</a>
+  </header>
   {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}
-  <section class="hr05-panel"><div id="hr05-probation-detail" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>从当前学校授权列表中读取。</span></div></div><div id="hr05-probation-links" class="hr05-actions"></div></section>
-  <div class="hr05-truth-note"><strong>当前限制</strong><span>数据来自正式试用列表，暂无独立详情查询；本页不提供评价、转正确认、延期或不通过表单。</span></div>
+  <section class="hr05-panel" aria-labelledby="hr05-record-heading">
+    <div class="hr05-record-heading"><div><h2 id="hr05-record-heading">当前试用记录</h2><p class="hr05-record-id">{{ probation.id }}</p></div><button class="hr-btn" type="button" id="hr05-record-refresh">刷新记录</button></div>
+    <nav class="hr05-record-tabs" role="tablist" aria-label="试用记录分区">
+      <button type="button" role="tab" id="hr05-record-summary-tab" data-record-section="summary" aria-selected="true" aria-controls="hr05-probation-detail">试用摘要</button>
+      <button type="button" role="tab" id="hr05-record-goals-tab" data-record-section="goals" aria-selected="false" aria-controls="hr05-probation-detail" tabindex="-1">试用目标</button>
+      <button type="button" role="tab" id="hr05-record-reviews-tab" data-record-section="reviews" aria-selected="false" aria-controls="hr05-probation-detail" tabindex="-1">评价记录</button>
+      <button type="button" role="tab" id="hr05-record-extensions-tab" data-record-section="extensions" aria-selected="false" aria-controls="hr05-probation-detail" tabindex="-1">延期历史</button>
+    </nav>
+    <p class="hr05-record-meta" id="hr05-record-status" role="status" aria-live="polite" aria-atomic="true">正在读取试用摘要…</p>
+    <div id="hr05-probation-detail" role="tabpanel" aria-labelledby="hr05-record-summary-tab" tabindex="0"><div class="hr05-state"><strong>正在读取试用记录</strong><span>仅查询当前学校授权的这一条记录。</span></div></div>
+    <div class="hr05-record-pager" id="hr05-record-pager" hidden><span id="hr05-record-page">第 1 页</span><button class="hr-btn" id="hr05-record-previous" type="button" aria-disabled="true">上一页</button><button class="hr-btn" id="hr05-record-next" type="button" aria-disabled="true">下一页</button></div>
+    <div id="hr05-probation-links" class="hr05-actions"></div>
+  </section>
+
+  <section class="hr05-panel hr05-decision-panel" id="hr05-probation-decisions" aria-labelledby="hr05-decision-title" hidden>
+    <div class="hr05-decision-heading"><div><h2 id="hr05-decision-title">正式试用决定</h2><p>这里只显示当前状态和权限允许的操作；每次提交都会按当前记录版本校验。</p></div></div>
+    <p class="hr05-record-meta" id="hr05-decision-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+    <div class="hr05-decision-grid">
+      <form class="hr05-decision-card" data-probation-action="confirm" hidden>
+        <h3>确认转正</h3><p>形成正式转正结果，并沿既有领域事件同步后续人事事实。</p>
+        <label>转正依据<textarea name="reason" rows="4" maxlength="2000" required placeholder="填写考核结论、审批依据或会议意见"></textarea></label>
+        <label class="hr05-decision-check"><input type="checkbox" required>我已核对当前试用记录与评价历史</label>
+        <button class="hr05-button" type="submit">确认正式转正</button>
+      </form>
+      <form class="hr05-decision-card" data-probation-action="extend" hidden>
+        <h3>延长试用</h3><p>保留原计划日期和延期历史，不覆盖既有记录。</p>
+        <label>新的计划结束日<input type="date" name="new_end_date" required></label>
+        <label>延期原因<textarea name="reason" rows="4" maxlength="2000" required placeholder="说明延期原因和后续观察要求"></textarea></label>
+        <label class="hr05-decision-check"><input type="checkbox" required>我已核对当前计划结束日</label>
+        <button class="hr05-button" type="submit">确认延期</button>
+      </form>
+      <form class="hr05-decision-card hr05-decision-card--danger" data-probation-action="fail" hidden>
+        <h3>试用不通过</h3><p>形成不通过事实；合同和离校后续仍由对应模块继续办理。</p>
+        <label>不通过原因<textarea name="reason" rows="4" maxlength="2000" required placeholder="填写明确的正式处理依据"></textarea></label>
+        <label class="hr05-decision-check"><input type="checkbox" required>我已核对当前记录并确认这是正式决定</label>
+        <button class="hr05-button hr05-button--danger" type="submit">确认试用不通过</button>
+      </form>
+    </div>
+  </section>
+  <div class="hr05-truth-note"><strong>办理边界</strong><span>本人自评、单位评价和人事审核仍按既有评价事实分别记录；本页本轮只开放有权人员的正式转正、延期和不通过，不用前端下拉框伪装评价角色权限。</span></div>
 </div>
 {% endblock content %}
-{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probation-detail.js' %}"></script>{% endblock scripts %}
+{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probation-detail.js' %}?v=20260909-decision-1"></script>{% endblock scripts %}

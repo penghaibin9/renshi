@@ -12,6 +12,7 @@ from hr_onboarding.api import excel as excel_views
 from hr_onboarding.api import materials as materials_views
 from hr_onboarding.api import portal as portal_views
 from hr_onboarding.api import probations as probations_views
+from hr_onboarding.api.probation_detail import probation_detail
 from hr_onboarding.api import tasks as tasks_views
 from hr_onboarding.api import views as api_views
 
@@ -167,6 +168,12 @@ urlpatterns = [
         name="hr05-api-provisioning-retry",
     ),
     # HR05-05 试用与转正（S7）
+    # Canonical adapter exposes this read as /api/v1/hr/onboarding/probations/<id>.
+    path(
+        "api/hr/v1/onboarding/probations/<uuid:probation_id>",
+        probation_detail,
+        name="hr05-api-probation-detail",
+    ),
     path(
         "api/hr/v1/onboarding/probations",
         probations_views.probations_list,
