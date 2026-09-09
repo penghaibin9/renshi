@@ -75,6 +75,14 @@ class TaskActionGuardTests(TestCase):
             {"start": True, "complete": False, "waive": True},
         )
 
+    def test_corrupt_foreign_tenant_child_is_not_returned_from_valid_case(self):
+        HrOnboardingTaskInstance.objects.filter(pk=self.task.pk).update(tenant_id=self.tenant + 1)
+        response = self._list(permissions={"hr05.case.view", "hr05.task.complete"})
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)["data"]
+        self.assertEqual(data["items"], [])
+        self.assertEqual(data["total"], 0)
+
     def test_assigned_other_user_cannot_operate_without_manage_override(self):
         permissions = {"hr05.case.view", "hr05.task.complete", "hr05.task.waive"}
         response = self._list(user_id=self.actor_id + 1, permissions=permissions)
