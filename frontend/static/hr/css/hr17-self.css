@@ -66,3 +66,13 @@
     outline-color: Highlight;
   }
 }
+
+/* Only the existing HR17 catalogue toolbar; no layout or visibility changes elsewhere. */
+.hr17[data-module="HR17"] .hr17-filter-actions {display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.hr17[data-module="HR17"] .hr17-filter-button {min-height:44px;padding:8px 12px;border:1px solid var(--hr-border);border-radius:var(--hr-radius-sm);background:var(--hr-surface);color:var(--hr-text-700);font:inherit;font-size:13px;cursor:pointer}
+.hr17[data-module="HR17"] .hr17-filter-button[aria-pressed="true"] {border-color:var(--hr-primary-600);background:var(--hr-primary-50);color:var(--hr-primary-700);font-weight:700}
+.hr17[data-module="HR17"] .hr17-filter-button:disabled {opacity:.55;cursor:not-allowed}
+.hr17[data-module="HR17"] .hr17-filter-button:focus-visible {outline:2px solid var(--hr-primary-600);outline-offset:2px}
+.hr17[data-module="HR17"] :is(.hr17-filter-count,.hr17-service-feedback) {flex-basis:100%;margin:0;color:var(--hr-text-500);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+.hr17[data-module="HR17"] .hr17-service-feedback[data-tone="error"] {color:var(--hr-danger)}
+@media(forced-colors:active){.hr17[data-module="HR17"] .hr17-filter-button:focus-visible {outline-color:Highlight}}

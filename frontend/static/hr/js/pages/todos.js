@@ -120,7 +120,7 @@
         const summaryFields = ["overdue", "today", "week"];
         const hasCount = (value) => Number.isSafeInteger(value) && value >= 0;
         const summaryValue = (value) => hasCount(value) ? esc(value) : "—";
-        if (["UNAVAILABLE", "ERROR"].includes(s.status)) {
+        if (s.status === "UNAVAILABLE" || s.status === "ERROR") {
           summaryBody.innerHTML = message("待办来源暂不可用", "未用 0 条掩盖读取失败，请稍后重试。");
           return;
         }
