@@ -1,0 +1,128 @@
+/* HR05 collaboration actions only; no shared shell or other HR05 page changes. */
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr-table { min-width: 900px; }
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-row-actions:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 150px;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-row-actions .hr-btn {
+  min-height: 36px;
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid var(--hr-border);
+  border-left: 3px solid var(--hr-primary-600);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-canvas);
+  min-width: 0;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-panel[hidden],
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form[hidden] {
+  display: none;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-heading h3 {
+  margin: 0;
+  color: var(--hr-text-900);
+  font-size: 15px;
+  line-height: 23px;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-heading p {
+  margin: 4px 0 0;
+  color: var(--hr-text-500);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form > label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  color: var(--hr-text-700);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 92px;
+  padding: 9px 10px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+  font: inherit;
+  font-size: 13px;
+  line-height: 21px;
+  resize: vertical;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form .hr05-task-action-check {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 500;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-check input {
+  flex: none;
+  margin-top: 3px;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form .hr05-button {
+  min-height: 44px;
+  justify-self: start;
+}
+.hr05-page[data-hr-page="onboarding-collaboration"] :is(.hr05-task-action-panel textarea,.hr05-task-action-panel input,.hr05-task-row-actions button):focus-visible {
+  outline: 2px solid var(--hr-primary-600);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form .hr05-task-action-check {
+    grid-column: auto;
+  }
+  .hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form textarea {
+    min-height: 108px;
+    font-size: 16px;
+  }
+  .hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-form .hr05-button {
+    width: 100%;
+  }
+  .hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-row-actions .hr-btn {
+    min-height: 44px;
+  }
+}
+@media (forced-colors: active) {
+  .hr05-page[data-hr-page="onboarding-collaboration"] :is(.hr05-task-action-panel textarea,.hr05-task-action-panel input,.hr05-task-row-actions button):focus-visible {
+    outline-color: Highlight;
+  }
+  .hr05-page[data-hr-page="onboarding-collaboration"] .hr05-task-action-panel {
+    border-left-color: Highlight;
+  }
+}
