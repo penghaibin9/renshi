@@ -18,6 +18,7 @@ from hr_onboarding.api.labels import (
     PROBATION_STATUS_LABELS,
     label_for,
 )
+from hr_onboarding.constants import ProbationStatus
 from hr_onboarding.models import (
     HrProbationCase,
     HrProbationExtension,
@@ -25,6 +26,7 @@ from hr_onboarding.models import (
     HrProbationReview,
 )
 from hr_onboarding.permissions import require_hr05_permission
+from hr_onboarding.policies.state_machine import validate_probation_transition
 
 PAGE_SIZE = 20
 SECTIONS = {
@@ -43,6 +45,11 @@ SECTIONS = {
         ("-created_at", "-id"),
         ("id", "old_end_date", "new_end_date", "reason", "approval", "created_by", "created_at"),
     ),
+}
+TERMINAL_STATUSES = {
+    ProbationStatus.CONFIRMED,
+    ProbationStatus.FAILED,
+    ProbationStatus.CANCELLED,
 }
 
 
@@ -70,8 +77,6 @@ def _section_page(probation, tenant_id, section, page):
         return result
     model, order, fields = SECTIONS[section]
     start = (page - 1) * PAGE_SIZE
-    # Both predicates are intentional: a foreign-tenant child must not leak
-    # merely because its FK points at an otherwise authorized probation.
     rows = list(
         model.objects.filter(tenant_id=tenant_id, probation_case_id=probation.id)
         .order_by(*order)
@@ -83,6 +88,25 @@ def _section_page(probation, tenant_id, section, page):
         for row in rows[:PAGE_SIZE]
     ]
     return result
+
+
+def _decision_capabilities(request, probation):
+    can_finalize = bool(
+        request.user.is_superuser or request.user.has_perm("hr05.probation.finalize")
+    )
+    if not can_finalize:
+        return {"confirm": False, "extend": False, "fail": False}
+    return {
+        "confirm": validate_probation_transition(
+            probation.status, ProbationStatus.CONFIRMED
+        ).allowed,
+        # ProbationService intentionally supports repeated extensions and keeps
+        # every old/new date pair as history; mirror that established contract.
+        "extend": probation.status not in TERMINAL_STATUSES,
+        "fail": validate_probation_transition(
+            probation.status, ProbationStatus.FAILED
+        ).allowed,
+    }
 
 
 @require_GET
@@ -122,6 +146,7 @@ def probation_detail(request, probation_id):
             "probation": record,
             "section": _section_page(probation, context.tenant_id, section, page),
             "canViewCase": bool(request.user.is_superuser or request.user.has_perm("hr05.case.view")),
+            "decisionCapabilities": _decision_capabilities(request, probation),
         })
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
