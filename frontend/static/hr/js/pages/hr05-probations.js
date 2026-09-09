@@ -36,8 +36,6 @@
         const value = String(item.status || "");
         if (value && !choices.has(value)) choices.set(value, window.HrApi.statusLabel(item.status, item.statusLabel));
       });
-      // A refresh must not silently change the user's selected status when
-      // that status is absent from the new returned records.
       if (selected && !choices.has(selected)) choices.set(selected, selectedLabel);
       status.replaceChildren(new Option("全部状态", ""));
       choices.forEach((label, value) => status.add(new Option(label, value)));
@@ -83,7 +81,7 @@
         refresh.textContent = "刷新中…";
       }
       try {
-        const res = await window.HrApi.request("/api/hr/v1/onboarding/probations");
+        const res = await window.HrApi.request("/api/v1/hr/onboarding/probations");
         if (!root.isConnected || !host.isConnected) return;
         const items = res.data?.data?.items;
         if (!res.ok || !Array.isArray(items) || items.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
