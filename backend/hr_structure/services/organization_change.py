@@ -20,7 +20,7 @@ from hr_structure.models import (
     HrOrganizationVersion,
     HrStructureChangeCase,
 )
-from hr_structure.scope import Hr02Scope
+from hr_structure.scope import Hr02Scope, lock_materialized_school
 
 
 class Hr02ServiceError(Exception):
@@ -77,6 +77,7 @@ class OrganizationChangeService:
         short_name: str = "",
     ) -> HrOrganization:
         """新建组织（CREATE_ORG）。"""
+        lock_materialized_school(self.scope.tenant_id)
         if validity_from < timezone.localdate():
             raise Hr02ServiceError("HR02_EFFECTIVE_RANGE_OVERLAP", "生效日期不能早于今天")
         # parent 必须属于本 tenant（INV-01），否则跨租户引用

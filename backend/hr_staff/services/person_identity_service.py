@@ -96,6 +96,7 @@ class PersonIdentityService:
         document_valid_from: Optional[date] = None,
         document_valid_to: Optional[date] = None,
         contacts: Optional[list[dict]] = None,
+        audit_actor_user_id: Optional[int] = None,
     ) -> HrPerson:
         """
         创建 Person（可带证件/联系方式）。返回创建或已存在（同 tenant 同证件 HARD）的 Person。
@@ -158,6 +159,7 @@ class PersonIdentityService:
         write_audit_event(
             tenant_id=tenant_id,
             action="PersonCreated",
+            actor_user_id=audit_actor_user_id,
             person_id=person.id,
             reason=f"legal_name={legal_name}",
         )

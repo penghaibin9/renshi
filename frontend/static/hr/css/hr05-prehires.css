@@ -1,0 +1,36 @@
+/* HR05 prehires only: searchable read ledger, unchanged columns and destinations. */
+.hr05-page[data-section="prehires"],
+.hr05-page[data-section="prehires"] *,
+.hr05-page[data-section="prehires"] *::before,
+.hr05-page[data-section="prehires"] *::after { box-sizing: border-box; }
+.hr05-page[data-section="prehires"] .hr05-panel { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.hr05-page[data-section="prehires"] .hr05-toolbar { align-items: start; }
+.hr05-page[data-section="prehires"] .hr05-toolbar__copy { flex: 1 1 280px; min-width: 0; }
+.hr05-page[data-section="prehires"] .hr05-prehire-tools:not([hidden]) { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; flex: 1 1 440px; min-width: 0; }
+.hr05-page[data-section="prehires"] .hr05-prehire-search:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex: 1 1 220px; min-width: 0; color: var(--hr-text-700); font-size: 13px; font-weight: 600; }
+.hr05-page[data-section="prehires"] .hr05-search { width: 100%; min-width: 0; min-height: 40px; font: inherit; font-weight: 400; color: var(--hr-text-900); background: var(--hr-surface); }
+.hr05-page[data-section="prehires"] .hr05-prehire-buttons:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; }
+.hr05-page[data-section="prehires"] .hr-btn { min-height: 40px; font: inherit; font-size: 13px; }
+.hr05-page[data-section="prehires"] .hr-btn:disabled { opacity: .6; cursor: not-allowed; }
+.hr05-page[data-section="prehires"] .hr-btn[aria-busy="true"] { opacity: .7; cursor: wait; }
+.hr05-page[data-section="prehires"] :is(.hr05-prehire-scope, .hr05-prehire-count) { margin: 0; font-size: 12px; line-height: 20px; color: var(--hr-text-500); }
+.hr05-page[data-section="prehires"] .hr05-prehire-count { color: var(--hr-text-700); }
+.hr05-page[data-section="prehires"] .hr05-table-wrap { min-width: 0; max-width: 100%; }
+.hr05-page[data-section="prehires"] .hr-table { width: 100%; border-collapse: collapse; }
+.hr05-page[data-section="prehires"] .hr-table :is(th, td) { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hr-border); font-size: 13px; line-height: 20px; }
+.hr05-page[data-section="prehires"] .hr-table th { background: var(--hr-canvas); color: var(--hr-text-700); white-space: nowrap; }
+.hr05-page[data-section="prehires"] .hr-table td { max-width: 22rem; overflow-wrap: anywhere; }
+.hr05-page[data-section="prehires"] .hr05-actions a { display: inline-flex; align-items: center; min-height: 36px; padding: 5px 7px; border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); }
+.hr05-page[data-section="prehires"] :is(.hr05-toolbar__copy, .hr05-prehire-scope, .hr05-prehire-count, .hr05-state, .hr05-truth-note) { overflow-wrap: anywhere; }
+.hr05-page[data-section="prehires"] :is(input, button, a[href], [tabindex]):focus-visible { outline: 2px solid var(--hr-primary-600); outline-offset: 2px; scroll-margin-block: 100px 24px; }
+.hr05-page[data-section="prehires"] .hr05-table-wrap:focus-visible { outline-offset: -3px; }
+.hr05-page[data-section="prehires"] .hr05-prehire-scroll-help { margin: 0; color: var(--hr-text-500); font-size: 12px; line-height: 20px; }
+@media (max-width: 760px) {
+  .hr05-page[data-section="prehires"] .hr05-panel { padding: 14px; }
+  .hr05-page[data-section="prehires"] .hr05-search { min-height: 44px; font-size: 16px; }
+  .hr05-page[data-section="prehires"] :is(.hr-btn, .hr05-actions a) { min-height: 44px; }
+  .hr05-page[data-section="prehires"] .hr05-truth-note { flex-wrap: wrap; }
+}
+@media (forced-colors: active) {
+  .hr05-page[data-section="prehires"] :is(input, button, a[href], [tabindex]):focus-visible { outline-color: Highlight; }
+}

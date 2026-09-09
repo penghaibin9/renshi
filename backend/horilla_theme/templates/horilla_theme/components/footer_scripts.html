@@ -19,6 +19,7 @@
 <script src="{% static 'build/js/moment.js' %}"></script>
 <script src="{% static 'cdn/ajax/scripts/moment-with-locales.min.js' %}"></script>
 
+{% include "base/account/display_preferences.html" %}
 <script src="{% static '/base/date_settings.js' %}"></script>
 <script src="{% static '/base/time_formatting.js' %}"></script>
 <script src="{% static '/base/time_settings.js' %}"></script>
@@ -61,6 +62,10 @@
       document.body.classList.add('hr-v2-shell');
     }
 </script>
+
+<!-- HR presentation only; selectors remain scoped to existing workspaces. -->
+<link rel="stylesheet" href="{% static 'hr/css/hr-task-polish.css' %}">
+<script src="{% static 'hr/js/core/task-polish.js' %}"></script>
 
 <!-- Product tour engine (horilla_tour) -->
 {% if request.user.is_authenticated %}

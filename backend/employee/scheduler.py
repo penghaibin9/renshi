@@ -8,9 +8,8 @@ from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
-
-from horilla.horilla_middlewares import tenant_context
 from base.worker_health import write_worker_heartbeat
+from horilla.horilla_middlewares import tenant_context
 
 
 def _for_each_company(job):

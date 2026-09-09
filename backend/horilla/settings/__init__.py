@@ -14,7 +14,6 @@ import os
 from importlib.util import find_spec
 
 from django.core.exceptions import ImproperlyConfigured
-
 from horilla.settings.runtime_seals import install_legacy_runtime_seals
 
 from .base import *  # noqa: F401,F403
@@ -71,9 +70,7 @@ if "platform_access" not in INSTALLED_APPS:  # noqa: F405
 HR04_PRIVACY_NOTICE_VERSION = os.getenv(
     "HR04_PRIVACY_NOTICE_VERSION", "2026-01"
 ).strip()
-HR04_CANDIDATE_RETENTION_DAYS = int(
-    os.getenv("HR04_CANDIDATE_RETENTION_DAYS", "730")
-)
+HR04_CANDIDATE_RETENTION_DAYS = int(os.getenv("HR04_CANDIDATE_RETENTION_DAYS", "730"))
 HR04_PRIVACY_CONTACT = os.getenv(
     "HR04_PRIVACY_CONTACT", "招聘公告公布的联系方式"
 ).strip()
@@ -111,22 +108,15 @@ HR15_PAYROLL_INPUT_PROVIDERS = {
 # response: dispatch is HTTPS-bound and terminal receipts require an HMAC seal.
 HR15_PAYMENT_HTTP_ENDPOINT = os.getenv("HR15_PAYMENT_HTTP_ENDPOINT", "").strip()
 HR15_PAYMENT_HTTP_TOKEN = os.getenv("HR15_PAYMENT_HTTP_TOKEN", "").strip()
-HR15_PAYMENT_HTTP_TIMEOUT_SECONDS = os.getenv(
-    "HR15_PAYMENT_HTTP_TIMEOUT_SECONDS", "15"
-)
+HR15_PAYMENT_HTTP_TIMEOUT_SECONDS = os.getenv("HR15_PAYMENT_HTTP_TIMEOUT_SECONDS", "15")
 HR15_PAYMENT_RECEIPT_HMAC_SECRET = os.getenv(
     "HR15_PAYMENT_RECEIPT_HMAC_SECRET", ""
 ).strip()
-HR15_PAYMENT_RECEIPT_KEY_ID = os.getenv(
-    "HR15_PAYMENT_RECEIPT_KEY_ID", ""
-).strip()
-HR15_PAYMENT_PROVIDER_CODE = os.getenv(
-    "HR15_PAYMENT_PROVIDER_CODE", ""
-).strip().upper()
+HR15_PAYMENT_RECEIPT_KEY_ID = os.getenv("HR15_PAYMENT_RECEIPT_KEY_ID", "").strip()
+HR15_PAYMENT_PROVIDER_CODE = os.getenv("HR15_PAYMENT_PROVIDER_CODE", "").strip().upper()
 HR15_PAYMENT_PROVIDERS = (
     {
-        HR15_PAYMENT_PROVIDER_CODE:
-            "hr_payroll.providers.payment_http.HttpsPaymentProvider"
+        HR15_PAYMENT_PROVIDER_CODE: "hr_payroll.providers.payment_http.HttpsPaymentProvider"
     }
     if HR15_PAYMENT_HTTP_ENDPOINT and HR15_PAYMENT_PROVIDER_CODE
     else {}
@@ -135,9 +125,7 @@ HR15_PAYMENT_PROVIDERS = (
 # HR18 external delivery is enabled only when deployment credentials are
 # explicitly present.  Queueing remains fail-closed without them; no local
 # adapter can turn a formal submission or exchange into a fabricated success.
-HR18_SUBMISSION_HTTP_ENDPOINT = os.getenv(
-    "HR18_SUBMISSION_HTTP_ENDPOINT", ""
-).strip()
+HR18_SUBMISSION_HTTP_ENDPOINT = os.getenv("HR18_SUBMISSION_HTTP_ENDPOINT", "").strip()
 HR18_SUBMISSION_HTTP_TOKEN = os.getenv("HR18_SUBMISSION_HTTP_TOKEN", "").strip()
 HR18_SUBMISSION_HTTP_TIMEOUT_SECONDS = os.getenv(
     "HR18_SUBMISSION_HTTP_TIMEOUT_SECONDS", "15"
@@ -148,9 +136,7 @@ HR18_SUBMISSION_HTTP_PROVIDER_VERSION = os.getenv(
 HR18_SUBMISSION_RECEIPT_HMAC_SECRET = os.getenv(
     "HR18_SUBMISSION_RECEIPT_HMAC_SECRET", ""
 ).strip()
-HR18_SUBMISSION_RECEIPT_KEY_ID = os.getenv(
-    "HR18_SUBMISSION_RECEIPT_KEY_ID", ""
-).strip()
+HR18_SUBMISSION_RECEIPT_KEY_ID = os.getenv("HR18_SUBMISSION_RECEIPT_KEY_ID", "").strip()
 HR18_SUBMISSION_DISPATCH_PROVIDER_KEY = os.getenv(
     "HR18_SUBMISSION_DISPATCH_PROVIDER_KEY", "EDU_PLATFORM"
 ).strip()
@@ -168,13 +154,12 @@ HR18_EXCHANGE_HTTP_TIMEOUT_SECONDS = os.getenv(
 HR18_EXCHANGE_HTTP_PROVIDER_VERSION = os.getenv(
     "HR18_EXCHANGE_HTTP_PROVIDER_VERSION", "https-v1"
 ).strip()
-HR18_EXCHANGE_HTTP_PROVIDER_KEY = os.getenv(
-    "HR18_EXCHANGE_HTTP_PROVIDER_KEY", "EDU_PLATFORM"
-).strip().upper()
+HR18_EXCHANGE_HTTP_PROVIDER_KEY = (
+    os.getenv("HR18_EXCHANGE_HTTP_PROVIDER_KEY", "EDU_PLATFORM").strip().upper()
+)
 HR18_EXCHANGE_PROVIDERS = (
     {
-        HR18_EXCHANGE_HTTP_PROVIDER_KEY:
-            "hr_data.providers.exchange_http.https_exchange_provider"
+        HR18_EXCHANGE_HTTP_PROVIDER_KEY: "hr_data.providers.exchange_http.https_exchange_provider"
     }
     if HR18_EXCHANGE_HTTP_ENDPOINT and HR18_EXCHANGE_HTTP_PROVIDER_KEY
     else {}
@@ -233,17 +218,23 @@ if IS_PRODUCTION:  # noqa: F405
             "HR16_IAM": {
                 "url": HR16_EXIT_EXTERNAL_PROVIDERS["IAM"]["url"],  # noqa: F405
                 "token": HR16_EXIT_EXTERNAL_PROVIDERS["IAM"]["token"],  # noqa: F405
-                "timeout": HR16_EXIT_EXTERNAL_PROVIDERS["IAM"]["timeoutSeconds"],  # noqa: F405
+                "timeout": HR16_EXIT_EXTERNAL_PROVIDERS["IAM"][
+                    "timeoutSeconds"
+                ],  # noqa: F405
             },
             "HR16_ASSET": {
                 "url": HR16_EXIT_EXTERNAL_PROVIDERS["ASSET"]["url"],  # noqa: F405
                 "token": HR16_EXIT_EXTERNAL_PROVIDERS["ASSET"]["token"],  # noqa: F405
-                "timeout": HR16_EXIT_EXTERNAL_PROVIDERS["ASSET"]["timeoutSeconds"],  # noqa: F405
+                "timeout": HR16_EXIT_EXTERNAL_PROVIDERS["ASSET"][
+                    "timeoutSeconds"
+                ],  # noqa: F405
             },
             "HR16_FINANCE": {
                 "url": HR16_EXIT_EXTERNAL_PROVIDERS["FINANCE"]["url"],  # noqa: F405
                 "token": HR16_EXIT_EXTERNAL_PROVIDERS["FINANCE"]["token"],  # noqa: F405
-                "timeout": HR16_EXIT_EXTERNAL_PROVIDERS["FINANCE"]["timeoutSeconds"],  # noqa: F405
+                "timeout": HR16_EXIT_EXTERNAL_PROVIDERS["FINANCE"][
+                    "timeoutSeconds"
+                ],  # noqa: F405
             },
             "HR18_SUBMISSION": {
                 "url": HR18_SUBMISSION_HTTP_ENDPOINT,

@@ -44,7 +44,7 @@
     if (item.notice_status !== "CLOSED_NO_BLOCKER") return `<button type="button" class="hr-btn hr-btn--primary" data-proposed-action="close-notice" data-id="${id}">公示结束（无异议）</button>`;
     if (!item.offer_id) return `<button type="button" class="hr-btn hr-btn--primary" data-proposed-action="offer" data-id="${id}">创建并签发 Offer</button>`;
     if (item.offer_status !== "ACCEPTED") return `<button type="button" class="hr-btn hr-btn--primary" data-proposed-action="accept" data-id="${id}">候选人接受 Offer</button>`;
-    return `<button type="button" class="hr-btn hr-btn--primary" data-proposed-action="handoff" data-id="${id}">交接 HR05</button>`;
+    return handoffAction(item);
   }
 
   async function advance(item, action, button) {
@@ -74,8 +74,6 @@
         await api(`/api/hr/v1/recruitment/offers/${encodeURIComponent(offer.id)}/status`, {method: "POST", body: {target: "ISSUED"}});
       } else if (action === "accept") {
         await api(`/api/hr/v1/recruitment/offers/${encodeURIComponent(item.offer_id)}/accept`, {method: "POST"});
-      } else if (action === "handoff") {
-        await api(`/api/hr/v1/recruitment/proposed-hires/${encodeURIComponent(item.id)}/handoff-to-hr05`, {method: "POST", headers: {"Idempotency-Key": `hr04-ui-handoff-${item.id}`}});
       }
       await load();
     } catch (error) {
@@ -169,6 +167,7 @@
         "</tbody></table>";
       const itemMap = new Map(items.map((item) => [item.id, item]));
       container.querySelectorAll("[data-proposed-action]").forEach((button) => button.addEventListener("click", () => advance(itemMap.get(button.dataset.id), button.dataset.proposedAction, button)));
+      bindHandoffActions(container);
     } catch (error) {
       container.innerHTML = stateHtml(
         "拟录用结果读取失败",

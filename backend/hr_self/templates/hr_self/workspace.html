@@ -7,6 +7,17 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr17-self.css' %}?v=20260830-2">
+<style>
+/* Only the existing HR17 catalogue toolbar; no layout or visibility changes elsewhere. */
+.hr17[data-module="HR17"] .hr17-filter-actions {display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.hr17[data-module="HR17"] .hr17-filter-button {min-height:44px;padding:8px 12px;border:1px solid var(--hr-border);border-radius:var(--hr-radius-sm);background:var(--hr-surface);color:var(--hr-text-700);font:inherit;font-size:13px;cursor:pointer}
+.hr17[data-module="HR17"] .hr17-filter-button[aria-pressed="true"] {border-color:var(--hr-primary-600);background:var(--hr-primary-50);color:var(--hr-primary-700);font-weight:700}
+.hr17[data-module="HR17"] .hr17-filter-button:disabled {opacity:.55;cursor:not-allowed}
+.hr17[data-module="HR17"] .hr17-filter-button:focus-visible {outline:2px solid var(--hr-primary-600);outline-offset:2px}
+.hr17[data-module="HR17"] :is(.hr17-filter-count,.hr17-service-feedback) {flex-basis:100%;margin:0;color:var(--hr-text-500);font-size:13px;line-height:20px;overflow-wrap:anywhere}
+.hr17[data-module="HR17"] .hr17-service-feedback[data-tone="error"] {color:var(--hr-danger)}
+@media(forced-colors:active){.hr17[data-module="HR17"] .hr17-filter-button:focus-visible {outline-color:Highlight}}
+</style>
 {% endblock styles %}
 
 {% block content %}
@@ -52,9 +63,9 @@
         <div class="hr17-identity" id="hr17-identity"><div class="hr17-empty">正在读取本人主档…</div></div>
       </article>
       <article class="hr17-card">
-        <h2>业务来源健康度</h2>
+        <h2 id="hr17-health-title">数据来源状态</h2>
         <p>每个来源独立展示当前状态；暂不可用不会被误报为“没有数据”。</p>
-        <div class="hr17-health" id="hr17-health"><div class="hr17-empty">正在检查数据来源…</div></div>
+        <div class="hr17-health" id="hr17-health" tabindex="0" role="region" aria-labelledby="hr17-health-title"><div class="hr17-empty">正在检查数据来源…</div></div>
       </article>
     </section>
 
@@ -63,8 +74,14 @@
         <h2 id="hr17-work-title">{{ section_title }}</h2>
         <p id="hr17-work-desc">正在读取当前登录人的本人服务事实。</p>
         <div class="hr17-toolbar" id="hr17-service-tools" hidden>
-          <input id="hr17-search" class="hr17-search" type="search" placeholder="搜索我要办的事，例如：合同、职称、岗位聘任…" aria-label="搜索本人服务">
-          <select id="hr17-domain" class="hr17-select" aria-label="按业务域筛选"><option value="">全部业务域</option></select>
+          <input id="hr17-search" class="hr17-search" type="search" placeholder="搜索我要办的事，例如：合同、职称、岗位聘任…" aria-label="搜索本人服务" aria-controls="hr17-services">
+          <select id="hr17-domain" class="hr17-select" aria-label="按服务类别筛选" aria-controls="hr17-services"><option value="">全部服务类别</option></select>
+          <div class="hr17-filter-actions">
+            <button id="hr17-only-pinned" class="hr17-filter-button" type="button" aria-pressed="false" aria-controls="hr17-services">只看常用</button>
+            <button id="hr17-clear-filters" class="hr17-filter-button" type="button" aria-controls="hr17-services" disabled>清空筛选</button>
+          </div>
+          <p id="hr17-service-count" class="hr17-filter-count" role="status" aria-live="polite" aria-atomic="true"></p>
+          <p id="hr17-service-feedback" class="hr17-service-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
         </div>
         <div id="hr17-services" class="hr17-services" hidden><div class="hr17-empty">正在读取本人服务目录…</div></div>
         <div id="hr17-rows" class="hr17-list"><div class="hr17-empty">正在读取本人记录…</div></div>
@@ -84,5 +101,5 @@
 
 {% block scripts %}
 {{ block.super }}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr17-self.js' %}?v=20260830-2"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr17-self.js' %}?v=20260908-usability-2"></script>{% endif %}
 {% endblock scripts %}

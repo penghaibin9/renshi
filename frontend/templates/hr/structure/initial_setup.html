@@ -1,0 +1,71 @@
+{% extends "index.html" %}
+{% load static %}
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/structure-setup.css' %}">
+{% endblock styles %}
+{% block content %}
+<main id="hr02-initial-setup" class="hr-v2-page setup-workspace" data-school-id="{{ school.pk }}">
+  <header class="setup-header">
+    <div><p class="setup-eyebrow">学校首次配置 · 组织与岗位</p><h1>建立初始组织与岗位</h1>
+      <p>{{ school.company }} · 学校编号 {{ school.pk }}</p></div>
+    <a class="setup-button" href="{% url 'school-management' %}">返回学校管理中心</a>
+  </header>
+  {% if setup_form.non_field_errors %}<div role="alert" class="setup-error">{{ setup_form.non_field_errors }}</div>{% endif %}
+  {% if receipt %}
+    <section class="setup-card" id="structure-setup-receipt" data-receipt-id="{{ receipt.pk }}">
+      <h2>初始组织与岗位已建立</h2>
+      <p>以下记录已经写入正式组织与岗位台账。刷新或重复提交不会再创建一份。</p>
+      <dl class="setup-facts">
+        <dt>学校根组织</dt><dd>{{ receipt.root_version.name }} · {{ receipt.root_version.organization_id.stable_code }}</dd>
+        <dt>首个部门</dt><dd>{{ receipt.department_version.name }} · {{ receipt.department_version.organization_id.stable_code }}</dd>
+        <dt>岗位目录</dt><dd>{{ receipt.catalog_version.name }} · {{ receipt.catalog_version.catalog_id.stable_code }}</dd>
+        <dt>首个岗位</dt><dd>{{ receipt.position.position_code }} · 初始最大任职人数 1 人</dd>
+        <dt>初始生效日期</dt><dd>{{ receipt.root_version.validity_from|date:"Y-m-d" }}</dd>
+      </dl>
+      <div class="setup-actions">
+        <a class="setup-button" href="{% url 'hr-structure-organizations' %}">查看正式组织树</a>
+        <a class="setup-button" href="{% url 'hr-structure-positions' %}">查看岗位台账</a>
+        {% if can_view_staff %}<a class="setup-button setup-primary" href="{% url 'hr03-staff-list' %}">下一步：教职工主档</a>{% endif %}
+      </div>
+    </section>
+  {% elif has_existing_structure %}
+    <section class="setup-card"><h2>本校已有组织或岗位记录</h2>
+      <p>为保护已有数据，不能再次执行首次建立。请进入正式工作区核对或办理调整。</p>
+      <a class="setup-button" href="{% url 'hr-structure-organizations' %}">进入组织机构</a>
+      <a class="setup-button" href="{% url 'hr-structure-positions' %}">进入岗位台账</a>
+    </section>
+  {% elif not profile_complete %}
+    <section class="setup-card"><h2>先完善学校资料</h2><p>学校名称和地址等基础资料尚未完成，不会自动创建任何组织。</p>
+      <a class="setup-button setup-primary" href="{% url 'school-management' %}#school-profile">完善学校资料</a></section>
+  {% elif not can_initialize %}
+    <section class="setup-card"><h2>请由学校授权管理员办理</h2>
+      <p>当前账号可以查看，但没有组织新建、岗位目录管理和岗位管理的全部权限。平台支持账号不会代替学校确认初始数据。</p></section>
+  {% else %}
+    <p class="setup-notice">一次建立学校根组织、一个实际部门及其首个空缺岗位。生效日期为 <strong>{{ today|date:"Y-m-d" }}</strong>；请填写本校真实信息。</p>
+    <form id="initial-structure-form" method="post" action="{% url 'hr-structure-initial-setup' %}" hx-boost="false" data-settings-native="true">
+      {% csrf_token %}<input type="hidden" name="setup_proof" value="{{ setup_proof }}">
+      <div class="setup-grid">
+        <section class="setup-card"><h2>1. 学校与首个部门</h2>
+          <p class="setup-hint">学校组织名称使用已确认的“{{ school.company }}”。</p>
+          {% for field in setup_form %}{% if field.name == "root_code" or field.name == "department_code" or field.name == "department_name" or field.name == "department_type" %}
+            <div class="setup-field"><label for="{{ field.id_for_label }}">{{ field.label }} <span aria-label="必填">*</span></label>{{ field }}{{ field.errors }}{% if field.help_text %}<p class="setup-hint">{{ field.help_text }}</p>{% endif %}</div>
+          {% endif %}{% endfor %}
+        </section>
+        <section class="setup-card"><h2>2. 首个岗位</h2>
+          <p class="setup-hint">岗位属于左侧填写的部门。人员建档后再办理实际任职。</p>
+          {% for field in setup_form %}{% if field.name == "catalog_code" or field.name == "catalog_name" or field.name == "category" or field.name == "position_code" or field.name == "planned_fte" %}
+            <div class="setup-field"><label for="{{ field.id_for_label }}">{{ field.label }} <span aria-label="必填">*</span></label>{{ field }}{{ field.errors }}{% if field.help_text %}<p class="setup-hint">{{ field.help_text }}</p>{% endif %}</div>
+          {% endif %}{% endfor %}
+        </section>
+      </div>
+      <section class="setup-card setup-confirm"><label for="{{ setup_form.confirmed.id_for_label }}">{{ setup_form.confirmed }} {{ setup_form.confirmed.label }}</label>{{ setup_form.confirmed.errors }}
+        <p class="setup-hint">本次不生成教师、不分配任职、不代替编制方案审批。任一步骤失败都不保留半成品。</p>
+        <button type="submit" class="setup-button setup-primary">确认并建立组织岗位</button>
+      </section>
+    </form>
+  {% endif %}
+</main>
+{% endblock content %}

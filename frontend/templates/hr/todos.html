@@ -11,15 +11,36 @@ HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-inbox.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-focus.css' %}">
 
-<div class="hr-page" data-hr-page="todos">
-  {% include "hr/components/page_header.html" with title="我的待办" subtitle="散落在各模块的、当前由我处理的事项" %}
+<div class="hr-page hr-v2-page hr01-inbox hr01-focus-page" data-hr-page="todos" data-module="HR01">
+  {% include "hr/components/page_header.html" with title="我的待办" subtitle="先处理逾期事项。" %}
 
   <!-- 统计 -->
   {% include "hr/components/section_card.html" with id="hr-todo-summary" title="待办概览" status="loading" %}
 
   <!-- 分类 Tabs -->
   {% include "hr/components/status_tabs.html" with id="hr-todo-tabs" %}
+
+  <div class="hr01-inbox__tools" role="group" aria-label="待办查找与刷新">
+    <label class="hr01-inbox__search" for="hr-todo-search">查找待办
+      <input id="hr-todo-search" type="search" placeholder="搜索事项、姓名、单位或办理阶段" aria-controls="hr-todo-list" autocomplete="off">
+    </label>
+    <label for="hr-todo-severity">紧急程度
+      <select id="hr-todo-severity" aria-controls="hr-todo-list">
+        <option value="">全部等级</option><option value="CRITICAL">严重</option><option value="HIGH">高</option><option value="MEDIUM">中</option><option value="LOW">低</option>
+      </select>
+    </label>
+    <div class="hr01-inbox__actions">
+      <button id="hr-todo-overdue" class="hr-btn" type="button" aria-pressed="false" aria-controls="hr-todo-list">只看逾期</button>
+      <button id="hr-todo-clear" class="hr-btn" type="button" disabled>清空筛选</button>
+      <button id="hr-todo-refresh" class="hr-btn hr-btn--primary" type="button" aria-controls="hr-todo-summary hr-todo-list">刷新数据</button>
+    </div>
+    <p class="hr01-inbox__scope">仅筛选已载入的最多 50 条，保留返回顺序；概览不变。</p>
+    <p class="hr01-inbox__count" id="hr-todo-count" role="status" aria-live="polite" aria-atomic="true">正在读取待办…</p>
+  </div>
 
   <!-- 待办列表 -->
   {% include "hr/components/section_card.html" with id="hr-todo-list" title="待办事项" status="loading" %}

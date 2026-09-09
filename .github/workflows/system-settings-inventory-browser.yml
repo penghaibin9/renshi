@@ -1,0 +1,331 @@
+name: System Settings Full Inventory Browser Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/system-settings-inventory-browser.yml"
+      - "scripts/system_settings_inventory_browser.py"
+      - "backend/base/**"
+      - "backend/horilla/menu/**"
+      - "backend/horilla/urls.py"
+      - "backend/horilla_theme/templates/settings.html"
+      - "backend/horilla_theme/templates/base/settings/**"
+      - "backend/horilla_theme/templates/base/company/**"
+      - "backend/horilla_theme/templates/base/dynamic_pagination/**"
+      - "frontend/templates/index.html"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: system-settings-inventory-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  SETTINGS_INVENTORY_BASE_URL: http://127.0.0.1:8000
+  SETTINGS_INVENTORY_ARTIFACT_DIR: tests/artifacts/system-settings-inventory
+  SETTINGS_INVENTORY_USERNAME: settings-inventory-admin
+  SETTINGS_INVENTORY_PASSWORD: "inventory-${{ github.run_id }}-${{ github.run_attempt }}"
+
+jobs:
+  every-visible-settings-entry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: renshi_db
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Syntax gate
+        run: python -m py_compile scripts/system_settings_inventory_browser.py
+
+      - name: Install application and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
+
+      - name: Prepare runtime
+        run: |
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for System Settings inventory gate' \
+              > backend/horilla/settings/local_settings.py
+          fi
+          mkdir -p tests/artifacts/system-settings-inventory
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+          python manage.py makemigrations --check --dry-run --noinput
+
+      - name: Seed one ordinary all-settings school role
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from django.contrib.auth import get_user_model
+          from django.contrib.auth.models import Group, Permission
+          from django.core.files.uploadedfile import SimpleUploadedFile
+
+          from base.models import Company, CompanyGroupAssignment
+          from employee.models import Employee, EmployeeWorkInformation
+          from horilla.horilla_middlewares import tenant_context
+          from hr_staff.models import HrPerson, HrStaffMaster
+
+          school = Company.objects.create(
+              company="跃科全量系统设置巡检学校",
+              hq=True,
+              address="长沙市系统设置全量巡检路 1 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              icon=SimpleUploadedFile(
+                  "settings-inventory.png",
+                  b"settings-inventory",
+                  content_type="image/png",
+              ),
+          )
+          foreign_school = Company.objects.create(
+              company="跃科系统设置隔离对照学校",
+              hq=False,
+              address="长沙市系统设置隔离对照路 2 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410001",
+              icon=SimpleUploadedFile(
+                  "settings-inventory-foreign.png",
+                  b"settings-inventory-foreign",
+                  content_type="image/png",
+              ),
+          )
+
+          User = get_user_model()
+          user = User.objects.create_user(
+              username=os.environ["SETTINGS_INVENTORY_USERNAME"],
+              email="settings-inventory@example.invalid",
+              password=os.environ["SETTINGS_INVENTORY_PASSWORD"],
+          )
+          user.is_new_employee = False
+          user.save(update_fields=["is_new_employee"])
+          assert not user.is_superuser
+
+          employee = Employee.objects.create(
+              employee_user_id=user,
+              employee_first_name="系统设置",
+              employee_last_name="全量巡检员",
+              email="settings-inventory-employee@example.invalid",
+              phone="13800009999",
+              is_active=True,
+          )
+          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(
+              employee_id=employee,
+          )
+          work_info.company_id = school
+          work_info.save(update_fields=["company_id"])
+          person = HrPerson.objects.create(
+              tenant_id=school.pk,
+              legal_name="系统设置全量巡检员",
+              status="ACTIVE",
+          )
+          HrStaffMaster.objects.create(
+              tenant_id=school.pk,
+              person_id=person,
+              staff_no="SETTINGS-INVENTORY-001",
+              current_employment_status="ACTIVE",
+              legacy_employee_id=employee.pk,
+          )
+
+          group = Group.objects.create(
+              name=f"System Settings Inventory @ {school.pk}"
+          )
+          group.permissions.set(Permission.objects.all())
+          assignment = CompanyGroupAssignment.objects.create(
+              user=user,
+              company=school,
+              group=group,
+          )
+          CompanyGroupAssignment.sync_user_group_membership(user, group)
+
+          with tenant_context(school.pk):
+              for permission in (
+                  "base.view_company",
+                  "base.change_company",
+                  "base.view_dynamicpagination",
+                  "base.change_dynamicpagination",
+                  "hr08.hiring.review",
+              ):
+                  assert user.has_perm(permission), permission
+          with tenant_context(foreign_school.pk):
+              assert not user.has_perm("base.view_company")
+
+          Path(
+              "tests/artifacts/system-settings-inventory/seed.json"
+          ).write_text(
+              json.dumps(
+                  {
+                      "school_id": school.pk,
+                      "school_name": school.company,
+                      "foreign_school_id": foreign_school.pk,
+                      "foreign_school_name": foreign_school.company,
+                      "user_id": user.pk,
+                      "assignment_id": assignment.pk,
+                      "permission_count": group.permissions.count(),
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          print(
+              "System Settings inventory seed PASS",
+              f"school={school.pk}",
+              f"foreign_school={foreign_school.pk}",
+              f"user={user.pk}",
+              f"permissions={group.permissions.count()}",
+          )
+          PY
+
+      - name: Boot Django and click every visible settings entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python manage.py runserver 127.0.0.1:8000 --noreload \
+            > tests/artifacts/system-settings-inventory/django-runserver.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/login/ >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            cat tests/artifacts/system-settings-inventory/django-runserver.log
+            exit 1
+          fi
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
+            | tee tests/artifacts/system-settings-inventory/readiness.json
+
+          python scripts/system_settings_inventory_browser.py
+
+      - name: Seal the dynamic settings inventory
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import json
+          from pathlib import Path
+
+          from django.contrib.auth import get_user_model
+
+          from base.models import Company, CompanyGroupAssignment
+
+          root = Path("tests/artifacts/system-settings-inventory")
+          seed = json.loads((root / "seed.json").read_text(encoding="utf-8"))
+          menu = json.loads(
+              (root / "discovered-menu.json").read_text(encoding="utf-8")
+          )
+          inventory = json.loads(
+              (root / "settings-inventory.json").read_text(encoding="utf-8")
+          )
+          diagnostics = json.loads(
+              (root / "diagnostics.json").read_text(encoding="utf-8")
+          )
+
+          assert len(menu) >= 8, len(menu)
+          assert len(inventory) == len(menu), (len(inventory), len(menu))
+          assert diagnostics["failure"] is None, diagnostics
+          assert diagnostics["visited_count"] == len(menu), diagnostics
+          assert not diagnostics["page_errors"], diagnostics
+          assert not diagnostics["unexpected_responses"], diagnostics
+          assert all(item["http_status"] < 400 for item in inventory)
+          assert all(item["content_length"] > 0 for item in inventory)
+
+          targets = {item["target"] for item in inventory}
+          assert "/settings/system-preferences-view/" in targets, targets
+          assert "/settings/company-view/" in targets, targets
+
+          User = get_user_model()
+          user = User.objects.get(id=seed["user_id"])
+          assert not user.is_superuser
+          assignment = CompanyGroupAssignment.objects.get(
+              id=seed["assignment_id"],
+              user=user,
+              company_id=seed["school_id"],
+          )
+          assert assignment.group.permissions.count() == seed["permission_count"]
+          assert not CompanyGroupAssignment.objects.filter(
+              user=user,
+              company_id=seed["foreign_school_id"],
+          ).exists()
+          assert Company.objects.get(id=seed["school_id"]).company == seed["school_name"]
+          assert (
+              Company.objects.get(id=seed["foreign_school_id"]).company
+              == seed["foreign_school_name"]
+          )
+
+          print(
+              "System Settings full inventory browser seal PASS",
+              f"visited={len(inventory)}",
+              f"groups={len({item['group'] for item in inventory})}",
+              f"ordinary_user={user.pk}",
+          )
+          PY
+
+      - name: Upload full settings inventory evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-settings-inventory-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/system-settings-inventory/
+          if-no-files-found: error
+          retention-days: 14

@@ -8,35 +8,44 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-prehires.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr05-page" data-module="HR05" data-section="prehires" data-hr-page="onboarding-prehires">
+<div class="hr-v2-page hr05-page hr05-focus-page" data-module="HR05" data-section="prehires" data-hr-page="onboarding-prehires">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>待报到人员</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr05-prehires-title">
     <div class="hr-v2-pagehead__copy">
-      <div class="hr-v2-eyebrow">HR05 · 入职管理</div>
+      
       <h1 class="hr-v2-title" id="hr05-prehires-title">待报到人员</h1>
-      <p class="hr-v2-subtitle">读取当前学校可见的入职单，按服务端数据范围过滤；列表不展示身份证明等高敏明文。</p>
+      <p class="hr-v2-subtitle">查找入职单，进入详情、报到或材料办理。</p>
     </div>
-    <div class="hr-v2-context">
-      <span class="hr-v2-context__item"><strong>来源</strong> 正式入职单数据</span>
-      <span class="hr-v2-context__item"><strong>范围</strong> 服务端裁剪</span>
-      <span class="hr-v2-context__item"><strong>状态</strong> 实时读取</span>
-    </div>
+    
   </header>
   {% include "hr/onboarding/components/v2_nav.html" with active="prehires" %}
 
   <section class="hr05-panel">
     <div class="hr05-toolbar">
-      <div class="hr05-toolbar__copy"><h2>入职单</h2><p>可按入职单编号或来源编号搜索，搜索条件直接发送给服务端。</p></div>
-      <input class="hr05-search" id="hr05-prehire-keyword" placeholder="搜索入职单/来源编号" autocomplete="off">
+      <div class="hr05-toolbar__copy"><h2 id="hr05-prehire-list-title">入职单</h2></div>
+      <div class="hr05-prehire-tools" role="group" aria-label="入职单搜索与刷新">
+        <label class="hr05-prehire-search" for="hr05-prehire-keyword">搜索入职单或来源编号
+          <input class="hr05-search" id="hr05-prehire-keyword" type="search" placeholder="搜索入职单/来源编号" autocomplete="off" aria-controls="hr05-prehire-list">
+        </label>
+        <div class="hr05-prehire-buttons">
+          <button class="hr-btn" id="hr05-prehire-clear" type="button" disabled>清空搜索</button>
+          <button class="hr-btn hr-btn--primary" id="hr05-prehire-refresh" type="button" aria-controls="hr05-prehire-list">刷新列表</button>
+        </div>
+      </div>
     </div>
-    <div id="hr05-prehire-list" class="hr05-table-wrap" aria-live="polite">
-      <div class="hr05-state"><strong>正在读取待报到人员</strong><span>等待服务端返回当前学校可见的正式入职单。</span></div>
+    <p class="hr05-prehire-scope">当前学校授权范围 · 单次最多 100 条 · 按原顺序展示</p>
+    <p id="hr05-prehire-count" class="hr05-prehire-count" role="status" aria-live="polite" aria-atomic="true">正在查询，请稍候…</p>
+    <p id="hr05-prehire-scroll-help" class="hr05-prehire-scroll-help">左右滚动可查看办理入口。</p>
+    <div id="hr05-prehire-list" class="hr05-table-wrap" aria-live="polite" tabindex="0" role="region" aria-labelledby="hr05-prehire-list-title" aria-describedby="hr05-prehire-scroll-help">
+      <div class="hr05-state"><strong>正在读取待报到人员</strong><span>请稍候。</span></div>
     </div>
   </section>
-  <div class="hr05-truth-note"><strong>真实性边界</strong><span>空列表表示服务端已成功返回且没有匹配数据；请求失败会明确显示失败状态，不再用占位文案冒充业务数据。</span></div>
+  <div class="hr05-truth-note"><strong>数据说明</strong><span>仅展示已授权入职单，不含高敏明文。读取失败与无匹配记录分别提示。</span></div>
 </div>
 {% endblock content %}
 

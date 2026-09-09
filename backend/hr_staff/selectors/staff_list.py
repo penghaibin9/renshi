@@ -298,7 +298,9 @@ class StaffListSelector:
             )
             .filter(effective_from__lte=self.as_of)
             .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=self.as_of))
-            .select_related("organization_id", "position_id", "post_catalog_id")
+            .select_related(
+                "employment_relationship_id", "organization_id", "position_id", "post_catalog_id"
+            )
             .order_by("effective_from")
         )
         by_staff = {}
@@ -330,6 +332,7 @@ class StaffListSelector:
 
     def _batch_org_names(self, primaries, as_of=None) -> dict:
         from hr_structure.models import HrOrganizationVersion
+        from hr_structure.selectors.effective import FORMAL_STATUSES
 
         as_of = as_of or self.as_of
         org_ids = {
@@ -344,6 +347,7 @@ class StaffListSelector:
             HrOrganizationVersion.objects.filter(
                 tenant_id=self.tenant_id,
                 organization_id__in=org_ids,
+                status__in=FORMAL_STATUSES,
                 validity_from__lte=as_of,
             )
             .filter(Q(validity_to__isnull=True) | Q(validity_to__gt=as_of))

@@ -1,34 +1,47 @@
 {% extends "index.html" %}
 {% load static i18n %}
-{% comment %}
-HR01-04 队伍结构 —— 结论卡 + 维度分布
-
-数据来源：
-  GET /api/hr/v1/home/workforce/summary
-  GET /api/hr/v1/home/workforce/distribution?dimension=...
-{% endcomment %}
 
 {% block content %}
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
-<script src="{% static 'hr/vendor/apexcharts/apexcharts.min.js' %}"></script>
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-workforce.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr01-focus.css' %}">
 
-<div class="hr-page" data-hr-page="workforce">
-  {% include "hr/components/page_header.html" with title="队伍结构" subtitle="学校/学院教师队伍结构是否合理、哪里存在缺口" %}
+<main class="hr-v2-page hr-workforce hr01-focus-page" data-hr-page="workforce" data-module="HR01">
+  <header class="hr-v2-pagehead">
+    <div class="hr-v2-pagehead__copy">
+      <h1 class="hr-v2-title">队伍结构</h1>
+      <p class="hr-v2-subtitle">查看人员规模、分布与缺项。</p>
+    </div>
+    <button class="wf-button" type="button" data-workforce-refresh>刷新数据</button>
+  </header>
 
-  <!-- 结论卡 -->
-  {% include "hr/components/section_card.html" with id="hr-workforce-summary" title="队伍结构结论" status="loading" %}
+  <section aria-labelledby="wf-summary-title">
+    <div class="wf-section-heading"><h2 id="wf-summary-title">人员规模与数据状态</h2><span id="hr-workforce-context" class="wf-meta">正在核对统计口径</span></div>
+    <div id="hr-workforce-summary" aria-busy="true" data-state="loading">
+      <div class="wf-state" role="status"><div class="hr-skeleton wf-loading" aria-hidden="true"></div><span>正在读取人员规模…</span></div>
+    </div>
+  </section>
 
-  <!-- 维度 Tabs -->
-  {% include "hr/components/status_tabs.html" with id="hr-workforce-tabs" %}
-
-  <!-- 分布图 -->
-  {% include "hr/components/chart_card.html" with chart_id="hr-workforce-dist" title="维度分布" status="loading" %}
-</div>
+  <section class="wf-panel" aria-labelledby="wf-distribution-title">
+    <div class="wf-section-heading"><div><h2 id="wf-distribution-title">人员类别 · 人数分布</h2><p class="wf-meta">按账号可见范围统计；小样本保护不变。</p></div></div>
+    <nav id="hr-workforce-tabs" class="wf-tabs" aria-label="队伍结构统计维度">
+      <button type="button" data-dim="personnel_category" aria-pressed="true" aria-controls="hr-workforce-dist">人员类别</button>
+      <button type="button" data-dim="department" aria-pressed="false" aria-controls="hr-workforce-dist">学院分布</button>
+      <button type="button" data-dim="job_position" aria-pressed="false" aria-controls="hr-workforce-dist">岗位分布</button>
+      <button type="button" data-dim="gender" aria-pressed="false" aria-controls="hr-workforce-dist">性别</button>
+      <button type="button" data-dim="age_group" aria-pressed="false" aria-controls="hr-workforce-dist">年龄结构</button>
+    </nav>
+    <div id="hr-workforce-dist" aria-busy="true" data-state="loading">
+      <div class="wf-state" role="status"><div class="hr-skeleton wf-loading" aria-hidden="true"></div><span>正在读取人数分布…</span></div>
+    </div>
+  </section>
+  <noscript><p class="wf-state">请启用 JavaScript 后查看队伍结构。当前没有加载业务数据。</p></noscript>
+</main>
 {% endblock %}
 
 {% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/core/chart.js' %}"></script>
 <script src="{% static 'hr/js/pages/workforce.js' %}"></script>
 {% endblock %}

@@ -75,12 +75,13 @@ class Hr03V2WorkspaceContractTests(SimpleTestCase):
     def test_roster_api_and_import_export_contracts_remain_visible(self):
         source = self._source(self.ROSTER_TEMPLATE)
         for endpoint in (
-            "/api/hr/v1/staff?",
-            "/api/hr/v1/staff/export",
-            "/api/hr/v1/staff/import",
+            "/api/v1/hr/staff?",
+            "/api/v1/hr/staff/export",
+            "/api/v1/hr/staff/import",
         ):
             with self.subTest(endpoint=endpoint):
                 self.assertIn(endpoint, source)
+        self.assertNotIn("/api/hr/v1/staff", source)
         self.assertIn("X-CSRFToken", source)
         self.assertIn("/hr/staff/data-quality/", source)
         self.assertIn("/hr/onboarding/", source)

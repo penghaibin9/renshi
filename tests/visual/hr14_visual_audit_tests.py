@@ -165,7 +165,7 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                 self.assertIsNotNone(response)
                 self.assertEqual(response.status, 200)
                 self.assertEqual(page.locator("[data-module='HR14']").count(), 1)
-                self.assertEqual(page.locator(".hr14-nav a").count(), 9)
+                self.assertEqual(page.locator(".hr14-nav a").count(), 6)
                 self.assertEqual(page.locator(".hr14-process__step").count(), 6)
                 self.assertEqual(page.locator(".hr14-hero").count(), 0)
                 self.assertEqual(page.locator("#hr14-kpis .hr14-kpi").count(), 6)
@@ -250,7 +250,7 @@ class Hr14VisualAuditTests(StaticLiveServerTestCase):
                         f"HR14 V2 shell missing at {route}",
                     )
 
-                    self.assertEqual(page.locator(".hr14-nav a").count(), 9)
+                    self.assertEqual(page.locator(".hr14-nav a").count(), 6)
                     if route in expected_workflows:
                         self.assertEqual(
                             page.locator("#hr14-workflow").count(),

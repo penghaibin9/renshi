@@ -26,7 +26,7 @@ from django.db.models import Q
 
 from horilla.hr_event_service import emit_registered_event
 from hr_time.enums import LeaveLedgerEntryType, LeaveRequestStatus
-from hr_time.models.leave import HrLeaveAccount
+from hr_time.models.leave import HrLeaveAccount, HrLeavePolicyVersion
 from hr_time.models.leave_request import (
     HrAbsenceFact,
     HrLeaveRequest,
@@ -531,6 +531,55 @@ class LeaveRequestService:
         return float(sum((e.amount for e in total), 0))
 
     @staticmethod
+    def _paid_classification_basis(request: HrLeaveRequest) -> dict:
+        """Read the submitted policy version, never today's mutable catalogue.
+
+        Pre-version requests and old versions without a frozen classification
+        stay unresolved. The existing monthly-close gate remains authoritative.
+        """
+        basis = {
+            "policyVersionId": request.policy_version_id,
+            "policyContentHash": None,
+            "paidClassification": "POLICY_DEPENDENT",
+            "source": "UNRESOLVED_LEGACY_POLICY",
+        }
+        if request.policy_version_id is None:
+            return basis
+        policy = HrLeavePolicyVersion.objects.filter(
+            pk=request.policy_version_id,
+            tenant_id=request.tenant_id,
+            leave_type_id=request.leave_type_id,
+        ).first()
+        if policy is None:
+            raise LeaveRequestError(
+                "CROSS_TENANT_REFERENCE", "申请政策不属于当前学校或假别"
+            )
+        # A retired version may still govern an already-submitted request.
+        if policy.status not in {"PUBLISHED", "RETIRED"} or not policy.content_hash:
+            raise LeaveRequestError(
+                "LEAVE_POLICY_NOT_PUBLISHED", "申请未关联曾正式发布的假期政策"
+            )
+        if policy.effective_from > request.start_at or (
+            policy.effective_to and policy.effective_to < request.end_at
+        ):
+            raise LeaveRequestError(
+                "LEAVE_POLICY_NOT_FOUND", "申请政策未覆盖完整请假期间"
+            )
+        rules = policy.interaction_rules
+        classification = rules.get("paidClassification") if isinstance(rules, dict) else None
+        if classification is not None and (
+            not isinstance(classification, str)
+            or classification not in {"PAID", "UNPAID", "POLICY_DEPENDENT"}
+        ):
+            raise LeaveRequestError(
+                "LEAVE_POLICY_CLASSIFICATION_INVALID", "已发布政策计薪分类无效，禁止形成计薪依据"
+            )
+        basis["policyContentHash"] = policy.content_hash
+        if classification is not None:
+            basis.update(paidClassification=classification, source="PUBLISHED_POLICY_VERSION")
+        return basis
+
+    @staticmethod
     @transaction.atomic
     def approve(request: HrLeaveRequest) -> HrAbsenceFact:
         """审批通过：RESERVE→USE（保留 reserve 记录 + 补 USE 条目）+ 生成 AbsenceFact。"""
@@ -553,6 +602,7 @@ class LeaveRequestService:
         account = HrLeaveAccount.objects.select_for_update().get(
             pk=request.account_id, tenant_id=request.tenant_id
         )
+        classification_basis = LeaveRequestService._paid_classification_basis(request)
         # RESERVE → USE：写 USE 条目（amount 同值，方向由 entry 语义区分）
         LeaveAccountService.grant(
             tenant_id=request.tenant_id,
@@ -583,10 +633,12 @@ class LeaveRequestService:
             ),
             chargeable_amount=request.calculated_amount,
             policy_version_id=request.policy_version_id,
+            paid_classification=classification_basis["paidClassification"],
             status="ACTIVE",
             effective_snapshot={
                 "leave_request_id": request.id,
                 "calculation": request.calculation_snapshot,
+                "paidClassificationBasis": classification_basis,
             },
         )
         emit_registered_event(

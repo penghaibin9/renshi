@@ -1,85 +1,32 @@
+/* Display-only: formats belong to this authorised document, never localStorage. */
 var DateFormattingUtility = DateFormattingUtility || class DateFormattingUtility {
     constructor() {
-        // Default date format
         this.dateFormat = 'MMM. D, YYYY';
+        try {
+            const formats = JSON.parse(document.getElementById('account-display-formats')?.textContent || '{}');
+            if (typeof formats.dateFormat === 'string' && formats.dateFormat) this.dateFormat = formats.dateFormat;
+        } catch (_) { /* Missing/malformed display projection retains the non-school default. */ }
     }
 
     setDateFormat(format) {
-        // Save the selected format to localStorage
-        localStorage.setItem('selectedDateFormat', format);
-        this.dateFormat = format;
+        // Page-local preview only. The existing settings POST owns persistence;
+        // a reload (including after an error) reads the actual school setting.
+        if (typeof format === 'string' && format) this.dateFormat = format;
     }
 
     getFormattedDate(date) {
-        // var specificDate = date; // Your specific date in YYYY-MM-DD format
-        // var now = moment(specificDate);
-        // // console.log('LANGUAGAE DATE')
-        // // console.log(now.format('LL')); // Output will be the formatted date for the specific date you provided
-
-        if (localStorage.getItem('selectedDateFormat')){
-
-        }
-        else{
-            function fetchData(callback) {
-
-                $.ajax({
-                    url: '/settings/get-date-format/',
-                    method: 'GET',
-                    data: { csrfmiddlewaretoken: getCookie('csrftoken') },
-                    success: function(response) {
-                        var date_format = response.selected_format;
-
-                        // Call the callback function and pass the value of 'date_format'
-                        callback(date_format);
-                    },
-                });
-            }
-
-            // Use the fetchData function with a callback
-            fetchData(function(date_format) {
-
-                // If any date format is found setting it to the local storage.
-                if(date_format){
-                    localStorage.setItem('selectedDateFormat', date_format);
-
-                }
-                // Setting a default date format MMM. D, YYYY
-                else{
-                    localStorage.setItem('selectedDateFormat', 'MMM. D, YYYY');
-                }
-            });
-
-        }
-        // Use the stored date format
-        const storedDateFormat = localStorage.getItem('selectedDateFormat') || 'MMM. D, YYYY';
-
-
-        // Preprocess the date string based on the selected format
+        const format = this.dateFormat;
         let processedDate = date;
-        if (storedDateFormat === 'DD-MM-YYYY') {
-            processedDate = date.replace(/(\d{2})-(\d{2})-(\d{4})/, '$3-$2-$1');
-        } else if (storedDateFormat === 'DD.MM.YYYY') {
-            processedDate = date.replace(/(\d{2})\.(\d{2})\.(\d{4})/, '$3-$2-$1');
-        } else if (storedDateFormat === 'DD/MM/YYYY') {
-            processedDate = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+        if (typeof date === 'string') {
+            if (format === 'DD-MM-YYYY') {
+                processedDate = date.replace(/(\d{2})-(\d{2})-(\d{4})/, '$3-$2-$1');
+            } else if (format === 'DD.MM.YYYY') {
+                processedDate = date.replace(/(\d{2})\.(\d{2})\.(\d{4})/, '$3-$2-$1');
+            } else if (format === 'DD/MM/YYYY') {
+                processedDate = date.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1');
+            }
         }
-
-        // Format the processed date using moment.js
-        const formattedDate = moment(processedDate).format(storedDateFormat);
-
-        return formattedDate;
+        return moment(processedDate).format(format);
     }
-
-
-}
-
-// Create an instance of the utility
+};
 var dateFormatter = dateFormatter || new DateFormattingUtility();
-
-// Retrieve the selected date format from localStorage
-var storedDateFormat = localStorage.getItem('selectedDateFormat');
-
-if (storedDateFormat) {
-    // If a date format is stored, set it in the utility
-    dateFormatter.setDateFormat(storedDateFormat);
-}

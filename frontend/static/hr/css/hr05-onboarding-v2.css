@@ -1,1 +1,75 @@
 .hr05-page{display:grid;gap:18px}.hr05-nav{display:flex;gap:8px;flex-wrap:wrap;padding:10px;border:1px solid var(--hr-border,#dbe4ee);border-radius:12px;background:var(--hr-surface,#fff)}.hr05-nav a{padding:9px 12px;border-radius:8px;color:var(--hr-text-secondary,#475569);text-decoration:none;font-weight:600}.hr05-nav a:hover,.hr05-nav a[aria-current="page"]{background:var(--hr-primary-soft,#eef6ff);color:var(--hr-primary,#165dff)}.hr05-panel{border:1px solid var(--hr-border,#dbe4ee);border-radius:14px;background:var(--hr-surface,#fff);padding:18px;display:grid;gap:14px}.hr05-toolbar{display:flex;gap:12px;align-items:end;justify-content:space-between;flex-wrap:wrap}.hr05-toolbar__copy{display:grid;gap:4px}.hr05-toolbar__copy h2{margin:0;font-size:18px}.hr05-toolbar__copy p{margin:0;color:var(--hr-text-secondary,#64748b)}.hr05-search,.hr05-input{min-width:240px;max-width:100%;padding:10px 12px;border:1px solid var(--hr-border,#cbd5e1);border-radius:9px;background:#fff}.hr05-case-picker{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.hr05-case-picker label{display:grid;gap:6px;font-weight:600}.hr05-button{border:1px solid var(--hr-primary,#165dff);background:var(--hr-primary,#165dff);color:#fff;border-radius:9px;padding:10px 14px;font-weight:700;cursor:pointer}.hr05-button:disabled{cursor:not-allowed;opacity:.55}.hr05-table-wrap{overflow:auto;border:1px solid var(--hr-border,#e2e8f0);border-radius:10px}.hr05-table-wrap .hr-table{margin:0;min-width:760px}.hr05-state{min-height:112px;display:grid;align-content:center;justify-items:start;gap:5px;padding:18px;color:var(--hr-text-secondary,#64748b)}.hr05-state strong{color:var(--hr-text,#0f172a)}.hr05-state[data-state="error"]{background:#fff7f7;color:#b42318}.hr05-badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#334155;font-size:12px;font-weight:700}.hr05-actions{display:flex;gap:8px;flex-wrap:wrap}.hr05-actions a{font-weight:700;text-decoration:none;color:var(--hr-primary,#165dff)}.hr05-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:var(--hr-text-secondary,#64748b);font-size:13px}.hr05-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.hr05-summary__item{border:1px solid var(--hr-border,#e2e8f0);border-radius:10px;padding:12px;display:grid;gap:3px}.hr05-summary__item strong{font-size:18px}.hr05-summary__item span{color:var(--hr-text-secondary,#64748b);font-size:13px}.hr05-truth-note{display:flex;gap:8px;align-items:flex-start;border-left:3px solid var(--hr-primary,#165dff);padding:10px 12px;background:#f8fafc;color:var(--hr-text-secondary,#475569)}@media(max-width:760px){.hr05-toolbar{align-items:stretch}.hr05-search,.hr05-input{width:100%;min-width:0}.hr05-case-picker{display:grid}.hr05-summary{grid-template-columns:1fr}.hr05-nav{overflow:auto;flex-wrap:nowrap}.hr05-nav a{white-space:nowrap}}
+
+
+/* HR05 reporting ledger: preserve the five columns and original destinations. */
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"],
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] *,
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] *::before,
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] *::after { box-sizing: border-box; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-panel { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-toolbar { align-items: start; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-toolbar__copy { flex: 1 1 280px; min-width: 0; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-ledger-tools:not([hidden]) { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; flex: 1 1 440px; min-width: 0; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-ledger-search:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex: 1 1 220px; min-width: 0; color: var(--hr-text-700); font-size: 13px; font-weight: 600; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-search { width: 100%; min-width: 0; min-height: 40px; font: inherit; font-weight: 400; color: var(--hr-text-900); background: var(--hr-surface); }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-ledger-buttons:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-btn { min-height: 40px; font: inherit; font-size: 13px; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-btn:disabled { opacity: .6; cursor: not-allowed; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-btn[aria-busy="true"] { opacity: .7; cursor: wait; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] :is(.hr05-ledger-scope, .hr05-ledger-count) { margin: 0; font-size: 12px; line-height: 20px; color: var(--hr-text-500); }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-ledger-count { color: var(--hr-text-700); }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-table-wrap { min-width: 0; max-width: 100%; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-table { width: 100%; border-collapse: collapse; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-table :is(th, td) { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hr-border); font-size: 13px; line-height: 20px; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-table th { background: var(--hr-canvas); color: var(--hr-text-700); white-space: nowrap; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr-table td { max-width: 22rem; overflow-wrap: anywhere; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-actions a { display: inline-flex; align-items: center; min-height: 36px; padding: 5px 7px; border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] :is(.hr05-toolbar__copy, .hr05-ledger-scope, .hr05-ledger-count, .hr05-state, .hr05-truth-note) { overflow-wrap: anywhere; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] :is(input, button, a[href], [tabindex]):focus-visible { outline: 2px solid var(--hr-primary-600); outline-offset: 2px; scroll-margin-block: 100px 24px; }
+.hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-table-wrap:focus-visible { outline-offset: -3px; }
+@media (max-width: 760px) {
+  .hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-panel { padding: 14px; }
+  .hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-search { min-height: 44px; font-size: 16px; }
+  .hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] :is(.hr-btn, .hr05-actions a) { min-height: 44px; }
+  .hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] .hr05-truth-note { flex-wrap: wrap; }
+}
+@media (forced-colors: active) {
+  .hr05-page[data-section="reporting"][data-hr-page="onboarding-reporting-list"] :is(input, button, a[href], [tabindex]):focus-visible { outline-color: Highlight; }
+}
+
+/* HR05 probation lookup: returned records only; retain the independent ledger. */
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"],
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] *,
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] *::before,
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] *::after { box-sizing: border-box; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-panel { min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-toolbar__copy { min-width: 0; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-probation-tools:not([hidden]) { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-probation-tools > label:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; flex: 1 1 150px; color: var(--hr-text-700); font-size: 13px; font-weight: 600; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-probation-tools > .hr05-probation-query:not([hidden]) { flex: 2 1 280px; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(.hr05-search, .hr05-probation-tools select) { width: 100%; min-width: 0; min-height: 40px; padding: 9px 12px; border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); background: var(--hr-surface); color: var(--hr-text-900); font: inherit; font-weight: 400; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-probation-buttons:not([hidden]) { display: flex; flex-wrap: wrap; gap: 8px; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-btn { min-height: 40px; font: inherit; font-size: 13px; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-btn[aria-pressed="true"] { border-color: var(--hr-primary-600); background: var(--hr-primary-50); color: var(--hr-primary-700); font-weight: 700; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-btn:disabled { cursor: not-allowed; opacity: .6; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-btn[aria-busy="true"] { cursor: wait; opacity: .7; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(.hr05-probation-note, .hr05-probation-count) { margin: 0; font-size: 12px; line-height: 20px; color: var(--hr-text-500); }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-probation-count { color: var(--hr-text-700); }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-table-wrap { min-width: 0; max-width: 100%; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-table { width: 100%; border-collapse: collapse; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-table :is(th, td) { padding: 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hr-border); font-size: 13px; line-height: 20px; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-table th { background: var(--hr-canvas); color: var(--hr-text-700); white-space: nowrap; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr-table td { max-width: 22rem; overflow-wrap: anywhere; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-actions a { display: inline-flex; align-items: center; min-height: 36px; padding: 5px 7px; border: 1px solid var(--hr-border); border-radius: var(--hr-radius-sm); }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(.hr05-toolbar__copy, .hr05-probation-note, .hr05-probation-count, .hr05-state, .hr05-truth-note) { overflow-wrap: anywhere; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(input, select, button, a[href], [tabindex]):focus-visible { outline: 2px solid var(--hr-primary-600); outline-offset: 2px; scroll-margin-block: 100px 24px; }
+.hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-table-wrap:focus-visible { outline-offset: -3px; }
+@media (max-width: 760px) {
+  .hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-panel { padding: 14px; }
+  .hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(.hr05-search, .hr05-probation-tools select) { min-height: 44px; font-size: 16px; }
+  .hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(.hr-btn, .hr05-actions a) { min-height: 44px; }
+  .hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] .hr05-truth-note { flex-wrap: wrap; }
+}
+@media (forced-colors: active) {
+  .hr05-page[data-section="probations"][data-hr-page="onboarding-probations-list"] :is(input, select, button, a[href], [tabindex]):focus-visible { outline-color: Highlight; }
+}

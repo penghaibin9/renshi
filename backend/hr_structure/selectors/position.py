@@ -14,11 +14,12 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from typing import Optional
 
-from django.db.models import Q, Sum
+from django.db.models import OuterRef, Q, Subquery, Sum
 from django.utils import timezone
 
-from hr_structure.models import HrPosition, HrPositionPool, HrPositionReservation
+from hr_structure.models import HrOrganizationVersion, HrPosition, HrPositionPool, HrPositionReservation
 from hr_structure.scope import Hr02Scope, organization_ids_for_scope
+from hr_structure.selectors.effective import FORMAL_STATUSES
 
 
 class PositionSelector:
@@ -45,6 +46,19 @@ class PositionSelector:
         ).filter(Q(validity_to__isnull=True) | Q(validity_to__gt=self.as_of))
         allowed = organization_ids_for_scope(self.scope, self.as_of)
         return qs if allowed is None else qs.filter(organization_id__in=allowed)
+
+    def _with_organization_name(self, queryset):
+        # Resolve the displayed name at the same business date, inside the
+        # existing paginated SELECT. No per-position query or future-name leak.
+        names = HrOrganizationVersion.objects.filter(
+            tenant_id=self.scope.tenant_id,
+            organization_id=OuterRef("organization_id"),
+            status__in=FORMAL_STATUSES,
+            validity_from__lte=self.as_of,
+        ).filter(Q(validity_to__isnull=True) | Q(validity_to__gt=self.as_of))
+        return queryset.annotate(
+            _organization_name_as_of=Subquery(names.order_by("-version_no").values("name")[:1])
+        )
 
     def _occupancy_counts(self, position_ids) -> dict:
         return self.occupancy_service.position_occupancy_by_position_as_of(
@@ -92,7 +106,7 @@ class PositionSelector:
         total = qs.count()
         start = (page - 1) * page_size
         items = list(
-            qs.select_related(
+            self._with_organization_name(qs).select_related(
                 "organization_id", "post_catalog_version_id", "post_grade_id"
             )
             .order_by("position_code")[start : start + page_size]
@@ -114,7 +128,7 @@ class PositionSelector:
 
     def get_position(self, position_id) -> Optional[dict]:
         p = (
-            self._base()
+            self._with_organization_name(self._base())
             .select_related(
                 "organization_id", "post_catalog_version_id", "post_grade_id"
             )
@@ -148,7 +162,11 @@ class PositionSelector:
             "id": p.id,
             "positionCode": p.position_code,
             "organizationId": p.organization_id_id,
-            "organizationName": getattr(p.organization_id, "stable_code", ""),
+            "organizationName": (
+                getattr(p, "_organization_name_as_of", None)
+                or getattr(p.organization_id, "stable_code", "")
+            ),
+            "organizationCode": getattr(p.organization_id, "stable_code", ""),
             "postCatalog": getattr(p.post_catalog_version_id, "name", ""),
             "postGrade": getattr(p.post_grade_id, "name", "") if p.post_grade_id else "",
             "plannedFte": str(p.planned_fte),

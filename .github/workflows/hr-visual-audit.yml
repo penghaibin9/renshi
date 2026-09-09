@@ -9,6 +9,17 @@ on:
       - "frontend/static/hr/**"
       - "backend/hr_*/templates/**"
       - "backend/horilla_theme/templates/hr/**"
+      - "backend/hr_staff/tests/test_account_activation_language.py"
+      - "backend/base/templatetags/account_display.py"
+      - "backend/base/test_account_display.py"
+      - "backend/base/static/base/*formatting.js"
+      - "backend/base/templates/base/account/display_preferences.html"
+      - "backend/base/account_views.py"
+      - "frontend/templates/index.html"
+      - "backend/horilla_theme/templates/horilla_theme/components/footer_scripts.html"
+      - "backend/base/account_invitation.py"
+      - "backend/base/static/base/js/account_invitation.js"
+      - "backend/base/templates/base/account/invitation_*.html"
       - "tests/visual/**"
       - ".github/workflows/hr-visual-audit.yml"
 
@@ -20,32 +31,33 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
-  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
-  SECRET_KEY: ci-only-strong-secret-key-please-never-use-in-production
+  DATABASE_URL: "mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/renshi_db?charset=utf8mb4"
+  DB_INIT_PASSWORD: "init-${{ github.run_id }}"
+  SECRET_KEY: "ci-secret-${{ github.repository_id }}-${{ github.run_id }}"
   ALLOWED_HOSTS: localhost,127.0.0.1
   CSRF_TRUSTED_ORIGINS: http://localhost:8000
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
-  MYSQL_CI_ROOT_PASSWORD: renshi_root_pass
+  MYSQL_CI_ROOT_PASSWORD: "root-${{ github.run_id }}"
 
 jobs:
   hr-visual-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Additional registered-page census and focused MySQL contracts retain all prior gates.
+    timeout-minutes: 55
     services:
       mysql:
         image: mysql:8.4
         env:
           MYSQL_DATABASE: renshi_db
           MYSQL_USER: renshi_user
-          MYSQL_PASSWORD: renshi_pass
-          MYSQL_ROOT_PASSWORD: renshi_root_pass
+          MYSQL_PASSWORD: "db-${{ github.run_id }}"
+          MYSQL_ROOT_PASSWORD: "root-${{ github.run_id }}"
           MYSQL_ROOT_HOST: "%"
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -pdb-${{ github.run_id }} --silent"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=30
@@ -67,6 +79,39 @@ jobs:
           pip install playwright
           python -m playwright install --with-deps chromium
 
+      - name: Account display formats without admin API or storage
+        run: python tests/visual/account_display_ui_tests.py -v
+
+      - name: HR typography tokens in Chromium
+        run: python tests/visual/hr_typography_contract_tests.py -v
+
+      - name: HR layout and independent overview UI regressions
+        run: python tests/visual/hr_polish_contract_tests.py -v
+
+      - name: HR01 workforce UI regression (isolated transport)
+        run: python tests/visual/hr_workforce_ui_contract_tests.py -v
+
+      - name: Account activation isolated DOM recovery
+        env:
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python tests/visual/hr_account_activation_ui_tests.py -v
+
+      - name: HR17 independent first-screen loading (isolated transport)
+        run: python tests/visual/hr17_self_loading_tests.py -v
+
+      - name: HR11 download dialog UI unit regressions (isolated transport)
+        env:
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python tests/visual/hr11_download_lifecycle_tests.py -v
+
+      - name: Authorize immutable-fact trigger DDL in ephemeral MySQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          mysql_container=$(docker ps --filter "ancestor=mysql:8.4" --format '{{.ID}}' | head -n 1)
+          test -n "$mysql_container"
+          docker exec "$mysql_container" sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET GLOBAL log_bin_trust_function_creators = 1; SELECT @@GLOBAL.log_bin_trust_function_creators;"'
+
       - name: Ensure local settings stub
         run: |
           if [ ! -f backend/horilla/settings/local_settings.py ]; then
@@ -81,6 +126,7 @@ jobs:
           key: hr-visual-mysql-${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('**/migrations/*.py', 'requirements.lock', 'backend/horilla/settings/__init__.py') }}
 
       - name: Prepare visual audit MySQL schemas
+        id: prepare-schema
         shell: bash
         run: |
           set -euo pipefail
@@ -132,12 +178,138 @@ jobs:
             'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" test_renshi_db' \
             < .ci-cache/hr-visual-mysql.sql
 
-          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --run-syncdb --noinput
-          DATABASE_URL='mysql://renshi_user:renshi_pass@127.0.0.1:3306/test_renshi_db?charset=utf8mb4' \
+          DATABASE_URL="mysql://renshi_user:db-${{ github.run_id }}@127.0.0.1:3306/test_renshi_db?charset=utf8mb4" \
             python manage.py migrate --check
 
+      - name: Save verified schema before browser checks
+        if: steps.schema-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ci-cache/hr-visual-mysql.sql
+          key: ${{ steps.schema-cache.outputs.cache-primary-key }}
+
+      - name: Allow Django flush in disposable visual test database
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import MySQLdb
+
+          connection = MySQLdb.connect(
+              host="127.0.0.1",
+              user="root",
+              passwd=os.environ["MYSQL_CI_ROOT_PASSWORD"],
+              charset="utf8mb4",
+          )
+          try:
+              cursor = connection.cursor()
+              cursor.execute(
+                  """
+                  SELECT TRIGGER_NAME
+                  FROM information_schema.TRIGGERS
+                  WHERE TRIGGER_SCHEMA = %s
+                    AND EVENT_MANIPULATION = 'DELETE'
+                  ORDER BY TRIGGER_NAME
+                  """,
+                  ("test_renshi_db",),
+              )
+              trigger_names = [row[0] for row in cursor.fetchall()]
+              for trigger_name in trigger_names:
+                  safe_name = trigger_name.replace("`", "``")
+                  cursor.execute(
+                      f"DROP TRIGGER `test_renshi_db`.`{safe_name}`"
+                  )
+              print(
+                  "Dropped DELETE-only immutability triggers from disposable "
+                  f"visual test database: {len(trigger_names)}"
+              )
+          finally:
+              connection.close()
+          PY
+
+      - name: HR11 published classification to close basis contracts
+        id: classification-contracts
+        run: python manage.py test hr_time.tests.test_leave_paid_classification --keepdb --noinput --verbosity 2
+
+      - name: HR11 real write-reload-close checkpoint
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr11-focused
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr11-focused
+          python manage.py test tests.visual.hr11_visual_audit_tests.Hr11VisualAuditTests.test_real_browser_completes_time_fact_chain --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr11-focused/browser-tests.log
+
+      - name: Retain HR11 focused result before full regression
+        if: always() && steps.prepare-schema.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr11-close-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/hr11-focused/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Account activation language and rejected-write MySQL contracts
+        if: always() && steps.prepare-schema.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL
+          python manage.py test hr_staff.tests.test_account_activation_language --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/language-tests.log
+
+      - name: Account activation real validation retry and explicit login
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL
+          python manage.py test tests.visual.hr_account_activation_browser_tests.AccountActivationBrowserTests --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/browser-tests.log
+
+      - name: Retain activation evidence before remaining page audits
+        if: always() && steps.prepare-schema.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-activation-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/hr-visual/ACCOUNT-ACTIVATION-REAL/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Teacher shell real MySQL and browser contracts
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tests/artifacts/hr-visual/TEACHER-SHELL-REAL
+          python manage.py test base.test_account_display tests.visual.teacher_shell_browser_tests.TeacherShellBrowserTests --keepdb --noinput --verbosity 2 \
+            2>&1 | tee tests/artifacts/hr-visual/TEACHER-SHELL-REAL/tests.log
+
+      - name: Retain teacher shell evidence before full inventory
+        if: always() && steps.prepare-schema.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-teacher-shell-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: tests/artifacts/hr-visual/TEACHER-SHELL-REAL/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Capture real Chromium screenshots
+        if: always() && steps.prepare-schema.outcome == 'success'
         env:
           HR_VISUAL_AUDIT: "1"
           HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
@@ -159,6 +331,22 @@ jobs:
             tests.visual.hr18_visual_audit_tests.Hr18VisualAuditTests \
             tests.visual.hr_visual_audit_tests.HrVisualAuditTests \
             --keepdb --noinput --verbosity 2
+
+      - name: HR01 workforce real login and dimension readback
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python manage.py test tests.visual.hr_workforce_visual_audit_tests.HrWorkforceVisualAuditTests --keepdb --noinput --verbosity 2
+
+      - name: Real login and registered HR page inventory
+        if: always() && steps.prepare-schema.outcome == 'success'
+        env:
+          HR_VISUAL_AUDIT: "1"
+          HR_PRODUCT_SHA: ${{ github.event.pull_request.head.sha }}
+          HR_VISUAL_ARTIFACT_DIR: tests/artifacts/hr-visual
+        run: python manage.py test tests.visual.hr_page_inventory_tests.HrPageInventoryTests --keepdb --noinput --verbosity 2
 
       - name: Upload visual audit screenshots
         if: always()

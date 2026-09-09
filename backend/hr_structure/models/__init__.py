@@ -32,9 +32,11 @@ from hr_structure.models.migration_link import (
     HrLegacyObjectLink,
     HrExternalIdentifier,
 )
+from hr_structure.models.initialization import HrSchoolStructureInitialization
 from hr_structure.models.permission_meta import HrStructurePermissionMeta
 
 __all__ = [
+    "HrSchoolStructureInitialization",
     "HrOrganization",
     "HrOrganizationVersion",
     "HrOrganizationRelation",

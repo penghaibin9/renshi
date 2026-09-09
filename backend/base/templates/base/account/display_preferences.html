@@ -1,0 +1,13 @@
+{% load account_display %}
+{% account_display_preferences as account_formats %}
+{{ account_formats|json_script:"account-display-formats" }}
+{% account_self_navigation_only as self_navigation_only %}
+{% if self_navigation_only %}
+<script>
+// Match the server-projected SELF-only menu: the school logo goes home, not
+// to the HR01 management dashboard. This changes navigation, never grants.
+document.querySelectorAll('#sidebar .oh-sidebar__company-link[href="/hr/overview"]').forEach((link) => {
+  link.setAttribute('href', '/hr/self/');
+});
+</script>
+{% endif %}

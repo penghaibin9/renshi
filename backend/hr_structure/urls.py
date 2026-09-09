@@ -14,8 +14,10 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from hr_structure import views
+from hr_structure.initialization_views import initial_structure
 
 urlpatterns = [
+    path("initial-setup/", initial_structure, name="hr-structure-initial-setup"),
     path(
         "",
         RedirectView.as_view(pattern_name="hr-structure-organizations", permanent=False),

@@ -2,8 +2,16 @@
 
 > 仓库：`penghaibin9/renshi`  
 > 底座：历史兼容层（正在逐步退出，所有新业务统一进入 HR01～HR18）
-> 当前本地集成分支：`main`
-> 稳定分支规则：**没有全绿验收，不推送远端**
+> 当前正式集成目标：`main`；本轮唯一施工分支：`fix/production-readiness-20260904`，原 Draft PR #53
+> 提交规则：经授权只向原施工分支提交并触发验收；**证据未齐，不合并 main、不部署**
+
+## 开发前必读：已采用的产品原则
+
+先读根目录 [`AGENTS.md`](AGENTS.md)；它将已确认的产品方向落实为 HRP-01～HRP-12 开发与验收要求。业务解释及公开资料依据继续复用 [`docs/UNIVERSITY_HR_PRODUCT_PRIORITIES.md`](docs/UNIVERSITY_HR_PRODUCT_PRIORITIES.md)，不另造产品总册。
+
+目标是：**教师少重复填报，学院少人工催办，人事少反复核对，每一个正式结果都能解释和追溯；学校能自己配置并办事。**人员档案、登录账号和本校权限分别管理；人事与学生系统保持独立，通过明确映射及受控接口协作。
+
+每次施工须写清“原则 → 页面与事件 → API/权限 → 服务/事实 → 测试/证据”；使用现有 [PR 检查表](.github/PULL_REQUEST_TEMPLATE.md)。原则采用不代表功能已实现，检查表不是自动强制执行器；实时进度见 [`docs/CURRENT_STATE_2026-09-04.md`](docs/CURRENT_STATE_2026-09-04.md)。
 
 ## 新手只认这三个入口
 
@@ -138,6 +146,8 @@ git status
 - 不要一次性大范围重写历史兼容层；必须按 Authority Cutover 逐域退出
 
 ## 当前开发顺序
+
+下表保留总体依赖，不等于每轮从 C0 重新施工。当前活动切片以 [`docs/CURRENT_STATE_2026-09-04.md`](docs/CURRENT_STATE_2026-09-04.md) 的最新记录为准；专项绿灯不抵消其他必需门的失败。
 
 简版：
 

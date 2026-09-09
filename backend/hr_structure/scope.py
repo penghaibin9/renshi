@@ -86,3 +86,15 @@ def organization_ids_for_scope(scope: Hr02Scope, as_of) -> Optional[set[int]]:
         allowed.update(children)
         frontier = children
     return allowed
+
+
+def lock_materialized_school(tenant_id):
+    """Serialize HR02 creation for an existing school; never create a tenant.
+
+    Domain import/recovery callers can precede a Company projection. Live HTTP
+    entry points separately require an authorized, materialized Company.
+    Call only inside the service's existing atomic transaction.
+    """
+    from base.models import Company
+
+    return Company.objects.select_for_update().filter(pk=tenant_id).first()

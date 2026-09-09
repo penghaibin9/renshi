@@ -1,0 +1,86 @@
+/* HR01 focus presentation only. No shared-shell, request or business changes.
+ * All data, source warnings, actions and complete module links remain visible.
+ */
+.hr01-focus-page[data-module="HR01"] {
+  box-sizing: border-box;
+  min-width: 0;
+}
+.hr01-focus-page[data-module="HR01"] :is(.hr-page-header, .hr-v2-pagehead) {
+  gap: 12px 20px;
+  margin-bottom: 16px;
+}
+.hr01-focus-page[data-module="HR01"] :is(.hr-page-header__main, .hr-v2-pagehead__copy) {
+  min-width: 0;
+}
+.hr01-focus-page[data-module="HR01"] :is(.hr-page-subtitle, .hr-v2-subtitle) {
+  margin-top: 4px;
+}
+/* Retain the existing section-switcher as useful native directory navigation,
+ * in the page header on both sizes instead of repeating the page title. */
+.hr01-focus-page[data-module="HR01"] .hr01-focus-directory-nav {
+  display: flex;
+  position: static;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.hr01-focus-page[data-module="HR01"] .hr01-focus-jump {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+}
+.hr01-focus-page[data-module="HR01"] :is(.hr-section-card, .hr01-inbox__tools, .hr01-actions__tools) {
+  padding: 14px 16px;
+}
+.hr01-focus-page[data-module="HR01"] :is(.hr01-inbox__tools, .hr01-actions__tools) {
+  gap: 8px 12px;
+}
+.hr01-focus-page[data-module="HR01"] .hr-summary-numbers {
+  padding-block: 4px;
+  gap: 8px 20px;
+}
+.hr01-focus-page[data-module="HR01"] .hr-section-card__header {
+  margin-bottom: 8px;
+}
+.hr01-focus-page[data-module="HR01"] .hr-home__module {
+  min-height: 90px;
+}
+.hr01-focus-page[data-module="HR01"] .hr-home__module :is(h4, p) {
+  overflow-wrap: anywhere;
+}
+.hr01-focus-page[data-module="HR01"] .hr-home__module p {
+  font-size: 12px;
+  line-height: 18px;
+}
+.hr01-focus-page[data-module="HR01"] .hr-home__module-group-head {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+}
+.hr01-focus-page[data-module="HR01"] #hr-business-nav-title {
+  scroll-margin-top: 100px;
+}
+.hr01-focus-page[data-module="HR01"] :is(a[href], button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--hr-primary-600);
+  outline-offset: 2px;
+  scroll-margin-block: 100px 24px;
+}
+@media (max-width: 760px) {
+  .hr01-focus-page[data-module="HR01"] :is(.hr01-inbox__tools, .hr01-actions__tools) {
+    padding: 12px;
+  }
+  .hr01-focus-page[data-module="HR01"] :is(.hr-section-card, .wf-panel) {
+    padding: 12px;
+  }
+  .hr01-focus-page[data-module="HR01"] .hr01-focus-jump {
+    min-height: 44px;
+  }
+}
+@media (forced-colors: active) {
+  .hr01-focus-page[data-module="HR01"] :is(a[href], button, input, select, [tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
+}

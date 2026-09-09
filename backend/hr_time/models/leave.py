@@ -202,6 +202,20 @@ class HrLeavePolicyVersion(TimeTenantModel):
         if self.status == PolicyStatus.PUBLISHED and (
             old is None or old.status != PolicyStatus.PUBLISHED
         ):
+            # Pin the catalogue choice only when publishing a NEW version.
+            # Existing published versions and approved absence facts are never
+            # reinterpreted when the mutable leave catalogue changes later.
+            if not isinstance(self.interaction_rules, dict):
+                raise ValidationError(_("假别政策交互规则必须是对象"))
+            classification = self.interaction_rules.get(
+                "paidClassification", self.leave_type.paid_classification
+            )
+            if not isinstance(classification, str) or classification not in {"PAID", "UNPAID", "POLICY_DEPENDENT"}:
+                raise ValidationError(_("假别政策计薪分类无效"))
+            self.interaction_rules = {
+                **self.interaction_rules,
+                "paidClassification": classification,
+            }
             payload = {
                 "tenantId": self.tenant_id,
                 "leavePolicyPackId": self.leave_policy_pack_id,
@@ -225,6 +239,10 @@ class HrLeavePolicyVersion(TimeTenantModel):
                 ).encode("utf-8")
             ).hexdigest()
             self.published_at = self.published_at or timezone.now()
+            if kwargs.get("update_fields") is not None:
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {
+                    "interaction_rules", "content_hash", "published_at"
+                }
         super().save(*args, **kwargs)
 
     def __str__(self):

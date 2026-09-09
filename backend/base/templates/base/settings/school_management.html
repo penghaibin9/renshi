@@ -1,0 +1,87 @@
+{% extends "settings.html" %}
+{% block settings %}
+<section class="yk-school-management" id="school-management" data-school-id="{{ school.pk }}">
+  <style>
+    .yk-school-management {padding:16px; color:#243449; line-height:1.6;}
+    .yk-school-management * {box-sizing:border-box;}
+    .yk-school-management .yk-head {display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px;}
+    .yk-school-management h1 {font-size:24px; font-weight:700; margin:0 0 6px;}
+    .yk-school-management h2 {font-size:17px; font-weight:650; margin:0 0 12px;}
+    .yk-school-management p {margin:0 0 8px;}
+    .yk-school-management .yk-muted {color:#5f6d80; font-size:13px;}
+    .yk-school-management .yk-notice {background:#eef5ff; border:1px solid #c9dcf7; border-radius:10px; padding:12px 16px; margin-bottom:18px;}
+    .yk-school-management .yk-columns {display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:20px; align-items:start;}
+    .yk-school-management .yk-card {background:#fff; border:1px solid #dce3ed; border-radius:12px; padding:20px;}
+    .yk-school-management .yk-field {margin-bottom:13px;}
+    .yk-school-management label {display:block; font-size:13px; font-weight:600; margin-bottom:5px;}
+    .yk-school-management input, .yk-school-management textarea, .yk-school-management select {width:100%; border:1px solid #bdc9da; border-radius:7px; padding:9px 11px; font:inherit; font-size:14px; background:#fff;}
+    .yk-school-management input:focus-visible, .yk-school-management a:focus-visible, .yk-school-management button:focus-visible {outline:3px solid #80a9e4; outline-offset:3px;}
+    .yk-school-management .yk-action {display:inline-flex; align-items:center; padding:8px 14px; border:1px solid #bdc9da; border-radius:7px; background:#fff; color:#244b83; text-decoration:none; white-space:nowrap; font-size:13px;}
+    .yk-school-management .yk-primary {color:#fff; background:#255c9c; border-color:#255c9c; cursor:pointer;}
+    .yk-school-management .yk-step {border-bottom:1px solid #e5eaf1; padding:14px 0;}
+    .yk-school-management .yk-step:last-child {border-bottom:0;}
+    .yk-school-management .yk-step-head {display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin-bottom:6px;}
+    .yk-school-management .yk-state {font-size:12px; background:#f1f4f8; color:#4c5c72; border-radius:5px; padding:2px 7px;}
+    .yk-school-management .errorlist {color:#a22b2b; list-style:none; margin:5px 0; padding:0; font-size:13px;}
+    .yk-school-management .yk-boundary {margin-top:18px; border-top:1px solid #e5eaf1; padding-top:12px;}
+    @media(max-width:1000px) {.yk-school-management .yk-columns {grid-template-columns:1fr;} .yk-school-management {padding:8px;}}
+    @media(max-width:560px) {.yk-school-management .yk-head {display:block;} .yk-school-management .yk-head .yk-action {margin-top:8px;}}
+  </style>
+  <header class="yk-head">
+    <div>
+      <h1>学校管理中心</h1>
+      <p>{{ school.company }}</p>
+      <p class="yk-muted">学校编号 {{ school.pk }} · 先完善基础资料，再进入对应业务办理。</p>
+    </div>
+    <a class="yk-action" href="{% url 'school-management' %}" hx-boost="false">重新核验配置</a>
+  </header>
+  {% if request.platform_tenant_elevation_active %}
+  <div class="yk-notice" role="status">当前为平台限时支持会话，仅针对本校操作。结束支持后请退出提权。</div>
+  {% endif %}
+  <div class="yk-notice" id="school-setup-status" data-production-ready="false">
+    <strong>基础配置核验：{{ setup.recorded }} / {{ setup.total }} 项已有记录</strong>
+    <p class="yk-muted">“已有记录”不等于已审批生效。角色、审批负责人、制度发布及真实业务验收仍须逐项确认，不自动判定学校已可投产。</p>
+  </div>
+  <div class="yk-columns">
+    <section class="yk-card" id="school-profile" aria-labelledby="school-profile-title">
+      <h2 id="school-profile-title">学校资料</h2>
+      <form method="post" action="{% url 'school-management' %}" data-settings-native="true" hx-boost="false" id="school-profile-form">
+        {% csrf_token %}
+        <input type="hidden" name="profile_token" value="{{ profile_token }}">
+        {{ profile_form.non_field_errors }}
+        {% for field in profile_form %}
+        <div class="yk-field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span aria-label="必填">*</span>{% endif %}</label>
+          {{ field }}
+          {{ field.errors }}
+          {% if field.help_text %}<p class="yk-muted">{{ field.help_text }}</p>{% endif %}
+        </div>
+        {% endfor %}
+        {% if can_edit_profile %}
+        <button type="submit" class="yk-action yk-primary">保存学校资料</button>
+        <p class="yk-muted" style="margin-top:8px">保存后重新读取服务器数据。并发修改会提示核对，不覆盖他人更新。</p>
+        {% else %}
+        <p class="yk-muted">当前账号可查看资料；修改请联系学校管理员。</p>
+        {% endif %}
+      </form>
+    </section>
+    <section class="yk-card" aria-labelledby="school-steps-title">
+      <h2 id="school-steps-title">首次配置与业务入口</h2>
+      {% for step in setup.steps %}
+      <article class="yk-step" data-setup-step="{{ step.key }}" data-state="{{ step.state }}">
+        <div class="yk-step-head">
+          <strong>{{ forloop.counter }}. {{ step.title }}</strong>
+          <span class="yk-state">
+            {% if step.state == "RECORDED" %}已有记录{% elif step.state == "MISSING" %}待配置{% elif step.state == "NO_ACCESS" %}需授权人员处理{% else %}核验暂不可用{% endif %}
+          </span>
+        </div>
+        <p class="yk-muted">{{ step.detail }}</p>
+        {% if step.count != None %}<p class="yk-muted">本校当前记录：{{ step.count }} 条</p>{% endif %}
+        {% if step.url %}<a class="yk-action" href="{{ step.url }}" hx-boost="false">{% if step.key == "profile" %}完善学校资料{% else %}进入{{ step.title }}{% endif %}</a>{% endif %}
+      </article>
+      {% endfor %}
+    </section>
+  </div>
+  <footer class="yk-boundary yk-muted">学校开户、产品授权和跨校操作由平台办理。本页不创建新学校，不自动发布制度，也不写入其他学校数据。</footer>
+</section>
+{% endblock settings %}

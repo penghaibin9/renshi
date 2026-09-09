@@ -116,6 +116,7 @@ class StaffMasterService:
         staff_no: Optional[str] = None,
         legacy_employee_id: Optional[int] = None,
         source: str = "HR_ENTERED",
+        audit_actor_user_id: Optional[int] = None,
     ) -> HrStaffMaster:
         # N6/P1-6：person 必须属于当前 tenant（支持实例或 UUID/str）
         from hr_staff.models import HrPerson
@@ -152,6 +153,7 @@ class StaffMasterService:
         write_audit_event(
             tenant_id=tenant_id,
             action="StaffMasterCreated",
+            actor_user_id=audit_actor_user_id,
             staff_id=staff.id,
             reason=f"staff_no={staff_no} source={source}",
         )

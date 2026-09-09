@@ -24,6 +24,12 @@ class BaseConfig(AppConfig):
         _install_mysql_schema_compatibility()
 
         from base import production_checks, sidebar, signals  # noqa: F401
+        from base.settings_visibility import install_settings_visibility_tag
+
+        # The top-right gear and SettingsView must use the same filtered
+        # registry.  Loading sidebar first guarantees all base settings entries
+        # exist before the canonical template tag is installed.
+        install_settings_visibility_tag()
 
         super().ready()
         check_for_no_permissions_models()

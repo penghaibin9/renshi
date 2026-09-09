@@ -1,16 +1,16 @@
-"""HR17 SELF identity resolution.
+"""HR17 SELF identity resolved from login and the explicitly selected school.
 
-Every HR17 self route starts from the authenticated user plus explicit tenant
-context.  Client-supplied ``staff_id`` is never an identity source.  During the
-legacy cutover we use the verified Horilla Employee↔User link only as a bridge
-to the HR03 StaffMaster Authority, and fail closed if that bridge is missing or
-cross-tenant.
+HR03 account links are the primary source. Only a login with no link records
+in that school may use the verified legacy Employee bridge. An inactive,
+ambiguous or corrupt explicit link never re-enables the compatibility path.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+from django.utils import timezone
 
 
 class SelfIdentityError(Exception):
@@ -25,7 +25,7 @@ class SelfIdentityContext:
     user_id: Any
     staff_id: Any
     person_id: Any
-    legacy_employee_id: int
+    legacy_employee_id: int | None
 
     def assert_owned_staff(self, staff_id) -> None:
         """Guard any legacy/path staff identifier against SELF IDOR."""
@@ -48,18 +48,81 @@ def _staff_master_model():
     return HrStaffMaster
 
 
+def _account_link_model():
+    from hr_staff.models import HrAccountLink
+
+    return HrAccountLink
+
+
 class SelfIdentityService:
     def __init__(self, tenant_id: int):
         if not tenant_id:
             raise SelfIdentityError("TENANT_CONTEXT_REQUIRED", "tenant_id is required")
         self.tenant_id = tenant_id
 
+    def _native_account_context(self, user) -> SelfIdentityContext | None:
+        # Count before checking targets: a corrupt target must not disappear
+        # from the result and accidentally permit a legacy fallback.
+        links = _account_link_model().objects.filter(
+            tenant_id=self.tenant_id, auth_user_id=user.id,
+        )
+        active = list(
+            links.filter(link_status="ACTIVE")
+            .select_related("staff_id", "staff_id__person_id")
+            .order_by("id")[:2]
+        )
+        if len(active) > 1:
+            raise SelfIdentityError(
+                "SELF_IDENTITY_AMBIGUOUS", "multiple active account links exist inside tenant",
+            )
+        if not active:
+            if links.exists():
+                raise SelfIdentityError(
+                    "SELF_ACCOUNT_LINK_INACTIVE", "account association is suspended or unlinked",
+                )
+            return None
+        link = active[0]
+        if (link.linked_at is None or link.linked_at > timezone.now()
+                or link.unlinked_at is not None):
+            raise SelfIdentityError(
+                "SELF_ACCOUNT_LINK_INVALID", "account association has no valid activation period",
+            )
+        staff = link.staff_id
+        if staff.tenant_id != self.tenant_id or staff.person_id.tenant_id != self.tenant_id:
+            raise SelfIdentityError(
+                "SELF_ACCOUNT_LINK_INVALID", "account association is inconsistent with its school",
+            )
+        # Preserve old providers only when the Employee identity is verified
+        # for THIS login and school and agrees with the explicit staff link.
+        # A raw integer pointer alone cannot authorize source-provider reads.
+        legacy_employee_id = None
+        if staff.legacy_employee_id is not None:
+            verified = list(
+                _legacy_employee_model()._base_manager.filter(
+                    employee_user_id=user,
+                    employee_work_info__company_id_id=self.tenant_id,
+                    is_active=True,
+                ).order_by("id").values_list("pk", flat=True)[:2]
+            )
+            if verified == [staff.legacy_employee_id]:
+                legacy_employee_id = staff.legacy_employee_id
+        return SelfIdentityContext(
+            tenant_id=self.tenant_id, user_id=user.id,
+            staff_id=staff.pk, person_id=staff.person_id_id,
+            legacy_employee_id=legacy_employee_id,
+        )
+
     def resolve(self, user) -> SelfIdentityContext:
-        if user is None or not getattr(user, "is_authenticated", False):
+        if (user is None or not getattr(user, "is_authenticated", False)
+                or not getattr(user, "is_active", False) or not getattr(user, "id", None)):
             raise SelfIdentityError(
                 "SELF_IDENTITY_NOT_RESOLVED",
                 "authenticated user is required",
             )
+
+        native = self._native_account_context(user)
+        if native is not None:
+            return native
 
         Employee = _legacy_employee_model()
         HrStaffMaster = _staff_master_model()
@@ -67,7 +130,7 @@ class SelfIdentityService:
         # Do not trust Employee.objects request/thread-local company scoping.
         # Explicit company filtering is mandatory for background/mobile/API use.
         employees = list(
-            Employee.objects.filter(
+            Employee._base_manager.filter(
                 employee_user_id=user,
                 employee_work_info__company_id_id=self.tenant_id,
                 is_active=True,

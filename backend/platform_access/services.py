@@ -16,25 +16,32 @@ MIN_REASON_LENGTH = 12
 
 
 def is_platform_operator(user):
-    """Return True only for a platform-only superuser without school HR identity.
+    """An active platform superuser has neither Employee nor school grants.
 
-    Horilla legitimately uses ``is_superuser`` for school HR administrators too.
-    Those users remain tenant-bound through their Employee identity and must not
-    be forced through the platform break-glass path. A superuser that has no
-    Employee row is the platform/operator identity and therefore requires an
-    audited elevation before entering a concrete school tenant.
+    Historical school superusers stay school-bound. Missing Employee alone is
+    insufficient: a school account may not have its personnel record yet.
+    Database/relationship errors propagate; they must never grant authority.
     """
     if not (
         user
         and getattr(user, "is_authenticated", False)
+        and getattr(user, "is_active", True)
         and getattr(user, "is_superuser", False)
     ):
         return False
-    try:
-        employee = user.employee_get
-    except Exception:
-        return True
-    return employee is None
+    # Django's missing reverse OneToOne relation is an AttributeError, which
+    # getattr(default) handles. OperationalError and other failures are NOT
+    # swallowed (the former blanket except Exception returned True).
+    if getattr(user, "employee_get", None) is not None:
+        return False
+    assignments = getattr(user, "company_group_assignments", None)
+    return assignments is None or not assignments.exists()
+
+
+def require_platform_operator(user):
+    """Authorize a platform action, not merely a Django superuser flag."""
+    if not is_platform_operator(user):
+        raise PermissionDenied("Only a platform operator may perform this action.")
 
 
 def _client_ip(request):
@@ -103,11 +110,8 @@ def grant_tenant_elevation(
     now = timezone.now()
     expires_at = now + timedelta(minutes=duration_minutes)
     with transaction.atomic():
-        # Lock a row that always exists for this actor. Locking only the current
-        # elevation rows is insufficient when there are none: two simultaneous
-        # requests could both observe an empty active set and create two valid
-        # grants. The actor-row mutex makes the revoke+create sequence truly
-        # single-active even for the first elevation.
+        # An actor-row mutex also protects the first grant, when no elevation
+        # rows exist for SELECT FOR UPDATE to lock.
         user.__class__._default_manager.select_for_update().only("pk").get(pk=user.pk)
         active = PlatformTenantElevation.objects.select_for_update().filter(
             actor=user,

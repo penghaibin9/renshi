@@ -39,18 +39,22 @@ ALL_MENUS = {}
 
 def sidebar(request):
 
-    base_dir_apps = get_apps_in_base_dir()
     user = getattr(request, "user", None)
+    request.MENUS = []
 
-    # Normal Django requests get user/session from middleware. Direct view
-    # calls (management commands and focused RequestFactory tests) may not.
-    # A context processor should degrade to an empty sidebar instead of making
-    # template rendering crash merely because middleware was intentionally
-    # bypassed.
-    if user is None or user.is_anonymous:
+    # These providers belong to the legacy Employee UI. A valid school account
+    # may configure its school before personnel records exist; calling legacy
+    # project/attendance accessibility functions for it would crash every page,
+    # including login and permission-denied rendering. Canonical HR navigation
+    # and the settings registry keep their independent permission checks.
+    if (
+        user is None
+        or user.is_anonymous
+        or getattr(user, "employee_get", None) is None
+    ):
         return []
 
-    request.MENUS = []
+    base_dir_apps = get_apps_in_base_dir()
     MENUS = request.MENUS
 
     for app in base_dir_apps:

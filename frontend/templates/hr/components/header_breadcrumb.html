@@ -1,5 +1,7 @@
+{% load account_display %}
+{% account_self_navigation_only as self_navigation_only %}
 <nav class="hr-shell-breadcrumb" aria-label="当前位置">
-  <a href="/hr/overview">人事</a><i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+  <a href="{% if self_navigation_only %}/hr/self/{% else %}/hr/overview{% endif %}">{% if self_navigation_only %}本人服务{% else %}人事{% endif %}</a><i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
   <strong>
     {% if '/hr/changes/' in request.path %}人事异动中心
     {% elif '/hr/contracts/' in request.path %}合同管理

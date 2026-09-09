@@ -1,4 +1,4 @@
-/** HR05-02 单 case 报到与激活：真实 GET + 表单编码 POST。 */
+/** HR05-02 单 case 报到与激活：canonical GET + 既有表单编码写入。 */
 (function () {
   "use strict";
   function $(s) { return document.querySelector(s); }
@@ -17,27 +17,55 @@
   function localDateTimeValue(date) { const pad = function (n) { return String(n).padStart(2, "0"); }; return date.getFullYear() + "-" + pad(date.getMonth()+1) + "-" + pad(date.getDate()) + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()); }
   function toIsoInstant(localValue) { if (!localValue) return ""; const parsed = new Date(localValue); return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString(); }
   const root = $('[data-hr-page="onboarding-reporting-detail"]'); if (!root) return; const caseId = root.dataset.caseId || "";
+  const apiBase = "/api/v1/hr/onboarding/cases/" + encodeURIComponent(caseId);
+  const reportableStatuses = new Set(["READY_TO_REPORT", "REPORT_SCHEDULED"]);
+  const activationKey = newIdempotencyKey();
+  let caseStatus = "";
+  let caseLoading = false;
+
+  function syncReportButton() {
+    const button = $("#hr05-confirm-report");
+    if (!button) return;
+    button.disabled = caseLoading || !reportableStatuses.has(caseStatus);
+    button.title = reportableStatuses.has(caseStatus) ? "确认本次实际报到" : "当前入职单状态不可执行报到确认";
+  }
 
   async function loadCase() {
     const host = $("#hr05-report-case-facts");
-    try { const res = await window.HrApi.request("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId)); const item = res.data?.data || {}; host.innerHTML = '<table class="hr-table"><tbody><tr><th>入职单</th><td>' + escapeHtml(item.case_no || "—") + '</td><th>姓名</th><td>' + escapeHtml(item.legal_name || "—") + '</td></tr><tr><th>预计报到</th><td>' + escapeHtml(item.expected_report_date || "—") + '</td><th>实际报到</th><td>' + escapeHtml(item.actual_report_at || "尚未报到") + '</td></tr><tr><th>当前状态</th><td><span class="hr05-badge hr05-badge--' + safeStatusClass(item.status) + '">' + escapeHtml(window.HrApi.statusLabel(item.status, item.statusLabel)) + '</span></td><th>激活状态</th><td>' + escapeHtml(window.HrApi.statusLabel(item.activation_status, item.activationStatusLabel, "生效状态待确认")) + '</td></tr></tbody></table>'; }
-    catch (err) { host.innerHTML = stateHtml("入职单读取失败", errorMessage(err), true); }
+    caseLoading = true;
+    caseStatus = "";
+    syncReportButton();
+    try {
+      const res = await window.HrApi.request(apiBase);
+      const item = res.data?.data || {};
+      if (!item || typeof item !== "object" || Array.isArray(item) || !item.status) throw new Error("入职单返回格式暂不可用");
+      caseStatus = String(item.status);
+      host.innerHTML = '<table class="hr-table"><tbody><tr><th>入职单</th><td>' + escapeHtml(item.case_no || "—") + '</td><th>姓名</th><td>' + escapeHtml(item.legal_name || "—") + '</td></tr><tr><th>预计报到</th><td>' + escapeHtml(item.expected_report_date || "—") + '</td><th>实际报到</th><td>' + escapeHtml(item.actual_report_at || "尚未报到") + '</td></tr><tr><th>当前状态</th><td><span class="hr05-badge hr05-badge--' + safeStatusClass(item.status) + '">' + escapeHtml(window.HrApi.statusLabel(item.status, item.statusLabel)) + '</span></td><th>激活状态</th><td>' + escapeHtml(window.HrApi.statusLabel(item.activation_status, item.activationStatusLabel, "生效状态待确认")) + '</td></tr></tbody></table>';
+    } catch (err) {
+      host.innerHTML = stateHtml("入职单读取失败", errorMessage(err), true);
+      caseStatus = "";
+    } finally {
+      caseLoading = false;
+      syncReportButton();
+    }
   }
   async function loadGate() {
     const host = $("#hr05-activation-gate"); const button = $("#hr05-activate-case"); if (button) button.disabled = true;
-    try { const res = await window.HrApi.request("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId) + "/activation-gate"); const gate = res.data?.data || {}; const items = gate.items || []; host.innerHTML = items.length ? '<table class="hr-table"><thead><tr><th>检查项</th><th>结果</th><th>说明</th></tr></thead><tbody>' + items.map(function (item) { return '<tr><td>' + escapeHtml(item.label || "未命名检查项") + '</td><td>' + (item.ok ? "通过" : "未通过") + '</td><td>' + escapeHtml(item.detail || "—") + '</td></tr>'; }).join("") + '</tbody></table>' : stateHtml(gate.passed ? "生效条件已通过" : "生效条件未通过", "服务端未返回明细项。", false); if (button) button.disabled = !gate.passed; }
-    catch (err) { host.innerHTML = stateHtml("生效条件读取失败", errorMessage(err), true); }
+    try { const res = await window.HrApi.request(apiBase + "/activation-gate"); const gate = res.data?.data || {}; const items = gate.items || []; host.innerHTML = items.length ? '<table class="hr-table"><thead><tr><th>检查项</th><th>结果</th><th>说明</th></tr></thead><tbody>' + items.map(function (item) { return '<tr><td>' + escapeHtml(item.label || "未命名检查项") + '</td><td>' + (item.ok ? "通过" : "未通过") + '</td><td>' + escapeHtml(item.detail || "—") + '</td></tr>'; }).join("") + '</tbody></table>' : stateHtml(gate.passed ? "生效条件已通过" : "生效条件未通过", "服务端未返回明细项。", false); if (button) button.disabled = gate.passed !== true; }
+    catch (err) { host.innerHTML = stateHtml("生效条件读取失败", errorMessage(err), true); if (button) button.disabled = true; }
   }
   async function confirmReport() {
-    const button = $("#hr05-confirm-report"); const result = $("#hr05-report-result"); const localActual = $("#hr05-report-at")?.value || ""; const actual = toIsoInstant(localActual); if (!actual) { result.innerHTML = '<span>请填写有效的实际到校时间</span>'; return; } button.disabled = true; result.innerHTML = '<span>正在确认报到…</span>';
-    try { await postForm("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId) + "/report", {actual_report_at:actual,location:$("#hr05-report-location")?.value || "",checked_identity:$("#hr05-identity-check")?.checked ? "true" : "false",notes:$("#hr05-report-notes")?.value || ""}); result.innerHTML = '<span>报到事实已由服务端确认</span>'; await Promise.all([loadCase(), loadGate()]); }
-    catch (err) { result.innerHTML = '<span>' + escapeHtml(errorMessage(err)) + '</span>'; } finally { button.disabled = false; }
+    const button = $("#hr05-confirm-report"); const result = $("#hr05-report-result");
+    if (!reportableStatuses.has(caseStatus)) { result.innerHTML = '<span>当前状态不可确认报到，请先刷新入职单。</span>'; syncReportButton(); return; }
+    const localActual = $("#hr05-report-at")?.value || ""; const actual = toIsoInstant(localActual); if (!actual) { result.innerHTML = '<span>请填写有效的实际到校时间</span>'; return; } button.disabled = true; result.innerHTML = '<span>正在确认报到…</span>';
+    try { await postForm(apiBase + "/report", {actual_report_at:actual,location:$("#hr05-report-location")?.value || "",checked_identity:$("#hr05-identity-check")?.checked ? "true" : "false",notes:$("#hr05-report-notes")?.value || ""}); result.innerHTML = '<span>报到事实已由服务端确认</span>'; await Promise.all([loadCase(), loadGate()]); }
+    catch (err) { result.innerHTML = '<span>' + escapeHtml(errorMessage(err)) + '</span>'; await loadCase(); } finally { syncReportButton(); }
   }
   async function activateCase() {
     const button = $("#hr05-activate-case"); const result = $("#hr05-activation-result"); button.disabled = true; result.innerHTML = '<span>正在执行正式生效…</span>';
-    try { await postForm("/api/hr/v1/onboarding/cases/" + encodeURIComponent(caseId) + "/activate", {}, {"Idempotency-Key":newIdempotencyKey()}); result.innerHTML = '<span>正式生效请求已由服务端完成</span>'; await Promise.all([loadCase(), loadGate()]); }
-    catch (err) { result.innerHTML = '<span>' + escapeHtml(errorMessage(err)) + '</span>'; await loadGate(); }
+    try { await postForm(apiBase + "/activate", {}, {"Idempotency-Key":activationKey}); result.innerHTML = '<span>正式生效请求已由服务端完成</span>'; await Promise.all([loadCase(), loadGate()]); }
+    catch (err) { result.innerHTML = '<span>' + escapeHtml(errorMessage(err)) + '</span>'; await Promise.all([loadCase(), loadGate()]); }
   }
-  function init() { const at = $("#hr05-report-at"); if (at && !at.value) at.value = localDateTimeValue(new Date()); $("#hr05-confirm-report")?.addEventListener("click", confirmReport); $("#hr05-activate-case")?.addEventListener("click", activateCase); loadCase(); loadGate(); }
+  function init() { const at = $("#hr05-report-at"); if (at && !at.value) at.value = localDateTimeValue(new Date()); $("#hr05-confirm-report")?.addEventListener("click", confirmReport); $("#hr05-activate-case")?.addEventListener("click", activateCase); syncReportButton(); loadCase(); loadGate(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

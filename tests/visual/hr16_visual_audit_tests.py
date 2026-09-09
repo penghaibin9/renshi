@@ -66,7 +66,7 @@ class Hr16VisualAuditTests(StaticLiveServerTestCase):
 
     def test_all_routes_and_real_case_submit(self):
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import expect, sync_playwright
         except ImportError as exc:
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
         page_errors, console_errors, static_failures, api_failures = [], [], [], []
@@ -90,10 +90,18 @@ class Hr16VisualAuditTests(StaticLiveServerTestCase):
                     response = page.goto(self.live_server_url + route, wait_until="networkidle")
                     self.assertIsNotNone(response); self.assertEqual(response.status, 200)
                     self.assertEqual(page.locator("[data-module='HR16']").count(), 1)
-                    self.assertEqual(page.locator(".hr16-nav a").count(), 8)
+                    self.assertEqual(page.locator(".hr16-nav a").count(), 6)
                     self.assertEqual(page.locator("#hr16-kpis .hr16-kpi").count(), 6)
-                    if slug == "overview": self.assertEqual(page.locator(".hr16-process__step").count(), 6)
-                    else: self.assertEqual(page.locator(".hr16-action-card").count(), 1)
+                    if slug == "overview":
+                        self.assertEqual(page.locator(".hr16-process__step").count(), 6)
+                    elif slug == "retirement-precheck":
+                        # Policy management and executing a precheck are distinct tasks.
+                        # Exact headings also reject an accidental extra error card.
+                        expect(page.locator(".hr16-action-card h2")).to_have_text([
+                            "退休政策与资格预审", "执行退休预审",
+                        ])
+                    else:
+                        self.assertEqual(page.locator(".hr16-action-card").count(), 1)
                     page.screenshot(path=str(self.out_dir / f"desktop-{slug}.png"), full_page=True)
 
                 response = page.goto(self.live_server_url + "/hr/exit/cases/", wait_until="networkidle")
@@ -112,6 +120,10 @@ class Hr16VisualAuditTests(StaticLiveServerTestCase):
                     response = page.goto(self.live_server_url + route, wait_until="networkidle")
                     self.assertIsNotNone(response); self.assertEqual(response.status, 200)
                     self.assertEqual(page.locator(".hr-v2-mobile-section-switcher").count(), 1)
+                    if slug == "retirement-precheck":
+                        expect(page.locator(".hr16-action-card h2")).to_have_text([
+                            "退休政策与资格预审", "执行退休预审",
+                        ])
                     page.screenshot(path=str(self.out_dir / f"mobile-{slug}.png"), full_page=True)
                 context.close()
             finally:

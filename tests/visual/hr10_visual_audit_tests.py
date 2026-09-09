@@ -169,7 +169,7 @@ class Hr10VisualAuditTests(StaticLiveServerTestCase):
                         self.assertEqual(page.locator(".hr10-nav a, .hr10-nav span.disabled").count(), 6, route)
                         self.assertEqual(page.locator(".hr-v2-pagehead").count(), 1, route)
                         if name in {"plans", "programs", "requests", "practice"}:
-                            page.locator(".hr10-panel").wait_for(state="visible", timeout=10000)
+                            page.locator(".hr10-panel").first.wait_for(state="visible", timeout=10000)
                         if mode == "mobile":
                             self.assertEqual(page.locator(".hr-v2-mobile-section-switcher").count(), 1, route)
                         page.screenshot(path=str(self.out_dir / f"{mode}-{name}.png"), full_page=True)

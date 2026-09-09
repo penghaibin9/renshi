@@ -176,7 +176,7 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
         from hr_data.models import MetricDefinitionVersion
 
         try:
-            from playwright.sync_api import sync_playwright
+            from playwright.sync_api import expect, sync_playwright
         except ImportError as exc:
             raise RuntimeError("playwright must be installed for HR visual audit") from exc
 
@@ -227,7 +227,7 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                     self.assertIsNotNone(response)
                     self.assertEqual(response.status, 200, f"HR18 {route} returned HTTP {response.status}")
                     self.assertEqual(page.locator("[data-module='HR18'].hr-v2-page").count(), 1)
-                    self.assertEqual(page.locator(".hr18-nav a").count(), 8)
+                    self.assertEqual(page.locator(".hr18-nav a").count(), 6)
                     self.assertEqual(page.locator(".hr18-nav a[aria-current='page']").count(), 1)
                     page.wait_for_function(
                         """() => Array.from(document.querySelectorAll('#hr18-kpis .hr18-kpi b')).every((n) => n.textContent.trim() !== '—')""",
@@ -250,7 +250,9 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                 page.goto(self.live_server_url + "/hr/data/metrics/", wait_until="networkidle")
                 page.locator("[data-open='hr18-metric-form']").click()
                 form = page.locator("#hr18-metric-form")
-                self.assertEqual(page.evaluate("document.activeElement?.name"), "metricCode")
+                # Production transfers focus on requestAnimationFrame; require the
+                # real input to receive focus instead of sampling the preceding frame.
+                expect(form.locator("[name='metricCode']")).to_be_focused()
                 self.assertTrue(
                     form.locator(".hr18-action-field > label[for]").evaluate_all(
                         "labels => labels.every(label => document.getElementById(label.htmlFor))"
@@ -271,12 +273,15 @@ class Hr18VisualAuditTests(StaticLiveServerTestCase):
                 )
                 page.screenshot(path=str(self.out_dir / "desktop-real-metric-write.png"), full_page=True)
 
-                page.goto(self.live_server_url + "/hr/data/exchange/", wait_until="networkidle")
-                page.wait_for_function(
-                    """() => document.querySelector('#hr18-boundary')?.textContent.includes('暂未开放')""",
-                    timeout=8000,
-                )
-                self.assertIn("同步导出不会伪装成交换任务中心", page.locator("#hr18-boundary").inner_text())
+                with page.expect_response(lambda response: response.url.endswith("/api/v1/hr/data/dashboard/")) as exchange_dashboard:
+                    page.goto(self.live_server_url + "/hr/data/exchange/", wait_until="networkidle")
+                self.assertEqual(exchange_dashboard.value.status, 200)
+                self.assertTrue(exchange_dashboard.value.json()["capabilities"]["asyncExchange"])
+                expect(page.locator("#hr18-boundary")).to_contain_text("真实异步任务台账")
+                expect(page.get_by_role("heading", name="数据交换与共享工作区", exact=True)).to_be_visible()
+                expect(page.locator("[data-open='hr18-exchange-dataset']")).to_be_enabled()
+                # Rendering the implemented exchange workbench is not a claim
+                # that an external target accepted or transmitted a dataset.
 
                 page.set_viewport_size({"width": 390, "height": 844})
                 for slug, route in routes:

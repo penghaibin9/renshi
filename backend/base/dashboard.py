@@ -16,244 +16,59 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 
-def _safe_url(url_name):
-    """Reverse a URL name; return '#' if the URL is not registered."""
-    try:
-        return reverse(url_name)
-    except Exception:
-        return "#"
-
-
-# ---------------------------------------------------------------------------
-# Setup checklist helpers
-# ---------------------------------------------------------------------------
-
-
 def _is_setup_admin(request):
-    """
-    True for superusers, staff, and any user who can manage HR setup entities.
-    Regular employees (no management perms) are excluded — they can't complete
-    setup steps and should not see setup prompts.
-    """
+    """Only an active account with school-profile access may inspect setup."""
     user = request.user
-    if user.is_superuser or user.is_staff:
-        return True
-    return user.has_perm("base.add_department") or user.has_perm("base.add_company")
+    return bool(
+        user.is_authenticated
+        and user.is_active
+        and user.has_perm("base.view_company")
+    )
 
 
 def _resolve_checklist_company(request):
-    """
-    Return the integer PK of the company currently active for this request.
+    """Use the same concrete, authorized school as the settings write path.
 
-    Priority:
-      1. The company stored in the ContextVar by the middleware
-      2. The first company in the DB (fresh install with no session yet)
-      3. None  (no company exists — the "Company" step is the first to do)
+    Missing/union/foreign selections have no checklist. Never use the first
+    Company in the database or a shared legacy lookup as school evidence.
     """
+    from django.core.exceptions import PermissionDenied
+    from django.http import Http404
+
+    from base.settings_center import _selected_company
     from horilla.horilla_middlewares import get_selected_company
 
-    company_id = get_selected_company()
-    if company_id and company_id != "all":
-        try:
-            return int(company_id)
-        except (TypeError, ValueError):
-            pass
-
-    # "all" or None → fall back to first company in the DB
-    from base.models import Company
-
-    first = Company.objects.first()
-    return first.pk if first else None
-
-
-def _exists_for_company(ModelClass, company_id):
-    """
-    Return True if at least one record of ModelClass is visible for the given
-    company.  Mirrors HorillaCompanyManager: a record is visible when it is
-    explicitly assigned to this company OR has no company assignment at all
-    (meaning it is shared across all companies — common for lookup tables like
-    WorkType, EmployeeType, EmployeeShift whose M2M company_id may be empty).
-    """
     try:
-        filter_path = ModelClass.objects.get_company_filter_path()
-        if not filter_path:
-            return False
-        null_path = f"{filter_path}__isnull"
-        return (
-            ModelClass.objects.entire()
-            .filter(Q(**{filter_path: company_id}) | Q(**{null_path: True}))
-            .exists()
-        )
-    except Exception:
-        return False
+        company = _selected_company(request)
+    except (PermissionDenied, Http404):
+        return None
+    if str(get_selected_company()) != str(company.pk):
+        return None
+    return company.pk
 
 
 def _get_setup_checklist_context(request):
-    """
-    Builds the context for the onboarding setup checklist banner.
+    """Dashboard and school center consume the same factual setup summary."""
+    from base.models import Company, SetupChecklistDismissal
+    from base.school_management import setup_summary
 
-    Returns ``{"show_setup_checklist": False}`` when:
-      • the user is not an admin/manager (regular employees skip it)
-      • the user has already dismissed the banner for the active company
-      • all 8 steps are complete for the active company
-
-    In DEBUG mode only, ``?preview_checklist=1`` forces the banner visible
-    with every step shown as incomplete — useful for testing on populated DBs
-    without deleting any data.
-    """
-    from django.conf import settings
-
-    from base.models import (
-        Company,
-        Department,
-        DynamicEmailConfiguration,
-        EmployeeShift,
-        EmployeeShiftSchedule,
-        JobPosition,
-        SetupChecklistDismissal,
-        WorkType,
-    )
-
-    # 1. Permission gate — only show to admins / managers
     if not _is_setup_admin(request):
         return {"show_setup_checklist": False}
-
-    preview_mode = settings.DEBUG and request.GET.get("preview_checklist") == "1"
-
-    # 2. Resolve the company we're scoping the checklist to
     company_pk = _resolve_checklist_company(request)
-
-    # 3. Check per-user, per-company dismissal
-    if not preview_mode:
-        dismissed = SetupChecklistDismissal.objects.filter(
-            user=request.user, company_id=company_pk
-        ).exists()
-        if dismissed:
-            return {"show_setup_checklist": False}
-
-    # 4. Build steps — each checks live DB scoped to the active company
-    def _has_company():
-        # Company itself is the root tenant object; any company existing is enough.
-        try:
-            return Company.objects.exists()
-        except Exception:
-            return False
-
-    def _has_employees():
-        try:
-            from employee.models import Employee
-
-            return _exists_for_company(Employee, company_pk)
-        except Exception:
-            return False
-
-    def _has_mail_server():
-        try:
-            return DynamicEmailConfiguration.objects.filter(
-                is_primary=True, host__isnull=False
-            ).exists()
-        except Exception:
-            return False
-
-    steps = [
-        {
-            "key": "company",
-            "title": _("Company"),
-            "description": _("Add your company profile — name, logo and timezone."),
-            "url": _safe_url("company-view"),
-            "done": _has_company(),
-        },
-        {
-            "key": "department",
-            "title": _("Departments"),
-            "description": _("Create the departments your employees will belong to."),
-            "url": _safe_url("department-view"),
-            "done": (
-                _exists_for_company(Department, company_pk) if company_pk else False
-            ),
-        },
-        {
-            "key": "job_position",
-            "title": _("Job Positions"),
-            "description": _("Define named roles within each department."),
-            "url": _safe_url("job-position-view"),
-            "done": (
-                _exists_for_company(JobPosition, company_pk) if company_pk else False
-            ),
-        },
-        {
-            "key": "shift",
-            "title": _("Shift"),
-            "description": _("Define working schedules — Morning, Evening, Night."),
-            "url": _safe_url("employee-shift-view"),
-            "done": (
-                _exists_for_company(EmployeeShift, company_pk) if company_pk else False
-            ),
-        },
-        {
-            "key": "shift_schedule",
-            "title": _("Shift Schedule"),
-            "description": _("Set day-wise timings for each shift."),
-            "url": _safe_url("employee-shift-schedule-view"),
-            "done": (
-                _exists_for_company(EmployeeShiftSchedule, company_pk)
-                if company_pk
-                else False
-            ),
-        },
-        {
-            "key": "work_type",
-            "title": _("Work Type"),
-            "description": _("Set engagement types — Full Time, Part Time, Contract."),
-            "url": _safe_url("work-type-view"),
-            "done": _exists_for_company(WorkType, company_pk) if company_pk else False,
-        },
-        {
-            "key": "mail_server",
-            "title": _("Mail Server"),
-            "description": _(
-                "Configure an outgoing mail server so Horilla can send emails."
-            ),
-            "url": _safe_url("mail-server-conf"),
-            "done": _has_mail_server(),
-        },
-        {
-            "key": "first_employee",
-            "title": _("First Employee"),
-            "description": _("Add your first employee to bring everything together."),
-            "url": _safe_url("employee-view-new"),
-            "done": _has_employees() if company_pk else False,
-        },
-    ]
-
-    # 5. Preview mode overrides all done flags to False
-    if preview_mode:
-        for s in steps:
-            s["done"] = False
-
-    completed = sum(1 for s in steps if s["done"])
-    total = len(steps)
-
-    # Auto-hide once all steps are complete (no dismiss record needed)
-    if not preview_mode and completed == total:
+    if company_pk is None:
         return {"show_setup_checklist": False}
-
-    # 6. Precompute connector-line state for the template.
-    for i, step in enumerate(steps):
-        step["left_line_active"] = (i > 0) and steps[i - 1]["done"]
-        step["right_line_active"] = step["done"] and (i < total - 1)
-
-    next_step = next((s for s in steps if not s["done"]), None)
-    progress_pct = int(completed / total * 100)
-
+    if SetupChecklistDismissal.objects.filter(
+        user=request.user, company_id=company_pk
+    ).exists():
+        return {"show_setup_checklist": False}
+    company = Company.objects.get(pk=company_pk)
+    summary = setup_summary(request, company)
     return {
         "show_setup_checklist": True,
-        "setup_steps": steps,
-        "setup_completed": completed,
-        "setup_total": total,
-        "setup_next_step": next_step,
-        "setup_progress_pct": progress_pct,
-        "setup_dismiss_url": _safe_url("dashboard-dismiss-setup-checklist"),
+        "setup": summary,
+        "setup_recorded": sum(step["state"] == "RECORDED" for step in summary["steps"]),
+        "setup_center_url": reverse("school-management"),
+        "setup_dismiss_url": reverse("dashboard-dismiss-setup-checklist"),
         "setup_company_pk": company_pk,
     }
 
@@ -337,20 +152,20 @@ def main_dashboard_view(request):
 @login_required
 @require_http_methods(["POST"])
 def dismiss_setup_checklist(request):
-    """
-    HTMX endpoint — records per-user, per-company dismissal and returns empty
-    HTML so the banner is removed via outerHTML swap.
-    Only admins can dismiss (non-admins never see the banner anyway).
-    """
+    """Dismiss this account's banner for exactly the selected school."""
+    from django.core.exceptions import PermissionDenied
+
     from base.models import SetupChecklistDismissal
 
-    if _is_setup_admin(request):
-        company_pk = _resolve_checklist_company(request)
-        SetupChecklistDismissal.objects.get_or_create(
-            user=request.user,
-            company_id=company_pk,
-        )
-    return HttpResponse("")
+    if not _is_setup_admin(request):
+        raise PermissionDenied
+    company_pk = _resolve_checklist_company(request)
+    if company_pk is None:
+        raise PermissionDenied("Select one authorized school before dismissing setup.")
+    SetupChecklistDismissal.objects.get_or_create(
+        user=request.user, company_id=company_pk
+    )
+    return HttpResponse("", headers={"Cache-Control": "no-store"})
 
 
 @login_required

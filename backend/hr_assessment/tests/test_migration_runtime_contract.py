@@ -1,3 +1,4 @@
+import inspect
 from importlib import import_module
 from types import SimpleNamespace
 from unittest import TestCase
@@ -41,4 +42,32 @@ class ObjectionMigrationRuntimeContractTests(TestCase):
         self.assertEqual(
             queryset.ordered_by,
             ("tenant_id", "result_id", "result_version"),
+        )
+
+
+class ProviderSnapshotTriggerMigrationContractTests(TestCase):
+    def test_repair_is_collation_safe_and_restores_complete_item_seals(self):
+        migration = import_module(
+            "hr_assessment.migrations."
+            "0028_repair_provider_snapshot_item_trigger_collation"
+        )
+        source = inspect.getsource(
+            migration.install_collation_safe_snapshot_item_seals
+        )
+
+        self.assertEqual(
+            migration.ITEM_TABLE,
+            "hr_assessment_provider_snapshot_item",
+        )
+        self.assertIn(
+            "CAST(parent_case AS BINARY) <> CAST(NEW.case_id AS BINARY)",
+            source,
+        )
+        self.assertNotIn("OR parent_case <> NEW.case_id", source)
+        self.assertIn("parent_status <> 'CAPTURING'", source)
+        self.assertIn("{ITEM_TABLE}_no_update", source)
+        self.assertIn("{ITEM_TABLE}_no_delete", source)
+        self.assertIn(
+            "hr_assessment_provider_snapshot_item_seal_insert",
+            source,
         )

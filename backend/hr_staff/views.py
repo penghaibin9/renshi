@@ -8,11 +8,10 @@ hr_staff/views.py —— HR03 页面 views（S4/S5 落地）。
 
 from __future__ import annotations
 
-import uuid
-
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 
+from hr_staff.account_contract import ACCOUNT_MANAGE_PERMISSION
 from hr_staff.api.base import make_staff_context
 from hr_staff.context import HrStaffContextError
 
@@ -41,6 +40,7 @@ def staff_list(request):
         {
             "tenant_id": context.tenant_id,
             "authority_mode": context.authority_mode,
+            "can_import_staff": request.user.has_perm("hr.staff.import"),
         },
     )
 
@@ -56,6 +56,9 @@ def staff_profile(request, staff_id):
             {"error_code": exc.code, "error_message": exc.message},
             status=403,
         )
+    can_manage_account = request.user.is_superuser or request.user.has_perm(
+        ACCOUNT_MANAGE_PERMISSION
+    )
     return render(
         request,
         "hr_staff/profile.html",
@@ -63,6 +66,7 @@ def staff_profile(request, staff_id):
             "staff_id": str(staff_id),
             "as_of": context.as_of.isoformat() if context.as_of else "",
             "tenant_id": context.tenant_id,
+            "can_manage_account": can_manage_account,
         },
     )
 
@@ -90,8 +94,15 @@ def background_facts(request, staff_id):
     """HR03-04 教育资格履历（S7）。"""
     context, exc = _context_or_403(request)
     if exc:
-        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
-    return render(request, "hr_staff/background_facts.html", {"staff_id": str(staff_id)})
+        return render(
+            request,
+            "hr_staff/error.html",
+            {"error_code": exc.code, "error_message": exc.message},
+            status=403,
+        )
+    return render(
+        request, "hr_staff/background_facts.html", {"staff_id": str(staff_id)}
+    )
 
 
 @ensure_csrf_cookie
@@ -99,7 +110,12 @@ def materials(request, staff_id):
     """HR03-05 人事材料档案（S8）。"""
     context, exc = _context_or_403(request)
     if exc:
-        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
+        return render(
+            request,
+            "hr_staff/error.html",
+            {"error_code": exc.code, "error_message": exc.message},
+            status=403,
+        )
     return render(request, "hr_staff/materials.html", {"staff_id": str(staff_id)})
 
 
@@ -108,7 +124,12 @@ def corrections(request, staff_id):
     """HR03-06 信息更正与历史（S9）。"""
     context, exc = _context_or_403(request)
     if exc:
-        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
+        return render(
+            request,
+            "hr_staff/error.html",
+            {"error_code": exc.code, "error_message": exc.message},
+            status=403,
+        )
     return render(request, "hr_staff/corrections.html", {"staff_id": str(staff_id)})
 
 
@@ -117,5 +138,12 @@ def data_quality(request):
     """数据质量异常中心（§34）。"""
     context, exc = _context_or_403(request)
     if exc:
-        return render(request, "hr_staff/error.html", {"error_code": exc.code, "error_message": exc.message}, status=403)
-    return render(request, "hr_staff/data_quality.html", {"tenant_id": context.tenant_id})
+        return render(
+            request,
+            "hr_staff/error.html",
+            {"error_code": exc.code, "error_message": exc.message},
+            status=403,
+        )
+    return render(
+        request, "hr_staff/data_quality.html", {"tenant_id": context.tenant_id}
+    )

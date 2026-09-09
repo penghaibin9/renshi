@@ -1,0 +1,111 @@
+/* HR01 task/risk inbox only. Preserve source order, labels and native links. */
+.hr-v2-page.hr01-inbox,
+.hr01-inbox *,
+.hr01-inbox *::before,
+.hr01-inbox *::after { box-sizing: border-box; }
+.hr-v2-page.hr01-inbox { min-width: 0; }
+.hr01-inbox > .hr-section-card { margin-bottom: var(--hr-space-4); }
+.hr01-inbox .hr-section-card__header { margin-bottom: var(--hr-space-2); }
+.hr01-inbox .hr01-inbox__tools:where(:not([hidden])) {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 160px) auto;
+  gap: var(--hr-space-3);
+  align-items: end;
+  margin-bottom: var(--hr-space-4);
+  padding: var(--hr-space-4);
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-md);
+  background: var(--hr-surface);
+}
+.hr01-inbox .hr01-inbox__tools > label:where(:not([hidden])) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+  color: var(--hr-text-700);
+  font-size: 13px;
+  font-weight: 600;
+}
+.hr01-inbox .hr01-inbox__tools :is(input, select) {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--hr-border);
+  border-radius: var(--hr-radius-sm);
+  background: var(--hr-surface);
+  color: var(--hr-text-900);
+  font: inherit;
+  font-weight: 400;
+}
+.hr01-inbox .hr01-inbox__actions:where(:not([hidden])) { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.hr01-inbox .hr-btn:where(:not([hidden])) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  max-width: 100%;
+  line-height: 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.hr01-inbox .hr01-inbox__scope,
+.hr01-inbox .hr01-inbox__count {
+  grid-column: 1 / -1;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--hr-text-500);
+  font-size: 12px;
+  line-height: 20px;
+}
+.hr01-inbox .hr01-inbox__count { color: var(--hr-text-700); }
+.hr01-inbox .hr01-inbox__notice {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hr-warning);
+  border-radius: var(--hr-radius-sm);
+  color: var(--hr-text-700);
+  background: var(--hr-canvas);
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.hr01-inbox .hr-btn[aria-pressed="true"] {
+  border-color: var(--hr-primary-600);
+  color: var(--hr-primary-700);
+  background: var(--hr-primary-50);
+}
+.hr01-inbox .hr-btn:disabled { opacity: .6; cursor: not-allowed; }
+.hr01-inbox .hr-btn[aria-busy="true"] { opacity: .7; cursor: wait; }
+.hr01-inbox :is(.hr-todo-item, .hr-alert-item) { flex-wrap: wrap; align-items: flex-start; }
+.hr01-inbox :is(.hr-todo-item__main, .hr-alert-item__main) { flex: 1 1 200px; }
+.hr01-inbox :is(.hr-todo-item__due, .hr-alert-item__due) { flex: 0 1 190px; }
+.hr01-inbox :is(.hr-todo-item, .hr-alert-item) > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.hr01-inbox :is(.hr-todo-item__title, .hr-alert-item__title) { line-height: 22px; }
+.hr01-inbox :is(.hr-empty-state, .hr-page-title, .hr-page-subtitle) { overflow-wrap: anywhere; }
+.hr01-inbox .hr-empty-state { padding-block: 24px; }
+.hr01-inbox :is(a[href], button, input, select):focus-visible {
+  outline: 2px solid var(--hr-primary-600);
+  outline-offset: 2px;
+  scroll-margin-block: 100px 24px;
+}
+@media (max-width: 1100px) {
+  .hr01-inbox .hr01-inbox__tools:where(:not([hidden])) { grid-template-columns: minmax(0, 1fr) minmax(120px, 180px); }
+  .hr01-inbox .hr01-inbox__actions:where(:not([hidden])) { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .hr01-inbox .hr-section-card { padding: 16px; }
+  .hr01-inbox .hr01-inbox__tools:where(:not([hidden])) { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .hr01-inbox .hr01-inbox__tools :is(input, select) { font-size: 16px; min-height: 44px; }
+  .hr01-inbox .hr-btn { min-height: 44px; }
+  .hr01-inbox :is(.hr-todo-item, .hr-alert-item):where(:not([hidden])) { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 10px; }
+  .hr01-inbox :is(.hr-todo-item__main, .hr-alert-item__main) { grid-column: 2; }
+  .hr01-inbox :is(.hr-todo-item__due, .hr-alert-item__due) { grid-column: 1 / -1; }
+  .hr01-inbox .hr-todo-item > a { grid-column: 1 / -1; justify-self: end; border-color: var(--hr-border); }
+  .hr01-inbox .hr-summary-numbers { gap: 12px 16px; }
+}
+@media (forced-colors: active) {
+  .hr01-inbox :is(a[href], button, input, select):focus-visible { outline-color: Highlight; }
+  .hr01-inbox .hr-btn[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -3px; }
+}

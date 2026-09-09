@@ -8,7 +8,7 @@
     >
         {% csrf_token %}
         <div class="flex space-x-2 pb-1">
-            <label>{% trans "Default Records Per Page" %}</label>
+            <label for="id_pagination">{% trans "Default Records Per Page" %}</label>
             <span class="oh-info mr-2" title='{% trans "Default pagination for all views." %}'> </span>
         </div>
         <p class="text-xs text-gray-500 mt-1 pb-2">
@@ -19,12 +19,22 @@
                 type="number"
                 name="pagination"
                 placeholder="{% trans 'Pagination' %}"
-                value="{{pagination_form.instance.pagination}}"
-                required=""
+                value="{{ pagination_form.instance.pagination|default:50 }}"
+                min="1"
+                required
                 id="id_pagination"
+                {% if not perms.base.change_dynamicpagination %}readonly aria-readonly="true"{% endif %}
             >
 
-            <button class="btn" type="submit">{% trans "Save" %}</button>
+            {% if perms.base.change_dynamicpagination %}
+                <button class="btn" type="submit" data-settings-save="pagination">
+                    {% trans "Save" %}
+                </button>
+            {% else %}
+                <span class="text-xs text-gray-500 self-center" data-settings-readonly="pagination">
+                    {% trans "Read only" %}
+                </span>
+            {% endif %}
         </div>
     </form>
 </div>

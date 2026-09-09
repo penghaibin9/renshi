@@ -31,7 +31,9 @@ SECTION_META = {
 @login_required
 def hr_organizations(request):
     """HR02-01 组织机构页面。"""
-    return render(request, "hr/structure/organizations.html")
+    return render(request, "hr/structure/organizations.html", {
+        "show_initial_structure_link": request.user.has_perm("hr.structure.organization.create"),
+    })
 
 
 @login_required

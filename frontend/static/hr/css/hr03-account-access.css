@@ -1,0 +1,31 @@
+/* HR03 current login/account access card. */
+.hr03-account-card { border-color:#d6e4f8; }
+.hr03-account-card .hr-v2-panel__head { align-items:flex-start; gap:12px; }
+.hr03-account-state { display:inline-flex; flex:0 0 auto; min-height:26px; align-items:center; padding:3px 9px; border-radius:999px; background:#f2f5f9; color:#526681; font-size:11px; font-weight:800; }
+.hr03-account-state.is-loading { background:#eff6ff; color:#1d4ed8; }
+.hr03-account-state.is-linked { background:#ecfdf3; color:#166534; }
+.hr03-account-state.is-pending { background:#fffbeb; color:#92400e; }
+.hr03-account-state.is-warning, .hr03-account-state.is-error { background:#fff1f2; color:#991b1b; }
+.hr03-account-summary { margin-bottom:12px; color:var(--hr-v2-text); font-size:12px; line-height:1.65; }
+.hr03-account-facts { padding:12px 0; border-top:1px solid var(--hr-v2-line); border-bottom:1px solid var(--hr-v2-line); }
+.hr03-account-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.hr03-account-button { min-height:36px; padding:7px 12px; border:1px solid var(--hr-v2-line); border-radius:var(--hr-radius-sm); background:var(--hr-v2-surface); color:var(--hr-v2-text); font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
+.hr03-account-button:hover:not(:disabled) { border-color:var(--hr-v2-accent); color:var(--hr-v2-accent-strong); }
+.hr03-account-button:disabled { cursor:not-allowed; opacity:.58; }
+.hr03-account-button.is-primary { border-color:var(--hr-v2-accent); background:var(--hr-v2-accent); color:#fff; }
+.hr03-account-button.is-primary:hover:not(:disabled) { color:#fff; filter:brightness(.96); }
+.hr03-account-button.is-danger { border-color:#fecaca; background:#fff; color:#b91c1c; }
+.hr03-invite-secret { margin-top:14px; padding:12px; border:1px solid #bfdbfe; border-radius:var(--hr-radius-sm); background:#f8fbff; }
+.hr03-invite-secret strong { color:var(--hr-v2-text); font-size:12px; }
+.hr03-invite-secret p, .hr03-account-note { margin:5px 0 10px; color:var(--hr-v2-muted); font-size:11px; line-height:1.6; }
+.hr03-invite-secret label { display:block; margin-bottom:5px; color:var(--hr-v2-muted); font-size:11px; font-weight:700; }
+.hr03-invite-copy { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.hr03-invite-copy input { min-width:0; min-height:36px; padding:7px 9px; border:1px solid var(--hr-v2-line); border-radius:var(--hr-radius-sm); background:#fff; color:var(--hr-v2-text); font:inherit; font-size:11px; }
+.hr03-account-feedback { min-height:18px; margin-top:8px; color:var(--hr-v2-muted); font-size:11px; line-height:1.55; }
+.hr03-account-note { margin:10px 0 0; }
+@media (max-width:520px) {
+  .hr03-account-card .hr-v2-panel__head { align-items:stretch; flex-direction:column; }
+  .hr03-account-state { width:max-content; }
+  .hr03-invite-copy { grid-template-columns:1fr; }
+  .hr03-invite-copy .hr03-account-button { width:100%; }
+}
