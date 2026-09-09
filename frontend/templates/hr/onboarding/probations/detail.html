@@ -9,7 +9,7 @@
   <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title"><div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">查看试用摘要；评价、目标与决策明细暂不可用。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>试用记录编号</strong> {{ probation.id }}</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}
   <section class="hr05-panel"><div id="hr05-probation-detail" class="hr05-table-wrap" aria-live="polite"><div class="hr05-state"><strong>正在读取试用记录</strong><span>从当前学校授权列表中读取。</span></div></div><div id="hr05-probation-links" class="hr05-actions"></div></section>
-  <div class="hr05-truth-note"><strong>当前限制</strong><span>数据来自正式试用列表，暂无独立详情查询；本页不提供评价、转正确认、延期或不通过表单。</span></div>
+  <div class="hr05-truth-note"><strong>当前限制</strong><span>数据来自正式试用列表，尚无单条详情查询入口；本页不提供评价、转正确认、延期或不通过表单。</span></div>
 </div>
 {% endblock content %}
 {% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-probation-detail.js' %}"></script>{% endblock scripts %}
