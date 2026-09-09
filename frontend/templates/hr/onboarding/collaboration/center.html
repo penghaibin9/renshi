@@ -1,12 +1,12 @@
 {% extends "index.html" %}
 {% load static i18n %}
 {% block title %}{% trans "入职协同中心" %}{% endblock %}
-{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-case-workspaces.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
+{% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-case-workspaces.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-collaboration-actions.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-focus.css' %}">
 {% endblock styles %}
 {% block content %}
 <div class="hr-v2-page hr05-page hr05-focus-page" data-module="HR05" data-section="collaboration" data-hr-page="onboarding-collaboration">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>协同任务</strong></div>
-  <header class="hr-v2-pagehead" aria-labelledby="hr05-collab-title"><div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-collab-title">协同任务</h1><p class="hr-v2-subtitle">查看任务、责任角色与阻塞项。本页只读。</p></div></header>
+  <header class="hr-v2-pagehead" aria-labelledby="hr05-collab-title"><div class="hr-v2-pagehead__copy"><h1 class="hr-v2-title" id="hr05-collab-title">协同任务</h1><p class="hr-v2-subtitle">选择入职单，按责任人与当前状态推进协同任务。</p></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="collaboration" %}
   <section class="hr05-panel" aria-labelledby="hr05-task-work-title">
     <div class="hr05-work-heading"><div><h2 id="hr05-task-work-title">任务清单</h2></div><a class="hr-btn" href="/hr/onboarding/prehires">选择入职单</a></div>
@@ -20,8 +20,23 @@
     <p class="hr05-work-note">仅筛选已载入任务，统计不随筛选改变。</p>
     <p id="hr05-task-count" class="hr05-work-count" role="status" aria-live="polite" aria-atomic="true">尚未读取任务。</p>
     <div id="hr05-task-list" class="hr05-table-wrap" tabindex="0" role="region" aria-label="协同任务表格，可横向滚动" aria-live="polite"><div class="hr05-state"><strong>请选择入职单</strong><span>从入职单详情进入，可自动带入。</span></div></div>
+
+    <section class="hr05-task-action-panel" id="hr05-task-action-panel" aria-labelledby="hr05-task-action-title" hidden>
+      <div class="hr05-task-action-heading"><div><h3 id="hr05-task-action-title">办理当前任务</h3><p id="hr05-task-action-meta"></p></div><button class="hr-btn" id="hr05-task-action-close" type="button">关闭</button></div>
+      <p class="hr05-work-count" id="hr05-task-action-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+      <form class="hr05-task-action-form" data-task-form="complete" hidden>
+        <label>完成说明<textarea name="note" rows="3" maxlength="2000" placeholder="可填写处理结果或交接说明"></textarea></label>
+        <label>完成凭证<textarea name="evidence" rows="3" maxlength="2000" placeholder="可填写工单号、回执号或其他可追溯信息"></textarea></label>
+        <button class="hr05-button" type="submit">确认完成任务</button>
+      </form>
+      <form class="hr05-task-action-form" data-task-form="waive" hidden>
+        <label>豁免原因<textarea name="reason" rows="4" maxlength="2000" required placeholder="说明为什么本任务可以豁免"></textarea></label>
+        <label class="hr05-task-action-check"><input type="checkbox" required>我已核对任务责任与业务影响</label>
+        <button class="hr05-button" type="submit">确认豁免任务</button>
+      </form>
+    </section>
   </section>
-  <div class="hr05-truth-note"><strong>未开放操作</strong><span>开始、完成和豁免尚未开放；未读取或读取失败不计为 0。</span></div>
+  <div class="hr05-truth-note"><strong>办理边界</strong><span>只有服务端确认当前账号可操作、且任务状态允许时才显示开始、完成或豁免；读取失败不会显示旧任务操作，豁免必须填写原因。</span></div>
 </div>
 {% endblock content %}
-{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-collaboration.js' %}"></script>{% endblock scripts %}
+{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-collaboration.js' %}?v=20260909-actions-1"></script>{% endblock scripts %}
