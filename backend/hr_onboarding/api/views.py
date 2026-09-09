@@ -81,7 +81,7 @@ def hr05_case_detail(request, case_id: str):
 
 
 @require_POST
-@require_hr05_permission("hr05.case.view")
+@require_hr05_permission("hr05.case.create")
 def hr05_case_ready_to_report(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -350,7 +350,7 @@ def hr05_case_report(request, case_id: str):
 
 
 @require_POST
-@require_hr05_permission("hr05.case.view")
+@require_hr05_permission("hr05.case.create")
 def hr05_case_confirm_intent(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
@@ -368,7 +368,7 @@ def hr05_case_confirm_intent(request, case_id: str):
 
 
 @require_POST
-@require_hr05_permission("hr05.case.view")
+@require_hr05_permission("hr05.case.create")
 def hr05_case_request_delay(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
