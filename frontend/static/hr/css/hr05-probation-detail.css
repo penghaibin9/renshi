@@ -1,0 +1,28 @@
+/* Only the single HR05 probation reader. Shared shell and decision forms stay unchanged. */
+.hr05-page[data-hr-page="onboarding-probation-detail"] {box-sizing:border-box;min-width:0;grid-template-columns:minmax(0,1fr)}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-panel {min-width:0;grid-template-columns:minmax(0,1fr);gap:16px}
+.hr05-page[data-hr-page="onboarding-probation-detail"] :is(.hr05-record-heading,.hr05-record-pager) {display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-heading {justify-content:space-between}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-heading>div {flex:1;min-width:0}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-heading h2 {margin:0;font-size:17px;line-height:25px}
+.hr05-page[data-hr-page="onboarding-probation-detail"] :is(.hr05-record-id,.hr05-record-meta) {margin:4px 0 0;color:var(--hr-text-500);font-size:12px;line-height:20px;overflow-wrap:anywhere}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-tabs {display:flex;gap:6px;overflow:auto;min-width:0;border-bottom:1px solid var(--hr-border);padding:2px 2px 0}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-tabs button {flex:none;min-height:44px;padding:10px 14px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--hr-text-700);font:inherit;font-size:14px;cursor:pointer}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-tabs [aria-selected="true"] {color:var(--hr-primary-700);border-bottom-color:var(--hr-primary-600);font-weight:700;background:var(--hr-primary-50)}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-facts {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin:8px 0}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-facts dt {margin-bottom:6px;font-size:12px;line-height:20px;color:var(--hr-text-500)}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-facts dd {margin:0;color:var(--hr-text-900);font-size:14px;line-height:22px;overflow-wrap:anywhere}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-entries {display:grid;gap:14px}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-entry {padding:16px;border:1px solid var(--hr-border);border-left:3px solid var(--hr-primary-200);border-radius:var(--hr-radius-sm);min-width:0}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-entry h2 {margin:0;font-size:15px;line-height:24px;overflow-wrap:anywhere}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-text {margin:12px 0;color:var(--hr-text-700);font-size:14px;line-height:24px;white-space:pre-wrap;overflow-wrap:anywhere}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-label {display:inline-block;padding:4px 8px;background:var(--hr-primary-50);color:var(--hr-primary-700);font-size:12px;border-radius:4px}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-pager {justify-content:flex-end;font-size:13px;color:var(--hr-text-500)}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-pager[hidden] {display:none}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr-btn {box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;font:inherit;font-size:13px;line-height:20px;text-decoration:none;white-space:normal;overflow-wrap:anywhere}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr-btn[aria-disabled="true"] {opacity:.6;cursor:not-allowed}
+.hr05-page[data-hr-page="onboarding-probation-detail"] .hr-btn[aria-busy="true"] {cursor:wait}
+.hr05-page[data-hr-page="onboarding-probation-detail"] :is(button,a,[tabindex]):focus-visible {outline:2px solid var(--hr-primary-600);outline-offset:-2px;scroll-margin-block:90px 20px}
+@media(max-width:1000px){.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-facts{grid-template-columns:minmax(0,1fr);gap:16px}.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-truth-note{flex-wrap:wrap}.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-panel{padding:14px}}
+@media(forced-colors:active){.hr05-page[data-hr-page="onboarding-probation-detail"] :is(button,a,[tabindex]):focus-visible{outline-color:Highlight}.hr05-page[data-hr-page="onboarding-probation-detail"] .hr05-record-tabs [aria-selected="true"]{border-bottom-color:Highlight}}

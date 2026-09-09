@@ -1,14 +1,154 @@
-/** HR05-05 试用详情：在 tenant-scope canonical 列表中定位当前试用记录。 */
+/** HR05 single-record reader. Tabs read server facts; no decision is submitted. */
 (function () {
   "use strict";
-  function $(s) { return document.querySelector(s); }
-  function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
-  function safeStatusClass(value) { return String(value || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 40) || "unknown"; }
-  function stateHtml(title, detail, error) { return '<div class="hr05-state"' + (error ? ' data-state="error"' : "") + '><strong>' + escapeHtml(title) + '</strong><span>' + escapeHtml(detail || "") + '</span></div>'; }
-  async function load() {
-    const root = $('[data-hr-page="onboarding-probation-detail"]'); const host = $("#hr05-probation-detail"); if (!root || !host) return; const probationId = root.dataset.probationId || "";
-    try { const res = await window.HrApi.request("/api/hr/v1/onboarding/probations"); const items = res.data?.data?.items || []; const item = items.find(function (row) { return String(row.id) === String(probationId); }); if (!item) { host.innerHTML = stateHtml("试用记录不可见", "当前学校和账号可见范围内没有该记录。", true); return; } host.innerHTML = '<table class="hr-table"><tbody><tr><th>开始日期</th><td>' + escapeHtml(item.start_date || "—") + '</td><th>计划转正日</th><td>' + escapeHtml(item.planned_end_date || "—") + '</td></tr><tr><th>当前状态</th><td><span class="hr05-badge hr05-badge--' + safeStatusClass(item.status) + '">' + escapeHtml(window.HrApi.statusLabel(item.status, item.statusLabel)) + '</span></td><th>结果</th><td>' + escapeHtml(window.HrApi.statusLabel(item.result, item.resultLabel, "结果待确认")) + '</td></tr><tr><th>延长次数</th><td>' + escapeHtml(item.extension_count ?? 0) + '</td><th>教职工主档</th><td>' + escapeHtml(item.staff_master_id || "—") + '</td></tr></tbody></table>'; const links = $("#hr05-probation-links"); if (links && item.onboarding_case_id) links.innerHTML = '<a href="/hr/onboarding/prehires/' + encodeURIComponent(item.onboarding_case_id) + '">查看关联入职单</a>'; }
-    catch (err) { host.innerHTML = stateHtml("试用记录读取失败", window.HrApi.apiErrorToMessage(err) || "请求失败", true); }
+  const titles = {summary: "试用摘要", goals: "试用目标", reviews: "评价记录", extensions: "延期历史"};
+  const reviewLabels = {SELF: "本人自评", COLLEGE: "单位评价", HR: "人事审核"};
+  const approvalLabels = {PENDING: "待审批", APPROVED: "已批准", REJECTED: "未批准"};
+  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const shown = (value) => value === null || value === undefined || value === "" ? "—" : esc(value);
+  const message = (title, detail, error = false) => `<div class="hr05-state"${error ? ' data-state="error"' : ""}><strong>${esc(title)}</strong><span>${esc(detail)}</span></div>`;
+
+  function mount() {
+    const root = document.querySelector('[data-hr-page="onboarding-probation-detail"]');
+    if (!root || root.dataset.recordBound === "true") return;
+    const host = root.querySelector("#hr05-probation-detail");
+    if (!host) return;
+    root.dataset.recordBound = "true";
+    const count = root.querySelector("#hr05-record-status");
+    const refresh = root.querySelector("#hr05-record-refresh");
+    const pager = root.querySelector("#hr05-record-pager");
+    const previous = root.querySelector("#hr05-record-previous");
+    const next = root.querySelector("#hr05-record-next");
+    const pageLabel = root.querySelector("#hr05-record-page");
+    const links = root.querySelector("#hr05-probation-links");
+    const tabs = [...root.querySelectorAll("[data-record-section]")];
+    const objectId = root.dataset.probationId || "";
+    const endpoint = root.dataset.detailUrl || "";
+    const isObjectId = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value || "");
+    // The server-rendered named route is the sole transport target.
+    if (!isObjectId(objectId) || endpoint !== `/api/v1/hr/onboarding/probations/${objectId}`) {
+      host.innerHTML = message("试用入口不可用", "请从试用列表重新进入该记录。", true);
+      if (count) count.textContent = "详情地址未确认，未发出请求。";
+      return;
+    }
+    let ticket = 0;
+    let section = "summary";
+    let page = 1;
+    let pending = false;
+    let hasMore = false;
+    let ready = false;
+    const current = (revision) => root.isConnected && host.isConnected && revision === ticket;
+    const setDisabled = (button, disabled) => {
+      if (button) button.setAttribute("aria-disabled", String(disabled));
+    };
+
+    function controls() {
+      tabs.forEach((tab) => {
+        const active = tab.dataset.recordSection === section;
+        tab.setAttribute("aria-selected", String(active));
+        tab.tabIndex = active ? 0 : -1;
+        if (active) host.setAttribute("aria-labelledby", tab.id);
+      });
+      if (pager) pager.hidden = section === "summary";
+      setDisabled(previous, pending || !ready || page <= 1);
+      setDisabled(next, pending || !ready || !hasMore);
+      setDisabled(refresh, pending);
+      if (refresh) {
+        refresh.setAttribute("aria-busy", String(pending));
+        refresh.textContent = pending ? "读取中…" : "刷新记录";
+      }
+      if (pageLabel) pageLabel.textContent = `第 ${page} 页`;
+      host.setAttribute("aria-busy", String(pending));
+    }
+
+    function summary(record) {
+      const fields = [
+        ["当前状态", record.statusLabel], ["正式结果", record.resultLabel],
+        ["开始日期", record.start_date], ["计划转正日", record.planned_end_date],
+        ["实际结束日", record.actual_end_date], ["延期次数", record.extension_count],
+        ["教职工主档编号", record.staff_master_id], ["聘用关系编号", record.employment_relationship_id],
+        ["政策版本", record.policy_version_id], ["记录版本", record.version],
+        ["创建时间", record.created_at], ["更新时间", record.updated_at],
+      ];
+      return `<dl class="hr05-record-facts">${fields.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${shown(value)}</dd></div>`).join("")}</dl>`;
+    }
+
+    function entries(key, items) {
+      if (!items.length) return message(`本页暂无${titles[key]}`, page > 1 ? "当前页未返回记录，可回到上一页或刷新核对。" : "服务端已成功返回此分区的空记录。未推断目标完成或评价通过。 ");
+      return `<div class="hr05-record-entries">${items.map((item) => {
+        if (key === "goals") return `<article class="hr05-record-entry"><h2>${shown(item.title)}</h2><p class="hr05-record-meta">类别：${shown(item.category)} · 评价角色：${shown(item.evaluator_role)}</p><p class="hr05-record-text">${shown(item.description)}</p><span class="hr05-record-label">${item.evidence_required === true ? "要求提供证据" : item.evidence_required === false ? "未要求证据" : "证据要求未确认"}</span></article>`;
+        if (key === "reviews") return `<article class="hr05-record-entry"><h2>${shown(reviewLabels[item.review_type] || item.review_type)}</h2><p class="hr05-record-meta">提交时间：${shown(item.submitted_at)} · 评价账号：${shown(item.reviewer_id)} · 版本：${shown(item.version)}</p><p class="hr05-record-text">${shown(item.content)}</p><p class="hr05-record-meta">记录意见：${shown(item.decision)}（不代替正式转正结果）</p></article>`;
+        return `<article class="hr05-record-entry"><h2>${shown(item.old_end_date)} → ${shown(item.new_end_date)}</h2><p class="hr05-record-meta">${shown(approvalLabels[item.approval] || item.approval)} · 经办账号：${shown(item.created_by)} · ${shown(item.created_at)}</p><p class="hr05-record-text">${shown(item.reason)}</p></article>`;
+      }).join("")}</div>`;
+    }
+
+    async function load(key = section, targetPage = page) {
+      if (!root.isConnected || !Object.hasOwn(titles, key)) return;
+      if (pending && key === section && targetPage === page) return;
+      section = key;
+      page = targetPage;
+      pending = true;
+      ready = false;
+      hasMore = false;
+      const revision = ++ticket;
+      controls();
+      host.innerHTML = message(`正在读取${titles[key]}`, "以本次读取的正式记录为准。");
+      if (links) links.replaceChildren();
+      if (count) count.textContent = `${titles[key]} · 第 ${page} 页正在读取`;
+      try {
+        const response = await window.HrApi.request(endpoint, {params: {section: key, page: targetPage}});
+        if (!current(revision)) return;
+        const data = response.data?.data;
+        const record = data?.probation;
+        const result = data?.section;
+        if (!response.ok || !record || String(record.id) !== objectId || !result
+          || result.key !== key || result.page !== targetPage || result.pageSize !== 20
+          || typeof result.hasMore !== "boolean" || !Array.isArray(result.items)
+          || result.items.length > 20 || result.items.some((item) => !item || typeof item !== "object" || Array.isArray(item))) {
+          throw new Error("详情返回格式或对象不一致，请重新读取。");
+        }
+        host.innerHTML = key === "summary" ? summary(record) : entries(key, result.items);
+        hasMore = result.hasMore;
+        ready = true;
+        if (count) count.textContent = `${titles[key]}${key === "summary" ? "" : ` · 第 ${page} 页 ${result.items.length} 条${hasMore ? "，后面还有记录" : ""}`} · 记录版本 ${record.version ?? "未返回"}`;
+        if (links && data.canViewCase === true && isObjectId(record.onboarding_case_id)) {
+          const link = document.createElement("a");
+          link.href = `/hr/onboarding/prehires/${encodeURIComponent(record.onboarding_case_id)}`;
+          link.className = "hr-btn";
+          link.textContent = "查看关联入职单";
+          links.append(link);
+        }
+      } catch (error) {
+        if (!current(revision)) return;
+        const status = error.status;
+        const title = status === 403 ? "无权读取此试用记录"
+          : status === 404 ? "试用记录不存在或不可见" : "试用记录读取失败";
+        host.innerHTML = message(title, window.HrApi.apiErrorToMessage(error) || "请重试或返回列表核对。", true);
+        if (count) count.textContent = "读取未成功，未沿用旧记录；当前分区和页码已保留。";
+      } finally {
+        if (current(revision)) { pending = false; controls(); }
+      }
+    }
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => load(tab.dataset.recordSection, 1));
+      tab.addEventListener("keydown", (event) => {
+        let target;
+        if (event.key === "ArrowRight") target = (index + 1) % tabs.length;
+        if (event.key === "ArrowLeft") target = (index + tabs.length - 1) % tabs.length;
+        if (event.key === "Home") target = 0;
+        if (event.key === "End") target = tabs.length - 1;
+        if (target === undefined) return;
+        event.preventDefault();
+        // Manual activation: move focus without issuing an extra read.
+        tabs[target].focus();
+      });
+    });
+    refresh?.addEventListener("click", () => { if (!pending) load(); });
+    previous?.addEventListener("click", () => { if (!pending && ready && page > 1) load(section, page - 1); });
+    next?.addEventListener("click", () => { if (!pending && ready && hasMore) load(section, page + 1); });
+    load();
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load); else load();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount, {once: true});
+  else mount();
 })();
