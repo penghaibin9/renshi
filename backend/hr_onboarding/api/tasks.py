@@ -148,7 +148,13 @@ def tasks_list(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
         case = _load_case_or_404(context, case_id)
-        qs = HrOnboardingTaskInstance.objects.filter(case=case).select_related("definition")
+        # Keep both parent and child tenant predicates. Historical/imported
+        # corrupt rows must not leak merely because their FK points to a valid
+        # case in the current school.
+        qs = HrOnboardingTaskInstance.objects.filter(
+            tenant_id=context.tenant_id,
+            case=case,
+        ).select_related("definition")
         items = [
             {
                 "id": str(t.id),
