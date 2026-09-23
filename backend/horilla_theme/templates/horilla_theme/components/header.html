@@ -1,3 +1,4 @@
+{# LEGACY NON-HR HEADER. Canonical HR uses hr/components/header_clean_v16.html. #}
 {% load i18n %}
 {% load static i18n horillafilters notifications_tags %}
 {% load basefilters %}
@@ -58,6 +59,9 @@
     {% endif %}
 
     <div class="flex items-center gap-8">
+        {% if request.path|slice:":4" == "/hr/" %}
+            {% include "hr/components/page_search_v16.html" %}
+        {% endif %}
         <!-- Action Icons -->
         <div class="flex items-center gap-2">
             {% if "attendance"|app_installed %}

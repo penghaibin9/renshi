@@ -171,9 +171,9 @@
     host.querySelector(`[data-open="${form.id}"]`)?.focus();
   }
 
-  function reloadAfterSuccess(host, message) {
+  function reloadAfterSuccess(host, message, button) {
     showResult(host, 'ok', message);
-    window.setTimeout(() => window.location.reload(), 650);
+    window.HrWorkspaceUX?.afterCommit({host, button, message});
   }
 
   function field(label, input, help = '', full = false) {
@@ -234,7 +234,7 @@
           sourceDomains: domains(data.get('sourceDomains')),
           asOfRequired: data.get('asOfRequired') === 'on',
         });
-        reloadAfterSuccess(host, `${created.metricCode} v${created.versionNo} 已保存${created.created === false ? '（内容未变化，复用既有版本）' : ''}`);
+        reloadAfterSuccess(host, `${created.metricCode} v${created.versionNo} 已保存${created.created === false ? '（内容未变化，复用既有版本）' : ''}`, button);
       } catch (error) {
         showResult(host, 'error', error.message);
         setBusy(button, false);
@@ -296,7 +296,7 @@
           description: data.get('description'),
           asOfRequired: data.get('asOfRequired') === 'on',
         });
-        reloadAfterSuccess(host, `${created.populationCode} v${created.versionNo} 已保存`);
+        reloadAfterSuccess(host, `${created.populationCode} v${created.versionNo} 已保存`, button);
       } catch (error) {
         showResult(host, 'error', error.message);
         setBusy(button, false);
@@ -320,7 +320,7 @@
           description: data.get('description'),
           asOfRequired: data.get('asOfRequired') === 'on',
         });
-        reloadAfterSuccess(host, `${created.dimensionCode} v${created.versionNo} 已保存`);
+        reloadAfterSuccess(host, `${created.dimensionCode} v${created.versionNo} 已保存`, button);
       } catch (error) {
         showResult(host, 'error', error.message);
         setBusy(button, false);
@@ -372,7 +372,7 @@
           definitionVersion: Number(data.get('definitionVersion')),
           asOfDate: data.get('asOfDate'),
         });
-        reloadAfterSuccess(host, `${evidence.evidenceNo} 重建完成：${evidence.status}`);
+        reloadAfterSuccess(host, `${evidence.evidenceNo} 重建完成：${evidence.status}`, button);
       } catch (error) {
         showResult(host, 'error', error.message);
         setBusy(button, false);
@@ -448,7 +448,7 @@
           parameters: parseJson(data.get('parameters'), 'Parameters', {}),
           asOfRequired: data.get('asOfRequired') === 'on',
         });
-        reloadAfterSuccess(host, `${rule.ruleCode} v${rule.versionNo} 已保存`);
+        reloadAfterSuccess(host, `${rule.ruleCode} v${rule.versionNo} 已保存`, button);
       } catch (error) {
         showResult(host, 'error', error.message);
         setBusy(button, false);
@@ -468,7 +468,7 @@
           ruleVersion: Number(data.get('ruleVersion')),
           asOfDate: data.get('asOfDate') || null,
         });
-        reloadAfterSuccess(host, `${run.runNo} 执行完成：${run.status}，发现 ${run.findingCount} 项`);
+        reloadAfterSuccess(host, `${run.runNo} 执行完成：${run.status}，发现 ${run.findingCount} 项`, button);
       } catch (error) {
         showResult(host, 'error', error.message);
         setBusy(button, false);
@@ -496,7 +496,7 @@
         setBusy(button, true);
         try {
           await request(`/quality/findings/${findingIds.get(row.dataset.finding)}/acknowledge/`);
-          reloadAfterSuccess(host, '质量问题已确认接单；正式事实仍需回到来源模块修复。');
+          reloadAfterSuccess(host, '质量问题已确认接单；正式事实仍需回到来源模块修复。', button);
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -512,7 +512,7 @@
         setBusy(button, true);
         try {
           await request(`/quality/findings/${findingIds.get(row.dataset.finding)}/verify-fixed/`, {verificationRunNo: runNo});
-          reloadAfterSuccess(host, '复核完成；只有新运行证明问题消失后才会进入已修复状态。');
+          reloadAfterSuccess(host, '复核完成；只有新运行证明问题消失后才会进入已修复状态。', button);
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -581,7 +581,7 @@
               payloadHash: values.get('payloadHash'),
               scope: parseJson(values.get('scope'), '更正范围', {}),
             });
-            reloadAfterSuccess(host, `${snapshot.submissionNo} 更正草稿已追加`);
+            reloadAfterSuccess(host, `${snapshot.submissionNo} 更正草稿已追加`, button);
           } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
         });
       }
@@ -605,7 +605,7 @@
               payloadHash: values.get('payloadHash'),
               scope: parseJson(values.get('scope'), '报送范围', {}),
             });
-            reloadAfterSuccess(host, `${snapshot.submissionNo} 已创建：${snapshot.status}`);
+            reloadAfterSuccess(host, `${snapshot.submissionNo} 已创建：${snapshot.status}`, button);
           } catch (error) {
             showResult(host, 'error', error.message);
             setBusy(button, false);
@@ -638,7 +638,7 @@
         try {
           const action = button.dataset.transition;
           const snapshot = await request(`/submissions/${submissionIds.get(row.dataset.submission)}/${action}/`);
-          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 已推进到${statusLabel(snapshot.status)}`);
+          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 已推进到${statusLabel(snapshot.status)}`, button);
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -662,7 +662,7 @@
           const snapshot = await request(`/submissions/${submissionIds.get(row.dataset.submission)}/receipt/`, {
             providerReceipt,
           });
-          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 回执已记录：${statusLabel(snapshot.status)}`);
+          reloadAfterSuccess(host, `${snapshot.submissionNo || '报送'} 回执已记录：${statusLabel(snapshot.status)}`, button);
         } catch (error) {
           showResult(host, 'error', error.message);
           setBusy(button, false);
@@ -706,6 +706,7 @@
     }).join('');
     const targetOptions = targets.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.targetCode)} v${item.versionNo} · ${escapeHtml(item.datasetCode)} v${item.datasetVersion}</option>`).join('');
     const receiptJobs = jobs.filter((item) => item.status === 'TRANSMITTED');
+    const failedJobs = jobs.filter((item) => item.status === 'DEAD_LETTER');
     const receiptOptions = receiptJobs.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.jobNo)} · ${escapeHtml(item.dispatchRef || '已传输')}</option>`).join('');
 
     host.insertAdjacentHTML('beforeend', `
@@ -720,7 +721,9 @@
         <button class="hr18-action-btn" type="button" data-open="hr18-exchange-target" ${datasets.length ? '' : 'disabled'}>配置目标映射</button>
         <button class="hr18-action-btn" type="button" data-open="hr18-exchange-job" ${datasets.length && targets.length ? '' : 'disabled'}>创建交换任务</button>
         <button class="hr18-action-btn" type="button" data-open="hr18-exchange-receipt" ${receiptJobs.length ? '' : 'disabled'}>登记外部回执</button>
+        <button class="hr18-action-btn" type="button" data-retry-failed-batch ${failedJobs.length ? '' : 'disabled'}>批量重试失败任务</button>
       </div>
+      <div class="hr18-action-table" id="hr18-exchange-health"></div>
       <form class="hr18-action-form" id="hr18-exchange-dataset">
         <div class="hr18-action-note"><strong>标准口径：</strong>按 GB/T 29808-2013、JY/T 0637-2022 描述高校人员数据，并依据 ${escapeHtml(classificationStandard)} 完成分类分级。高校全校范围教职工数据不得低于 L3。</div>
         <div class="hr18-action-grid">
@@ -778,6 +781,21 @@
     host.querySelectorAll('[data-open]').forEach((button) => button.addEventListener('click', () => toggleForm(host, button.dataset.open)));
     host.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeForm(host, button.closest('form'))));
 
+    const healthHost = host.querySelector('#hr18-exchange-health');
+    healthHost.innerHTML = targets.length ? targets.map((item) => {
+      const health = item.syncHealth || {};
+      const successMeaning = health.successSemantics === 'RECONCILED' ? '对账完成' : '传输成功';
+      const lastSuccess = health.lastSuccessAt ? new Date(health.lastSuccessAt).toLocaleString() : `尚无${successMeaning}`;
+      const latest = health.latestJobStatus ? statusLabel(health.latestJobStatus) : '尚无任务';
+      const mappingCount = item.mapping && typeof item.mapping === 'object' ? Object.keys(item.mapping).length : 0;
+      const unresolvedReason = health.latestUnresolvedFailureReason ? ` · 待处理原因 ${health.latestUnresolvedFailureReason}` : '';
+      return `<div class="hr18-action-row">
+        <div><b>${escapeHtml(item.targetCode)} v${item.versionNo}</b><small>${escapeHtml(item.datasetCode)} v${item.datasetVersion} · 字段映射 ${mappingCount} 项</small></div>
+        <div><span class="hr18-action-state">${escapeHtml(latest)}</span><small>最近${escapeHtml(successMeaning)}：${escapeHtml(lastSuccess)}${health.latestErrorCode ? ` · ${escapeHtml(health.latestErrorCode)}` : ''}${escapeHtml(unresolvedReason)}</small></div>
+        <div><small>待处理 ${Number(health.pendingCount || 0)} · 已传输 ${Number(health.transmittedCount || 0)} · 已对账 ${Number(health.reconciledCount || 0)} · 待人工处理 ${Number(health.unresolvedFailureCount || 0)} · 历史最终失败 ${Number(health.failureCount || 0)}</small></div>
+      </div>`;
+    }).join('') : '<div class="hr18-action-empty">尚未配置交换目标。目标配置后可在这里查看最近同步时间、状态和成功/失败数量。</div>';
+
     const datasetById = new Map(datasets.map((item) => [item.id, item]));
     host.querySelector('#hr18-exchange-dataset').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -807,7 +825,7 @@
           payloadRef: values.get('payloadRef'), payloadHash: values.get('payloadHash'),
           recordCount: Number(values.get('recordCount')),
         });
-        reloadAfterSuccess(host, `${result.datasetCode} v${result.versionNo} 已冻结`);
+        reloadAfterSuccess(host, `${result.datasetCode} v${result.versionNo} 已冻结`, button);
       } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
     });
     host.querySelector('#hr18-exchange-target').addEventListener('submit', async (event) => {
@@ -824,7 +842,7 @@
           providerKey: values.get('providerKey'), mapping: parseJson(values.get('mapping'), '字段映射'),
           expectedReceipt: values.get('expectedReceipt') === 'on',
         });
-        reloadAfterSuccess(host, `${result.targetCode} v${result.versionNo} 已保存`);
+        reloadAfterSuccess(host, `${result.targetCode} v${result.versionNo} 已保存`, button);
       } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
     });
     host.querySelector('#hr18-exchange-job').addEventListener('submit', async (event) => {
@@ -840,7 +858,7 @@
           targetMappingVersionId: values.get('targetMappingVersionId'),
           maxAttempts: Number(values.get('maxAttempts')),
         });
-        reloadAfterSuccess(host, `${result.jobNo} 已进入异步队列`);
+        reloadAfterSuccess(host, `${result.jobNo} 已进入异步队列`, button);
       } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
     });
     host.querySelector('#hr18-exchange-receipt').addEventListener('submit', async (event) => {
@@ -856,7 +874,7 @@
           receivedRecordCount: Number(values.get('receivedRecordCount')),
           receiptEvidence: parseJson(values.get('receiptEvidence'), '回执证据'),
         });
-        reloadAfterSuccess(host, '外部回执已登记，可执行自动对账');
+        reloadAfterSuccess(host, '外部回执已登记，可执行自动对账', button);
       } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
     });
 
@@ -864,17 +882,52 @@
     const jobIds = new Map(jobs.map((item, index) => [`exchange-job-${index}`, item.id]));
     target.innerHTML = jobs.length ? jobs.map((item, index) => `<div class="hr18-action-row" data-exchange-job="exchange-job-${index}">
       <div><b>${escapeHtml(item.jobNo)}</b><small>${escapeHtml(item.datasetCode)} v${item.datasetVersion} → ${escapeHtml(item.targetCode)} v${item.targetVersion}</small></div>
-      <div><span class="hr18-action-state">${escapeHtml(statusLabel(item.status))}</span><small>尝试 ${item.attemptCount}/${item.maxAttempts}${item.lastErrorCode ? ` · ${escapeHtml(item.lastErrorCode)}` : ''}</small></div>
-      <div class="hr18-action-row-actions">${item.status === 'ACKNOWLEDGED' ? '<button class="hr18-action-btn primary" type="button" data-reconcile>执行对账</button>' : ''}</div>
+      <div><span class="hr18-action-state">${escapeHtml(statusLabel(item.status))}</span><small>尝试 ${item.attemptCount}/${item.maxAttempts}${item.lastErrorCode ? ` · ${escapeHtml(item.lastErrorCode)}` : ''}${item.retryOfJobId ? ' · 人工重试后继' : ''}</small></div>
+      <div class="hr18-action-row-actions">${item.status === 'ACKNOWLEDGED' ? '<button class="hr18-action-btn primary" type="button" data-reconcile>执行对账</button>' : ''}${item.status === 'DEAD_LETTER' ? '<button class="hr18-action-btn" type="button" data-manual-retry>人工重试</button>' : ''}</div>
     </div>`).join('') : '<div class="hr18-action-empty">尚无交换任务。请依次冻结数据集、配置目标映射并创建任务。</div>';
     target.querySelectorAll('[data-reconcile]').forEach((button) => button.addEventListener('click', async () => {
       const row = button.closest('[data-exchange-job]');
       setBusy(button, true);
       try {
         const result = await request(`/exchange/jobs/${jobIds.get(row.dataset.exchangeJob)}/reconcile/`);
-        reloadAfterSuccess(host, `对账完成：${statusLabel(result.status)}`);
+        reloadAfterSuccess(host, `对账完成：${statusLabel(result.status)}`, button);
       } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
     }));
+    target.querySelectorAll('[data-manual-retry]').forEach((button, index) => button.addEventListener('click', async () => {
+      const row = button.closest('[data-exchange-job]');
+      const sourceId = jobIds.get(row.dataset.exchangeJob);
+      const reason = window.prompt('请输入本次人工重试原因（会写入审计来源）：', '接口故障已排除，人工重新投递');
+      if (!reason || !reason.trim()) return;
+      const stamp = Date.now().toString(36).toUpperCase();
+      setBusy(button, true);
+      try {
+        const result = await request(`/exchange/jobs/${sourceId}/retry/`, {
+          newJobNo: `RETRY_${stamp}_${index}`,
+          idempotencyKey: `manual-retry:${sourceId}:${stamp}:${index}`,
+          reason: reason.trim(),
+        });
+        reloadAfterSuccess(host, `失败任务已保留，新任务 ${result.jobNo} 已进入队列`, button);
+      } catch (error) { showResult(host, 'error', error.message); setBusy(button, false); }
+    }));
+
+    const batchRetryButton = host.querySelector('[data-retry-failed-batch]');
+    if (batchRetryButton && failedJobs.length) batchRetryButton.addEventListener('click', async () => {
+      const reason = window.prompt(`将重试当前列表中的 ${failedJobs.length} 个最终失败任务。请输入统一原因：`, '外部接口已恢复，批量人工重新投递');
+      if (!reason || !reason.trim()) return;
+      const stamp = Date.now().toString(36).toUpperCase();
+      setBusy(batchRetryButton, true);
+      try {
+        const result = await request('/exchange/jobs/retry-batch/', {
+          items: failedJobs.slice(0, 100).map((item, index) => ({
+            jobId: item.id,
+            newJobNo: `RETRY_${stamp}_${index + 1}`,
+            idempotencyKey: `manual-retry:${item.id}:${stamp}:${index + 1}`,
+            reason: reason.trim(),
+          })),
+        });
+        reloadAfterSuccess(host, `批量重试完成：成功 ${result.successCount}，失败 ${result.failureCount}`, batchRetryButton);
+      } catch (error) { showResult(host, 'error', error.message); setBusy(batchRetryButton, false); }
+    });
   }
 
   async function boot() {

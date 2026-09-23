@@ -1,0 +1,21 @@
+test_command_display_redacts_secret_shapes (test_acceptance_gate.AcceptanceGateSafetyTests.test_command_display_redacts_secret_shapes) ... ok
+test_compose_overlay_never_changes_make_prod_path (test_acceptance_gate.AcceptanceGateSafetyTests.test_compose_overlay_never_changes_make_prod_path) ... ok
+test_generated_env_is_isolated_and_has_no_source_dotenv_dependency (test_acceptance_gate.AcceptanceGateSafetyTests.test_generated_env_is_isolated_and_has_no_source_dotenv_dependency) ... ok
+test_plan_contains_database_backup_restore_and_cleanup (test_acceptance_gate.AcceptanceGateSafetyTests.test_plan_contains_database_backup_restore_and_cleanup) ... ok
+test_rejects_production_like_project_names (test_acceptance_gate.AcceptanceGateSafetyTests.test_rejects_production_like_project_names) ... ok
+test_requires_acceptance_or_qa_namespace (test_acceptance_gate.AcceptanceGateSafetyTests.test_requires_acceptance_or_qa_namespace) ... ok
+test_hr07_counts_staff_from_formal_contract_versions (test_round4_closure_contracts.HistoricalContractClosureTests.test_hr07_counts_staff_from_formal_contract_versions) ... ok
+test_hr07_evidence_hash_includes_void_and_successor_identity (test_round4_closure_contracts.HistoricalContractClosureTests.test_hr07_evidence_hash_includes_void_and_successor_identity) ... ok
+test_hr07_is_registered_end_to_end_for_asof_evidence (test_round4_closure_contracts.HistoricalContractClosureTests.test_hr07_is_registered_end_to_end_for_asof_evidence) ... ok
+test_hr07_quality_gate_is_registered_and_checks_authority_breaks (test_round4_closure_contracts.HistoricalContractClosureTests.test_hr07_quality_gate_is_registered_and_checks_authority_breaks) ... ok
+test_unsafe_domains_remain_fail_closed (test_round4_closure_contracts.HistoricalContractClosureTests.test_unsafe_domains_remain_fail_closed) ... ok
+test_flex_service_requires_category_and_distinct_materials (test_round4_closure_contracts.RetirementEvidenceClosureTests.test_flex_service_requires_category_and_distinct_materials) ... ok
+test_manager_upload_does_not_fall_back_to_generic_other_hr (test_round4_closure_contracts.RetirementEvidenceClosureTests.test_manager_upload_does_not_fall_back_to_generic_other_hr) ... ok
+test_retirement_evidence_categories_are_distinct (test_round4_closure_contracts.RetirementEvidenceClosureTests.test_retirement_evidence_categories_are_distinct) ... ok
+test_self_and_manager_ui_filter_evidence_by_business_use (test_round4_closure_contracts.RetirementEvidenceClosureTests.test_self_and_manager_ui_filter_evidence_by_business_use) ... ok
+test_changed_python_sources_parse (test_round4_closure_contracts.SourceSyntaxTests.test_changed_python_sources_parse) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.021s
+
+OK

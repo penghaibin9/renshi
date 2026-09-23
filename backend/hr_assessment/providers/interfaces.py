@@ -458,6 +458,13 @@ class ArchiveProvider(BaseAssessmentProvider):
         rows = []
         found = set()
         for archive in archives:
+            from hr_assessment.services.archive_evidence import verified_archive, ArchiveEvidenceError
+            try:
+                verified_archive(archive)
+            except ArchiveEvidenceError:
+                return ProviderResult(status=ProviderStatus.UNAVAILABLE, data=[],
+                    error_message="ASSESSMENT_ARCHIVE_INTEGRITY_INVALID: archived evidence did not verify",
+                    source_version="hr12-archive-v2")
             staff_id = staff_by_case.get(str(archive.result.case_id))
             if not staff_id:
                 continue

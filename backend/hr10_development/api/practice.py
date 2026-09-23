@@ -27,8 +27,8 @@ from hr10_development.models.practice_models import (
 )
 from hr10_development.services.practice_process_service import PracticeProcessService
 from hr10_development.models.provider_org import HrDevelopmentProviderOrganization
-from hr_staff.models import HrStaffMaster
 from hr10_development.permissions import require_hr10_permission
+from hr10_development.identity import resolve_staff_identity, staff_identity_q, StaffIdentityError
 
 
 def _body_object(request):
@@ -67,7 +67,7 @@ def _assignment_to_dict(a: HrEnterprisePracticeAssignment) -> dict:
     return {
         "id": str(a.id),
         "placementId": a.placement_id,
-        "staffMasterId": a.staff_master_id,
+        "staffMasterId": str(a.staff_master_uuid) if a.staff_master_uuid else a.staff_master_id,
         "assignmentStatus": a.assignment_status,
         "assignmentStatusLabel": a.get_assignment_status_display(),
         "assignedSceneId": a.assigned_scene_id,
@@ -302,15 +302,14 @@ def create_assignment(request):
     if body is None:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
     try:
-        staff_id = int(body["staffMasterId"])
         with transaction.atomic():
+            identity = resolve_staff_identity(
+                tenant_id=tenant_id, raw_staff_id=body["staffMasterId"], for_update=True
+            )
             placement = HrEnterprisePracticePlacement.objects.select_for_update().filter(
                 id=body.get("placementId"), tenant_id=tenant_id
             ).first()
-            staff = HrStaffMaster.objects.select_for_update().filter(
-                tenant_id=tenant_id, legacy_employee_id=staff_id
-            ).first()
-            if not placement or not staff:
+            if not placement:
                 return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "实践批次或教师不存在"), status=404)
             scene_id = body.get("assignedSceneId")
             mentor_id = body.get("enterpriseMentorId")
@@ -329,7 +328,7 @@ def create_assignment(request):
             active_assignments = HrEnterprisePracticeAssignment.objects.filter(
                 tenant_id=tenant_id, placement_id=placement.id
             ).exclude(assignment_status__in=[AssignmentStatus.CANCELLED, AssignmentStatus.REJECTED])
-            if active_assignments.filter(staff_master_id=staff_id).exists():
+            if active_assignments.filter(staff_identity_q(identity)).exists():
                 return JsonResponse(error("PRACTICE_ASSIGNMENT_DUPLICATE", "该教师已在此批次中"), status=409)
             if placement.capacity > 0 and active_assignments.count() >= placement.capacity:
                 return JsonResponse(error("PRACTICE_CAPACITY_FULL", "实践批次名额已满"), status=409)
@@ -340,7 +339,8 @@ def create_assignment(request):
             assignment = HrEnterprisePracticeAssignment(
                 tenant_id=tenant_id,
                 placement_id=placement.id,
-                staff_master_id=staff_id,
+                staff_master_uuid=identity.staff_uuid,
+                staff_master_id=identity.legacy_employee_id,
                 request_id=body.get("requestId"),
                 development_need_id=body.get("developmentNeedId"),
                 assignment_status=AssignmentStatus.APPROVED,

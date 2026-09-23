@@ -25,6 +25,7 @@ from hr_exit.models import (
     ExitFact,
     RetirementFact,
     RetirementPensionTransition,
+    RetirementPrecheck,
 )
 
 
@@ -83,7 +84,9 @@ class RetirementFactService:
         *,
         exit_fact_id,
         fact_no: str,
-        retirement_type: str,
+        precheck_id,
+        flex_application_id=None,
+        retirement_type: str = "",
         statutory_date=None,
         evidence_ref: str = "",
     ) -> RetirementFactResult:
@@ -95,16 +98,76 @@ class RetirementFactService:
             raise RetirementFactError(
                 "RETIREMENT_FACT_NO_INVALID", "fact_no exceeds 64 characters"
             )
-        if not retirement_type:
+        exit_fact = self._lock_exit_fact(exit_fact_id)
+        from hr_exit.services.flex_service import approved_plan_for_case, FlexError
+        try:
+            flex = approved_plan_for_case(self.tenant_id, exit_fact.source_case_id)
+        except FlexError as exc:
+            raise RetirementFactError(exc.code, str(exc)) from exc
+        if flex_application_id and (flex is None or str(flex.id) != str(flex_application_id)):
+            raise RetirementFactError("FLEX_APPLICATION_MISMATCH", "申请不是该离校事实的有效弹性退休依据")
+        if flex and (str(flex.precheck_id) != str(precheck_id) or flex.person_id != exit_fact.person_id
+                     or flex.employment_relationship_id != exit_fact.employment_relationship_id):
+            raise RetirementFactError("FLEX_APPLICATION_MISMATCH", "弹性退休申请与预审或人员不一致")
+        precheck = (
+            RetirementPrecheck.objects.select_for_update()
+            .filter(id=precheck_id, tenant_id=self.tenant_id)
+            .first()
+        )
+        if precheck is None:
             raise RetirementFactError(
-                "RETIREMENT_TYPE_REQUIRED", "retirement_type is required"
+                "RETIREMENT_PRECHECK_REQUIRED",
+                "formal retirement must reference a retirement precheck inside the same school",
             )
+        if precheck.decision != RetirementPrecheck.Decision.ELIGIBLE and flex is None:
+            raise RetirementFactError(
+                "RETIREMENT_PRECHECK_NOT_ELIGIBLE",
+                "only an ELIGIBLE retirement precheck can materialize a formal retirement fact",
+            )
+        if (
+            str(precheck.person_id) != str(exit_fact.person_id)
+            or str(precheck.employment_relationship_id)
+            != str(exit_fact.employment_relationship_id)
+        ):
+            raise RetirementFactError(
+                "RETIREMENT_PRECHECK_SUBJECT_MISMATCH",
+                "retirement precheck does not belong to the exit fact person and employment relationship",
+            )
+        if not precheck.retirement_type or precheck.statutory_date is None:
+            raise RetirementFactError(
+                "RETIREMENT_PRECHECK_AUTHORITY_INCOMPLETE",
+                "eligible retirement precheck must freeze retirement type and statutory date",
+            )
+        if precheck.as_of > exit_fact.employment_end_date:
+            raise RetirementFactError(
+                "RETIREMENT_PRECHECK_AFTER_EFFECTIVE_DATE",
+                "retirement precheck cannot be performed after the formal employment end date",
+            )
+        expected_effective_date = flex.requested_date if flex else precheck.statutory_date
+        if exit_fact.employment_end_date != expected_effective_date:
+            raise RetirementFactError(
+                "RETIREMENT_EFFECTIVE_DATE_MISMATCH",
+                "formal retirement date must equal the statutory date resolved by the eligible precheck",
+            )
+        authority_type = ("FLEX_" + flex.mode) if flex else str(precheck.retirement_type).strip().upper()
+        authority_date = precheck.statutory_date
+        if retirement_type and retirement_type != authority_type:
+            raise RetirementFactError(
+                "RETIREMENT_CLIENT_AUTHORITY_CONFLICT",
+                "client retirement type conflicts with the eligible retirement precheck",
+            )
+        if statutory_date is not None and statutory_date != authority_date:
+            raise RetirementFactError(
+                "RETIREMENT_CLIENT_AUTHORITY_CONFLICT",
+                "client statutory date conflicts with the eligible retirement precheck",
+            )
+        retirement_type = authority_type
+        statutory_date = authority_date
         if len(retirement_type) > 32:
             raise RetirementFactError(
                 "RETIREMENT_TYPE_INVALID", "retirement_type exceeds 32 characters"
             )
 
-        exit_fact = self._lock_exit_fact(exit_fact_id)
         predecessor = None
         if exit_fact.supersedes_fact_id:
             predecessor = (
@@ -129,7 +192,7 @@ class RetirementFactService:
                     "retirement specialization already follows this ExitFact successor",
                 )
         evidence_ref = str(
-            evidence_ref or exit_fact.evidence_ref or f"exitfact://{exit_fact.id}"
+            evidence_ref or (f"retirement-flex://{flex.id}/{flex.approval_hash}" if flex else f"retirement-precheck://{precheck.id}")
         ).strip()
         if len(evidence_ref) > 256:
             raise RetirementFactError(

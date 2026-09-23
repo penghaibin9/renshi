@@ -2,6 +2,7 @@ from django.urls import path
 
 from . import (
     api,
+    operational_api,
     asof_api,
     exchange_api,
     evaluation_api,
@@ -16,6 +17,8 @@ from . import (
 app_name = "hr_data_api"
 
 urlpatterns = [
+    path("operational-snapshots/", operational_api.snapshots, name="operational-snapshots"),
+    path("operational-snapshots/<uuid:snapshot_id>/", operational_api.snapshots, name="operational-snapshot-detail"),
     path("dashboard/", api.dashboard, name="dashboard"),
     path(
         "legacy/report-assets/",
@@ -100,6 +103,16 @@ urlpatterns = [
         name="exchange-target-create",
     ),
     path("exchange/jobs/", exchange_api.queue_job, name="exchange-job-queue"),
+    path(
+        "exchange/jobs/retry-batch/",
+        exchange_api.retry_batch,
+        name="exchange-job-retry-batch",
+    ),
+    path(
+        "exchange/jobs/<uuid:job_id>/retry/",
+        exchange_api.retry_job,
+        name="exchange-job-retry",
+    ),
     path(
         "exchange/jobs/<uuid:job_id>/receipt/",
         exchange_api.record_receipt,

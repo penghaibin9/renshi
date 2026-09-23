@@ -1,0 +1,20 @@
+category	path	runtime_status	action	reason
+canonical	frontend/templates/hr/base.html	ACTIVE	KEEP	HR01-HR18 dedicated shell
+legacy-shell	backend/horilla_theme/templates/index.html	NON_HR_COMPAT	QUARANTINE	upstream/support pages only
+legacy-fallback	frontend/templates/index.html	SHADOWED_FALLBACK	QUARANTINE	must never be HR parent
+legacy-header	backend/horilla_theme/templates/horilla_theme/components/header.html	NON_HR_COMPAT	QUARANTINE	contains old attendance/language/profile links
+legacy-floating	backend/horilla_theme/templates/floating_button.html	NON_HR_COMPAT	QUARANTINE	contains old ticket/asset/leave/attendance actions
+settings-center	backend/base/templates/base/settings/system_admin_center.html	ACTIVE_CLEAN_SHELL	KEEP	Chinese system admin landing now uses hr/base
+legacy-route	/dashboard/...	REDIRECT->/hr/overview	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/employee/...	REDIRECT->/hr/staff/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/attendance/...	REDIRECT->/hr/time/attendance/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/leave/...	REDIRECT->/hr/time/leave/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/recruitment/...	REDIRECT->/hr/recruitment/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/onboarding/...	REDIRECT->/hr/onboarding/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/pms/...	REDIRECT->/hr/assessments/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/project/...	REDIRECT->/hr/overview	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/asset/...	REDIRECT->/hr/exit/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/helpdesk/...	REDIRECT->/hr/self/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/payroll/...	REDIRECT->/hr/payroll/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/offboarding/...	REDIRECT->/hr/exit/	KEEP_ADAPTER	legacy UI not directly rendered
+legacy-route	/report/...	REDIRECT->/hr/data/	KEEP_ADAPTER	legacy UI not directly rendered

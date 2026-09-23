@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from django.db.models import Count, Max, OuterRef, Q, Subquery
 from django.http import JsonResponse
 
 from .api import HrDataAccessError, _error, _payload, resolve_request_tenant
@@ -39,6 +40,9 @@ def _status(code):
         "EXCHANGE_RECEIPT_CONFLICT",
         "EXCHANGE_RECONCILE_INVALID_STATE",
         "EXCHANGE_LEASE_LOST",
+        "EXCHANGE_MANUAL_RETRY_INVALID_STATE",
+        "EXCHANGE_DEAD_LETTER_ALREADY_RESOLVED",
+        "EXCHANGE_JOB_NO_CONFLICT",
     }:
         return 409
     if code == "EXCHANGE_PROVIDER_UNAVAILABLE":
@@ -86,9 +90,79 @@ def workbench(request):
     datasets = ExchangeDatasetVersion.objects.filter(tenant_id=tenant_id).order_by(
         "dataset_code", "-version_no"
     )[:200]
-    targets = ExchangeTargetMappingVersion.objects.filter(tenant_id=tenant_id).order_by(
-        "target_code", "-version_no"
-    )[:200]
+    latest_target_job = ExchangeJob.objects.filter(
+        tenant_id=tenant_id, target_mapping_version_id=OuterRef("pk")
+    ).order_by("-created_at")
+    latest_unresolved_failure = ExchangeDeadLetter.objects.filter(
+        tenant_id=tenant_id,
+        job__target_mapping_version_id=OuterRef("pk"),
+        resolved_at__isnull=True,
+    ).order_by("-failed_at")
+    targets = (
+        ExchangeTargetMappingVersion.objects.filter(tenant_id=tenant_id)
+        .annotate(
+            pending_count=Count(
+                "exchange_jobs",
+                filter=Q(exchange_jobs__status__in=[
+                    ExchangeJob.Status.QUEUED,
+                    ExchangeJob.Status.LEASED,
+                    ExchangeJob.Status.RETRY_WAIT,
+                ]),
+                distinct=True,
+            ),
+            transmitted_count=Count(
+                "exchange_jobs",
+                filter=Q(exchange_jobs__status__in=[
+                    ExchangeJob.Status.TRANSMITTED,
+                    ExchangeJob.Status.ACKNOWLEDGED,
+                    ExchangeJob.Status.RECONCILED,
+                ]),
+                distinct=True,
+            ),
+            reconciled_count=Count(
+                "exchange_jobs",
+                filter=Q(exchange_jobs__status=ExchangeJob.Status.RECONCILED),
+                distinct=True,
+            ),
+            failure_count=Count(
+                "exchange_jobs",
+                filter=Q(exchange_jobs__status=ExchangeJob.Status.DEAD_LETTER),
+                distinct=True,
+            ),
+            unresolved_failure_count=Count(
+                "exchange_jobs",
+                filter=Q(
+                    exchange_jobs__status=ExchangeJob.Status.DEAD_LETTER,
+                    exchange_jobs__dead_letter__resolved_at__isnull=True,
+                ),
+                distinct=True,
+            ),
+            last_transmitted_at=Max(
+                "exchange_jobs__transmitted_at",
+                filter=Q(
+                    exchange_jobs__status__in=[
+                        ExchangeJob.Status.TRANSMITTED,
+                        ExchangeJob.Status.ACKNOWLEDGED,
+                        ExchangeJob.Status.RECONCILED,
+                    ]
+                ),
+            ),
+            last_reconciled_at=Max(
+                "exchange_jobs__updated_at",
+                filter=Q(exchange_jobs__status=ExchangeJob.Status.RECONCILED),
+            ),
+            latest_job_status=Subquery(latest_target_job.values("status")[:1]),
+            latest_job_no=Subquery(latest_target_job.values("job_no")[:1]),
+            latest_error_code=Subquery(latest_target_job.values("last_error_code")[:1]),
+            latest_unresolved_failure_reason=Subquery(
+                latest_unresolved_failure.values("reason_code")[:1]
+            ),
+            latest_unresolved_failure_at=Subquery(
+                latest_unresolved_failure.values("failed_at")[:1]
+            ),
+        )
+        .order_by("target_code", "-version_no")[:200]
+    )
     jobs = ExchangeJob.objects.filter(tenant_id=tenant_id).select_related(
         "dataset_version", "target_mapping_version"
     ).order_by("-created_at")[:200]
@@ -119,6 +193,32 @@ def workbench(request):
                     "providerKey": row.provider_key,
                     "expectedReceipt": row.expected_receipt,
                     "status": row.status,
+                    "mapping": row.mapping_json,
+                    "contentHash": row.content_hash,
+                    "syncHealth": {
+                        "pendingCount": row.pending_count,
+                        "transmittedCount": row.transmitted_count,
+                        "reconciledCount": row.reconciled_count,
+                        "failureCount": row.failure_count,
+                        "unresolvedFailureCount": row.unresolved_failure_count,
+                        "lastSuccessAt": (
+                            row.last_reconciled_at.isoformat()
+                            if row.expected_receipt and row.last_reconciled_at
+                            else row.last_transmitted_at.isoformat()
+                            if (not row.expected_receipt) and row.last_transmitted_at
+                            else None
+                        ),
+                        "successSemantics": "RECONCILED" if row.expected_receipt else "TRANSMITTED",
+                        "latestJobStatus": row.latest_job_status or None,
+                        "latestJobNo": row.latest_job_no or None,
+                        "latestErrorCode": row.latest_error_code or None,
+                        "latestUnresolvedFailureReason": row.latest_unresolved_failure_reason or None,
+                        "latestUnresolvedFailureAt": (
+                            row.latest_unresolved_failure_at.isoformat()
+                            if row.latest_unresolved_failure_at
+                            else None
+                        ),
+                    },
                 }
                 for row in targets
             ],
@@ -137,6 +237,9 @@ def workbench(request):
                     "dispatchRef": row.dispatch_ref or None,
                     "lastErrorCode": row.last_error_code or None,
                     "createdAt": row.created_at.isoformat(),
+                    "retryOfJobId": str(row.retry_of_job_id) if row.retry_of_job_id else None,
+                    "manualRetryReason": row.manual_retry_reason or None,
+                    "manualRetryBy": row.manual_retry_by,
                 }
                 for row in jobs
             ],
@@ -247,6 +350,100 @@ def queue_job(request):
         },
         status=202 if outcome.created else 200,
         schema="hr18.exchange-job.1",
+    )
+
+
+def retry_job(request, job_id):
+    tenant_id, payload, error = _prepare(request)
+    if error:
+        return error
+    try:
+        outcome = ExchangeJobService(
+            tenant_id, getattr(request.user, "id", None)
+        ).requeue_dead_letter(
+            job_id,
+            new_job_no=payload.get("newJobNo"),
+            idempotency_key=payload.get("idempotencyKey"),
+            reason=payload.get("reason"),
+            max_attempts=payload.get("maxAttempts"),
+        )
+    except ExchangeError as exc:
+        return _error(exc.code, str(exc), status=_status(exc.code))
+    value = outcome.value
+    return _json(
+        {
+            "id": str(value.id),
+            "jobNo": value.job_no,
+            "status": value.status,
+            "retryOfJobId": str(value.retry_of_job_id),
+            "created": outcome.created,
+        },
+        status=202 if outcome.created else 200,
+        schema="hr18.exchange-manual-retry.1",
+    )
+
+
+def retry_batch(request):
+    tenant_id, payload, error = _prepare(request)
+    if error:
+        return error
+    items = payload.get("items")
+    if not isinstance(items, list) or not 1 <= len(items) <= 100:
+        return _error(
+            "EXCHANGE_RETRY_BATCH_INVALID",
+            "items must contain 1..100 retry requests",
+            status=400,
+        )
+    service = ExchangeJobService(tenant_id, getattr(request.user, "id", None))
+    results = []
+    success_count = 0
+    for item in items:
+        if not isinstance(item, dict):
+            results.append({"ok": False, "code": "EXCHANGE_RETRY_ITEM_INVALID"})
+            continue
+        source_id = item.get("jobId")
+        try:
+            source_uuid = uuid.UUID(str(source_id or ""))
+            outcome = service.requeue_dead_letter(
+                source_uuid,
+                new_job_no=item.get("newJobNo"),
+                idempotency_key=item.get("idempotencyKey"),
+                reason=item.get("reason"),
+                max_attempts=item.get("maxAttempts"),
+            )
+        except (TypeError, ValueError):
+            results.append({
+                "jobId": str(source_id or ""),
+                "ok": False,
+                "code": "EXCHANGE_ID_INVALID",
+            })
+            continue
+        except ExchangeError as exc:
+            results.append({
+                "jobId": str(source_id or ""),
+                "ok": False,
+                "code": exc.code,
+                "message": str(exc),
+            })
+            continue
+        success_count += 1
+        results.append({
+            "jobId": str(source_uuid),
+            "ok": True,
+            "successorJobId": str(outcome.value.id),
+            "successorJobNo": outcome.value.job_no,
+            "created": outcome.created,
+        })
+    return _json(
+        {
+            "requestedCount": len(items),
+            "successCount": success_count,
+            "failureCount": len(items) - success_count,
+            "partial": success_count != len(items),
+            "results": results,
+        },
+        status=200,
+        schema="hr18.exchange-manual-retry-batch.1",
     )
 
 

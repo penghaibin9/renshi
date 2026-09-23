@@ -1,0 +1,9 @@
+V16/V1.1 Linux-safe archive filename map
+Only filenames exceeding Linux component limits were shortened.
+
+ORIGINAL: docs/00_╬ô├╢├«╬ô├▓┬ú~B5~E1~ED~F5~A6~A6~F5~A6~EF~FE~A6+~FE+~83~D5~E0~BF╬ô├▓├åΓö¼┬¼╬ô├▓╞Æ╬ô├▓├¡~D7╬ô├╢┬╝╬ô├▓├¡~D7~E4~F5~A9╬ô├╢├ç╬ô├▓├¡~F9~BA~FE~A6+~FE+~83~B5~C4~D1~FE~AB~ED~D5~C9~EA~D5~C9~EE.md
+SAFE:     docs/legacy_long_filename_b0eb182bdc760430.md
+
+ORIGINAL: docs/99_╬ô├╢├«╬ô├▓┬ú~B5~E1~ED~F5~A6~A6~F5~A6~EF~FE~A6+~FE+~8318~B5~BF~ED~D5~D8~F9~B5~FB~A2~D5~C0╬ô├▓├▒╬ô├▓├¡~C7+~B5╬ô├╢├ç╬ô├▓├ª~F5~A9╬ô├╢├ç╬ô├▓├¡~A3~C7~FE+~EA╬ô├╢├«Γö¼Γò¥~EE~B5~F6╬ô├╢┬╝╬ô├▓├¡~C7+~D5~E5~EE.md
+SAFE:     docs/legacy_long_filename_d5b81e4b1dcf1007.md
+

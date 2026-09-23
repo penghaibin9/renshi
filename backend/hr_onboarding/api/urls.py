@@ -8,14 +8,32 @@ HR05 API 路由。
 
 from django.urls import path
 
+from hr_onboarding.api import school_templates as school_template_views
 from hr_onboarding.api import excel as excel_views
 from hr_onboarding.api import materials as materials_views
 from hr_onboarding.api import portal as portal_views
 from hr_onboarding.api import probations as probations_views
+from hr_onboarding.api import workflow as workflow_views
 from hr_onboarding.api import tasks as tasks_views
 from hr_onboarding.api import views as api_views
 
 urlpatterns = [
+    path("api/hr/v1/onboarding/school-templates", school_template_views.collection, name="hr05-template-list"),
+    path("api/hr/v1/onboarding/school-templates/save", school_template_views.save, name="hr05-template-save"),
+    path("api/hr/v1/onboarding/school-templates/<uuid:version_id>", school_template_views.detail, name="hr05-template-detail"),
+    path("api/hr/v1/onboarding/school-templates/<uuid:version_id>/publish", school_template_views.publish, name="hr05-template-publish"),
+    path("api/hr/v1/onboarding/school-templates/<uuid:version_id>/retire", school_template_views.retire, name="hr05-template-retire"),
+    path("api/hr/v1/onboarding/school-templates/<uuid:version_id>/cases/<uuid:case_id>/preview", school_template_views.preview, name="hr05-template-preview"),
+    path("api/hr/v1/onboarding/school-templates/<uuid:version_id>/cases/<uuid:case_id>/bind", school_template_views.bind, name="hr05-template-bind"),
+
+    path("api/hr/v1/onboarding/workbench/assignees", workflow_views.assignees, name="hr05-api-task-assignees"),
+    path("api/hr/v1/onboarding/cases/<uuid:case_id>/materials/initialize", materials_views.materials_initialize, name="hr05-api-materials-initialize"),
+    path("api/hr/v1/onboarding/materials/<uuid:material_id>", materials_views.material_detail, name="hr05-api-material-detail"),
+    path("api/hr/v1/onboarding/workbench/tasks", workflow_views.inbox, name="hr05-api-task-inbox"),
+    path("api/hr/v1/onboarding/cases/<uuid:case_id>/workflow", workflow_views.summary, name="hr05-api-workflow"),
+    path("api/hr/v1/onboarding/cases/<uuid:case_id>/initialize-tasks", workflow_views.initialize, name="hr05-api-initialize-tasks"),
+    path("api/hr/v1/onboarding/cases/<uuid:case_id>/complete-onboarding", workflow_views.complete, name="hr05-api-complete-onboarding"),
+    path("api/hr/v1/onboarding/tasks/<uuid:task_id>/assign", workflow_views.assign, name="hr05-api-task-assign"),
     # 探针
     path(
         "api/hr/v1/onboarding/health",
@@ -228,6 +246,11 @@ urlpatterns = [
         "api/hr/v1/onboarding/excel/confirm",
         excel_views.excel_confirm,
         name="hr05-api-excel-confirm",
+    ),
+    path(
+        "api/hr/v1/onboarding/excel/jobs/<uuid:job_id>",
+        excel_views.excel_job_status,
+        name="hr05-api-excel-job-status",
     ),
     path(
         "api/hr/v1/onboarding/excel/errors",

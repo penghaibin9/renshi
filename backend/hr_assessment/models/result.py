@@ -598,6 +598,25 @@ class HrResultRevision(TenantScopedModel):
         ]
 
 
+class _ArchivePackageQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if kwargs.get('archive_status') == 'ARCHIVED' or self.filter(archive_status='ARCHIVED').exists():
+            raise ValueError('HR12_ARCHIVE_IMMUTABLE')
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(archive_status='ARCHIVED').exists():
+            raise ValueError('HR12_ARCHIVE_IMMUTABLE')
+        return super().delete()
+
+    def bulk_update(self, objs, fields, **kwargs):
+        raise ValueError('HR12_ARCHIVE_IMMUTABLE')
+
+    def bulk_create(self, objs, **kwargs):
+        # Insert via the existing archive service, including seal validation.
+        raise ValueError('HR12_ARCHIVE_SERVICE_REQUIRED')
+
+
 class HrAssessmentArchivePackage(TenantScopedModel):
     """考核归档包 —— 总册 §101。"""
     result = models.ForeignKey(HrFinalAssessmentResult, on_delete=models.PROTECT, null=True, related_name="archives", verbose_name=_("所属结果"))
@@ -610,6 +629,21 @@ class HrAssessmentArchivePackage(TenantScopedModel):
     archived_at = models.DateTimeField(null=True, verbose_name=_("归档时间"))
     sealed_at = models.DateTimeField(null=True, verbose_name=_("封存时间"))
     archive_provider_ref = models.CharField(max_length=200, default="", verbose_name=_("归档 Provider 引用"))
+
+    objects = _ArchivePackageQuerySet.as_manager()
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding and type(self).objects.filter(pk=self.pk, archive_status='ARCHIVED').exists():
+            raise ValueError('HR12_ARCHIVE_IMMUTABLE')
+        if self.archive_status == 'ARCHIVED':
+            from hr_assessment.services.archive_evidence import verified_archive
+            verified_archive(self)
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if type(self).objects.filter(pk=self.pk, archive_status='ARCHIVED').exists():
+            raise ValueError('HR12_ARCHIVE_IMMUTABLE')
+        return super().delete(*args, **kwargs)
 
     class Meta:
         db_table = "hr_assessment_archive_package"
@@ -672,3 +706,47 @@ class HrResultApplicationLedger(TenantScopedModel):
                 name="hr12_result_application_idempotency_uq",
             )
         ]
+
+
+class _ArchiveAccessAuditQuerySet(models.QuerySet):
+    def bulk_create(self, objs, **kwargs):
+        raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_USE_SERVICE')
+
+    def update(self, **kwargs):
+        raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_IMMUTABLE')
+
+    def delete(self):
+        raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_IMMUTABLE')
+
+    def bulk_update(self, objs, fields, **kwargs):
+        raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_IMMUTABLE')
+
+
+class HrAssessmentArchiveAccessAudit(TenantScopedModel):
+    """Append-only authorization receipt; not a customer acceptance certificate."""
+    archive = models.ForeignKey(HrAssessmentArchivePackage, on_delete=models.PROTECT, related_name='access_audits')
+    actor_user_id = models.PositiveBigIntegerField()
+    action = models.CharField(max_length=20, choices=[('VIEW', '查阅'), ('EXPORT', '导出'), ('COMPARE', '样本核对')])
+    purpose = models.CharField(max_length=500)
+    content_hash = models.CharField(max_length=64)
+    details_json = models.JSONField(default=dict)
+    request_id = models.CharField(max_length=128, blank=True, default='')
+    objects = _ArchiveAccessAuditQuerySet.as_manager()
+
+    class Meta:
+        db_table = 'hr12_archive_access_audit'
+        indexes = [models.Index(fields=['tenant_id', 'archive', 'created_at'], name='idx_hr12_archive_access')]
+        constraints = [models.CheckConstraint(condition=models.Q(purpose__gt=''), name='ck_hr12_archive_reason')]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_IMMUTABLE')
+        if (not str(self.purpose or '').strip() or not self.actor_user_id
+            or self.action not in {'VIEW', 'EXPORT', 'COMPARE'}
+            or self.archive.tenant_id != self.tenant_id
+            or self.content_hash != self.archive.content_hash):
+            raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_INVALID')
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError('HR12_ARCHIVE_ACCESS_AUDIT_IMMUTABLE')

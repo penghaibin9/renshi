@@ -21,8 +21,8 @@ from hr10_development.services.enrollment_service import EnrollmentService, chec
 from hr10_development.models.offering import HrLearningOffering
 from hr10_development.models.enrollment import HrLearningEnrollment
 from hr10_development.models.learning_program import HrLearningProgram
-from hr_staff.models import HrStaffMaster
 from hr10_development.permissions import require_hr10_permission
+from hr10_development.identity import resolve_staff_identity, staff_identity_q, StaffIdentityError
 
 
 def _request_to_dict(r: HrTrainingRequest) -> dict:
@@ -30,7 +30,7 @@ def _request_to_dict(r: HrTrainingRequest) -> dict:
         "id": str(r.id),
         "tenantId": r.tenant_id,
         "requestNo": r.request_no,
-        "staffMasterId": r.staff_master_id,
+        "staffMasterId": str(r.staff_master_uuid) if r.staff_master_uuid else r.staff_master_id,
         "requestType": r.request_type,
         "requestTypeLabel": r.get_request_type_display(),
         "programId": r.program_id,
@@ -59,14 +59,19 @@ def _approval_error_response(result):
     return JsonResponse(error(code, "申请当前状态不允许执行该审批操作"), status=status)
 
 
-def _approver_employee_id(request):
-    """Use the legacy Employee ID, matching HrTrainingRequest.staff_master_id."""
+def _approver_identity(request, tenant_id):
+    """Return (legacy actor id, canonical HR03 UUID or None)."""
     if not request.user.is_authenticated:
-        return 0
+        return 0, None
     try:
-        return request.user.employee_get.id
-    except (AttributeError, ObjectDoesNotExist):
-        return request.user.id
+        actor_id = int(request.user.employee_get.id)
+    except (AttributeError, ObjectDoesNotExist, TypeError, ValueError):
+        actor_id = int(request.user.id)
+    try:
+        identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=actor_id)
+    except StaffIdentityError:
+        return actor_id, None
+    return actor_id, identity.staff_uuid
 
 
 def _body_object(request):
@@ -89,7 +94,11 @@ def list_requests(request):
         qs = qs.filter(lifecycle_status=status_filter)
     staff_filter = request.GET.get("staffId")
     if staff_filter:
-        qs = qs.filter(staff_master_id=staff_filter)
+        try:
+            identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_filter)
+        except StaffIdentityError as exc:
+            return JsonResponse(error(exc.code, str(exc)), status=400)
+        qs = qs.filter(staff_identity_q(identity))
     return JsonResponse(success([_request_to_dict(r) for r in qs[:100]]))
 
 
@@ -116,12 +125,10 @@ def create_request(request):
     if body is None:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
     try:
-        staff_id = int(body["staffMasterId"])
         with transaction.atomic():
-            if not HrStaffMaster.objects.select_for_update().filter(
-                tenant_id=tenant_id, legacy_employee_id=staff_id
-            ).exists():
-                return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "教师不存在"), status=404)
+            identity = resolve_staff_identity(
+                tenant_id=tenant_id, raw_staff_id=body["staffMasterId"], for_update=True
+            )
             program_id = body.get("programId")
             program = None
             if program_id:
@@ -134,7 +141,7 @@ def create_request(request):
             offering_id = body.get("offeringId")
             offering = None
             if offering_id:
-                offering = HrLearningOffering.objects.filter(
+                offering = HrLearningOffering.objects.select_for_update().filter(
                     id=offering_id, tenant_id=tenant_id
                 ).first()
                 if offering is None:
@@ -150,7 +157,8 @@ def create_request(request):
             r = HrTrainingRequest(
                 tenant_id=tenant_id,
                 request_no=str(body.get("requestNo") or f"REQ-{datetime.now(timezone.utc).timestamp():.0f}").strip(),
-                staff_master_id=staff_id,
+                staff_master_uuid=identity.staff_uuid,
+                staff_master_id=identity.legacy_employee_id,
                 request_type=body.get("requestType", "INTERNAL_PROGRAM"),
                 program_id=program_id,
                 offering_id=offering_id,
@@ -212,8 +220,9 @@ def approve_request(request, request_id):
     if not r:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "申请不存在"), status=404)
 
-    approver_id = _approver_employee_id(request)
-    if check_self_approval(r.staff_master_id, approver_id):
+    approver_id, approver_staff_uuid = _approver_identity(request, tenant_id)
+    applicant_identity = r.staff_master_uuid or r.staff_master_id
+    if check_self_approval(applicant_identity, approver_staff_uuid or approver_id):
         return JsonResponse(error(DevelopmentErrorCode.SELF_APPROVAL_NOT_ALLOWED, "禁止自审批"), status=403)
 
     workflow_version = request.POST.get("workflowVersion", "DEFAULT_V1")
@@ -231,6 +240,7 @@ def approve_request(request, request_id):
     result = ApprovalService.approve_step(
         request_obj=r,
         approver_id=approver_id,
+        approver_staff_uuid=approver_staff_uuid,
         workflow_version=workflow_version,
     )
     if response := _approval_error_response(result):
@@ -248,9 +258,11 @@ def return_request(request, request_id):
     r = HrTrainingRequest.objects.filter(id=request_id, tenant_id=tenant_id).first()
     if not r:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "申请不存在"), status=404)
+    approver_id, approver_staff_uuid = _approver_identity(request, tenant_id)
     result = ApprovalService.return_step(
         request_obj=r,
-        approver_id=_approver_employee_id(request),
+        approver_id=approver_id,
+        approver_staff_uuid=approver_staff_uuid,
         workflow_version="DEFAULT_V1",
     )
     if response := _approval_error_response(result):
@@ -268,9 +280,11 @@ def reject_request(request, request_id):
     r = HrTrainingRequest.objects.filter(id=request_id, tenant_id=tenant_id).first()
     if not r:
         return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "申请不存在"), status=404)
+    approver_id, approver_staff_uuid = _approver_identity(request, tenant_id)
     result = ApprovalService.reject(
         request_obj=r,
-        approver_id=_approver_employee_id(request),
+        approver_id=approver_id,
+        approver_staff_uuid=approver_staff_uuid,
         workflow_version="DEFAULT_V1",
     )
     if response := _approval_error_response(result):
@@ -321,7 +335,7 @@ def enroll_in_offering(request, offering_id):
 
     try:
         offering = HrLearningOffering(id=offering_id, tenant_id=tenant_id)
-        enrollment = EnrollmentService.enroll(offering, int(staff_id), tenant_id)
+        enrollment = EnrollmentService.enroll(offering, staff_id, tenant_id)
     except ValueError as e:
         code = str(e)
         status = 404 if code == DevelopmentErrorCode.NOT_FOUND else 409
@@ -347,7 +361,7 @@ def waitlist_offering(request, offering_id):
         return JsonResponse(error("MISSING_FIELD", "staffMasterId 必填"), status=400)
     try:
         offering = HrLearningOffering(id=offering_id, tenant_id=tenant_id)
-        enrollment = EnrollmentService.waitlist(offering, int(staff_id), tenant_id)
+        enrollment = EnrollmentService.waitlist(offering, staff_id, tenant_id)
     except ValueError as e:
         code = str(e)
         status = 404 if code == DevelopmentErrorCode.NOT_FOUND else 409

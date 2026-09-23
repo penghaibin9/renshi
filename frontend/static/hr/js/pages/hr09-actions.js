@@ -82,11 +82,12 @@
     else { button.textContent = button.dataset.label || button.textContent; button.disabled = false; }
   }
   async function act(host, button, path, body, message) {
+    if (button.disabled || button.form?.dataset.v6Committed === 'true') return;
     busy(button, true);
     try {
       const data = await post(path, body);
       result(host, 'ok', typeof message === 'function' ? message(data) : message);
-      window.setTimeout(() => window.location.reload(), 500);
+      window.HrWorkspaceUX?.afterCommit({host, button, message: typeof message === 'function' ? message(data) : message});
     } catch (error) { result(host, 'error', error.message); busy(button, false); }
   }
   function field(label, control, help = '', full = false) {

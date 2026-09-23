@@ -13,6 +13,7 @@
   const targetPosition = document.getElementById("hr06-temporary-target-position");
   const effectiveAt = document.getElementById("hr06-temporary-effective-at");
   const returnAt = document.getElementById("hr06-temporary-return-at");
+  const temporaryFte = document.getElementById("hr06-temporary-fte");
   const priority = document.getElementById("hr06-temporary-priority");
   const bootstrapState = document.getElementById("hr06-temporary-bootstrap-state");
   const createButton = document.getElementById("hr06-temporary-create");
@@ -56,6 +57,9 @@
     const datesValid = Boolean(
       effectiveAt.value && returnAt.value && returnAt.value > effectiveAt.value
     );
+    const fteValid = !temporaryFte || !temporaryFte.value || (
+      Number(temporaryFte.value) > 0 && Number(temporaryFte.value) <= 1.5
+    );
     createButton.disabled = !(
       state.bootstrap &&
       state.selectedStaff &&
@@ -64,7 +68,8 @@
       action.value &&
       reason.value &&
       targetOrg.value &&
-      datesValid
+      datesValid &&
+      fteValid
     );
   }
 
@@ -252,6 +257,7 @@
           requestedEffectiveAt: effectiveAt.value,
           expectedReturnAt: returnAt.value,
           sourcePolicy: "KEEP_ACTIVE",
+          fte: temporaryFte && temporaryFte.value ? temporaryFte.value : null,
           priority: priority.value || "NORMAL",
         },
       });
@@ -271,6 +277,7 @@
   targetPosition.addEventListener("change", updateCreateAvailability);
   effectiveAt.addEventListener("change", updateCreateAvailability);
   returnAt.addEventListener("change", updateCreateAvailability);
+  if (temporaryFte) temporaryFte.addEventListener("input", updateCreateAvailability);
   searchButton.addEventListener("click", searchStaff);
   keyword.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {

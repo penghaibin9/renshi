@@ -74,6 +74,13 @@ class ExportServiceTests(TestCase):
 
 
 class ImportApplierTests(TestCase):
+    def setUp(self):
+        # Real school/department fixtures, not a phantom legacy integer.
+        from base.models import Company, Department
+        self.company = Company.objects.create(id=TENANT, company="导入验收学校", hq=True)
+        self.department = Department.objects.entire().create(department="验收部门")
+        self.department.company_id.add(self.company)
+
     def test_staff_master_row_applier_creates_person_staff_employment(self):
         """P1-i：真实 applier 一行创建 Person+Staff+Relationship+Assignment（原子）。"""
         from hr_staff.models import HrEmploymentRelationship, HrStaffAssignment
@@ -84,7 +91,9 @@ class ImportApplierTests(TestCase):
                 "staff_no": "T500001",
                 "legal_name": "钱七",
                 "effective_from": "2024-09-01",
-                "legacy_department_id": "7",
+                "legacy_department_id": str(self.department.pk),
+                "staff_category_code": "TEACHER",
+                "relationship_type": "CONTRACT",
             },
             {},
         )
@@ -96,7 +105,7 @@ class ImportApplierTests(TestCase):
         assignment = HrStaffAssignment.objects.filter(
             tenant_id=TENANT, employment_relationship_id__staff_id=staff
         ).first()
-        self.assertEqual(assignment.legacy_department_id, 7)
+        self.assertEqual(assignment.legacy_department_id, self.department.pk)
 
     def test_import_service_commit_with_real_applier(self):
         """P1-i：commit 走真实 applier，成功/失败行精确统计。"""
@@ -109,7 +118,9 @@ class ImportApplierTests(TestCase):
                     "staff_no": "T600001",
                     "legal_name": "孙八",
                     "effective_from": "2024-09-01",
-                    "legacy_department_id": "7",
+                    "legacy_department_id": str(self.department.pk),
+                "staff_category_code": "TEACHER",
+                "relationship_type": "CONTRACT",
                 },
                 {"legal_name": ""},  # 缺姓名 → 校验失败
             ],

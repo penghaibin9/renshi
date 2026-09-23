@@ -1,0 +1,330 @@
+{
+  "version": "V15",
+  "date": "2026-09-19",
+  "baseline": "V14",
+  "purpose": "HR01-HR18 core business flow replay and closeout",
+  "release_approved": false,
+  "flows": [
+    {
+      "id": "C01",
+      "name": "首次建档 / 数据迁入",
+      "modules": "HR02→HR03",
+      "status": "PASS_ISOLATED",
+      "tests": 3,
+      "evidence": "flow-logs/C01.log",
+      "result": "Excel/合法来源行校验后形成 Person→Staff→Employment→PRIMARY Assignment；失败行可定位；再聘复用 canonical 人员。",
+      "remaining": "完整 HR03 学校应用/真实 MySQL 专用测试仍是环境门。"
+    },
+    {
+      "id": "C02",
+      "name": "招聘录用 → 入职交接",
+      "modules": "HR04→HR05",
+      "status": "PASS_ISOLATED",
+      "tests": 1,
+      "evidence": "flow-logs/C02-C03.log",
+      "result": "接受录用后的交接与 HR02 岗位容量提交能够进入 HR05，重复链路不重复占用。",
+      "remaining": "原生生产登录、真实并发与 MySQL 行锁待预发布。"
+    },
+    {
+      "id": "C03",
+      "name": "报到 / 材料 / 责任协同 → 正式人员",
+      "modules": "HR05→HR03",
+      "status": "PASS_ISOLATED",
+      "tests": 1,
+      "evidence": "flow-logs/C02-C03.log",
+      "result": "同一入职对象经过材料、责任任务、激活后形成正式四层人员事实并可结案。",
+      "remaining": "生产角色/学校数据范围、真实文件存储、Cookie/MFA 待预发布。"
+    },
+    {
+      "id": "C04",
+      "name": "人事异动 → 任职事实更新",
+      "modules": "HR06→HR03/HR02",
+      "status": "PASS_WITH_FIX",
+      "tests": 2,
+      "evidence": "flow-logs/C04.log",
+      "result": "借调/挂职保留原岗时，按生效日核对原事实和 FTE 剩余额度，临时任职能够真实生效并保留原岗。",
+      "remaining": "MySQL 并发、真实岗位容量冲突待预发布。",
+      "fix": "修复原临时岗默认 1.0 FTE 导致总 FTE 超限；新增可选 FTE、剩余额度校验，并保持 HR03 1.50 上限兜底。"
+    },
+    {
+      "id": "C05",
+      "name": "合同 / 续签 / 终止",
+      "modules": "HR07",
+      "status": "PASS_ISOLATED",
+      "tests": 2,
+      "evidence": "flow-logs/C05.log",
+      "result": "首次签署冻结内容哈希；激活带租户锁与幂等，旧版本不被覆盖。",
+      "remaining": "电子签章/真实附件存储及完整终止支付影响待集成。"
+    },
+    {
+      "id": "C06",
+      "name": "外聘人员 / 协议 / 任务 / 退出",
+      "modules": "HR08",
+      "status": "PASS_ISOLATED",
+      "tests": 3,
+      "evidence": "flow-logs/C06.log",
+      "result": "外聘任务可走状态生命周期；续聘新建关系而非覆盖旧关系；退出结束关系并撤销原权限事实。",
+      "remaining": "真实课酬、税目及外部系统开通/回收待专项验收。"
+    },
+    {
+      "id": "C07",
+      "name": "资格资质 ↔ 教师发展",
+      "modules": "HR09↔HR10",
+      "status": "PASS_WITH_FIX",
+      "tests": 6,
+      "evidence": "flow-logs/C07.log",
+      "result": "HR09 能消费 HR10 已核验发展事实；历史/身份来源不确定时不再假装为空数据。",
+      "remaining": "当前环境缺 djangorestframework，HR09 全 HTTP 集合未完整执行。",
+      "fix": "HR10 权威读取在 canonical 身份缺少旧桥接且没有 canonical 事实链时 fail-closed；HR10 申请创建同时锁定所选班次。"
+    },
+    {
+      "id": "C08",
+      "name": "考勤月结 → 工资输入",
+      "modules": "HR11→HR15",
+      "status": "PASS_ISOLATED",
+      "tests": 2,
+      "evidence": "flow-logs/C08-time.log + C08-payroll.log",
+      "result": "HR11 月结形成带签名范围/工资基数的正式输入；HR15 使用权威来源快照且重复冻结保持幂等。",
+      "remaining": "真实考勤设备/假期接口、MySQL 月结并发待预发布。"
+    },
+    {
+      "id": "C09",
+      "name": "考核周期与归档证据",
+      "modules": "HR12",
+      "status": "PASS_ISOLATED",
+      "tests": 2,
+      "evidence": "flow-logs/C09.log",
+      "result": "正式定稿冻结当期来源，归档后读取历史证据；归档前来源变化不静默改写正式定稿上下文。",
+      "remaining": "V14 新增 MySQL 归档保护触发器尚未在 MySQL 8.4 执行。"
+    },
+    {
+      "id": "C10",
+      "name": "职称评审 → 岗位聘任",
+      "modules": "HR13→HR14",
+      "status": "PASS_ISOLATED",
+      "tests": 2,
+      "evidence": "flow-logs/C10.log",
+      "result": "封存职称结果进入岗位聘任集体决策；聘期晋升关闭旧事实并建立替代关系。",
+      "remaining": "专家/评委真实账号、院系数据范围、MySQL 锁冲突待预发布。"
+    },
+    {
+      "id": "C11",
+      "name": "工资核算 / 复核 / 封账 / 支付 / 补差",
+      "modules": "HR15",
+      "status": "PASS_ISOLATED_EXTERNAL_GATE",
+      "tests": 1,
+      "evidence": "flow-logs/C08-C11.log",
+      "result": "权威输入→正式计算→复核/终态→支付指令→工资单/对账的数据库链通过代表性回放。",
+      "remaining": "付款提供方为测试适配；银行、财务、税务及学校实账未联调。"
+    },
+    {
+      "id": "C12",
+      "name": "退休 / 离校 / 交接",
+      "modules": "HR16",
+      "status": "PASS_ISOLATED_ENV_GATE",
+      "tests": 2,
+      "evidence": "flow-logs/C12.log",
+      "result": "正式离退生效生成 append-only 事实；更正/撤销链禁止分叉，历史事实可追溯。",
+      "remaining": "2 个 round2/flex 测试因完整设置缺 django-environ 未执行；真实停薪/欠发边界待 MySQL。"
+    },
+    {
+      "id": "C13",
+      "name": "教职工本人服务 → 正式域",
+      "modules": "HR17→HR03/HR16/HR15",
+      "status": "PARTIAL_ENV_GATE",
+      "tests": 1,
+      "evidence": "flow-logs/C13.log",
+      "result": "本人可读取版本化合同和终态工资单摘要，敏感付款账户不投影到本人页面。",
+      "remaining": "本人更正/材料提交→独立审核→正式域写回的 round2 命令链需要完整设置/MySQL，当前未冒充走通。"
+    },
+    {
+      "id": "C14",
+      "name": "数据治理 / 历史统计 / 报送",
+      "modules": "HR18",
+      "status": "PASS_ISOLATED_ENV_GATE",
+      "tests": 3,
+      "evidence": "flow-logs/C14.log",
+      "result": "指标冻结人口版本、数据质量生成持久问题记录，HR16 正式事实可纳入 as-of 评估。",
+      "remaining": "MySQL immutability/退休运营 round2 专项和真实报送接口仍待预发布。"
+    }
+  ],
+  "product_fixes": [
+    {
+      "id": "F01",
+      "module": "HR06",
+      "severity": "P1",
+      "status": "FIXED_TESTED",
+      "title": "借调挂职真实生效时 FTE 超限",
+      "before": "KEEP_ACTIVE 保留原主岗，但临时岗沿用 1.00 默认，主岗 1.00 时 Apply 阶段触发总 FTE≤1.50 规则而失败。",
+      "fix": "按计划生效日读取主岗和同关系有效任职，排除 DRAFT/CANCELLED，计算剩余额度；未显式输入时保留原 1.00 默认但裁剪到真实剩余额度；支持显式 FTE 并在创建草稿时阻断超额。",
+      "proof": "HR06 全集 213 执行、203 通过、10 跳过；S6 16/16；C04 2/2。"
+    },
+    {
+      "id": "F02",
+      "module": "HR10",
+      "severity": "P1",
+      "status": "FIXED_TESTED",
+      "title": "培训申请并发下班次关系未锁定",
+      "before": "创建申请锁定人员和项目，但所选 HrLearningOffering 只普通读取，项目/班次关系可在事务窗口变化。",
+      "fix": "在同一 atomic 事务内 select_for_update 锁定班次，再校验其 program version 属于所选已发布项目。",
+      "proof": "HR10 110/110；相关 mutation contract 已更新。"
+    },
+    {
+      "id": "F03",
+      "module": "HR09↔HR10",
+      "severity": "P1",
+      "status": "FIXED_TESTED",
+      "title": "无法确认发展事实身份时可能被误读为空数据",
+      "before": "authority consumer 请求 canonical staff，而旧 bigint 身份桥接缺失、也没有 canonical UUID 事实时，空查询无法证明是真的无事实。",
+      "fix": "权威读取明确返回 SOURCE_IDENTITY_MAPPING_UNAVAILABLE，不让 HR09/HR12 把未知来源当零事实；已有 canonical 事实链仍按 UUID 读取。",
+      "proof": "HR10/HR09 bridge 9/9；HR09 service/provider 118 执行、117 通过、1 跳过。"
+    }
+  ],
+  "module_regression": [
+    {
+      "module": "HR01",
+      "name": "人事工作台",
+      "result": "ENV_BLOCKED",
+      "detail": "完整集合先缺 auditlog；测试 shim 后 URL 包含 HR09 又缺 rest_framework。未把环境缺依赖记成产品通过。"
+    },
+    {
+      "module": "HR02",
+      "name": "组织岗位",
+      "result": "PASS_WITH_SKIP",
+      "detail": "88 执行，87 通过，1 跳过。"
+    },
+    {
+      "module": "HR03",
+      "name": "教职工主档",
+      "result": "PARTIAL_ENV_GATE",
+      "detail": "273 执行，270 通过，3 环境错误；错误入口依赖完整 horilla_auth/学校应用。"
+    },
+    {
+      "module": "HR04",
+      "name": "招聘管理",
+      "result": "PASS_WITH_SKIP",
+      "detail": "239 执行，220 通过，19 MySQL/并发专用跳过。"
+    },
+    {
+      "module": "HR05",
+      "name": "入职管理",
+      "result": "PASS_WITH_SKIP",
+      "detail": "355 执行，346 通过，9 MySQL 专用跳过。"
+    },
+    {
+      "module": "HR06",
+      "name": "人事异动",
+      "result": "PASS_WITH_FIX",
+      "detail": "213 执行，203 通过，10 跳过；本轮 FTE 修复后完整重跑。"
+    },
+    {
+      "module": "HR07",
+      "name": "合同管理",
+      "result": "PASS_WITH_SKIP",
+      "detail": "55 执行，49 通过，6 跳过。"
+    },
+    {
+      "module": "HR08",
+      "name": "外聘人员",
+      "result": "PASS_WITH_SKIP",
+      "detail": "215 执行，211 通过，4 跳过。"
+    },
+    {
+      "module": "HR09",
+      "name": "资格资质",
+      "result": "SERVICE_PASS_ENV_GATE",
+      "detail": "服务/provider 子集 118 执行，117 通过，1 跳过；全 HTTP 集合受 djangorestframework 缺失阻断。"
+    },
+    {
+      "module": "HR10",
+      "name": "教师发展",
+      "result": "PASS_WITH_FIX",
+      "detail": "110/110 通过；本轮增加 offering 行锁。"
+    },
+    {
+      "module": "HR11",
+      "name": "考勤工时",
+      "result": "PASS_WITH_SKIP",
+      "detail": "发现 156；实际执行 148，OK，9 跳过（框架发现/标签口径不同，保留原日志）。"
+    },
+    {
+      "module": "HR12",
+      "name": "考核管理",
+      "result": "PASS_WITH_SKIP",
+      "detail": "349 执行，344 通过，5 跳过。"
+    },
+    {
+      "module": "HR13",
+      "name": "职称评审",
+      "result": "PASS",
+      "detail": "119/119 通过。"
+    },
+    {
+      "module": "HR14",
+      "name": "岗位聘任",
+      "result": "PASS",
+      "detail": "191/191 通过。"
+    },
+    {
+      "module": "HR15",
+      "name": "薪酬福利",
+      "result": "PASS_ISOLATED",
+      "detail": "215/215 通过；不等于真实银行/税务/学校实账。"
+    },
+    {
+      "module": "HR16",
+      "name": "退休离校",
+      "result": "PARTIAL_ENV_GATE",
+      "detail": "168 执行，166 通过，2 环境错误；round2/flex 完整设置缺 django-environ。"
+    },
+    {
+      "module": "HR17",
+      "name": "教职工服务",
+      "result": "PARTIAL_ENV_GATE",
+      "detail": "可执行子集 78/78 通过；round2 正式写回命令链依赖完整设置/MySQL。"
+    },
+    {
+      "module": "HR18",
+      "name": "数据中心",
+      "result": "PARTIAL_ENV_GATE",
+      "detail": "可执行服务集合 260/260 通过；MySQL-only retirement/operations round2 未执行。"
+    }
+  ],
+  "environment_gates": [
+    {
+      "id": "G01",
+      "gate": "MySQL 8.4 / Docker / 完整生产依赖",
+      "status": "BLOCKED",
+      "detail": "当前沙箱没有 Docker/MySQL，原 horilla.settings 仍缺 django-environ；不以 SQLite 代替生产迁移/并发。"
+    },
+    {
+      "id": "G02",
+      "gate": "HR09/HR01 完整 HTTP 测试依赖",
+      "status": "BLOCKED",
+      "detail": "当前环境缺 djangorestframework；服务/provider 已回归，但不宣称全 HTTP 套件通过。"
+    },
+    {
+      "id": "G03",
+      "gate": "HR16/HR17/HR18 round2 专项",
+      "status": "BLOCKED",
+      "detail": "这些测试链加载完整 base settings，当前缺 django-environ/MySQL。"
+    },
+    {
+      "id": "G04",
+      "gate": "真实登录/SSO/MFA/院系与本人数据范围",
+      "status": "NOT_RUN",
+      "detail": "需独立演示服务器真实账号执行。"
+    },
+    {
+      "id": "G05",
+      "gate": "银行/税务/邮件/一卡通/外部接口",
+      "status": "NOT_RUN",
+      "detail": "未配置时保持未配置/不可验证；不伪造成功。"
+    }
+  ],
+  "notes": [
+    "Representative flow tests are not equivalent to full production end-to-end journeys.",
+    "No MySQL, production SSO, bank/tax integration, or real teacher data were used in this sandbox.",
+    "No new database migration was added in V15; V14 hr_assessment.0028 and all earlier migrations remain required."
+  ]
+}

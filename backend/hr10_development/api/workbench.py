@@ -33,16 +33,18 @@ def choices(request):
 
     staff = HrStaffMaster.objects.filter(
         tenant_id=tenant_id,
-        legacy_employee_id__isnull=False,
     ).select_related("person_id").order_by("person_id__legal_name", "staff_no")[:500]
     staff_items = [
         {
-            "value": item.legacy_employee_id,
+            "value": str(item.id),
             "label": f"{item.person_id.legal_name} · {item.staff_no}",
         }
         for item in staff
     ]
     staff_labels = {item["value"]: item["label"] for item in staff_items}
+    for master, option in zip(staff, staff_items):
+        if master.legacy_employee_id is not None:
+            staff_labels[master.legacy_employee_id] = option["label"]
 
     providers = HrDevelopmentProviderOrganization.objects.filter(
         tenant_id=tenant_id,
@@ -148,7 +150,7 @@ def choices(request):
                 ),
                 None,
             ),
-            "label": f"{staff_labels.get(item.staff_master_id, '教师')} · {placement_labels.get(item.placement_id, '实践批次')}",
+            "label": f"{staff_labels.get(str(item.staff_master_uuid) if item.staff_master_uuid else item.staff_master_id, '教师')} · {placement_labels.get(item.placement_id, '实践批次')}",
             "status": item.assignment_status,
             "sceneLabel": scene_labels.get(item.assigned_scene_id, "未配置岗位场景"),
         }

@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}
 HR01-04 队伍结构 —— 结论卡 + 维度分布
@@ -13,22 +13,22 @@ HR01-04 队伍结构 —— 结论卡 + 维度分布
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <script src="{% static 'hr/vendor/apexcharts/apexcharts.min.js' %}"></script>
 
-<div class="hr-page" data-hr-page="workforce">
+<div class="hr-page" data-hr-page="workforce" data-module="HR01" data-hr-workspace="v6">
   {% include "hr/components/page_header.html" with title="队伍结构" subtitle="学校/学院教师队伍结构是否合理、哪里存在缺口" %}
 
   <!-- 结论卡 -->
   {% include "hr/components/section_card.html" with id="hr-workforce-summary" title="队伍结构结论" status="loading" %}
 
   <!-- 维度 Tabs -->
-  {% include "hr/components/status_tabs.html" with id="hr-workforce-tabs" %}
+  <div id="hr-workforce-tabs" aria-label="队伍结构维度"></div>
 
   <!-- 分布图 -->
-  {% include "hr/components/chart_card.html" with chart_id="hr-workforce-dist" title="维度分布" status="loading" %}
+  {% include "hr/components/chart_card.html" with chart_id="hr-workforce-dist" title="维度分布" %}
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
 <script src="{% static 'hr/js/core/chart.js' %}"></script>
-<script src="{% static 'hr/js/pages/workforce.js' %}"></script>
+<script src="{% static 'hr/js/pages/workforce.js' %}?v=20260918-all-secondary-v6"></script>
 {% endblock %}

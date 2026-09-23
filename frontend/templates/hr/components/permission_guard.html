@@ -20,5 +20,6 @@ Usage:
     <h3 class="hr-permission-guard__title">{% trans "无查看权限" %}</h3>
     {% if reason %}<p class="hr-meta">{{ reason }}</p>{% endif %}
     {% if contact_hint %}<p class="hr-meta">{{ contact_hint }}</p>{% endif %}
+    {% if not contact_hint %}<p class="hr-meta">下一步：检查当前账号的角色和数据范围；确需办理时，请联系学校系统管理员按职责授权。</p>{% endif %}
   </div>
 {% endif %}

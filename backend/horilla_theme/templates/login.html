@@ -112,6 +112,18 @@
               </button>
             </form>
 
+            {% if sso_options %}
+              <div class="yk-sso-divider"><span>或使用学校统一认证</span></div>
+              <div class="yk-sso-options">
+                {% for option in sso_options %}
+                  <a class="yk-login-submit yk-login-submit--sso" href="{{ option.url }}?next=/">
+                    <ion-icon name="school-outline" aria-hidden="true"></ion-icon>
+                    <span>{{ option.name }} · {{ option.protocol }}</span>
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
+
             {% if initialize_database %}
               <div class="yk-init-actions">
                 <a href="{% url 'initialize-database' %}">初始化数据库</a>

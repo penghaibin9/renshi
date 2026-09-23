@@ -47,7 +47,7 @@
 | 1 | **HR02→HR03** | 组织/岗位供给 → 任职参考 | Provider: org/position read | `selectors.effective` as-of | ✅ HR02 S3 已交付 |
 | 2 | **HR02→HR04** | 岗位供给 → 招聘引用 | Provider: position availability | `PositionService.reserve/commit/release` (S7) | ✅ 预占 API 已暴露 |
 | 3 | **HR04→HR05** | 拟录用/Offer → 入职 handoff | Outbox: `OfferAccepted` + API | `POST handoff-to-hr05` + Idempotency-Key | ✅ HANDOFF 已交付 |
-| 4 | **HR05→HR03** | Activation Gate → 创建 Staff | Outbox: `StaffActivated` | HR03 `event_service` 消费 | ✅ Service 契约 v1 已交付 |
+| 4 | **HR05→HR03** | Activation Gate → 创建 Staff | 同事务 Provider 写 HR03 Authority + Outbox `StaffActivated` | HR05 outbox worker 校验已封存 HR03/HR05 Authority 后 ACK；禁止从事件重复创建关系/任职 | ✅ Round7 生产收口 |
 | 5 | **HR03→HR07** | EmploymentRelationship → 合同绑定 | Provider: relationship read | `selectors.effective` | 待 HR07 开窗 |
 | 6 | **HR03→HR06** | Assignment → 异动变更 | Event: `PersonnelChangeEffective` | HR03 consumer 更新历史 | 待 HR06 开窗 |
 | 7 | **HR03→HR08** | Person 身份复用 | Provider: `PersonIdentityService` | fingerprint 去重 | ✅ HR08 已复用 |
@@ -86,6 +86,9 @@
 ---
 
 ## 4. Outbox/Inbox 规则
+
+> **Round7 单体部署说明**：HR05 Activation Gate 已在源事务中通过受控 Provider 创建 HR03 Person/Staff/Relationship/Assignment 并提交 HR02 预占。`StaffActivated` 在当前单体部署中是可靠发布/对账事实，不是第二个写 Authority 的命令；生产 `hr05-outbox-worker` 只做封存事实与 event payload/hash 一致性校验，校验通过后写 ACK receipt。这样避免 Outbox 重放导致重复关系/重复任职。试用终局事件同样以 HR05 权威事实为源，其他域通过 Provider/Authority 读取，不允许消费者反向篡改 HR05。
+
 
 - 正式事务必须 `domain state + audit + outbox` 同事务
 - 发布失败可重试

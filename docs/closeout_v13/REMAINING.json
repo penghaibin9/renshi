@@ -1,0 +1,78 @@
+{
+  "release": "V13",
+  "release_approved": false,
+  "items": [
+    {
+      "id": "G01",
+      "kind": "运行环境",
+      "status": "阻断",
+      "item": "P2 完整发布配置与 MySQL 8.4",
+      "next": "安装原发布依赖，执行所有历史迁移、MySQL 专用方法和真实事务并发；不得关闭原 MySQL 限制。",
+      "evidence": "p2-readonly.log；production-check.log；environment-download-attempt.txt"
+    },
+    {
+      "id": "G02",
+      "kind": "运行环境",
+      "status": "待真实执行",
+      "item": "HR03 完整学校集成集合",
+      "next": "22 个方法需要完整学校应用集；其中 20 个是 MySQL 专用方法。当前完整收集出现 3 个环境错误入口，不计为通过。",
+      "evidence": "hr03-real-runtime-required.json；hr03-complete-attempt-final.log"
+    },
+    {
+      "id": "G03",
+      "kind": "安全验收",
+      "status": "待真实执行",
+      "item": "登录、MFA、学校/院系/本人权限、私有文件",
+      "next": "原生浏览器、真实认证成员与 Cookie/CSRF、跨学校负例和真实下载；隔离身份和响应不能替代。",
+      "evidence": "P2 未通过；ui-after/browser-results.json 的限制"
+    },
+    {
+      "id": "G04",
+      "kind": "恢复验收",
+      "status": "待真实执行",
+      "item": "独立 MySQL 备份恢复与核对",
+      "next": "独立低权限恢复账号、完整导出、独立数据库和私有媒体恢复；同冻结点采集两份 v2 指纹并对账。23 模型不是全部业务覆盖。",
+      "evidence": "closeout-safety-release.log 明确模拟 SQL；未执行实际恢复"
+    },
+    {
+      "id": "G05",
+      "kind": "设备与规模",
+      "status": "待真实执行",
+      "item": "Windows 原生操作、打印、125% 和规模性能",
+      "next": "实际终端、文件选择器与打印；代表规模、并发和资源容量测试。本轮仅浏览器视口回归。",
+      "evidence": "ui-after/browser-results.json"
+    },
+    {
+      "id": "G06",
+      "kind": "代码能力",
+      "status": "尚未实现",
+      "item": "高级绩效与复杂薪酬专项",
+      "next": "校院两级预算、年度绩效预发清算、负向追扣、复杂缴费反算和专项税务另立受控专项；保留 V8–V12 原阻断。",
+      "evidence": "沿用 V8/V9 已列代码范围，工资目录本轮字节未改"
+    },
+    {
+      "id": "G07",
+      "kind": "学校资料",
+      "status": "待校方确认",
+      "item": "真实制度、脱敏样本和实账验算",
+      "next": "学校批准标准、材料和岗位映射、实际工资逐人逐项验算、授权与差异签认；禁止自动灌入虚构政策。",
+      "evidence": "V12 客户交付清单；本轮未获得真实学校资料"
+    },
+    {
+      "id": "G08",
+      "kind": "外部集成",
+      "status": "待联调",
+      "item": "SSO、财务银行税务、邮件及校园系统",
+      "next": "单独约定接口、凭证与责任；有真实回执才标外部成功，本轮没有对外付款或开通。",
+      "evidence": "不在本轮真实连接范围"
+    },
+    {
+      "id": "G09",
+      "kind": "商务与交付",
+      "status": "待校方确认",
+      "item": "P6/P7 培训验收、服务、许可及第二校复制",
+      "next": "校方复做和签认、逐组件许可与合同核对、真实试点和第二校部署；材料准备不等于已经交付成交。",
+      "evidence": "保留 V12 交付材料；无新增客户签字或商业事实"
+    }
+  ]
+}

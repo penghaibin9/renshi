@@ -20,7 +20,7 @@ class DevelopmentFactAuthorityError(Exception):
 def development_fact_event_payload(fact: HrDevelopmentFact) -> dict:
     return {
         "factId": str(fact.id),
-        "staffMasterId": str(fact.staff_master_id),
+        "staffMasterId": str(fact.staff_master_uuid) if fact.staff_master_uuid else str(fact.staff_master_id),
         "factType": fact.fact_type,
         "sourceCaseType": fact.source_case_type,
         "sourceCaseId": str(fact.source_case_id),
@@ -133,7 +133,7 @@ class DevelopmentFactAuthorityService:
     @staticmethod
     def _snapshot(fact: HrDevelopmentFact) -> dict:
         fields = (
-            "staff_master_id", "fact_type", "source_case_type", "source_case_id",
+            "staff_master_uuid", "staff_master_id", "fact_type", "source_case_type", "source_case_id",
             "activity_type", "provider_org_id", "start_date", "end_date",
             "verified_hours", "verified_days", "verified_credits", "level_or_result",
             "verification_status", "evidence_package_hash", "generated_at",
@@ -199,6 +199,12 @@ class DevelopmentFactAuthorityService:
             return replay
 
         values = self._snapshot(current)
+        if values.get("staff_master_uuid") is None and values.get("staff_master_id") is not None:
+            from hr10_development.identity import resolve_staff_identity
+            identity = resolve_staff_identity(
+                tenant_id=self.tenant_id, raw_staff_id=values["staff_master_id"]
+            )
+            values["staff_master_uuid"] = identity.staff_uuid
         values.update(changes)
         successor = HrDevelopmentFact(
             tenant_id=self.tenant_id,

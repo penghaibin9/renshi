@@ -11,7 +11,9 @@
     .find((item) => item.startsWith(`${name}=`))?.slice(name.length + 1) || '';
 
   function show(message, kind = '') {
-    zone.innerHTML = '';
+    const existing = zone.querySelector(':scope > .hr08-notice');
+    if (existing) existing.remove();
+    if (!zone.querySelector('form')) zone.innerHTML = '';
     const notice = document.createElement('div');
     notice.className = `hr08-notice${kind ? ` is-${kind}` : ''}`;
     notice.textContent = message;
@@ -57,6 +59,7 @@
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const button = form.querySelector('[type="submit"]');
+        if (button.disabled) return;
         button.disabled = true;
         const original = button.textContent;
         button.textContent = '确认中…';
@@ -67,8 +70,7 @@
             body: JSON.stringify({agreementId: select.value}),
           });
           await payload(confirmed);
-          window.sessionStorage.setItem('hr08-flash', '正式协议已确认，申请进入待激活。');
-          window.location.reload();
+          window.HrWorkspaceUX?.afterCommit({host:zone,form,button,message:'正式协议已确认，申请进入待激活。'});
         } catch (error) {
           show(error.message, 'error');
           button.disabled = false;

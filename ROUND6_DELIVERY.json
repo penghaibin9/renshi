@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "project": "Yueke University HR",
+  "round": "Round6",
+  "date": "2026-09-15",
+  "baseline": {
+    "name": "Yueke_University_HR_Round5_20260915.zip",
+    "sha256": "7799650cf1d3b9595c940dc7743148548990b0e47daabd444b3d6a233d5aed6a",
+    "soleBaseline": true
+  },
+  "releaseDecision": "NOT_RELEASED",
+  "codeClosureDecision": "ROUND6_CODE_SCOPE_COMPLETE",
+  "scope": [
+    "HR18 HR04 hiring fact correction/revocation historical Authority adapter",
+    "HR18 HR05 activation amendment historical Authority adapter with HR04-to-HR05-to-HR03 lineage",
+    "HR15 sealed finalized/adjusted/reversed payroll Authority chain and reversal command",
+    "fail-closed frozen evidence and runtime quality validation for HR04/HR05/HR15"
+  ],
+  "changedFiles": {
+    "count": 27,
+    "added": 7,
+    "modified": 20,
+    "deleted": 0,
+    "metadataExcludedFromDiff": [
+      "ROUND6_CHANGED_FILES.tsv",
+      "ROUND6_DELIVERY.json",
+      "ROUND6_FILE_MANIFEST.tsv"
+    ]
+  },
+  "verified": {
+    "round2Pure": "66/66 PASS",
+    "round3Pure": "6/6 PASS",
+    "round4Pure": "16/16 PASS",
+    "round5Pure": "20/20 PASS",
+    "round6Pure": "24/24 PASS",
+    "djangoRound6TestSource": "AST/py_compile PASS; runtime BLOCKED because Django/MySQL are unavailable in current executor",
+    "acceptancePlan": "PASS",
+    "acceptanceRuntime": "BLOCKED/FAIL-CLOSED at compose-version: Docker unavailable",
+    "acceptanceRuntimeSeconds": 0.001,
+    "pythonAst": "3122 files PASS (utf-8-sig aware)",
+    "compileall": "PASS",
+    "entrypointBash": "PASS (deploy/docker/entrypoint.sh)",
+    "migrationNumberUniqueness": "444 migration files / 0 duplicate numeric prefixes",
+    "javascriptSyntax": "253 files PASS"
+  },
+  "safety": {
+    "githubTouched": false,
+    "productionServerTouched": false,
+    "productionDatabaseTouched": false,
+    "acceptanceReadsProductionDotEnv": false,
+    "acceptanceEvidenceProductionTouched": false,
+    "acceptanceEvidenceGitHubTouched": false
+  },
+  "historicalAuthoritySupport": [
+    "HR03",
+    "HR04",
+    "HR05",
+    "HR06",
+    "HR07",
+    "HR12",
+    "HR13",
+    "HR14",
+    "HR15",
+    "HR16"
+  ],
+  "historicalAdaptersNotDeclared": [
+    "HR08",
+    "HR09",
+    "HR10",
+    "HR11",
+    "HR17"
+  ],
+  "closedRound5CodeBlocker": "HR04/HR05/HR15 chain-aware historical adapter",
+  "remainingReleaseGates": [
+    "trusted Docker Compose >=2.24.4 + MySQL 8.4 acceptance-qa",
+    "Django/MySQL full HR01-HR18 tests, migrations and MySQL triggers",
+    "encrypted backup/decrypt/restore verification",
+    "four-role real browser golden flows",
+    "real SMTP/IAM/academic/bank-tax/e-signature integrations",
+    "tenant/authorization/MFA/concurrency/large-data security and performance acceptance"
+  ],
+  "manifest": {
+    "name": "ROUND6_FILE_MANIFEST.tsv",
+    "excludesItself": true
+  },
+  "notes": [
+    "Do not claim RELEASED until target-environment acceptance gates pass.",
+    "Round6 closes the source-level blocker explicitly listed as item 7 in the Round5 closure report.",
+    "HR08-HR11 and HR17 are not forced into generic COUNT history semantics; future metrics require explicit Authority definitions."
+  ]
+}

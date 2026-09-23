@@ -124,19 +124,64 @@ def _aware_datetime(value) -> datetime:
 @require_http_methods(["GET"])
 def setup_options(request: HttpRequest) -> JsonResponse:
     tenant = request.tenant_id
-    policies = HrAssessmentPolicyVersion.objects.filter(
+    assessment_type = str(request.GET.get("assessmentType") or "ANNUAL").strip().upper()
+    if assessment_type not in {"ANNUAL", "TERM"}:
+        return JsonResponse(api_error(
+            "ASSESSMENT_SETUP_TYPE_INVALID",
+            "当前启动工作台仅支持年度考核和聘期考核",
+            http_status=400,
+        ), status=400)
+    policy_qs = HrAssessmentPolicyVersion.objects.filter(
         tenant_id=tenant, status="PUBLISHED"
     ).select_related("policy_pack").order_by("-effective_from", "-version_no")
+    policies = [
+        item for item in policy_qs
+        if item.policy_pack.assessment_domain == assessment_type
+        and assessment_type in (item.assessment_types or [])
+    ]
     cycles = HrAssessmentCycle.objects.filter(
-        tenant_id=tenant, assessment_type="ANNUAL",
+        tenant_id=tenant, assessment_type=assessment_type,
         lifecycle_status__in=["PUBLISHED", "ACTIVE"],
     ).order_by("-start_at")
     staff = HrStaffMaster.objects.filter(tenant_id=tenant).select_related("person_id").order_by("staff_no")[:1000]
-    return JsonResponse(api_success(data={
+    data = {
         "policies": [{"value": str(item.id), "label": f"{item.policy_pack.name} · v{item.version_no}"} for item in policies],
         "cycles": [{"value": str(item.id), "label": f"{item.name} · {item.cycle_no}"} for item in cycles],
         "staff": [{"value": str(item.id), "label": f"{item.person_id.legal_name} · {item.staff_no}"} for item in staff],
-    }))
+    }
+    if assessment_type == "TERM":
+        from hr_appointment.term_models import AppointmentTerm
+
+        existing_term_ids = set(
+            HrTermAssessmentCase.objects.filter(tenant_id=tenant).values_list("term_id", flat=True)
+        )
+        term_rows = list(
+            AppointmentTerm.objects.filter(
+                tenant_id=tenant,
+                status__in=["ACTIVE", "EXPIRING", "RENEWAL_IN_PROGRESS"],
+                effective_to__isnull=False,
+            ).exclude(id__in=existing_term_ids).order_by("effective_to")[:1000]
+        )
+        person_ids = {item.person_id for item in term_rows}
+        staff_by_person = {
+            item.person_id_id: item
+            for item in HrStaffMaster.objects.filter(
+                tenant_id=tenant,
+                person_id_id__in=person_ids,
+            ).select_related("person_id")
+        }
+        data["terms"] = [
+            {
+                "value": str(item.id),
+                "label": (
+                    f"{staff_by_person[item.person_id].person_id.legal_name} · {item.term_no} · "
+                    f"{item.effective_from:%Y-%m-%d} 至 {item.effective_to:%Y-%m-%d}"
+                ),
+            }
+            for item in term_rows
+            if item.person_id in staff_by_person
+        ]
+    return JsonResponse(api_success(data=data))
 
 
 @require_assessment_permission("hr.assessment.cycle.admin")
@@ -159,6 +204,17 @@ def create_cycle(request: HttpRequest) -> JsonResponse:
         return JsonResponse(api_error("ASSESSMENT_CYCLE_INPUT_INVALID", "请选择已发布制度并填写有效周期信息", http_status=400), status=400)
     if not cycle_no or not name or end_at <= start_at:
         return JsonResponse(api_error("ASSESSMENT_CYCLE_INPUT_INVALID", "周期编号、名称或起止时间无效", http_status=400), status=400)
+    assessment_type = str(body.get("assessmentType") or policy.policy_pack.assessment_domain).strip().upper()
+    if (
+        assessment_type not in {"ANNUAL", "TERM"}
+        or policy.policy_pack.assessment_domain != assessment_type
+        or assessment_type not in (policy.assessment_types or [])
+    ):
+        return JsonResponse(api_error(
+            "ASSESSMENT_CYCLE_POLICY_TYPE_MISMATCH",
+            "考核周期类型必须与已发布制度类型一致",
+            http_status=400,
+        ), status=400)
     try:
         with transaction.atomic():
             policy = HrAssessmentPolicyVersion.objects.select_for_update().get(
@@ -186,51 +242,57 @@ def create_cycle(request: HttpRequest) -> JsonResponse:
                 tenant_id=tenant,
                 status="PUBLISHED",
             )
-            quota_policy = HrExcellentQuotaPolicy.objects.select_for_update().get(
-                id=policy.excellent_quota_policy_id,
-                tenant_id=tenant,
-                status="PUBLISHED",
-            )
-            for authority in (
+            quota_policy = None
+            if policy.excellent_quota_policy_id:
+                quota_policy = HrExcellentQuotaPolicy.objects.select_for_update().get(
+                    id=policy.excellent_quota_policy_id,
+                    tenant_id=tenant,
+                    status="PUBLISHED",
+                )
+            authorities = [
                 policy,
                 scale,
                 indicator_set,
                 workflow,
                 result_rule,
-                quota_policy,
-            ):
+            ]
+            if quota_policy is not None:
+                authorities.append(quota_policy)
+            for authority in authorities:
                 if authority.content_hash != calculate_version_content_hash(authority):
                     raise ValidationError(
                         f"ASSESSMENT_PUBLISHED_AUTHORITY_HASH_INVALID:{authority._meta.model_name}"
                     )
             cycle = HrAssessmentCycle.objects.create(
-                tenant_id=tenant, cycle_no=cycle_no, assessment_type="ANNUAL", name=name,
+                tenant_id=tenant, cycle_no=cycle_no, assessment_type=assessment_type, name=name,
                 business_year=business_year, start_at=start_at, end_at=end_at,
                 policy_version_id=policy.id,
             )
             lifecycle = CycleLifecycleService()
             for status in ("VALIDATING", "READY_TO_PUBLISH", "PUBLISHED"):
                 lifecycle.transition(cycle, status)
+            frozen_policy = {
+                "id": str(policy.id),
+                "versionNo": policy.version_no,
+                "contentHash": policy.content_hash,
+                "resultRule": {
+                    "id": str(result_rule.id),
+                    "contentHash": result_rule.content_hash,
+                    "scoreToGradeMapping": result_rule.score_to_grade_mapping,
+                },
+            }
+            if quota_policy is not None:
+                frozen_policy["excellentQuota"] = {
+                    "id": str(quota_policy.id),
+                    "contentHash": quota_policy.content_hash,
+                    "maxExcellentRatio": str(quota_policy.max_excellent_ratio),
+                    "roundingRule": quota_policy.rounding_rule,
+                    "minEligibleForQuota": quota_policy.min_eligible_for_quota,
+                    "overQuotaAction": quota_policy.over_quota_action,
+                }
             HrCycleSnapshot.objects.create(
                 tenant_id=tenant, cycle=cycle,
-                frozen_policy_json={
-                    "id": str(policy.id),
-                    "versionNo": policy.version_no,
-                    "contentHash": policy.content_hash,
-                    "resultRule": {
-                        "id": str(result_rule.id),
-                        "contentHash": result_rule.content_hash,
-                        "scoreToGradeMapping": result_rule.score_to_grade_mapping,
-                    },
-                    "excellentQuota": {
-                        "id": str(quota_policy.id),
-                        "contentHash": quota_policy.content_hash,
-                        "maxExcellentRatio": str(quota_policy.max_excellent_ratio),
-                        "roundingRule": quota_policy.rounding_rule,
-                        "minEligibleForQuota": quota_policy.min_eligible_for_quota,
-                        "overQuotaAction": quota_policy.over_quota_action,
-                    },
-                },
+                frozen_policy_json=frozen_policy,
                 frozen_org_scope_json={"scope": "SCHOOL"},
                 frozen_population_query_definition={"status": "ACTIVE"},
                 frozen_rating_scale_json={
@@ -357,6 +419,185 @@ def create_annual_case(request: HttpRequest) -> JsonResponse:
     except (IntegrityError, ValidationError, ValueError) as exc:
         return JsonResponse(api_error("ASSESSMENT_CASE_CONFLICT", str(exc), http_status=409), status=409)
     return JsonResponse(api_success(data={"id": str(case.id), "status": case.status}), status=201)
+
+
+@require_assessment_permission("hr.assessment.cycle.admin")
+@require_http_methods(["POST"])
+def create_term_case(request: HttpRequest) -> JsonResponse:
+    """Create a real term-assessment case from HR14 appointment-term authority.
+
+    A term case is never created from free-text dates.  HR14 supplies the formal
+    appointment term, HR03 supplies the canonical staff identity/as-of org
+    context, and HR07 must supply an active formal employment agreement.
+    """
+    from hr_appointment.term_models import AppointmentTerm
+    from hr_contracts.models import HrContractAgreement
+    from hr_assessment.models.cycle import HrAssessmentPopulationSnapshot
+
+    tenant = request.tenant_id
+    body = _body(request)
+    if body is None:
+        return JsonResponse(api_error("INVALID_REQUEST", "请求正文不是有效 JSON", http_status=400), status=400)
+    cycle = HrAssessmentCycle.objects.filter(
+        id=body.get("cycleId"),
+        tenant_id=tenant,
+        assessment_type="TERM",
+        lifecycle_status__in=["PUBLISHED", "ACTIVE"],
+    ).first()
+    term = AppointmentTerm.objects.filter(
+        id=body.get("termId"),
+        tenant_id=tenant,
+        status__in=["ACTIVE", "EXPIRING", "RENEWAL_IN_PROGRESS"],
+    ).first()
+    if cycle is None or term is None or term.effective_to is None:
+        return JsonResponse(api_error(
+            "ASSESSMENT_TERM_CASE_INPUT_INVALID",
+            "请选择当前学校已发布的聘期考核周期和有明确结束日期的正式聘期",
+            http_status=400,
+        ), status=400)
+    staff = HrStaffMaster.objects.select_related("person_id").filter(
+        tenant_id=tenant,
+        person_id_id=term.person_id,
+    ).first()
+    if staff is None:
+        return JsonResponse(api_error(
+            "ASSESSMENT_TERM_STAFF_UNAVAILABLE",
+            "该聘期尚未关联当前学校正式教职工主档，不能启动聘期考核",
+            http_status=409,
+        ), status=409)
+    agreement = HrContractAgreement.objects.filter(
+        tenant_id=tenant,
+        subject_type=HrContractAgreement.SubjectType.STAFF_EMPLOYMENT,
+        staff_id=staff.id,
+        status__in=[
+            HrContractAgreement.Status.ACTIVE,
+            HrContractAgreement.Status.EXPIRING,
+            HrContractAgreement.Status.RENEWAL_IN_PROGRESS,
+        ],
+    ).order_by("-updated_at").first()
+    if agreement is None:
+        return JsonResponse(api_error(
+            "ASSESSMENT_TERM_AGREEMENT_REQUIRED",
+            "该教职工没有可核验的有效正式聘用合同，不能启动聘期考核",
+            http_status=409,
+        ), status=409)
+    try:
+        with transaction.atomic():
+            if HrTermAssessmentCase.objects.select_for_update().filter(
+                tenant_id=tenant,
+                term_id=term.id,
+            ).exists():
+                raise ValidationError("ASSESSMENT_TERM_CASE_ALREADY_EXISTS")
+            subject_as_of = OrgAsOfResolver().resolve(
+                tenant,
+                staff.id,
+                term.effective_from,
+            )
+            case = HrTermAssessmentCase.objects.create(
+                tenant_id=tenant,
+                assessment_type="TERM",
+                cycle=cycle,
+                staff_id=staff.id,
+                policy_version_id=cycle.policy_version_id,
+                status="DRAFT",
+                term_id=term.id,
+                agreement_id=agreement.id,
+                term_start=term.effective_from,
+                term_end=term.effective_to,
+                term_duty_snapshot_json={
+                    "source": "HR14_APPOINTMENT_TERM",
+                    "termNo": term.term_no,
+                    "appointmentFactId": str(term.appointment_fact_id),
+                    "positionInstanceId": term.position_instance_id,
+                    "levelCode": term.level_code,
+                    "sourceSnapshot": term.source_snapshot_json or {},
+                },
+                term_goal_snapshot_json={
+                    "source": "HR12_TERM_CASE_CREATION",
+                    "status": "TO_BE_CONFIRMED_BY_FORMAL_EVIDENCE",
+                },
+                annual_result_refs_json=[
+                    str(result_id)
+                    for result_id in HrFinalAssessmentResult.objects.filter(
+                        tenant_id=tenant,
+                        assessment_type="ANNUAL",
+                        case_id__in=HrAnnualAssessmentCase.objects.filter(
+                            tenant_id=tenant,
+                            staff_id=staff.id,
+                            assessment_type="ANNUAL",
+                            business_year__gte=term.effective_from.year,
+                            business_year__lte=term.effective_to.year,
+                        ).values("id"),
+                    ).values_list("id", flat=True)
+                ],
+            )
+            subject = HrSubjectSnapshot.objects.create(
+                tenant_id=tenant,
+                case_id=case.id,
+                staff_id=staff.id,
+                display_name=staff.person_id.legal_name,
+                staff_code=staff.staff_no,
+                worker_category=staff.staff_category_code,
+                org_id=subject_as_of.org_id,
+                org_name=subject_as_of.org_name,
+                position_id=subject_as_of.position_id,
+                position_name=subject_as_of.position_name,
+                job_category=subject_as_of.job_category,
+                teacher_type=subject_as_of.teacher_type,
+                employment_relationship_id=agreement.employment_relationship_id,
+                reviewer_line_json={
+                    "asOf": subject_as_of.as_of_date,
+                    "source": "HR14_TERM_HR03_PRIMARY_ASSIGNMENT_HR02_AS_OF",
+                    "directManagerId": (
+                        str(subject_as_of.direct_manager_id)
+                        if subject_as_of.direct_manager_id
+                        else None
+                    ),
+                },
+                snapshot_at=timezone.now(),
+            )
+            HrAssessmentPopulationSnapshot.objects.create(
+                tenant_id=tenant,
+                cycle=cycle,
+                staff_id=staff.id,
+                employment_relationship_id=agreement.employment_relationship_id,
+                primary_assignment_id=subject_as_of.primary_assignment_id,
+                org_id=subject_as_of.org_id,
+                position_id=subject_as_of.position_id,
+                worker_category=staff.staff_category_code,
+                classification_profile_json={
+                    "source": "HR14_TERM_HR03_PRIMARY_ASSIGNMENT_HR02_AS_OF",
+                    "asOf": subject_as_of.as_of_date,
+                    "appointmentTermId": str(term.id),
+                },
+                included=True,
+                excluded=False,
+                snapshot_at=timezone.now(),
+                policy_version_id=cycle.policy_version_id,
+                eligibility_reason_codes=["FORMAL_APPOINTMENT_TERM_SELECTED_BY_HR"],
+            )
+            if subject_as_of.direct_manager_id:
+                HrReviewerAssignment.objects.create(
+                    tenant_id=tenant,
+                    case_id=case.id,
+                    reviewer_role="DIRECT_MANAGER",
+                    reviewer_staff_id=subject_as_of.direct_manager_id,
+                    scope="ASSIGNED_CASES",
+                    status="PENDING",
+                )
+            case.subject_snapshot = subject
+            case.status = "PROPOSED"
+            case.save(update_fields=["subject_snapshot", "status"])
+            if cycle.lifecycle_status == "PUBLISHED":
+                CycleLifecycleService().transition(cycle, "ACTIVE")
+    except (IntegrityError, ValidationError, ValueError) as exc:
+        return JsonResponse(api_error("ASSESSMENT_TERM_CASE_CONFLICT", str(exc), http_status=409), status=409)
+    return JsonResponse(api_success(data={
+        "id": str(case.id),
+        "status": case.status,
+        "termId": str(term.id),
+        "agreementId": str(agreement.id),
+    }), status=201)
 
 
 def _display_date(value) -> str:
@@ -623,7 +864,16 @@ def _acknowledgement_payload(acknowledgement) -> dict:
 
 
 def _archive_payload(archive) -> dict:
+    from hr_assessment.services.archive_evidence import verified_archive, ArchiveEvidenceError
+    try:
+        manifest = verified_archive(archive)
+        integrity = "VERIFIED"
+        identity_frozen = manifest.get("schemaVersion") == "hr12-archive-v2"
+    except ArchiveEvidenceError:
+        integrity, identity_frozen = "INVALID", False
     return {
+        "integrityStatus": integrity,
+        "identityFrozen": identity_frozen,
         "id": str(archive.id),
         "resultId": str(archive.result_id),
         "archivePackageId": archive.archive_package_id,
@@ -728,7 +978,7 @@ def _staff_option_rows(tenant_id: int) -> list[dict]:
     ]
 
 
-def _annual_decision_map(cases: list[HrAnnualAssessmentCase], tenant_id: int) -> dict[str, str]:
+def _decision_map(cases: list[HrAssessmentCase], tenant_id: int) -> dict[str, str]:
     case_ids = {str(item.id) for item in cases}
     cycle_ids = {item.cycle_id for item in cases if item.cycle_id}
     if not case_ids or not cycle_ids:
@@ -766,7 +1016,7 @@ def annual_case_list(request: HttpRequest) -> JsonResponse:
         str(item.id): item
         for item in HrProviderSnapshotSet.objects.filter(tenant_id=tenant, id__in=snapshot_ids)
     }
-    decision_map = _annual_decision_map(cases, tenant)
+    decision_map = _decision_map(cases, tenant)
     rows = []
     for case in cases:
         snapshot = snapshot_map.get(str(case.provider_snapshot_set_id))
@@ -780,6 +1030,49 @@ def annual_case_list(request: HttpRequest) -> JsonResponse:
             "cycleName": case.cycle.name if case.cycle else "",
             "businessYear": case.business_year,
             "academicYear": case.academic_year or "",
+            "status": case.status,
+            "providerSnapshotId": str(case.provider_snapshot_set_id) if case.provider_snapshot_set_id else None,
+            "providerSnapshotStatus": snapshot.status if snapshot else None,
+            "providerSnapshotReady": bool(snapshot and snapshot.status == "READY"),
+            "decisionSessionId": decision_map.get(str(case.id)),
+            "formalResult": _result_payload(result) if result else None,
+        })
+    return JsonResponse(api_success(data=rows))
+
+
+@require_assessment_permission("hr.assessment.hr_reviewer")
+@require_http_methods(["GET"])
+def term_case_list(request: HttpRequest) -> JsonResponse:
+    tenant = request.tenant_id
+    cases = list(
+        HrTermAssessmentCase.objects.filter(tenant_id=tenant, assessment_type="TERM")
+        .select_related("cycle", "subject_snapshot")
+        .order_by("-term_end", "-created_at")[:200]
+    )
+    case_ids = [item.id for item in cases]
+    result_map = {
+        str(item.case_id): item
+        for item in HrFinalAssessmentResult.objects.filter(tenant_id=tenant, case_id__in=case_ids)
+    }
+    snapshot_ids = [item.provider_snapshot_set_id for item in cases if item.provider_snapshot_set_id]
+    snapshot_map = {
+        str(item.id): item
+        for item in HrProviderSnapshotSet.objects.filter(tenant_id=tenant, id__in=snapshot_ids)
+    }
+    decision_map = _decision_map(cases, tenant)
+    rows = []
+    for case in cases:
+        snapshot = snapshot_map.get(str(case.provider_snapshot_set_id))
+        result = result_map.get(str(case.id))
+        subject = case.subject_snapshot
+        rows.append({
+            "id": str(case.id),
+            "staffId": str(case.staff_id),
+            "staffName": subject.display_name if subject else "",
+            "cycleId": str(case.cycle_id) if case.cycle_id else None,
+            "cycleName": case.cycle.name if case.cycle else "",
+            "termStart": _display_date(case.term_start),
+            "termEnd": _display_date(case.term_end),
             "status": case.status,
             "providerSnapshotId": str(case.provider_snapshot_set_id) if case.provider_snapshot_set_id else None,
             "providerSnapshotStatus": snapshot.status if snapshot else None,
@@ -1114,10 +1407,21 @@ def result_lifecycle_list(request: HttpRequest) -> JsonResponse:
             and getattr(request, "staff_id", None)
             and str(case.staff_id) == str(request.staff_id)
         )
+        historical_subject = None
+        historical_cycle = None
+        if archive is not None:
+            from hr_assessment.services.archive_evidence import verified_archive, ArchiveEvidenceError
+            try:
+                frozen = verified_archive(archive).get("evidence", {})
+                historical_subject = frozen.get("subject", {}).get("display_name", "旧归档未冻结姓名")
+                historical_cycle = frozen.get("cycle", {}).get("nameAtFinalization", "旧归档未冻结周期名称")
+            except ArchiveEvidenceError:
+                historical_subject, historical_cycle = "归档证据校验失败", "请由授权人员核查"
         rows.append({
             "result": result_payload,
-            "staffName": _subject_label(case.subject_snapshot if case else None),
-            "cycleName": case.cycle.name if case and case.cycle else "",
+            "assessmentType": case.assessment_type if case else result.assessment_type,
+            "staffName": historical_subject if archive else _subject_label(case.subject_snapshot if case else None),
+            "cycleName": historical_cycle if archive else (case.cycle.name if case and case.cycle else ""),
             "notice": _notice_payload(notice) if notice else None,
             "acknowledgement": (
                 _acknowledgement_payload(acknowledgement)
@@ -1128,6 +1432,7 @@ def result_lifecycle_list(request: HttpRequest) -> JsonResponse:
                 if objection else None
             ),
             "archive": _archive_payload(archive) if archive else None,
+            "archiveVersions": [{"version": v, "packageId": a.archive_package_id} for (rid, v), a in archives.items() if rid == key],
             "actions": {
                 "canIssueNotice": can_issue and notice is None,
                 "canConfirmDelivery": can_issue and bool(
@@ -1147,6 +1452,8 @@ def result_lifecycle_list(request: HttpRequest) -> JsonResponse:
                     )
                 ),
                 "canArchive": can_archive and archive is None,
+                "canReadArchive": any(rid == key for rid, _v in archives) and (can_archive or request.user.is_superuser or request.user.has_perm("hr.assessment.auditor")),
+                "canExportArchive": any(rid == key for rid, _v in archives) and (request.user.is_superuser or request.user.has_perm("hr.assessment.archive.export")),
             },
         })
     return JsonResponse(api_success(data=rows))
@@ -1359,13 +1666,13 @@ def _review_error_response(exc, request_id: str) -> JsonResponse:
 @require_http_methods(["GET"])
 def review_administration_options(request: HttpRequest) -> JsonResponse:
     cases = (
-        HrAnnualAssessmentCase.objects.filter(
+        HrAssessmentCase.objects.filter(
             tenant_id=request.tenant_id,
-            assessment_type="ANNUAL",
+            assessment_type__in=["ANNUAL", "TERM"],
             status__in=AssessmentReviewService.CASE_STATES,
         )
         .select_related("cycle", "subject_snapshot")
-        .order_by("-business_year", "subject_snapshot__display_name")[:1000]
+        .order_by("-created_at", "subject_snapshot__display_name")[:1000]
     )
     return JsonResponse(api_success(data={
         "cases": [
@@ -1373,6 +1680,7 @@ def review_administration_options(request: HttpRequest) -> JsonResponse:
                 "value": str(item.id),
                 "label": (
                     f"{_subject_label(item.subject_snapshot)} · "
+                    f"{ASSESSMENT_TYPE_LABELS.get(item.assessment_type, item.assessment_type)} · "
                     f"{item.cycle.name if item.cycle else '未命名周期'}"
                 ),
             }
@@ -1432,13 +1740,13 @@ def decision_options(request: HttpRequest) -> JsonResponse:
         tenant_id=request.tenant_id
     ).values_list("case_id", flat=True)
     cases = list(
-        HrAnnualAssessmentCase.objects.filter(
+        HrAssessmentCase.objects.filter(
             tenant_id=request.tenant_id,
-            assessment_type="ANNUAL",
+            assessment_type__in=["ANNUAL", "TERM"],
             status__in={"PROPOSED", "PUBLICITY"},
         ).exclude(id__in=finalized_case_ids)
         .select_related("cycle", "subject_snapshot")
-        .order_by("-business_year", "subject_snapshot__display_name")[:1000]
+        .order_by("-created_at", "subject_snapshot__display_name")[:1000]
     )
     cycles = {}
     for case in cases:
@@ -1453,7 +1761,12 @@ def decision_options(request: HttpRequest) -> JsonResponse:
             {
                 "value": str(item.id),
                 "cycleId": str(item.cycle_id),
-                "label": f"{_subject_label(item.subject_snapshot)} · {item.business_year or ''}",
+                "assessmentType": item.assessment_type,
+                "label": (
+                    f"{_subject_label(item.subject_snapshot)} · "
+                    f"{ASSESSMENT_TYPE_LABELS.get(item.assessment_type, item.assessment_type)} · "
+                    f"{item.cycle.name if item.cycle else '未命名周期'}"
+                ),
             }
             for item in cases
         ],
@@ -1642,7 +1955,8 @@ def download_decision_minutes(request: HttpRequest, session_id, document_id):
         )
         from django.core.files.storage import default_storage
 
-        stream = default_storage.open(document.storage_key, "rb")
+        from hr_assessment.services.document_service import open_verified_document
+        stream = open_verified_document(document)
         try:
             HrAssessmentDocumentAccessAudit.objects.create(
                 tenant_id=request.tenant_id,

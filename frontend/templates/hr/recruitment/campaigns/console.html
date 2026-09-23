@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block styles %}
@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr04-page" data-module="HR04" data-section="campaigns" data-hr-page="recruitment-console">
+<div class="hr-v2-page hr04-page" data-module="HR04" data-hr-workspace="v6" data-section="campaigns" data-hr-page="recruitment-console">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>招聘项目与岗位</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr04-campaign-title">
@@ -46,7 +46,7 @@
       <div><h2>{% trans "招聘项目" %}</h2><p>查看服务端返回的项目状态、岗位数量和报名截止日。</p></div>
       <button class="hr04-action" type="button" data-hr-new-campaign>{% trans "新建招聘项目" %}</button>
     </div>
-    <form id="hr04-campaign-create" class="hr04-create-form" hidden>
+    <form id="hr04-campaign-create" class="hr04-create-form" hidden data-v6-surface="form">
       <div class="hr04-form-grid">
         <label><span>项目编号</span><input name="code" required maxlength="64" placeholder="例如：UAT-2026-001"></label>
         <label><span>项目名称</span><input name="title" required maxlength="200" placeholder="例如：人工智能专任教师招聘"></label>

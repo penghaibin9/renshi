@@ -79,3 +79,4 @@ XlsxWriter
 gunicorn
 whitenoise
 django-storages
+ldap3

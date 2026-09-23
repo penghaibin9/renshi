@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block content %}
@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-home.css' %}">
 
-<div class="hr-v2-page hr-home" data-hr-page="overview" data-module="HR01">
+<div class="hr-v2-page hr-home" data-hr-page="overview" data-module="HR01" data-hr-workspace="v6">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR01 人事工作台</span>
     <strong>人事总览</strong>
@@ -41,6 +41,24 @@
     </article>
   </section>
 
+  <section class="hr-v2-section hr-home__core-flow" aria-labelledby="hr-core-flow-title">
+    <div class="hr-v2-section__head">
+      <div>
+        <span class="hr-home__section-kicker">高频主业务</span>
+        <h2 id="hr-core-flow-title">第一次来，按这条主线办理</h2>
+        <p>学校管理员和人事老师优先完成组织、人员与任职事实；其他模块仍完整保留在下方“全部业务模块”中。</p>
+      </div>
+    </div>
+    <div class="hr-home__flow-grid">
+      <a class="hr-home__flow-card" href="/hr/structure/organizations"><span class="hr-home__flow-no">1</span><span><strong>组织机构</strong><small>先确认学院、部门和机构层级</small></span><b>去办理 →</b></a>
+      <a class="hr-home__flow-card" href="/hr/staff/"><span class="hr-home__flow-no">2</span><span><strong>教职工主档</strong><small>查询、核对并进入个人主档</small></span><b>打开名册 →</b></a>
+      <a class="hr-home__flow-card" href="/hr/staff/" data-hr-open-import="1"><span class="hr-home__flow-no">3</span><span><strong>Excel 批量导入</strong><small>下载模板，先校验，再确认提交</small></span><b>开始导入 →</b></a>
+      <a class="hr-home__flow-card" href="/hr/staff/"><span class="hr-home__flow-no">4</span><span><strong>人员详情与任职</strong><small>从姓名进入主档，再查看任职履历</small></span><b>进入名册 →</b></a>
+    </div>
+  </section>
+
+  <details class="hr-home__all-modules">
+    <summary><span><strong>全部业务模块</strong><small>HR01–HR18 功能完整保留，按需要展开</small></span><b>展开</b></summary>
   <section class="hr-v2-section" aria-labelledby="hr-business-nav-title">
     <div class="hr-v2-section__head">
       <div>
@@ -123,6 +141,7 @@
       </section>
     </div>
   </section>
+  </details>
 
   <section class="hr-v2-section" aria-labelledby="hr-metrics-title">
     <div class="hr-v2-section__head">

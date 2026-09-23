@@ -1,0 +1,14 @@
+HR_ACCEPTANCE_GATE_PLAN
+- isolated compose project: yueke_hr_acceptance_4616
+- generate temporary acceptance-only secrets/env (never use .env)
+- validate Docker Compose >= 2.24.4 and merged config
+- start isolated MySQL 8.4 + Redis + ClamAV
+- run production release entrypoint (migrate + collectstatic)
+- run check --deploy + makemigrations --check + migrate --check
+- run HR01-HR18 Django/MySQL test suite
+- bootstrap an acceptance-only first school/admin
+- create + cryptographically verify an encrypted MySQL/media backup
+- restore backup into a separate renshi_restore_test database
+- run migrate --check against restored database and compare schema table counts
+- start web and verify /ready/ returns HTTP 200 inside the container
+- destroy only this acceptance project and its volumes

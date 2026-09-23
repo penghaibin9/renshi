@@ -24,6 +24,8 @@ class SalaryRuleVersion(HrTenantScopedModel):
         DEDUCTION = "DEDUCTION", "Deduction"
         EMPLOYER = "EMPLOYER", "Employer contribution"
 
+    pay_group_code = models.CharField(max_length=64, blank=True, default="")
+    allocation_mode = models.CharField(max_length=24, default="FULL_PERIOD")
     rule_code = models.CharField(max_length=64)
     version_no = models.PositiveIntegerField(default=1)
     item_code = models.CharField(max_length=64)
@@ -44,6 +46,8 @@ class SalaryRuleVersion(HrTenantScopedModel):
 
     _RULE_FIELDS = (
         "tenant_id",
+        "pay_group_code",
+        "allocation_mode",
         "rule_code",
         "version_no",
         "item_code",
@@ -63,11 +67,11 @@ class SalaryRuleVersion(HrTenantScopedModel):
         db_table = "hr15_salary_rule_version"
         constraints = [
             models.UniqueConstraint(
-                fields=("tenant_id", "rule_code", "version_no"),
+                fields=("tenant_id", "pay_group_code", "rule_code", "version_no"),
                 name="uq_hr15_salary_rule_ver",
             ),
             models.UniqueConstraint(
-                fields=("tenant_id", "item_code", "version_no"),
+                fields=("tenant_id", "pay_group_code", "item_code", "version_no"),
                 name="uq_hr15_salary_item_ver",
             ),
             models.CheckConstraint(
@@ -127,6 +131,7 @@ class PayrollInputSnapshotManager(models.Manager.from_queryset(PayrollInputSnaps
 
 
 class PayrollInputSnapshot(HrTenantScopedModel):
+    revision_no = models.PositiveIntegerField(default=1)
     payroll_period_id = models.UUIDField()
     staff_id = models.UUIDField()
     currency_code = models.CharField(max_length=3, default="CNY")
@@ -142,7 +147,7 @@ class PayrollInputSnapshot(HrTenantScopedModel):
         db_table = "hr15_payroll_input_snapshot"
         constraints = [
             models.UniqueConstraint(
-                fields=("tenant_id", "payroll_period_id", "staff_id"),
+                fields=("tenant_id", "payroll_period_id", "staff_id", "revision_no"),
                 name="uq_hr15_input_period_staff",
             )
         ]
@@ -255,7 +260,7 @@ class PayrollCalculationLine(HrTenantScopedModel):
     sequence_no = models.PositiveIntegerField()
     amount = models.DecimalField(max_digits=18, decimal_places=2)
     currency_code = models.CharField(max_length=3, default="CNY")
-    rule_version_id = models.UUIDField()
+    rule_version_id = models.UUIDField(null=True, blank=True)
     explanation_json = models.JSONField(default=dict)
 
     class Meta:

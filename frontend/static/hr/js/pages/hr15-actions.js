@@ -54,7 +54,7 @@
     });
     let data = {};
     try { data = await response.json(); } catch (_error) { /* HTTP status remains authoritative. */ }
-    if (!response.ok) throw new Error(data?.error?.message || '差额调整提交失败，请稍后重试。');
+    if (!response.ok) { const error=new Error(data?.error?.message || '差额调整提交失败，请稍后重试。'); error.status=response.status; throw error; }
     return data.data || data;
   }
 
@@ -79,7 +79,10 @@
     const sync = () => { net.value = (amount(gross.value) - amount(deduction.value)).toFixed(2); };
     gross.addEventListener('input', sync);
     deduction.addEventListener('input', sync);
-    targetForm.querySelector('[data-cancel]').addEventListener('click', () => targetForm.classList.remove('open'));
+    targetForm.querySelector('[data-cancel]').addEventListener('click', async (event) => {
+      if(targetForm.dataset.uxDirty==='true') {const choice=await window.HrDetailUX.confirm({title:'暂时收起调整表单？',message:'已填写内容仍保留在此页面，再次展开可继续。离开页面或刷新会丢失未提交内容。',opener:event.currentTarget,confirmText:'收起表单'});if(!choice.confirmed)return;}
+      targetForm.classList.remove('open'); host.querySelector('[data-open]')?.focus();
+    });
     targetForm.addEventListener('submit', async (event) => {
       event.preventDefault();
       const button = targetForm.querySelector('[type="submit"]');
@@ -88,23 +91,21 @@
         show('error', '差额不能全部为 0。');
         return;
       }
-      busy(button, true);
-      try {
-        const saved = await postAdjustment(row.id, {
+      await window.HrDetailUX.run({scope:targetForm,button,lockSuccess:true,
+        confirmation:{title:'确认追加工资差额',message:'只追加差额，不覆盖原正式结果。请核对调整编号、币种和正负金额。',facts:[['原结果',row.result_no],...window.HrDetailUX.formFacts(targetForm)],danger:true},
+        task:()=>postAdjustment(row.id, {
           adjustmentNo: data.get('adjustmentNo'), grossDelta: data.get('grossDelta'),
           deductionDelta: data.get('deductionDelta'), netDelta: data.get('netDelta'), currencyCode: data.get('currencyCode')
-        });
-        show('ok', `${saved.resultNo} 已追加，实发差额 ${saved.currencyCode} ${saved.netDelta}；原结果保持不变。`);
-        targetForm.classList.remove('open');
-        button.textContent = '已追加';
-      } catch (error) {
-        show('error', error.message);
-        busy(button, false);
-      }
+        }),
+        onSuccess:saved=>{show('ok', `${saved.resultNo} 已追加，实发差额 ${saved.currencyCode} ${saved.netDelta}；原结果保持不变。`);targetForm.classList.remove('open');host.querySelector('[data-open]').textContent='本次已追加';},
+        onError:error=>window.HrDetailUX.note(targetForm,window.HrDetailUX.errorText(error,true))
+      });
     });
   }
 
-  fetch('/api/v1/hr/payroll/dashboard/', {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
+  function loadAdjustableResults() {
+  window.HrDetailUX.clearNote(card);
+  return fetch('/api/v1/hr/payroll/dashboard/', {credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'}})
     .then((response) => {
       if (!response.ok) throw new Error('正式结果读取失败，请稍后重试。');
       return response.json();
@@ -138,6 +139,7 @@
         open.addEventListener('click', () => {
           card.querySelectorAll('.hr15-adjust-form').forEach((item) => { if (item !== targetForm) item.classList.remove('open'); });
           targetForm.classList.toggle('open');
+          if(targetForm.classList.contains('open')) targetForm.elements.adjustmentNo.focus();
           result.classList.remove('show');
         });
         bindForm(wrap, row);
@@ -146,5 +148,8 @@
     })
     .catch((error) => {
       card.querySelector('#hr15-adjust-list').innerHTML = `<div class="hr15-adjust-empty">${esc(error.message)}</div>`;
+      window.HrDetailUX.note(card,'正式工资结果读取失败，暂不能选择差额调整对象。','error',loadAdjustableResults);
     });
+  }
+  loadAdjustableResults();
 })();

@@ -1,0 +1,63 @@
+{% extends "hr/base.html" %}
+{% load static i18n %}
+{% block title %}校本入职方案{% endblock %}
+{% block styles %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-school-templates-v10.css' %}?v=10">
+{% endblock %}
+{% block content %}
+<main class="hr05-page hr-school-plan" data-module="HR05" data-manage="{{ can_manage_templates|yesno:'1,0' }}" data-publish="{{ can_publish_templates|yesno:'1,0' }}">
+  <header class="plan-header"><div><p class="plan-eyebrow">入职管理 / 学校配置</p><h1>校本入职方案</h1><p>一次配置材料与责任事项，经另一人复核发布后，用于新的入职单。已办理记录继续原版本。</p></div><a href="{% url 'hr05-prehires' %}">返回待报到人员</a></header>
+  {% include "hr/onboarding/components/v2_nav.html" with active="configuration" %}
+  <div class="plan-workspace">
+    <aside class="plan-library" aria-label="方案版本">
+      <div class="plan-library-head"><h2>方案与版本</h2>{% if can_manage_templates %}<button type="button" id="plan-new">新建方案</button>{% endif %}</div>
+      <p>草稿可修改；已发布版本只能复制为新草稿或停止用于新单。</p>
+      <div id="plan-list" aria-live="polite">正在读取…</div>
+      <div class="plan-pager"><button type="button" id="plan-prev">上一页</button><span id="plan-page"></span><button type="button" id="plan-next">下一页</button></div>
+      <button type="button" id="plan-reload">重新读取版本列表</button>
+    </aside>
+    <section class="plan-editor" aria-label="方案编辑与核对">
+      <div id="plan-feedback" class="plan-feedback" role="status" aria-live="polite">请选择版本，或新建校本方案。</div>
+      <button id="plan-retry" type="button" hidden>核对并重试原请求</button>
+      <div class="plan-version-line"><h2 id="plan-heading">新的校本方案</h2><span id="plan-state">尚未保存</span>{% if can_manage_templates %}<button type="button" id="plan-copy" hidden>复制为新草稿</button>{% endif %}</div>
+      <form id="plan-form">
+        <fieldset id="plan-fields"><legend class="plan-sr-only">方案内容</legend>
+          <section class="plan-section"><h3>1　适用对象与制度依据</h3>
+            <div class="plan-fields-grid">
+              <label>方案编号<input name="code" required maxlength="64" pattern="[A-Z][A-Z0-9_]{0,63}" placeholder="例如 TEACHER_JOIN"></label>
+              <label>方案名称<input name="name" required maxlength="200" placeholder="填写学校实际办理方案名称"></label>
+              <label>开始日期（含当天）<input name="effective_from" type="date" required></label>
+              <label>截止日期（不含当天，可留空）<input name="effective_to" type="date"></label>
+              <label>人员类别（多选，不选表示全部）<select name="staff_category" id="plan-staff" multiple size="3"></select></label>
+              <label>用工性质（多选，不选表示全部）<select name="employment_type" id="plan-employment" multiple size="3"></select></label>
+            </div>
+            <label class="plan-wide-label">制度依据与配置说明<textarea name="note" rows="2" maxlength="2000" required placeholder="写明校内制度、适用对象及办理要求，不填写个人身份证或银行卡"></textarea></label>
+          </section>
+          <section class="plan-section"><div class="plan-section-heading"><h3>2　责任任务与先后顺序</h3><button type="button" id="task-add">添加任务</button></div>
+            <p>实际完成仍由已有权限的责任账号办理。时间偏移以原系统“任务生成时间”为基准；这里不替代外部系统自动开通。</p>
+            <div class="plan-table-scroll" tabindex="0" aria-label="任务配置表，可横向滚动"><table><thead><tr><th>编号 / 任务名称</th><th>责任角色 / 阻塞条件</th><th>时间偏移（天）</th><th>前置任务 / 本人可见</th><th>操作</th></tr></thead><tbody id="plan-tasks"></tbody></table></div>
+          </section>
+          <section class="plan-section"><div class="plan-section-heading"><h3>3　材料清单与核验要求</h3><button type="button" id="material-add">添加材料</button></div>
+            <p>上传不等于通过。所有材料沿用原核验流程；本编辑器不提供“跳过核验”或自定义执行脚本。</p>
+            <div class="plan-table-scroll" tabindex="0" aria-label="材料配置表，可横向滚动"><table><thead><tr><th>编号 / 材料名称</th><th>核验阶段 / 必交</th><th>格式 / 单文件上限</th><th>操作</th></tr></thead><tbody id="plan-materials"></tbody></table></div>
+          </section>
+        </fieldset>
+        <div class="plan-actions">{% if can_manage_templates %}<button type="submit" class="plan-primary" id="plan-save">保存并校验草稿</button>{% endif %}<span id="plan-dirty">未保存的新方案</span></div>
+      </form>
+      <section class="plan-checks" aria-label="发布校验"><h3>4　校验、复核与发布</h3><div id="plan-checks">保存草稿后查看校验结果。</div><div class="plan-actions">{% if can_publish_templates %}<button type="button" id="plan-publish" class="plan-primary" hidden>核对内容并发布</button><button type="button" id="plan-retire" hidden>停止用于新入职单</button>{% endif %}</div></section>
+      <section class="plan-section" id="plan-bind-area"><h3>5　选择入职单，先预览再绑定</h3><p>仅允许报到前、尚未绑定方案且没有任务材料的入职单。不会重绑老单，也不会自动生成正式人员。</p>
+        <div class="plan-case-search"><label>查找办理对象<input type="search" id="plan-case-keyword" placeholder="姓名、工号或入职单号"></label><button type="button" id="plan-case-search">查找</button></div>
+        <label class="plan-wide-label">选择当前学校可见的入职单<select id="plan-case"><option value="">先查找并选择入职单</option></select></label>
+        <button type="button" id="plan-preview">只读预览匹配结果</button><div id="plan-preview-result" aria-live="polite"></div>
+        {% if can_manage_templates %}<button type="button" id="plan-bind" class="plan-primary" hidden>确认绑定并生成材料与任务</button>{% endif %}
+      </section>
+    </section>
+  </div>
+  <dialog id="plan-confirm" aria-labelledby="plan-confirm-title"><form method="dialog"><h2 id="plan-confirm-title">核对办理</h2><p id="plan-confirm-copy"></p><label id="plan-confirm-label">实际办理依据<textarea id="plan-confirm-reason" rows="3" maxlength="2000"></textarea></label><div class="plan-actions"><button value="cancel" autofocus>返回检查</button><button value="confirm" class="plan-primary" id="plan-confirm-ok">确认</button></div></form></dialog>
+  {{ template_options|json_script:"plan-options" }}
+</main>
+{% endblock %}
+{% block scripts %}{{ block.super }}<script src="{% static 'hr/js/core/api-client.js' %}"></script><script src="{% static 'hr/js/pages/hr05-school-templates.js' %}?v=10"></script>{% endblock %}

@@ -119,3 +119,9 @@ body.dark.hr-shell-v3 .hr-module-nav__subnav a[aria-current="page"] { background
 @media (max-width: 767.98px) {
   .hr-shell-v3 #sidebar>div { padding: 12px 8px !important; }
 }
+
+/* R2 UI polish: HR01-HR03 remain visually prominent; low-frequency modules stay available without competing for attention. */
+.hr-module-nav__home[data-priority="core"],.hr-module-nav__item[data-priority="core"]{font-weight:780;color:#334155}
+.hr-module-nav__home[data-priority="core"] i,.hr-module-nav__item[data-priority="core"] i{color:#3b82f6}
+.hr-module-nav__group--core{margin-top:8px;color:#64748b}
+.hr-module-nav__group--core::after{content:" · 常用";color:#2563eb;letter-spacing:0}

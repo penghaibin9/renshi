@@ -719,6 +719,18 @@ class AssessmentFinalizationService:
                 blockers=quota_blockers,
             )
 
+        # R11-derived archive evidence binding: preserve the exact HR context at
+        # finalization, never rebuild it from current records when archiving later.
+        from hr_assessment.services.archive_evidence import freeze_result_context, ArchiveEvidenceError
+        try:
+            evidence_binding = freeze_result_context(case)
+        except ArchiveEvidenceError as exc:
+            raise AssessmentFinalizationError(exc.code, str(exc)) from exc
+        calculation_snapshot = {
+            **calculated.calculation_snapshot,
+            "providerSnapshotSetId": str(case.provider_snapshot_set_id) if case.provider_snapshot_set_id else None,
+            "evidenceBinding": evidence_binding,
+        }
         finalized_at = timezone.now()
         content = {
             "tenantId": int(self.tenant_id),
@@ -747,7 +759,7 @@ class AssessmentFinalizationService:
             grade_code=calculated.grade_code,
             display_grade_snapshot_json=calculated.display_grade_snapshot,
             calculated_score=calculated.calculated_score,
-            calculation_snapshot_json=calculated.calculation_snapshot,
+            calculation_snapshot_json=calculation_snapshot,
             decision_reason=payload.decision_reason,
             policy_version_id=case.policy_version_id,
             decision_session_id=payload.decision_session_id,

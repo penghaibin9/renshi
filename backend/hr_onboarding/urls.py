@@ -21,6 +21,7 @@ from django.views.generic import RedirectView
 from hr_onboarding import views
 
 urlpatterns = [
+    path("school-templates", views.hr05_school_templates, name="hr05-school-templates"),
     path(
         "",
         RedirectView.as_view(pattern_name="hr05-prehires", permanent=False),

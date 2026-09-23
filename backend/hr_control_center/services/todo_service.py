@@ -43,6 +43,9 @@ class TodoService:
     @staticmethod
     def _allowed(provider, user) -> bool:
         permission = getattr(provider, "required_permission", "")
+        alternatives = getattr(provider, "required_any_permissions", ())
+        if alternatives and user is not None:
+            return bool(getattr(user, "is_superuser", False) or any(user.has_perm(p) for p in alternatives))
         if not permission or user is None:
             return True
         return bool(getattr(user, "is_superuser", False) or user.has_perm(permission))

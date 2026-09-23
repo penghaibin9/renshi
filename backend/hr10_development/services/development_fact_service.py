@@ -13,6 +13,7 @@ from typing import Optional
 from django.db import transaction
 
 from hr10_development.constants import FactType, VerificationStatus
+from hr10_development.identity import resolve_staff_identity, staff_identity_q
 
 
 class DevelopmentFactService:
@@ -43,9 +44,15 @@ class DevelopmentFactService:
         if existing:
             return existing
 
+        enrollment = completion.enrollment
+        identity = resolve_staff_identity(
+            tenant_id=tenant_id,
+            raw_staff_id=enrollment.staff_master_uuid or enrollment.staff_master_id,
+        )
         fact = HrDevelopmentFact.objects.create(
             tenant_id=tenant_id,
-            staff_master_id=completion.enrollment.staff_master_id,
+            staff_master_uuid=identity.staff_uuid,
+            staff_master_id=identity.legacy_employee_id,
             fact_type=FactType.TRAINING_COMPLETION,
             source_case_type="HrLearningCompletion",
             source_case_id=completion.id,
@@ -60,7 +67,7 @@ class DevelopmentFactService:
         return fact
 
     @staticmethod
-    def rebuild_hr09_index(tenant_id: int, staff_master_id: Optional[int] = None):
+    def rebuild_hr09_index(tenant_id: int, staff_master_id=None):
         """重建 HR09 证据索引。生产阶段通过异步 job 执行。"""
         from hr10_development.models.development_fact import HrDevelopmentFact
 
@@ -76,7 +83,8 @@ class DevelopmentFactService:
             ],
         )
         if staff_master_id:
-            qs = qs.filter(staff_master_id=staff_master_id)
+            identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
+            qs = qs.filter(staff_identity_q(identity))
 
         counts = {"TRAINING_COMPLETION": 0, "FURTHER_STUDY": 0,
                    "ENTERPRISE_PRACTICE": 0, "DEVELOPMENT_OUTPUT": 0}

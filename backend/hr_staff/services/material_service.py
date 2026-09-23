@@ -104,7 +104,7 @@ class MaterialService:
             tenant_id=self.tenant_id,
             action="MaterialUploaded",
             actor_user_id=self.actor_user_id,
-            staff_id=staff_id.id,
+            staff_id=staff.id,
             business_type="MATERIAL",
             business_id=str(material.id),
             reason=f"v{version.version_no}",
@@ -218,6 +218,48 @@ class MaterialService:
 
         staff_material_verified(self.tenant_id, material.staff_id_id, material.id)
         return material
+
+    @transaction.atomic
+    def verify_material_version(self, *, material_id, version_id, staff_id=None) -> HrStaffMaterialVersion:
+        """Verify the exact immutable file version used by a business approval.
+
+        A historical/replaced version may still be legitimate sealed evidence, so
+        verification must never silently jump to the material's current version.
+        The material-level VERIFIED projection is advanced only when the selected
+        version is still current.
+        """
+        material = HrStaffMaterial.objects.select_for_update().filter(
+            tenant_id=self.tenant_id, id=material_id
+        ).first()
+        if material is None:
+            raise MaterialAccessDenied("MATERIAL_NOT_FOUND")
+        if staff_id is not None and str(material.staff_id_id) != str(staff_id):
+            raise MaterialAccessDenied("MATERIAL_ACCESS_DENIED")
+        version = HrStaffMaterialVersion.objects.select_for_update().filter(
+            tenant_id=self.tenant_id, id=version_id, material_id=material,
+            status__in=(MaterialVersionStatus.CURRENT, MaterialVersionStatus.REPLACED),
+        ).first()
+        if version is None:
+            raise MaterialAccessDenied("MATERIAL_VERSION_NOT_FOUND")
+        if version.verified_at is None or version.verified_by is None:
+            version.verified_by = self.actor_user_id
+            version.verified_at = timezone.now()
+            version.save(update_fields=["verified_by", "verified_at"])
+            write_audit_event(
+                tenant_id=self.tenant_id,
+                action="StaffMaterialVersionVerified",
+                actor_user_id=self.actor_user_id,
+                staff_id=material.staff_id_id,
+                business_type="MATERIAL_VERSION",
+                business_id=str(version.id),
+                reason=f"material:{material.id}",
+            )
+        if str(material.current_version_id) == str(version.id) and material.verification_status != VerificationStatus.VERIFIED:
+            material.verification_status = VerificationStatus.VERIFIED
+            material.save(update_fields=["verification_status"])
+            from hr_staff.services.outbox_service import staff_material_verified
+            staff_material_verified(self.tenant_id, material.staff_id_id, material.id)
+        return version
 
     # ------------------------------------------------------------------
     # 下载票据（短时效一次性/有限次数；落 DB，跨进程可用）

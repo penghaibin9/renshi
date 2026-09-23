@@ -83,3 +83,5 @@ __all__ = [
     "HrSensitiveAccessLog",
     "HrStaffPermissionMeta",
 ]
+
+from hr_staff.models.self_submission import HrMaterialSubmission

@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block styles %}
@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr04-page" data-module="HR04" data-section="candidates" data-hr-page="recruitment-candidates">
+<div class="hr-v2-page hr04-page" data-module="HR04" data-hr-workspace="v6" data-section="candidates" data-hr-page="recruitment-candidates">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>人才库与应聘者</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr04-candidates-title">
@@ -35,13 +35,14 @@
     <a href="{% url 'hr04-proposed-hires' %}">录用与人才引进</a>
   </nav>
 
-  <section class="hr04-panel">
-    <div class="hr04-toolbar">
-      <div><h2>{% trans "候选人" %}</h2><p>搜索结果来自服务端正式候选人数据，不读取身份证或简历正文。</p></div>
-      <input class="hr04-search" id="hr04-candidate-keyword" placeholder="{% trans '搜索姓名/编号/邮箱' %}" autocomplete="off">
+  <section class="hr04-panel hr04-candidate-workbench">
+    <div class="hr04-toolbar hr04-candidate-toolbar">
+      <div><h2>{% trans "候选人工作台" %}</h2><p>左侧筛选并选择候选人，右侧聚焦当前人员及下一步招聘动作；不读取身份证或简历正文。</p></div>
+      <div class="hr04-candidate-searchbox"><label class="hr-v5-field" for="hr04-candidate-keyword"><span>查找候选人</span><input type="search" class="hr04-search" aria-label="搜索候选人姓名、编号或邮箱" id="hr04-candidate-keyword" placeholder="{% trans '搜索姓名/编号/邮箱' %}" autocomplete="off"></label><button type="button" class="hr-v5-button" id="hr04-candidate-clear">清除</button><span id="hr04-candidate-count" class="hr04-candidate-count">读取中</span></div>
     </div>
-    <div id="hr04-candidate-list" class="hr04-table-wrap">
-      <div class="hr04-state"><strong>正在读取候选人</strong><span>默认读取当前学校可见候选摘要。</span></div>
+    <div class="hr04-candidate-split">
+      <div id="hr04-candidate-list" class="hr04-table-wrap hr04-candidate-master"><div class="hr04-state"><strong>正在读取候选人</strong><span>默认读取当前学校可见候选摘要。</span></div></div>
+      <aside id="hr04-candidate-detail" class="hr04-candidate-detail" aria-live="polite"><div class="hr04-candidate-empty"><strong>选择一名候选人</strong><span>查看联系方式摘要、来源、状态和推荐的下一步工作入口。</span></div></aside>
     </div>
   </section>
 
@@ -52,5 +53,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/recruitment-candidates.js' %}"></script>
+<script src="{% static 'hr/js/pages/recruitment-candidates.js' %}?v=20260918-detail-v5-2"></script>
 {% endblock scripts %}

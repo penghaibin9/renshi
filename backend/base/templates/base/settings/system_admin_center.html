@@ -1,0 +1,213 @@
+{% extends 'hr/base.html' %}
+{% load static i18n %}
+{% block styles %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-admin-center.css' %}">
+{% endblock styles %}
+{% block content %}
+<div class="sysadmin-center" data-system-admin-center data-school-scope="{{ admin_selected_company }}">
+  <section class="sysadmin-hero">
+    <div>
+      <div class="sysadmin-hero-badges">
+        <span class="sysadmin-eyebrow">学校系统管理</span>
+        <span class="sysadmin-mode-badge">{{ admin_health.mode_label }}</span>
+      </div>
+      <h1>一所学校，一套后台：先说要做什么</h1>
+      <p>这是单校独立部署版的系统管理入口。学校管理员只管理本校账号、组织、权限、参数、安全、接口与备份；平台运营、套餐和跨学校能力不进入本版日常界面。</p>
+    </div>
+    <div class="sysadmin-scope">
+      <strong>学校主体</strong>
+      <span>{% if admin_health.school %}{{ admin_health.school.company }}{% else %}尚未完成学校初始化{% endif %}</span>
+      <small>{{ admin_health.environment }} · {{ admin_health.database_vendor|upper }} · {{ admin_health.timezone }}</small>
+    </div>
+  </section>
+
+  {% include "base/settings/first_use_progress.html" %}
+
+  {% if admin_health.blocker_count %}
+  <section class="sysadmin-alert sysadmin-alert-danger" role="alert">
+    <div><strong>有 {{ admin_health.blocker_count }} 项运行阻断需要先处理</strong><span>系统仍可用于配置，但在阻断项解决前不要把它标记为正式上线完成。</span></div>
+    <a href="#sysadmin-health">查看运行检查</a>
+  </section>
+  {% elif admin_health.warning_count %}
+  <section class="sysadmin-alert sysadmin-alert-warn" role="status">
+    <div><strong>基础可用，还有 {{ admin_health.warning_count }} 项建议收口</strong><span>这些项目不一定阻止日常配置，但正式上线前应逐项核对。</span></div>
+    <a href="#sysadmin-health">查看建议</a>
+  </section>
+  {% else %}
+  <section class="sysadmin-alert sysadmin-alert-ok" role="status">
+    <div><strong>系统管理基础检查无阻断</strong><span>可以进入真实账号、权限和备份恢复验收。</span></div>
+  </section>
+  {% endif %}
+
+  <section class="sysadmin-task-first" aria-labelledby="sysadmin-task-title">
+    <div class="sysadmin-section-head">
+      <div><span>日常管理</span><h2 id="sysadmin-task-title">我要设置什么？</h2></div>
+      <small>直接输入：学校信息、开账号、配角色、加学院、岗位、参数、查日志、邮件、接口、备份</small>
+    </div>
+    <div class="sysadmin-search-wrap">
+      <ion-icon name="search-outline"></ion-icon>
+      <input id="sysadmin-task-search" type="search" placeholder="例如：给新管理员分配权限" autocomplete="off" />
+      <kbd>/</kbd>
+    </div>
+    <div id="sysadmin-search-results" class="sysadmin-search-results" hidden></div>
+    <div class="sysadmin-task-grid" id="sysadmin-task-grid">
+      {% if perms.base.view_company or request.user.is_superuser %}
+      <a class="sysadmin-task-card" href="{% url 'company-view' %}" data-title="学校基本信息" data-keywords="学校 单位 校名 地址 图标 logo 基本信息 学校信息 单校 主体">
+        <span class="sysadmin-task-icon"><ion-icon name="school-outline"></ion-icon></span>
+        <strong>学校基本信息</strong><small>维护唯一学校主体、地址、校标和日期时间口径</small>
+      </a>
+      {% endif %}
+      {% if request.user.is_superuser or perms.employee.view_employee %}
+      <a class="sysadmin-task-card" href="/hr/staff/" data-title="账号与人员" data-keywords="账号 用户 员工 教师 开通 停用 启用 解锁 密码 重置 登录 管理员 离职账号">
+        <span class="sysadmin-task-icon"><ion-icon name="people-outline"></ion-icon></span>
+        <strong>账号与人员</strong><small>开通、停用、解锁、重置密码、核对账号状态</small>
+      </a>
+      {% endif %}
+      {% if request.user.is_superuser %}
+      <a class="sysadmin-task-card" href="{% url 'user-group-view' %}" data-title="角色与权限" data-keywords="角色 权限 授权 复制 配角色 分权限 加权限 数据范围 越权 管理员 审计员 最小权限">
+        <span class="sysadmin-task-icon"><ion-icon name="shield-checkmark-outline"></ion-icon></span>
+        <strong>角色与权限</strong><small>复制角色、分配成员、配置权限、核对高风险权限</small>
+      </a>
+      {% endif %}
+      {% if perms.base.view_department or request.user.is_superuser %}
+      <a class="sysadmin-task-card" href="/hr/structure/organizations" data-title="组织与部门" data-keywords="学院 部门 组织 架构 新增 部门负责人 二级学院 处室">
+        <span class="sysadmin-task-icon"><ion-icon name="git-network-outline"></ion-icon></span>
+        <strong>组织与部门</strong><small>维护学校、学院、部门等基础组织</small>
+      </a>
+      {% endif %}
+      {% if perms.base.view_jobposition or request.user.is_superuser %}
+      <a class="sysadmin-task-card" href="/hr/structure/post-catalogs" data-title="岗位与职务" data-keywords="岗位 职务 职级 工作角色 岗位目录 岗位设置">
+        <span class="sysadmin-task-icon"><ion-icon name="briefcase-outline"></ion-icon></span>
+        <strong>岗位与职务</strong><small>维护岗位目录；正式任职事实仍由人事业务流程产生</small>
+      </a>
+      {% endif %}
+      <a class="sysadmin-task-card" href="{% url 'system-preferences-view' %}" data-title="基础参数" data-keywords="参数 字典 日期 时间 语言 工号 前缀 分页 系统偏好 配置">
+        <span class="sysadmin-task-icon"><ion-icon name="options-outline"></ion-icon></span>
+        <strong>基础参数</strong><small>日期、语言、编号、分页等学校级运行参数</small>
+      </a>
+      {% if perms.horilla_audit.view_audittag or perms.horilla_audit.view_auditmodelconfig or request.user.is_superuser %}
+      <a class="sysadmin-task-card" href="{% url 'audit-history-view' %}" data-title="安全审计" data-keywords="审计 日志 登录 越权 导出 敏感 追踪 配置变更 谁改了">
+        <span class="sysadmin-task-icon"><ion-icon name="document-text-outline"></ion-icon></span>
+        <strong>安全审计</strong><small>查谁在什么时间做了什么；审计记录只读留痕</small>
+      </a>
+      {% endif %}
+      {% if perms.base.view_dynamicemailconfiguration or request.user.is_superuser %}
+      <a class="sysadmin-task-card" href="{% url 'mail-server-conf' %}" data-title="邮件与通知" data-keywords="邮件 SMTP 通知 发送 邮箱 模板 自动化 验证码 MFA">
+        <span class="sysadmin-task-icon"><ion-icon name="mail-outline"></ion-icon></span>
+        <strong>邮件与通知</strong><small>配置邮件服务器、模板和管理员 MFA 通知能力</small>
+      </a>
+      {% endif %}
+      {% if admin_can_hr_configuration %}
+      <a class="sysadmin-task-card" href="{% url 'hr-configuration-center' %}" data-title="高校人事配置中心" data-keywords="流程 表单 字段 审批 条件 通知 打印 Excel 学校配置">
+        <span class="sysadmin-task-icon"><ion-icon name="git-branch-outline"></ion-icon></span>
+        <strong>高校人事配置中心</strong><small>配置学校流程、表单、字段、审批、通知、打印和 Excel 模板</small>
+      </a>
+      {% endif %}
+      {% if admin_can_hr_integration %}
+      <a class="sysadmin-task-card" href="{% url 'hr-integration-hub' %}" data-title="统一认证与接口适配中心" data-keywords="统一认证 登录 SSO CAS OAuth OIDC LDAP 主数据 科研 教务 财务 考勤 门禁 一卡通 电子签章 短信 邮件 企业微信 Adapter">
+        <span class="sysadmin-task-icon"><ion-icon name="layers-outline"></ion-icon></span>
+        <strong>统一认证与接口适配</strong><small>接学校登录、主数据、财务等系统；换学校只改 Adapter、连接和字段映射</small>
+      </a>
+      {% endif %}
+      {% if admin_can_hr18_exchange %}
+      <a class="sysadmin-task-card" href="/hr/data/exchange/" data-title="数据上报与交换" data-keywords="上报 交换 数据中台 字段映射 失败 重试 对账 HR18">
+        <span class="sysadmin-task-icon"><ion-icon name="sync-outline"></ion-icon></span>
+        <strong>数据上报与交换</strong><small>HR18 正式上报、交换任务、失败重试与回执对账</small>
+      </a>
+      {% endif %}
+      <a class="sysadmin-task-card" href="#sysadmin-runtime" data-title="运行与备份" data-keywords="备份 恢复 数据库 MySQL 运行状态 健康检查 上线 移交 灾备">
+        <span class="sysadmin-task-icon"><ion-icon name="server-outline"></ion-icon></span>
+        <strong>运行与备份</strong><small>检查数据库、安全基线、最近备份和恢复演练要求</small>
+      </a>
+    </div>
+  </section>
+
+  <section class="sysadmin-metrics" aria-label="账号与权限概况">
+    <article><strong>{{ admin_metrics.employees }}</strong><span>本校人员</span></article>
+    <article><strong>{{ admin_metrics.active_accounts }}</strong><span>启用账号</span></article>
+    <article><strong>{{ admin_metrics.inactive_accounts }}</strong><span>停用账号</span></article>
+    <article class="{% if admin_metrics.accounts_without_role %}is-warn{% endif %}"><strong>{{ admin_metrics.accounts_without_role }}</strong><span>未分角色账号</span></article>
+    <article><strong>{{ admin_metrics.roles }}</strong><span>在用角色</span></article>
+    <article class="{% if admin_metrics.direct_permission_accounts %}is-warn{% endif %}"><strong>{{ admin_metrics.direct_permission_accounts }}</strong><span>个人直接授权</span></article>
+  </section>
+
+  <section class="sysadmin-two-col">
+    <div class="sysadmin-panel">
+      <div class="sysadmin-section-head"><div><span>第一次部署</span><h2>单校版按 6 步完成初始化</h2><small>实施人员备忘，不作为系统启用进度</small></div></div>
+      <ol class="sysadmin-checklist" id="sysadmin-onboarding-checklist">
+        <li data-check="school"><button type="button" aria-label="标记学校主体已核对"></button><div><strong>1. 学校主体</strong><small>只保留本校主体；学院、部门不要建成第二所学校。</small></div></li>
+        <li data-check="org"><button type="button" aria-label="标记组织岗位已核对"></button><div><strong>2. 组织与岗位</strong><small>学院/部门、岗位目录先核对，再导人员。</small></div></li>
+        <li data-check="account"><button type="button" aria-label="标记账号角色已核对"></button><div><strong>3. 管理员与角色</strong><small>优先复制模板再裁剪，避免长期使用超级管理员。</small></div></li>
+        <li data-check="config"><button type="button" aria-label="标记基础参数已核对"></button><div><strong>4. 基础参数与通知</strong><small>日期、编号、关键字典和学校邮件配置。</small></div></li>
+        <li data-check="security"><button type="button" aria-label="标记安全审计已核对"></button><div><strong>5. 安全与审计</strong><small>管理员、业务人员、安全审计员分别验证权限。</small></div></li>
+        <li data-check="backup"><button type="button" aria-label="标记备份恢复已核对"></button><div><strong>6. 备份与恢复演练</strong><small>必须在隔离空环境验证真正能恢复，不以“有备份文件”代替恢复演练。</small></div></li>
+      </ol>
+      <p class="sysadmin-note">勾选只记录当前浏览器的实施进度，不代表正式验收通过。</p>
+    </div>
+
+    <div class="sysadmin-panel" data-admin-assistant>
+      <div class="sysadmin-section-head"><div><span>管理员办理助手</span><h2>不会设置，直接点问题</h2></div></div>
+      <div class="sysadmin-prompts">
+        <button type="button">单校版第一次上线先配置什么？</button>
+        <button type="button">学院和部门应该建在哪里？</button>
+        <button type="button">怎么给新管理员分配最小权限？</button>
+        <button type="button">复制角色后哪些东西不会被复制？</button>
+        <button type="button">为什么不建议给个人直接加权限？</button>
+        <button type="button">怎么判断一个账号是不是权限过大？</button>
+        <button type="button">组织调整后权限范围怎么处理？</button>
+        <button type="button">接口同步失败应该先查什么？</button>
+        <button type="button">什么时候必须做备份恢复演练？</button>
+        <button type="button">安全审计员和系统管理员有什么区别？</button>
+        <button type="button">哪些设置改了会影响历史业务？</button>
+        <button type="button">正式上线前系统管理还要检查什么？</button>
+        <button type="button">我只想改一个设置，最短怎么走？</button>
+      </div>
+      <div class="sysadmin-answer" id="sysadmin-answer" hidden></div>
+    </div>
+  </section>
+
+  <section class="sysadmin-health" id="sysadmin-health">
+    <div class="sysadmin-section-head">
+      <div><span>专业运行检查</span><h2>现在还有什么需要处理？</h2></div>
+      <small>只显示状态和建议，不暴露密码、Token、密钥</small>
+    </div>
+    <div class="sysadmin-health-grid">
+      {% for item in admin_health.checks %}
+      <article class="sysadmin-health-item is-{{ item.state }}" data-health-code="{{ item.code }}">
+        <div class="sysadmin-health-dot"></div>
+        <div><strong>{{ item.title }}</strong><span>{{ item.detail }}</span>{% if item.action %}<em>建议：{{ item.action }}</em>{% endif %}</div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="sysadmin-ops" id="sysadmin-runtime">
+    <div class="sysadmin-section-head"><div><span>运行与灾备</span><h2>单校版运维状态</h2></div><small>浏览器只读展示，恢复数据库必须走服务器端受控命令</small></div>
+    <div class="sysadmin-runtime-summary">
+      <article><span>部署形态</span><strong>{{ admin_health.mode_label }}</strong></article>
+      <article><span>数据库</span><strong>{{ admin_health.database_vendor|upper }}</strong></article>
+      <article><span>MFA</span><strong>{% if admin_health.mfa_enabled %}已启用{% else %}待启用{% endif %}</strong></article>
+      <article><span>最近备份</span><strong>{% if admin_health.backup.latest_valid_manifest %}已发现{% else %}未发现{% endif %}</strong></article>
+    </div>
+    <div class="sysadmin-ops-grid">
+      <article><strong>生产备份</strong><span>加密 MySQL + 媒体文件 → SHA/Manifest 校验 → 保留策略</span><em>服务器执行，不提供网页“一键恢复”</em></article>
+      <article><strong>隔离恢复</strong><span>恢复到空 MySQL 环境 → migration check → 表/行数核验</span><em>上线前和重大升级前必须演练</em></article>
+      <article><strong>学校数据移交</strong><span>标准 MySQL SQL + 附件 + 数据字典 + 接口/部署资料</span><em>学校拥有可迁移的开放格式数据</em></article>
+      <article><strong>最终验收包</strong><span>缺真实运行/并发/培训/试运行/接口证据时只允许 INCOMPLETE</span><em>防止源码通过冒充运行通过</em></article>
+    </div>
+  </section>
+
+  <section class="sysadmin-principles">
+    <div class="sysadmin-section-head"><div><span>权限治理原则</span><h2>单校版也按生产系统管理</h2></div></div>
+    <div class="sysadmin-principle-grid">
+      <article><strong>角色优先</strong><span>日常权限通过角色管理，个人直接授权只作为有原因、有复核日期的例外。</span></article>
+      <article><strong>最小权限</strong><span>能查看就不给修改；能办理就不给删除；系统管理员不替业务人员终审。</span></article>
+      <article><strong>审计不可当普通数据删除</strong><span>权限、敏感查看、导出和关键配置变更都应留下可追溯记录。</span></article>
+      <article><strong>危险操作不做“一键化”</strong><span>删除权限、数据库恢复等高风险操作宁可多一次确认，也不为省一步牺牲安全。</span></article>
+    </div>
+  </section>
+</div>
+{% endblock content %}
+{% block scripts %}{{ block.super }}
+<script src="{% static 'hr/js/core/hr-admin-center.js' %}"></script>
+{% endblock scripts %}

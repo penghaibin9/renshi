@@ -32,6 +32,8 @@ MANAGE_PERMISSION = PERM_RETIREMENT_PENSION_MANAGE
 def _status(code: str) -> int:
     if code in {"EXIT_FACT_NOT_FOUND", "RETIREMENT_FACT_NOT_FOUND"}:
         return 404
+    if code.startswith("FLEX_") or code in {"RETIREMENT_EFFECT_NOT_DUE", "RETIREMENT_DATE_REQUIRED"}:
+        return 409
     if code in {
         "RETIREMENT_EXIT_NOT_EFFECTIVE",
         "RETIREMENT_EXIT_TYPE_REQUIRED",
@@ -41,6 +43,12 @@ def _status(code: str) -> int:
         "RETIREMENT_FACT_ALREADY_SUPERSEDED",
         "RETIREMENT_PENSION_STATUS_REGRESSION",
         "RETIREMENT_PENSION_STATUS_SKIP",
+        "RETIREMENT_PRECHECK_NOT_ELIGIBLE",
+        "RETIREMENT_PRECHECK_SUBJECT_MISMATCH",
+        "RETIREMENT_PRECHECK_AUTHORITY_INCOMPLETE",
+        "RETIREMENT_PRECHECK_AFTER_EFFECTIVE_DATE",
+        "RETIREMENT_EFFECTIVE_DATE_MISMATCH",
+        "RETIREMENT_CLIENT_AUTHORITY_CONFLICT",
     }:
         return 409
     return 400
@@ -80,6 +88,14 @@ def finalize_retirement(request, exit_fact_id):
         payload = _payload(request)
     except ValueError:
         return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
+    try:
+        precheck_id = uuid.UUID(str(payload.get("precheckId", "")))
+    except (TypeError, ValueError):
+        return _error(
+            "RETIREMENT_PRECHECK_REQUIRED",
+            "precheckId 必须引用当前学校的退休预审；弹性退休还须有已批准且关联的申请",
+            status=400,
+        )
     statutory_date = None
     if payload.get("statutoryDate"):
         try:
@@ -99,6 +115,8 @@ def finalize_retirement(request, exit_fact_id):
         ).finalize(
             exit_fact_id=exit_fact_id,
             fact_no=payload.get("factNo", ""),
+            precheck_id=precheck_id,
+            flex_application_id=payload.get("flexApplicationId"),
             retirement_type=payload.get("retirementType", ""),
             statutory_date=statutory_date,
             evidence_ref=payload.get("evidenceRef", ""),

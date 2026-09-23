@@ -28,6 +28,8 @@ from platform_access.services import (
 @override_settings(
     PLATFORM_TENANT_ELEVATION_MAX_MINUTES=60,
     COMPANY_SCOPED_PERMISSIONS=True,
+    HR_INSTALLATION_MODE="saas_platform",
+    PLATFORM_OPERATIONS_ENABLED=True,
 )
 class PlatformTenantElevationTests(TestCase):
     def setUp(self):

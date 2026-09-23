@@ -407,3 +407,7 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* R2 UI polish: organization lookup optimized for daily HR use. */
+.hr02-taskbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px;padding:9px 11px;border:1px solid #dbeafe;border-radius:8px;background:#f8fbff;color:#53657b;font-size:11px}.hr02-taskbar strong{color:#1e3a8a}.hr02-focus-search{flex:0 0 auto;padding:6px 10px;border:1px solid #bfdbfe;border-radius:7px;background:#fff;color:#1d4ed8;cursor:pointer;font:inherit;font-weight:750}.hr02-page .hr-structure-tree{position:sticky;top:12px;align-self:start}.hr02-page .hr-structure-tree__search{position:sticky;top:0;z-index:2;background:#fff}.hr02-page .hr-org-node.is-filter-hidden{display:none}
+@media(max-width:760px){.hr02-taskbar{align-items:stretch;flex-direction:column}.hr02-page .hr-structure-tree{position:static}}

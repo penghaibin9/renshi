@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
+import stat
 import os
 import tempfile
 from pathlib import Path
@@ -109,3 +112,56 @@ def resolve_bundle(backup_root, bundle_name: str) -> Path:
     if candidate.parent != root or not candidate.is_dir():
         raise ProductionBackupError("Backup bundle must be an existing direct child of BACKUP_ROOT")
     return candidate
+
+
+BACKUP_ARTIFACT_NAMES = frozenset({"database.sql.enc", "media.tar.gz.enc"})
+
+
+def _unique_json_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ProductionBackupError("Backup manifest has duplicate fields")
+        result[key] = value
+    return result
+
+
+def verified_bundle_manifest(bundle: Path) -> dict:
+    """Only the two artifacts created by create_production_backup are accepted.
+
+    A hash in a manifest does not authorize a path outside the bundle. AES-GCM
+    authentication is still checked by decrypt_file before any SQL is run.
+    """
+    bundle = Path(bundle)
+    manifest_path = bundle / "manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file() or manifest_path.stat().st_size > 1024 * 1024:
+        raise ProductionBackupError("Backup manifest must be a bounded regular file")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"), object_pairs_hook=_unique_json_pairs)
+    except (OSError, ValueError) as exc:
+        raise ProductionBackupError("Invalid backup manifest") from exc
+    if not isinstance(manifest, dict) or manifest.get("format") != "renshi-production-backup-v1":
+        raise ProductionBackupError("unsupported backup manifest format")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, dict) or set(artifacts) != BACKUP_ARTIFACT_NAMES:
+        raise ProductionBackupError("Backup must contain exactly the database and media encrypted artifacts")
+    for name, metadata in artifacts.items():
+        verified_bundle_artifact(bundle, manifest, name)
+    return manifest
+
+
+def verified_bundle_artifact(bundle: Path, manifest: dict, name: str) -> Path:
+    if name not in BACKUP_ARTIFACT_NAMES:
+        raise ProductionBackupError("Unexpected backup artifact name")
+    metadata = manifest.get("artifacts", {}).get(name)
+    if not isinstance(metadata, dict) or type(metadata.get("bytes")) is not int or metadata["bytes"] <= len(MAGIC) + NONCE_BYTES + TAG_BYTES:
+        raise ProductionBackupError("Invalid encrypted artifact metadata")
+    expected = metadata.get("sha256")
+    if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
+        raise ProductionBackupError("Invalid encrypted artifact digest")
+    artifact = Path(bundle) / name
+    if artifact.is_symlink() or not artifact.is_file() or not stat.S_ISREG(artifact.stat().st_mode):
+        raise ProductionBackupError("Backup artifacts must be regular, non-link files")
+    if artifact.stat().st_size != metadata["bytes"] or sha256_file(artifact).lower() != expected.lower():
+        raise ProductionBackupError("Backup artifact content or size mismatch")
+    return artifact

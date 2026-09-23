@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% block title %}{{ case.caseNo }} · {% trans "人事异动" %}{% endblock %}
 {% block styles %}
@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
 {% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr06-page" data-module="HR06" data-section="detail" data-hr-page="change-detail" data-case-id="{{ case.id }}">
+<div class="hr-v2-page hr06-page" data-module="HR06" data-hr-workspace="v6" data-section="detail" data-hr-page="change-detail" data-case-id="{{ case.id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>案件详情</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-detail-title">
     <div class="hr-v2-pagehead__copy">
@@ -85,5 +85,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/hr06-change-detail.js' %}?v=20260901-1"></script>
+<script src="{% static 'hr/js/pages/hr06-change-detail.js' %}?v=20260918-all-secondary-v6"></script>
 {% endblock scripts %}

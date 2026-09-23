@@ -7,6 +7,7 @@ from django.test import RequestFactory, SimpleTestCase
 
 from hr_data import exchange_api
 from hr_data.api import HrDataAccessError
+from hr_data.services.exchange_service import ExchangeError
 
 
 class ExchangeApiContractTests(SimpleTestCase):
@@ -89,4 +90,81 @@ class ExchangeApiContractTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertNotIn(b"must-not-be-echoed", response.content)
+
+    @patch("hr_data.exchange_api.resolve_request_tenant", return_value=77)
+    @patch("hr_data.exchange_api.ExchangeJobService")
+    def test_manual_retry_endpoint_returns_successor_provenance(self, service_cls, _tenant):
+        source_id = uuid.uuid4()
+        successor_id = uuid.uuid4()
+        service_cls.return_value.requeue_dead_letter.return_value = SimpleNamespace(
+            created=True,
+            value=SimpleNamespace(
+                id=successor_id,
+                job_no="JOB_RETRY_001",
+                status="QUEUED",
+                retry_of_job_id=source_id,
+            ),
+        )
+        response = exchange_api.retry_job(
+            self._post(
+                f"/api/v1/hr/data/exchange/jobs/{source_id}/retry/",
+                {
+                    "newJobNo": "JOB_RETRY_001",
+                    "idempotencyKey": "retry-command-001",
+                    "reason": "target endpoint recovered",
+                },
+            ),
+            source_id,
+        )
+        self.assertEqual(response.status_code, 202)
+        body = json.loads(response.content)["data"]
+        self.assertEqual(body["id"], str(successor_id))
+        self.assertEqual(body["retryOfJobId"], str(source_id))
+        service_cls.assert_called_once_with(77, 9)
+
+    @patch("hr_data.exchange_api.resolve_request_tenant", return_value=77)
+    @patch("hr_data.exchange_api.ExchangeJobService")
+    def test_manual_retry_batch_reports_partial_failure_per_item(self, service_cls, _tenant):
+        first = uuid.uuid4()
+        second = uuid.uuid4()
+        successor = uuid.uuid4()
+        service_cls.return_value.requeue_dead_letter.side_effect = [
+            SimpleNamespace(
+                created=True,
+                value=SimpleNamespace(id=successor, job_no="JOB_RETRY_OK"),
+            ),
+            ExchangeError("EXCHANGE_DEAD_LETTER_ALREADY_RESOLVED", "already resolved"),
+        ]
+        response = exchange_api.retry_batch(
+            self._post(
+                "/api/v1/hr/data/exchange/jobs/retry-batch/",
+                {
+                    "items": [
+                        {
+                            "jobId": str(first),
+                            "newJobNo": "JOB_RETRY_OK",
+                            "idempotencyKey": "batch-retry-1",
+                            "reason": "target recovered",
+                        },
+                        {
+                            "jobId": str(second),
+                            "newJobNo": "JOB_RETRY_CONFLICT",
+                            "idempotencyKey": "batch-retry-2",
+                            "reason": "target recovered",
+                        },
+                    ]
+                },
+            )
+        )
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.content)["data"]
+        self.assertEqual(body["requestedCount"], 2)
+        self.assertEqual(body["successCount"], 1)
+        self.assertEqual(body["failureCount"], 1)
+        self.assertTrue(body["partial"])
+        self.assertTrue(body["results"][0]["ok"])
+        self.assertFalse(body["results"][1]["ok"])
+        self.assertEqual(
+            body["results"][1]["code"], "EXCHANGE_DEAD_LETTER_ALREADY_RESOLVED"
+        )
 

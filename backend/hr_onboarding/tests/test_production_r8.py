@@ -143,8 +143,8 @@ class ExcelServiceTests(TestCase):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Sheet1"
-        ws.append(["legal_name", "source_type", "expected_report_date"])
-        ws.append(["张三", "HR04_HIRE", "2026-09-01"])
+        ws.append(["legal_name", "source_type", "source_id", "expected_report_date"])
+        ws.append(["张三", "HR04_HIRE", "HIRE-001", "2026-09-01"])
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)

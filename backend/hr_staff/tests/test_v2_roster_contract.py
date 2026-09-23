@@ -93,7 +93,9 @@ class Hr03V2WorkspaceContractTests(SimpleTestCase):
         self.assertIn("/api/hr/v1/staff/${encodeURIComponent(staffId)}/profile", source)
         for suffix in ("/assignments", "/backgrounds", "/materials", "/corrections"):
             self.assertIn(suffix, source)
-        self.assertIn("Profile bootstrap 不返回完整资格事实", source)
+        self.assertIn('id="qualifications"', source)
+        self.assertIn("个人概览不复制跨域资格事实", source)
+        self.assertIn('href="/hr/staff/{{ staff_id }}/backgrounds"', source)
         self.assertIn("bootstrap 不返回高敏明文", source)
 
     def test_assignment_and_background_authority_reads_remain_real(self):

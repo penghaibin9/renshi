@@ -1,0 +1,13 @@
+{% if first_use %}
+<section class="first-use-panel" data-first-use-progress data-progress-source="server" data-progress-state="{{ first_use.state }}" aria-labelledby="first-use-heading">
+  <div class="first-use-heading"><div><span class="first-use-kicker">第一次使用 · 跟着下一步走</span><h2 id="first-use-heading">{{ first_use.title }}</h2><p>{{ first_use.next_help }}</p></div><div class="first-use-count"><strong>{{ first_use.completed }} / {{ first_use.total }}</strong><small>关键步骤已完成</small></div></div>
+  {% if first_use.next_url %}<div class="first-use-next"><span><strong>现在只做这一件事</strong><small>完成后回到这里，系统会按真实记录继续给出下一步。</small></span><a class="first-use-primary" data-first-use-next href="{{ first_use.next_url }}">去办理下一步 →</a></div>{% endif %}
+  <ol class="first-use-steps">
+    {% for step in first_use.steps %}
+    <li class="is-{{ step.state }}" data-step="{{ step.code }}"><span class="first-use-step-no">{{ forloop.counter }}</span><span class="first-use-state">{{ step.state_label }}</span><strong>{{ step.title }}</strong><small>{{ step.help }}</small>{% if step.url %}<a href="{{ step.url }}">打开办理页面</a>{% endif %}</li>
+    {% endfor %}
+  </ol>
+  {% if first_use.profile_pending %}<details class="first-use-later"><summary>学校详细资料可以后补，不拦住开始使用</summary><p>尚未填写：{% for label in first_use.profile_pending %}{{ label }} {% endfor %}。未填项保持空白；不会自动生成虚假地址。</p>{% if first_use.profile_url %}<a href="{{ first_use.profile_url }}">补充学校资料</a>{% endif %}</details>{% endif %}
+  <p class="first-use-evidence">进度由服务器读取真实记录；刷新后仍可继续。按钮点击、浏览器勾选和基础资料齐全，都不等于生产验收通过。</p>
+</section>
+{% endif %}

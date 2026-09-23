@@ -1,0 +1,26 @@
+/* Same HR brand, scoped evidence reading surface. No module palette changes. */
+[data-module="HR12"] .hr12-frozen-entry {border-top:1px solid #d9e3ed;margin-top:20px;padding-top:16px;min-width:0;}
+[data-module="HR12"] .hr12-frozen-entry h4 {margin:8px 0;font-size:17px;color:#233b53;}
+[data-module="HR12"] .hr12-frozen-entry h5 {font-size:14px;margin:20px 0 8px;}
+[data-module="HR12"] .hr12-frozen-entry p {font-size:13px;line-height:1.7;overflow-wrap:anywhere;}
+[data-module="HR12"] .hr12-evidence-workspace {margin-top:16px;border-top:2px solid #245b91;padding-top:12px;min-width:0;}
+[data-module="HR12"] .hr12-evidence-facts {display:flex;flex-wrap:wrap;gap:24px;margin:18px 0;}
+[data-module="HR12"] .hr12-evidence-facts dt {font-size:12px;color:#526479;}
+[data-module="HR12"] .hr12-evidence-facts dd {margin:5px 0;font-weight:600;}
+[data-module="HR12"] .hr12-evidence-boundary {background:#f3f6fa;padding:10px 12px;border-left:3px solid #63778d;}
+[data-module="HR12"] .hr12-evidence-table {max-width:100%;overflow:auto;border:1px solid #dce4ed;max-height:360px;}
+[data-module="HR12"] .hr12-evidence-table table {border-collapse:collapse;min-width:660px;width:100%;font-size:12px;}
+[data-module="HR12"] .hr12-evidence-table th,[data-module="HR12"] .hr12-evidence-table td {padding:10px 12px;vertical-align:top;border-bottom:1px solid #e4ebf2;max-width:260px;overflow-wrap:anywhere;text-align:left;}
+[data-module="HR12"] .hr12-evidence-table th {position:sticky;top:0;background:#edf3f8;color:#294660;}
+[data-module="HR12"] .hr12-frozen-entry details {margin:14px 0;}
+[data-module="HR12"] .hr12-frozen-entry summary {cursor:pointer;color:#245b91;min-height:28px;font-size:14px;}
+[data-module="HR12"] .hr12-frozen-entry code {word-break:break-all;}
+[data-module="HR12"] .hr12-evidence-inputs {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0;}
+[data-module="HR12"] .hr12-evidence-inputs label {font-size:13px;}
+[data-module="HR12"] .hr12-evidence-inputs input,[data-module="HR12"] .hr12-evidence-inputs select {display:block;width:100%;box-sizing:border-box;min-height:36px;margin-top:6px;border:1px solid #aebecd;border-radius:4px;padding:6px;background:white;}
+[data-module="HR12"] .hr12-frozen-entry :focus-visible {outline:2px solid #245b91;outline-offset:2px;}
+@media(max-width:900px){[data-module="HR12"] .hr12-evidence-inputs {grid-template-columns:1fr;}}
+
+/* Reading one archive spans the existing grid instead of squeezing evidence into half a card. */
+[data-module="HR12"] [data-lifecycle-result].hr12-evidence-open {grid-column:1 / -1;min-width:0;}
+[data-module="HR12"] .hr12-evidence-facts dd {font-variant-numeric:tabular-nums;}

@@ -58,6 +58,7 @@ class HrImportRow(models.Model):
     data_json = models.JSONField(default=dict, blank=True)
     is_valid = models.BooleanField(default=True)
     error_summary = models.CharField(max_length=512, blank=True, default="")
+    result_ref = models.CharField(max_length=64, blank=True, default="")  # scoped authority id, never personal data
     commit_status = models.CharField(max_length=16, default="PENDING")  # PENDING/COMMITTED/FAILED
     created_at = models.DateTimeField(auto_now_add=True)
 

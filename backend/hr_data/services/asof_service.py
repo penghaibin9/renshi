@@ -62,8 +62,14 @@ class AsOfReconstructionService:
     }
     _BUILTIN_PROVIDERS = {
         "HR03": "hr_data.providers.hr03.asof_provider",
+        "HR04": "hr_data.providers.formal_facts.hr04_asof_provider",
+        "HR05": "hr_data.providers.formal_facts.hr05_asof_provider",
+        "HR06": "hr_data.providers.formal_facts.hr06_asof_provider",
+        "HR07": "hr_data.providers.formal_facts.hr07_asof_provider",
+        "HR12": "hr_data.providers.formal_facts.hr12_asof_provider",
         "HR13": "hr_data.providers.formal_facts.hr13_asof_provider",
         "HR14": "hr_data.providers.formal_facts.hr14_asof_provider",
+        "HR15": "hr_data.providers.formal_facts.hr15_asof_provider",
         "HR16": "hr_data.providers.formal_facts.hr16_asof_provider",
     }
 

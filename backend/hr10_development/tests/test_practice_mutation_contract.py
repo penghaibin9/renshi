@@ -45,8 +45,10 @@ class PracticeMutationContractTests(SimpleTestCase):
         create_source = inspect.getsource(practice_process.create_output)
         verify_source = inspect.getsource(practice_process.verify_output)
 
-        self.assertIn("HrStaffMaster.objects.select_for_update()", create_source)
-        self.assertIn("legacy_employee_id=staff_id", create_source)
+        self.assertIn("resolve_staff_identity(", create_source)
+        self.assertIn("for_update=True", create_source)
+        self.assertIn("staff_master_uuid=identity.staff_uuid", create_source)
+        self.assertIn("staff_master_id=identity.legacy_employee_id", create_source)
         self.assertIn("HrDevelopmentOutput.objects.select_for_update()", verify_source)
         self.assertIn("OUTPUT_VERIFICATION_IMMUTABLE", verify_source)
 

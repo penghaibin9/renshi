@@ -58,3 +58,16 @@ class SelfServicePinnedService(HrTenantScopedModel):
                 name="idx_hr17_pin_tenant_staff",
             ),
         ]
+
+
+class SelfCommandReceipt(HrTenantScopedModel):
+    staff_id = models.UUIDField()
+    operation = models.CharField(max_length=32)
+    idempotency_key = models.CharField(max_length=128)
+    request_hash = models.CharField(max_length=64)
+    result = models.JSONField(default=dict)
+
+    class Meta:
+        db_table = "hr17_self_command_receipt"
+        permissions = [("hr.self.apply", "提交本人的人事申请和材料")]
+        constraints = [models.UniqueConstraint(fields=("tenant_id", "staff_id", "operation", "idempotency_key"), name="uq_hr17_self_command_key")]

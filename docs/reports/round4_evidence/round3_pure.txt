@@ -1,0 +1,13 @@
+test_every_child_initialization_endpoint_requires_session_grant (test_deployment_contracts.InitializationFailClosedContractTests.test_every_child_initialization_endpoint_requires_session_grant) ... ok
+test_production_demo_loader_is_hidden (test_deployment_contracts.InitializationFailClosedContractTests.test_production_demo_loader_is_hidden) ... ok
+test_bootstrap_password_is_not_a_cli_argument (test_deployment_contracts.ProductionDeploymentContractTests.test_bootstrap_password_is_not_a_cli_argument) ... ok
+test_compose_preflight_enforces_override_capable_version_and_config (test_deployment_contracts.ProductionDeploymentContractTests.test_compose_preflight_enforces_override_capable_version_and_config) ... PROD_COMPOSE_PREFLIGHT_FAILED: Docker Compose 2.23.3 is too old; >=2.24.4 is required because the production overlay uses !override.
+ok
+test_release_uses_image_entrypoint_and_exact_prepare_command (test_deployment_contracts.ProductionDeploymentContractTests.test_release_uses_image_entrypoint_and_exact_prepare_command) ... ok
+test_successor_replan_reopens_review_but_blocks_downstream_facts (test_deployment_contracts.RetirementReplanContractTests.test_successor_replan_reopens_review_but_blocks_downstream_facts) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.094s
+
+OK
+PROD_COMPOSE_PREFLIGHT_OK compose=2.24.4 min=2.24.4

@@ -73,6 +73,37 @@ def main() -> None:
             settle_timeouts.append(label)
         page.wait_for_timeout(350)
 
+    def check_usability_guide(page, code: str) -> dict[str, object]:
+        """Assert the shipped in-app guide on the real Django page.
+
+        This is intentionally navigation/guidance only: it must never be used to
+        manufacture formal HR conclusions or bypass backend permission checks.
+        """
+        launcher = page.locator(".hr-guide-launcher").first
+        require(launcher.count() == 1, f"{code} rendered no 办理助手 launcher")
+        launcher.click()
+        page.wait_for_timeout(80)
+        require(
+            page.locator(".hr-guide-drawer.is-open").count() == 1,
+            f"{code} 办理助手 did not open",
+        )
+        title = page.locator("#hr-guide-title").inner_text().strip()
+        require(title, f"{code} 办理助手 has no contextual title")
+        require(
+            page.locator(".hr-guide-prompt").count() >= 20,
+            f"{code} 办理助手 has fewer than 20 prompt chips",
+        )
+        lifecycle_steps = page.evaluate("() => window.YuekeHRGuide && window.YuekeHRGuide.fullLifecycle ? window.YuekeHRGuide.fullLifecycle.steps.length : 0")
+        require(lifecycle_steps == 14, f"{code} lifecycle coach is not the required 14-step route")
+        require(page.locator(".hr-guide-lifecycle").count() == 1, f"{code} rendered no 14-step lifecycle coach")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(220)
+        require(
+            page.locator(".hr-guide-drawer.is-open").count() == 0,
+            f"{code} 办理助手 did not close with Escape",
+        )
+        return {"step": "usability-guide", "module": code, "title": title, "prompt_count_min": 15, "lifecycle_steps": lifecycle_steps, "status": "PASS"}
+
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1440, "height": 1000})
@@ -128,6 +159,33 @@ def main() -> None:
             require(hub_response is not None, "HR01 hub returned no response")
             require(hub_response.status == 200, f"HR01 hub HTTP {hub_response.status}")
             settle(page, "hr01-hub")
+            require(page.locator(".hr-guide-home").count() == 1, "HR01 missing task-first 我要办什么 finder")
+            home_search = page.locator(".hr-guide-home__search")
+            home_search.fill("入职")
+            page.wait_for_timeout(80)
+            require(
+                page.locator('.hr-guide-home__result[href="/hr/onboarding/prehires"]').count() >= 1,
+                "HR01 task-first finder did not resolve 入职 to HR05",
+            )
+            require(
+                page.locator(".hr-guide-home__journeys:not([hidden])").count() == 1,
+                "HR01 入职 search rendered no complete cross-module journey",
+            )
+            require(
+                "新教职工从录用到正常发薪" in page.locator(".hr-guide-home__journeys").inner_text(),
+                "HR01 入职 journey title missing",
+            )
+            evidence.append({"step": "task-first-home-search", "query": "入职", "expected": "/hr/onboarding/prehires", "status": "PASS"})
+            evidence.append({"step": "cross-module-guided-route", "query": "入职", "journey": "新教职工从录用到正常发薪", "status": "PASS"})
+
+            home_search.fill("换部门")
+            page.wait_for_timeout(80)
+            require(
+                page.locator('.hr-guide-home__result[href="/hr/changes/transfers"]').count() >= 1,
+                "HR01 colloquial 换部门 did not resolve to HR06 transfer",
+            )
+            evidence.append({"step": "colloquial-task-search", "query": "换部门", "expected": "/hr/changes/transfers", "status": "PASS"})
+            evidence.append(check_usability_guide(page, "HR01"))
 
             for code, entry_href, landing_path, target_path, require_secondary in JOURNEYS:
                 # Start every module journey from the same visible business hub.
@@ -170,6 +228,8 @@ def main() -> None:
                     entry_final_path == landing_path,
                     f"{code} entry click redirected to {page.url}",
                 )
+                if code != "HR01":
+                    evidence.append(check_usability_guide(page, code))
 
                 if code == "HR03":
                     require(

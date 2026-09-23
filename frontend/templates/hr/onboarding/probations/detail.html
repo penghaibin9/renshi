@@ -1,9 +1,9 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% block title %}{% trans "试用详情" %}{% endblock %}
 {% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr05-onboarding-v2.css' %}">{% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr05-page" data-module="HR05" data-section="probations" data-hr-page="onboarding-probation-detail" data-probation-id="{{ probation.id }}">
+<div class="hr-v2-page hr05-page" data-module="HR05" data-hr-workspace="v6" data-section="probations" data-hr-page="onboarding-probation-detail" data-probation-id="{{ probation.id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>试用详情</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr05-probation-detail-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">HR05 · 入职管理</div><h1 class="hr-v2-title" id="hr05-probation-detail-title">试用详情</h1><p class="hr-v2-subtitle">当前服务端提供试用记录列表与写入操作，但尚无单条详情查询入口；本页只从当前学校和账号可见列表中定位记录，不编造评价、目标或决策明细。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>试用记录编号</strong> {{ probation.id }}</span><span class="hr-v2-context__item"><strong>依据</strong> 正式试用列表</span></div></header>
   {% include "hr/onboarding/components/v2_nav.html" with active="probations" %}

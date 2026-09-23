@@ -55,7 +55,8 @@ class HrEnterprisePracticePlacement(DevelopmentTenantModel):
 
 class HrEnterprisePracticeAssignment(DevelopmentTenantModel):
     placement_id = models.BigIntegerField(db_index=True)
-    staff_master_id = models.BigIntegerField(db_index=True)
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True, verbose_name=_("HR03 教职工 UUID"))
+    staff_master_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     request_id = models.BigIntegerField(null=True, blank=True)
     development_need_id = models.BigIntegerField(null=True, blank=True)
     assignment_status = models.CharField(max_length=32, choices=AssignmentStatus.choices, default=AssignmentStatus.DRAFT, db_index=True)
@@ -75,6 +76,12 @@ class HrEnterprisePracticeAssignment(DevelopmentTenantModel):
         verbose_name = _("实践派出")
         verbose_name_plural = verbose_name
         indexes = [models.Index(fields=["staff_master_id", "assignment_status"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(staff_master_uuid__isnull=False) | models.Q(staff_master_id__isnull=False),
+                name="ck_hr10_practice_staff_identity",
+            ),
+        ]
 
 
 class HrEnterprisePracticeMentor(DevelopmentTenantModel):

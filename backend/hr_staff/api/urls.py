@@ -13,6 +13,7 @@ hr_staff/api/urls.py —— HR03 API 路由。
 
 from django.urls import path
 
+from hr_staff.api import self_submissions as self_submissions_api
 from hr_staff.api import views as api_views
 from hr_staff.api import assignments as assignments_api
 from hr_staff.api import backgrounds as backgrounds_api
@@ -28,6 +29,11 @@ from hr_staff.api import staff as staff_api
 from hr_staff.api import profile as profile_api
 
 urlpatterns = [
+    path("api/hr/v1/staff/import/<uuid:job_id>/receipt", imports_api.import_receipt, name="hr03-import-receipt"),
+    path("api/hr/v1/staff/import/template", imports_api.import_template, name="hr03-import-template"),
+    path("api/hr/v1/staff/import/<uuid:job_id>/errors", imports_api.import_errors, name="hr03-import-errors"),
+    path("api/hr/v1/staff/<uuid:staff_id>/material-submissions", self_submissions_api.submissions, name="hr03-material-submissions"),
+    path("api/hr/v1/staff/<uuid:staff_id>/material-submissions/<uuid:submission_id>/review", self_submissions_api.submissions, name="hr03-material-submission-review"),
     path(
         "api/hr/v1/staff/contract",
         api_views.contract_probe,

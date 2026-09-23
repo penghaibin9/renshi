@@ -61,7 +61,8 @@ class HrDevelopmentFact(DevelopmentTenantModel):
         CORRECTION = "CORRECTION", _("追加更正")
         REVOCATION = "REVOCATION", _("追加撤销")
 
-    staff_master_id = models.BigIntegerField(db_index=True)
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True)
+    staff_master_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     fact_type = models.CharField(max_length=32, choices=FactType.choices, db_index=True, verbose_name=_("事实类型"))
     source_case_type = models.CharField(max_length=64, verbose_name=_("来源 case 类型"))
     source_case_id = models.BigIntegerField()
@@ -96,7 +97,9 @@ class HrDevelopmentFact(DevelopmentTenantModel):
 
     objects = DevelopmentFactManager()
 
-    _HASH_FIELDS = (
+    # V1 is frozen for already-sealed bigint identity rows. Never add fields to it:
+    # historic hashes must remain verifiable byte-for-byte.
+    _HASH_FIELDS_V1 = (
         "tenant_id", "staff_master_id", "fact_type", "source_case_type",
         "source_case_id", "source_revision_no", "activity_type", "provider_org_id",
         "start_date", "end_date", "verified_hours", "verified_days",
@@ -105,14 +108,34 @@ class HrDevelopmentFact(DevelopmentTenantModel):
         "supersedes_fact_id", "record_kind", "correction_reason",
         "correction_evidence_ref", "idempotency_key", "sealed_at", "sealed_by",
     )
+    _HASH_FIELDS_V2 = (
+        "tenant_id", "staff_master_uuid", "staff_master_id", "fact_type",
+        "source_case_type", "source_case_id", "source_revision_no", "activity_type",
+        "provider_org_id", "start_date", "end_date", "verified_hours",
+        "verified_days", "verified_credits", "level_or_result",
+        "verification_status", "evidence_package_hash", "generated_at",
+        "valid_from", "valid_to", "supersedes_fact_id", "record_kind",
+        "correction_reason", "correction_evidence_ref", "idempotency_key",
+        "sealed_at", "sealed_by",
+    )
 
     class Meta:
         db_table = "hr_development_fact"
         verbose_name = _("发展事实")
         verbose_name_plural = verbose_name
-        indexes = [models.Index(fields=["staff_master_id", "fact_type", "valid_from"])]
+        indexes = [
+            models.Index(fields=["staff_master_id", "fact_type", "valid_from"]),
+            models.Index(
+                fields=["staff_master_uuid", "fact_type", "valid_from"],
+                name="hr10_fact_uuid_type_valid_idx",
+            ),
+        ]
         base_manager_name = "objects"
         constraints = [
+            models.CheckConstraint(
+                condition=Q(staff_master_uuid__isnull=False) | Q(staff_master_id__isnull=False),
+                name="ck_hr10_fact_staff_identity",
+            ),
             models.UniqueConstraint(
                 fields=("tenant_id", "supersedes_fact_id"),
                 name="uq_hr10_fact_one_successor",
@@ -149,10 +172,13 @@ class HrDevelopmentFact(DevelopmentTenantModel):
             return value.isoformat()
         return value
 
+    def _hash_fields(self):
+        return self._HASH_FIELDS_V2 if self.staff_master_uuid else self._HASH_FIELDS_V1
+
     def calculate_content_hash(self) -> str:
         payload = {
             field: self._canonical_value(getattr(self, field))
-            for field in self._HASH_FIELDS
+            for field in self._hash_fields()
         }
         raw = json.dumps(
             payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
@@ -177,7 +203,8 @@ class HrDevelopmentFact(DevelopmentTenantModel):
             ).first()
             if parent is None:
                 raise ValueError("HR10_DEVELOPMENT_FACT_PARENT_NOT_IN_TENANT")
-            if parent.staff_master_id != self.staff_master_id:
+            from hr10_development.identity import same_staff_identity
+            if not same_staff_identity(parent, self):
                 raise ValueError("HR10_DEVELOPMENT_FACT_STAFF_CHAIN_MISMATCH")
 
     def save(self, *args, **kwargs):
@@ -190,7 +217,9 @@ class HrDevelopmentFact(DevelopmentTenantModel):
         self._validate_lineage()
         # Normalize values exactly as Django/MySQL will persist them so a value
         # supplied as an ISO string cannot produce a pre-save-only hash.
-        for field_name in self._HASH_FIELDS:
+        if self.staff_master_uuid is None and self.staff_master_id is None:
+            raise ValueError("HR10_DEVELOPMENT_FACT_STAFF_REQUIRED")
+        for field_name in self._hash_fields():
             field = self._meta.get_field(field_name)
             setattr(self, field_name, field.to_python(getattr(self, field_name)))
         self.sealed_at = self.sealed_at or timezone.now()
@@ -206,7 +235,8 @@ class HrDevelopmentFact(DevelopmentTenantModel):
 
 
 class HrDevelopmentMetricLedger(DevelopmentTenantModel):
-    staff_master_id = models.BigIntegerField(db_index=True)
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True)
+    staff_master_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     fact_id = models.BigIntegerField(db_index=True)
     metric_code = models.CharField(max_length=64, verbose_name=_("度量码"))
     raw_value = models.DecimalField(max_digits=10, decimal_places=2)
@@ -223,6 +253,12 @@ class HrDevelopmentMetricLedger(DevelopmentTenantModel):
         verbose_name = _("发展度量台账")
         verbose_name_plural = verbose_name
         indexes = [models.Index(fields=["staff_master_id", "metric_code", "window_key"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(staff_master_uuid__isnull=False) | Q(staff_master_id__isnull=False),
+                name="ck_hr10_metric_staff_identity",
+            ),
+        ]
 
 
 class HrDevelopmentComplianceRule(DevelopmentTenantModel):
@@ -249,6 +285,7 @@ class HrDevelopmentComplianceRule(DevelopmentTenantModel):
 
 class HrDevelopmentRiskCase(DevelopmentTenantModel):
     risk_type = models.CharField(max_length=48, choices=RiskType.choices, db_index=True, verbose_name=_("风险类型"))
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True)
     staff_master_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     source_case_type = models.CharField(max_length=64, blank=True, default="")
     source_case_id = models.BigIntegerField(null=True, blank=True)

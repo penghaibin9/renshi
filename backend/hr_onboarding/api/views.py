@@ -62,7 +62,7 @@ def hr05_cases_list(request):
         status=request.GET.get("status") or None,
         keyword=request.GET.get("keyword", ""),
         page=page,
-        page_size=min(page_size, 100),
+        page_size=max(1, min(page_size, 100)),
     )
     return api_base.ok(request, data)
 

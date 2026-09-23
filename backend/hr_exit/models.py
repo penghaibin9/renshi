@@ -777,3 +777,6 @@ class RetirementPrecheck(HrTenantScopedModel):
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             raise ValueError("RETIREMENT_PRECHECK_IMMUTABLE: create a new precheck")
         return super().save(*args, **kwargs)
+
+
+from .flex_models import RetirementFlexApplication, RetirementFlexEvent  # noqa: E402,F401

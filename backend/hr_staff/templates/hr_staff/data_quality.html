@@ -1,11 +1,5 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
-{% trans "数据质量异常中心" as t_title %}
-{% trans "加载失败" as t_load_failed %}
-{% trans "暂无异常" as t_clean %}
-{% trans "高" as t_high %}
-{% trans "中" as t_medium %}
-{% trans "低" as t_low %}
 
 {% block styles %}
 {{ block.super }}
@@ -17,7 +11,13 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr03-page" data-module="HR03" data-section="data-quality">
+{% trans "数据质量异常中心" as t_title %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无异常" as t_clean %}
+{% trans "高" as t_high %}
+{% trans "中" as t_medium %}
+{% trans "低" as t_low %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-hr-workspace="v6" data-section="data-quality">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr03-quality-title">
@@ -41,7 +41,7 @@
   <section class="hr-v2-section" aria-labelledby="hr03-scan-title">
     <div class="hr-v2-panel">
       <div class="hr-v2-panel__head"><div><h3 id="hr03-scan-title">执行质量扫描</h3><p>日期留空时按后端当前口径扫描；指定日期用于核对历史 effective-dated 事实。</p></div></div>
-      <form id="scanForm" class="hr03-quality-form">
+      <form id="scanForm" class="hr03-quality-form" data-v6-surface="form">
         <label for="asOf"><span>扫描日期</span><input type="date" id="asOf" name="as_of"></label>
         <button class="btn primary" type="submit">开始扫描</button>
       </form>
@@ -60,6 +60,12 @@
 {% endblock content %}
 
 {% block scripts %}
+{% trans "数据质量异常中心" as t_title %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无异常" as t_clean %}
+{% trans "高" as t_high %}
+{% trans "中" as t_medium %}
+{% trans "低" as t_low %}
 {{ block.super }}
 <script>
 (function () {

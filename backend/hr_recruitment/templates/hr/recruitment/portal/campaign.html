@@ -5,41 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ campaign.title }} - 招聘报名</title>
   <style>
-    :root { color-scheme: light; --blue:#155eef; --ink:#172b4d; --muted:#667085; --line:#d0d5dd; --bg:#f5f7fb; --danger:#b42318; }
-    * { box-sizing: border-box; }
-    body { margin:0; color:var(--ink); background:var(--bg); font:16px/1.65 system-ui,"Microsoft YaHei","PingFang SC",sans-serif; }
-    header { background:linear-gradient(135deg,#0b4bc4,#2e74ff); color:#fff; padding:38px 20px; }
-    header div, main { max-width:1040px; margin:auto; }
-    h1 { margin:0 0 8px; font-size:clamp(26px,4vw,40px); }
-    h2 { margin:0 0 18px; font-size:22px; }
-    main { padding:24px 16px 56px; display:grid; gap:20px; }
-    section { background:#fff; border:1px solid #eaecf0; border-radius:14px; padding:24px; box-shadow:0 6px 22px rgba(16,24,40,.06); }
-    .positions { display:grid; gap:12px; }
-    .position { border:1px solid var(--line); border-radius:10px; padding:16px; }
-    .position strong { font-size:18px; }
-    .muted { color:var(--muted); }
-    form { display:grid; gap:15px; }
-    label { display:grid; gap:6px; font-weight:600; }
-    input, select, textarea, button { font:inherit; }
-    input, select, textarea { width:100%; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#fff; }
-    textarea { min-height:110px; resize:vertical; }
-    .consent { display:flex; align-items:flex-start; gap:10px; font-weight:400; }
-    .consent input { width:auto; margin-top:6px; }
-    .privacy-notice { border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:#f8fafc; }
-    .privacy-notice summary { cursor:pointer; font-weight:700; }
-    .privacy-notice dl { display:grid; grid-template-columns:7em 1fr; gap:6px 12px; margin:12px 0 0; font-size:14px; }
-    .privacy-notice dt { font-weight:700; }
-    .privacy-notice dd { margin:0; }
-    button { border:0; border-radius:8px; padding:11px 18px; color:#fff; background:var(--blue); font-weight:700; cursor:pointer; }
-    button:disabled { opacity:.55; cursor:not-allowed; }
-    .message { min-height:26px; margin:0; }
-    .error { color:var(--danger); }
-    .success { color:#067647; }
-    @media (min-width:820px) { main { grid-template-columns:1fr 1fr; } .wide { grid-column:1/-1; } }
+    :root{color-scheme:light;--ink:#182a43;--muted:#66788f;--blue:#2360d5;--blue-deep:#184aa8;--pale:#edf3ff;--line:#e3e9f0;--bg:#f4f6fa;--paper:#fff;--danger:#b74742;--green:#287a65;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    *{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--bg);font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    header{background:#fff;border-bottom:1px solid var(--line);padding:24px 20px}header>div,main{max-width:1180px;margin:auto}.public-brand{display:flex;align-items:center;gap:9px;color:#5e7dad;font-size:11px;font-weight:650;letter-spacing:.7px}.public-brand:before{content:"";width:9px;height:9px;border:3px solid var(--blue);border-radius:50%}
+    h1{margin:12px 0 6px;font-size:clamp(26px,3vw,34px);line-height:1.4;letter-spacing:-.6px}header p{margin:0;color:var(--muted);font-size:13px}h2{margin:0 0 16px;font-size:18px;line-height:1.5}
+    main{padding:24px 18px 56px;display:grid;gap:18px}section{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:0 3px 14px rgba(20,40,73,.04)}
+    .positions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.position{border:1px solid var(--line);border-radius:9px;padding:16px;background:#fff}.position strong{font-size:15px}.position .muted{margin-top:4px}.muted{color:var(--muted)}
+    form{display:grid;gap:14px}label{display:grid;gap:6px;font-weight:600;font-size:13px}input,select,textarea,button{font:inherit}input,select,textarea{width:100%;min-height:40px;border:1px solid #d7e0eb;border-radius:7px;padding:9px 12px;background:#fff;color:var(--ink)}input:focus,select:focus,textarea:focus{outline:3px solid #608def;outline-offset:1px;border-color:#8aace6}textarea{min-height:105px;resize:vertical}.consent{display:flex;align-items:flex-start;gap:10px;font-weight:400}.consent input{width:16px;min-height:0;margin-top:5px;accent-color:var(--blue)}
+    .privacy-notice{border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:#fbfcfe}.privacy-notice summary{cursor:pointer;font-weight:650;color:#405674}.privacy-notice dl{display:grid;grid-template-columns:7em 1fr;gap:6px 12px;margin:12px 0 0;font-size:12px}.privacy-notice dt{font-weight:650;color:#4d6380}.privacy-notice dd{margin:0;color:#6f8198}
+    button{min-height:40px;border:1px solid var(--blue);border-radius:7px;padding:9px 16px;color:#fff;background:var(--blue);font-weight:650;cursor:pointer}button:hover{background:var(--blue-deep);border-color:var(--blue-deep)}button:disabled{opacity:.55;cursor:not-allowed}.message{min-height:24px;margin:0;font-size:12px}.error{color:var(--danger)}.success{color:var(--green)}hr{border-color:var(--line)!important}
+    @media(min-width:860px){main{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}@media(max-width:720px){.positions{grid-template-columns:1fr}main{padding-inline:14px}section{padding:18px}.privacy-notice dl{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <header><div><h1>{{ campaign.title }}</h1><p>{{ campaign.description|default:"欢迎报考，请如实填写报名信息。" }}</p></div></header>
+  <header><div><span class="public-brand">跃科高校人事 · 公开招聘</span><h1>{{ campaign.title }}</h1><p>{{ campaign.description|default:"欢迎报考，请如实填写报名信息。" }}</p></div></header>
   <main>
     <section class="wide">
       <h2>招聘岗位</h2>

@@ -1,0 +1,14 @@
+{
+  "automaticGate": "BLOCKED",
+  "productionRelease": "NOT_RELEASED",
+  "pendingProductionGates": [
+    "四角色与双学校真实浏览器流程/越权验收",
+    "多进程并发、幂等和上传中切学校验收",
+    "备份恢复、迁移升级演练、容量与安全扫描",
+    "真实短信/邮件/杀毒/签章/IAM/财税等适用外部系统验收"
+  ],
+  "steps": [],
+  "runtime": "3.13.5",
+  "message": "Missing locked runtime dependencies: django, rest_framework, MySQLdb. No database or source changed."
+}
+Evidence: /mnt/data/hr_round2_evidence/runtime-preflight/20260914T152618Z

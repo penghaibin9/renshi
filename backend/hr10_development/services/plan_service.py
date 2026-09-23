@@ -16,12 +16,14 @@ from django.utils import timezone
 from hr10_development.constants import PlanLifecycleStatus, PlanVersionStatus
 from hr10_development.models.plan import HrDevelopmentPlan
 from hr10_development.models.plan_version import HrDevelopmentPlanVersion
+from hr10_development.identity import resolve_staff_identity
 
 
 class PlanService:
     """发展计划生命周期服务。"""
 
     @staticmethod
+    @transaction.atomic
     def create_plan(
         tenant_id: int,
         plan_no: str,
@@ -30,15 +32,21 @@ class PlanService:
         end_date,
         cycle_type: str = "ANNUAL",
         owner_org_id: Optional[int] = None,
-        staff_master_id: Optional[int] = None,
+        staff_master_id=None,
         created_by=None,
     ) -> HrDevelopmentPlan:
+        identity = None
+        if staff_master_id not in (None, ""):
+            identity = resolve_staff_identity(
+                tenant_id=tenant_id, raw_staff_id=staff_master_id, for_update=True
+            )
         plan = HrDevelopmentPlan.objects.create(
             tenant_id=tenant_id,
             plan_no=plan_no,
             plan_type=plan_type,
             owner_org_id=owner_org_id,
-            staff_master_id=staff_master_id,
+            staff_master_uuid=identity.staff_uuid if identity else None,
+            staff_master_id=identity.legacy_employee_id if identity else None,
             cycle_type=cycle_type,
             start_date=start_date,
             end_date=end_date,

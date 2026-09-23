@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Optional
 
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Q, OuterRef, Subquery, Value, CharField
+from django.db.models.functions import Coalesce
 
 from hr_onboarding.api.labels import (
     label_for,
@@ -21,7 +22,8 @@ from hr_onboarding.api.labels import (
     STAFF_CATEGORY_LABELS,
     VERIFICATION_STATUS_LABELS,
 )
-from hr_onboarding.models import HrOnboardingCase
+from hr_onboarding.models import HrOnboardingCase, HrPrehireProfile
+from hr_staff.models import HrPerson, HrStaffMaster
 
 
 def list_cases(
@@ -33,22 +35,31 @@ def list_cases(
     page_size: int = 20,
 ) -> dict:
     """待报到/全部 case 列表（DB 层过滤分页）。"""
-    qs = HrOnboardingCase.objects.filter(tenant_id=tenant_id)
+    qs = HrOnboardingCase.objects.filter(tenant_id=tenant_id).annotate(
+        display_name=Coalesce(
+            Subquery(HrPerson.objects.filter(tenant_id=tenant_id, id=OuterRef("hr03_person_id")).values("legal_name")[:1]),
+            Subquery(HrPrehireProfile.objects.filter(tenant_id=tenant_id, case_id=OuterRef("pk")).values("legal_name")[:1]),
+            Value(""), output_field=CharField()),
+        staff_no=Coalesce(Subquery(HrStaffMaster.objects.filter(tenant_id=tenant_id,
+            id=OuterRef("hr03_staff_master_id")).values("staff_no")[:1]), Value(""), output_field=CharField()),
+    )
     if status:
         qs = qs.filter(status=status)
     if keyword:
         qs = qs.filter(
-            Q(case_no__icontains=keyword)
+            Q(display_name__icontains=keyword) | Q(staff_no__icontains=keyword) | Q(case_no__icontains=keyword)
             | Q(source_id__icontains=keyword)
             | Q(hr04_proposed_hire_id__icontains=keyword)
         )
-    qs = qs.order_by("-created_at")
+    qs = qs.order_by("-created_at", "-id")
+    page_size = max(1, min(int(page_size), 100))
     paginator = Paginator(qs, page_size)
     page_obj = paginator.get_page(page)
     items = [
         {
             "id": str(c.id),
             "case_no": c.case_no,
+            "legal_name": c.display_name, "staff_no": c.staff_no,
             "source_type": c.source_type,
             "sourceTypeLabel": label_for(SOURCE_TYPE_LABELS, c.source_type),
             "source_id": c.source_id,
@@ -84,7 +95,7 @@ def get_case_detail(*, tenant_id: int, case_id: str) -> Optional[dict]:
         return None
     if case is None:
         return None
-    profile = getattr(case, "prehire_profile", None)
+    profile = HrPrehireProfile.objects.filter(case_id=case.id, tenant_id=tenant_id).first()
     return {
         "id": str(case.id),
         "case_no": case.case_no,

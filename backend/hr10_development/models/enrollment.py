@@ -20,7 +20,11 @@ class HrLearningEnrollment(DevelopmentTenantModel):
         verbose_name=_("班次 ID"),
     )
 
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True, verbose_name=_("HR03 教职工 UUID"))
+
     staff_master_id = models.BigIntegerField(
+        null=True,
+        blank=True,
         db_index=True,
         verbose_name=_("教职工 ID"),
     )
@@ -92,4 +96,14 @@ class HrLearningEnrollment(DevelopmentTenantModel):
         indexes = [
             models.Index(fields=["offering_id", "enrollment_status"]),
             models.Index(fields=["staff_master_id", "enrollment_status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "offering_id", "staff_master_uuid"],
+                name="uq_hr10_enroll_offering_staff_uuid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(staff_master_uuid__isnull=False) | models.Q(staff_master_id__isnull=False),
+                name="ck_hr10_enroll_staff_identity",
+            ),
         ]

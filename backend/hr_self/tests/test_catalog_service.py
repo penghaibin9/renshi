@@ -32,10 +32,12 @@ class SelfCatalogServiceTests(TestCase):
         result = self.service.pin(service_code="MY_PROFILE", sort_order=5)
 
         self.assertIs(result, pin)
-        catalog_objects.filter.assert_called_once_with(
-            tenant_id=77,
-            service_code="MY_PROFILE",
-            enabled=True,
+        # ensure_default_catalog_if_empty() may first perform a tenant-scoped
+        # existence check; the actual service lookup must still be fail-closed
+        # to this tenant and enabled service code.
+        self.assertIn(
+            (((), {"tenant_id": 77, "service_code": "MY_PROFILE", "enabled": True})),
+            [(call.args, call.kwargs) for call in catalog_objects.filter.call_args_list],
         )
         pin_objects.update_or_create.assert_called_once_with(
             tenant_id=77,

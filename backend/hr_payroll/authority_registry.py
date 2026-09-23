@@ -88,3 +88,18 @@ register_business_events((
     BusinessEventDefinition(EVENT_COMPENSATION_CHANGE_APPROVED, "HR15", "compensation_change", 1),
     BusinessEventDefinition(EVENT_COMPENSATION_CHANGE_REJECTED, "HR15", "compensation_change", 1),
 ))
+
+# Policy-depth extension: identities and formal amounts remain within HR15.
+register_business_events((
+    BusinessEventDefinition("hr.payroll.policy.published", "HR15", "policy", 1),
+    BusinessEventDefinition("hr.payroll.trial.created", "HR15", "trial", 1),
+    BusinessEventDefinition("hr.payroll.trial.approved", "HR15", "trial", 1),
+))
+
+register_business_events((BusinessEventDefinition("hr.payroll.tax.blocked", "HR15", "tax", 1),))
+
+register_business_events([BusinessEventDefinition("hr.payroll.policy.imported", "HR15", "policy", 1)])
+
+register_business_events([BusinessEventDefinition("hr.payroll.retro.applied", "HR15", "retro", 1)])
+
+register_business_events([BusinessEventDefinition("hr.payroll.trial.exported", "HR15", "trial", 1)])

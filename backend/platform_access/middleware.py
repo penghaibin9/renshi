@@ -1,9 +1,11 @@
 from django.contrib.auth.views import redirect_to_login
+from django.conf import settings
 from django.http import JsonResponse
 
 from base.auth_backends import company_scoped_active, get_allowed_company_ids
 from base.context_processors import AllCompany
 from base.middleware import CompanyMiddleware as LegacyCompanyMiddleware
+from base.models import Company
 from horilla.horilla_middlewares import get_selected_company, set_selected_company
 from platform_access.services import (
     clear_elevation_session,
@@ -107,6 +109,23 @@ class PlatformTenantElevationMiddleware:
             return None
 
         normalized = _normalize_company_id(selected)
+        if (
+            getattr(settings, "HR_INSTALLATION_MODE", "standalone_school") == "standalone_school"
+            and getattr(user, "is_superuser", False)
+        ):
+            school_ids = list(Company.objects.order_by("id").values_list("id", flat=True)[:2])
+            if len(school_ids) == 1 and normalized == school_ids[0]:
+                request.write_company_id = normalized
+                return None
+            _reset_to_all_scope(request)
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Standalone-school superuser may write only inside the single configured school."
+                    )
+                },
+                status=403,
+            )
         if company_scoped_active():
             allowed = getattr(request, "allowed_company_ids", None)
             if allowed is None:

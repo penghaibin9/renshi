@@ -11,6 +11,7 @@ from hr10_development.models import (
     HrFurtherStudyMilestone,
 )
 from hr10_development.providers.base import ProviderResult, ProviderStatus
+from hr_staff.models import HrPerson, HrStaffMaster
 from hr10_development.providers.education_writeback_provider import (
     Hr03EducationWritebackProvider,
 )
@@ -46,14 +47,15 @@ def certificate_evidence():
 
 
 class FurtherStudyWritebackContractTests(SimpleTestCase):
-    def test_service_uses_real_provider_and_case_staff_master_id(self):
+    def test_service_uses_real_provider_and_canonical_case_staff_identity(self):
         source = (
             Path(__file__).resolve().parents[1]
             / "services"
             / "further_study_service.py"
         ).read_text(encoding="utf-8")
         self.assertIn("Hr03EducationWritebackProvider", source)
-        self.assertIn("staff_master_id=str(case.staff_master_id)", source)
+        self.assertIn("staff_identity_key = case.staff_master_uuid or case.staff_master_id", source)
+        self.assertIn("staff_master_id=str(staff_identity_key)", source)
         self.assertNotIn("StubEducationWritebackProvider", source)
         self.assertNotIn('staff_master_id=str(getattr(milestone, "case_id"', source)
 
@@ -115,8 +117,16 @@ class RecordingProvider:
 
 class FurtherStudyWritebackServiceTests(TestCase):
     def setUp(self):
+        person = HrPerson.objects.create(tenant_id=TENANT, legal_name="进修测试教师")
+        self.staff = HrStaffMaster.objects.create(
+            tenant_id=TENANT,
+            person_id=person,
+            staff_no="FS-99001",
+            legacy_employee_id=99001,
+        )
         self.case = HrFurtherStudyCase.objects.create(
             tenant_id=TENANT,
+            staff_master_uuid=self.staff.id,
             staff_master_id=99001,
             study_type="DEGREE",
             field_or_major="计算机科学",
@@ -140,7 +150,7 @@ class FurtherStudyWritebackServiceTests(TestCase):
             education_provider=provider,
         )
         self.assertEqual(result["status"], "VERIFIED")
-        self.assertEqual(provider.calls[0][1], str(self.case.staff_master_id))
+        self.assertEqual(provider.calls[0][1], str(self.staff.id))
         self.assertNotEqual(provider.calls[0][1], str(self.case.id))
         self.milestone.refresh_from_db()
         self.assertEqual(self.milestone.writeback_status, "SUCCEEDED")

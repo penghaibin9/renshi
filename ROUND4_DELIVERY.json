@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "project": "Yueke University HR",
+  "round": "Round4",
+  "date": "2026-09-15",
+  "baseline": {
+    "name": "Yueke_University_HR_Round3_20260915.zip",
+    "sha256": "6f08e1f79af6cd9cc475a8bf71d65329da2a1b6d4b5b2b38a2730419e0b5d33c",
+    "soleBaseline": true
+  },
+  "releaseDecision": "NOT_RELEASED",
+  "scope": [
+    "HR16 retirement evidence authority/category/exact-version verification",
+    "HR18 HR07 formal-contract historical evaluator/evidence/quality closure",
+    "isolated production-shaped acceptance gate for HR01-HR18"
+  ],
+  "changedFiles": {
+    "count": 41,
+    "added": 16,
+    "modified": 25,
+    "deleted": 0,
+    "metadataExcludedFromDiff": [
+      "ROUND4_CHANGED_FILES.tsv",
+      "ROUND4_DELIVERY.json",
+      "ROUND4_FILE_MANIFEST.tsv"
+    ]
+  },
+  "verified": {
+    "round2Pure": "66/66 PASS",
+    "round3Pure": "6/6 PASS",
+    "round4Pure": "16/16 PASS",
+    "pythonAst": "3111 files PASS",
+    "compileall": "PASS",
+    "javascriptSyntax": [
+      "hr16-flex.js PASS",
+      "hr17-commands.js PASS"
+    ],
+    "composeYaml": "PASS (static parse)",
+    "entrypointBash": "PASS",
+    "migrationNumberUniqueness": "PASS",
+    "acceptancePlan": "PASS",
+    "acceptanceRuntime": "BLOCKED/FAIL-CLOSED at compose-version: Docker unavailable",
+    "djangoMysqlRuntime": "BLOCKED: Django/MySQL unavailable in current executor"
+  },
+  "safety": {
+    "githubTouched": false,
+    "productionServerTouched": false,
+    "productionDatabaseTouched": false,
+    "acceptanceReadsProductionDotEnv": false,
+    "acceptanceBootstrapPasswordSharedEnv": false
+  },
+  "manifest": {
+    "name": "ROUND4_FILE_MANIFEST.tsv",
+    "excludesItself": true
+  },
+  "notes": [
+    "Do not claim RELEASED until make acceptance-qa passes on a trusted Docker/MySQL QA host and target-environment external/browser gates pass.",
+    "HR04/HR05/HR06/HR12/HR15 historical evaluators remain fail-closed until chain-aware adapters are implemented."
+  ]
+}

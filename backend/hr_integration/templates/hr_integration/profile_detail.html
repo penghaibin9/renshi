@@ -1,0 +1,21 @@
+{% extends "hr/base.html" %}{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr_integration/integration_hub_v2.css' %}">
+<div class="hrint-page">
+  <div class="hrint-hero"><div><span class="hrint-eyebrow">{{ connection.name }} · {{ profile.get_direction_display }}</span><h1>{{ profile.name }}</h1><p>{{ profile.source_object|default:"外部对象" }} → {{ profile.target_domain }}。这里只处理字段差异，不改变 HR 权威业务模型。</p></div><a class="hrint-btn is-secondary" href="{% url 'hr-integration-connection' connection.id %}#mapping">返回连接</a></div>
+
+  <section class="hrint-panel">
+    <div class="hrint-section-head"><div><span>字段字典</span><h2>映射关系</h2><p>实施时先拿学校样例报文逐项对照。必填字段缺失应在同步前阻断。</p></div><span>{{ rows|length }} 个字段</span></div>
+    <div class="hrint-table-wrap"><table class="hrint-table"><thead><tr><th>顺序</th><th>学校字段</th><th></th><th>跃科字段</th><th>转换</th><th>规则</th><th></th></tr></thead><tbody>{% for x in rows %}<tr><td>{{ x.sort_order }}</td><td><code>{{ x.source_field }}</code></td><td class="hrint-map-arrow">→</td><td><code>{{ x.target_field }}</code></td><td>{{ x.transform_code|default:"DIRECT" }}</td><td>{% if x.required %}<span class="hrint-required">必填</span>{% else %}<span class="hrint-muted">可选</span>{% endif %}{% if x.default_value %}<small>默认：{{ x.default_value }}</small>{% endif %}</td><td><form method="post" action="{% url 'hr-integration-field-delete' connection.id profile.id x.id %}" data-hrint-confirm="确认删除这条字段映射？">{% csrf_token %}<button class="hrint-danger-link">删除</button></form></td></tr>{% empty %}<tr><td colspan="7"><div class="hrint-empty is-compact"><strong>还没有字段映射</strong><span>从学校接口文档或样例 JSON 逐项建立。</span></div></td></tr>{% endfor %}</tbody></table></div>
+  </section>
+
+  <div class="hrint-two-col">
+    <section class="hrint-panel"><div class="hrint-section-head"><div><span>新增</span><h2>添加字段映射</h2></div></div><details class="hrint-add-box"><summary>添加字段映射</summary><form method="post" class="hrint-form-grid">{% csrf_token %}{% for field in form %}<label><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endfor %}<div class="full"><button class="hrint-btn is-primary">保存字段映射</button></div></form></details></section>
+    <section class="hrint-panel"><div class="hrint-section-head"><div><span>本地预检</span><h2>样例 JSON 字段检查</h2><p>只在浏览器本地检查字段名，不上传样例数据。</p></div></div><textarea class="hrint-sample-json" rows="10" placeholder='例如：{"uid":"T001","name":"张老师","deptCode":"CS"}' data-hrint-sample-json></textarea><button class="hrint-btn is-secondary" type="button" data-hrint-preview-mapping>检查样例</button><div class="hrint-preview-result" data-hrint-preview-result></div></section>
+  </div>
+
+  <section class="hrint-panel hrint-danger-zone"><div><strong>删除整个映射方案</strong><span>仅在确认该方案不再被实施使用时操作；删除动作会留下审计记录。</span></div><form method="post" action="{% url 'hr-integration-profile-delete' connection.id profile.id %}" data-hrint-confirm="确认删除整个字段映射方案？">{% csrf_token %}<button class="hrint-btn is-danger">删除映射方案</button></form></section>
+</div>
+<script>window.HRINT_MAPPING_SOURCES=[{% for x in rows %}"{{ x.source_field|escapejs }}"{% if not forloop.last %},{% endif %}{% endfor %}];</script>
+<script src="{% static 'hr_integration/integration_hub_v2.js' %}"></script>
+{% endblock content %}

@@ -70,6 +70,8 @@ def store_staff_material(upload, *, tenant_id: int, staff_id) -> dict:
         digest.update(chunk)
         if len(head) < 16:
             head += bytes(chunk[: 16 - len(head)])
+    if size == 0:
+        raise StaffMaterialFileError("MATERIAL_FILE_EMPTY", "空文件不能作为人事材料")
     magic = rule[0]
     if magic is not None and not head.startswith(magic):
         raise StaffMaterialFileError("MATERIAL_FILE_CONTENT_MISMATCH", "文件内容与扩展名不一致")

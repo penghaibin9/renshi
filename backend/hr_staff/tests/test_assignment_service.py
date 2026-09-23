@@ -1,6 +1,7 @@
 """S3 · AssignmentService 不变量测试：并发 PRIMARY、重叠、跨租户、主岗切换原子。"""
 
 from datetime import date
+from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.test import TestCase
@@ -169,3 +170,90 @@ class AssignmentInvariantTests(TestCase):
                 source_business_type=FIXTURE_SOURCE,
             )
         self.assertEqual(ctx.exception.code, "ASSIGNMENT_OVERLAP")
+
+    def _make_position(self, *, org, code="P001", lifecycle="ACTIVE"):
+        from hr_structure.models import HrPostCatalog, HrPostCatalogVersion, HrPosition
+
+        catalog = HrPostCatalog.objects.create(
+            tenant_id=TENANT,
+            stable_code=f"CAT-{code}",
+        )
+        catalog_version = HrPostCatalogVersion.objects.create(
+            catalog_id=catalog,
+            tenant_id=TENANT,
+            name=f"岗位目录-{code}",
+            category="PROFESSIONAL_TECHNICAL",
+            subcategory="TEACHER",
+            validity_from=date(2024, 1, 1),
+            status="ACTIVE",
+            version_no=1,
+        )
+        return HrPosition.objects.create(
+            tenant_id=TENANT,
+            position_code=code,
+            organization_id=org,
+            post_catalog_version_id=catalog_version,
+            validity_from=date(2024, 1, 1),
+            lifecycle_status=lifecycle,
+            max_incumbents=2,
+            allow_multiple_incumbents=True,
+        )
+
+    def test_assignment_cannot_outlive_employment_relationship(self):
+        self.emp.effective_to = date(2025, 1, 1)
+        self.emp.save(update_fields=["effective_to", "updated_at"])
+        with self.assertRaises(AssignmentPolicyViolation) as ctx:
+            self.service.create_assignment(
+                employment_relationship_id=self.emp,
+                assignment_type=AssignmentType.CONCURRENT,
+                effective_from=date(2024, 9, 1),
+                effective_to=date(2025, 2, 1),
+                organization_id=self.computer,
+                source_business_type=FIXTURE_SOURCE,
+            )
+        self.assertEqual(ctx.exception.code, "ASSIGNMENT_OUTSIDE_RELATIONSHIP")
+
+    def test_position_must_belong_to_selected_org_as_of_effective_date(self):
+        position = self._make_position(org=self.computer, code="P-ORG")
+        with self.assertRaises(AssignmentPolicyViolation) as ctx:
+            self.service.create_assignment(
+                employment_relationship_id=self.emp,
+                assignment_type=AssignmentType.CONCURRENT,
+                effective_from=date(2024, 9, 1),
+                organization_id=self.ai,
+                position_id=position,
+                source_business_type=FIXTURE_SOURCE,
+            )
+        self.assertEqual(ctx.exception.code, "POSITION_ORG_MISMATCH")
+
+    def test_frozen_position_cannot_receive_new_assignment(self):
+        position = self._make_position(org=self.computer, code="P-FROZEN", lifecycle="FROZEN")
+        with self.assertRaises(AssignmentPolicyViolation) as ctx:
+            self.service.create_assignment(
+                employment_relationship_id=self.emp,
+                assignment_type=AssignmentType.CONCURRENT,
+                effective_from=date(2024, 9, 1),
+                organization_id=self.computer,
+                position_id=position,
+                source_business_type=FIXTURE_SOURCE,
+            )
+        self.assertEqual(ctx.exception.code, "POSITION_NOT_ASSIGNABLE")
+
+    def test_overlapping_total_fte_cannot_exceed_school_policy(self):
+        self.service.create_assignment(
+            employment_relationship_id=self.emp,
+            assignment_type=AssignmentType.PRIMARY,
+            effective_from=date(2024, 9, 1),
+            organization_id=self.computer,
+            source_business_type=FIXTURE_SOURCE,
+        )
+        with self.assertRaises(AssignmentPolicyViolation) as ctx:
+            self.service.create_assignment(
+                employment_relationship_id=self.emp,
+                assignment_type=AssignmentType.CONCURRENT,
+                effective_from=date(2025, 1, 1),
+                organization_id=self.ai,
+                fte=Decimal("0.75"),
+                source_business_type=FIXTURE_SOURCE,
+            )
+        self.assertEqual(ctx.exception.code, "FTE_POLICY_EXCEEDED")

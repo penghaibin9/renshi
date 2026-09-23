@@ -1,3 +1,4 @@
+{# LEGACY FALLBACK SNAPSHOT. Canonical HR01-HR18 templates must never extend this file. #}
 {% load static %}
 {% load i18n %}
 {% load horillafilters %}
@@ -37,6 +38,8 @@
     <link rel="stylesheet" href="{% static 'build/css/sweetalert2.min.css' %}" />
     <link rel="stylesheet" type="text/css" href="{% static 'css/style.css' %}">
     <link rel="stylesheet" type="text/css" href="{% static 'css/hr_academic_workspace.css' %}">
+    <link rel="stylesheet" href="{% static 'hr/css/hr-guide.css' %}" />
+    <link rel="stylesheet" href="{% static 'hr/css/hr-admin-center.css' %}" />
     <link rel="stylesheet" href="{% static 'build/css/summernote-lite.min.css' %}" />
     <link rel="stylesheet" href="{% static 'build/css/orgChart.css' %}" />
     <link rel="stylesheet" href="{% static '/jquery/jqueryui.css' %}">
@@ -268,6 +271,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{% static 'src/js/customFooterScripts.js' %}"></script>
     <script src="{% static 'src/js/hrAcademicWorkspace.js' %}"></script>
+    <script src="{% static 'hr/js/core/hr-guide.js' %}"></script>
+    <script src="{% static 'hr/js/core/hr-smart-fill.js' %}"></script>
+    <script src="{% static 'hr/js/core/hr-admin-center.js' %}"></script>
     {% block scripts %}
     {% endblock scripts %}
     <script>

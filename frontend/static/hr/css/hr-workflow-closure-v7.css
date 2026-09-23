@@ -1,0 +1,8 @@
+/* Local workflow controls. Existing blue/gray theme and semantic state colors only. */
+.hr-v7-proposed-dialog .hr-v7-field{display:flex;flex-direction:column;gap:7px;margin:0 0 16px;font-size:14px;font-weight:600;min-width:0}
+.hr-v7-proposed-dialog .hr-v7-field :is(input,select){width:100%;min-width:0;min-height:40px;border:1px solid #cbd5e1;border-radius:5px;padding:8px 10px;background:#fff;color:#0f172a;font:inherit;font-weight:400}
+.hr-v7-proposed-dialog .hr-v7-field textarea{font-weight:400}
+.hr-v7-proposed-dialog .hr-v7-draft-hint{font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:10px}
+.hr-v7-command-result{font-size:14px;line-height:1.7;color:#912018;overflow-wrap:anywhere}
+.hr-v7-command-result:empty{display:none}
+.hr-v7-proposed-dialog [aria-busy="true"]{cursor:progress}

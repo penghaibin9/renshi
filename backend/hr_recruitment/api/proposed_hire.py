@@ -41,7 +41,7 @@ from hr_recruitment.services.hiring_authority_service import (
     effective_hiring_decision_snapshot,
 )
 from hr_recruitment.services.notice_service import NoticeService, NoticeServiceError
-from hr_recruitment.services.offer_service import OfferService, OfferServiceError
+from hr_recruitment.services.offer_service import OfferService, OfferServiceError, offer_snapshot
 from hr_recruitment.services.proposed_hire_service import (
     ProposedHireService,
     ProposedHireServiceError,
@@ -88,86 +88,72 @@ def proposed_hire_list(request):
         HrSelectionResultSnapshot,
     )
 
-    items = HrProposedHire.objects.filter(
-        tenant_id=ctx.tenant_id
-    ).select_related("application_id__candidate_id", "recruitment_position_id").order_by(
-        "-created_at"
-    )[:100]
-    proposed_application_ids = set(items.values_list("application_id_id", flat=True))
-    latest_snapshots = (
-        HrSelectionResultSnapshot.objects.filter(
-            tenant_id=ctx.tenant_id,
-            application_id__canonical_status=S.QUALIFIED,
-        )
-        .select_related("application_id__candidate_id", "recruitment_position_id")
-        .order_by("application_id_id", "-snapshot_version")
+    from django.core.paginator import Paginator
+    from django.db.models import Q, F, OuterRef, Subquery, Exists
+    try:
+        page_no = max(1, int(request.GET.get("page", 1)))
+        eligible_page = max(1, int(request.GET.get("eligiblePage", 1)))
+        page_size = max(1, min(100, int(request.GET.get("pageSize", 20))))
+    except (ValueError, TypeError):
+        return error(request, "PAGINATION_INVALID", "分页参数必须为整数", 422)
+    keyword = request.GET.get("keyword", "").strip()[:200]
+    query = HrProposedHire.objects.filter(
+        tenant_id=ctx.tenant_id, application_id__tenant_id=ctx.tenant_id,
+        application_id__candidate_id__tenant_id=ctx.tenant_id, recruitment_position_id__tenant_id=ctx.tenant_id,
+        application_id__recruitment_position_id=F("recruitment_position_id"),
     )
-    eligible = []
-    seen_applications = set()
-    for snapshot in latest_snapshots:
-        app_id = snapshot.application_id_id
-        if app_id in proposed_application_ids or app_id in seen_applications:
-            continue
-        seen_applications.add(app_id)
-        app = snapshot.application_id
-        position = snapshot.recruitment_position_id
-        eligible.append(
-            {
-                "application_id": str(app.id),
-                "application_no": app.application_no,
-                "candidate_name": app.candidate_id.legal_name if app.candidate_id else "",
-                "position": position.post_catalog_name,
-                "rank": snapshot.rank,
-                "final_score": str(snapshot.final_score),
-                "reservation_id": position.reservation_id,
-                "reservation_no": position.reservation_no,
-            }
-        )
-
-    item_rows = []
+    if keyword:
+        query = query.filter(Q(application_id__candidate_id__legal_name__icontains=keyword)
+            | Q(application_id__application_no__icontains=keyword) | Q(recruitment_position_id__post_catalog_name__icontains=keyword))
+    pager = Paginator(query.select_related("application_id__candidate_id", "recruitment_position_id").order_by("-created_at", "-id"), page_size)
+    selected = pager.get_page(page_no)
+    items = list(selected)
+    ids = [x.id for x in items]
+    # At most three child queries for the current page (not 3 queries per row).
+    notices, offers, handoffs = {}, {}, {}
+    for n in HrPublicNoticeEntry.objects.filter(tenant_id=ctx.tenant_id, proposed_hire_id_id__in=ids,
+            notice_id__tenant_id=ctx.tenant_id).select_related("notice_id").order_by("-notice_id__published_at", "-id"):
+        notices.setdefault(n.proposed_hire_id_id, n)
+    for o in HrRecruitmentOffer.objects.filter(tenant_id=ctx.tenant_id, proposed_hire_id_id__in=ids).order_by("-created_at", "-id"):
+        offers.setdefault(o.proposed_hire_id_id, o)
+    for h in HrRecruitmentHandoff.objects.filter(tenant_id=ctx.tenant_id, proposed_hire_id_id__in=ids).order_by("-handoff_at", "-id"):
+        handoffs.setdefault(h.proposed_hire_id_id, h)
+    # Exclude ALL existing proposals, not only those on the displayed page.
+    existing = HrProposedHire.objects.filter(tenant_id=ctx.tenant_id, application_id_id=OuterRef("application_id_id"))
+    latest = HrSelectionResultSnapshot.objects.filter(tenant_id=ctx.tenant_id,
+        application_id_id=OuterRef("application_id_id")).order_by("-snapshot_version", "-calculated_at", "-id")
+    snapshots = HrSelectionResultSnapshot.objects.filter(tenant_id=ctx.tenant_id,
+        application_id__tenant_id=ctx.tenant_id, application_id__candidate_id__tenant_id=ctx.tenant_id,
+        recruitment_position_id__tenant_id=ctx.tenant_id, application_id__canonical_status=S.QUALIFIED,
+        application_id__recruitment_position_id=F("recruitment_position_id"),
+    ).annotate(already_proposed=Exists(existing), latest_id=Subquery(latest.values("id")[:1])).filter(
+        already_proposed=False, id=F("latest_id"))
+    if keyword:
+        snapshots=snapshots.filter(Q(application_id__candidate_id__legal_name__icontains=keyword)
+            | Q(application_id__application_no__icontains=keyword) | Q(recruitment_position_id__post_catalog_name__icontains=keyword))
+    ep = Paginator(snapshots.select_related("application_id__candidate_id", "recruitment_position_id").order_by("-calculated_at", "-id"), page_size)
+    es = ep.get_page(eligible_page)
+    eligible = [{"application_id": str(x.application_id_id), "application_no": x.application_id.application_no,
+        "candidate_name": x.application_id.candidate_id.legal_name, "position": x.recruitment_position_id.post_catalog_name,
+        "rank": x.rank, "final_score": str(x.final_score), "reservation_id": x.recruitment_position_id.reservation_id,
+        "reservation_no": x.recruitment_position_id.reservation_no} for x in es]
+    can_offer = request.user.is_superuser or request.user.has_perm("hr04.offer.manage")
+    rows=[]
     for p in items:
-        notice_entry = (
-            HrPublicNoticeEntry.objects.filter(tenant_id=ctx.tenant_id, proposed_hire_id=p)
-            .select_related("notice_id")
-            .order_by("-notice_id__published_at")
-            .first()
-        )
-        offer = HrRecruitmentOffer.objects.filter(
-            tenant_id=ctx.tenant_id, proposed_hire_id=p
-        ).order_by("-created_at").first()
-        handoff = HrRecruitmentHandoff.objects.filter(
-            tenant_id=ctx.tenant_id, proposed_hire_id=p
-        ).order_by("-handoff_at").first()
-        item_rows.append(
-            {
-                "id": str(p.id),
-                "application_id": str(p.application_id_id),
-                "campaign_id": str(p.recruitment_position_id.campaign_id_id),
-                "rank": p.rank,
-                "final_score": str(p.final_score),
-                "approval_status": p.approval_status,
-                "approvalStatusLabel": status_label(PROPOSED_HIRE_STATUS_LABELS, p.approval_status),
-                "candidate_name": p.application_id.candidate_id.legal_name if p.application_id and p.application_id.candidate_id else "",
-                "position": p.recruitment_position_id.post_catalog_name if p.recruitment_position_id else "",
-                "reservation_id": p.reservation_id or "",
-                "notice_id": str(notice_entry.notice_id_id) if notice_entry else "",
-                "notice_status": notice_entry.notice_id.status if notice_entry else "",
-                "offer_id": str(offer.id) if offer else "",
-                "offer_status": offer.status if offer else "",
-                "handoff_id": str(handoff.id) if handoff else "",
-                "handoff_status": handoff.status if handoff else "",
-                "hr05_case_id": handoff.hr05_case_id if handoff else "",
-                "created_at": p.created_at.isoformat() if p.created_at else None,
-            }
-        )
-    return ok(
-        request,
-        {
-            "items": item_rows,
-            "eligible_applications": eligible,
-        },
-        status=200,
-    )
+        n,o,h=notices.get(p.id),offers.get(p.id),handoffs.get(p.id)
+        rows.append({"id":str(p.id), "application_id":str(p.application_id_id),
+            "application_no":p.application_id.application_no, "campaign_id":str(p.recruitment_position_id.campaign_id_id),
+            "rank":p.rank, "final_score":str(p.final_score), "approval_status":p.approval_status,
+            "approvalStatusLabel":status_label(PROPOSED_HIRE_STATUS_LABELS,p.approval_status),
+            "candidate_name":p.application_id.candidate_id.legal_name, "position":p.recruitment_position_id.post_catalog_name,
+            "reservation_id":p.reservation_id or "", "notice_id":str(n.notice_id_id) if n else "",
+            "notice_status":n.notice_id.status if n else "", "offer_id":str(o.id) if o else "",
+            "offer_status":o.status if o else "", "offer_snapshot":offer_snapshot(o) if o and can_offer else None,
+            "handoff_id":str(h.id) if h else "", "handoff_status":h.status if h else "",
+            "hr05_case_id":h.hr05_case_id if h else "", "created_at":p.created_at.isoformat()})
+    return ok(request, {"items":rows, "eligible_applications":eligible,
+        "page":selected.number, "pageSize":page_size, "total":pager.count, "hasNext":selected.has_next(),
+        "eligiblePage":es.number, "eligibleTotal":ep.count, "eligibleHasNext":es.has_next(), "can_manage_offer":bool(can_offer)})
 
 
 @require_http_methods(["POST"])
@@ -327,11 +313,13 @@ def transition_offer(request, offer_id):
         return error(request, "PERMISSION_DENIED", "无推进 Offer 状态权限", 403)
     try:
         body = json.loads(request.body or b"{}")
+        if not isinstance(body, dict): return error(request, "INVALID_JSON", "请求必须为对象", 422)
+        fingerprint = request.headers.get("If-Match", "").strip('"')
+        if not fingerprint: return error(request, "OFFER_VERSION_REQUIRED", "请读取并核对通知内容后再提交", 422)
         offer = OfferService(tenant_id=ctx.tenant_id, actor=str(request.user.id)).transition(
-            offer_id=offer_id,
-            target=body.get("target"),
+            offer_id=offer_id, target=body.get("target"), expected_fingerprint=fingerprint,
         )
-        return ok(request, {"id": str(offer.id), "status": offer.status})
+        return ok(request, {"id": str(offer.id), "status": offer.status, "offer_snapshot": offer_snapshot(offer)})
     except Exception as exc:  # noqa: BLE001
         return _handle(request, exc)
 

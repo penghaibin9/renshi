@@ -8,6 +8,7 @@ cannot be proven.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any, Iterable
@@ -51,6 +52,7 @@ class CredentialEvidenceRow:
     document_refs: tuple[str, ...]
     requires_document: bool
     as_of: date
+    document_snapshots: tuple[dict, ...] = ()
 
     def snapshot(self) -> dict:
         return {
@@ -70,6 +72,8 @@ class CredentialEvidenceRow:
                 self.last_verified_at.isoformat() if self.last_verified_at else None
             ),
             "document_refs": list(self.document_refs),
+            "document_snapshot_schema": "hr09-document-metadata-v1",
+            "document_snapshots": deepcopy(list(self.document_snapshots)),
             "requires_document": self.requires_document,
             "as_of": self.as_of.isoformat(),
         }
@@ -222,6 +226,7 @@ def get_formal_credential_evidence(
         ).append(verification)
 
     documents_by_credential: dict[str, list[str]] = {str(value): [] for value in credential_ids}
+    document_snapshots: dict[str, list[dict]] = {str(value): [] for value in credential_ids}
     seen_document_refs: dict[str, set[str]] = {str(value): set() for value in credential_ids}
     for document in HrCredentialDocument.objects.filter(
         credential_id_id__in=credential_ids,
@@ -230,6 +235,17 @@ def get_formal_credential_evidence(
     ).order_by("credential_id_id", "version_no", "uploaded_at", "id"):
         key = str(document.credential_id_id)
         ref = str(document.file_id or "").strip()
+        # R11 qualification revision principle: freeze each exact document version,
+        # not just a mutable storage reference. A missing digest stays explicitly unknown.
+        document_snapshots.setdefault(key, []).append({
+            "documentId": str(document.id), "credentialId": key,
+            "fileRef": ref, "version": int(document.version_no),
+            "sha256": str(document.checksum or "").lower(),
+            "documentType": document.document_type,
+            "uploadedAt": document.uploaded_at.isoformat(),
+            "verifiedAtCapture": bool(document.verified),
+            "bytesVerified": False,
+        })
         if not ref or ref in seen_document_refs.setdefault(key, set()):
             continue
         seen_document_refs[key].add(ref)
@@ -288,6 +304,7 @@ def get_formal_credential_evidence(
                 document_refs=tuple(documents_by_credential.get(str(credential.id), [])),
                 requires_document=bool(catalog.requires_document),
                 as_of=as_of,
+                document_snapshots=tuple(document_snapshots.get(str(credential.id), [])),
             )
         )
 

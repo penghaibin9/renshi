@@ -19,6 +19,7 @@ class FormalFactChainTailTests(SimpleTestCase):
         active = MagicMock(name="active")
         interval = MagicMock(name="interval")
         predicate = MagicMock(name="predicate")
+        non_null = MagicMock(name="non_null")
         values = MagicMock(name="values")
         distinct = MagicMock(name="distinct")
 
@@ -28,7 +29,8 @@ class FormalFactChainTailTests(SimpleTestCase):
         no_successor.filter.return_value = active
         active.filter.return_value = interval
         interval.filter.return_value = predicate
-        predicate.values.return_value = values
+        predicate.exclude.return_value = non_null
+        non_null.values.return_value = values
         values.distinct.return_value = distinct
         distinct.count.return_value = value
         return model, successor_qs, base_qs, distinct

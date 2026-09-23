@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "round": "Round9",
+  "date": "2026-09-16",
+  "baseline": {
+    "file": "Yueke_University_HR_Round8_20260916.zip",
+    "sha256": "720912d3598f5cc7ed21ebe083a814191aed8f7c1866f9aebd852bfab87850a0",
+    "deliverableFileCount": 10625
+  },
+  "status": "SOURCE_CODE_CANDIDATE",
+  "releaseStatus": "NOT_RELEASED",
+  "scope": "HR10 canonical HR03 UUID staff identity + legacy compatibility boundary closure",
+  "sourceClosure": {
+    "added": 14,
+    "modified": 41,
+    "deleted": 0,
+    "changedTotal": 55,
+    "deliveryMetadataExcludedFromDiff": true
+  },
+  "fixedDefects": [
+    "HR10 staff-bearing aggregates used legacy Employee bigint while HR03 authority key is UUID",
+    "Round8 individual-plan Excel could only fail closed because HR10 could not store canonical HR03 staff UUID",
+    "HR11 bigint identity leaked into HR10 domain logic instead of being isolated at the provider boundary",
+    "sealed DevelopmentFact history could not be safely bulk-rewritten without invalidating append-only hashes",
+    "duplicate tenant legacy_employee_id mappings could silently misattribute historic HR10 evidence",
+    "making legacy staff ids nullable for UUID-only staff would otherwise permit staff-required rows with no identity",
+    "a monolithic MySQL schema+backfill migration could become non-retryable after partially committed DDL",
+    "fact parent trigger could accept different canonical UUIDs when their legacy bigint happened to match",
+    "approve/return/reject did not all share the same canonical self-approval guard"
+  ],
+  "identityContract": {
+    "canonicalAuthority": "hr_staff.HrStaffMaster.id UUID",
+    "legacyBridge": "tenant-scoped legacy_employee_id only when unique",
+    "canonicalColumns": 10,
+    "requiredIdentityCheckConstraints": 7,
+    "migrationChain": [
+      "0026_canonical_hr03_staff_uuid",
+      "0027_backfill_hr10_staff_uuid",
+      "0028_hr10_staff_identity_guards"
+    ],
+    "sealedFactPolicy": "V1 hash rows untouched; mappable successors upgrade to V2 UUID identity",
+    "hr11Policy": "UUID -> unique HR03 legacy bridge -> HR11 bigint; missing/ambiguous = SOURCE_UNAVAILABLE",
+    "hr09Policy": "ambiguous historic bridge = SOURCE_IDENTITY_MAPPING_AMBIGUOUS",
+    "individualPlanExcel": "UUID accepted directly; numeric id accepted only through unique tenant HR03 mapping"
+  },
+  "verification": {
+    "hr10ImportStatic": {
+      "passed": 20,
+      "total": 20,
+      "status": "PASS"
+    },
+    "hr10StaffIdentityStatic": {
+      "passed": 53,
+      "total": 53,
+      "status": "PASS"
+    },
+    "pureUnittest": {
+      "tests": 159,
+      "status": "PASS"
+    },
+    "pythonAst": {
+      "files": 3144,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "javascriptNodeCheck": {
+      "files": 253,
+      "errors": 0,
+      "status": "PASS"
+    }
+  },
+  "djangoRuntimeRegression": {
+    "status": "NOT_RUN_DEPENDENCY_MISSING",
+    "attempted": true,
+    "error": "ModuleNotFoundError: No module named 'django'",
+    "requiredBeforeRelease": true
+  },
+  "runtimeGatesStillRequiredBeforeTraffic": [
+    "python manage.py makemigrations --check --dry-run",
+    "0026 -> 0027 -> 0028 migrate plan on disposable MySQL 8.4 QA database",
+    "dirty missing/ambiguous legacy mapping fail-closed and retry rehearsal",
+    "HR10 targeted Django regression suite",
+    "MySQL identity check/unique/index/parent-trigger verification",
+    "V1 sealed fact hash and V2 successor verification",
+    "Round8 Excel worker lease and real execution regression"
+  ],
+  "safety": {
+    "productionTouched": false,
+    "gitHubTouched": false
+  },
+  "packageVerification": {
+    "expectedZipFileCount": 10642,
+    "expectedManifestEntries": 10641,
+    "status": "PASS",
+    "zipFileCount": 10642,
+    "manifestEntries": 10641,
+    "manifestMissing": 0,
+    "manifestHashOrSizeErrors": 0,
+    "unexpectedFiles": 0,
+    "pycacheArtifacts": 0,
+    "finalZipReextractGates": {
+      "hr10ImportStatic": "20/20 PASS",
+      "hr10StaffIdentityStatic": "53/53 PASS",
+      "pureUnittest": "159/159 PASS"
+    },
+    "manifestPolicy": "ROUND9_FILE_MANIFEST.tsv covers every packaged file except itself"
+  }
+}

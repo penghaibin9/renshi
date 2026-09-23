@@ -1,0 +1,65 @@
+{% load static %}
+{% load i18n %}
+{% load horillafilters %}
+{% get_company as theme_obj %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{% block title %}跃科高校人事一体化平台{% endblock %}</title>
+  <link rel="icon" type="image/jpeg" href="{% if white_label_company.icon %}{{ white_label_company.icon.url }}{% else %}{% static 'images/ui/university-seal.jpg' %}{% endif %}">
+  <link rel="stylesheet" href="{% static 'cdn/font-awsome/css/all.min.css' %}">
+  <link rel="stylesheet" href="{% static 'cdn/googleapi/css/inter-font-style.css' %}">
+  <link rel="stylesheet" href="{% static 'horilla_theme/assets/css/tailwind.css' %}">
+  {% include "horilla_theme/components/tailwind_theme_tokens.html" %}
+  <link rel="stylesheet" href="{% static 'horilla_theme/assets/css/global.css' %}">
+  <link rel="stylesheet" href="{% static 'horilla_theme/assets/css/v1_styles.css' %}">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-shell-v3.css' %}?v=20260830-hr-shell-2">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-all-menus-polish.css' %}?v=20260918-menu-polish-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr01-10-business-redesign.css' %}?v=20260918-business-redesign-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr11-18-business-redesign.css' %}?v=20260918-business-redesign-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-business-surface-v2.css' %}?v=20260918-surface-v2-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-unified-brand-v3.css' %}?v=20260918-unified-brand-v3-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-detail-workspaces-v4.css' %}?v=20260918-detail-v4-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-detail-closure-v5.css' %}?v=20260919-detail-v5-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-workspace-finish-v6.css' %}?v=20260919-workspace-v6-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-ui-a-v16.css' %}?v=20260920-ui-a-v16-1">
+  <link rel="stylesheet" href="{% static 'hr/css/hr-shell-clean-v16.css' %}?v=20260920-repo-clean-1">
+  {% block styles %}{% endblock %}
+</head>
+<body class="hr-shell-v3 hr-ui-a-v16 hr-shell-clean-v16">
+  <a class="hr-clean-skip" href="#ohMainContent">跳到办理内容</a>
+  <aside id="sidebar" class="hr-clean-sidebar" aria-label="人事业务导航">
+    <div class="hr-clean-sidebar__inner">
+      {% include "hr/components/sidebar_brand_v16.html" %}
+      <nav class="hr-clean-sidebar__nav" aria-label="HR01 至 HR18 模块与页面">
+        {% include "hr/components/module_sidebar.html" %}
+      </nav>
+      <footer class="hr-clean-sidebar__footer">
+        <span>跃科高校人事</span><small>V16 · 中文业务前台</small>
+      </footer>
+    </div>
+  </aside>
+  <div class="hr-clean-backdrop" data-hr-sidebar-backdrop hidden></div>
+  <div class="oh-main-content hr-clean-main">
+    {% include "hr/components/header_clean_v16.html" %}
+    <main id="ohMainContent" class="hr-clean-content" tabindex="-1">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>window.CURRENT_LANGUAGE = "zh-hans";</script>
+  <script src="{% static '/jquery/jquery.min.js' %}"></script>
+  <script type="module" src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.esm.js' %}"></script>
+  <script nomodule src="{% static 'images/ionicons/ui_icons/ionicons/ionicons.js' %}"></script>
+  <script src="{% static 'hr/js/core/hr-detail-ux-v5.js' %}?v=20260919-detail-v5-1"></script>
+  <script src="{% static 'hr/js/core/hr-workspace-ux-v6.js' %}?v=20260919-workspace-v6-1"></script>
+  {% block scripts %}{% endblock %}
+  <script src="{% static 'hr/js/core/hr-all-menus-polish.js' %}?v=20260918-menu-polish-1"></script>
+  <script src="{% static 'hr/js/core/hr-ui-a-v16.js' %}?v=20260920-ui-a-v16-1"></script>
+  <script src="{% static 'hr/js/core/hr-shell-clean-v16.js' %}?v=20260920-repo-clean-1"></script>
+</body>
+</html>

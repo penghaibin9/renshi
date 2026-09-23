@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% block title %}{% trans "人事异动中心" %}{% endblock %}
 {% block styles %}
@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}?v=20260830-hr06-workbench">
 {% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr06-page hr06-center" data-module="HR06" data-section="center" data-hr-page="change-center">
+<div class="hr-v2-page hr06-page hr06-center" data-module="HR06" data-hr-workspace="v6" data-section="center" data-hr-page="change-center">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事管理</span><strong>人事异动</strong></div>
 
   <nav class="hr06-breadcrumb" aria-label="面包屑">
@@ -64,7 +64,7 @@
         {% endfor %}
       </div>
 
-      <form method="get" action="{% url 'hr06-change-center' %}" class="hr06-filter-form">
+      <form method="get" action="{% url 'hr06-change-center' %}" class="hr06-filter-form" data-v6-form="read">
         <input type="hidden" name="view" value="{{ view }}">
         <div class="hr06-filter-title">
           <h2 id="hr06-filter-title">筛选</h2>

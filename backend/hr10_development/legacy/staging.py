@@ -72,6 +72,19 @@ class HrDevelopmentStagingRow(DevelopmentTenantModel):
         verbose_name=_("目标 ID"),
     )
 
+    execution_status = models.CharField(
+        max_length=16,
+        default="PENDING",
+        db_index=True,
+        verbose_name=_("导入执行状态"),  # PENDING / SUCCESS / FAILED / SKIPPED
+    )
+
+    executed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("导入执行时间"),
+    )
+
     verification_status = models.CharField(
         max_length=16,
         default="PENDING",
@@ -112,7 +125,14 @@ class HrDevelopmentStagingRow(DevelopmentTenantModel):
         verbose_name_plural = verbose_name
         indexes = [
             models.Index(fields=["tenant_id", "verification_status"]),
+            models.Index(fields=["tenant_id", "execution_status"]),
             models.Index(fields=["import_job_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "import_job_id", "source_object_id"],
+                name="uniq_hr10_staging_import_row",
+            ),
         ]
 
     def __str__(self):

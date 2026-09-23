@@ -290,3 +290,88 @@ class ExchangeRuntimeTests(MySQLTriggerSafeTransactionTestCase):
         job.refresh_from_db()
         self.assertEqual(job.lease_token, lease2)
         self.assertEqual(job.status, ExchangeJob.Status.LEASED)
+
+    @override_settings(
+        HR18_EXCHANGE_PROVIDERS={
+            "SANDBOX": "hr_data.tests.test_exchange_service.failing_provider"
+        }
+    )
+    def test_manual_retry_appends_successor_without_rewriting_terminal_failure(self):
+        dataset, target, source = self._job(max_attempts=1)
+        service = ExchangeJobService(self.tenant_id, actor_user_id=9)
+        failed = service.dispatch(source.id)
+        self.assertTrue(failed.dead_lettered)
+        source.refresh_from_db()
+        self.assertEqual(source.status, ExchangeJob.Status.DEAD_LETTER)
+        dead = ExchangeDeadLetter.objects.get(job_id=source.id)
+        self.assertIsNone(dead.resolved_at)
+        original_attempt_ids = list(
+            ExchangeAttempt.objects.filter(job_id=source.id).values_list("id", flat=True)
+        )
+
+        outcome = service.requeue_dead_letter(
+            source.id,
+            new_job_no="JOB_MANUAL_RETRY_1",
+            idempotency_key="manual-retry-1",
+            reason="provider recovered after administrator verification",
+        )
+        self.assertTrue(outcome.created)
+        successor = outcome.value
+        self.assertEqual(successor.status, ExchangeJob.Status.QUEUED)
+        self.assertEqual(successor.retry_of_job_id, source.id)
+        self.assertEqual(successor.dataset_version_id, dataset.id)
+        self.assertEqual(successor.target_mapping_version_id, target.id)
+        self.assertEqual(successor.snapshot_hash, source.snapshot_hash)
+        self.assertEqual(successor.manual_retry_by, 9)
+        self.assertEqual(
+            successor.manual_retry_reason,
+            "provider recovered after administrator verification",
+        )
+
+        source.refresh_from_db()
+        dead.refresh_from_db()
+        self.assertEqual(source.status, ExchangeJob.Status.DEAD_LETTER)
+        self.assertIsNotNone(dead.resolved_at)
+        self.assertEqual(
+            list(ExchangeAttempt.objects.filter(job_id=source.id).values_list("id", flat=True)),
+            original_attempt_ids,
+        )
+
+        replay = service.requeue_dead_letter(
+            source.id,
+            new_job_no="JOB_MANUAL_RETRY_1",
+            idempotency_key="manual-retry-1",
+            reason="provider recovered after administrator verification",
+        )
+        self.assertFalse(replay.created)
+        self.assertEqual(replay.value.id, successor.id)
+
+        with self.assertRaises(ExchangeError) as ctx:
+            service.requeue_dead_letter(
+                source.id,
+                new_job_no="JOB_MANUAL_RETRY_1",
+                idempotency_key="manual-retry-1",
+                reason="changed reason must not silently reuse the same command",
+            )
+        self.assertEqual(ctx.exception.code, "EXCHANGE_IDEMPOTENCY_CONFLICT")
+
+    def test_manual_retry_is_tenant_scoped_and_dead_letter_only(self):
+        _dataset, _target, queued = self._job()
+        service = ExchangeJobService(self.tenant_id, actor_user_id=9)
+        with self.assertRaises(ExchangeError) as ctx:
+            service.requeue_dead_letter(
+                queued.id,
+                new_job_no="JOB_INVALID_RETRY",
+                idempotency_key="manual-retry-invalid-state",
+                reason="must not retry a live queue item",
+            )
+        self.assertEqual(ctx.exception.code, "EXCHANGE_MANUAL_RETRY_INVALID_STATE")
+
+        with self.assertRaises(ExchangeError) as ctx:
+            ExchangeJobService(999, actor_user_id=9).requeue_dead_letter(
+                queued.id,
+                new_job_no="JOB_CROSS_TENANT_RETRY",
+                idempotency_key="manual-retry-cross-tenant",
+                reason="cross tenant access must fail closed",
+            )
+        self.assertEqual(ctx.exception.code, "EXCHANGE_JOB_NOT_FOUND")

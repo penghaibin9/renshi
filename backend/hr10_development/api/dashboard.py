@@ -144,10 +144,34 @@ def metric_detail(request, metric_code):
             tenant_id=tenant_id, fact_type=FactType.TRAINING_COMPLETION,
         )
         total_hours = sum(float(f.verified_hours or 0) for f in facts[:2000])
-        staff_count = facts.values("staff_master_id").distinct().count()
+        identity_rows = list(
+            facts.values_list("staff_master_uuid", "staff_master_id").distinct()
+        )
+        canonical_ids = {row[0] for row in identity_rows if row[0] is not None}
+        legacy_ids = {int(row[1]) for row in identity_rows if row[0] is None and row[1] is not None}
+        identity_mapping_safe = True
+        if legacy_ids:
+            from hr_staff.models import HrStaffMaster
+            bridge_members = {}
+            for legacy_id, staff_uuid in HrStaffMaster.objects.filter(
+                tenant_id=tenant_id, legacy_employee_id__in=legacy_ids
+            ).values_list("legacy_employee_id", "id"):
+                bridge_members.setdefault(int(legacy_id), set()).add(staff_uuid)
+            identity_mapping_safe = all(
+                len(bridge_members.get(legacy_id, set())) == 1 for legacy_id in legacy_ids
+            )
+            if identity_mapping_safe:
+                canonical_ids.update(
+                    next(iter(bridge_members[legacy_id])) for legacy_id in legacy_ids
+                )
+        staff_count = len(canonical_ids) if identity_mapping_safe else 0
         value = round(total_hours / staff_count, 2) if staff_count else None
-        available = bool(staff_count)
-        denominator = f"有培训完成事实的教师 {staff_count} 人"
+        available = bool(staff_count) and identity_mapping_safe
+        denominator = (
+            f"有培训完成事实的教师 {staff_count} 人"
+            if identity_mapping_safe
+            else "历史培训事实存在缺失或歧义的旧 Employee→HR03 UUID 映射"
+        )
     else:
         return JsonResponse(error("UNKNOWN_METRIC", f"未知指标: {metric_code}"), status=404)
 

@@ -1,0 +1,340 @@
+import django.db.models.deletion
+import uuid
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='HrConfigurationPermissionMeta',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+            ],
+            options={
+                'permissions': (('hr.configuration.view', '查看高校人事配置中心'), ('hr.configuration.manage', '编辑高校人事配置草稿'), ('hr.configuration.publish', '发布高校人事流程配置')),
+                'managed': False,
+            },
+        ),
+        migrations.CreateModel(
+            name='ConfigurationAuditEvent',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('actor_user_id', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('event_type', models.CharField(db_index=True, max_length=64)),
+                ('object_type', models.CharField(max_length=64)),
+                ('object_id', models.CharField(max_length=64)),
+                ('summary', models.CharField(max_length=255)),
+                ('payload_json', models.JSONField(blank=True, default=dict)),
+                ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
+            ],
+            options={
+                'db_table': 'hrcfg_audit_event',
+                'indexes': [models.Index(fields=['tenant_id', 'created_at'], name='idx_hrcfg_audit_tenant')],
+            },
+        ),
+        migrations.CreateModel(
+            name='WorkflowDefinition',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('name', models.CharField(max_length=160)),
+                ('business_domain', models.CharField(db_index=True, max_length=16)),
+                ('description', models.TextField(blank=True, default='')),
+                ('enabled', models.BooleanField(default=True)),
+            ],
+            options={
+                'db_table': 'hrcfg_workflow_definition',
+                'indexes': [models.Index(fields=['tenant_id', 'business_domain', 'enabled'], name='idx_hrcfg_workflow_domain')],
+                'constraints': [models.UniqueConstraint(fields=('tenant_id', 'code'), name='uq_hrcfg_workflow_tenant_code')],
+            },
+        ),
+        migrations.CreateModel(
+            name='WorkflowVersion',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('version_no', models.PositiveIntegerField(default=1)),
+                ('status', models.CharField(choices=[('DRAFT', '草稿'), ('PUBLISHED', '已发布')], db_index=True, default='DRAFT', max_length=16)),
+                ('change_note', models.CharField(blank=True, default='', max_length=255)),
+                ('content_hash', models.CharField(blank=True, default='', max_length=64)),
+                ('published_at', models.DateTimeField(blank=True, null=True)),
+                ('published_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('workflow', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='versions', to='hr_configuration.workflowdefinition')),
+            ],
+            options={
+                'db_table': 'hrcfg_workflow_version',
+            },
+        ),
+        migrations.CreateModel(
+            name='WorkflowStage',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('name', models.CharField(max_length=120)),
+                ('sort_order', models.PositiveIntegerField(default=10)),
+                ('is_start', models.BooleanField(default=False)),
+                ('is_end', models.BooleanField(default=False)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_workflow_stage',
+                'ordering': ('sort_order', 'code'),
+            },
+        ),
+        migrations.CreateModel(
+            name='PrintTemplate',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('name', models.CharField(max_length=120)),
+                ('output_format', models.CharField(choices=[('HTML', 'HTML/浏览器打印'), ('PDF', 'PDF')], default='PDF', max_length=8)),
+                ('template_body', models.TextField()),
+                ('enabled', models.BooleanField(default=True)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_print_template',
+            },
+        ),
+        migrations.CreateModel(
+            name='NotificationRule',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('event_code', models.CharField(max_length=64)),
+                ('channel', models.CharField(choices=[('IN_APP', '站内通知'), ('EMAIL', '邮件'), ('SMS', '短信'), ('WECOM', '企业微信')], max_length=16)),
+                ('recipient_role_code', models.CharField(max_length=96)),
+                ('subject_template', models.CharField(blank=True, default='', max_length=200)),
+                ('body_template', models.TextField()),
+                ('enabled', models.BooleanField(default=True)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_notification_rule',
+            },
+        ),
+        migrations.CreateModel(
+            name='FormDefinition',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('title', models.CharField(max_length=160)),
+                ('stage_code', models.CharField(blank=True, default='', max_length=64)),
+                ('sort_order', models.PositiveIntegerField(default=10)),
+                ('description', models.CharField(blank=True, default='', max_length=255)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_form_definition',
+                'ordering': ('sort_order', 'code'),
+            },
+        ),
+        migrations.CreateModel(
+            name='FieldDefinition',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('key', models.CharField(max_length=64)),
+                ('label', models.CharField(max_length=120)),
+                ('field_type', models.CharField(choices=[('TEXT', '单行文本'), ('TEXTAREA', '多行文本'), ('INTEGER', '整数'), ('DECIMAL', '小数'), ('DATE', '日期'), ('DATETIME', '日期时间'), ('BOOLEAN', '是/否'), ('SELECT', '单选下拉'), ('MULTISELECT', '多选'), ('FILE', '附件')], default='TEXT', max_length=16)),
+                ('required', models.BooleanField(default=False)),
+                ('sort_order', models.PositiveIntegerField(default=10)),
+                ('help_text', models.CharField(blank=True, default='', max_length=255)),
+                ('default_value', models.CharField(blank=True, default='', max_length=255)),
+                ('options_json', models.JSONField(blank=True, default=list)),
+                ('validation_json', models.JSONField(blank=True, default=dict)),
+                ('form', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='fields', to='hr_configuration.formdefinition')),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_field_definition',
+                'ordering': ('form_id', 'sort_order', 'key'),
+            },
+        ),
+        migrations.CreateModel(
+            name='ExcelTemplate',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('name', models.CharField(max_length=120)),
+                ('direction', models.CharField(choices=[('IMPORT', '导入'), ('EXPORT', '导出'), ('BOTH', '导入/导出')], default='IMPORT', max_length=8)),
+                ('sheet_name', models.CharField(default='数据', max_length=31)),
+                ('enabled', models.BooleanField(default=True)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_excel_template',
+            },
+        ),
+        migrations.CreateModel(
+            name='ExcelColumn',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('field_key', models.CharField(max_length=64)),
+                ('header', models.CharField(max_length=120)),
+                ('sort_order', models.PositiveIntegerField(default=10)),
+                ('required', models.BooleanField(default=False)),
+                ('data_type', models.CharField(default='TEXT', max_length=24)),
+                ('example_value', models.CharField(blank=True, default='', max_length=255)),
+                ('template', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='columns', to='hr_configuration.exceltemplate')),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_excel_column',
+                'ordering': ('sort_order', 'field_key'),
+            },
+        ),
+        migrations.CreateModel(
+            name='ConditionRule',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('name', models.CharField(max_length=120)),
+                ('source_stage_code', models.CharField(max_length=64)),
+                ('field_key', models.CharField(max_length=64)),
+                ('operator', models.CharField(choices=[('EQ', '等于'), ('NE', '不等于'), ('GT', '大于'), ('GTE', '大于等于'), ('LT', '小于'), ('LTE', '小于等于'), ('IN', '属于'), ('NOT_IN', '不属于'), ('EMPTY', '为空'), ('NOT_EMPTY', '不为空')], max_length=16)),
+                ('compare_value_json', models.JSONField(blank=True, default=dict)),
+                ('target_stage_code', models.CharField(max_length=64)),
+                ('priority', models.PositiveIntegerField(default=100)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_condition_rule',
+                'ordering': ('priority', 'code'),
+            },
+        ),
+        migrations.CreateModel(
+            name='ApprovalRoleRule',
+            fields=[
+                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ('tenant_id', models.PositiveBigIntegerField(db_index=True)),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('updated_at', models.DateTimeField(auto_now=True)),
+                ('created_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('updated_by', models.PositiveBigIntegerField(blank=True, null=True)),
+                ('code', models.CharField(max_length=64)),
+                ('stage_code', models.CharField(max_length=64)),
+                ('role_code', models.CharField(max_length=96)),
+                ('role_name', models.CharField(max_length=120)),
+                ('data_scope', models.CharField(default='SAME_ORG', max_length=32)),
+                ('sort_order', models.PositiveIntegerField(default=10)),
+                ('approval_mode', models.CharField(choices=[('ANY', '任一人通过'), ('ALL', '全部通过'), ('SEQUENTIAL', '按顺序审批')], default='ANY', max_length=16)),
+                ('version', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to='hr_configuration.workflowversion')),
+            ],
+            options={
+                'db_table': 'hrcfg_approval_role_rule',
+                'ordering': ('sort_order', 'code'),
+            },
+        ),
+        migrations.AddIndex(
+            model_name='workflowversion',
+            index=models.Index(fields=['tenant_id', 'status', 'published_at'], name='idx_hrcfg_version_status'),
+        ),
+        migrations.AddConstraint(
+            model_name='workflowversion',
+            constraint=models.UniqueConstraint(fields=('workflow', 'version_no'), name='uq_hrcfg_workflow_version'),
+        ),
+        migrations.AddConstraint(
+            model_name='workflowstage',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_stage_code'),
+        ),
+        migrations.AddConstraint(
+            model_name='workflowstage',
+            constraint=models.UniqueConstraint(fields=('version', 'sort_order'), name='uq_hrcfg_stage_order'),
+        ),
+        migrations.AddConstraint(
+            model_name='printtemplate',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_print_code'),
+        ),
+        migrations.AddConstraint(
+            model_name='notificationrule',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_notification_code'),
+        ),
+        migrations.AddConstraint(
+            model_name='formdefinition',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_form_code'),
+        ),
+        migrations.AddConstraint(
+            model_name='fielddefinition',
+            constraint=models.UniqueConstraint(fields=('version', 'key'), name='uq_hrcfg_field_key'),
+        ),
+        migrations.AddConstraint(
+            model_name='fielddefinition',
+            constraint=models.UniqueConstraint(fields=('form', 'sort_order'), name='uq_hrcfg_field_order'),
+        ),
+        migrations.AddConstraint(
+            model_name='exceltemplate',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_excel_code'),
+        ),
+        migrations.AddConstraint(
+            model_name='excelcolumn',
+            constraint=models.UniqueConstraint(fields=('template', 'field_key'), name='uq_hrcfg_excel_field'),
+        ),
+        migrations.AddConstraint(
+            model_name='excelcolumn',
+            constraint=models.UniqueConstraint(fields=('template', 'sort_order'), name='uq_hrcfg_excel_order'),
+        ),
+        migrations.AddConstraint(
+            model_name='conditionrule',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_condition_code'),
+        ),
+        migrations.AddConstraint(
+            model_name='approvalrolerule',
+            constraint=models.UniqueConstraint(fields=('version', 'code'), name='uq_hrcfg_approval_code'),
+        ),
+    ]

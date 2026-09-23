@@ -15,6 +15,7 @@ from hr_assessment.models import (
     HrAssessmentPolicyVersion,
     HrAssessmentPopulationSnapshot,
     HrExcellentQuotaPolicy,
+    HrRatingScaleVersion,
     HrResultRuleVersion,
 )
 from hr_staff.models import HrPerson, HrStaffMaster
@@ -54,6 +55,16 @@ class Hr12SetupWorkbenchApiTests(TestCase):
         version_id = json.loads(response.content)["data"]["id"]
         version = HrAssessmentPolicyVersion.objects.get(id=version_id)
         self.assertEqual(version.status, "DRAFT")
+        scale = HrRatingScaleVersion.objects.get(id=version.rating_scale_version_id)
+        self.assertEqual(
+            [level["code"] for level in scale.levels],
+            ["EXCELLENT", "QUALIFIED", "BASIC_QUALIFIED", "UNQUALIFIED"],
+        )
+        result_rule = HrResultRuleVersion.objects.get(id=version.result_rule_version_id)
+        self.assertEqual(
+            [band["gradeCode"] for band in result_rule.score_to_grade_mapping["bands"]],
+            ["EXCELLENT", "QUALIFIED", "BASIC_QUALIFIED", "UNQUALIFIED"],
+        )
         self.assertTrue(
             HrResultRuleVersion.objects.filter(
                 tenant_id=self.tenant_id,
@@ -114,3 +125,34 @@ class Hr12SetupWorkbenchApiTests(TestCase):
         data = json.loads(response.content)["data"]
         self.assertIn(str(cycle.id), {item["value"] for item in data["cycles"]})
         self.assertIn(str(self.staff.id), {item["value"] for item in data["staff"]})
+
+    def test_term_policy_uses_two_level_result_without_excellent_quota(self):
+        pack = HrAssessmentPolicyPack.objects.create(
+            tenant_id=self.tenant_id,
+            code="TERM_SETUP",
+            name="聘期考核制度",
+            assessment_domain="TERM",
+        )
+        response = create_policy_version(
+            self.request("/versions", {
+                "effectiveFrom": timezone.localdate().isoformat(),
+                "assessmentTypes": ["TERM"],
+                "qualifiedMinScore": "60",
+            }),
+            pack.id,
+        )
+        self.assertEqual(response.status_code, 201)
+        version = HrAssessmentPolicyVersion.objects.get(
+            id=json.loads(response.content)["data"]["id"]
+        )
+        self.assertIsNone(version.excellent_quota_policy_id)
+        scale = HrRatingScaleVersion.objects.get(id=version.rating_scale_version_id)
+        self.assertEqual(
+            [level["code"] for level in scale.levels],
+            ["QUALIFIED", "UNQUALIFIED"],
+        )
+        result_rule = HrResultRuleVersion.objects.get(id=version.result_rule_version_id)
+        self.assertEqual(
+            [band["gradeCode"] for band in result_rule.score_to_grade_mapping["bands"]],
+            ["QUALIFIED", "UNQUALIFIED"],
+        )

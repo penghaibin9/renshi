@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 
 {% block content %}
@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr09-qualification.css' %}?v=20260830-workbench">
 <link id="hr09-action-styles" rel="stylesheet" href="{% static 'hr/css/hr09-actions.css' %}">
 
-<div class="hr-v2-page hr09" data-module="HR09" data-section="{{ section }}">
+<div class="hr-v2-page hr09" data-module="HR09" data-hr-workspace="v6" data-section="{{ section }}">
   {% if access_error %}
     <div class="hr09-access" role="alert">{{ access_error }}</div>
   {% else %}
@@ -304,5 +304,5 @@
     {{ rule_version_options|json_script:"hr09-rule-version-options" }}
   {% endif %}
 </div>
-<script id="hr09-action-script" src="{% static 'hr/js/pages/hr09-actions.js' %}?v=20260830-business-copy"></script>
+<script id="hr09-action-script" src="{% static 'hr/js/pages/hr09-actions.js' %}?v=20260918-workspace-v6-1"></script>
 {% endblock %}

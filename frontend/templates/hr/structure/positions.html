@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}
 HR02-05 岗位编制台账 —— 单位岗位供给/空岗/已占/冻结/超限
@@ -16,7 +16,7 @@ HR02-05 岗位编制台账 —— 单位岗位供给/空岗/已占/冻结/超限
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr02-page" data-module="HR02" data-hr02-section="positions">
+<div class="hr-v2-page hr02-page" data-module="HR02" data-hr-workspace="v6" data-hr02-section="positions">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR02 组织与岗位</span>
     <strong>岗位编制台账</strong>
@@ -85,7 +85,7 @@ HR02-05 岗位编制台账 —— 单位岗位供给/空岗/已占/冻结/超限
     </div>
     <details class="hr02-editor hr-v2-panel">
       <summary>新建正式岗位</summary>
-      <form class="hr02-form" id="hr-position-create-form">
+      <form class="hr02-form" id="hr-position-create-form" data-v6-surface="form">
         <label><span>岗位编码</span><input name="positionCode" required placeholder="例如：JSJX-001"></label>
         <label><span>所属机构</span><select name="organizationId" required><option value="">正在读取机构…</option></select></label>
         <label><span>岗位目录</span><select name="postCatalogVersionId" required><option value="">正在读取岗位目录…</option></select></label>

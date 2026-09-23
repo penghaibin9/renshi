@@ -1,0 +1,60 @@
+{% extends "hr/base.html" %}
+{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr_configuration/configuration_v1.css' %}">
+<div class="hrcfg-page">
+  <div class="hrcfg-hero">
+    <div><span class="hrcfg-kicker">{{ workflow.business_domain }} · {{ workflow.code }}</span><h1>{{ workflow.name }}</h1><p>{{ workflow.description|default:"配置本校差异；业务数据仍由原 HR 模块负责。" }}</p></div>
+    <a class="hrcfg-link" href="{% url 'hr-configuration-center' %}">返回流程清单</a>
+  </div>
+
+  <div class="hrcfg-statusbar">
+    <div><span>正在查看</span><strong>{% if draft %}v{{ draft.version_no }} 草稿{% elif published %}v{{ published.version_no }} 正式版本{% else %}暂无版本{% endif %}</strong></div>
+    <div><span>正式版本</span><strong>{% if published %}v{{ published.version_no }}{% else %}未发布{% endif %}</strong></div>
+    <div><span>发布校验</span><strong>{% if draft and not publish_errors %}可发布{% elif draft %}还有 {{ publish_errors|length }} 项{% else %}—{% endif %}</strong></div>
+  </div>
+
+  {% if not draft and can_manage %}<form method="post" class="hrcfg-inline-action">{% csrf_token %}<input type="hidden" name="action" value="clone"><button class="hrcfg-primary" type="submit">从正式版本创建新草稿</button></form>{% endif %}
+  {% if draft and publish_errors %}<div class="hrcfg-warn"><strong>发布前还要处理：</strong><ul>{% for item in publish_errors %}<li>{{ item }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if draft and can_publish %}<form method="post" class="hrcfg-inline-action">{% csrf_token %}<input type="hidden" name="action" value="publish"><button class="hrcfg-primary" type="submit" {% if publish_errors %}disabled{% endif %}>发布 v{{ draft.version_no }}</button><small>发布后该版本不可直接修改；下一次变更会创建新草稿。</small></form>{% endif %}
+
+  {% if version %}
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>01</small><h2>流程阶段</h2></div><span>必须 1 个开始、至少 1 个结束</span></div>
+    <div class="hrcfg-chip-list">{% for x in stages %}<article><b>{{ x.sort_order }} · {{ x.name }}</b><small>{{ x.code }}{% if x.is_start %} · 开始{% endif %}{% if x.is_end %} · 结束{% endif %}</small>{% if draft and can_manage %}<div><a href="{% url 'hr-configuration-component-edit' workflow.id 'stage' x.id %}">编辑</a><form method="post" action="{% url 'hr-configuration-component-delete' workflow.id 'stage' x.id %}">{% csrf_token %}<button>删除</button></form></div>{% endif %}</article>{% empty %}<p class="hrcfg-empty">还没有阶段。</p>{% endfor %}</div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_stage" form=forms.stage button="添加阶段" %}{% endif %}
+  </section>
+
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>02–03</small><h2>表单与字段</h2></div><span>字段编码跨本流程唯一</span></div>
+    <div class="hrcfg-table-wrap"><table class="hrcfg-table"><thead><tr><th>表单</th><th>阶段</th><th>字段数</th><th>操作</th></tr></thead><tbody>{% for x in form_defs %}<tr><td><b>{{ x.title }}</b><small>{{ x.code }}</small></td><td>{{ x.stage_code|default:"通用" }}</td><td>{{ x.fields.count }}</td><td>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'form' x.id %}">编辑</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="4">暂无表单</td></tr>{% endfor %}</tbody></table></div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_form" form=forms.form button="添加表单" %}{% endif %}
+    <h3 class="hrcfg-subtitle">字段</h3><div class="hrcfg-table-wrap"><table class="hrcfg-table"><thead><tr><th>字段</th><th>表单</th><th>类型</th><th>必填</th><th>操作</th></tr></thead><tbody>{% for x in field_defs %}<tr><td><b>{{ x.label }}</b><small>{{ x.key }}</small></td><td>{{ x.form.title }}</td><td>{{ x.get_field_type_display }}</td><td>{% if x.required %}是{% else %}否{% endif %}</td><td>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'field' x.id %}">编辑</a>{% endif %}</td></tr>{% empty %}<tr><td colspan="5">暂无字段</td></tr>{% endfor %}</tbody></table></div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_field" form=forms.field button="添加字段" %}{% endif %}
+  </section>
+
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>04</small><h2>审批角色</h2></div><span>角色 + 数据范围 + 通过方式</span></div>
+    <div class="hrcfg-card-grid">{% for x in approvals %}<article><b>{{ x.role_name }}</b><small>{{ x.stage_code }} · {{ x.role_code }} · {{ x.data_scope }} · {{ x.get_approval_mode_display }}</small>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'approval' x.id %}">编辑</a>{% endif %}</article>{% empty %}<p class="hrcfg-empty">暂无审批角色。</p>{% endfor %}</div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_approval" form=forms.approval button="添加审批角色" %}{% endif %}
+  </section>
+
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>05</small><h2>条件路由</h2></div><span>只允许声明式字段判断，不执行任意代码</span></div>
+    <div class="hrcfg-card-grid">{% for x in conditions %}<article><b>{{ x.name }}</b><small>{{ x.source_stage_code }} → {{ x.field_key }} {{ x.operator }} → {{ x.target_stage_code }}</small>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'condition' x.id %}">编辑</a>{% endif %}</article>{% empty %}<p class="hrcfg-empty">暂无条件，表示按标准顺序流转。</p>{% endfor %}</div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_condition" form=forms.condition button="添加条件" %}{% endif %}
+  </section>
+
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>06</small><h2>通知</h2></div><span>站内 / 邮件 / 短信 / 企业微信</span></div>
+    <div class="hrcfg-card-grid">{% for x in notifications %}<article><b>{{ x.event_code }} · {{ x.get_channel_display }}</b><small>接收：{{ x.recipient_role_code }}</small>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'notification' x.id %}">编辑</a>{% endif %}</article>{% empty %}<p class="hrcfg-empty">暂无通知规则。</p>{% endfor %}</div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_notification" form=forms.notification button="添加通知" %}{% endif %}
+  </section>
+
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>07</small><h2>打印模板</h2></div><span>支持字段占位符</span></div>
+    <div class="hrcfg-card-grid">{% for x in print_templates %}<article><b>{{ x.name }}</b><small>{{ x.code }} · {{ x.output_format }}</small>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'print' x.id %}">编辑</a>{% endif %}</article>{% empty %}<p class="hrcfg-empty">暂无打印模板。</p>{% endfor %}</div>
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_print" form=forms.print button="添加打印模板" %}{% endif %}
+  </section>
+
+  <section class="hrcfg-panel"><div class="hrcfg-section-head"><div><small>08</small><h2>Excel 模板</h2></div><span>导入/导出列直接绑定字段编码</span></div>
+    {% for x in excel_templates %}<article class="hrcfg-excel"><div><b>{{ x.name }}</b><small>{{ x.code }} · {{ x.get_direction_display }} · Sheet: {{ x.sheet_name }}</small></div>{% if draft and can_manage %}<a href="{% url 'hr-configuration-component-edit' workflow.id 'excel' x.id %}">编辑</a>{% endif %}<div class="hrcfg-chip-list">{% for c in x.columns.all %}<span>{{ c.sort_order }}. {{ c.header }} → {{ c.field_key }}{% if c.required %} *{% endif %}</span>{% empty %}<span>还没有列</span>{% endfor %}</div></article>{% empty %}<p class="hrcfg-empty">暂无 Excel 模板。</p>{% endfor %}
+    {% if draft and can_manage %}{% include "hr_configuration/partials/add_form.html" with action="add_excel" form=forms.excel button="添加 Excel 模板" %}{% include "hr_configuration/partials/add_form.html" with action="add_excel_column" form=forms.excel_column button="添加 Excel 列" %}{% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock content %}

@@ -40,6 +40,9 @@ class ComplianceServiceContractTests(SimpleTestCase):
         with patch(
             "hr10_development.models.development_fact.HrDevelopmentFact.objects",
             query,
+        ), patch(
+            "hr10_development.services.compliance_service.resolve_staff_identity",
+            return_value=SimpleNamespace(staff_uuid="00000000-0000-0000-0000-000000000018", legacy_employee_id=18),
         ):
             value = ComplianceService._compute_current_value(
                 staff_master_id=18,

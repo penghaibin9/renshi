@@ -1,0 +1,68 @@
+{
+  "package": "Yueke_University_HR_Minimal_FirstUse_Candidate_20260917",
+  "status": "SOURCE_CANDIDATE_NOT_PRODUCTION_ACCEPTED",
+  "baseline": {
+    "name": "Yueke_University_HR_Standalone_School_Admin_Professional_20260917.zip",
+    "sha256": "91a9769d8b870ab01105c09212b038c5cf55760cd364fea3f39db540b3a8781d"
+  },
+  "scope": "University HR standalone school baseline; minimal bootstrap, first-use navigator, HR03 import, legacy account migration",
+  "source_tests": {
+    "passed": 255,
+    "subtests_passed": 25,
+    "new_executable_pure_tests_included": 50,
+    "log": "tests/artifacts/minimal-first-use/all-source-tests.txt"
+  },
+  "chromium": {
+    "new_checks_passed": 16,
+    "existing_system_admin_script": "PASS",
+    "template_and_js": "real",
+    "api": "SIMULATED_FIXTURE",
+    "mode": "page.set_content; native DOM events",
+    "http_navigation": "BLOCKED_BY_BROWSER_POLICY",
+    "full_refresh_and_real_storage_persistence": "NOT_RUN",
+    "evidence": "tests/artifacts/minimal-first-use/chromium-evidence.json"
+  },
+  "python_ast": {
+    "files_parsed_before_packaging_helper": 3145,
+    "errors": 0,
+    "scope": "syntax only"
+  },
+  "javascript_syntax": "PASS",
+  "django_runtime": {
+    "status": "BLOCKED",
+    "reason": "ModuleNotFoundError: No module named django",
+    "evidence": "tests/artifacts/minimal-first-use/django-runtime-attempt.txt"
+  },
+  "mysql_runtime": "NOT_RUN",
+  "migrations_executed": false,
+  "new_django_mysql_tests": {
+    "methods": 13,
+    "execution": "NOT_RUN"
+  },
+  "production_accepted": false,
+  "changed_user_computer": false,
+  "changed_user_server": false,
+  "git_push": false,
+  "migration_files": [
+    "backend/base/migrations/0014_minimal_school_bootstrap.py",
+    "backend/employee/migrations/0007_optional_employee_phone.py",
+    "backend/hr_staff/migrations/0023_import_row_authority_receipt.py"
+  ],
+  "required_unrun_gates": [
+    "real MySQL migration consistency",
+    "minimum bootstrap transactional readback",
+    "real HR03 four-table import and rollback",
+    "parallel bootstrap/lease takeover",
+    "Django HTTP authentication+permissions",
+    "full browser refresh/job restoration",
+    "contract, assessment, payroll and backup/restore acceptance"
+  ],
+  "external_assets": {
+    "font_binaries_bundled": false,
+    "original_assets_count": 25,
+    "manifest": "FIRST_USE_EXTERNAL_ASSETS.json",
+    "operator_check": "scripts/check_first_use_assets.py"
+  },
+  "dependency_bundles_included": false,
+  "note": "Historical reports remain for traceability; only this report and its referenced current logs describe this round."
+}

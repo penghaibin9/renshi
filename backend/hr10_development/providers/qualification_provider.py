@@ -17,6 +17,7 @@ from hr10_development.providers.base import (
     ProviderStatus,
 )
 from hr10_development.constants import VerificationStatus
+from hr10_development.identity import resolve_staff_identity, staff_identity_q
 
 
 class Hr09QualificationEvidenceProvider(QualificationEvidenceProvider):
@@ -40,9 +41,13 @@ class Hr09QualificationEvidenceProvider(QualificationEvidenceProvider):
             VerificationStatus.MANUAL_COMMITTEE_VERIFIED,
         ]
 
+        try:
+            identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
+        except ValueError as exc:
+            return ProviderResult(status=ProviderStatus.UNAVAILABLE, data=[], error_message=str(exc))
         qs = HrDevelopmentFact.objects.effective().filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
             verification_status__in=VERIFIED_STATUSES,
         )
 

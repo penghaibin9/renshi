@@ -8,10 +8,16 @@ from . import (
     legacy_api,
     participant_api,
     retirement_api,
+    flex_api,
 )
 
 app_name = "hr_exit_api"
 urlpatterns = [
+    path("flex-retirements/", flex_api.applications, name="flex-list"),
+    path("flex-retirements/<uuid:application_id>/", flex_api.detail, name="flex-detail"),
+    path("flex-retirements/<uuid:application_id>/review/", flex_api.review, name="flex-review"),
+    path("flex-retirements/<uuid:application_id>/exit-case/", flex_api.open_exit_case, name="flex-open-exit"),
+    path("flex-retirements/<uuid:application_id>/evidence/", flex_api.upload_evidence, name="flex-upload-evidence"),
     path("dashboard/", api.dashboard, name="dashboard"),
     path(
         "legacy/reconcile/",

@@ -157,26 +157,75 @@
     return map[status] || "UNKNOWN_ERROR";
   }
 
-  function apiErrorToMessage(err) {
-    const map = {
-      TENANT_CONTEXT_REQUIRED: "请先选择当前学校",
-      PERMISSION_DENIED: "无权限查看",
-      SCOPE_NOT_ALLOWED: "当前数据范围不允许",
-      PROVIDER_UNAVAILABLE: "数据暂不可用",
-      TIMEOUT_OR_ABORTED: "请求超时",
-      INVALID_REQUEST: "请求内容不完整或格式不正确",
-      UNAUTHENTICATED: "登录状态已失效，请重新登录",
-      RESOURCE_NOT_FOUND: "未找到对应业务记录",
-      VERSION_CONFLICT: "数据已被更新，请刷新后重试",
-      BUSINESS_RULE_VIOLATION: "当前操作不符合业务规则",
-      RATE_LIMITED: "操作过于频繁，请稍后重试",
-      INTERNAL_ERROR: "系统处理失败，请稍后重试",
-      UNKNOWN_ERROR: "数据加载失败",
-    };
-    if (err && err.code && map[err.code]) return map[err.code];
+  const ERROR_GUIDANCE = {
+    TENANT_CONTEXT_REQUIRED: {
+      message: "还没选择当前学校",
+      action: "先切换到要办理的学校，再重新进入当前页面。",
+    },
+    PERMISSION_DENIED: {
+      message: "当前账号没有这项操作权限",
+      action: "确认当前角色和数据范围；确需办理时联系学校管理员授权。",
+    },
+    SCOPE_NOT_ALLOWED: {
+      message: "这条数据不在当前可处理范围",
+      action: "确认所属学院/部门和当前数据范围，不要通过修改地址绕过权限。",
+    },
+    PROVIDER_UNAVAILABLE: {
+      message: "业务数据暂时不可用",
+      action: "可先处理其他事项，稍后重试；持续失败时把请求号提供给管理员。",
+    },
+    TIMEOUT_OR_ABORTED: {
+      message: "请求超时，本次操作是否成功还不能确认",
+      action: "先刷新业务状态，再决定是否重试，避免重复提交。",
+    },
+    INVALID_REQUEST: {
+      message: "还有内容不完整或格式不正确",
+      action: "按页面必填/标红提示补充后再提交。",
+    },
+    UNAUTHENTICATED: {
+      message: "登录状态已失效",
+      action: "重新登录后回到原业务页面继续办理。",
+    },
+    RESOURCE_NOT_FOUND: {
+      message: "没有找到这条业务记录",
+      action: "请从对应台账重新搜索进入；不要继续使用旧收藏或过期链接。",
+    },
+    VERSION_CONFLICT: {
+      message: "这条数据刚被其他人更新",
+      action: "刷新页面并核对最新状态后再提交，不要覆盖他人的新结果。",
+    },
+    BUSINESS_RULE_VIOLATION: {
+      message: "当前业务状态还不能执行这一步",
+      action: "先完成页面提示的前置步骤或待办，再回来继续。",
+    },
+    RATE_LIMITED: {
+      message: "操作过于频繁",
+      action: "请稍后再试，不要连续点击提交按钮。",
+    },
+    INTERNAL_ERROR: {
+      message: "系统处理失败",
+      action: "先不要重复提交；刷新状态后仍失败时，把请求号提供给管理员排查。",
+    },
+    UNKNOWN_ERROR: {
+      message: "数据暂时没有加载成功",
+      action: "先刷新页面；仍失败时记录发生时间和请求号，再联系管理员。",
+    },
+  };
+
+  function apiErrorToGuidance(err) {
+    const code = (err && err.code) || "UNKNOWN_ERROR";
+    const base = ERROR_GUIDANCE[code] || ERROR_GUIDANCE.UNKNOWN_ERROR;
     const detail = err && err.data && err.data.error && err.data.error.message;
-    if (detail && /[\u3400-\u9fff]/.test(detail)) return detail;
-    return "数据加载失败";
+    const requestId = (err && err.requestId) || (err && err.data && err.data.requestId) || null;
+
+    // 服务端明确返回中文业务原因时保留原原因；下一步动作仍由统一前端口径补充。
+    const message = detail && /[\u3400-\u9fff]/.test(detail) ? detail : base.message;
+    return { code, message, action: base.action, requestId };
+  }
+
+  function apiErrorToMessage(err) {
+    const guidance = apiErrorToGuidance(err);
+    return `${guidance.message}。${guidance.action}`;
   }
 
   const STATUS_LABELS = {
@@ -198,6 +247,7 @@
   window.HrApi = {
     request,
     apiErrorToMessage,
+    apiErrorToGuidance,
     statusLabel,
   };
 })(window);

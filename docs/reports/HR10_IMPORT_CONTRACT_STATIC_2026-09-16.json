@@ -1,0 +1,118 @@
+{
+  "checks": [
+    {
+      "detail": "backend/hr10_development/legacy/import_job.py",
+      "name": "ast:job",
+      "ok": true
+    },
+    {
+      "detail": "backend/hr10_development/legacy/staging.py",
+      "name": "ast:staging",
+      "ok": true
+    },
+    {
+      "detail": "backend/hr10_development/services/import_worker.py",
+      "name": "ast:worker",
+      "ok": true
+    },
+    {
+      "detail": "backend/hr10_development/api/imports.py",
+      "name": "ast:api",
+      "ok": true
+    },
+    {
+      "detail": "backend/hr10_development/api/urls.py",
+      "name": "ast:urls",
+      "ok": true
+    },
+    {
+      "detail": "backend/hr10_development/migrations/0025_import_claim_lease_and_execution.py",
+      "name": "ast:migration",
+      "ok": true
+    },
+    {
+      "detail": "backend/hr10_development/tests/test_excel_import_pipeline.py",
+      "name": "ast:tests",
+      "ok": true
+    },
+    {
+      "detail": "claim token + expiry + heartbeat are persisted",
+      "name": "lease_fields",
+      "ok": true
+    },
+    {
+      "detail": "duplicate parse delivery is lease-guarded and stale work can be reclaimed",
+      "name": "lease_claim_parse",
+      "ok": true
+    },
+    {
+      "detail": "confirmation/execution also owns a lease",
+      "name": "lease_claim_execute",
+      "ok": true
+    },
+    {
+      "detail": "authority rows + success state + audit share one transaction",
+      "name": "execution_atomic",
+      "ok": true
+    },
+    {
+      "detail": "all supported Excel job types build real HR10 authority rows",
+      "name": "real_authority_targets",
+      "ok": true
+    },
+    {
+      "detail": "unsafe BigInteger-to-HR03-UUID personal-plan imports are rejected instead of creating false links",
+      "name": "individual_plan_staff_key_fail_closed",
+      "ok": true
+    },
+    {
+      "detail": "preview and pre-write conflict checks are batched",
+      "name": "batch_execution_recheck",
+      "ok": true
+    },
+    {
+      "detail": "each source row retains target id, execution status/time and audit",
+      "name": "row_execution_receipt",
+      "ok": true
+    },
+    {
+      "detail": "confirm endpoint delegates to transactional execution instead of flipping status",
+      "name": "api_no_fake_success",
+      "ok": true
+    },
+    {
+      "detail": "job/authority operations are tenant-scoped",
+      "name": "tenant_scoped_execution",
+      "ok": true
+    },
+    {
+      "detail": "row-level execution results are observable through a paginated endpoint",
+      "name": "row_results_endpoint",
+      "ok": true
+    },
+    {
+      "detail": "schema upgrade de-duplicates safely and blocks conflicting historical target links",
+      "name": "migration_fail_closed_dedup",
+      "ok": true
+    },
+    {
+      "detail": "6 targeted regression cases are present",
+      "name": "regression_tests_present",
+      "ok": true
+    }
+  ],
+  "gate": "HR10_IMPORT_CONTRACT_STATIC",
+  "passed": 20,
+  "scopeNote": "Static/AST gate only; Django/MySQL runtime regression must run in an environment with project dependencies.",
+  "sha256": {
+    "backend/hr10_development/api/imports.py": "c2a3dc572defbc53fdbafb0f381148546960daeba56744dc6be81552f92d61bc",
+    "backend/hr10_development/api/urls.py": "cc3eea9620661c27f16595685266f948010c63b0d259ade1576dc6b842dc9206",
+    "backend/hr10_development/legacy/import_job.py": "f3c7f5efa26810540e7faf032fac29e96dad18ea22b359773d560dd033ca17ba",
+    "backend/hr10_development/legacy/staging.py": "d0783ff9583709e00dd2050faea6fea4154af41a963fbe5113db86a7754b519e",
+    "backend/hr10_development/migrations/0025_import_claim_lease_and_execution.py": "984de9bf8104ced1ff9edb6cf7722fcdec3d8f84aaeac81947f60e1262f4bce0",
+    "backend/hr10_development/services/import_worker.py": "e5f388b0f9353646592d62dd561f221ca582f6dfa9b958221a5996a88b228918",
+    "backend/hr10_development/tests/test_excel_import_pipeline.py": "eba762ff61895c35224c357e982c429b13a9aac062e25b491e7e3b7290b3d74a"
+  },
+  "status": "PASS",
+  "total": 20
+}

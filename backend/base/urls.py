@@ -337,6 +337,11 @@ urlpatterns = [
     # path("settings/", views.common_settings, name="settings"),
     path("settings/", views.SettingsView.as_view(), name="settings"),
     path(
+        "settings/system-management/",
+        views.system_admin_center_view,
+        name="system-admin-center",
+    ),
+    path(
         "settings/user-group-create/", views.user_group_table, name="user-group-create"
     ),
     path("settings/user-group-view/", views.user_group, name="user-group-view"),
@@ -358,6 +363,11 @@ urlpatterns = [
         "group-permission-remove/<int:pid>/<int:gid>/",
         views.user_group_permission_remove,
         name="group-permission-remove",
+    ),
+    path(
+        "group-permission-copy/<int:gid>/",
+        views.user_group_permission_copy,
+        name="group-permission-copy",
     ),
     path(
         "user-group-assign-view/",

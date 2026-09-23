@@ -1,3 +1,4 @@
+{# LEGACY NON-HR SHELL. Canonical HR01-HR18 templates must extend "hr/base.html". Keep only for quarantined upstream/support pages. #}
 {% load static %}
 {% load i18n %}
 {% load horillafilters %}
@@ -62,6 +63,12 @@
         >
         {% if request.path|slice:":4" == "/hr/" %}
         <link rel="stylesheet" href="{% static 'hr/css/hr-shell-v3.css' %}?v=20260830-hr-shell-2">
+        <link rel="stylesheet" href="{% static 'hr/css/hr-all-menus-polish.css' %}?v=20260918-menu-polish-1">
+        <link rel="stylesheet" href="{% static 'hr/css/hr01-10-business-redesign.css' %}?v=20260918-business-redesign-1">
+        <link rel="stylesheet" href="{% static 'hr/css/hr11-18-business-redesign.css' %}?v=20260918-business-redesign-1">
+        <link rel="stylesheet" href="{% static 'hr/css/hr-business-surface-v2.css' %}?v=20260918-surface-v2-1">
+        <link rel="stylesheet" href="{% static 'hr/css/hr-unified-brand-v3.css' %}?v=20260918-unified-brand-v3-1">
+        <link rel="stylesheet" href="{% static 'hr/css/hr-detail-workspaces-v4.css' %}?v=20260918-detail-v4-1">
         {% endif %}
         <link rel="stylesheet" href="{% static 'build/css/pivottable.min.css' %}">
         {% with theme=theme_obj %}
@@ -227,9 +234,14 @@
         {% block styles %}
             <!-- Page-specific styles (optional) -->
         {% endblock %}
+        <link rel="stylesheet" href="{% static 'hr/css/hr-detail-closure-v5.css' %}?v=20260918-detail-v5-1">
+        {% if request.path|slice:":4" == "/hr/" %}
+        <link rel="stylesheet" href="{% static 'hr/css/hr-workspace-finish-v6.css' %}?v=20260918-workspace-v6-1">
+        <link rel="stylesheet" href="{% static 'hr/css/hr-ui-a-v16.css' %}?v=20260920-ui-a-v16-1">
+        {% endif %}
     </head>
 
-    <body class="bg-primary-50 font-[Inter,_sans-serif] overflow-hidden {% if request.path|slice:":4" == "/hr/" %}hr-shell-v3{% endif %} {% if request.session.theme == 'dark' %}dark{% endif %}">
+    <body class="bg-primary-50 font-[Inter,_sans-serif] overflow-hidden {% if request.path|slice:":4" == "/hr/" %}hr-shell-v3 hr-ui-a-v16{% endif %} {% if request.session.theme == 'dark' %}dark{% endif %}">
         {% get_current_language_bidi as LANGUAGE_BIDI %}
         {% get_current_language as LANGUAGE_CODE %}
         <div hidden id="statiUrl" data-url='{% static "" %}'></div>
@@ -332,9 +344,17 @@
         </div>
         {% include "generic/components.html" %}
         {% include "horilla_theme/components/footer_scripts.html" %}
+        <script src="{% static 'hr/js/core/hr-detail-ux-v5.js' %}?v=20260918-detail-v5-1"></script>
+        {% if request.path|slice:":4" == "/hr/" %}
+        <script src="{% static 'hr/js/core/hr-workspace-ux-v6.js' %}?v=20260918-workflow-v7-1"></script>
+        {% endif %}
         {% block scripts %}
             <!-- Page-specific scripts (optional) -->
         {% endblock %}
+        {% if request.path|slice:":4" == "/hr/" %}
+        <script src="{% static 'hr/js/core/hr-all-menus-polish.js' %}?v=20260918-menu-polish-1"></script>
+        <script src="{% static 'hr/js/core/hr-ui-a-v16.js' %}?v=20260920-ui-a-v16-1"></script>
+        {% endif %}
         <script>
             document.body.addEventListener("showMessages", function () {
                 var b = document.getElementById("reloadMessagesButton");

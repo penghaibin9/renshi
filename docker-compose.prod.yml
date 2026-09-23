@@ -20,6 +20,8 @@ x-production-env: &production-env
   PRODUCTION_BACKUP_ENCRYPTION_KEY: ${PRODUCTION_BACKUP_ENCRYPTION_KEY:?Set PRODUCTION_BACKUP_ENCRYPTION_KEY in .env}
   PRODUCTION_BACKUP_RETENTION_COUNT: ${PRODUCTION_BACKUP_RETENTION_COUNT:-30}
   PRODUCTION_BACKUP_INTERVAL_HOURS: ${PRODUCTION_BACKUP_INTERVAL_HOURS:-24}
+  SCHOOL_HANDOVER_ROOT: /app/handover
+  SCHOOL_HANDOVER_RECEIPT_ROOT: /app/handover-audit
   COMPANY_SCOPED_PERMISSIONS: "True"
   TENANT_FAIL_CLOSED: "True"
   SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-1}
@@ -91,12 +93,20 @@ services:
   # start only after it succeeds, avoiding concurrent migrate/collectstatic races.
   release:
     <<: *app-hardening
+    image: renshi-web:latest
     build: .
     env_file:
       - .env
-    environment: *production-env
-    entrypoint: ["/bin/bash", "-lc"]
-    command: python manage.py prepare_runtime --migrate --collectstatic
+    environment:
+      <<: *production-env
+      # The release container intentionally goes through /entrypoint.sh so it
+      # gets the same database reachability and production-secret guards as web.
+      # Disable entrypoint auto-preparation and execute exactly one explicit,
+      # auditable preparation command below.
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    command: ["python", "manage.py", "prepare_runtime", "--migrate", "--collectstatic"]
     volumes:
       - staticfiles:/app/.runtime/staticfiles
       - media:/app/.runtime/media
@@ -134,6 +144,48 @@ services:
       redis:
         condition: service_healthy
       clamav:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hr05-outbox-worker:
+    <<: *app-hardening
+    env_file:
+      - .env
+    environment: !override
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes: !override
+      - staticfiles:/app/.runtime/staticfiles
+      - media:/app/.runtime/media
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  hr05-import-worker:
+    <<: *app-hardening
+    env_file:
+      - .env
+    environment: !override
+      <<: *production-env
+      MIGRATE_ON_START: "0"
+      COLLECTSTATIC_ON_START: "0"
+      CHECK_ON_START: "0"
+    volumes: !override
+      - staticfiles:/app/.runtime/staticfiles
+      - media:/app/.runtime/media
+    depends_on:
+      release:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 
@@ -232,6 +284,8 @@ services:
     volumes:
       - media:/app/.runtime/media:ro
       - ${BACKUP_STORAGE_PATH:?Set BACKUP_STORAGE_PATH in .env}:/app/backups
+      - ${HANDOVER_STORAGE_PATH:?Set HANDOVER_STORAGE_PATH in .env}:/app/handover
+      - ${HANDOVER_AUDIT_STORAGE_PATH:?Set HANDOVER_AUDIT_STORAGE_PATH in .env}:/app/handover-audit
     depends_on:
       release:
         condition: service_completed_successfully

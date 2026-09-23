@@ -34,6 +34,8 @@ class HrDevelopmentPlan(DevelopmentTenantModel):
         help_text="引用 HR02 Organization",
     )
 
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True, verbose_name=_("HR03 教职工 UUID"))
+
     staff_master_id = models.BigIntegerField(
         null=True,
         blank=True,

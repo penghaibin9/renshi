@@ -294,3 +294,10 @@
     startOverview();
   }
 })();
+
+// Front-end only convenience: carry the user's intent to open HR03 import after navigation.
+document.querySelectorAll('[data-hr-open-import="1"]').forEach(function (link) {
+  link.addEventListener("click", function () {
+    try { sessionStorage.setItem("hr03:auto-open-import", "1"); } catch (_err) {}
+  });
+});

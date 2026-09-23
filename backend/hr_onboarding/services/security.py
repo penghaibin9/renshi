@@ -1,10 +1,8 @@
-"""
-hr_onboarding/services/security.py
+"""HR05 high-sensitive staging encryption.
 
-HR05 敏感值加密（总册 §27 / §40 / 00 §37）：
-- bank_json 等 HIGH_SENSITIVE 数据 Fernet 加密存储；
-- 密钥派生与 hr_staff.services.crypto 一致（基于 settings.SECRET_KEY），保证全系统可互通；
-- 明文不落库、不入日志；解密仅授权路径调用。
+Round7 writes use the independent ``FIELD_ENCRYPTION_KEYS`` keyring.  Round6
+ciphertext derived from Django ``SECRET_KEY`` remains readable only as a legacy
+transition path so production can rewrap it before go-live.
 """
 
 from __future__ import annotations
@@ -14,53 +12,74 @@ import hashlib
 import json
 import logging
 
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+
+from horilla.security.field_keyring import decrypt_text, encrypt_text, needs_rewrap
 
 logger = logging.getLogger(__name__)
 
 _ENCRYPTED_MARKER = "__hr05_enc__"
+_PREFIX = "hr05:v2"
 
-_fernet = None
+
+def _raw_keyring() -> str:
+    return str(getattr(settings, "FIELD_ENCRYPTION_KEYS", "") or "").strip()
 
 
-def _get_fernet():
-    global _fernet
-    if _fernet is None:
-        from cryptography.fernet import Fernet, InvalidToken
-
-        secret = getattr(settings, "SECRET_KEY", "")
-        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
-        _fernet = Fernet(key)
-    return _fernet
+def _legacy_fernet() -> Fernet:
+    secret = str(getattr(settings, "SECRET_KEY", ""))
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(key)
 
 
 def encrypt_sensitive_value(value: dict) -> dict:
-    """把 dict 加密为 {marker: ciphertext}（Fernet）。空 dict 原样返回。"""
     if not value:
         return {}
     try:
-        ciphertext = _get_fernet().encrypt(json.dumps(value, ensure_ascii=False).encode("utf-8")).decode("ascii")
+        payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        raw_keys = _raw_keyring()
+        if raw_keys:
+            ciphertext = encrypt_text(raw_keys, payload, prefix=_PREFIX)
+        else:
+            # Local/test compatibility only. Production requires the keyring.
+            ciphertext = _legacy_fernet().encrypt(payload.encode("utf-8")).decode("ascii")
     except Exception:
+        # Encryption failure must abort the caller before any profile save.
+        # Returning an empty dict here would silently erase bank/high-sensitive
+        # staging data while making the request look successful.
         logger.exception("sensitive encrypt failed")
-        return {}
+        raise
     return {_ENCRYPTED_MARKER: ciphertext}
 
 
 def decrypt_sensitive_value(stored: dict) -> dict:
-    """解密 {marker: ciphertext} → dict；失败/非加密返回空 dict（不泄漏）。"""
     if not stored or not isinstance(stored, dict):
         return {}
     ciphertext = stored.get(_ENCRYPTED_MARKER)
     if not ciphertext:
-        return stored  # 非加密内容原样返回（兼容旧数据/非敏感字段）
+        return stored  # legacy non-sensitive JSON remains readable
     try:
-        from cryptography.fernet import InvalidToken
-
-        plain = _get_fernet().decrypt(ciphertext.encode("ascii")).decode("utf-8")
-        return json.loads(plain)
+        value = str(ciphertext)
+        if value.startswith(f"{_PREFIX}:"):
+            plain = decrypt_text(_raw_keyring(), value, prefix=_PREFIX)
+        else:
+            plain = _legacy_fernet().decrypt(value.encode("ascii")).decode("utf-8")
+        decoded = json.loads(plain)
+        return decoded if isinstance(decoded, dict) else {}
     except InvalidToken:
         logger.error("sensitive decrypt failed (InvalidToken)")
         return {}
     except Exception:
         logger.exception("sensitive decrypt failed")
         return {}
+
+
+def needs_sensitive_rewrap(stored: dict) -> bool:
+    raw_keys = _raw_keyring()
+    if not raw_keys or not isinstance(stored, dict):
+        return False
+    ciphertext = stored.get(_ENCRYPTED_MARKER)
+    if not ciphertext:
+        return bool(stored)
+    return needs_rewrap(str(ciphertext), raw_keys, prefix=_PREFIX)

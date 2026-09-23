@@ -318,3 +318,13 @@
     flex-wrap: wrap;
   }
 }
+
+/* R2 UI polish: roster optimized for repetitive HR work. */
+.hr03-actions{align-items:flex-start;justify-content:space-between;padding:12px 14px;border:1px solid var(--hr-v2-line);border-radius:var(--hr-radius-md);background:#fff}.hr03-actions__main{display:flex;flex-wrap:wrap;gap:var(--hr-space-2)}.hr03-actions__hint{max-width:500px;margin:2px 0 0;color:var(--hr-v2-muted);font-size:11px;line-height:1.55}.hr03-import-trigger{border-color:#bfdbfe!important;background:#eff6ff!important;color:#1d4ed8!important}
+.hr03-import-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 14px;padding:0;list-style:none}.hr03-import-steps li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 8px;padding:10px;border:1px solid var(--hr-v2-line);border-radius:9px;background:#f8fafc}.hr03-import-steps li>span{grid-row:1/3;display:inline-flex;width:27px;height:27px;align-items:center;justify-content:center;border-radius:8px;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:900}.hr03-import-steps strong{color:var(--hr-v2-text);font-size:12px}.hr03-import-steps small{color:var(--hr-v2-muted);font-size:10px;line-height:1.4}
+.hr03-import-file input[type="file"]{padding:6px;background:#f8fafc}.hr03-filter-actions{display:flex;gap:8px;align-items:center}.hr03-ledger-panel{padding-top:0}.hr03-table-wrap{max-height:min(62vh,720px)}.hr03-table thead{position:sticky;top:0;z-index:2}.hr03-table th{box-shadow:0 1px 0 var(--hr-v2-line)}.hr03-table th:first-child,.hr03-table td:first-child{position:sticky;left:0;z-index:1;background:#fff}.hr03-table th:first-child{z-index:3;background:var(--hr-v2-canvas)}.hr03-table tbody tr:hover td:first-child{background:#fbfdff}.hr03-pager{justify-content:flex-end;padding:0 4px}
+@media(max-width:760px){.hr03-actions{display:block}.hr03-actions__hint{margin-top:10px}.hr03-import-steps{grid-template-columns:1fr}.hr03-filter-actions{width:100%}.hr03-filter-actions .btn{flex:1}}
+
+/* V12: a roster may render outside the full shell during first-delivery checks.
+   Its width already includes page padding; do not rely on a global reset. */
+.hr03-page.hr-v2-page { box-sizing: border-box; }

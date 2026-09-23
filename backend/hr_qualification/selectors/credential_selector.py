@@ -6,7 +6,6 @@ hr_qualification/selectors/credential_selector.py —— 资格查询选择器�
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import date
 from typing import Any
@@ -14,6 +13,7 @@ from typing import Any
 from django.core.paginator import Paginator
 from django.db.models import QuerySet
 
+from hr_qualification.security import certificate_no_hash_candidates
 from hr_qualification.models import HrCredentialCatalogItem, HrPersonCredential
 
 
@@ -85,10 +85,10 @@ class CredentialSelector:
     @staticmethod
     def exact_match_by_no(tenant_id: int, certificate_no: str) -> HrPersonCredential | None:
         """证号精确匹配（需权限受控）。"""
-        no_hash = hashlib.sha256(certificate_no.encode()).hexdigest()
+        hashes = certificate_no_hash_candidates(tenant_id, certificate_no)
         return (
             HrPersonCredential.objects
-            .filter(tenant_id=tenant_id, certificate_no_hash=no_hash)
+            .filter(tenant_id=tenant_id, certificate_no_hash__in=hashes)
             .select_related("catalog_item_id")
             .first()
         )

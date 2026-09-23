@@ -24,7 +24,7 @@ class PayrollInputProviderRegistry:
     SETTING = "HR15_PAYROLL_INPUT_PROVIDERS"
 
     @classmethod
-    def configured_paths(cls) -> dict[str, str]:
+    def configured_paths(cls, required_authorities=None) -> dict[str, str]:
         configured = getattr(settings, cls.SETTING, {}) or {}
         if not isinstance(configured, Mapping):
             raise PayrollInputProviderRegistryError(
@@ -39,17 +39,18 @@ class PayrollInputProviderRegistry:
                     f"{cls.SETTING} contains a blank authority or provider path"
                 )
             paths[code] = import_path
-        missing = sorted(REQUIRED_INPUT_AUTHORITIES - set(paths))
+        required = REQUIRED_INPUT_AUTHORITIES if required_authorities is None else frozenset(required_authorities)
+        missing = sorted(required - set(paths))
         if missing:
             raise PayrollInputProviderRegistryError(
                 "trusted payroll input providers are missing: " + ",".join(missing)
             )
-        return paths
+        return paths if required_authorities is None else {k: v for k, v in paths.items() if k in required}
 
     @classmethod
-    def resolve_all(cls) -> tuple[tuple[str, object], ...]:
+    def resolve_all(cls, required_authorities=None) -> tuple[tuple[str, object], ...]:
         providers = []
-        for authority, path in sorted(cls.configured_paths().items()):
+        for authority, path in sorted(cls.configured_paths(required_authorities).items()):
             try:
                 adapter = import_string(path)
                 if isinstance(adapter, type):

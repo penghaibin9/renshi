@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}
 HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
@@ -12,7 +12,7 @@ HR01-02 我的待办 —— 各业务域待处理任务的统一聚合视图
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 
-<div class="hr-page" data-hr-page="todos">
+<div class="hr-page" data-hr-page="todos" data-module="HR01" data-hr-workspace="v6">
   {% include "hr/components/page_header.html" with title="我的待办" subtitle="散落在各模块的、当前由我处理的事项" %}
 
   <!-- 统计 -->

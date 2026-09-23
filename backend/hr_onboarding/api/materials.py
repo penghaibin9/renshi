@@ -61,105 +61,198 @@ def _load_material_or_404(context, material_id: str):
     return material
 
 
+def material_fingerprint(material):
+    from hr_onboarding.services.idempotency_service import canonical_request_hash
+    return canonical_request_hash({
+        "id": str(material.id), "case": str(material.case_id), "status": material.status,
+        "file": str(material.file_version_id), "updated": material.updated_at.isoformat(),
+        "requirement": [str(material.requirement_id), material.requirement.required,
+                        material.requirement.verification_required, material.requirement.blocking_phase],
+    })
+
+
+def material_projection(material, user):
+    req = material.requirement
+    can_review = bool(user.is_superuser or user.has_perm("hr05.material.review"))
+    actions = []
+    if can_review and material.case.status not in {"CANCELLED", "DECLINED", "PROBATION_FAILED"}:
+        if material.status in {"MISSING", "RETURNED", "REJECTED", "EXPIRED"}: actions.append("upload")
+        if material.status == "UNDER_REVIEW": actions.extend(["verify", "return"])
+        if not req.required and material.status not in {"VERIFIED", "WAIVED"}: actions.append("waive")
+    if can_review and material.file_version_id: actions.append("download")
+    return {
+        "id": str(material.id), "material_type": req.material_type, "label": req.label,
+        "blocking_phase": req.blocking_phase, "blockingPhaseLabel": label_for(BLOCKING_PHASE_LABELS, req.blocking_phase),
+        "required": req.required, "reuse_policy": req.reuse_policy,
+        "reusePolicyLabel": label_for(REUSE_POLICY_LABELS, req.reuse_policy),
+        "status": material.status, "statusLabel": label_for(MATERIAL_STATUS_LABELS, material.status),
+        "hasFile": bool(material.file_version_id), "source": material.source,
+        "expiry_date": material.expiry_date.isoformat() if material.expiry_date else None,
+        "fingerprint": material_fingerprint(material), "actions": actions,
+        "allowed_formats": req.allowed_formats, "max_size": req.max_size,
+    }
+
+
+def scoped_materials(context, case):
+    return HrOnboardingMaterial.objects.filter(tenant_id=context.tenant_id, case_id=case.id,
+        requirement__tenant_id=context.tenant_id, requirement__template_version_id=case.template_version_id
+    ).select_related("requirement", "case").order_by("requirement__created_at", "id")
+
+
 @require_GET
 @require_hr05_permission("hr05.case.view")
 def materials_list(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
         case = _load_case_or_404(context, case_id)
-        # 按模板版本实例化材料清单（幂等；case 未绑定模板时为空）
-        from hr_onboarding.services.material_service import ensure_materials_from_requirements
-
-        ensure_materials_from_requirements(case)
-        qs = HrOnboardingMaterial.objects.filter(case=case).select_related("requirement")
-        items = [
-            {
-                "id": str(m.id),
-                "material_type": m.requirement.material_type,
-                "label": m.requirement.label,
-                "blocking_phase": m.requirement.blocking_phase,
-                "blockingPhaseLabel": label_for(BLOCKING_PHASE_LABELS, m.requirement.blocking_phase),
-                "required": m.requirement.required,
-                "reuse_policy": m.requirement.reuse_policy,
-                "reusePolicyLabel": label_for(REUSE_POLICY_LABELS, m.requirement.reuse_policy),
-                "status": m.status,
-                "statusLabel": label_for(MATERIAL_STATUS_LABELS, m.status),
-                "hasFile": bool(m.file_version_id),
-                "source": m.source,
-                "expiry_date": m.expiry_date.isoformat() if m.expiry_date else None,
-            }
-            for m in qs
-        ]
-        return api_base.ok(request, {"items": items, "total": len(items)})
+        rows = list(scoped_materials(context, case))
+        from hr_onboarding.models import HrOnboardingMaterialRequirement
+        missing = HrOnboardingMaterialRequirement.objects.filter(
+            tenant_id=context.tenant_id, template_version_id=case.template_version_id
+        ).exclude(id__in=[r.requirement_id for r in rows]).count() if case.template_version_id else 0
+        can_init = (request.user.is_superuser or request.user.has_perm("hr05.material.review")) and case.status not in {"CANCELLED", "DECLINED", "PROBATION_FAILED"}
+        return api_base.ok(request, {"items": [material_projection(m, request.user) for m in rows],
+            "total": len(rows), "missing_requirements": missing, "can_initialize": bool(missing and can_init),
+            "case_no": case.case_no, "case_version": case.version, "has_template": bool(case.template_version_id)})
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
+
+
+@require_GET
+@require_hr05_permission("hr05.case.view")
+def material_detail(request, material_id):
+    try:
+        ctx = api_base.make_hr05_context(request)
+        row = _load_material_or_404(ctx, material_id)
+        case = _load_case_or_404(ctx, row.case_id)
+        row = scoped_materials(ctx, case).filter(pk=material_id).first()
+        if row is None: raise NotFoundError("材料所属模板不一致")
+        return api_base.ok(request, {"item": material_projection(row, request.user)})
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+@require_POST
+@require_hr05_permission("hr05.material.review")
+def materials_initialize(request, case_id):
+    from django.db import transaction
+    from hr_onboarding.services.workflow_service import expected_version
+    from hr_onboarding.services.idempotency_service import DurableIdempotencyService
+    from hr_onboarding.services.material_service import ensure_materials_from_requirements
+    from hr_onboarding.api.exceptions import VersionConflictError
+    try:
+        ctx = api_base.make_hr05_context(request)
+        with transaction.atomic():
+            case = MaterialService(tenant_id=ctx.tenant_id)._lock_case(case_id)
+            version = expected_version(request.headers.get("If-Match", "").strip('"'))
+            idem = DurableIdempotencyService(tenant_id=ctx.tenant_id, operation="materials.initialize")
+            claim = idem.claim(idempotency_key=api_base.get_idempotency_key(request), request_payload={
+                "actor": ctx.user_id, "case": str(case_id), "version": version})
+            if claim.is_replay: return api_base.ok(request, {"receipt": claim.record.response_summary, "replayed": True})
+            if case.version != version: raise VersionConflictError("入职单已更新，请重读")
+            if not case.template_version_id: raise Hr05ApiError("请先绑定本校入职模板")
+            created = ensure_materials_from_requirements(case)
+            event = HrOnboardingAuditEvent.objects.create(tenant_id=ctx.tenant_id, case_id=case.id,
+                actor_user_id=ctx.user_id, action="MATERIALS_INITIALIZED", business_type="MATERIAL",
+                business_id=str(case.id), reason="按绑定模板生成材料要求", request_id=api_base._request_id(request))
+            receipt = {"id": str(event.id), "created": created, "case_id": str(case.id)}
+            idem.succeed(claim.record, authority_type="HrOnboardingCase", authority_id=case.id, response_summary=receipt)
+            return api_base.ok(request, {"receipt": receipt, "replayed": False})
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+
+
+def _material_command(request, material_id, action, case_id=None):
+    from django.db import transaction
+    from hr_onboarding.api.exceptions import VersionConflictError
+    from hr_onboarding.services.idempotency_service import DurableIdempotencyService
+    new_file_path = None
+    committed = False
+    try:
+        ctx = api_base.make_hr05_context(request)
+        with transaction.atomic():
+            existing = _load_material_or_404(ctx, material_id)
+            service = MaterialService(tenant_id=ctx.tenant_id, actor_user_id=ctx.user_id)
+            material = service._lock_material(existing)  # parent → child lock ordering
+            if case_id and str(case_id) != str(material.case_id): raise NotFoundError("材料不属于该入职单")
+            fingerprint = request.headers.get("If-Match", "").strip('"')
+            if not fingerprint: raise Hr05ApiError("请先读取材料最新版本后提交")
+            fields = {k: request.POST.get(k, "").strip() for k in ("reason", "result", "evidence")}
+            if any(len(v)>2000 for v in fields.values()): raise Hr05ApiError("说明不得超过2000字")
+            upload = request.FILES.get("file") if action == "upload" else None
+            payload = {"actor": ctx.user_id, "material": str(material.id), "version": fingerprint, "fields": fields}
+            if action == "upload":
+                if upload is None: raise Hr05ApiError("缺少文件字段 file")
+                try:
+                    meta = file_service.validate_upload(upload, allowed_formats=material.requirement.allowed_formats or None,
+                        max_size_mb=material.requirement.max_size/(1024*1024) if material.requirement.max_size else None)
+                except ValueError as exc: raise Hr05ApiError("文件不符合材料要求：" + str(exc)) from exc
+                payload["file"] = meta
+            idem = DurableIdempotencyService(tenant_id=ctx.tenant_id, operation="material." + action)
+            claim = idem.claim(idempotency_key=api_base.get_idempotency_key(request), request_payload=payload)
+            if claim.is_replay:
+                return api_base.ok(request, {"material_id": str(material.id), "status": material.status,
+                    "item": material_projection(material, request.user), "receipt": claim.record.response_summary, "replayed": True})
+            if fingerprint != material_fingerprint(material): raise VersionConflictError("材料已更新，请核对最新文件与状态后再办理")
+            if action not in material_projection(material, request.user)["actions"]:
+                raise Hr05ApiError("当前材料状态或权限不允许此操作")
+            before = material_fingerprint(material)
+            if action != "upload" and not fields["reason"]: raise Hr05ApiError("请填写本次办理依据")
+            if action == "upload":
+                updated = service.submit_material(material.case, material.requirement_id, upload)
+                m = updated.file_meta_json
+                new_file_path = file_service.material_storage_path(tenant_id=ctx.tenant_id, case_id=material.case_id,
+                    material_id=material.id, file_version_id=m["file_version_id"], ext=m["ext"])
+            elif action == "verify":
+                result = fields["result"] or VerificationResult.VERIFIED
+                if result not in VerificationResult.values: raise Hr05ApiError("核验结果不合法")
+                if not fields["evidence"]: raise Hr05ApiError("核验须填写依据或凭证编号")
+                updated = service.verify_material(material, result=result, reason=fields["reason"], evidence={"evidence": fields["evidence"]})
+            elif action == "return": updated = service.return_material(material, reason=fields["reason"])
+            elif action == "waive": updated = service.waive_material(material, reason=fields["reason"])
+            else: raise Hr05ApiError("不支持此材料动作")
+            event = HrOnboardingAuditEvent.objects.create(tenant_id=ctx.tenant_id, case_id=material.case_id,
+                actor_user_id=ctx.user_id, action="MATERIAL_" + action.upper(), business_type="MATERIAL", business_id=str(material.id),
+                before_snapshot_ref=before, after_snapshot_ref=material_fingerprint(updated),
+                reason=fields["reason"], request_id=api_base._request_id(request))
+            receipt = {"id": str(event.id), "action": action, "material_id": str(material.id), "status": updated.status,
+                "actor_user_id": ctx.user_id, "occurred_at": event.occurred_at.isoformat()}
+            idem.succeed(claim.record, authority_type="HrOnboardingMaterial", authority_id=material.id, response_summary=receipt)
+            result_data = {"material_id": str(updated.id), "status": updated.status,
+                "item": material_projection(updated, request.user), "receipt": receipt, "replayed": False}
+        committed = True
+        return api_base.ok(request, result_data)
+    except Hr05ApiError as exc:
+        return api_base.handle_hr05_error(request, exc)
+    finally:
+        # File storage is not transactional: remove only the newly written file
+        # after a DB/audit rollback. Never remove the previous committed version.
+        if new_file_path and not committed and default_storage.exists(new_file_path):
+            default_storage.delete(new_file_path)
 
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
 def material_submit(request, case_id: str, material_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        case = _load_case_or_404(context, case_id)
-        material = _load_material_or_404(context, material_id)
-        # 纵深防御：material 必须属于该 case（跨 case 提交拒绝）
-        if str(material.case_id) != str(case.id):
-            raise NotFoundError("材料不属于该 case")
-        uploaded = request.FILES.get("file")
-        if uploaded is None:
-            raise Hr05ApiError("缺少文件字段 file")
-        service = MaterialService(tenant_id=context.tenant_id, actor_user_id=context.user_id)
-        updated = service.submit_material(case, material.requirement_id, uploaded)
-        return api_base.ok(request, {"material_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    return _material_command(request, material_id, "upload", case_id)
 
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
 def material_verify(request, material_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        material = _load_material_or_404(context, material_id)
-        result = request.POST.get("result", VerificationResult.VERIFIED)
-        if result not in VerificationResult.values:
-            raise Hr05ApiError("result 非法")
-        service = MaterialService(tenant_id=context.tenant_id, actor_user_id=context.user_id)
-        updated = service.verify_material(
-            material,
-            result=result,
-            reason=request.POST.get("reason", ""),
-            evidence={"evidence": request.POST.get("evidence", "")},
-        )
-        return api_base.ok(request, {"material_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    return _material_command(request, material_id, "verify")
 
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
 def material_return(request, material_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        material = _load_material_or_404(context, material_id)
-        service = MaterialService(tenant_id=context.tenant_id, actor_user_id=context.user_id)
-        updated = service.return_material(material, reason=request.POST.get("reason", ""))
-        return api_base.ok(request, {"material_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    return _material_command(request, material_id, "return")
 
 
 @require_POST
 @require_hr05_permission("hr05.material.review")
 def material_waive(request, material_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        material = _load_material_or_404(context, material_id)
-        service = MaterialService(tenant_id=context.tenant_id, actor_user_id=context.user_id)
-        updated = service.waive_material(material, reason=request.POST.get("reason", ""))
-        return api_base.ok(request, {"material_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    return _material_command(request, material_id, "waive")
 
 
 @require_POST

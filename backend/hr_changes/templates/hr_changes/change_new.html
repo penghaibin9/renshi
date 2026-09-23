@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}Implementation contract: TransferService; DRAFT 草稿; 服务端生成受管字段 proposals.{% endcomment %}
 {% block title %}{% trans "创建异动草稿" %}{% endblock %}
@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
 {% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr06-page" data-module="HR06" data-section="new" data-hr-page="change-new">
+<div class="hr-v2-page hr06-page" data-module="HR06" data-hr-workspace="v6" data-section="new" data-hr-page="change-new">
   <div hidden aria-hidden="true">{% csrf_token %}</div>
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>创建草稿</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-new-title">

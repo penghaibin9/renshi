@@ -79,7 +79,7 @@
                                         <input
                                             type="checkbox"
                                             name="permissions"
-                                            value="add_{{model.model_name}}"
+                                            value="{{perm.app_label}}.add_{{model.model_name}}"
                                             class="oh-switch__checkbox"
                                             onchange="
                                                 if (!$(this).is(':checked')) {
@@ -99,7 +99,7 @@
                                         <input
                                             type="checkbox"
                                             name="permissions"
-                                            value="view_{{model.model_name}}"
+                                            value="{{perm.app_label}}.view_{{model.model_name}}"
                                             class="oh-switch__checkbox view-permission"
                                             onchange="
                                                 if (!$(this).is(':checked')) {
@@ -119,7 +119,7 @@
                                         <input
                                             type="checkbox"
                                             name="permissions"
-                                            value="change_{{model.model_name}}"
+                                            value="{{perm.app_label}}.change_{{model.model_name}}"
                                             class="oh-switch__checkbox"
                                             onchange="
                                                 if (!$(this).is(':checked')) {
@@ -139,7 +139,8 @@
                                         <input
                                             type="checkbox"
                                             name="permissions"
-                                            value="delete_{{model.model_name}}"
+                                            value="{{perm.app_label}}.delete_{{model.model_name}}"
+                                            data-permission-risk="high"
                                             class="oh-switch__checkbox"
                                             onchange="
                                                 if (!$(this).is(':checked')) {

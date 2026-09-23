@@ -1,0 +1,3 @@
+AUTHORED_DJANGO_MYSQL_TESTS_COMPILE_OK
+authored_round3_tests=8 (bootstrap=6, hr16_replan=2)
+not_executed_reason=runtime dependencies and MySQL/Docker unavailable

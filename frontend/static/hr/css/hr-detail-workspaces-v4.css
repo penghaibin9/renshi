@@ -1,0 +1,330 @@
+/* Yueke University HR — secondary business workspaces V4
+   Scope: high-frequency detail/handling screens only. One brand palette; business differentiation comes from layout. */
+
+body.hr-shell-v3 {
+  --hr-detail-blue: var(--hr-brand-600, #2563eb);
+  --hr-detail-blue-strong: var(--hr-brand-700, #1d4ed8);
+  --hr-detail-blue-soft: var(--hr-brand-50, #eff6ff);
+  --hr-detail-line: var(--hr-line, #e2e8f0);
+  --hr-detail-line-strong: var(--hr-line-strong, #cbd5e1);
+  --hr-detail-muted: var(--hr-muted, #64748b);
+  --hr-detail-ink: #0f172a;
+  --hr-detail-surface: #fff;
+  --hr-detail-canvas: #f8fafc;
+}
+
+/* ========================= HR03 person profile ========================= */
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-detail-workspace {
+  display:grid;
+  grid-template-columns:280px minmax(0,1fr);
+  gap:28px;
+  align-items:start;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-detail-rail {
+  position:sticky;
+  top:72px;
+  min-width:0;
+  padding-right:24px;
+  border-right:1px solid var(--hr-detail-line);
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-identity {
+  display:grid;
+  grid-template-columns:56px minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+  margin:0 0 18px;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-name-row {
+  align-items:flex-start;
+  gap:7px;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-name {font-size:21px;letter-spacing:-.01em}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-no {margin-top:3px;font-variant-numeric:tabular-nums}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-org {line-height:1.55}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-asof {
+  display:grid;
+  gap:10px;
+  margin:0 0 18px;
+  padding:12px 0;
+  border:0;
+  border-top:1px solid var(--hr-detail-line);
+  border-bottom:1px solid var(--hr-detail-line);
+  border-radius:0;
+  background:transparent;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-asof-control {justify-content:space-between}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav {
+  display:grid;
+  gap:0;
+  margin:0;
+  border:0;
+  overflow:visible;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav a {
+  display:flex;
+  align-items:center;
+  min-height:40px;
+  padding:9px 10px;
+  border:0;
+  border-left:2px solid transparent;
+  color:var(--hr-detail-muted);
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav a:hover {background:#f8fbff}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav a.is-active {
+  border-left-color:var(--hr-detail-blue);
+  background:var(--hr-detail-blue-soft);
+  color:var(--hr-detail-blue-strong);
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-detail-main {min-width:0}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-next-actions {
+  margin:0 0 20px;
+  padding:0 0 16px;
+  border:0;
+  border-bottom:1px solid var(--hr-detail-line);
+  border-radius:0;
+  background:transparent;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-next-actions a {border-radius:5px}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-grid {
+  grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);
+  gap:0 28px;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-grid > article {
+  padding:18px 0 22px;
+  border:0;
+  border-top:1px solid var(--hr-detail-line);
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-grid > article:first-child,
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-grid > article:nth-child(2) {border-top:0;padding-top:0}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-kv {
+  grid-template-columns:130px minmax(0,1fr);
+  gap:0;
+  border-top:1px solid var(--hr-detail-line);
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-kv dt,
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-kv dd {
+  min-height:42px;
+  padding:11px 0;
+  border-bottom:1px solid var(--hr-detail-line);
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-kv dt {padding-right:18px;color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-kv dd {font-weight:600;color:var(--hr-detail-ink)}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-boundary {
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+}
+body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-boundary a {margin-top:6px}
+
+/* ========================= HR04 candidate master-detail ========================= */
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-workbench {padding:0;border:0;background:transparent}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-toolbar {
+  align-items:end;
+  padding:0 0 14px;
+  border-bottom:1px solid var(--hr-detail-line);
+}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-searchbox {display:flex;align-items:center;gap:10px;min-width:min(440px,45vw)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-searchbox .hr04-search {flex:1;min-width:0}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-count {font-size:11px;color:var(--hr-detail-muted);white-space:nowrap}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-split {
+  display:grid;
+  grid-template-columns:minmax(0,1.65fr) minmax(300px,.7fr);
+  min-height:520px;
+  border-bottom:1px solid var(--hr-detail-line);
+}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master {min-width:0;padding-right:22px;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master .hr-table {min-width:720px;border:0}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master .hr-table th {position:sticky;top:0;z-index:1}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master .hr-table tbody tr {cursor:pointer}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master .hr-table tbody tr.is-selected {background:#f2f7ff !important;box-shadow:inset 3px 0 var(--hr-detail-blue)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master .hr-table tbody tr:focus-visible {outline:2px solid rgba(37,99,235,.25);outline-offset:-2px}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-detail {padding:8px 0 20px 24px;min-width:0}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-empty {display:grid;gap:6px;padding:40px 4px;color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-empty strong {color:var(--hr-detail-ink);font-size:15px}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-head {padding:2px 0 16px;border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-head small {display:block;color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-head h3 {margin:4px 0 7px;font-size:22px;letter-spacing:-.01em}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-meta {display:grid;grid-template-columns:96px minmax(0,1fr);margin:0}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-meta dt,
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-meta dd {padding:10px 0;border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-meta dt {color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-meta dd {margin:0;font-weight:600;overflow-wrap:anywhere}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-next {padding-top:16px}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-next > strong {display:block;margin-bottom:4px}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-next > small {display:block;color:var(--hr-detail-muted);line-height:1.55}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-actions {display:grid;gap:7px;margin-top:12px}
+body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-detail-actions a {display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--hr-detail-line);font-weight:700;color:var(--hr-detail-blue-strong);text-decoration:none}
+
+/* ========================= HR05 onboarding case ========================= */
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-workbench {padding:0;border:0;background:transparent}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-progress {
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:0;
+  margin:0 0 22px;
+  border-top:1px solid var(--hr-detail-line);
+  border-bottom:1px solid var(--hr-detail-line);
+}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step {position:relative;padding:13px 14px 13px 28px;color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step:not(:last-child){border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step::before {content:"";position:absolute;left:12px;top:18px;width:7px;height:7px;border-radius:50%;background:#cbd5e1}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step b,
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step small {display:block}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step b {font-size:12px;color:#475569}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step small {font-size:10px;margin-top:2px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step.is-done::before {background:var(--hr-success,#16a34a)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step.is-current {background:#f8fbff}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step.is-current::before {background:var(--hr-detail-blue);box-shadow:0 0 0 4px rgba(37,99,235,.12)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step.is-current b {color:var(--hr-detail-blue-strong)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-layout {display:grid;grid-template-columns:minmax(0,1.7fr) minmax(290px,.6fr);gap:28px;align-items:start}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-aside {position:sticky;top:72px;padding-left:24px;border-left:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-aside__head {padding-bottom:12px;border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-aside__head strong,
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-aside__head span {display:block}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-aside__head span {margin-top:4px;color:var(--hr-detail-muted);font-size:11px;line-height:1.5}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-detail-head {display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-detail-head h2 {margin:2px 0 4px;font-size:22px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-detail-head small {color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary > div {padding:14px 16px 14px 0;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary > div:not(:first-child){padding-left:16px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary > div:last-child{border-right:0}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary span,
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary b {display:block}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary span {color:var(--hr-detail-muted);font-size:11px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary b {margin-top:3px;font-size:14px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-facts {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:18px 0 0;border-top:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-fact {display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px;padding:11px 0;border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-fact:nth-child(odd){padding-right:20px;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-fact:nth-child(even){padding-left:20px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-fact span {color:var(--hr-detail-muted)}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-fact b {font-weight:600;overflow-wrap:anywhere}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-actions {display:grid;gap:0;margin-top:10px}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-actions :is(a,button) {display:flex;align-items:center;justify-content:space-between;min-height:42px;padding:10px 0;border:0;border-bottom:1px solid var(--hr-detail-line);border-radius:0;background:transparent;color:var(--hr-detail-blue-strong);font:inherit;font-weight:700;text-align:left;text-decoration:none}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-actions button:first-child {color:#fff;background:var(--hr-detail-blue);padding:10px 12px;border-radius:5px;margin-bottom:8px;border-bottom:0}
+body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-actions:empty::after {content:"当前状态没有需要人工推进的动作";display:block;padding:14px 0;color:var(--hr-detail-muted);font-size:11px}
+
+/* ========================= HR13 expert review console ========================= */
+body.hr-shell-v3 .hr13[data-section="experts"] #hr13f-panel,
+body.hr-shell-v3 .hr13[data-section="deliberation"] #hr13f-panel {padding:0;border:0;background:transparent}
+body.hr-shell-v3 .hr13 :is(.hr13f-facts,.hr13f-workbench) {margin-top:14px}
+body.hr-shell-v3 .hr13 .hr13f-facts {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--hr-detail-line);border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr13 .hr13f-fact {padding:12px 14px;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr13 .hr13f-fact:last-child{border-right:0}
+body.hr-shell-v3 .hr13 .hr13f-fact span,.hr13 .hr13f-fact b{display:block}.hr13 .hr13f-fact span{color:var(--hr-detail-muted);font-size:11px}.hr13 .hr13f-fact b{margin-top:3px;font-size:18px}
+body.hr-shell-v3 .hr13 .hr13f-workbench {display:grid;grid-template-columns:minmax(300px,.68fr) minmax(0,1.45fr);gap:28px;align-items:start}
+body.hr-shell-v3 .hr13 .hr13f-rail {position:sticky;top:72px;padding-right:24px;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr13 .hr13f-main {min-width:0}
+body.hr-shell-v3 .hr13 .hr13f-box {padding:16px 0;border:0;border-top:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr13 .hr13f-rail .hr13f-box:first-child,
+body.hr-shell-v3 .hr13 .hr13f-main .hr13f-box:first-child {padding-top:0;border-top:0}
+body.hr-shell-v3 .hr13 .hr13f-form {grid-template-columns:1fr;gap:9px}
+body.hr-shell-v3 .hr13 .hr13f-form .wide {grid-column:auto}
+body.hr-shell-v3 .hr13 .hr13f-input,
+body.hr-shell-v3 .hr13 .hr13f-select,
+body.hr-shell-v3 .hr13 .hr13f-textarea {border-radius:5px}
+body.hr-shell-v3 .hr13 .hr13f-list {gap:0;border-top:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr13 .hr13f-row {padding:12px 0;border:0;border-bottom:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr13 .hr13f-row-head {align-items:center}
+body.hr-shell-v3 .hr13 .hr13f-actions {padding-top:8px;border-top:1px dashed var(--hr-detail-line);margin-top:10px}
+body.hr-shell-v3 .hr13 .hr13f-badge {border-radius:4px;background:var(--hr-detail-blue-soft);color:var(--hr-detail-blue-strong)}
+body.hr-shell-v3 .hr13 .hr13f-ballot-history {margin-top:14px}
+
+/* ========================= HR15 payroll calculation ledger ========================= */
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));margin:0 0 20px;border-top:1px solid var(--hr-detail-line);border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage > span {position:relative;padding:12px 14px;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage > span:last-child{border-right:0}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage b,
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage small {display:block}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage b {color:var(--hr-detail-muted);font-size:10px;letter-spacing:.08em}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage small {margin-top:3px;color:#475569;font-size:11px;font-weight:700}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage .is-current {background:#f8fbff}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage .is-current b,
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage .is-current small {color:var(--hr-detail-blue-strong)}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-layout {grid-template-columns:minmax(0,1.75fr) minmax(300px,.58fr);gap:28px}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-layout > aside {padding-left:24px;border-left:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-card {padding:16px 0;border:0;border-top:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-layout > div > .hr15-card:first-child,
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-layout > aside > .hr15-card:first-child {padding-top:0;border-top:0}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-tasks,
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-list {gap:0;border-top:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-task,
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-row {border:0;border-bottom:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-row {grid-template-columns:minmax(190px,1.3fr) minmax(110px,.6fr) 105px minmax(150px,.7fr);padding:12px 0}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-flow {gap:0;border-top:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-flow a {border:0;border-bottom:1px solid var(--hr-detail-line);border-left:0 !important;border-radius:0;padding:10px 0}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-step {border-radius:50%;background:var(--hr-detail-blue-soft);color:var(--hr-detail-blue-strong)}
+
+/* ========================= HR16 handover checklist ========================= */
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 20px;border-top:1px solid var(--hr-detail-line);border-bottom:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide > span {padding:12px 16px;border-right:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide > span:last-child{border-right:0}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide b,
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide small {display:block}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide small {margin-top:3px;color:var(--hr-detail-muted);font-size:11px;line-height:1.5}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-layout {grid-template-columns:minmax(0,1.8fr) minmax(290px,.55fr);gap:28px}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-layout > aside {padding-left:24px;border-left:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-card {padding:16px 0;border:0;border-top:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-layout > div > .hr16-card:first-child,
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-layout > aside > .hr16-card:first-child {padding-top:0;border-top:0}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-priority,
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-list {gap:0;border-top:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-task,
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-row {border:0;border-bottom:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-row {position:relative;grid-template-columns:minmax(190px,1.35fr) 95px 115px minmax(140px,.75fr);padding:13px 0 13px 22px}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-row::before {content:"";position:absolute;left:0;top:17px;width:12px;height:12px;border:2px solid var(--hr-detail-line-strong);border-radius:50%}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-row.is-complete::before {border-color:var(--hr-success,#16a34a);background:var(--hr-success,#16a34a);box-shadow:inset 0 0 0 3px #fff}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-row.is-blocking::before {border-color:var(--hr-warning,#d97706)}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-row.is-blocking {background:#fffdf7 !important}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-flow {gap:0;border-top:1px solid var(--hr-detail-line)}
+body.hr-shell-v3 .hr16[data-section="handover"] .hr16-flow a {border:0;border-bottom:1px solid var(--hr-detail-line);border-left:0 !important;border-radius:0;padding:10px 0}
+
+@media (max-width: 1040px) {
+  body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-detail-workspace,
+  body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-split,
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-layout,
+  body.hr-shell-v3 .hr13 .hr13f-workbench,
+  body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-layout,
+  body.hr-shell-v3 .hr16[data-section="handover"] .hr16-layout {grid-template-columns:1fr}
+  body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-detail-rail,
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-aside,
+  body.hr-shell-v3 .hr13 .hr13f-rail,
+  body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-layout > aside,
+  body.hr-shell-v3 .hr16[data-section="handover"] .hr16-layout > aside {position:static;padding:0;border:0;border-top:1px solid var(--hr-detail-line);padding-top:18px}
+  body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav {display:flex;overflow-x:auto;border-bottom:1px solid var(--hr-detail-line)}
+  body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav a {border-left:0;border-bottom:2px solid transparent}
+  body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-person-nav a.is-active {border-bottom-color:var(--hr-detail-blue)}
+  body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-master {padding-right:0;border-right:0}
+  body.hr-shell-v3 .hr04-page[data-section="candidates"] .hr04-candidate-detail {padding:18px 0 0;border-top:1px solid var(--hr-detail-line)}
+}
+@media (max-width: 700px) {
+  body.hr-shell-v3 .hr03-page[data-section="profile"] .hr03-profile-grid,
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary,
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-facts,
+  body.hr-shell-v3 .hr13 .hr13f-facts,
+  body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage,
+  body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide {grid-template-columns:1fr}
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-progress {grid-template-columns:1fr}
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-step:not(:last-child),
+  body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-calc-stage > span,
+  body.hr-shell-v3 .hr16[data-section="handover"] .hr16-handover-guide > span {border-right:0;border-bottom:1px solid var(--hr-detail-line)}
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-summary > div {padding:12px 0 !important;border-right:0;border-bottom:1px solid var(--hr-detail-line)}
+  body.hr-shell-v3 .hr05-page[data-hr-page="onboarding-case-detail"] .hr05-case-fact {padding:10px 0 !important;border-right:0 !important}
+}
+
+/* HR15 real action forms: a ledger-like operator panel, not nested cards. */
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-adjust-card {margin-top:18px !important;padding:18px 0 0 !important;border:0 !important;border-top:1px solid var(--hr-detail-line) !important;border-radius:0 !important;background:transparent !important}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-adjust-form {margin:0;padding:14px 0;border:0;border-bottom:1px solid var(--hr-detail-line);border-radius:0;background:transparent}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-adjust-form + .hr15-adjust-form {margin-top:0}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-adjust-grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-adjust-actions {justify-content:flex-end;margin-top:12px}
+body.hr-shell-v3 .hr15[data-section="calculations"] .hr15-adjust-btn {border-radius:5px}
+
+/* HR13 inline legacy styles load before this file; neutralize their old card language. */
+body.hr-shell-v3 .hr13 .hr13f-btn {border-radius:5px;background:var(--hr-detail-blue);border-color:var(--hr-detail-blue);color:#fff}
+body.hr-shell-v3 .hr13 .hr13f-btn.secondary {background:#fff;color:var(--hr-detail-blue-strong);border-color:var(--hr-detail-line-strong)}
+body.hr-shell-v3 .hr13 .hr13f-btn.warn {background:#fff;color:var(--hr-warning,#b45309);border-color:#fed7aa}

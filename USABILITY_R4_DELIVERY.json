@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "releaseName": "Usability Candidate R4 2026-09-17",
+  "baseline": {
+    "file": "Yueke_University_HR_Usability_Candidate_R3_20260917.zip",
+    "sha256": "19b6122aafb8b3922ea49631f58c860660d2bcc816c386bf6b5ec620587ded56"
+  },
+  "status": "SOURCE_USABILITY_R4_CLOSURE_COMPLETE",
+  "runtimeBusinessFlowStatus": "QA_RUNTIME_PENDING_DJANGO_MYSQL",
+  "primaryWorkflow": [
+    "HR04 招聘", "HR05 入职", "HR03 主档", "HR07 合同", "HR06 异动", "HR09 资质", "HR10 培训",
+    "HR11 考勤", "HR12 考核", "HR14 聘任", "HR15 薪酬", "HR16 离退", "HR17 教职工本人服务", "HR18 数据中心"
+  ],
+  "closures": [
+    "14-step lifecycle coach in the exact user-requested order with resumable navigation-only progress",
+    "HR01-HR18 now expose at least 15 contextual prompt chips per module",
+    "134 distinct prompt texts including 54 new module-specific minimum-input/carry-forward/error-recovery questions",
+    "passive prefill for explicit server values and one unambiguous required select option",
+    "one-click safe fill for current year, explicit record/application timestamps and candidate business numbers",
+    "complex forms default to required-only compact mode when safe and can always show all fields",
+    "existing values are labeled as carried-in rather than asking users to type them again",
+    "arrival time, effective dates, reasons, approvals, qualification/performance/payroll/exit conclusions and sensitive data are never guessed",
+    "colloquial intent aliases expanded for onboarding, transfer, qualification renewal, training, assessment, appointment, retirement and self-service",
+    "HR02 public-institution job categories/grade templates verified and surfaced as guidance while school effective configuration remains authoritative",
+    "real QA browser gate upgraded to require the 14-step coach and at least 15 contextual prompts on each HR module"
+  ],
+  "researchBasis": [
+    "Oracle HCM Guided Journeys: contextual tutorials, policies and best practices inside HCM flows",
+    "ServiceNow Guided Self-Service: searchable visual Q&A and step-by-step self-service",
+    "SAP SuccessFactors Onboarding: recruit-to-hire field mapping, prepopulated review and least-restrictive onboarding mandatory fields",
+    "Chinese public-institution job setting rules: management/professional-technical/skilled-worker categories and generic grade counts"
+  ],
+  "sourceVerification": {
+    "hr10Import": "20/20 PASS",
+    "hr10StaffIdentity": "53/53 PASS",
+    "hr18ProcurementSync": "24/24 PASS",
+    "schoolHandover": "33/33 PASS",
+    "finalProcurement": "53/53 PASS",
+    "hrUsability": "95/95 PASS",
+    "pureTests": "187/187 PASS",
+    "pythonAst": "3162/3162 PASS",
+    "javascriptNodeCheck": "255/255 PASS"
+  },
+  "browserVerification": {
+    "engine": "Chromium via Playwright",
+    "usabilitySmoke": "PASS",
+    "fourteenStepClickSequence": "PASS",
+    "promptCountPerModuleMin": 15,
+    "passiveUnambiguousPrefill": "PASS",
+    "compactRequiredOnlyMode": "PASS",
+    "safeAutofill": "PASS",
+    "pageErrors": 0,
+    "backendBusinessTransactionsExecuted": false,
+    "evidenceDirs": ["tests/artifacts/hr-usability-static", "tests/artifacts/hr-lifecycle-static"]
+  },
+  "runtimeBlocker": {
+    "django": "ModuleNotFoundError: No module named 'django'",
+    "remoteDesktop": "Device mypeng is offline; real school/QA machine cannot currently be driven from this session.",
+    "meaning": "The source/UI route and real Chromium interaction gates are complete, but database-writing HR transactions still require a Django + MySQL QA runtime."
+  },
+  "finalReextractStatus": "PENDING_EXACT_ZIP_REEXTRACT"
+}

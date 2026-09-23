@@ -234,8 +234,8 @@
     rows.hidden = false;
 
     if (['overview', 'services'].includes(section)) {
-      title.textContent = section === 'services' ? '服务大厅' : '我可以办理的服务';
-      desc.textContent = '从当前学校已开放的服务中查找入口，并可把高频事项设为本人常用。';
+      title.textContent = section === 'services' ? '服务大厅' : '我的服务入口';
+      desc.textContent = '从当前学校已开放的服务中查找本人入口；只读入口只展示权威结果，不会冒充在线办理。';
       serviceTools.hidden = false;
       services.hidden = false;
       rows.hidden = true;

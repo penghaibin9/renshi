@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "round": "Round8",
+  "date": "2026-09-16",
+  "baseline": {
+    "file": "Yueke_University_HR_Round7_20260915.zip",
+    "sha256": "647fee0ecd94be1b59c79459d72cac9363e2c2f7b140ffcedb0de6f6d9cd02f7",
+    "deliverableFileCount": 10616
+  },
+  "status": "SOURCE_CODE_HOTFIX_CANDIDATE",
+  "releaseStatus": "NOT_RELEASED",
+  "scope": "HR10 Excel import lease-safe claim + real authority execution closure",
+  "sourceClosure": {
+    "added": 6,
+    "modified": 6,
+    "deleted": 0,
+    "changedTotal": 12,
+    "deliveryMetadataExcludedFromDiff": true
+  },
+  "fixedDefects": [
+    "duplicate worker delivery could parse the same HR10 import job concurrently after the row lock transaction committed",
+    "confirm_import reported SUCCESS without writing staging rows into HR10 authority tables",
+    "confirmation could be retried/double-clicked without an execution lease",
+    "preview-time authority validation alone could miss conflicts created before confirmation",
+    "confirmation-time authority recheck could become an N+1 query storm",
+    "unsafe EXCEL_PLAN INDIVIDUAL numeric staff ids could masquerade as HR03 authority references despite HR03 UUID primary keys"
+  ],
+  "importContract": {
+    "parseLease": true,
+    "executionLease": true,
+    "leaseTimeoutSecondsDefault": 300,
+    "leaseTakeoverAfterExpiryOnly": true,
+    "authorityWriteTargets": [
+      "HrDevelopmentPlan",
+      "HrLearningProgram",
+      "HrEnterprisePracticeProject"
+    ],
+    "successAtomicWithAuthorityRowsAndAudit": true,
+    "rowExecutionReceipt": true,
+    "tenantFailClosed": true,
+    "individualPlanStaffKeyPolicy": "FAIL_CLOSED_HR03_UUID_CONTRACT_MISMATCH"
+  },
+  "pureGateTests": {
+    "Round2ToRound7": 155,
+    "subtests": 25,
+    "status": "PASS"
+  },
+  "hr10StaticContractGate": {
+    "passed": 20,
+    "total": 20,
+    "status": "PASS"
+  },
+  "staticVerification": {
+    "pythonAstFiles": 3138,
+    "pythonAstErrors": 0,
+    "compileall": "PASS",
+    "migrationDuplicatePrefixes": 0,
+    "javascriptNodeCheckFiles": 253,
+    "javascriptErrors": 0
+  },
+  "djangoRuntimeRegression": {
+    "status": "NOT_RUN_DEPENDENCY_MISSING",
+    "attempted": true,
+    "error": "/opt/pyvenv/bin/python: No module named django",
+    "requiredCommand": "python manage.py test hr10_development.tests.test_excel_import_pipeline -v 2"
+  },
+  "runtimeGatesStillRequiredBeforeTraffic": [
+    "Django migration plan and migration on disposable MySQL QA database",
+    "HR10 Excel import targeted Django test suite",
+    "two-worker duplicate parse delivery test",
+    "parse worker crash and expired-lease takeover test",
+    "double-confirm execution test",
+    "EXECUTING worker crash/rollback and expired-lease takeover test",
+    "PREVIEW-to-confirm authority conflict race test",
+    "cross-tenant job and row-result access test"
+  ],
+  "safety": {
+    "productionTouched": false,
+    "gitHubTouched": false
+  },
+  "packageVerification": {
+    "expectedZipFileCount": 10625,
+    "expectedManifestEntries": 10624,
+    "status": "PASS",
+    "zipFileCount": 10625,
+    "manifestEntries": 10624,
+    "manifestMissing": 0,
+    "manifestHashOrSizeErrors": 0,
+    "unexpectedFiles": 0
+  }
+}

@@ -1,0 +1,251 @@
+{
+  "pythonASTFiles": 3073,
+  "nodeChecks": [
+    {
+      "file": "frontend/static/hr/js/pages/hr16-actions.js",
+      "returnCode": 0,
+      "output": ""
+    },
+    {
+      "file": "frontend/static/hr/js/pages/hr-round2-common.js",
+      "returnCode": 0,
+      "output": ""
+    },
+    {
+      "file": "frontend/static/hr/js/pages/hr03-self-materials.js",
+      "returnCode": 0,
+      "output": ""
+    },
+    {
+      "file": "frontend/static/hr/js/pages/hr16-flex.js",
+      "returnCode": 0,
+      "output": ""
+    },
+    {
+      "file": "frontend/static/hr/js/pages/hr17-commands.js",
+      "returnCode": 0,
+      "output": ""
+    },
+    {
+      "file": "frontend/static/hr/js/pages/hr18-operations.js",
+      "returnCode": 0,
+      "output": ""
+    }
+  ],
+  "newMigrationLiteralChecks": [
+    {
+      "file": "backend/hr_data/migrations/0018_operational_snapshot_seals.py",
+      "dependencies": [
+        [
+          "hr_data",
+          "0017_operational_snapshot"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_data/migrations/0017_operational_snapshot.py",
+      "dependencies": [
+        [
+          "hr_data",
+          "0016_materialize_submission_permissions"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_self/migrations/0004_self_command_seals.py",
+      "dependencies": [
+        [
+          "hr_self",
+          "0003_self_commands"
+        ],
+        [
+          "hr_staff",
+          "0021_self_submission_seals"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_self/migrations/0003_self_commands.py",
+      "dependencies": [
+        [
+          "hr_self",
+          "0002_self_view_permission"
+        ],
+        [
+          "hr_staff",
+          "0020_self_submissions"
+        ],
+        [
+          "hr_exit",
+          "0015_flexible_retirement_seals"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_exit/migrations/0014_flexible_retirement_workflow.py",
+      "dependencies": [
+        [
+          "hr_exit",
+          "0013_evidence_access_audit"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_exit/migrations/0015_flexible_retirement_seals.py",
+      "dependencies": [
+        [
+          "hr_exit",
+          "0014_flexible_retirement_workflow"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_staff/migrations/0020_self_submissions.py",
+      "dependencies": [
+        [
+          "hr_staff",
+          "0019_material_ticket_constraints"
+        ]
+      ]
+    },
+    {
+      "file": "backend/hr_staff/migrations/0021_self_submission_seals.py",
+      "dependencies": [
+        [
+          "hr_staff",
+          "0020_self_submissions"
+        ]
+      ]
+    }
+  ],
+  "migrationFilesTotal": 442,
+  "migrationNumberCollisions": [],
+  "catalogSchemaChecks": [
+    {
+      "indicator": "organizations",
+      "model": "hr_structure.HrOrganization",
+      "stateField": "identity_status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "staffing_plans",
+      "model": "hr_structure.HrStaffingPlan",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "staff_dossiers",
+      "model": "hr_staff.HrStaffMaster",
+      "stateField": "current_employment_status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "correction_cases",
+      "model": "hr_staff.HrCorrectionCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "recruitment_offers",
+      "model": "hr_recruitment.HrRecruitmentOffer",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "onboarding_cases",
+      "model": "hr_onboarding.HrOnboardingCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "probation_cases",
+      "model": "hr_onboarding.HrProbationCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "personnel_changes",
+      "model": "hr_changes.HrPersonnelChangeCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "contract_agreements",
+      "model": "hr_contracts.HrContractAgreement",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "external_hiring",
+      "model": "hr_external.HrExternalHiringCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "qualification_credentials",
+      "model": "hr_qualification.HrPersonCredential",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "development_plans",
+      "model": "hr10_development.HrDevelopmentPlan",
+      "stateField": "lifecycle_status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "attendance_days",
+      "model": "hr_time.HrAttendanceDayFact",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "assessment_cases",
+      "model": "hr_assessment.HrAssessmentCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "title_applications",
+      "model": "hr_title.TitleApplicationCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "appointment_applications",
+      "model": "hr_appointment.AppointmentApplicationCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "payroll_result_records",
+      "model": "hr_payroll.PayrollResultFact",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "exit_cases",
+      "model": "hr_exit.ExitCase",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "flex_retirement_applications",
+      "model": "hr_exit.RetirementFlexApplication",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    },
+    {
+      "indicator": "material_requests",
+      "model": "hr_staff.HrMaterialRequest",
+      "stateField": "status",
+      "explicitModelFieldExists": true
+    }
+  ],
+  "newMySQLIntegrationTestsAuthored": 26,
+  "newMySQLIntegrationTestsExecuted": false,
+  "preservedLineEndingsInTrackedFiles": 27,
+  "gitDiffCheckReturnCode": 0,
+  "errors": [],
+  "limits": "AST/literal checks do not validate Django model state, migration SQL, registry startup or runtime transactions."
+}

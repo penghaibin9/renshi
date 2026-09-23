@@ -98,7 +98,9 @@ def user_perms(perms):
     """
     permission names return method
     """
-    return json.dumps(list(perms.values_list("codename", flat="True")))
+    from base.permission_refs import permission_refs
+
+    return json.dumps(permission_refs(perms))
 
 
 @register.filter(name="all_user_perms")
@@ -109,9 +111,9 @@ def all_user_perms(user):
     """
     if not user:
         return json.dumps([])
-    from base.auth_backends import get_effective_permission_codenames
-
-    return json.dumps(get_effective_permission_codenames(user))
+    if not getattr(user, "is_authenticated", False):
+        return json.dumps([])
+    return json.dumps(sorted(user.get_all_permissions()))
 
 
 @register.filter(name="company_user_groups")

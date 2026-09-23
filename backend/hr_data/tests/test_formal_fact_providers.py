@@ -6,7 +6,9 @@ from django.test import TestCase
 
 from hr_data.models import AsOfEvidenceSnapshot, PopulationDefinitionVersion
 from hr_data.providers.formal_facts import (
+    HR07_SPEC,
     HR13_SPEC,
+    hr07_asof_provider,
     hr13_asof_provider,
     hr16_asof_provider,
 )
@@ -46,6 +48,46 @@ class FormalFactProviderTests(TestCase):
         self.assertEqual(outcome.evidence.status, AsOfEvidenceSnapshot.Status.UNAVAILABLE)
         self.assertEqual(outcome.evidence.source_statuses_json, {"HR13": "UNAVAILABLE"})
         self.assertEqual(outcome.evidence.blocked_domains_json, ["HR13"])
+
+    @patch("hr_data.providers.formal_facts.apps.get_model")
+    def test_hr07_hashes_only_formal_contract_authority_rows(self, get_model):
+        population = self._population(
+            code="FORMAL_EMPLOYMENT_CONTRACTS",
+            root_domain="HR07",
+            field="contract.agreementType",
+            sources=["HR07"],
+        )
+        model = SimpleNamespace(objects=MagicMock())
+        get_model.return_value = model
+        initial_qs = MagicMock()
+        status_qs = MagicMock()
+        ordered_qs = MagicMock()
+        values_qs = MagicMock()
+        model.objects.filter.return_value = initial_qs
+        initial_qs.filter.return_value = status_qs
+        status_qs.order_by.return_value = ordered_qs
+        ordered_qs.values_list.return_value = values_qs
+        values_qs.iterator.return_value = [
+            (
+                "version-id", "agreement-id", "staff-id", "rel-id",
+                "STAFF_EMPLOYMENT", "HT-001", "EMPLOYMENT", 1, "INITIAL",
+                date(2025, 1, 1), None, "EFFECTIVE", None, "a" * 64,
+            )
+        ]
+
+        receipt = hr07_asof_provider(
+            tenant_id=77, source_domain="HR07", definition_kind="POPULATION",
+            definition_code=population.population_code, definition_version=1,
+            as_of_date=date(2026, 8, 1),
+        )
+
+        self.assertEqual(receipt["status"], "OK")
+        self.assertEqual(receipt["sourceVersion"], HR07_SPEC.provider_version)
+        self.assertEqual(len(receipt["evidenceHash"]), 64)
+        get_model.assert_called_once_with("hr_contracts", "HrContractVersion")
+        initial_qs.filter.assert_called_once_with(
+            status__in=("EFFECTIVE", "SUPERSEDED", "TERMINATED", "EXPIRED", "VOID")
+        )
 
     @patch("hr_data.providers.formal_facts.apps.get_model")
     def test_hr13_uses_tenant_asof_and_terminal_fact_statuses_when_model_exists(

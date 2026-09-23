@@ -542,3 +542,6 @@ body.yk-login-page {
     transition: none;
   }
 }
+
+/* V16 Integration Hub SSO runtime */
+.yk-sso-divider{display:flex;align-items:center;gap:12px;margin:22px 0 14px;color:#667085;font-size:13px}.yk-sso-divider:before,.yk-sso-divider:after{content:"";height:1px;background:#e4e7ec;flex:1}.yk-sso-options{display:grid;gap:10px}.yk-login-submit--sso{text-decoration:none;justify-content:center;background:#fff;color:#344054;border:1px solid #d0d5dd;box-shadow:none}.yk-login-submit--sso:hover{background:#f9fafb}

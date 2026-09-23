@@ -386,6 +386,9 @@
 </style>
 <div id="sidebar" class="fixed inset-y-0 left-0 bg-white border-r border-r-dark-50 z-50">
     <div class="p-4">
+        {% if request.path|slice:":4" == "/hr/" %}
+            {% include "hr/components/sidebar_brand_v16.html" %}
+        {% endif %}
         <!-- Header: hamburger pin toggle + company logo -->
         <div class="flex items-center gap-3 mb-6">
             <button

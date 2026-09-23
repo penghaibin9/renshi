@@ -343,7 +343,9 @@ def validate_mfa_email_configuration(
         )
 
 
-def validate_field_encryption_configuration(raw_keys, *, production=False):
+def validate_field_encryption_configuration(
+    raw_keys, *, production=False, disallowed_secrets=()
+):
     """Require a valid, rotation-capable credential encryption keyring."""
 
     if not production:
@@ -354,6 +356,7 @@ def validate_field_encryption_configuration(raw_keys, *, production=False):
         errors.append("FIELD_ENCRYPTION_KEYS is required in production.")
     seen = set()
     seen_material = set()
+    disallowed = {str(value or "") for value in (disallowed_secrets or ()) if str(value or "")}
     for entry in filter(None, (item.strip() for item in raw.split(","))):
         key_id, separator, key_material = entry.partition(":")
         if (
@@ -371,6 +374,10 @@ def validate_field_encryption_configuration(raw_keys, *, production=False):
         seen.add(key_id)
         if key_material in seen_material:
             errors.append("FIELD_ENCRYPTION_KEYS must not reuse key material.")
+        if key_material in disallowed:
+            errors.append(
+                "FIELD_ENCRYPTION_KEYS must not reuse Django, backup, fingerprint or ticket-signing secrets."
+            )
         seen_material.add(key_material)
         try:
             decoded = base64.urlsafe_b64decode(key_material.encode("ascii"))
@@ -383,6 +390,80 @@ def validate_field_encryption_configuration(raw_keys, *, production=False):
     if errors:
         raise ImproperlyConfigured(
             "Horilla database field encryption check failed:\n- "
+            + "\n- ".join(errors)
+        )
+
+
+def validate_field_fingerprint_configuration(
+    secret,
+    *,
+    secret_key="",
+    backup_key="",
+    encryption_keys="",
+    production=False,
+):
+    """Require a dedicated keyed fingerprint secret for searchable identifiers."""
+
+    if not production:
+        return
+    value = str(secret or "")
+    errors = []
+    if _is_placeholder(value) or len(value.encode("utf-8")) < 32:
+        errors.append(
+            "FIELD_FINGERPRINT_KEY must contain at least 32 non-placeholder bytes in production."
+        )
+    encryption_material = {
+        item.partition(":")[2]
+        for item in str(encryption_keys or "").split(",")
+        if item.partition(":")[1]
+    }
+    if value and value in {str(secret_key or ""), str(backup_key or ""), *encryption_material}:
+        errors.append(
+            "FIELD_FINGERPRINT_KEY must not reuse SECRET_KEY, backup or field-encryption key material."
+        )
+    if errors:
+        raise ImproperlyConfigured(
+            "Horilla identifier fingerprint configuration check failed:\n- "
+            + "\n- ".join(errors)
+        )
+
+
+def validate_hr08_ticket_signing_configuration(
+    secret,
+    *,
+    secret_key="",
+    fingerprint_key="",
+    backup_key="",
+    encryption_keys="",
+    production=False,
+):
+    """Require a dedicated HMAC secret for HR08 short-lived material tickets."""
+
+    if not production:
+        return
+    value = str(secret or "")
+    errors = []
+    if _is_placeholder(value) or len(value.encode("utf-8")) < 32:
+        errors.append(
+            "HR08_TICKET_SIGNING_KEY must contain at least 32 non-placeholder bytes in production."
+        )
+    encryption_material = {
+        item.partition(":")[2]
+        for item in str(encryption_keys or "").split(",")
+        if item.partition(":")[1]
+    }
+    if value and value in {
+        str(secret_key or ""),
+        str(fingerprint_key or ""),
+        str(backup_key or ""),
+        *encryption_material,
+    }:
+        errors.append(
+            "HR08_TICKET_SIGNING_KEY must not reuse SECRET_KEY, FIELD_FINGERPRINT_KEY, backup or field-encryption key material."
+        )
+    if errors:
+        raise ImproperlyConfigured(
+            "Horilla HR08 ticket-signing configuration check failed:\n- "
             + "\n- ".join(errors)
         )
 

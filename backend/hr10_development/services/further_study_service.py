@@ -133,8 +133,9 @@ class FurtherStudyService:
         )
         if case is None:
             raise FurtherStudyVerificationError("进修案件不存在或与里程碑学校不一致")
-        if not case.staff_master_id:
-            raise FurtherStudyVerificationError("进修案件缺少 staff_master_id")
+        staff_identity_key = case.staff_master_uuid or case.staff_master_id
+        if not staff_identity_key:
+            raise FurtherStudyVerificationError("进修案件缺少 HR03 教职工身份")
 
         evidence = dict(evidence_refs if evidence_refs is not None else locked.evidence_refs or {})
         validate_writeback_evidence(locked, evidence)
@@ -142,7 +143,7 @@ class FurtherStudyService:
             "tenantId": locked.tenant_id,
             "milestoneId": locked.id,
             "caseId": case.id,
-            "staffMasterId": str(case.staff_master_id),
+            "staffMasterId": str(staff_identity_key),
             "milestoneType": locked.milestone_type,
             "verificationStatus": verification_status,
             "actualDate": locked.actual_date,
@@ -177,7 +178,7 @@ class FurtherStudyService:
             result = education_provider.submit_education_record(
                 tenant_id=locked.tenant_id,
                 # Never substitute the further-study case id for the person reference.
-                staff_master_id=str(case.staff_master_id),
+                staff_master_id=str(staff_identity_key),
                 education_data={
                     "milestone_type": locked.milestone_type,
                     "source_business_id": f"FS:{locked.id}",
@@ -262,7 +263,7 @@ class FurtherStudyService:
             payload_json={
                 "milestone_id": locked.id,
                 "case_id": case.id,
-                "staff_master_id": str(case.staff_master_id),
+                "staff_master_id": str(staff_identity_key),
                 "milestone_type": locked.milestone_type,
                 "verification_status": locked.verification_status,
                 "writeback_status": locked.writeback_status,

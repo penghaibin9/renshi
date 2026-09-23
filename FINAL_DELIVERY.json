@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "releaseName": "Final Procurement Source Candidate",
+  "date": "2026-09-17",
+  "baseline": {
+    "file": "Yueke_University_HR_Round11_20260917.zip",
+    "sha256": "142453b414a8bde797261fac39b9ee6ddcf3f6843339c14cf96a663d7c740508"
+  },
+  "status": "SOURCE_CODE_COMPLETE",
+  "releaseStatus": "RUNTIME_AND_EXTERNAL_ACCEPTANCE_PENDING",
+  "scope": "One-shot procurement-grade source closure based on the user-provided 14-item university procurement reference; HR01-HR18 domain boundaries preserved.",
+  "sourceClosure": {
+    "added": 17,
+    "modified": 11,
+    "deleted": 0,
+    "changedTotal": 28,
+    "deliveryMetadataExcludedFromDiff": true
+  },
+  "keyClosures": [
+    "fixed hard-coded role permission deletion target",
+    "role permission copy without members or organization/data scope",
+    "app-qualified exact permission references with ambiguous legacy values fail-closed",
+    "secret-free school initialization snapshot + detached SHA-256",
+    "strict final procurement evidence package with no release certificate when evidence is incomplete",
+    "admin/operator training, user manual, trial-run/remediation/integration templates and procurement SLA",
+    "14-item procurement crosswalk without fabricating non-HR business domains"
+  ],
+  "verification": {
+    "hr10ImportStatic": "20/20 PASS",
+    "hr10StaffIdentityStatic": "53/53 PASS",
+    "hr18ProcurementSyncStatic": "24/24 PASS",
+    "schoolHandoverPortabilityStatic": "33/33 PASS",
+    "finalProcurementSourceClosureStatic": "53/53 PASS",
+    "pureUnittest": "187/187 PASS",
+    "pythonAst": {
+      "files": 3159,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "javascriptNodeCheck": {
+      "files": 253,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "acceptancePlan": "PASS"
+  },
+  "runtime": {
+    "django": {
+      "status": "NOT_RUN_DEPENDENCY_MISSING",
+      "attempted": true,
+      "error": "ModuleNotFoundError: No module named 'django'"
+    },
+    "dockerCompose": {
+      "status": "NOT_RUN_TOOL_MISSING",
+      "attempted": true,
+      "error": "docker command not found in current executor"
+    }
+  },
+  "externalAndHumanGatesRequired": [
+    "real MySQL/Django/Compose isolated acceptance",
+    "representative 100-concurrency performance evidence",
+    "school SSO/data-hub/contracted external integrations",
+    "trial run with buyer and supplier confirmation",
+    "closed remediation register with school acceptance",
+    "administrator and operator training confirmation"
+  ],
+  "safety": {
+    "productionTouched": false,
+    "gitHubTouched": false,
+    "externalSystemsTouched": false,
+    "realSchoolDataExported": false
+  },
+  "packageVerification": {
+    "status": "PASS",
+    "method": "Packaged ZIP re-extracted to a clean directory; manifest/hash, all source gates, pure tests, Python AST and JavaScript syntax checks rerun from extracted files.",
+    "zipEntries": 10683,
+    "manifestEntries": 10682,
+    "missingFiles": 0,
+    "unexpectedFiles": 0,
+    "hashOrSizeErrors": 0,
+    "pycacheDirs": 0,
+    "pycFiles": 0,
+    "sourceGates": {
+      "hr10Import": "20/20 PASS",
+      "hr10StaffIdentity": "53/53 PASS",
+      "hr18ProcurementSync": "24/24 PASS",
+      "schoolHandover": "33/33 PASS",
+      "finalProcurement": "53/53 PASS"
+    },
+    "pureTests": "187/187 PASS",
+    "pythonAst": "3159/3159 PASS",
+    "javascriptNodeCheck": "253/253 PASS"
+  }
+}

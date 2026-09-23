@@ -14,6 +14,7 @@ from horilla.horilla_middlewares import get_selected_company
 from hr10_development.permissions import require_hr10_permission
 from hr10_development.selectors.plan_selector import PlanSelector
 from hr_staff.models import HrStaffMaster
+from hr10_development.identity import resolve_staff_identity, StaffIdentityError
 
 
 def _selected_tenant_id() -> int:
@@ -31,14 +32,13 @@ def _workspace_context(tenant_id: int, page: str, title: str) -> dict:
     staff = list(
         HrStaffMaster.objects.filter(
             tenant_id=tenant_id,
-            legacy_employee_id__isnull=False,
         )
         .select_related("person_id")
         .order_by("person_id__legal_name", "staff_no")[:500]
     )
     staff_options = [
         {
-            "id": item.legacy_employee_id,
+            "id": str(item.id),
             "label": f"{item.person_id.legal_name} · {item.staff_no}",
         }
         for item in staff
@@ -123,9 +123,13 @@ def practice_results(request):
 def development_record(request, staff_id):
     """教师发展档案。"""
     tenant_id = _selected_tenant_id()
+    try:
+        identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_id)
+    except StaffIdentityError as exc:
+        raise Http404("当前学校没有对应的教师发展档案") from exc
     staff = (
         HrStaffMaster.objects.select_related("person_id")
-        .filter(tenant_id=tenant_id, legacy_employee_id=staff_id)
+        .filter(tenant_id=tenant_id, id=identity.staff_uuid)
         .first()
     )
     if staff is None:
@@ -133,7 +137,7 @@ def development_record(request, staff_id):
     context = _workspace_context(tenant_id, "record", "教师发展档案")
     context.update(
         {
-            "staff_id": staff_id,
+            "staff_id": str(identity.staff_uuid),
             "staff_label": f"{staff.person_id.legal_name} · {staff.staff_no}",
         }
     )

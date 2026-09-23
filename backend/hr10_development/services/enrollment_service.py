@@ -21,6 +21,7 @@ from hr10_development.models.offering import HrLearningOffering
 from hr10_development.providers.base import ProviderStatus
 from hr10_development.providers.time_provider import Hr11TimeConflictProvider
 from hr10_development.services.offering_service import OfferingService
+from hr10_development.identity import StaffIdentityError, resolve_staff_identity, staff_identity_q
 
 
 class EnrollmentService:
@@ -29,7 +30,7 @@ class EnrollmentService:
     @staticmethod
     def _assert_schedule_eligible(
         offering: HrLearningOffering,
-        staff_master_id: int,
+        staff_master_id,
         tenant_id: int,
         *,
         conflict_provider=None,
@@ -59,7 +60,7 @@ class EnrollmentService:
     @transaction.atomic
     def enroll(
         offering: HrLearningOffering,
-        staff_master_id: int,
+        staff_master_id,
         tenant_id: int,
         *,
         conflict_provider=None,
@@ -72,8 +73,6 @@ class EnrollmentService:
         if offering is None:
             raise ValueError(DevelopmentErrorCode.NOT_FOUND)
         from hr10_development.constants import OfferingStatus
-        from hr_staff.models import HrStaffMaster
-
         if offering.lifecycle_status != OfferingStatus.OPEN:
             raise ValueError(DevelopmentErrorCode.OFFERING_NOT_OPEN)
         now = timezone.now()
@@ -81,20 +80,21 @@ class EnrollmentService:
             offering.enrollment_close_at and now >= offering.enrollment_close_at
         ):
             raise ValueError(DevelopmentErrorCode.OFFERING_NOT_OPEN)
-        if not HrStaffMaster.objects.filter(
-            tenant_id=tenant_id,
-            legacy_employee_id=staff_master_id,
-        ).exists():
-            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        try:
+            identity = resolve_staff_identity(
+                tenant_id=tenant_id, raw_staff_id=staff_master_id, for_update=True
+            )
+        except StaffIdentityError as exc:
+            raise ValueError(exc.code)
         if HrLearningEnrollment.objects.filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
             offering_id=offering.id,
-            staff_master_id=staff_master_id,
         ).exists():
             raise ValueError(DevelopmentErrorCode.DUPLICATE_ENROLLMENT)
         EnrollmentService._assert_schedule_eligible(
             offering,
-            staff_master_id,
+            identity.staff_uuid,
             tenant_id,
             conflict_provider=conflict_provider,
         )
@@ -105,7 +105,8 @@ class EnrollmentService:
         return HrLearningEnrollment.objects.create(
             tenant_id=tenant_id,
             offering_id=offering.id,
-            staff_master_id=staff_master_id,
+            staff_master_uuid=identity.staff_uuid,
+            staff_master_id=identity.legacy_employee_id,
             enrollment_status=EnrollmentStatus.CONFIRMED,
             seat_status=SeatStatus.CONFIRMED,
         )
@@ -114,7 +115,7 @@ class EnrollmentService:
     @transaction.atomic
     def waitlist(
         offering: HrLearningOffering,
-        staff_master_id: int,
+        staff_master_id,
         tenant_id: int,
     ) -> HrLearningEnrollment:
         """进入候补。"""
@@ -125,19 +126,18 @@ class EnrollmentService:
         if offering is None:
             raise ValueError(DevelopmentErrorCode.NOT_FOUND)
         from hr10_development.constants import OfferingStatus
-        from hr_staff.models import HrStaffMaster
-
         if offering.lifecycle_status != OfferingStatus.WAITLIST_OPEN or offering.capacity > 0:
             raise ValueError(DevelopmentErrorCode.OFFERING_NOT_OPEN)
-        if not HrStaffMaster.objects.filter(
-            tenant_id=tenant_id,
-            legacy_employee_id=staff_master_id,
-        ).exists():
-            raise ValueError(DevelopmentErrorCode.NOT_FOUND)
+        try:
+            identity = resolve_staff_identity(
+                tenant_id=tenant_id, raw_staff_id=staff_master_id, for_update=True
+            )
+        except StaffIdentityError as exc:
+            raise ValueError(exc.code)
         if HrLearningEnrollment.objects.filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
             offering_id=offering.id,
-            staff_master_id=staff_master_id,
         ).exists():
             raise ValueError(DevelopmentErrorCode.DUPLICATE_ENROLLMENT)
         ok = OfferingService.occupy_waitlist(offering)
@@ -147,7 +147,8 @@ class EnrollmentService:
         return HrLearningEnrollment.objects.create(
             tenant_id=tenant_id,
             offering_id=offering.id,
-            staff_master_id=staff_master_id,
+            staff_master_uuid=identity.staff_uuid,
+            staff_master_id=identity.legacy_employee_id,
             enrollment_status=EnrollmentStatus.WAITLISTED,
             seat_status=SeatStatus.WAITLISTED,
         )

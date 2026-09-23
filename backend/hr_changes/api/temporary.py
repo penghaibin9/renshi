@@ -90,6 +90,7 @@ def temporary_create(request):
             requested_effective_at=body["requestedEffectiveAt"],
             expected_return_at=body["expectedReturnAt"],
             source_policy=body.get("sourcePolicy", "KEEP_ACTIVE"),
+            fte=body.get("fte"),
             priority=body.get("priority", "NORMAL"),
         )
     except (ChangeServiceError, TemporaryServiceError, KeyError) as exc:

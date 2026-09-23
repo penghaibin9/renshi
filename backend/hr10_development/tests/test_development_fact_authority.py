@@ -7,6 +7,7 @@ from django.test import RequestFactory, SimpleTestCase, TestCase
 from hr10_development.api.development_records import correct_fact
 from hr10_development.models.development_fact import HrDevelopmentFact
 from hr10_development.models.outbox import HrDevelopmentOutboxEvent
+from hr_staff.models import HrPerson, HrStaffMaster
 from hr10_development.services.development_fact_authority_service import (
     DevelopmentFactAuthorityError,
     DevelopmentFactAuthorityService,
@@ -17,6 +18,10 @@ class DevelopmentFactAuthorityTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             username="hr10-fact-authority", password="x", is_superuser=True
+        )
+        person = HrPerson.objects.create(tenant_id=101, legal_name="事实链测试教师")
+        self.staff = HrStaffMaster.objects.create(
+            tenant_id=101, person_id=person, staff_no="FACT-9001", legacy_employee_id=9001
         )
         self.fact = HrDevelopmentFact.objects.create(
             tenant_id=101,
@@ -70,6 +75,7 @@ class DevelopmentFactAuthorityTests(TestCase):
             changes={"verified_credits": "3.0", "level_or_result": "PASS-RECOUNTED"},
         )
         self.assertEqual(corrected.supersedes_fact_id, self.fact.id)
+        self.assertEqual(corrected.staff_master_uuid, self.staff.id)
         self.assertEqual(corrected.source_revision_no, 1)
         self.assertEqual(corrected.record_kind, "CORRECTION")
         self.assertTrue(corrected.verify_content_hash())

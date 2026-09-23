@@ -49,7 +49,7 @@
   }));
   const handoverRows = (items) => (items || []).map((item) => ({
     primary: item.title || item.item_no || '未命名交接项', secondary: [item.item_no, item.required ? '必交' : '可选'].filter(Boolean).join(' · '),
-    status: item.status, date: item.due_date || String(item.completed_at || '').slice(0, 10), extra: item.evidence_ref ? '已有证据' : '未登记证据', kind: '交接项'
+    status: item.status, date: item.due_date || String(item.completed_at || '').slice(0, 10), extra: item.evidence_ref ? '已有证据' : '未登记证据', kind: '交接项', required: Boolean(item.required)
   }));
   const effectRows = (items) => (items || []).map((item) => ({
     primary: `第 ${item.effect_version ?? '—'} 次生效协同`, secondary: `任职关系 ${label(item.hr03_status)} · 岗位聘任 ${label(item.hr14_status)}`,
@@ -73,8 +73,16 @@
     if (!target) return;
     const query = document.getElementById('hr16-search')?.value.trim().toLowerCase() || '';
     const status = document.getElementById('hr16-status')?.value || '';
-    const rows = current.filter((item) => (!status || item.status === status) && (!query || [item.primary, item.secondary, item.status, item.date, item.extra, item.kind].join(' ').toLowerCase().includes(query)));
-    target.innerHTML = rows.length ? rows.map((item) => `<div class="hr16-row"><div><b>${esc(item.primary)}</b><small>${esc(item.secondary || '—')}</small></div><span class="hr16-badge">${esc(label(item.status))}</span><div class="kind"><small>${esc(item.kind)}</small><b>${esc(item.date || '—')}</b></div><small class="date">${esc(item.extra || '—')}</small></div>`).join('') : '<div class="hr16-empty">当前没有符合筛选条件的真实记录。</div>';
+    let rows = current.filter((item) => (!status || item.status === status) && (!query || [item.primary, item.secondary, item.status, item.date, item.extra, item.kind].join(' ').toLowerCase().includes(query)));
+    if (section === 'handover') {
+      const rank = (item) => ['COMPLETED','WAIVED','NOT_REQUIRED'].includes(item.status) ? 2 : item.required ? 0 : 1;
+      rows = rows.slice().sort((a, b) => rank(a) - rank(b) || String(a.date || '9999-99-99').localeCompare(String(b.date || '9999-99-99')));
+    }
+    target.innerHTML = rows.length ? rows.map((item) => {
+      const complete = ['COMPLETED','WAIVED','NOT_REQUIRED'].includes(item.status);
+      const blocking = section === 'handover' && item.required && !complete;
+      return `<div class="hr16-row${complete ? ' is-complete' : ''}${blocking ? ' is-blocking' : ''}"><div><b>${esc(item.primary)}</b><small>${esc(item.secondary || '—')}</small></div><span class="hr16-badge">${esc(label(item.status))}</span><div class="kind"><small>${esc(item.kind)}</small><b>${esc(item.date || '—')}</b></div><small class="date">${esc(item.extra || '—')}</small></div>`;
+    }).join('') : '<div class="hr16-empty">当前没有符合筛选条件的真实记录。</div>';
   }
   function setRows(rows) {
     current = Array.isArray(rows) ? rows : [];

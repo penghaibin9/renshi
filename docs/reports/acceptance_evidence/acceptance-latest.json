@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "gate": "HR01-HR18 isolated production-shaped acceptance",
+  "project": "yueke_hr_round7_acceptance_final",
+  "startedAt": "2026-09-15T04:49:43.587386+00:00",
+  "status": "FAILED",
+  "phases": [
+    {
+      "name": "compose-version",
+      "status": "FAILED",
+      "seconds": 0.001
+    }
+  ],
+  "productionTouched": false,
+  "gitHubTouched": false,
+  "error": "compose-version failed",
+  "finishedAt": "2026-09-15T04:49:43.588160+00:00"
+}

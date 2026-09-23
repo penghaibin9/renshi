@@ -3,6 +3,7 @@
 from importlib.util import find_spec
 
 from django.urls import include, path, re_path
+from django.views.generic import RedirectView
 
 from horilla.legacy_cutover_policy import LEGACY_HR_UI_SUCCESSORS
 from horilla.legacy_hr_api import legacy_hr_api_redirect
@@ -85,6 +86,16 @@ urlpatterns.append(
         {"domain": "payroll", "tail": "view-reimbursement/"},
         name="view-reimbursement",
     )
+)
+
+# Exact old-shell utility entries are redirected before the generic legacy apps.
+# This removes two frequent escape hatches from the canonical Chinese HR surface
+# without intercepting /settings/system-management/ and its real admin subpages.
+urlpatterns.extend(
+    [
+        path("settings/", RedirectView.as_view(pattern_name="system-admin-center", permanent=False)),
+        path("notifications/", RedirectView.as_view(url="/hr/todos", permanent=False)),
+    ]
 )
 
 # Every Horilla browser root is now an entry adapter only.  The legacy apps stay

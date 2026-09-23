@@ -1,17 +1,5 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
-{% trans "信息更正与历史" as t_title %}
-{% trans "加载失败" as t_load_failed %}
-{% trans "暂无更正记录" as t_empty %}
-{% trans "提交" as t_submit %}
-{% trans "审核" as t_review %}
-{% trans "退回" as t_return %}
-{% trans "重新提交" as t_resubmit %}
-{% trans "批准" as t_approve %}
-{% trans "驳回" as t_reject %}
-{% trans "取消" as t_cancel %}
-{% trans "应用" as t_apply %}
-{% trans "操作失败" as t_action_failed %}
 
 {% block styles %}
 {{ block.super }}
@@ -24,14 +12,38 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr03-page" data-module="HR03" data-section="corrections" data-staff-id="{{ staff_id }}">
+{% trans "信息更正与历史" as t_title %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无更正记录" as t_empty %}
+{% trans "提交" as t_submit %}
+{% trans "审核" as t_review %}
+{% trans "退回" as t_return %}
+{% trans "重新提交" as t_resubmit %}
+{% trans "批准" as t_approve %}
+{% trans "驳回" as t_reject %}
+{% trans "取消" as t_cancel %}
+{% trans "应用" as t_apply %}
+{% trans "操作失败" as t_action_failed %}
+{% trans "信息更正与历史" as t_title %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无更正记录" as t_empty %}
+{% trans "提交" as t_submit %}
+{% trans "审核" as t_review %}
+{% trans "退回" as t_return %}
+{% trans "重新提交" as t_resubmit %}
+{% trans "批准" as t_approve %}
+{% trans "驳回" as t_reject %}
+{% trans "取消" as t_cancel %}
+{% trans "应用" as t_apply %}
+{% trans "操作失败" as t_action_failed %}
+<div class="hr-v2-page hr03-page" data-module="HR03" data-hr-workspace="v6" data-section="corrections" data-staff-id="{{ staff_id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr03-correction-title">
     <div class="hr-v2-pagehead__copy">
       <div class="hr-v2-eyebrow">HR03 · 教职工主档</div>
       <h1 class="hr-v2-title" id="hr03-correction-title">{{ t_title }}</h1>
-      <p class="hr-v2-subtitle">更正不是直接编辑历史事实。每个 Case 保留 before/after、理由、影响级别、审批状态和最终应用结果；页面只暴露当前状态允许的 transition。</p>
+      <p class="hr-v2-subtitle">核对更正前后的内容、原因与审批进度。历史记录不能直接覆盖，请按当前状态完成提交、审核或应用。</p>
     </div>
     <div class="hr-v2-context">
       <span class="hr-v2-context__item"><strong>范围</strong> 当前教职工</span>
@@ -52,18 +64,42 @@
 
   <section class="hr-v2-section" aria-labelledby="hr03-cases-title">
     <div class="hr-v2-section__head">
-      <div><h2 id="hr03-cases-title">更正 Case</h2><p>最多读取后端当前返回的 100 条正式记录；按钮由 Case 状态决定。</p></div>
+      <div><h2 id="hr03-cases-title">更正申请</h2><p>本次最多读取 100 条更正记录，可用操作以每条记录的当前状态为准。</p></div>
     </div>
     <div id="content" class="hr03-record-list">
       <div class="hr-v2-state"><strong>正在读取更正历史</strong><span>正在确认 Case 状态、字段差异和应用结果。</span></div>
     </div>
   </section>
 
-  <div class="hr-v2-truth-note"><strong>流程边界</strong><span>前端不直接更新主档事实；submit/review/return/resubmit/approve/reject/cancel/apply 全部走现有 CorrectionService 状态机和后端权限校验。</span></div>
+  <div class="hr-v2-truth-note"><strong>流程边界</strong><span>更正按现有审批流程办理。提交、审核、退回及应用均保留操作记录，最终结果以系统校验为准。</span></div>
 </div>
 {% endblock content %}
 
 {% block scripts %}
+{% trans "信息更正与历史" as t_title %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无更正记录" as t_empty %}
+{% trans "提交" as t_submit %}
+{% trans "审核" as t_review %}
+{% trans "退回" as t_return %}
+{% trans "重新提交" as t_resubmit %}
+{% trans "批准" as t_approve %}
+{% trans "驳回" as t_reject %}
+{% trans "取消" as t_cancel %}
+{% trans "应用" as t_apply %}
+{% trans "操作失败" as t_action_failed %}
+{% trans "信息更正与历史" as t_title %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无更正记录" as t_empty %}
+{% trans "提交" as t_submit %}
+{% trans "审核" as t_review %}
+{% trans "退回" as t_return %}
+{% trans "重新提交" as t_resubmit %}
+{% trans "批准" as t_approve %}
+{% trans "驳回" as t_reject %}
+{% trans "取消" as t_cancel %}
+{% trans "应用" as t_apply %}
+{% trans "操作失败" as t_action_failed %}
 {{ block.super }}
 <script>
 (function () {
@@ -92,14 +128,16 @@
     return "";
   }
 
+  let reading = false;
   async function load() {
+    if(reading)return false;reading=true;window.HrDetailUX.clearNote(root);
     const content = document.getElementById("content");
     try {
       const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/corrections/list`, {credentials:"same-origin"});
-      if (!resp.ok) { content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>HTTP ${resp.status}</span></div>`; return; }
+      if (!resp.ok) { const error=new Error(L.loadFailed);error.status=resp.status;throw error; }
       const body = await resp.json();
       const cases = Array.isArray(body.data?.items) ? body.data.items : [];
-      if (!cases.length) { content.innerHTML = `<div class="hr-v2-state"><strong>${L.empty}</strong><span>当前 Authority 没有返回更正 Case。</span></div>`; return; }
+      if (!cases.length) { content.innerHTML = `<div class="hr-v2-state"><strong>${L.empty}</strong><span>当前尚无更正记录。</span></div>`; return true; }
       content.innerHTML = cases.map(item => {
         const diffs = Array.isArray(item.items) ? item.items.map(diff => `
           <div class="hr03-diff-row">
@@ -121,33 +159,39 @@
           <div class="hr03-record-actions">${transitionButtons(item)}</div>
         </article>`;
       }).join("");
+      return true;
     } catch (_error) {
       content.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>${L.loadFailed}</strong><span>更正接口请求失败。</span></div>`;
-    }
+      window.HrDetailUX.note(root,window.HrDetailUX.errorText(_error),"error",load);return false;
+    } finally {reading=false;}
   }
 
-  async function runAction(caseId, action) {
+  const reasonDrafts = new Map();
+  async function runAction(caseId, action, button) {
+    const reasonKey=String(caseId)+":"+action;
+    const record = button.closest(".hr03-record-card");
     const needsReason = action === "return" || action === "reject";
-    const reason = needsReason ? prompt("请填写原因") : "";
-    if (needsReason && !reason) return;
-    try {
-      const resp = await fetch(`/api/hr/v1/corrections/${encodeURIComponent(caseId)}/${action}`, {
-        method:"POST",
-        credentials:"same-origin",
-        headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest","X-CSRFToken":csrfToken()},
-        body:JSON.stringify({reason})
-      });
-      if (!resp.ok) { alert(`${L.actionFailed}：` + ((await resp.json()).error?.code || resp.status)); return; }
-      await load();
-    } catch (_error) {
-      alert(L.actionFailed);
-    }
+    await window.HrDetailUX.run({
+      scope:record, button, lockSuccess:true,
+      confirmation:{title:button.textContent + "更正记录", message:action === "apply" ? "本次操作将应用已批准的更正。请核对字段差异，结果仍以服务端校验为准。" : "请核对本次办理对象；返回检查不会提交。",
+        facts:[["更正记录",record.querySelector(".hr03-record-card__title")?.textContent || caseId],["操作",button.textContent]],
+        reasonLabel:needsReason ? "办理原因" : "", reasonRequired:needsReason, reasonValue:reasonDrafts.get(reasonKey)||"", onDecision:({reason})=>{if(needsReason)reasonDrafts.set(reasonKey,reason);}, danger:["reject","cancel","apply"].includes(action)},
+      task:async (reason) => {
+        const resp = await fetch(`/api/hr/v1/corrections/${encodeURIComponent(caseId)}/${action}`, {
+          method:"POST", credentials:"same-origin",
+          headers:{"Content-Type":"application/json","X-Requested-With":"XMLHttpRequest","X-CSRFToken":csrfToken()},
+          body:JSON.stringify({reason})
+        });
+        if (!resp.ok) { const data = await resp.json().catch(() => ({})); const error = new Error(data.error?.message || L.actionFailed); error.status = resp.status; throw error; }
+      },
+      onSuccess:async () => { reasonDrafts.delete(reasonKey); const refreshed=await load(); window.HrDetailUX.note(root,refreshed?"更正操作已提交，请核对最新记录。":"更正操作已提交，但最新记录读取失败。请重新读取核对，不要重复提交。",refreshed?"success":"error",refreshed?null:load); }
+    });
   }
 
   document.getElementById("content").addEventListener("click", event => {
     const button = event.target.closest("button[data-action][data-case-id]");
     if (!button) return;
-    runAction(button.dataset.caseId, button.dataset.action);
+    runAction(button.dataset.caseId, button.dataset.action, button);
   });
   load();
 })();

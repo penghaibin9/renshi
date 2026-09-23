@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "releaseName": "System Admin + Usability Closure 2026-09-17",
+  "baseline": "Yueke_University_HR_Usability_Candidate_R5_20260917.zip",
+  "status": "SOURCE_SYSTEM_ADMIN_USABILITY_CLOSURE_COMPLETE",
+  "runtimeAcceptance": "PENDING_DJANGO_MYSQL_SCHOOL_ENVIRONMENT",
+  "closures": [
+    "task-first system management center is the first settings entry",
+    "plain-language administrator search covers accounts roles organisation jobs preferences audit mail and HR18 exchange",
+    "school initialization six-step checklist is explicitly non-authoritative and cannot be mistaken for UAT acceptance",
+    "administrator assistant ships 12 deterministic high-frequency questions without reading HR record values",
+    "account/role summary is scoped to current employee range rather than exposing cross-school totals",
+    "HR18 exchange entry is shown only with hr.data.exchange permission or superuser authority",
+    "role permission UI shows granted/high-risk counts",
+    "granting Delete-class high-risk permissions requires explicit confirmation",
+    "settings title/search language is simplified for Chinese school administrators",
+    "production backup school handover initialization snapshot and final acceptance remain server/runtime evidence rather than fake UI success"
+  ],
+  "verification": {
+    "hr10Import": "20/20 PASS",
+    "hr10StaffIdentity": "53/53 PASS",
+    "hr18ProcurementSync": "24/24 PASS",
+    "schoolHandover": "33/33 PASS",
+    "finalProcurement": "53/53 PASS",
+    "hrUsability": "102/102 PASS",
+    "systemAdminUsability": "31/31 PASS",
+    "pureTests": "194 passed + 25 subtests",
+    "pythonAst": "3165/3165 PASS",
+    "javascriptNodeCheck": "256/256 PASS",
+    "hrUsabilityChromium": "PASS",
+    "hrLifecycle14StepChromium": "PASS",
+    "systemAdminChromium": "PASS"
+  },
+  "runtimeBlocker": "python manage.py check cannot import Django in this sandbox; MySQL/SSO/backup restore must be executed in QA or school environment",
+  "finalReextractStatus": "PASS",
+  "pass1Verification": {
+    "manifestRows": 10731,
+    "missing": 0,
+    "extra": 0,
+    "hashOrSizeMismatch": 0,
+    "dotfilesPreserved": true,
+    "systemAdminUsability": "31/31 PASS",
+    "hrUsability": "102/102 PASS",
+    "pureTests": "194 passed + 25 subtests",
+    "pythonAst": "3165/3165 PASS",
+    "javascriptNodeCheck": "256/256 PASS",
+    "systemAdminChromium": "PASS",
+    "hrUsabilityChromium": "PASS",
+    "hrLifecycle14StepChromium": "PASS"
+  }
+}

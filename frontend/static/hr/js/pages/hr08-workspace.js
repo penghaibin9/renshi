@@ -45,6 +45,12 @@
   }
 
   function notice(host, message, kind = '') {
+    // A rejected request must not destroy an in-progress decision/clearance form.
+    if (kind === 'error' && host.querySelector('form')) {
+      let note = host.querySelector(':scope > .hr08-notice.is-error');
+      if (!note) { note = document.createElement('div'); note.className = 'hr08-notice is-error'; host.prepend(note); }
+      note.setAttribute('role', 'alert'); note.textContent = message; return;
+    }
     host.innerHTML = `<div class="hr08-notice${kind ? ` is-${kind}` : ''}">${esc(message)}</div>`;
   }
 
@@ -60,9 +66,8 @@
     }
   }
 
-  function reload(message) {
-    if (message) window.sessionStorage.setItem('hr08-flash', message);
-    window.location.reload();
+  function reload(message, button) {
+    window.HrWorkspaceUX?.afterCommit({host: root, button, message});
   }
 
   function bindPanels() {
@@ -136,7 +141,7 @@
           highestProfessionalTitle: data.get('highestProfessionalTitle'),
           expertiseTags: String(data.get('expertiseTags') || '').split(/[，,]/).map((item) => item.trim()).filter(Boolean),
         });
-        reload(`${created.externalTeacherNo} 的外聘档案已创建。`);
+        reload(`${created.externalTeacherNo} 的外聘档案已创建。`, button);
       } catch (error) {
         setMessage(form, error.message, 'error');
         busy(button, false);
@@ -199,7 +204,7 @@
           description: data.get('description'),
           settlementEligible: data.get('settlementEligible') === 'on',
         });
-        reload(`${created.title} 已创建。`);
+        reload(`${created.title} 已创建。`, button);
       } catch (error) {
         setMessage(form, error.message, 'error');
         busy(button, false);
@@ -237,9 +242,9 @@
             else if (action === 'start') await write(`/tasks/${task.id}/start`);
             else if (action === 'submit') await write(`/tasks/${task.id}/submit`);
             else await write(`/tasks/${task.id}/verify`, {action: action === 'complete' ? 'COMPLETE' : 'REJECT'});
-            reload(`${task.title} 的状态已更新。`);
+            reload(`${task.title} 的状态已更新。`, button);
           } catch (error) {
-            notice(host, error.message, 'error');
+            notice(host, error.message, 'error'); busy(button, false);
           }
         }));
         list.appendChild(item);
@@ -265,7 +270,7 @@
           requesterOrgOpinion: data.get('requesterOrgOpinion'),
           personWillingness: data.get('personWillingness'),
         });
-        reload('续聘评估已创建。');
+        reload('续聘评估已创建。', button);
       } catch (error) {
         setMessage(form, error.message, 'error');
         busy(button, false);
@@ -296,9 +301,9 @@
           busy(button, true);
           try {
             await write(`/renewal-reviews/${review.id}/decide`, {decision: values.get('decision'), nextStart: values.get('nextStart') || null, nextEnd: values.get('nextEnd') || null});
-            reload('续聘决策已形成。');
+            reload('续聘决策已形成。', button);
           } catch (error) {
-            notice(host, error.message, 'error');
+            notice(host, error.message, 'error'); busy(button, false);
           }
         });
         list.appendChild(item);
@@ -317,7 +322,7 @@
       setMessage(form, '正在创建退出单…');
       try {
         await write(`/engagements/${encodeURIComponent(data.get('engagementId'))}/exit`, {exitReason: data.get('exitReason'), plannedEndAt: data.get('plannedEndAt') || null, clearancePolicy: data.get('clearancePolicy')});
-        reload('退出单已创建。');
+        reload('退出单已创建。', button);
       } catch (error) {
         setMessage(form, error.message, 'error');
         busy(button, false);
@@ -349,8 +354,8 @@
             busy(button, true);
             try {
               await write(`/exits/${detail.id}/prepare`);
-              reload(detail.status === 'PLANNED' ? '退出单已提交审核。' : '退出单已确认可进入清退。');
-            } catch (error) { notice(host, error.message, 'error'); }
+              reload(detail.status === 'PLANNED' ? '退出单已提交审核。' : '退出单已确认可进入清退。', button);
+            } catch (error) { notice(host, error.message, 'error'); busy(button, false); }
           });
         } else {
           item.querySelector('[data-exit-action]').addEventListener('click', () => item.querySelector('[data-clearance-form]').classList.toggle('is-open'));
@@ -366,9 +371,9 @@
           busy(button, true);
           try {
             await write(`/exits/${detail.id}/complete`, {clearanceOk, clearanceItems});
-            reload('退出办理已完成。');
+            reload('退出办理已完成。', button);
           } catch (error) {
-            notice(host, error.message, 'error');
+            notice(host, error.message, 'error'); busy(button, false);
           }
         });
         list.appendChild(item);
@@ -404,9 +409,9 @@
         try {
           const action = button.dataset.hiringAction;
           await write(`/hiring-cases/${encodeURIComponent(caseId)}/${action}`);
-          reload(action === 'validate' ? '合规检查已重新执行。' : '聘用申请状态已更新。');
+          reload(action === 'validate' ? '合规检查已重新执行。' : '聘用申请状态已更新。', button);
         } catch (error) {
-          notice(zone, error.message, 'error');
+          notice(zone, error.message, 'error'); busy(button, false);
         }
       }));
     } catch (error) { notice(zone, error.message, 'error'); }
