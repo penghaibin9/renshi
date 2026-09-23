@@ -49,6 +49,8 @@ jobs:
           python-version: "3.12"
       - name: Prepare exact V1.3.1 snapshot
         run: bash .github/runner/v131_prepare.sh
+      - name: Apply audited forward fixes
+        run: python .github/runner/v131_patch_source.py
       - name: Run MySQL 8.4 Chromium SSO gate
         run: bash .github/runner/v131_run.sh
       - name: Upload acceptance evidence
