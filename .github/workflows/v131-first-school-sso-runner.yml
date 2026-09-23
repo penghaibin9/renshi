@@ -1,0 +1,8 @@
+name: V1.3.1 SSO Runner Gate
+on:
+  workflow_dispatch:
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo runner-ready
