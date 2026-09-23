@@ -24,6 +24,11 @@ class RoutedEvaluationResult:
     evaluator_version: str
 
 
+
+_ROUND5_FORMAL_DOMAINS = {"HR06", "HR07", "HR12", "HR13", "HR14", "HR16"}
+_ROUND6_FORMAL_DOMAINS = {"HR04", "HR05", "HR15"}
+_FORMAL_DOMAINS = _ROUND5_FORMAL_DOMAINS | _ROUND6_FORMAL_DOMAINS
+
 class HistoricalEvaluationRouter:
     def __init__(self, tenant_id: int, actor_user_id: Optional[int] = None):
         if not tenant_id:
@@ -57,14 +62,14 @@ class HistoricalEvaluationRouter:
                 self.tenant_id,
                 actor_user_id=self.actor_user_id,
             ), "hr03-count-v1"
-        if domain in {"HR13", "HR14"} and sources == {domain}:
+        if domain in _FORMAL_DOMAINS and sources == {domain}:
             return FormalFactAsOfEvaluationService(
                 self.tenant_id,
                 actor_user_id=self.actor_user_id,
             ), None
         raise AsOfEvaluationError(
             "ASOF_EVALUATION_SOURCE_UNSUPPORTED",
-            "historical value evaluator supports HR03, HR13 or HR14 single-domain populations only",
+            "historical value evaluator supports HR03 plus HR04/HR05/HR06/HR07/HR12/HR13/HR14/HR15/HR16 single-domain formal populations only",
         )
 
     def _guard_formal(self, *, population: PopulationDefinitionVersion, result: AsOfEvaluationResult):

@@ -97,14 +97,15 @@ class Company(HorillaModel):
 
     company = models.CharField(max_length=50, verbose_name=_("Name"))
     hq = models.BooleanField(default=False)
-    address = models.TextField(max_length=255)
-    country = models.CharField(max_length=50)
-    state = models.CharField(max_length=50)
-    city = models.CharField(max_length=50)
-    zip = models.CharField(max_length=20)
+    address = models.TextField(max_length=255, blank=True, default="")
+    country = models.CharField(max_length=50, blank=True, default="")
+    state = models.CharField(max_length=50, blank=True, default="")
+    city = models.CharField(max_length=50, blank=True, default="")
+    zip = models.CharField(max_length=20, blank=True, default="")
     icon = models.FileField(
         upload_to=upload_path,
         null=True,
+        blank=True,
     )
     objects = models.Manager()
     date_format = models.CharField(max_length=30, blank=True, null=True)
@@ -124,7 +125,8 @@ class Company(HorillaModel):
         return str(self.company)
 
     def company_icon_with_name(self):
-
+        if not self.icon:
+            return format_html('<span class="school-name">{}</span>', self.company)
         return format_html(
             '<img src="{}" style="width: 30px; border-radius: 100%; display:inline;" class="oh-profile__image" alt="" /> {}',
             self.icon.url,
@@ -3214,3 +3216,14 @@ class CompanyLanguageSetting(HorillaModel):
 
 
 # User.add_to_class("is_new_employee", models.BooleanField(default=False))
+
+
+class SchoolBootstrapState(models.Model):
+    """Installation mutex and first-account receipt, not a go-live certificate."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    company = models.ForeignKey(Company, null=True, blank=True, on_delete=models.PROTECT)
+    administrator = models.ForeignKey(HorillaUser, null=True, blank=True, on_delete=models.PROTECT)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(id=1), name="single_school_bootstrap_state")]

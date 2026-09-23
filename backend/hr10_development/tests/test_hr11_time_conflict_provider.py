@@ -27,7 +27,7 @@ class Hr11TimeConflictProviderTests(TestCase):
         self.provider = Hr11TimeConflictProvider()
         self.day = timezone.localdate().replace(day=15)
         person = HrPerson.objects.create(tenant_id=71, legal_name="冲突测试教师")
-        HrStaffMaster.objects.create(
+        self.staff = HrStaffMaster.objects.create(
             tenant_id=71,
             person_id=person,
             staff_no="TIME-501",
@@ -65,7 +65,40 @@ class Hr11TimeConflictProviderTests(TestCase):
 
         self.assertEqual(blocked.result, ScheduleConflictResult.BLOCKED)
         self.assertEqual(blocked.conflicts[0]["type"], "APPROVED_LEAVE")
-        self.assertEqual(other_tenant.result, ScheduleConflictResult.PASS)
+        self.assertEqual(other_tenant.result, ScheduleConflictResult.SOURCE_UNAVAILABLE)
+        self.assertEqual(other_tenant.source_availability, ProviderStatus.UNAVAILABLE)
+
+
+
+    def test_duplicate_legacy_mapping_makes_canonical_identity_source_unavailable(self):
+        person = HrPerson.objects.create(tenant_id=71, legal_name="重复旧ID教师")
+        HrStaffMaster.objects.create(
+            tenant_id=71, person_id=person, staff_no="TIME-DUP-501", legacy_employee_id=501
+        )
+        result = self.provider.check_conflict(
+            str(self.staff.id), 71, _at(self.day, 9), _at(self.day, 11)
+        )
+        self.assertEqual(result.result, ScheduleConflictResult.SOURCE_UNAVAILABLE)
+        self.assertEqual(result.conflicts[0]["type"], "STAFF_IDENTITY_AMBIGUOUS")
+        self.assertEqual(result.source_availability, ProviderStatus.UNAVAILABLE)
+
+    def test_canonical_uuid_resolves_to_hr11_legacy_boundary(self):
+        result = self.provider.check_conflict(
+            str(self.staff.id), 71, _at(self.day, 18), _at(self.day, 19)
+        )
+        self.assertEqual(result.result, ScheduleConflictResult.PASS)
+        self.assertEqual(result.source_availability, ProviderStatus.OK)
+
+    def test_staff_without_legacy_hr11_mapping_is_source_unavailable(self):
+        person = HrPerson.objects.create(tenant_id=71, legal_name="无旧ID教师")
+        staff = HrStaffMaster.objects.create(
+            tenant_id=71, person_id=person, staff_no="TIME-NO-LEGACY"
+        )
+        result = self.provider.check_conflict(
+            str(staff.id), 71, _at(self.day, 9), _at(self.day, 11)
+        )
+        self.assertEqual(result.result, ScheduleConflictResult.SOURCE_UNAVAILABLE)
+        self.assertEqual(result.conflicts[0]["type"], "HR11_LEGACY_ID_MAPPING_REQUIRED")
 
     def test_shift_overlap_warns_but_non_overlap_passes(self):
         shift_definition = HrShiftDefinition.objects.create(

@@ -323,6 +323,126 @@ class ExchangeJobService:
         )
         return VersionOutcome(value, True)
 
+    @transaction.atomic
+    def requeue_dead_letter(
+        self,
+        job_id,
+        *,
+        new_job_no,
+        idempotency_key,
+        reason,
+        max_attempts=None,
+    ) -> VersionOutcome:
+        """Create a new durable job from a terminal failure without rewriting history.
+
+        The original job, attempts and dead-letter evidence remain intact. The
+        dead-letter row is only marked resolved after the successor job exists.
+        Reusing the same idempotency key is itself idempotent when it identifies
+        the same source failure and frozen exchange definition.
+        """
+        new_job_no = _code(new_job_no, "JOB_NO")
+        idempotency_key = str(idempotency_key or "").strip()
+        if not idempotency_key or len(idempotency_key) > 128:
+            raise ExchangeError(
+                "EXCHANGE_IDEMPOTENCY_KEY_INVALID",
+                "idempotency_key is invalid",
+            )
+        reason = str(reason or "").strip()
+        if not reason:
+            raise ExchangeError(
+                "EXCHANGE_MANUAL_RETRY_REASON_REQUIRED",
+                "manual retry reason is required",
+            )
+        if len(reason) > 1000:
+            raise ExchangeError(
+                "EXCHANGE_MANUAL_RETRY_REASON_INVALID",
+                "manual retry reason is too long",
+            )
+
+        source = (
+            ExchangeJob.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, id=job_id)
+            .first()
+        )
+        if source is None:
+            raise ExchangeError("EXCHANGE_JOB_NOT_FOUND", "exchange job not found")
+        if source.status != ExchangeJob.Status.DEAD_LETTER:
+            raise ExchangeError(
+                "EXCHANGE_MANUAL_RETRY_INVALID_STATE",
+                "only a dead-letter job can be manually requeued",
+            )
+        dead_letter = (
+            ExchangeDeadLetter.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, job_id=source.id)
+            .first()
+        )
+        if dead_letter is None:
+            raise ExchangeError(
+                "EXCHANGE_DEAD_LETTER_NOT_FOUND",
+                "terminal failure has no dead-letter evidence",
+            )
+
+        attempts = source.max_attempts if max_attempts is None else max_attempts
+        if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 20:
+            raise ExchangeError(
+                "EXCHANGE_MAX_ATTEMPTS_INVALID",
+                "max_attempts must be 1..20",
+            )
+
+        existing = ExchangeJob.objects.filter(
+            tenant_id=self.tenant_id, idempotency_key=idempotency_key
+        ).first()
+        job_no_conflict = ExchangeJob.objects.filter(
+            tenant_id=self.tenant_id, job_no=new_job_no
+        ).exclude(idempotency_key=idempotency_key).exists()
+        if job_no_conflict:
+            raise ExchangeError(
+                "EXCHANGE_JOB_NO_CONFLICT",
+                "job_no already identifies different exchange work",
+            )
+        if existing is not None:
+            same = (
+                existing.retry_of_job_id == source.id
+                and existing.dataset_version_id == source.dataset_version_id
+                and existing.target_mapping_version_id == source.target_mapping_version_id
+                and existing.snapshot_hash == source.snapshot_hash
+                and existing.job_no == new_job_no
+                and existing.manual_retry_reason == reason
+                and existing.max_attempts == attempts
+            )
+            if not same:
+                raise ExchangeError(
+                    "EXCHANGE_IDEMPOTENCY_CONFLICT",
+                    "idempotency_key already identifies different retry work",
+                )
+            return VersionOutcome(existing, False)
+
+        if dead_letter.resolved_at is not None:
+            raise ExchangeError(
+                "EXCHANGE_DEAD_LETTER_ALREADY_RESOLVED",
+                "dead-letter failure was already requeued or resolved",
+            )
+
+        successor = ExchangeJob.objects.create(
+            tenant_id=self.tenant_id,
+            job_no=new_job_no,
+            dataset_version_id=source.dataset_version_id,
+            target_mapping_version_id=source.target_mapping_version_id,
+            snapshot_hash=source.snapshot_hash,
+            idempotency_key=idempotency_key,
+            retry_of_job_id=source.id,
+            manual_retry_reason=reason,
+            manual_retry_by=self.actor_user_id,
+            max_attempts=attempts,
+            status=ExchangeJob.Status.QUEUED,
+            created_by=self.actor_user_id,
+            updated_by=self.actor_user_id,
+        )
+        dead_letter.resolved_at = timezone.now()
+        dead_letter.updated_by = self.actor_user_id
+        dead_letter.save(update_fields=["resolved_at", "updated_by", "updated_at"])
+        return VersionOutcome(successor, True)
+
     def _load_provider(self, provider_key: str):
         registry = getattr(settings, "HR18_EXCHANGE_PROVIDERS", {})
         if not isinstance(registry, Mapping):

@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 
 {% block content %}
@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr10-actions.css' %}?v=20260830-2">
 <link rel="stylesheet" href="{% static 'hr/css/hr10-workspace.css' %}?v=20260830-2">
 
-<div class="hr-v2-page hr10" data-module="HR10" data-section="{{ hr10_page }}">
+<div class="hr-v2-page hr10" data-module="HR10" data-hr-workspace="v6" data-section="{{ hr10_page }}">
   {% comment %}总览入口由左侧 HR10 主菜单承载：{% url 'hr10_development:development-dashboard' %}{% endcomment %}
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR10 教师发展</span>
@@ -42,5 +42,5 @@
   {{ staff_options|json_script:"hr10-staff-options" }}
 </div>
 <script src="{% static 'hr/js/pages/hr10-actions.js' %}?v=20260902-1"></script>
-{% if hr10_page == 'dashboard' or hr10_page == 'record' %}<script src="{% static 'hr/js/pages/hr10-insights.js' %}?v=20260830-2"></script>{% endif %}
+{% if hr10_page == 'dashboard' or hr10_page == 'record' %}<script src="{% static 'hr/js/pages/hr10-insights.js' %}?v=20260918-workflow-v7-1"></script>{% endif %}
 {% endblock %}

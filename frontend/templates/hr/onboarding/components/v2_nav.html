@@ -4,4 +4,5 @@
   <a href="{% url 'hr05-material-workspace' %}"{% if active == 'materials' %} aria-current="page"{% endif %}>材料核验</a>
   <a href="{% url 'hr05-collaboration-center' %}"{% if active == 'collaboration' %} aria-current="page"{% endif %}>协同任务</a>
   <a href="{% url 'hr05-probations' %}"{% if active == 'probations' %} aria-current="page"{% endif %}>试用与转正</a>
+  {% if can_configure_onboarding %}<a href="{% url 'hr05-school-templates' %}"{% if active == 'configuration' %} aria-current="page"{% endif %}>校本入职方案</a>{% endif %}
 </nav>

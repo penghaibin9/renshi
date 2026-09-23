@@ -190,14 +190,10 @@ def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
     try:
         excellent_min = Decimal(str(body.get("excellentMinScore", "90")))
         qualified_min = Decimal(str(body.get("qualifiedMinScore", "60")))
+        basic_qualified_min = Decimal(str(body.get("basicQualifiedMinScore", "50")))
         excellent_ratio = Decimal(str(body.get("excellentRatio", "0.20")))
     except (InvalidOperation, TypeError, ValueError):
         return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "分数线或优秀比例无效", http_status=400), status=400)
-    if not (
-        Decimal("0") < qualified_min < excellent_min <= Decimal("100")
-        and Decimal("0") <= excellent_ratio <= Decimal("1")
-    ):
-        return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "需满足 0 < 合格线 < 优秀线 ≤ 100，优秀比例在 0% 至 100% 之间", http_status=400), status=400)
     with transaction.atomic():
         pack = HrAssessmentPolicyPack.objects.select_for_update().filter(
             id=policy_id, tenant_id=tenant
@@ -207,6 +203,67 @@ def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
         assessment_types = body.get("assessmentTypes") or [pack.assessment_domain]
         if not isinstance(assessment_types, list) or not assessment_types or any(x not in POLICY_DOMAINS for x in assessment_types):
             return JsonResponse(api_error("ASSESSMENT_POLICY_INPUT_INVALID", "考核类型无效", http_status=400), status=400)
+        if pack.assessment_domain == "ANNUAL":
+            valid_thresholds = (
+                Decimal("0") < basic_qualified_min < qualified_min < excellent_min <= Decimal("100")
+                and Decimal("0") <= excellent_ratio <= Decimal("1")
+            )
+            if not valid_thresholds:
+                return JsonResponse(api_error(
+                    "ASSESSMENT_POLICY_INPUT_INVALID",
+                    "年度考核需满足 0 < 基本合格线 < 合格线 < 优秀线 ≤ 100，优秀比例在 0% 至 100% 之间",
+                    http_status=400,
+                ), status=400)
+        elif pack.assessment_domain == "TERM":
+            if not Decimal("0") < qualified_min <= Decimal("100"):
+                return JsonResponse(api_error(
+                    "ASSESSMENT_POLICY_INPUT_INVALID",
+                    "聘期考核合格线需在 0 至 100 分之间",
+                    http_status=400,
+                ), status=400)
+        elif not (
+            Decimal("0") < qualified_min < excellent_min <= Decimal("100")
+            and Decimal("0") <= excellent_ratio <= Decimal("1")
+        ):
+            return JsonResponse(api_error(
+                "ASSESSMENT_POLICY_INPUT_INVALID",
+                "需满足 0 < 合格线 < 优秀线 ≤ 100，优秀比例在 0% 至 100% 之间",
+                http_status=400,
+            ), status=400)
+
+        if pack.assessment_domain == "ANNUAL":
+            scale_levels = [
+                {"code": "EXCELLENT", "min": str(excellent_min), "label": "优秀"},
+                {"code": "QUALIFIED", "min": str(qualified_min), "label": "合格"},
+                {"code": "BASIC_QUALIFIED", "min": str(basic_qualified_min), "label": "基本合格"},
+                {"code": "UNQUALIFIED", "min": 0, "label": "不合格"},
+            ]
+            result_bands = [
+                {"gradeCode": "EXCELLENT", "minScore": str(excellent_min), "maxScore": "100", "displayGrade": {"zh-CN": "优秀"}},
+                {"gradeCode": "QUALIFIED", "minScore": str(qualified_min), "maxScore": str(excellent_min - Decimal("0.01")), "displayGrade": {"zh-CN": "合格"}},
+                {"gradeCode": "BASIC_QUALIFIED", "minScore": str(basic_qualified_min), "maxScore": str(qualified_min - Decimal("0.01")), "displayGrade": {"zh-CN": "基本合格"}},
+                {"gradeCode": "UNQUALIFIED", "minScore": "0", "maxScore": str(basic_qualified_min - Decimal("0.01")), "displayGrade": {"zh-CN": "不合格"}},
+            ]
+        elif pack.assessment_domain == "TERM":
+            scale_levels = [
+                {"code": "QUALIFIED", "min": str(qualified_min), "label": "合格"},
+                {"code": "UNQUALIFIED", "min": 0, "label": "不合格"},
+            ]
+            result_bands = [
+                {"gradeCode": "QUALIFIED", "minScore": str(qualified_min), "maxScore": "100", "displayGrade": {"zh-CN": "合格"}},
+                {"gradeCode": "UNQUALIFIED", "minScore": "0", "maxScore": str(qualified_min - Decimal("0.01")), "displayGrade": {"zh-CN": "不合格"}},
+            ]
+        else:
+            scale_levels = [
+                {"code": "EXCELLENT", "min": str(excellent_min), "label": "优秀"},
+                {"code": "QUALIFIED", "min": str(qualified_min), "label": "合格"},
+                {"code": "UNQUALIFIED", "min": 0, "label": "不合格"},
+            ]
+            result_bands = [
+                {"gradeCode": "EXCELLENT", "minScore": str(excellent_min), "maxScore": "100", "displayGrade": {"zh-CN": "优秀"}},
+                {"gradeCode": "QUALIFIED", "minScore": str(qualified_min), "maxScore": str(excellent_min - Decimal("0.01")), "displayGrade": {"zh-CN": "合格"}},
+                {"gradeCode": "UNQUALIFIED", "minScore": "0", "maxScore": str(qualified_min - Decimal("0.01")), "displayGrade": {"zh-CN": "不合格"}},
+            ]
         version_no = (HrAssessmentPolicyVersion.objects.filter(
             tenant_id=tenant, policy_pack=pack
         ).aggregate(max_no=Max("version_no"))["max_no"] or 0) + 1
@@ -217,11 +274,7 @@ def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
             scale_type="SCORE_100",
             min_value=0,
             max_value=100,
-            levels=[
-                {"code": "EXCELLENT", "min": str(excellent_min), "label": "优秀"},
-                {"code": "QUALIFIED", "min": str(qualified_min), "label": "合格"},
-                {"code": "UNQUALIFIED", "min": 0, "label": "不合格"},
-            ],
+            levels=scale_levels,
             display_labels={"zh-CN": "百分制"},
         )
         indicator_set = HrIndicatorSetVersion.objects.create(
@@ -242,43 +295,26 @@ def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
             version_no=version_no,
             status="PUBLISHED",
             name=f"{pack.name}结果映射规则",
-            score_to_grade_mapping={
-                "bands": [
-                    {
-                        "gradeCode": "EXCELLENT",
-                        "minScore": str(excellent_min),
-                        "maxScore": "100",
-                        "displayGrade": {"zh-CN": "优秀"},
-                    },
-                    {
-                        "gradeCode": "QUALIFIED",
-                        "minScore": str(qualified_min),
-                        "maxScore": str(excellent_min - Decimal("0.01")),
-                        "displayGrade": {"zh-CN": "合格"},
-                    },
-                    {
-                        "gradeCode": "UNQUALIFIED",
-                        "minScore": "0",
-                        "maxScore": str(qualified_min - Decimal("0.01")),
-                        "displayGrade": {"zh-CN": "不合格"},
-                    },
-                ]
-            },
-            excellent_quota_rule_json={"enforcement": "BLOCKER"},
+            score_to_grade_mapping={"bands": result_bands},
+            excellent_quota_rule_json=(
+                {"enforcement": "BLOCKER"} if pack.assessment_domain == "ANNUAL" else {}
+            ),
         )
-        quota_policy = HrExcellentQuotaPolicy.objects.create(
-            tenant_id=tenant,
-            version_no=version_no,
-            status="PUBLISHED",
-            name=f"{pack.name}优秀比例政策",
-            quota_basis_population="ELIGIBLE_POPULATION",
-            max_excellent_ratio=excellent_ratio,
-            over_quota_action="BLOCKER",
-            rounding_rule="ROUND_DOWN",
-            min_eligible_for_quota=5,
-            effective_from=effective_from,
-            effective_to=effective_to,
-        )
+        quota_policy = None
+        if pack.assessment_domain == "ANNUAL":
+            quota_policy = HrExcellentQuotaPolicy.objects.create(
+                tenant_id=tenant,
+                version_no=version_no,
+                status="PUBLISHED",
+                name=f"{pack.name}优秀比例政策",
+                quota_basis_population="ELIGIBLE_POPULATION",
+                max_excellent_ratio=excellent_ratio,
+                over_quota_action="BLOCKER",
+                rounding_rule="ROUND_DOWN",
+                min_eligible_for_quota=5,
+                effective_from=effective_from,
+                effective_to=effective_to,
+            )
         version = HrAssessmentPolicyVersion(
             tenant_id=tenant,
             policy_pack=pack,
@@ -291,7 +327,7 @@ def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
             rating_scale_version_id=scale.id,
             indicator_set_version_id=indicator_set.id,
             workflow_version_id=workflow.id,
-            excellent_quota_policy_id=quota_policy.id,
+            excellent_quota_policy_id=quota_policy.id if quota_policy else None,
             result_rule_version_id=result_rule.id,
         )
         version.full_clean()
@@ -302,7 +338,7 @@ def create_policy_version(request: HttpRequest, policy_id) -> JsonResponse:
         "indicatorSetVersionId": str(indicator_set.id),
         "workflowVersionId": str(workflow.id),
         "resultRuleVersionId": str(result_rule.id),
-        "excellentQuotaPolicyId": str(quota_policy.id),
+        "excellentQuotaPolicyId": str(quota_policy.id) if quota_policy else None,
     }), status=201)
 
 

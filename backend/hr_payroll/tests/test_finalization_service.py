@@ -67,7 +67,9 @@ class PayrollFinalizationServiceTests(TestCase):
             tenant_id=77, payroll_period_id=period.id
         )
         self.assertEqual(result.status, PayrollResultFact.Status.FINALIZED)
-        result.save.assert_called_once_with(update_fields=["status", "updated_at"])
+        result.save.assert_called_once_with(
+            update_fields=["status", "effective_at", "sealed_at", "content_hash", "updated_at"]
+        )
         self.assertEqual(period.status, PayrollPeriod.Status.FINALIZED)
         self.assertEqual(period.time_source_snapshot_json["timeCloseSnapshotId"], 11)
         period.save.assert_called_once_with(

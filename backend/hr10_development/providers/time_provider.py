@@ -21,6 +21,8 @@ from django.db import DatabaseError
 from django.db.models import Q
 from django.utils import timezone
 
+from hr10_development.identity import StaffIdentityError, resolve_staff_identity, staff_identity_q
+
 
 _BLOCKING_LEAVE_STATUSES = (
     "APPROVED",
@@ -75,17 +77,38 @@ class Hr11TimeConflictProvider(TimeConflictProvider):
     ) -> SCR:
         window = _normalized_window(start_at, end_at)
         try:
-            staff_id = int(staff_master_id)
             tenant_id = int(tenant_id)
         except (TypeError, ValueError):
-            window = None
-            staff_id = 0
             tenant_id = 0
-        if window is None or staff_id <= 0 or tenant_id <= 0:
+        if window is None or tenant_id <= 0:
             return SCR(
                 result=ScheduleConflictResult.BLOCKED,
                 conflicts=[{"type": "INVALID_TIME_QUERY", "level": "HARD_CONFLICT"}],
                 source_availability=ProviderStatus.OK,
+            )
+        try:
+            identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
+        except StaffIdentityError as exc:
+            if exc.code in {"STAFF_ID_REQUIRED", "STAFF_ID_INVALID", "TENANT_CONTEXT_REQUIRED"}:
+                return SCR(
+                    result=ScheduleConflictResult.BLOCKED,
+                    conflicts=[{"type": "INVALID_TIME_QUERY", "level": "HARD_CONFLICT"}],
+                    source_availability=ProviderStatus.OK,
+                )
+            return SCR(
+                result=ScheduleConflictResult.SOURCE_UNAVAILABLE,
+                conflicts=[{"type": exc.code, "level": "HARD_CONFLICT"}],
+                source_availability=ProviderStatus.UNAVAILABLE,
+            )
+        # HR11 still stores the historic Employee id.  This is an explicit
+        # boundary adapter; absence of a mapping is SOURCE_UNAVAILABLE, never
+        # interpreted as "no conflict".
+        staff_id = identity.legacy_employee_id
+        if staff_id is None:
+            return SCR(
+                result=ScheduleConflictResult.SOURCE_UNAVAILABLE,
+                conflicts=[{"type": "HR11_LEGACY_ID_MAPPING_REQUIRED", "level": "HARD_CONFLICT"}],
+                source_availability=ProviderStatus.UNAVAILABLE,
             )
 
         start_at, end_at, current_tz = window
@@ -258,10 +281,15 @@ class Hr11DevelopmentTimeProvider(DevelopmentTimeProvider):
             datetime.combine(period_end + timedelta(days=1), time.min), current_tz
         )
 
-        # Training enrollments
+        try:
+            identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
+        except ValueError:
+            return ProviderResult(status=ProviderStatus.UNAVAILABLE, data=[])
+
+        # Training enrollments (canonical UUID + untouched historic fallback).
         enrollments = HrLearningEnrollment.objects.filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
             enrollment_status__in=["CONFIRMED", "COMPLETED"],
         ).values_list("offering_id", flat=True)
 
@@ -282,8 +310,8 @@ class Hr11DevelopmentTimeProvider(DevelopmentTimeProvider):
 
         # Enterprise practice assignments
         assignments = HrEnterprisePracticeAssignment.objects.filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
             assignment_status__in=["IN_PROGRESS", "COMPLETED"],
             started_at__isnull=False,
             started_at__lt=period_end_exclusive,

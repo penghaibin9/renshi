@@ -178,7 +178,7 @@ def dashboard_snapshot(tenant_id: int) -> dict:
         ),
         "recentExitFacts": list(
             exits.order_by("-employment_end_date", "-created_at")[:12].values(
-                "id", "fact_no", "person_id", "source_case_id", "exit_type", "employment_end_date",
+                "id", "fact_no", "person_id", "employment_relationship_id", "source_case_id", "exit_type", "employment_end_date",
                 "last_working_date", "access_end_at", "status", "last_effect_error",
                 "supersedes_fact_id", "change_reason", "evidence_ref", "content_hash",
                 "sealed_at", "created_at"

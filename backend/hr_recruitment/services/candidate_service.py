@@ -13,7 +13,6 @@ HR04-03 候选自然人服务（《04_HR04_总册》§10.3/§23）。
 
 from __future__ import annotations
 
-import hashlib
 from uuid import uuid4
 
 from django.core.exceptions import ValidationError
@@ -21,16 +20,17 @@ from django.db import transaction
 from django.utils import timezone
 
 from hr_recruitment.constants import CandidateStatus, IdentityMatchResult
+from hr_recruitment.security import (
+    candidate_id_hash,
+    candidate_id_hash_candidates,
+    encrypt_candidate_national_id,
+    normalize_candidate_national_id,
+)
 from hr_recruitment.models import (
     HrCandidateIdentityMatch,
     HrRecruitmentCandidate,
 )
 
-
-def _tenant_scoped_hash(tenant_id: int, national_id: str) -> str:
-    """tenant-scoped 身份证 hash（不跨租户 dedupe）。"""
-    raw = f"{tenant_id}:{national_id.strip()}".encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
 
 
 class CandidateServiceError(Exception):
@@ -65,8 +65,11 @@ class CandidateService:
         ).exists():
             candidate_uid = f"c-{uuid4().hex[:12]}"
 
+        normalized_national_id = normalize_candidate_national_id(national_id or "")
         national_id_hash = (
-            _tenant_scoped_hash(self.tenant_id, national_id) if national_id else ""
+            candidate_id_hash(self.tenant_id, normalized_national_id)
+            if normalized_national_id
+            else ""
         )
         candidate = HrRecruitmentCandidate.objects.create(
             tenant_id=self.tenant_id,
@@ -77,8 +80,7 @@ class CandidateService:
             primary_email=primary_email,
             primary_mobile=primary_mobile,
             national_id_hash=national_id_hash,
-            # 身份证加密由 material/安全层处理；V1 先只存 hash，不存 cipher 明文
-            national_id_cipher="",
+            national_id_cipher=encrypt_candidate_national_id(normalized_national_id),
             source=source,
             talent_tags=talent_tags or [],
             created_by=self.actor,
@@ -154,9 +156,9 @@ class CandidateService:
 
         # 1) identity hash exact（最可信）
         if national_id:
-            h = _tenant_scoped_hash(self.tenant_id, national_id)
+            hashes = candidate_id_hash_candidates(self.tenant_id, national_id)
             by_hash = HrRecruitmentCandidate.objects.filter(
-                tenant_id=self.tenant_id, national_id_hash=h
+                tenant_id=self.tenant_id, national_id_hash__in=hashes
             )
             if by_hash.exists():
                 match_result = IdentityMatchResult.EXACT_MATCH

@@ -8,11 +8,14 @@ Authority 切换后：只允许 New Authority → Legacy Projection 单向投影
 """
 
 
+from hr10_development.identity import resolve_staff_identity, staff_identity_q
+
+
 class LegacyProjectionService:
     """旧系统投影服务。将 HR10 authority 投影到旧 Employee 模型字段。"""
 
     @staticmethod
-    def project_training_summary(staff_master_id: int, tenant_id: int) -> dict:
+    def project_training_summary(staff_master_id, tenant_id: int) -> dict:
         """
         投影培训摘要到旧 Employee 字段。
 
@@ -22,9 +25,10 @@ class LegacyProjectionService:
         from hr10_development.models.development_fact import HrDevelopmentFact
         from hr10_development.constants import FactType
 
+        identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
         facts = HrDevelopmentFact.objects.effective().filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
             fact_type=FactType.TRAINING_COMPLETION,
         ).order_by("-valid_from")
 
@@ -44,14 +48,15 @@ class LegacyProjectionService:
         }
 
     @staticmethod
-    def project_practice_summary(staff_master_id: int, tenant_id: int) -> dict:
+    def project_practice_summary(staff_master_id, tenant_id: int) -> dict:
         """投影企业实践摘要。"""
         from hr10_development.models.development_fact import HrDevelopmentFact
         from hr10_development.constants import FactType
 
+        identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
         facts = HrDevelopmentFact.objects.effective().filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
             fact_type=FactType.ENTERPRISE_PRACTICE,
         ).order_by("-valid_from")
 
@@ -63,7 +68,7 @@ class LegacyProjectionService:
         }
 
     @staticmethod
-    def project_to_employee_qualification_field(staff_master_id: int, tenant_id: int) -> str:
+    def project_to_employee_qualification_field(staff_master_id, tenant_id: int) -> str:
         """
         投影到旧 Employee.qualification 字段（只读标签）。
 

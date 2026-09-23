@@ -1,0 +1,50 @@
+{{ adapter_ui_catalog|json_script:"hrint-adapter-ui" }}
+<form method="post" class="hrint-form" data-hrint-connection-form data-existing-credentials="{% if connection and connection.has_credentials %}1{% else %}0{% endif %}">
+  {% csrf_token %}
+  {% if not is_create %}<input type="hidden" name="action" value="save_connection">{% endif %}
+  {% if form.non_field_errors %}<div class="hrint-alert is-error">{{ form.non_field_errors }}</div>{% endif %}
+
+  <div class="hrint-form-section">
+    <div class="hrint-form-section-head"><span>01</span><div><strong>学校与连接</strong><small>先确定接什么系统，再填写学校分配的地址。</small></div></div>
+    <div class="hrint-form-grid">
+      <label><span>{{ form.name.label }}</span>{{ form.name }}{{ form.name.errors }}</label>
+      <label><span>{{ form.code.label }}</span>{{ form.code }}<small>建议保持稳定，后续业务只认这个连接编码。</small>{{ form.code.errors }}</label>
+      <label><span>{{ form.category.label }}</span>{{ form.category }}{{ form.category.errors }}</label>
+      <label><span>{{ form.adapter_code.label }}</span>{{ form.adapter_code }}<small>普通实施人员优先从上方协议卡选择。</small>{{ form.adapter_code.errors }}</label>
+      <label class="full"><span>{{ form.base_url.label }}</span>{{ form.base_url }}<small data-base-url-help>填写学校认证/接口系统根地址；不要把密码、Token 放进 URL。</small>{{ form.base_url.errors }}</label>
+    </div>
+  </div>
+
+  <div class="hrint-form-section">
+    <div class="hrint-form-section-head"><span>02</span><div><strong>协议参数</strong><small>页面会按 CAS / OAuth2 / OIDC / LDAP 等协议自动生成字段。</small></div></div>
+    <div class="hrint-guided-fields" data-hrint-config-fields></div>
+  </div>
+
+  <div class="hrint-form-section">
+    <div class="hrint-form-section-head"><span>03</span><div><strong>凭据与密钥</strong><small>密钥只写不回显；编辑时留空表示继续使用已保存密钥。</small></div></div>
+    <div class="hrint-guided-fields" data-hrint-secret-fields></div>
+    {% if connection and connection.has_credentials %}<div class="hrint-secret-state"><span>已保存</span> 当前连接已有加密凭据；除非学校更换密钥，否则无需重新输入。</div>{% endif %}
+  </div>
+
+  <div class="hrint-adapter-guidance" data-hrint-guidance>
+    <div><strong data-hrint-guidance-title>接入资料</strong><p data-hrint-guidance-summary>选择 Adapter 后显示学校需要提供的资料。</p></div>
+    <div><span>学校需要提供</span><ul data-hrint-materials></ul></div>
+    <div><span>当前验证范围</span><p data-hrint-verification></p></div>
+  </div>
+
+  <details class="hrint-advanced">
+    <summary>高级配置 JSON（仅实施工程师 / AI 使用）</summary>
+    <div class="hrint-form-grid">
+      <label class="full"><span>{{ form.config_text.label }}</span>{{ form.config_text }}<small>{{ form.config_text.help_text }}</small>{{ form.config_text.errors }}</label>
+      <label class="full"><span>{{ form.credential_text.label }}</span>{{ form.credential_text }}<small>{{ form.credential_text.help_text }}</small>{{ form.credential_text.errors }}</label>
+    </div>
+  </details>
+
+  <div class="hrint-form-footer">
+    <label class="hrint-switch-row">{{ form.enabled }}<span><strong>允许业务运行时使用此连接</strong><small>建议先保存、映射、测试通过，再启用。</small></span></label>
+    <div class="hrint-actions">
+      <a class="hrint-btn is-secondary" href="{% if is_create %}{% url 'hr-integration-hub' %}{% else %}{% url 'hr-integration-connection' connection.id %}{% endif %}">取消</a>
+      <button class="hrint-btn is-primary" type="submit">{% if is_create %}创建连接{% else %}保存配置{% endif %}</button>
+    </div>
+  </div>
+</form>

@@ -65,6 +65,7 @@ class EventOrgResolutionTests(TestCase):
         position = HrPosition.objects.create(
             tenant_id=TENANT,
             position_code="P001",
+            lifecycle_status="ACTIVE",  # Only published positions accept assignments.
             organization_id=self.org,
             post_catalog_version_id=catalog_version,
             validity_from=date(2020, 1, 1),

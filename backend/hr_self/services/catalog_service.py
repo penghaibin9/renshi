@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from hr_self.models import SelfServiceCatalogItem, SelfServicePinnedService
+from hr_self.services.default_catalog import ensure_default_catalog_if_empty
 from hr_self.services.identity_service import SelfIdentityContext, SelfIdentityError
 
 
@@ -26,6 +27,7 @@ class SelfCatalogService:
         self.context = context
 
     def _catalog_item(self, service_code: str) -> SelfServiceCatalogItem:
+        ensure_default_catalog_if_empty(self.context.tenant_id)
         item = (
             SelfServiceCatalogItem.objects.filter(
                 tenant_id=self.context.tenant_id,
@@ -51,6 +53,7 @@ class SelfCatalogService:
         limit: int = 24,
         offset: int = 0,
     ) -> dict:
+        ensure_default_catalog_if_empty(self.context.tenant_id)
         try:
             limit = int(limit)
             offset = int(offset)

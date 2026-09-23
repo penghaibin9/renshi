@@ -153,3 +153,74 @@ def resolve_decision_minutes(*, tenant_id: int, session_id, document_id) -> HrAs
             status=404,
         )
     return document
+
+
+def open_verified_document(document):
+    """R11 routes/files.py::verify_file, adapted to HR12 protected storage.
+
+    Authenticate/authorize the business object before calling. Return the very
+    bytes checked (no second open / public URL), in a bounded private spool.
+    This checks existing sealed bytes, not a replacement malware scan.
+    """
+    import hmac
+    import os
+    import re
+    import stat
+    import tempfile
+    from pathlib import PurePosixPath
+    from django.core.files.storage import FileSystemStorage
+
+    key = str(document.storage_key or '')
+    parts = PurePosixPath(key).parts
+    expected_prefix = ('protected', 'hr12', str(document.tenant_id))
+    if (document.status != 'SEALED' or not document.sealed_at
+        or not re.fullmatch(r'[0-9a-f]{64}', str(document.sha256 or ''))
+        or not 0 < int(document.size_bytes or 0) <= MAX_ASSESSMENT_DOCUMENT_BYTES
+        or '\\' in key or key.startswith('/') or any(p in {'.', '..'} for p in key.split('/'))
+        or parts[:3] != expected_prefix):
+        raise AssessmentDocumentError('ASSESSMENT_DOCUMENT_INTEGRITY_INVALID', '文件封存元数据或受控路径无效。', status=409)
+    spool = tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode='w+b')
+    stream = None
+    try:
+        if isinstance(default_storage, FileSystemStorage) and hasattr(os, 'O_NOFOLLOW'):
+            # Walk from the configured storage root with dir-fds, rejecting symlinks
+            # at each component. No untrusted pathname can switch the opened root.
+            directory = os.open(default_storage.location, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                for component in parts[:-1]:
+                    child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                    os.close(directory)
+                    directory = child
+                fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_NONBLOCK', 0), dir_fd=directory)
+                stream = os.fdopen(fd, 'rb')
+                metadata = os.fstat(stream.fileno())
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != document.size_bytes:
+                    raise ValueError('file size/type mismatch')
+            finally:
+                os.close(directory)
+        else:
+            stream = default_storage.open(key, 'rb')
+        total, checksum = 0, hashlib.sha256()
+        with stream:
+            while True:
+                chunk = stream.read(min(65536, int(document.size_bytes) - total + 1))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > document.size_bytes:
+                    raise ValueError('stored file is larger than sealed size')
+                checksum.update(chunk)
+                spool.write(chunk)
+        stream = None
+        if total != document.size_bytes or not hmac.compare_digest(checksum.hexdigest(), document.sha256):
+            raise ValueError('stored file checksum mismatch')
+        spool.seek(0)
+        return spool
+    except Exception as exc:
+        if stream is not None:
+            stream.close()
+        spool.close()
+        raise AssessmentDocumentError(
+            'ASSESSMENT_DOCUMENT_BYTES_INVALID',
+            '文件内容与封存指纹不一致或无法读取，禁止下载或用于新归档。', status=409,
+        ) from exc

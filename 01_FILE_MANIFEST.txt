@@ -1,0 +1,89 @@
+高校人事管理系统 ChatGPT 接手源码包 - 关键文件清单
+=========================================================
+
+打包基线
+--------
+- 正式源工程：F:\高校人事系统\01_项目源码\高校人事系统主程序
+- 本地分支/提交：main / 9b7f8773
+- 数据库：MySQL-only（Docker Compose 使用 MySQL 8.4）
+- 表结构与演进：Django ORM + backend/*/migrations/；未发现 Alembic 或 *.sql 迁移
+
+压缩包根目录文件
+----------------
+- 00_CHATGPT_START_HERE.md              接手说明、启动、测试、安全边界
+- 01_FILE_MANIFEST.txt                  本清单
+- README.md                             项目主说明及 HR01--HR18 映射
+- .env.dist                             不含真实密钥的配置字段模板
+- requirements.txt / requirements.lock  Python 依赖清单和锁定版本
+- package.json / package-lock.json      前端资源构建依赖和锁文件
+- manage.py / sitecustomize.py          Django 管理入口
+- Makefile                              dev/migrate/check/test/test-hr 等命令
+- Dockerfile                            Web 镜像定义
+- docker-compose.yml                    开发服务（web / MySQL / Redis 等；MySQL/Redis 口令改为从 .env 读取）
+- docker-compose.prod.yml               生产 overlay
+- docker-compose.dbport.yml             数据库端口 overlay
+- tailwind.config.cjs                   Tailwind 配置
+- .dockerignore / .gitignore            构建与源码忽略规则（仅规则文件，不含 .git）
+
+核心目录
+--------
+- backend/                              Django 后端全部业务源码、templates、static、API、service、models、tests 和 migrations
+- frontend/                             前端模板、原始 CSS/SCSS/JS、图片与 HR 页面资源
+- docs/                                 模块说明、开发顺序、验收、重构与报告文档
+- tests/                                跨模块、配置和视觉回归测试源码与 baselines（不含生成截图）
+- deploy/                               Docker/部署辅助文件
+- scripts/                              检查、演示数据、浏览器验收等脚本
+- backend/load_data/                    演示 fixture、演示素材和 README
+
+HR01--HR18 对应后端目录
+-----------------------
+- HR01 人事工作台：backend/hr_control_center/
+- HR02 组织机构与编制岗位：backend/hr_structure/
+- HR03 教职工主档：backend/hr_staff/
+- HR04 招聘与人才引进：backend/hr_recruitment/
+- HR05 入职管理：backend/hr_onboarding/
+- HR06 人事异动：backend/hr_changes/
+- HR07 合同与聘用：backend/hr_contracts/
+- HR08 兼职外聘教师：backend/hr_external/
+- HR09 教师资格与双师型：backend/hr_qualification/
+- HR10 培训进修与企业实践：backend/hr10_development/
+- HR11 考勤与请假：backend/hr_time/（并保留 attendance/、leave/）
+- HR12 年度与聘期考核：backend/hr_assessment/
+- HR13 职称评审：backend/hr_title/
+- HR14 岗位聘任：backend/hr_appointment/
+- HR15 薪酬福利：backend/hr_payroll/（并保留 payroll/）
+- HR16 退休与离校：backend/hr_exit/（并保留 offboarding/）
+- HR17 教职工服务：backend/hr_self/
+- HR18 人事数据中心：backend/hr_data/
+
+横向能力（均保留源码）
+------------------------
+- 权限/RBAC/租户：backend/platform_access/、backend/horilla_auth/、backend/base/ 与各 HR 应用的 permissions/policies
+- 审计与历史：backend/horilla_audit/、django-auditlog 依赖、各业务审计服务
+- 文件：backend/horilla_documents/、backend/hr_staff/ 及相关模块上传下载逻辑
+- Excel：backend/employee/static/employee/work_info_import.xlsx、backend/base/static/import_templates/shift_schedule_template.csv、各 HR 应用的 import/export service/API
+- 打印/报表/PDF：backend/report/、backend/base/pdf.py、payroll/leave/attendance 等模板与服务
+- 自动化测试：backend/*/test*.py、backend/*/tests/、tests/、Makefile 的 test/test-hr 目标
+
+明确排除（不影响源码开发；均可重建或不应交付）
+------------------------------------------------------
+- .git/：本地 Git 历史和元数据；本包不依赖 GitHub
+- node_modules/、.venv/、.venv-ci/：可按锁文件重装的依赖环境
+- __pycache__/、.pytest_cache/、.ruff_cache/、.runtime/：缓存和运行时状态
+- frontend/static/build/、生成的 Tailwind CSS、tests/artifacts/、hr-export/：构建产物、视觉截图或导出产物
+- *.sqlite、*.sqlite3、*.db、*.log、*.pyc、*.mo：本地数据库、日志或编译缓存
+- 任何实际 .env/.env.*、私钥/证书（*.pem/*.key/*.p12/*.pfx/*.crt/*.cer）：敏感配置或凭据
+
+安全预检摘要
+------------
+- 仅保留 .env.dist；未打包真实 .env。
+- 演示 JSON fixture 未命中中国身份证号或中国手机号；演示邮箱域名主要为 university.example。
+- 打包前对候选文本进行了私钥和硬编码长凭据模式检查；命中仅限测试场景源码，未发现需随包排除的实际凭据文件。
+- 未修改、覆盖或删除源工程的 backend/load_data/mail_automations.json。
+
+解压后应核对
+--------------
+1. 00_CHATGPT_START_HERE.md、01_FILE_MANIFEST.txt、README.md 在根目录。
+2. backend/hr_control_center 到 backend/hr_data、frontend/、docs/、tests/、deploy/、scripts/ 均存在。
+3. requirements.txt、requirements.lock、package.json、package-lock.json、.env.dist、Dockerfile、docker-compose*.yml、Makefile 均存在。
+4. backend 下各业务应用的 migrations/ 目录与 Python 源码存在。

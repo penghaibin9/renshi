@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}
 HR01-03 人事预警 —— 风险列表 + 统计 + 详情
@@ -13,7 +13,7 @@ HR01-03 人事预警 —— 风险列表 + 统计 + 详情
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 
-<div class="hr-page" data-hr-page="alerts">
+<div class="hr-page" data-hr-page="alerts" data-module="HR01" data-hr-workspace="v6">
   {% include "hr/components/page_header.html" with title="人事预警" subtitle="如果今天不处理，未来会形成管理事故的事项" %}
 
   <!-- 顶部统计 -->

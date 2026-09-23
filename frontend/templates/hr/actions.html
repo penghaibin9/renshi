@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}
 HR01-05 快捷办理 —— 已授权高频业务的真实入口
@@ -11,7 +11,7 @@ HR01-05 快捷办理 —— 已授权高频业务的真实入口
 <link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 
-<div class="hr-page" data-hr-page="actions">
+<div class="hr-page" data-hr-page="actions" data-module="HR01" data-hr-workspace="v6">
   {% include "hr/components/page_header.html" with title="快捷办理" subtitle="高频业务一键进入真实办理入口" %}
 
   {% include "hr/components/section_card.html" with id="hr-quick-actions" title="高频业务" status="loading" %}

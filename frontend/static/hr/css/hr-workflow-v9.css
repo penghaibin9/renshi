@@ -1,0 +1,56 @@
+/* Scoped work surfaces: one brand, task → evidence → outcome. No module palettes. */
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]){--wf-blue:#245b92;--wf-line:#d8e1ea;--wf-muted:#506176;color:#24364b;min-width:0;font-size:14px}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) [hidden]{display:none!important}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) h2{font-size:18px;line-height:1.5;margin:0 0 12px}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) h3{font-size:16px;line-height:1.5;margin:16px 0 10px}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) button,:is(.hr-workflow-v9,[data-hr-workflow="v9"]) input,:is(.hr-workflow-v9,[data-hr-workflow="v9"]) select,:is(.hr-workflow-v9,[data-hr-workflow="v9"]) textarea{font:inherit}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) button{cursor:pointer;min-height:36px;border:1px solid var(--wf-line);border-radius:5px;padding:7px 12px;background:white;color:var(--wf-blue)}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) button:disabled{cursor:not-allowed;opacity:.58}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) button.hr05-button{background:var(--wf-blue);color:white;border-color:var(--wf-blue)}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) button.hr-wf-secondary{background:white;color:var(--wf-blue);border-color:var(--wf-line)}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) :is(button,input,select,textarea,a):focus-visible{outline:3px solid #326fa3;outline-offset:3px}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) :is(input,select,textarea){box-sizing:border-box;min-height:38px;max-width:100%;padding:9px 10px;border:1px solid #adbac8;border-radius:5px;background:white;color:#24364b}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) textarea{width:100%;min-height:88px;resize:vertical}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) label{display:grid;gap:6px;font-weight:600;min-width:0}
+.hr-wf-toolbar{display:flex;gap:12px;align-items:end;padding:16px 0;flex-wrap:wrap;border-bottom:1px solid var(--wf-line)}
+.hr-wf-toolbar label:first-child{flex:1 1 260px;max-width:480px}.hr-wf-toolbar .hr05-meta{flex-basis:100%;margin:0;color:var(--wf-muted)}
+.hr-wf-split{display:grid;grid-template-columns:minmax(280px,.92fr) minmax(0,1.15fr);border-bottom:1px solid var(--wf-line);background:white}
+.hr-wf-queue{min-width:0;padding:20px 18px 20px 0;border-right:1px solid var(--wf-line)}
+.hr-wf-detail{min-width:0;padding:20px 0 24px 24px}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-wf-task{display:block;width:100%;text-align:left;padding:14px 12px;border:0;border-bottom:1px solid var(--wf-line);border-radius:0;color:#24364b}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-wf-task:hover{background:#f3f7fb}:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-wf-task[aria-pressed=true]{background:#eaf2fa;border-left:3px solid var(--wf-blue);padding-left:9px}
+.hr-wf-task strong{font-weight:600;display:block;margin:4px 0;font-size:15px}.hr-wf-task small{display:block;line-height:1.65;color:var(--wf-muted)}
+.hr-wf-task-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--wf-muted)}
+.hr-wf-pill{display:inline-flex;align-items:center;font-size:12px;line-height:1.7;padding:1px 6px;border-radius:3px;background:#edf3f8;color:#245b92;white-space:normal}
+.hr-wf-overdue{color:#9b4017;background:#fff4e5}.hr-wf-muted{color:var(--wf-muted)}
+.hr-wf-facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 16px;margin:16px 0 20px}.hr-wf-facts dt{color:var(--wf-muted)}.hr-wf-facts dd{margin:0;overflow-wrap:anywhere}
+.hr-wf-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.hr-wf-actions a{padding:8px 0;color:var(--wf-blue)}
+.hr-wf-feedback{padding:10px 12px;border-left:3px solid #7699bb;background:#f1f6fb;overflow-wrap:anywhere;line-height:1.7;margin:12px 0}.hr-wf-feedback:empty{display:none}
+.hr-wf-feedback[data-state=error]{border-color:#b34a34;background:#fff4f1;color:#803722}.hr-wf-feedback[data-state=success]{border-color:#388261;background:#f0f8f4;color:#23543f}
+.hr-wf-pager{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-top:16px}
+.hr-wf-case-search{padding:12px 0;border-bottom:1px solid var(--wf-line)}.hr-wf-case-search summary{cursor:pointer;color:var(--wf-blue)}.hr-wf-case-search form{display:flex;gap:12px;align-items:end;padding:12px 0;flex-wrap:wrap}.hr-wf-case-search form label{flex:1}
+.hr-wf-case-search #hr05-case-results{display:flex;flex-wrap:wrap;gap:8px}
+.hr-wf-outcome{padding:24px 0}.hr-wf-outcome>header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hr-wf-outcome-strip{display:flex;flex-wrap:wrap;border-block:1px solid var(--wf-line);margin:12px 0 20px}.hr-wf-outcome-strip>div{padding:12px 22px 12px 0;min-width:130px;flex:1}.hr-wf-outcome-strip strong{display:block;font-size:19px;margin-top:5px}
+.hr-wf-result-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:24px}.hr-wf-checks{list-style:none;margin:0;padding:0}.hr-wf-checks li{border-bottom:1px solid var(--wf-line);padding:10px 0;display:flex;gap:12px;justify-content:space-between;align-items:start;overflow-wrap:anywhere}
+.hr-wf-checks li a{color:var(--wf-blue)}.hr-wf-history{list-style:none;margin:0;padding:0;font-size:13px}.hr-wf-history li{padding:10px 0;border-bottom:1px solid var(--wf-line);line-height:1.7;overflow-wrap:anywhere}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-wf-dialog{width:min(620px,calc(100vw - 32px));max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);padding:0;border:1px solid #b9c7d5;border-radius:8px;color:#24364b;box-shadow:0 16px 60px #17293c33;overflow:auto}
+.hr-wf-dialog::backdrop{background:#16253680}.hr-wf-dialog header{padding:20px 24px 12px;border-bottom:1px solid var(--wf-line)}.hr-wf-dialog header p{margin:0;color:var(--wf-muted);overflow-wrap:anywhere}
+.hr-wf-dialog-body{display:grid;gap:16px;padding:20px 24px;line-height:1.7}.hr-wf-dialog .hr-wf-feedback{margin:0 24px 16px}
+.hr-wf-dialog footer{display:flex;justify-content:flex-end;gap:12px;padding:16px 24px;position:sticky;bottom:0;background:white;border-top:1px solid var(--wf-line)}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr05-material-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr05-material-actions input[type=file]{width:240px;max-width:100%;font-size:12px}:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-table-wrap{max-width:100%;overflow:auto}:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-table{border-collapse:collapse;width:100%;min-width:660px}:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-table td{vertical-align:top;padding:12px}:is(.hr-workflow-v9,[data-hr-workflow="v9"]) .hr-table th{padding:10px;text-align:left;background:#f3f6f9}.hr-wf-row-feedback{display:block;max-width:390px;white-space:normal;line-height:1.7;margin-top:8px;overflow-wrap:anywhere}
+@media(max-width:950px){.hr-wf-split{grid-template-columns:minmax(230px,.88fr) minmax(0,1.12fr)}.hr-wf-detail{padding-left:16px}.hr-wf-queue{padding-right:12px}.hr-wf-result-grid{grid-template-columns:1fr}}
+@media(max-width:680px){.hr-wf-split{display:block}.hr-wf-queue{border-right:0;padding-right:0;max-height:380px;overflow:auto;border-bottom:1px solid var(--wf-line)}.hr-wf-detail{padding-left:0}.hr-wf-facts{grid-template-columns:100px minmax(0,1fr)}.hr-wf-dialog-body,.hr-wf-dialog header{padding:16px}.hr-wf-dialog footer{padding:12px 16px}.hr-wf-dialog .hr-wf-feedback{margin-inline:16px}}
+/* Do not rely on a surrounding theme's universal reset for content width. */
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]),:is(.hr-workflow-v9,[data-hr-workflow="v9"]) *{box-sizing:border-box}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]){width:100%;max-width:100%;gap:14px}
+:is(.hr-workflow-v9,[data-hr-workflow="v9"]) h1.hr-v2-title{font-family:inherit;font-size:25px;font-weight:650;line-height:1.4;margin:0}
+.hr-wf-history-more{margin-top:12px;border-top:1px solid var(--wf-line);padding-top:10px}.hr-wf-history-more summary{cursor:pointer;color:var(--wf-blue)}
+.hr-wf-evidence-result{padding:12px 0;border-block:1px solid var(--wf-line);margin:12px 0;overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* Readable saved terms; diagnostic fingerprints stay secondary. */
+.hr-wf-verification {margin:14px 0; color:#475569; font-size:13px;}
+.hr-wf-verification summary {cursor:pointer; color:var(--hr-primary,#245b92); padding:6px 0;}
+.hr-wf-verification code {display:block; font-size:12px;}
+.hr-workflow-v9 .hr05-case-picker label {min-width:0; width:min(100%,440px);}
+.hr-workflow-v9 #hr05-material-case-id {width:100%;}

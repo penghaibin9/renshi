@@ -15,7 +15,9 @@ class TrainingLifecycleMutationContractTests(SimpleTestCase):
         source = inspect.getsource(requests.create_request)
 
         self.assertIn("with transaction.atomic()", source)
-        self.assertIn("HrStaffMaster.objects.select_for_update()", source)
+        self.assertIn("resolve_staff_identity(", source)
+        self.assertIn("for_update=True", source)
+        self.assertIn("HrLearningOffering.objects.select_for_update()", source)
         self.assertIn("REQUEST_PROGRAM_OFFERING_MISMATCH", source)
         self.assertIn("r.full_clean()", source)
 
@@ -25,7 +27,8 @@ class TrainingLifecycleMutationContractTests(SimpleTestCase):
         self.assertIn("HrLearningOffering.objects.select_for_update()", source)
         self.assertIn("OfferingStatus.OPEN", source)
         self.assertIn("DevelopmentErrorCode.DUPLICATE_ENROLLMENT", source)
-        self.assertIn("HrStaffMaster.objects.filter", source)
+        self.assertIn("resolve_staff_identity(", source)
+        self.assertIn("for_update=True", source)
 
     def test_waitlist_only_opens_after_regular_capacity_is_exhausted(self):
         waitlist_source = inspect.getsource(EnrollmentService.waitlist)

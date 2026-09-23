@@ -22,6 +22,7 @@ from hr_staff.constants import DuplicateMatchLevel, VerificationStatus
 from hr_staff.models import HrPerson, HrPersonContact, HrPersonIdentityDocument
 from hr_staff.services.crypto import (
     document_fingerprint,
+    document_fingerprint_candidates,
     encrypt_document_number,
     mask_document_number,
     normalize_document_number,
@@ -52,11 +53,11 @@ class PersonIdentityService:
         """先 HARD（证件指纹），再 LIKELY（姓名+生日组合）。"""
         if document_number:
             normalized = normalize_document_number(document_number)
-            fp = document_fingerprint(tenant_id, normalized)
-            if fp:
+            fingerprints = document_fingerprint_candidates(tenant_id, normalized)
+            if fingerprints:
                 existing = (
                     HrPersonIdentityDocument.objects.filter(
-                        tenant_id=tenant_id, document_number_fingerprint=fp
+                        tenant_id=tenant_id, document_number_fingerprint__in=fingerprints
                     )
                     .select_related("person_id")
                     .first()
@@ -168,10 +169,11 @@ class PersonIdentityService:
     ):
         normalized = normalize_document_number(document_number)
         fp = document_fingerprint(tenant_id, normalized)
+        fingerprints = document_fingerprint_candidates(tenant_id, normalized)
         existing = (
             HrPersonIdentityDocument.objects.filter(
                 tenant_id=tenant_id,
-                document_number_fingerprint=fp,
+                document_number_fingerprint__in=fingerprints,
             )
             .select_for_update()
             .first()

@@ -1,0 +1,34 @@
+{
+  "product": "Yueke University HR",
+  "round": 3,
+  "date": "2026-09-15",
+  "baseline": {
+    "file": "Yueke_University_HR_Round2_20260914.zip",
+    "sha256": "3538843133d0a4565f86bf30dce14dfcc3323d797d5ec8bf7539a634ecd440fa",
+    "verified": true
+  },
+  "scope": [
+    "production release command and entrypoint execution",
+    "production deployment preflight",
+    "first-production-database bootstrap",
+    "web initialization fail-closed controls",
+    "HR16 END_DELAY controlled ExitCase replanning"
+  ],
+  "verification": {
+    "executorFileReadWrite": "PASSED",
+    "round2PureTests": {"passed": 66, "failed": 0},
+    "round3PureTests": {"passed": 6, "failed": 0},
+    "backendAstFiles": 3076,
+    "composeYamlSyntax": "PASSED",
+    "entrypointBashSyntax": "PASSED",
+    "compileall": "PASSED",
+    "authoredRound3DjangoMysqlTests": 8,
+    "authoredRound3DjangoMysqlTestsExecuted": false,
+    "dockerComposeRuntime": "BLOCKED_NO_DOCKER",
+    "djangoMysqlRuntime": "BLOCKED_MISSING_DJANGO_DRF_MYSQLDB_MYSQL"
+  },
+  "productionRelease": "NOT_RELEASED",
+  "productionReleaseReason": "Target Docker Compose/MySQL/Django/browser runtime acceptance cannot be executed in the current cloud executor. SQLite was not used as a substitute.",
+  "githubUsed": false,
+  "productionServerTouched": false
+}

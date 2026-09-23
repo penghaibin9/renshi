@@ -1,0 +1,2 @@
+issue_id,severity,description,status,resolution,verification_status,school_acceptance,evidence_ref
+ISSUE-001,MAJOR,示例：替换为真实问题,CLOSED,示例：填写实际整改内容,PASS,ACCEPTED,evidence/example

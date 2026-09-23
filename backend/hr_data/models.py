@@ -1235,6 +1235,15 @@ class ExchangeJob(HrTenantScopedModel):
     )
     snapshot_hash = models.CharField(max_length=64)
     idempotency_key = models.CharField(max_length=128)
+    retry_of_job = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="manual_retry_jobs",
+    )
+    manual_retry_reason = models.TextField(blank=True, default="")
+    manual_retry_by = models.BigIntegerField(null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.QUEUED, db_index=True
     )
@@ -1254,6 +1263,9 @@ class ExchangeJob(HrTenantScopedModel):
         "target_mapping_version_id",
         "snapshot_hash",
         "idempotency_key",
+        "retry_of_job_id",
+        "manual_retry_reason",
+        "manual_retry_by",
         "max_attempts",
     )
 
@@ -1272,6 +1284,10 @@ class ExchangeJob(HrTenantScopedModel):
             models.Index(
                 fields=("tenant_id", "status", "next_attempt_at"),
                 name="idx_hr18_exchange_job_queue",
+            ),
+            models.Index(
+                fields=("tenant_id", "retry_of_job"),
+                name="idx_hr18_exchange_retry_of",
             ),
         ]
 
@@ -1714,3 +1730,5 @@ class LegacyReportWriteBlock(HrTenantScopedModel):
                 "HR18_LEGACY_REPORT_WRITE_BLOCK_IMMUTABLE: write block cannot be changed"
             )
         return super().save(*args, **kwargs)
+
+from .operational_models import OperationalSnapshot  # noqa: F401,E402

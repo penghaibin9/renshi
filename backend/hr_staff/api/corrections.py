@@ -47,6 +47,9 @@ def _parse_json_body(request):
 
 
 def _error_for(request, exc):
+    from hr_staff.services.evidence_reference_service import EvidenceReferenceError
+    if isinstance(exc, EvidenceReferenceError):
+        return error_response(request, exc.code, str(exc), status=exc.status)
     if isinstance(exc, CorrectionPolicyDenied):
         return error_response(request, exc.code, str(exc), status=403)
     if isinstance(exc, CorrectionStateError):
@@ -71,6 +74,9 @@ def _case_payload(case):
     return {
         "id": str(case.id),
         "caseNo": case.case_no,
+        "version": case.version,
+        "sourceChannel": case.source_channel,
+        "sourceEvidenceVersionId": str(case.source_evidence_version_id) if case.source_evidence_version_id else None,
         "staffId": str(case.staff_id_id),
         "status": case.status,
         "reason": case.reason,

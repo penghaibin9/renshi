@@ -100,6 +100,14 @@ def _snapshot_hash_payload(snapshot: PayrollInputSnapshot) -> dict:
 
 
 def verify_payroll_input_snapshot(snapshot: PayrollInputSnapshot) -> None:
+    if snapshot.snapshot_version == "hr15-policy-input-v1":
+        from .policy_payroll_service import verify_policy_snapshot
+        from .policy_math import PolicyPayrollError
+        try:
+            verify_policy_snapshot(snapshot)
+            return
+        except PolicyPayrollError as exc:
+            raise PayrollCalculationError(exc.code, str(exc)) from exc
     if snapshot.snapshot_version != INPUT_SNAPSHOT_VERSION:
         raise PayrollCalculationError(
             "PAYROLL_INPUT_SNAPSHOT_UNTRUSTED",
@@ -321,6 +329,13 @@ class PayrollRuleService:
         )
         if rule is None:
             raise PayrollCalculationError("SALARY_RULE_NOT_FOUND", "salary rule not found")
+        if rule.pay_group_code:
+            from .policy_configuration_service import PolicyConfigurationService
+            from .policy_math import PolicyPayrollError
+            try:
+                return PolicyConfigurationService(self.tenant_id, self.actor_user_id).publish("RULE", rule.id)
+            except PolicyPayrollError as exc:
+                raise PayrollCalculationError(exc.code, str(exc)) from exc
         if rule.status == SalaryRuleVersion.Status.PUBLISHED:
             return rule
         if rule.status != SalaryRuleVersion.Status.DRAFT:
@@ -421,6 +436,13 @@ class PayrollCalculationService:
         ).first()
         if period is None:
             raise PayrollCalculationError("PAYROLL_PERIOD_NOT_FOUND", "payroll period not found")
+        if period.engine_version == "POLICY_V1":
+            from .policy_payroll_service import PolicyPayrollService
+            from .policy_math import PolicyPayrollError
+            try:
+                return PolicyPayrollService(self.tenant_id, self.actor_user_id, self.correlation_id).capture(period_id=period.id, staff_id=staff_id)
+            except PolicyPayrollError as exc:
+                raise PayrollCalculationError(exc.code, str(exc)) from exc
         if period.status != PayrollPeriod.Status.INPUT_FROZEN:
             raise PayrollCalculationError(
                 "PAYROLL_INPUT_NOT_FROZEN",
@@ -544,6 +566,7 @@ class PayrollCalculationService:
         rules = list(
             SalaryRuleVersion.objects.filter(
                 tenant_id=self.tenant_id,
+                pay_group_code="",
                 status=SalaryRuleVersion.Status.PUBLISHED,
                 effective_from__lte=period.end_date,
             )
@@ -693,6 +716,7 @@ class PayrollCalculationService:
         rules = list(
             SalaryRuleVersion.objects.filter(
                 tenant_id=self.tenant_id,
+                pay_group_code="",
                 status=SalaryRuleVersion.Status.PUBLISHED,
                 effective_from__lte=period.end_date,
             )
@@ -812,6 +836,14 @@ class PayrollCalculationService:
         )
         if period is None:
             raise PayrollCalculationError("PAYROLL_PERIOD_NOT_FOUND", "payroll period not found")
+
+        if period.engine_version == "POLICY_V1":
+            from .policy_payroll_service import PolicyPayrollService
+            from .policy_math import PolicyPayrollError
+            try:
+                return PolicyPayrollService(self.tenant_id, self.actor_user_id, self.correlation_id).calculate(period_id=period.id, batch_no=batch_no, idempotency_key=idempotency_key)
+            except PolicyPayrollError as exc:
+                raise PayrollCalculationError(exc.code, str(exc)) from exc
 
         existing = PayrollCalculationBatch.objects.select_for_update().filter(
             tenant_id=self.tenant_id, idempotency_key=idempotency_key

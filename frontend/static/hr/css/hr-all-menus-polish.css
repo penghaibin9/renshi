@@ -1,0 +1,527 @@
+/*
+ * HR01-HR18 menu polish layer — 2026-09-18
+ * Frontend-only. Visual hierarchy / density / affordance only.
+ * No backend, API, permission, state-machine or business-rule changes.
+ */
+
+body.hr-shell-v3 {
+  --hr-polish-blue: #2563eb;
+  --hr-polish-blue-700: #1d4ed8;
+  --hr-polish-blue-50: #eff6ff;
+  --hr-polish-ink: #0f172a;
+  --hr-polish-text: #334155;
+  --hr-polish-muted: #64748b;
+  --hr-polish-line: #dfe7f1;
+  --hr-polish-line-soft: #edf2f7;
+  --hr-polish-panel: #ffffff;
+  --hr-polish-canvas: #f5f8fc;
+  --hr-polish-soft: #f8fafc;
+  background: var(--hr-polish-canvas) !important;
+  color: var(--hr-polish-text);
+}
+
+body.hr-shell-v3 .oh-main-content { background: var(--hr-polish-canvas); }
+body.hr-shell-v3 #ohMainContent { padding-left: 24px !important; padding-right: 24px !important; padding-bottom: 48px !important; }
+
+/* Keep all HR modules aligned to one readable content rail. */
+body.hr-shell-v3 .hr-v2-page,
+body.hr-shell-v3 .hr07-page {
+  width: min(100%, 1500px);
+  margin-inline: auto;
+}
+
+body.hr-shell-v3 .hr-v2-page { padding-left: 0; padding-right: 0; }
+body.hr-shell-v3 .hr07-page { padding: 0 0 40px; }
+
+/* Page header: one strong orientation zone on every module. */
+body.hr-shell-v3 .hr-v2-pagehead,
+body.hr-shell-v3 .hr06-center__head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  margin: 0 0 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--hr-polish-line);
+  border-radius: 14px;
+  background: var(--hr-polish-panel);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .035), 0 8px 24px rgba(15, 23, 42, .035);
+}
+
+body.hr-shell-v3 .hr-v2-pagehead::before,
+body.hr-shell-v3 .hr06-center__head::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 14px 0 0 14px;
+  background: var(--hr-polish-blue);
+}
+
+body.hr-shell-v3 .hr-v2-eyebrow,
+body.hr-shell-v3 .hr06-breadcrumb {
+  margin-bottom: 6px;
+  color: var(--hr-polish-blue-700);
+  font-size: 11px;
+  line-height: 18px;
+  font-weight: 800;
+  letter-spacing: .055em;
+}
+body.hr-shell-v3 .hr-v2-eyebrow::before { width: 16px; height: 2px; }
+body.hr-shell-v3 .hr-v2-title { color: var(--hr-polish-ink); font-size: 26px; line-height: 34px; font-weight: 800; letter-spacing: -.018em; }
+body.hr-shell-v3 .hr-v2-subtitle { max-width: 900px; margin-top: 6px; color: var(--hr-polish-muted); font-size: 13px; line-height: 1.7; }
+body.hr-shell-v3 .hr-v2-context { align-self: center; gap: 6px; }
+body.hr-shell-v3 .hr-v2-context__item {
+  min-height: 30px;
+  padding: 5px 9px;
+  border-color: var(--hr-polish-line-soft);
+  border-radius: 999px;
+  background: var(--hr-polish-soft);
+  color: var(--hr-polish-muted);
+  font-size: 11px;
+}
+
+/* Primary header actions across modules. */
+body.hr-shell-v3 :is(
+  .hr04-action.primary,
+  .hr06-button--primary,
+  .hr07-btn--primary,
+  .hr08-primary-action,
+  .hr10-primary-action,
+  .hr11-primary-action,
+  .hr12-primary-action,
+  .hr13-primary-action,
+  .hr14-primary-action,
+  .hr15-primary-action,
+  .hr16-primary-action,
+  .hr17-primary-action,
+  .hr18-primary-action,
+  .hr03-actions .primary,
+  .hr02-btn--primary
+) {
+  min-height: 38px;
+  border: 1px solid var(--hr-polish-blue) !important;
+  border-radius: 9px !important;
+  background: var(--hr-polish-blue) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, .14);
+  font-weight: 750;
+  text-decoration: none;
+}
+body.hr-shell-v3 :is(
+  .hr04-action.primary,
+  .hr06-button--primary,
+  .hr07-btn--primary,
+  .hr08-primary-action,
+  .hr10-primary-action,
+  .hr11-primary-action,
+  .hr12-primary-action,
+  .hr13-primary-action,
+  .hr14-primary-action,
+  .hr15-primary-action,
+  .hr16-primary-action,
+  .hr17-primary-action,
+  .hr18-primary-action,
+  .hr03-actions .primary,
+  .hr02-btn--primary
+):hover { background: var(--hr-polish-blue-700) !important; border-color: var(--hr-polish-blue-700) !important; }
+
+/* One navigation grammar for all 18 menus. */
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,
+  .hr10-nav,.hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--hr-polish-line);
+  border-radius: 12px;
+  background: var(--hr-polish-panel);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .025);
+  scrollbar-width: thin;
+}
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,
+  .hr10-nav,.hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #526276 !important;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: none !important;
+}
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,
+  .hr10-nav,.hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a:hover { background: #f6f9fd !important; color: var(--hr-polish-ink) !important; }
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,
+  .hr10-nav,.hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a:is(.active,.is-active,[aria-current="page"]) {
+  border-color: #dbeafe !important;
+  background: var(--hr-polish-blue-50) !important;
+  color: var(--hr-polish-blue-700) !important;
+  font-weight: 800;
+}
+body.hr-shell-v3 :is(
+  .hr07-nav,.hr09-nav,.hr10-nav,.hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a small,
+body.hr-shell-v3 .hr07-nav > a span {
+  color: #94a3b8;
+  font-size: 9px;
+  font-weight: 800;
+}
+body.hr-shell-v3 :is(.hr07-nav,.hr09-nav,.hr10-nav,.hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav) > a:is(.active,.is-active,[aria-current="page"]) small,
+body.hr-shell-v3 .hr07-nav > a.is-active span { color: var(--hr-polish-blue); }
+
+/* Shared KPI layout: fixes the largest visual inconsistency found in screenshots. */
+body.hr-shell-v3 :is(
+  .hr-v2-kpis,
+  .hr04-metric-grid,
+  .hr06-summary,
+  .hr09-primary-kpis,
+  .hr11-summary,
+  .hr12-primary-kpis,
+  .hr13c-kpis,
+  .hr14-kpis,
+  .hr15-kpis,
+  .hr16-kpis,
+  .hr17-kpis,
+  .hr18-kpis
+) {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px !important;
+  margin: 0 0 14px !important;
+}
+
+body.hr-shell-v3 :is(
+  .hr-v2-kpi,
+  .hr04-metric,
+  .hr06-summary__item,
+  .hr09-primary-kpis > *,
+  .hr11-kpi,
+  .hr12-kpi,
+  .hr13c-kpi,
+  .hr14-kpi,
+  .hr15-kpi,
+  .hr16-kpi,
+  .hr17-kpi,
+  .hr18-kpi
+) {
+  position: relative;
+  min-width: 0;
+  min-height: 96px;
+  padding: 14px 15px !important;
+  border: 1px solid var(--hr-polish-line) !important;
+  border-radius: 11px !important;
+  background: var(--hr-polish-panel) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .03) !important;
+  overflow: hidden;
+}
+body.hr-shell-v3 :is(
+  .hr-v2-kpi,
+  .hr04-metric,
+  .hr06-summary__item,
+  .hr09-primary-kpis > *,
+  .hr11-kpi,
+  .hr12-kpi,
+  .hr13c-kpi,
+  .hr14-kpi,
+  .hr15-kpi,
+  .hr16-kpi,
+  .hr17-kpi,
+  .hr18-kpi
+)::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: #cbdcf7;
+}
+body.hr-shell-v3 :is(.hr-v2-kpi__label,.hr04-metric span,.hr11-kpi span,.hr12-kpi span,.hr13c-kpi span,.hr14-kpi span,.hr15-kpi span,.hr16-kpi span,.hr17-kpi span,.hr18-kpi span) {
+  display: block;
+  color: var(--hr-polish-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 17px;
+}
+body.hr-shell-v3 :is(.hr-v2-kpi__value,.hr04-metric b,.hr11-kpi b,.hr12-kpi b,.hr13c-kpi b,.hr14-kpi b,.hr15-kpi b,.hr16-kpi b,.hr17-kpi b,.hr18-kpi b) {
+  display: block;
+  margin-top: 5px;
+  color: var(--hr-polish-ink) !important;
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  line-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+body.hr-shell-v3 :is(.hr-v2-kpi__note,.hr04-metric small,.hr11-kpi em,.hr12-kpi em,.hr13c-kpi em,.hr14-kpi em,.hr15-kpi em,.hr16-kpi em,.hr17-kpi em,.hr18-kpi em) {
+  display: block;
+  margin-top: 3px;
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+  font-style: normal !important;
+  line-height: 15px;
+}
+
+/* Conclusion cards should read as decisions, not loose text. */
+body.hr-shell-v3 .hr-v2-conclusions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+body.hr-shell-v3 .hr-v2-conclusion {
+  min-height: 104px;
+  padding: 14px 16px;
+  border-color: var(--hr-polish-line);
+  border-radius: 11px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .03);
+}
+body.hr-shell-v3 .hr-v2-conclusion__value { font-size: 20px; }
+
+/* Common cards / working surfaces. */
+body.hr-shell-v3 :is(
+  .hr-v2-panel,
+  .hr02-card,
+  .hr04-panel,
+  .hr05-panel,
+  .hr06-case-panel,
+  .hr06-filter-panel,
+  .hr07-card,
+  .hr08-card,
+  .hr09-card,
+  .hr10-card,
+  .hr11-card,
+  .hr12-panel,
+  .hr13c-card,
+  .hr14-card,
+  .hr15-card,
+  .hr16-card,
+  .hr17-card,
+  .hr18-card
+) {
+  border: 1px solid var(--hr-polish-line) !important;
+  border-radius: 12px !important;
+  background: var(--hr-polish-panel) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .025) !important;
+}
+body.hr-shell-v3 :is(.hr-v2-panel,.hr02-card,.hr04-panel,.hr05-panel,.hr06-case-panel,.hr07-card,.hr08-card,.hr09-card,.hr10-card,.hr11-card,.hr12-panel,.hr13c-card,.hr14-card,.hr15-card,.hr16-card,.hr17-card,.hr18-card) h2,
+body.hr-shell-v3 :is(.hr-v2-panel,.hr02-card,.hr04-panel,.hr05-panel,.hr06-case-panel,.hr07-card,.hr08-card,.hr09-card,.hr10-card,.hr11-card,.hr12-panel,.hr13c-card,.hr14-card,.hr15-card,.hr16-card,.hr17-card,.hr18-card) h3 {
+  color: var(--hr-polish-ink);
+  letter-spacing: -.01em;
+}
+
+/* Search / filter bars should look like one task surface. */
+body.hr-shell-v3 :is(
+  .hr02-toolbar,
+  .hr03-toolbar,
+  .hr04-toolbar,
+  .hr05-toolbar,
+  .hr06-filter-form,
+  .hr07-toolbar,
+  .hr08-toolbar,
+  .hr09-toolbar,
+  .hr10-toolbar,
+  .hr11-workbar,
+  .hr12-toolbar,
+  .hr13c-toolbar,
+  .hr14-toolbar,
+  .hr15-toolbar,
+  .hr16-toolbar,
+  .hr17-toolbar,
+  .hr18-toolbar
+) {
+  gap: 8px !important;
+  padding: 10px !important;
+  border: 1px solid var(--hr-polish-line-soft) !important;
+  border-radius: 10px !important;
+  background: var(--hr-polish-soft) !important;
+}
+
+/* Inputs: consistent density and strong keyboard focus. */
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) select,
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) textarea {
+  border: 1px solid #d6e0eb;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--hr-polish-ink);
+  box-shadow: none;
+}
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) select { min-height: 36px; }
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) textarea { min-height: 88px; }
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) input:focus-visible,
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) select:focus-visible,
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) textarea:focus-visible,
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) button:focus-visible,
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) a:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, .18) !important;
+  outline-offset: 2px;
+  border-color: #93c5fd !important;
+}
+
+/* Secondary buttons: lighter than primary, still obvious. */
+body.hr-shell-v3 :is(.hr-v2-page,.hr07-page) button:not([class*="primary"]):not([class*="danger"]):not([class*="success"]) {
+  border-color: #d8e1ec;
+  border-radius: 8px;
+}
+
+/* Dense data tables: more scan-friendly, no decorative zebra stripes. */
+body.hr-shell-v3 :is(
+  .hr03-table-wrap,.hr04-table-wrap,.hr05-table-wrap,.hr06-table-wrap,.hr07-table-wrap,.hr08-table-wrap,
+  .hr09-table-wrap,.hr10-table-wrap,.hr11-table-wrap,.hr12-table-wrap,.hr13c-table-wrap,.hr14-table-wrap,
+  .hr15-table-wrap,.hr16-table-wrap,.hr17-table-wrap,.hr18-table-wrap
+) {
+  position: relative;
+  overflow: auto;
+  border: 1px solid var(--hr-polish-line-soft);
+  border-radius: 10px;
+  background: #fff;
+}
+body.hr-shell-v3 :is(
+  .hr03-table,.hr04-table,.hr05-table,.hr06-table,.hr07-table,.hr08-table,.hr09-table,.hr10-table,
+  .hr11-table,.hr12-table,.hr13c-table,.hr14-table,.hr15-table,.hr16-table,.hr17-table,.hr18-table
+) {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0;
+}
+body.hr-shell-v3 :is(
+  .hr03-table,.hr04-table,.hr05-table,.hr06-table,.hr07-table,.hr08-table,.hr09-table,.hr10-table,
+  .hr11-table,.hr12-table,.hr13c-table,.hr14-table,.hr15-table,.hr16-table,.hr17-table,.hr18-table
+) thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid var(--hr-polish-line) !important;
+  background: #f8fafc !important;
+  color: #5b6b7e !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  white-space: nowrap;
+}
+body.hr-shell-v3 :is(
+  .hr03-table,.hr04-table,.hr05-table,.hr06-table,.hr07-table,.hr08-table,.hr09-table,.hr10-table,
+  .hr11-table,.hr12-table,.hr13c-table,.hr14-table,.hr15-table,.hr16-table,.hr17-table,.hr18-table
+) tbody td {
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+  border-bottom-color: var(--hr-polish-line-soft) !important;
+  vertical-align: middle;
+}
+body.hr-shell-v3 :is(
+  .hr03-table,.hr04-table,.hr05-table,.hr06-table,.hr07-table,.hr08-table,.hr09-table,.hr10-table,
+  .hr11-table,.hr12-table,.hr13c-table,.hr14-table,.hr15-table,.hr16-table,.hr17-table,.hr18-table
+) tbody tr:hover { background: #f8fbff !important; }
+
+/* Step / lifecycle bars: emphasize current step and reduce visual noise. */
+body.hr-shell-v3 :is(.hr06-stagebar,.hr07-stagebar,.hr12-process,.hr13-process,.hr14-process,.hr15-process,.hr16-process) {
+  gap: 8px !important;
+  margin-bottom: 14px !important;
+  padding: 10px !important;
+  border: 1px solid var(--hr-polish-line) !important;
+  border-radius: 11px !important;
+  background: #fff !important;
+}
+body.hr-shell-v3 :is(.hr06-stagebar__step,.hr07-stagebar > div,.hr12-process__step,.hr13-process__step,.hr14-process__step,.hr15-process__step,.hr16-process__step) {
+  border-radius: 8px !important;
+}
+
+/* Section rhythm: less empty canvas, clearer grouping. */
+body.hr-shell-v3 .hr-v2-section { margin-top: 18px; }
+body.hr-shell-v3 .hr-v2-section__head { margin-bottom: 10px; }
+body.hr-shell-v3 .hr-v2-section__head h2 { font-size: 16px; }
+body.hr-shell-v3 .hr-v2-truth-note,
+body.hr-shell-v3 :is(.hr07-truth-note,.hr16-principle,.hr17-principle) {
+  border-color: #dbe4f0 !important;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+  color: var(--hr-polish-muted) !important;
+}
+
+/* HR01 core path: preserve task-first onboarding and make it visually primary. */
+body.hr-shell-v3 .hr-home__core-flow {
+  padding: 18px;
+  border: 1px solid #dbeafe;
+  border-radius: 13px;
+  background: #fbfdff;
+}
+body.hr-shell-v3 .hr-home__flow-card {
+  border-color: var(--hr-polish-line) !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+body.hr-shell-v3 .hr-home__flow-card:hover { border-color: #bfdbfe !important; background: #f8fbff !important; }
+
+/* HR03 import: make the safe PREVIEW → CONFIRM flow obvious without changing it. */
+body.hr-shell-v3 .hr03-import-panel { border-color: #bfdbfe !important; box-shadow: 0 8px 24px rgba(37, 99, 235, .06) !important; }
+body.hr-shell-v3 .hr03-import-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; padding: 0; list-style: none; }
+body.hr-shell-v3 .hr03-import-steps li { min-width: 0; padding: 10px 12px; border: 1px solid var(--hr-polish-line-soft); border-radius: 9px; background: var(--hr-polish-soft); }
+body.hr-shell-v3 .hr03-actions { padding: 12px 14px; border: 1px solid var(--hr-polish-line); border-radius: 11px; background: #fff; }
+
+/* Sidebar: calmer density and a single strong active state. */
+body.hr-shell-v3 #sidebar { background: #fff !important; box-shadow: 1px 0 0 rgba(15, 23, 42, .04); }
+body.hr-shell-v3 .hr-module-nav__home,
+body.hr-shell-v3 .hr-module-nav__item {
+  min-height: 39px;
+  margin: 2px 0;
+  padding: 8px 9px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+body.hr-shell-v3 .hr-module-nav__item.is-active,
+body.hr-shell-v3 .hr-module-nav__home.is-active {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 var(--hr-polish-blue);
+}
+body.hr-shell-v3 .hr-module-nav__group { margin-top: 16px; }
+
+/* Scroll affordance is added by hr-all-menus-polish.js, not by business JS. */
+body.hr-shell-v3 [data-hr-scroll-x="1"] { box-shadow: inset -10px 0 12px -14px rgba(15,23,42,.55); }
+body.hr-shell-v3 [data-hr-scroll-start="0"] { box-shadow: inset 10px 0 12px -14px rgba(15,23,42,.55), inset -10px 0 12px -14px rgba(15,23,42,.55); }
+body.hr-shell-v3 [data-hr-scroll-end="1"] { box-shadow: inset 10px 0 12px -14px rgba(15,23,42,.55); }
+
+@media (max-width: 1280px) {
+  body.hr-shell-v3 :is(.hr-v2-kpis,.hr04-metric-grid,.hr06-summary,.hr09-primary-kpis,.hr11-summary,.hr12-primary-kpis,.hr13c-kpis,.hr14-kpis,.hr15-kpis,.hr16-kpis,.hr17-kpis,.hr18-kpis) { grid-template-columns: repeat(3,minmax(0,1fr)); }
+}
+
+@media (max-width: 900px) {
+  body.hr-shell-v3 #ohMainContent { padding-left: 14px !important; padding-right: 14px !important; }
+  body.hr-shell-v3 .hr-v2-pagehead,
+  body.hr-shell-v3 .hr06-center__head { padding: 16px; flex-direction: column; gap: 12px; }
+  body.hr-shell-v3 .hr-v2-title { font-size: 22px; line-height: 30px; }
+  body.hr-shell-v3 :is(.hr-v2-kpis,.hr04-metric-grid,.hr06-summary,.hr09-primary-kpis,.hr11-summary,.hr12-primary-kpis,.hr13c-kpis,.hr14-kpis,.hr15-kpis,.hr16-kpis,.hr17-kpis,.hr18-kpis) { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  body.hr-shell-v3 .hr-v2-conclusions { grid-template-columns: 1fr; }
+  body.hr-shell-v3 .hr03-import-steps { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  body.hr-shell-v3 :is(.hr-v2-kpis,.hr04-metric-grid,.hr06-summary,.hr09-primary-kpis,.hr11-summary,.hr12-primary-kpis,.hr13c-kpis,.hr14-kpis,.hr15-kpis,.hr16-kpis,.hr17-kpis,.hr18-kpis) { grid-template-columns: 1fr 1fr; gap: 8px !important; }
+  body.hr-shell-v3 :is(.hr-v2-kpi,.hr04-metric,.hr06-summary__item,.hr09-primary-kpis > *,.hr11-kpi,.hr12-kpi,.hr13c-kpi,.hr14-kpi,.hr15-kpi,.hr16-kpi,.hr17-kpi,.hr18-kpi) { min-height: 86px; padding: 11px 12px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.hr-shell-v3 *, body.hr-shell-v3 *::before, body.hr-shell-v3 *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}

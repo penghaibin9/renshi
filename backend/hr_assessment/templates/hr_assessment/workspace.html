@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
@@ -7,11 +7,12 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr12-assessment.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr12-archive-evidence.css' %}?v=20260919-v14">
 <link rel="stylesheet" href="{% static 'hr/css/hr12-actions.css' %}?v=20260830-2">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr12" data-module="HR12" data-section="{{ section }}">
+<div class="hr-v2-page hr12" data-module="HR12" data-hr-workspace="v6" data-section="{{ section }}">
   {% if access_error %}
     <div class="hr12-access" role="alert">{{ access_error }}</div>
   {% else %}
@@ -82,16 +83,16 @@
             <span class="hr12-process__no">02</span><strong>目标确认</strong><small>确认个人目标、任务和考核要求</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-annual' %}">
-            <span class="hr12-process__no">03</span><strong>个人总结</strong><small>提交年度总结与相关考核材料</small>
+            <span class="hr12-process__no">03</span><strong>年度考核</strong><small>年度对象、证据、评议和正式结论独立办理</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-term' %}">
-            <span class="hr12-process__no">04</span><strong>部门评议</strong><small>部门按指标和事实完成评议</small>
+            <span class="hr12-process__no">04</span><strong>聘期考核</strong><small>依据正式聘期、年度结果和聘期事实形成结论</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-ethics' %}">
-            <span class="hr12-process__no">05</span><strong>学校审定</strong><small>集中评议、校准并形成审定结论</small>
+            <span class="hr12-process__no">05</span><strong>师德专项</strong><small>独立记录师德事实、门槛判定与复核依据</small>
           </a>
           <a class="hr12-process__step" href="{% url 'hr_assessment:hr12-review' %}">
-            <span class="hr12-process__no">06</span><strong>结果归档</strong><small>结果告知、确认、异议与档案归集</small>
+            <span class="hr12-process__no">06</span><strong>评议归档</strong><small>评议、集体审定、结果告知、异议与档案归集</small>
           </a>
         </div>
       </section>
@@ -136,7 +137,8 @@
 </div>
 {% if not access_error %}
   {# HR12 boots directly after its root so script execution cannot depend on a theme block. #}
-  <script src="{% static 'hr/js/pages/hr12-assessment.js' %}?v=20260902-2"></script>
-  <script src="{% static 'hr/js/pages/hr12-actions.js' %}?v=20260902-1"></script>
+  <script src="{% static 'hr/js/pages/hr12-assessment.js' %}?v=20260919-v14"></script>
+  <script src="{% static 'hr/js/pages/hr12-archive-evidence.js' %}?v=20260919-v14"></script>
+  <script src="{% static 'hr/js/pages/hr12-actions.js' %}?v=20260918-workspace-v6-1"></script>
 {% endif %}
 {% endblock content %}

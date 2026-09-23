@@ -7,6 +7,11 @@ from hr_qualification.services.credential_service import CredentialError, Creden
 from hr_qualification.services.evidence_service import EvidenceAggregationService
 from hr_qualification.services.precheck_service import PrecheckItem, PrecheckResult, PrecheckService
 from hr_qualification.services.legacy_projection import LegacyQualificationProjection
+from hr_qualification.services.authority_mode_service import (
+    QualificationAuthorityMode,
+    QualificationAuthorityModeError,
+    QualificationAuthorityModeService,
+)
 from hr_qualification.services.recheck_service import RecheckError, RecheckService
 from hr_qualification.services.requirement_service import RequirementMatchItem, RequirementService
 from hr_qualification.services.review_service import ReviewError, ReviewService
@@ -21,6 +26,9 @@ __all__ = [
     "CredentialService",
     "EvidenceAggregationService",
     "LegacyQualificationProjection",
+    "QualificationAuthorityMode",
+    "QualificationAuthorityModeError",
+    "QualificationAuthorityModeService",
     "PrecheckItem",
     "PrecheckResult",
     "PrecheckService",

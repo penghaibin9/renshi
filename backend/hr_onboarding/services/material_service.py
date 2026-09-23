@@ -24,9 +24,11 @@ from hr_onboarding.constants import (
     MaterialSource,
     MaterialStatus,
     VerificationResult,
+    CaseStatus,
 )
 from hr_onboarding.models import (
     HrMaterialVerification,
+    HrOnboardingCase,
     HrOnboardingMaterial,
     HrOnboardingMaterialRequirement,
 )
@@ -35,11 +37,17 @@ from hr_onboarding.services.file_service import material_storage_path, store_mat
 logger = logging.getLogger(__name__)
 
 
+@transaction.atomic
 def ensure_materials_from_requirements(case) -> int:
     """按 case.template_version 的材料要求实例化（幂等：已有不重复建）。"""
+    case = HrOnboardingCase.objects.select_for_update().get(pk=case.id, tenant_id=case.tenant_id)
     created = 0
     if case.template_version is None:
         return 0
+    if case.template_version.tenant_id != case.tenant_id:
+        raise Hr05ApiError("入职模板学校归属不一致")
+    from hr_onboarding.services.school_template_service import verify_school_template
+    verify_school_template(case.template_version, case.tenant_id)
     requirements = HrOnboardingMaterialRequirement.objects.filter(
         tenant_id=case.tenant_id, template_version=case.template_version
     )
@@ -60,11 +68,32 @@ class MaterialService:
         self.tenant_id = tenant_id
         self.actor_user_id = actor_user_id
 
+    def _lock_case(self, case_id):
+        case = HrOnboardingCase.objects.select_for_update().filter(pk=case_id, tenant_id=self.tenant_id).first()
+        if case is None:
+            raise NotFoundError("入职单不存在或无权访问")
+        if case.status in {CaseStatus.CANCELLED, CaseStatus.DECLINED, CaseStatus.PROBATION_FAILED}:
+            raise Hr05ApiError("入职单已终止，不能继续修改材料")
+        from hr_onboarding.services.school_template_service import verify_school_template
+        verify_school_template(case.template_version, self.tenant_id)
+        return case
+
+    def _lock_material(self, material):
+        case = self._lock_case(material.case_id)
+        row = HrOnboardingMaterial.objects.select_for_update().filter(
+            pk=material.id, tenant_id=self.tenant_id, case_id=case.id,
+            requirement__tenant_id=self.tenant_id, requirement__template_version_id=case.template_version_id,
+        ).first()
+        if row is None:
+            raise NotFoundError("材料不属于当前学校及入职模板")
+        return row
+
     # ------------------------------------------------------------------
     # 提交（幂等：同 case+requirement 仅更新文件版本）
     # ------------------------------------------------------------------
     @transaction.atomic
     def submit_material(self, case, requirement_id, uploaded_file) -> HrOnboardingMaterial:
+        case = self._lock_case(case.id)
         req = HrOnboardingMaterialRequirement.objects.filter(
             tenant_id=self.tenant_id,
             id=requirement_id,
@@ -167,7 +196,11 @@ class MaterialService:
     # ------------------------------------------------------------------
     @transaction.atomic
     def return_material(self, material: HrOnboardingMaterial, *, reason: str) -> HrOnboardingMaterial:
-        material = HrOnboardingMaterial.objects.select_for_update().get(id=material.id)
+        material = self._lock_material(material)
+        if material.status != MaterialStatus.UNDER_REVIEW:
+            raise Hr05ApiError("只有待核验材料可退回；已核验材料须走正式更正")
+        if not str(reason or '').strip():
+            raise Hr05ApiError("退回补正必须填写原因")
         material.status = MaterialStatus.RETURNED
         material.save(update_fields=["status", "updated_at"])
         return material
@@ -181,7 +214,7 @@ class MaterialService:
         reason: str = "",
         evidence: Optional[dict] = None,
     ) -> HrOnboardingMaterial:
-        material = HrOnboardingMaterial.objects.select_for_update().get(id=material.id)
+        material = self._lock_material(material)
         if material.status != MaterialStatus.UNDER_REVIEW:
             raise Hr05ApiError(
                 f"材料状态 {material.status} 不可核验（要求 UNDER_REVIEW）",
@@ -207,9 +240,11 @@ class MaterialService:
 
     @transaction.atomic
     def waive_material(self, material: HrOnboardingMaterial, *, reason: str) -> HrOnboardingMaterial:
-        material = HrOnboardingMaterial.objects.select_for_update().get(id=material.id)
-        if not reason:
+        material = self._lock_material(material)
+        if not str(reason or '').strip():
             raise Hr05ApiError("豁免材料必须填写 reason（WAIVED 语义：reason+authority+audit）")
+        if material.status in {MaterialStatus.VERIFIED, MaterialStatus.WAIVED}:
+            raise Hr05ApiError("已核验或已豁免材料不能重复豁免")
         material.status = MaterialStatus.WAIVED
         material.save(update_fields=["status", "updated_at"])
         return material

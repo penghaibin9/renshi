@@ -20,6 +20,8 @@ class HrDevelopmentNeed(DevelopmentTenantModel):
         verbose_name=_("计划版本 ID"),
     )
 
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True, verbose_name=_("HR03 教职工 UUID"))
+
     staff_master_id = models.BigIntegerField(
         null=True,
         blank=True,
@@ -107,4 +109,4 @@ class HrDevelopmentNeed(DevelopmentTenantModel):
         ]
 
     def __str__(self):
-        return f"Need({self.need_type}) by {self.staff_master_id}"
+        return f"Need({self.need_type}) by {self.staff_master_uuid or self.staff_master_id}"

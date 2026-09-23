@@ -1,5 +1,18 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
+
+{% block styles %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr03-records.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-round2.css' %}">
+{% endblock styles %}
+
+{% block content %}
 {% trans "人事材料档案" as t_title %}
 {% trans "全部" as t_all %}
 {% trans "待核验" as t_unverified %}
@@ -10,19 +23,7 @@
 {% trans "预览" as t_preview %}
 {% trans "版本" as t_versions %}
 {% trans "下载失败" as t_download_failed %}
-
-{% block styles %}
-{{ block.super }}
-<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr03-staff.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr03-profile.css' %}">
-<link rel="stylesheet" href="{% static 'hr/css/hr03-records.css' %}">
-{% endblock styles %}
-
-{% block content %}
-<div class="hr-v2-page hr03-page" data-module="HR03" data-section="materials" data-staff-id="{{ staff_id }}">
+<div class="hr-v2-page hr03-page" data-module="HR03" data-hr-workspace="v6" data-section="materials" data-staff-id="{{ staff_id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR03 教职工主档</span><strong>{{ t_title }}</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr03-material-title">
@@ -49,7 +50,7 @@
   </nav>
 
   <section class="hr-v2-section">
-    <form id="materialUploadForm" class="hr03-upload-form" enctype="multipart/form-data">
+    <form id="materialUploadForm" class="hr03-upload-form" enctype="multipart/form-data" data-v6-surface="form">
       <div class="hr03-upload-form__head">
         <div><strong>新增人事材料</strong><span>文件进入学校隔离的私有存储，上传与下载均记录审计。</span></div>
       </div>
@@ -82,9 +83,24 @@
 
   <div class="hr-v2-truth-note"><strong>安全边界</strong><span>预览/下载必须先向 `/download-ticket` 申请受审计票据，再通过受控下载路由消费票据；页面不会拼接裸媒体直链。</span></div>
 </div>
+
+{% if not access_error %}<section class="hr-r2" id="hr03-self-material-panel" aria-label="新增业务办理工作区" data-hr-workspace="v6" data-v6-module="HR03"></section>{% endif %}
 {% endblock content %}
 
 {% block scripts %}
+{% trans "人事材料档案" as t_title %}
+{% trans "全部" as t_all %}
+{% trans "待核验" as t_unverified %}
+{% trans "即将到期" as t_expiring %}
+{% trans "已失效" as t_expired %}
+{% trans "加载失败" as t_load_failed %}
+{% trans "暂无材料" as t_empty %}
+{% trans "预览" as t_preview %}
+{% trans "版本" as t_versions %}
+{% trans "下载失败" as t_download_failed %}
+<script src="{% static 'hr/js/pages/hr-round2-common.js' %}?v=20260918-all-secondary-v6" defer></script>
+<script src="{% static 'hr/js/pages/hr03-self-materials.js' %}?v=20260918-all-secondary-v6" defer></script>
+
 {{ block.super }}
 <script>
 (function () {

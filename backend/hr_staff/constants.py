@@ -227,6 +227,10 @@ class MaterialCategoryCode(models.TextChoices):
     CONTRACT_REFERENCE = "CONTRACT_REFERENCE", _("Contract Reference")
     HONOR = "HONOR", _("Honor")
     CORRECTION_EVIDENCE = "CORRECTION_EVIDENCE", _("Correction Evidence")
+    RETIREMENT_NOTICE = "RETIREMENT_NOTICE", _("Retirement Notice")
+    RETIREMENT_APPROVAL = "RETIREMENT_APPROVAL", _("Retirement Approval")
+    RETIREMENT_CONTRIBUTION = "RETIREMENT_CONTRIBUTION", _("Retirement Contribution Evidence")
+    RETIREMENT_AGREEMENT = "RETIREMENT_AGREEMENT", _("Retirement Written Agreement")
     OTHER_HR = "OTHER_HR", _("Other HR")
 
 

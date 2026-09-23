@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "releaseName": "Usability Candidate R3 2026-09-17",
+  "baseline": {
+    "file": "Yueke_University_HR_Final_Source_Candidate_20260917.zip",
+    "sha256": "bc1daee86176d0bec28f3e15cc4720ab51d6903247c9b7bc23ccf92d97721472"
+  },
+  "status": "SOURCE_USABILITY_R3_CLOSURE_COMPLETE",
+  "runtimeBusinessFlowStatus": "QA_RUNTIME_PENDING_DJANGO_MYSQL",
+  "usabilityClosures": [
+    "HR01 task-first 我要办什么 search and common task chips",
+    "HR01-HR18 contextual 办理助手 with steps/materials/blockers/next action",
+    "72+ built-in prompt chips across 18 HR modules",
+    "PII-minimized AI-ready prompt builder",
+    "required-field badges, form completion and invalid-field jump summary",
+    "action-oriented API error guidance",
+    "first-use onboarding plus Alt+K and slash shortcuts",
+    "real QA browser flow upgraded to assert usability guidance across HR01-HR18",
+    "6 cross-module contextual business journeys for onboarding, transfer, renewal, title-to-appointment, retirement/exit and development-to-assessment",
+    "colloquial intent aliases such as 换部门/续合同/证书过期/工资单/离职",
+    "recent-work shortcuts storing route metadata only and supporting one-click clear",
+    "static route audit ensures every guide/journey URL exists in shipped source",
+    "real Chromium intent matrix covers six high-frequency cross-module journeys",
+    "26-term plain-language HR glossary with module-specific terms across HR01-HR18",
+    "natural-language glossary search such as 封板是什么意思 / 什么叫幂等",
+    "actionable empty/error/unavailable/permission states explaining what to do next",
+    "explicit distinction between submit/approve/verify/effective/archive semantics to prevent false completion assumptions"
+  ],
+  "researchBasis": [
+    "Oracle HCM Guided Journeys and Contextual Journeys",
+    "Oracle Journeys task-based lifecycle guidance",
+    "ServiceNow Employee Center single-entry task experience",
+    "SAP SuccessFactors Joule use cases and sample prompts"
+  ],
+  "sourceVerification": {
+    "hr10Import": "20/20 PASS",
+    "hr10StaffIdentity": "53/53 PASS",
+    "hr18ProcurementSync": "24/24 PASS",
+    "schoolHandover": "33/33 PASS",
+    "finalProcurement": "53/53 PASS",
+    "hrUsability": "68/68 PASS",
+    "pureTests": "187/187 PASS",
+    "pythonAst": "3161/3161 PASS",
+    "javascriptNodeCheck": "254/254 PASS"
+  },
+  "browserVerification": {
+    "engine": "Chromium via Playwright",
+    "hr05ContextGuide": "PASS",
+    "hr01TaskFirstSearch": "PASS",
+    "formCompletion": "PASS",
+    "invalidSummary": "PASS",
+    "safePromptNoVisiblePII": "PASS",
+    "actionOrientedErrorGuidance": "PASS",
+    "pageErrors": 0,
+    "evidenceDir": "tests/artifacts/hr-usability-static",
+    "crossModuleJourney": "PASS",
+    "sixHighFrequencyJourneys": "PASS",
+    "colloquialQueryAliases": "PASS",
+    "recentWorkShortcut": "SOURCE_CONTRACT_PASS_RUNTIME_PERSISTENCE_REQUIRES_NORMAL_ORIGIN",
+    "contextGlossary": "PASS",
+    "naturalLanguageGlossarySearch": "PASS"
+  },
+  "runtimeBlocker": {
+    "django": "ModuleNotFoundError: No module named 'django'",
+    "remoteDesktop": "No connected device available when rechecked on 2026-09-17; full Django/MySQL workflow remains QA-environment work."
+  },
+  "verifiedFromReExtractedFinalZip": true,
+  "finalReextractStatus": "PASS",
+  "packageVerification": {
+    "manifestEntries": 10698,
+    "missingFiles": 0,
+    "unexpectedFiles": 0,
+    "hashOrSizeErrors": 0,
+    "pythonAst": "3161/3161 PASS",
+    "javascriptNodeCheck": "254/254 PASS",
+    "pureTests": "187/187 PASS",
+    "realChromiumUsabilitySmoke": "PASS (includes R3 glossary/state guidance)",
+    "uniqueGuideRoutes": "43/43 resolve to shipped source",
+    "dotfilePreservation": "PASS: .env.dist/.dockerignore/.gitattributes/.github preserved verbatim",
+    "exactReextractGates": "HR usability 68/68; pure tests 187/187; Python AST 3161/3161; JS 254/254; real Chromium PASS"
+  }
+}

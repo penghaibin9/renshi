@@ -65,6 +65,18 @@ class AssessmentResultCorrectionService:
         "calculatedScore",
         "decisionReason",
     }
+    GRADE_CODES_BY_TYPE = {
+        "ANNUAL": {
+            "EXCELLENT": "优秀",
+            "QUALIFIED": "合格",
+            "BASIC_QUALIFIED": "基本合格",
+            "UNQUALIFIED": "不合格",
+        },
+        "TERM": {
+            "QUALIFIED": "合格",
+            "UNQUALIFIED": "不合格",
+        },
+    }
 
     def __init__(self, tenant_id: int, actor_staff_id=None, correlation_id: str = ""):
         if not tenant_id:
@@ -136,6 +148,32 @@ class AssessmentResultCorrectionService:
                 )
             after["status"] = "REVOKED"
         return after
+
+    @classmethod
+    def _validate_assessment_grade(cls, result, changes: dict) -> dict:
+        allowed = cls.GRADE_CODES_BY_TYPE.get(str(result.assessment_type or "").upper())
+        if not allowed or not ({"gradeCode", "displayGrade"} & set(changes)):
+            return changes
+
+        current = canonical_result_snapshot(result)
+        grade_code = str(changes.get("gradeCode") or current.get("gradeCode") or "").upper()
+        if grade_code not in allowed:
+            raise AssessmentResultCorrectionError(
+                "ASSESSMENT_GRADE_NOT_ALLOWED_FOR_TYPE",
+                f"gradeCode {grade_code or '<empty>'} is not allowed for {result.assessment_type}",
+            )
+
+        normalized = copy.deepcopy(changes)
+        # The Chinese display label is a governed projection of the grade code;
+        # do not allow a corrected result to say QUALIFIED while displaying 优秀.
+        display = normalized.get("displayGrade")
+        if display is not None:
+            display = dict(display)
+            display["zh-CN"] = allowed[grade_code]
+            normalized["displayGrade"] = display
+        elif "gradeCode" in normalized:
+            normalized["displayGrade"] = {"zh-CN": allowed[grade_code]}
+        return normalized
 
     def _exact_replay(
         self,
@@ -228,6 +266,7 @@ class AssessmentResultCorrectionService:
                 "ASSESSMENT_RESULT_NOT_FOUND",
                 "formal result not found inside tenant",
             )
+        changes = self._validate_assessment_grade(result, changes)
         latest = HrResultRevision.objects.select_for_update().filter(
             tenant_id=self.tenant_id,
             result_id=result.id,

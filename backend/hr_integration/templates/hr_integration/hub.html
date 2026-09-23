@@ -1,0 +1,61 @@
+{% extends "hr/base.html" %}{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr_integration/integration_hub_v2.css' %}">
+<div class="hrint-page">
+  <div class="hrint-hero">
+    <div><span class="hrint-eyebrow">系统管理 · 学校实施底座</span><h1>统一认证与接口适配中心</h1><p>把学校厂商差异收口在连接、适配器（Adapter）和字段映射里。换学校、换统一认证、换数据中台，不改 HR01～HR18。</p></div>
+    <div class="hrint-hero-actions">{% if can_manage %}<a class="hrint-btn is-primary" href="{% url 'hr-integration-create' %}"><ion-icon name="add-outline"></ion-icon>新增学校接口</a>{% endif %}<a class="hrint-btn is-secondary" href="{% url 'system-admin-center' %}">返回系统管理</a></div>
+  </div>
+
+  <section class="hrint-metrics">
+    <article><span>统一认证</span><strong>{{ summary.sso_state }}</strong><small>CAS / OAuth2 / OIDC / LDAP</small></article>
+    <article><span>已验证连接</span><strong>{{ summary.verified }}</strong><small>共 {{ summary.total }} 条学校连接</small></article>
+    <article class="{% if summary.error %}is-warn{% endif %}"><span>异常连接</span><strong>{{ summary.error }}</strong><small>失败先处理，不靠业务模块兜底</small></article>
+    <article><span>已启用</span><strong>{{ summary.enabled }}</strong><small>仅启用业务真实需要的连接</small></article>
+  </section>
+
+  <section class="hrint-panel hrint-sso-focus">
+    <div class="hrint-section-head"><div><span>P0 · 最先实施</span><h2>学校统一登录</h2><p>信息处只要告诉你使用哪一种协议，再提供对应资料；不要让学校填内部 JSON。</p></div><a href="{% url 'hr-integration-create' %}?category=SSO">进入统一认证实施</a></div>
+    <div class="hrint-protocol-grid">
+      {% for item in adapter_ui_catalog %}{% if item.category == 'SSO' %}
+      <a class="hrint-protocol-card" href="{% url 'hr-integration-create' %}?adapter={{ item.code }}">
+        <div><span>{{ item.badge }}</span><strong>{{ item.title }}</strong><small>{{ item.protocol }}</small></div>
+        <p>{{ item.summary }}</p><em>开始配置 →</em>
+      </a>
+      {% endif %}{% endfor %}
+    </div>
+  </section>
+
+  <section class="hrint-panel">
+    <div class="hrint-section-head"><div><span>8 类标准适配位</span><h2>学校接口版图</h2><p>绿色代表已有验证连接；黄色代表已配置待验证；红色代表测试失败。</p></div></div>
+    <div class="hrint-category-grid">
+      {% for item in summary.categories %}
+      <a class="hrint-category-card is-{{ item.state|lower }}" href="{% url 'hr-integration-create' %}?category={{ item.code }}">
+        <ion-icon name="{{ item.icon }}"></ion-icon><div><span>{{ item.priority }}</span><strong>{{ item.label }}</strong><small>{{ item.short }}</small><p>{{ item.summary }}</p></div><em>{{ item.count }} 条</em>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="hrint-panel">
+    <div class="hrint-section-head"><div><span>当前学校 #{{ tenant_id }}</span><h2>已建连接</h2><p>先看状态，再进入连接详情维护协议参数、密钥、字段映射和测试证据。</p></div>{% if can_manage %}<a href="{% url 'hr-integration-create' %}">新增连接</a>{% endif %}</div>
+    <div class="hrint-table-wrap"><table class="hrint-table"><thead><tr><th>系统</th><th>协议 / 适配器</th><th>状态</th><th>凭据</th><th>最近验证</th><th></th></tr></thead><tbody>
+      {% for x in connections %}<tr>
+        <td><strong>{{ x.name }}</strong><small>{{ x.get_category_display }} · {{ x.code }}</small></td>
+        <td>{{ x.adapter_code }}<small>{{ x.base_url|default:"未填写 Base URL" }}</small></td>
+        <td><span class="hrint-status is-{{ x.status|lower }}">{{ x.get_status_display }}</span>{% if x.enabled %}<small>运行时已启用</small>{% else %}<small>当前未启用</small>{% endif %}</td>
+        <td>{% if x.has_credentials %}<span class="hrint-ok">已加密保存</span>{% else %}<span class="hrint-muted">未保存</span>{% endif %}</td>
+        <td>{{ x.last_test_at|date:"Y-m-d H:i"|default:"尚未测试" }}<small>{{ x.last_test_message|default:"—" }}</small></td>
+        <td><a class="hrint-row-link" href="{% url 'hr-integration-connection' x.id %}">实施 / 维护</a></td>
+      </tr>{% empty %}<tr><td colspan="6"><div class="hrint-empty"><strong>还没有学校接口</strong><span>建议先完成统一认证，再接主数据、财务等系统。</span>{% if can_manage %}<a class="hrint-btn is-primary" href="{% url 'hr-integration-create' %}?category=SSO">从统一认证开始</a>{% endif %}</div></td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <section class="hrint-principles">
+    <article><strong>学校换了</strong><span>改连接地址、Adapter 参数、字段映射；不复制一套 HR 业务源码。</span></article>
+    <article><strong>密钥换了</strong><span>重新录入后加密保存，浏览器永不把旧 Token / Secret 回显出来。</span></article>
+    <article><strong>字段换了</strong><span>在映射方案调整，HR03 / HR15 等权威模型不跟着外部字段名变化。</span></article>
+    <article><strong>接口坏了</strong><span>测试证据和审计事件在 Hub 内定位，不让 HR01～HR18 静默吞错。</span></article>
+  </section>
+</div>
+{% endblock content %}

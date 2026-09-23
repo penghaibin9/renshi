@@ -12,7 +12,8 @@ from hr10_development.models.base import DevelopmentTenantModel
 
 
 class HrFurtherStudyCase(DevelopmentTenantModel):
-    staff_master_id = models.BigIntegerField(db_index=True, verbose_name=_("教职工 ID"))
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True, verbose_name=_("HR03 教职工 UUID"))
+    staff_master_id = models.BigIntegerField(null=True, blank=True, db_index=True, verbose_name=_("兼容旧 Employee ID"))
     study_type = models.CharField(max_length=32, choices=StudyType.choices, verbose_name=_("进修类型"))
     host_organization_id = models.BigIntegerField(null=True, blank=True, verbose_name=_("接受机构 ID"))
     field_or_major = models.CharField(max_length=256, blank=True, default="", verbose_name=_("专业/领域"))
@@ -30,6 +31,12 @@ class HrFurtherStudyCase(DevelopmentTenantModel):
         verbose_name = _("进修案例")
         verbose_name_plural = verbose_name
         indexes = [models.Index(fields=["staff_master_id", "lifecycle_status"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(staff_master_uuid__isnull=False) | models.Q(staff_master_id__isnull=False),
+                name="ck_hr10_study_staff_identity",
+            ),
+        ]
 
 
 class HrFurtherStudyMilestone(DevelopmentTenantModel):

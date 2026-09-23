@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 {% block content %}
@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr11-actions.css' %}?v=20260830-2">
 <link rel="stylesheet" href="{% static 'hr/css/hr11-workspace.css' %}?v=20260830-2">
 
-<main class="hr-v2-page hr11" data-module="HR11" data-section="{{ section }}">
+<main class="hr-v2-page hr11" data-module="HR11" data-hr-workspace="v6" data-section="{{ section }}">
   {% if access_error %}
     <div class="hr11-access" role="alert">{{ access_error }}</div>
   {% else %}
@@ -109,7 +109,7 @@
     <div class="hr-v2-truth-note"><strong>数据说明</strong><span>本工作区只展示当前学校考勤数据；日期按学校时区计算，所有状态在提交时重新校验。</span></div>
 
     <dialog class="hr11-dialog" data-dialog aria-labelledby="hr11-dialog-title">
-      <form method="dialog" data-dialog-form>
+      <form method="dialog" data-dialog-form data-v6-surface="form">
         <header><div><span>HR11 办理</span><h2 id="hr11-dialog-title" data-dialog-title>填写办理信息</h2></div><button type="button" data-dialog-close aria-label="关闭">×</button></header>
         <div data-dialog-fields></div>
         <footer><button type="button" class="hr11-button" data-dialog-close>取消</button><button type="submit" class="hr11-button hr11-button--primary" data-dialog-submit>确认办理</button></footer>
@@ -117,5 +117,5 @@
     </dialog>
   {% endif %}
 </main>
-<script src="{% static 'hr/js/pages/hr11-actions.js' %}?v=20260830-2"></script>
+<script src="{% static 'hr/js/pages/hr11-actions.js' %}?v=20260918-workspace-v6-1"></script>
 {% endblock %}

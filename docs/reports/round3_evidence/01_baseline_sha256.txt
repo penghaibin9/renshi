@@ -1,0 +1,4 @@
+Baseline: Yueke_University_HR_Round2_20260914.zip
+expected: 3538843133d0a4565f86bf30dce14dfcc3323d797d5ec8bf7539a634ecd440fa
+actual:   3538843133d0a4565f86bf30dce14dfcc3323d797d5ec8bf7539a634ecd440fa
+result: PASSED

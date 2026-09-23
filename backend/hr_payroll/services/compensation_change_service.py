@@ -494,6 +494,22 @@ class CompensationChangeService:
                 }
             )
         for variable_key, variable_cases in grouped.items():
+            # A missing prior salary is not a confirmed zero. Full-period SET is
+            # independent of the prior base; partial changes and ADD are not.
+            if len(variable_cases) == 1 and variable_cases[0].proration_mode == CompensationChangeCase.ProrationMode.NONE:
+                needs_base = variable_cases[0].amount_mode != CompensationChangeCase.AmountMode.SET
+            else:
+                needs_base = False
+                for offset in range(period_day_count):
+                    day = period_start + timedelta(days=offset)
+                    covering = [c for c in variable_cases if c.effective_from <= day and (c.effective_to is None or c.effective_to >= day)]
+                    winner = max(covering, key=lambda c: (c.effective_from, c.case_no, c.id)) if covering else None
+                    if winner is None or winner.amount_mode != CompensationChangeCase.AmountMode.SET:
+                        needs_base = True
+                        break
+            if needs_base and (variable_key not in base_variables or base_variables[variable_key] is None):
+                raise CompensationChangeError("COMPENSATION_CHANGE_BASE_MISSING",
+                                              f"旧核定标准缺失：{variable_key}；不能按零计算月中调资")
             try:
                 base = Decimal(str(base_variables.get(variable_key, 0)))
             except (InvalidOperation, TypeError, ValueError) as exc:

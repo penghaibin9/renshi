@@ -96,10 +96,13 @@ urlpatterns = [
     path("ready/", readiness_check, name="ready"),
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),
-    path("", include("platform_access.urls")),
     # Canonical HR routes and legacy-UI retirement adapters must resolve before
     # old app URLConfs registered by compatibility AppConfig.ready() hooks.
     path("", include("horilla.hr_urls")),
+    # School-level workflow configuration and Integration Hub are infrastructure,
+    # not HR19/HR20 and not owners of HR business facts.
+    path("", include("hr_configuration.urls")),
+    path("", include("hr_integration.urls")),
     path("", include("base.urls")),
     path("", include("horilla_automations.urls")),
     path("", include("horilla_views.urls")),
@@ -114,3 +117,10 @@ urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
     path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 ]
+
+# The standalone-school edition keeps the platform elevation API dormant.  The
+# code remains shipped so a future SaaS/platform deployment can opt in without
+# forking the HR application, but school servers do not expose those routes by
+# default.
+if getattr(settings, "PLATFORM_OPERATIONS_ENABLED", False):
+    urlpatterns.insert(4, path("", include("platform_access.urls")))

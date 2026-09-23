@@ -1,77 +1,87 @@
-"""
-hr_qualification/management/commands/hr09_switch_authority.py —— Authority 切换（总册 §173/S12）。
+"""Persisted HR09 authority cutover command."""
 
-LEGACY_QUALIFICATION_TEXT → DUAL_READ_COMPARE → HR09_AUTHORITY
+from django.core.management.base import BaseCommand, CommandError
 
-使用 Feature Flag（django-constance 或 DB flag 表）控制：
-- LEGACY: 旧 Employee.qualification 读写
-- DUAL: 双读对比（写 HR09，读返回 HR09，同时写 legacy 投影）
-- AUTHORITY: HR09 Authority，legacy readonly
-"""
-
-from django.core.management.base import BaseCommand
+from hr_qualification.services.authority_mode_service import (
+    QualificationAuthorityMode,
+    QualificationAuthorityModeError,
+    QualificationAuthorityModeService,
+)
 
 
-_MODE_CHOICES = ["LEGACY", "DUAL_READ_COMPARE", "HR09_AUTHORITY"]
+_MODE_CHOICES = [
+    QualificationAuthorityMode.LEGACY,
+    QualificationAuthorityMode.DUAL_READ_COMPARE,
+    QualificationAuthorityMode.HR09_AUTHORITY,
+]
 
 
 class Command(BaseCommand):
-    help = "Authority 模式切换（总册 §173/S12）。"
+    help = "Persist HR09 authority mode in the shared tenant cutover ledger."
 
     def add_arguments(self, parser):
         parser.add_argument("--tenant-id", type=int, required=True)
         parser.add_argument("--mode", choices=_MODE_CHOICES, required=True)
-        parser.add_argument("--force", action="store_true", default=False,
-                            help="跳过确认提示")
+        parser.add_argument("--reason", required=True)
+        parser.add_argument("--cutover-by", default="")
+        parser.add_argument("--verification-report-id", default="")
+        parser.add_argument("--force", action="store_true", default=False)
 
     def handle(self, *args, **options):
         tenant_id = options["tenant_id"]
         mode = options["mode"]
-        force = options["force"]
+        reason = options["reason"]
+        report_id = options["verification_report_id"]
 
-        if not force:
-            self.stdout.write(self.style.WARNING(
-                f"即将切换 tenant {tenant_id} 的 qualification authority 到 {mode}。\n"
-                f"切换前请确保已完成：\n"
-                f"  1. Legacy Migration（hr09_legacy_migrate）\n"
-                f"  2. DUAL_READ_COMPARE 对账全绿\n"
-                f"  3. 遗留写入口已封堵\n"
-            ))
-            confirm = input("输入 'YES' 确认: ")
-            if confirm != "YES":
-                self.stdout.write("已取消。")
+        if mode == QualificationAuthorityMode.HR09_AUTHORITY and not report_id:
+            raise CommandError(
+                "HR09_AUTHORITY requires --verification-report-id from the dual-read reconciliation evidence"
+            )
+
+        if not options["force"]:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"tenant {tenant_id} HR09 authority -> {mode}\n"
+                    "Before switching confirm legacy migration, dual-read reconciliation, "
+                    "and legacy write-path closure."
+                )
+            )
+            if input("Type YES to confirm: ") != "YES":
+                self.stdout.write("Cancelled.")
                 return
 
-        if mode == "LEGACY":
-            self._set_mode(tenant_id, "LEGACY_STAFF_ONLY")
-            self.stdout.write(f"Tenant {tenant_id} → LEGACY（旧写入口开放，HR09 不响应正式写入）")
+        if mode == QualificationAuthorityMode.DUAL_READ_COMPARE:
+            from hr_qualification.services.legacy_projection import (
+                LegacyQualificationProjection,
+            )
 
-        elif mode == "DUAL_READ_COMPARE":
-            self._set_mode(tenant_id, "DUAL_READ_COMPARE")
-            from hr_qualification.services.legacy_projection import LegacyQualificationProjection
             result = LegacyQualificationProjection.bulk_rebuild(tenant_id)
-            self.stdout.write(
-                f"Tenant {tenant_id} → DUAL_READ_COMPARE\n"
-                f"  Legacy 投影重建: {result}"
-            )
+            if result.get("error") or int(result.get("failed", 0)):
+                raise CommandError(
+                    "HR09 legacy projection rebuild failed; authority mode was not changed: "
+                    f"{result}"
+                )
+            self.stdout.write(f"Legacy projection rebuild: {result}")
 
-        elif mode == "HR09_AUTHORITY":
-            self._set_mode(tenant_id, "HR09_AUTHORITY")
-            self.stdout.write(f"Tenant {tenant_id} → HR09_AUTHORITY（旧写入口已封堵）")
-
-    def _set_mode(self, tenant_id: int, mode: str):
+        service = QualificationAuthorityModeService()
         try:
-            from hr_qualification.models.credential_catalog import HrCredentialCatalogItem
-            # 使用 tenant_id=0 存储模式标记（临时方案，正式应走 HR03 HrStaffAuthorityMode）
-            obj, _ = HrCredentialCatalogItem.objects.get_or_create(
-                tenant_id=0,
-                code=f"AUTH_MODE_{tenant_id}",
-                defaults={"name": mode, "category": "OTHER"},
+            row = service.record_cutover(
+                tenant_id=tenant_id,
+                mode=mode,
+                reason=reason,
+                cutover_by=options["cutover_by"],
+                verification_report_id=report_id,
             )
-            obj.name = mode
-            obj.save()
-        except Exception:
-            self.stdout.write(self.style.WARNING(
-                "Unable to persist authority mode (schema not ready). "
-                "Mode set in-memory only for this session."
-            ))
+        except QualificationAuthorityModeError as exc:
+            raise CommandError(str(exc)) from exc
+
+        persisted = service.get_mode(tenant_id)
+        if persisted != mode:
+            raise CommandError(
+                f"HR09 authority persistence mismatch: requested={mode}, persisted={persisted}"
+            )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"HR09_AUTHORITY_CUTOVER_OK tenant={tenant_id} mode={persisted} cutover_id={row.pk}"
+            )
+        )

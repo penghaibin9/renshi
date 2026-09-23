@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "releaseName": "Standalone School System Admin Professional Closure 2026-09-17",
+  "baseline": "Yueke_University_HR_SystemAdmin_Usability_Closure_20260917.zip",
+  "deploymentShape": "standalone_school",
+  "status": "SINGLE_SCHOOL_SYSTEM_ADMIN_SOURCE_COMPLETE",
+  "runtimeAcceptance": "PENDING_DJANGO_MYSQL_SCHOOL_ENVIRONMENT",
+  "closures": [
+    "single-school standalone installation mode is explicit",
+    "platform tenant-elevation API is not published by default in standalone mode",
+    "school system management is task-first and hides SaaS/platform operating concepts",
+    "normal school management UI allows exactly one school authority record",
+    "colleges and offices belong to organization/department hierarchy instead of new school records",
+    "department forms auto-bind the only school in standalone mode",
+    "standalone local superuser can write only inside the single configured school",
+    "professional read-only runtime checks cover school/org/roles/MySQL/security/MFA/mail/backup/platform boundary",
+    "runtime status never exposes passwords tokens or encryption keys",
+    "server-side check_school_system command fails closed on blockers",
+    "database restore remains a controlled server workflow and is not exposed as one-click browser mutation",
+    "existing RBAC exact permission identity, role copy boundary, audit and HR usability remain intact"
+  ],
+  "verification": {
+    "pureTests": "205 passed + 25 subtests",
+    "systemAdminUsability": "31/31 PASS",
+    "hrUsability": "102/102 PASS",
+    "systemAdminChromium": "PASS",
+    "hrLifecycle14StepChromium": "PASS",
+    "pythonAst": "3168/3168 PASS",
+    "javascriptNodeCheck": "256/256 PASS"
+  },
+  "runtimeBoundary": "Real Django startup, MySQL migrations, local admin login, SMTP/SSO integrations and backup restore still require QA or school-server execution.",
+  "finalReextractStatus": "PASS",
+  "pass1Verification": {
+    "manifestRows": 10739,
+    "missing": 0,
+    "extra": 0,
+    "hashOrSizeMismatch": 0,
+    "pureTests": "205 passed + 25 subtests",
+    "systemAdminUsability": "31/31 PASS",
+    "hrUsability": "102/102 PASS",
+    "systemAdminChromium": "PASS",
+    "hrLifecycle14StepChromium": "PASS",
+    "pythonAst": "3168/3168 PASS",
+    "javascriptNodeCheck": "256/256 PASS"
+  }
+}

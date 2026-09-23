@@ -21,6 +21,28 @@ from horilla.menu import settings_menu
 # ---------------------------------------------------------------------------
 
 
+def system_admin_center_accessibility(request, submenu, user_perms, *args, **kwargs):
+    """School-side system management cockpit.
+
+    Keep the cockpit narrower than business access: only users already trusted
+    with system/organisation/permission/audit configuration should see it.
+    """
+    if request.user.is_superuser:
+        return True
+    return any(
+        request.user.has_perm(p)
+        for p in [
+            "auth.view_group",
+            "auth.view_permission",
+            "base.view_company",
+            "base.view_department",
+            "base.view_jobposition",
+            "horilla_audit.view_audittag",
+            "horilla_audit.view_auditmodelconfig",
+        ]
+    )
+
+
 def system_preferences_accessibility(request, submenu, user_perms, *args, **kwargs):
     return any(
         request.user.has_perm(p)
@@ -180,6 +202,21 @@ class GeneralSettings:
     title = _("General")
     order = 1
     items = [
+        {
+            "label": _("System Management Center"),
+            "url": reverse_lazy("system-admin-center"),
+            "accessibility": system_admin_center_accessibility,
+            "search_entries": [
+                {
+                    "text": _("System Management Center"),
+                    "description": _("Task-first entry for accounts roles organisation security integrations backup and acceptance"),
+                },
+                {
+                    "text": _("What do I want to configure"),
+                    "description": _("Search common administrator tasks in plain language"),
+                },
+            ],
+        },
         {
             "label": _("System Preferences"),
             "url": reverse_lazy("system-preferences-view"),

@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block styles %}
@@ -11,7 +11,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr03-page" data-module="HR03" data-section="profile" data-staff-id="{{ staff_id }}" data-as-of="{{ as_of }}">
+<div class="hr-v2-page hr03-page" data-module="HR03" data-hr-workspace="v6" data-section="profile" data-staff-id="{{ staff_id }}" data-as-of="{{ as_of }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR03 教职工主档</span>
     <strong>个人主档</strong>
@@ -32,74 +32,63 @@
 
   <a class="hr03-profile-back" href="/hr/staff/">← 返回教职工名册</a>
 
-  <section class="hr-v2-panel" aria-labelledby="hr03-person-title">
-    <div class="hr03-profile-identity">
-      <div class="hr03-profile-avatar" id="avatar">?</div>
-      <div>
-        <div class="hr03-profile-name-row">
-          <h2 class="hr03-profile-name" id="hr03-person-title"><span id="name">—</span></h2>
-          <span class="hr03-profile-no" id="staffNo"></span>
-          <span class="hr03-profile-status" id="statusBadge">读取中</span>
-        </div>
-        <div class="hr03-profile-org" id="orgLine">正在读取当前主岗…</div>
-      </div>
-    </div>
-
-    <div class="hr03-asof" id="asofBar">
-      <span id="asofText">正在读取当前事实口径…</span>
-      <label class="hr03-asof-control" for="asOfInput">
-        <span>查看日期</span>
-        <input type="date" id="asOfInput">
-      </label>
-    </div>
-
-    <nav class="hr03-person-nav" aria-label="教职工个人主档工作区">
-      <a class="is-active" href="/hr/staff/{{ staff_id }}/">概览</a>
-      <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
-      <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
-      <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
-      <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
-    </nav>
-
-    <div class="hr03-profile-grid">
-      <div class="hr03-profile-stack">
-        <article class="hr-v2-panel">
-          <div class="hr-v2-panel__head">
-            <div><h3>当前人事概况</h3><p>主单位、主岗、人员类别、入校日、聘用关系和兼岗数量。</p></div>
+  <section class="hr-v2-panel hr03-detail-workspace" aria-labelledby="hr03-person-title">
+    <aside class="hr03-detail-rail" aria-label="教职工身份与个人工作区">
+      <div class="hr03-profile-identity">
+        <div class="hr03-profile-avatar" id="avatar">?</div>
+        <div>
+          <div class="hr03-profile-name-row">
+            <h2 class="hr03-profile-name" id="hr03-person-title"><span id="name">—</span></h2>
+            <span class="hr03-profile-status" id="statusBadge">读取中</span>
           </div>
+          <div class="hr03-profile-no" id="staffNo"></div>
+          <div class="hr03-profile-org" id="orgLine">正在读取当前主岗…</div>
+        </div>
+      </div>
+
+      <div class="hr03-asof" id="asofBar">
+        <span id="asofText">正在读取当前事实口径…</span>
+        <label class="hr03-asof-control" for="asOfInput"><span>查看日期</span><input type="date" id="asOfInput"></label>
+      </div>
+
+      <nav class="hr03-person-nav" aria-label="教职工个人主档工作区">
+        <a class="is-active" href="/hr/staff/{{ staff_id }}/">概览</a>
+        <a href="/hr/staff/{{ staff_id }}/assignments">任职履历</a>
+        <a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a>
+        <a href="/hr/staff/{{ staff_id }}/materials">材料档案</a>
+        <a href="/hr/staff/{{ staff_id }}/corrections">更正与历史</a>
+      </nav>
+    </aside>
+
+    <div class="hr03-detail-main">
+      <div class="hr03-next-actions" aria-label="常用下一步">
+        <span><strong>下一步</strong><small>先核对当前事实，再进入任职、资格、材料或更正工作区。</small></span>
+        <div><a class="is-primary" href="/hr/staff/{{ staff_id }}/assignments">查看任职履历 →</a><a href="/hr/staff/{{ staff_id }}/backgrounds">教育资格</a><a href="/hr/staff/{{ staff_id }}/materials">材料档案</a></div>
+      </div>
+
+      <div class="hr03-profile-grid">
+        <article class="hr-v2-panel hr03-fact-sheet">
+          <div class="hr-v2-panel__head"><div><h3>当前人事事实</h3><p>把最常核对的组织、岗位、人员类别、入校和聘用关系放在同一阅读面。</p></div></div>
           <dl class="hr03-kv" id="facts"><dt>状态</dt><dd>加载中…</dd></dl>
         </article>
 
-        <article class="hr-v2-panel">
-          <div class="hr-v2-panel__head">
-            <div><h3>资格事实边界</h3><p>Profile bootstrap 不返回完整资格事实，避免把跨域信息混进个人概览。</p></div>
-          </div>
-          <div class="hr03-profile-boundary" id="qualifications">
-            <strong>资格详情不在当前 bootstrap 中读取</strong>
-            <span>教师学历、资格和其他背景事实请进入“教育资格”工作区，以对应 Authority 接口为准。</span>
-            <a href="/hr/staff/{{ staff_id }}/backgrounds">查看教育资格 →</a>
-          </div>
-        </article>
-      </div>
-
-      <aside class="hr03-profile-stack">
-        <article class="hr-v2-panel">
-          <div class="hr-v2-panel__head"><div><h3>身份摘要</h3><p>这里只显示脱敏身份信息，不在 bootstrap 中展开高敏明文。</p></div></div>
+        <article class="hr-v2-panel hr03-identity-sheet">
+          <div class="hr-v2-panel__head"><div><h3>身份摘要</h3><p>仅显示脱敏身份信息，高敏明文仍走独立受审计入口。</p></div></div>
           <dl class="hr03-kv" id="identity"><dt>状态</dt><dd>加载中…</dd></dl>
         </article>
 
-        <article class="hr-v2-panel" id="riskPanel">
-          <div class="hr-v2-panel__head"><div><h3>数据质量入口</h3><p>主档 bootstrap 不伪造风险数量。</p></div></div>
-          <div class="hr03-profile-boundary">
-            <strong>需要核对异常时进入数据质量中心</strong>
-            <span>这里不把缺失字段、历史纠错或跨域事项自动推断成风险。</span>
-            <a href="/hr/staff/data-quality/">查看数据质量 →</a>
-          </div>
+        <article class="hr-v2-panel hr03-boundary-sheet">
+          <div class="hr-v2-panel__head"><div><h3>教育与资格</h3><p>个人概览不复制跨域资格事实，避免出现两个口径。</p></div></div>
+          <div class="hr03-profile-boundary" id="qualifications"><strong>资格详情使用独立权威工作区</strong><span>学历、资格和其他背景事实请进入“教育资格”，以对应 Authority 接口为准。</span><a href="/hr/staff/{{ staff_id }}/backgrounds">查看教育资格 →</a></div>
         </article>
-      </aside>
+
+        <article class="hr-v2-panel hr03-boundary-sheet" id="riskPanel">
+          <div class="hr-v2-panel__head"><div><h3>数据质量</h3><p>不在个人页猜测风险数量，只提供明确的核对入口。</p></div></div>
+          <div class="hr03-profile-boundary"><strong>发现资料不一致或缺失？</strong><span>缺失字段、历史纠错和跨域异常统一进入数据质量中心处理。</span><a href="/hr/staff/data-quality/">查看数据质量 →</a></div>
+        </article>
+      </div>
     </div>
   </section>
-
   <div class="hr-v2-truth-note">
     <strong>事实边界</strong>
     <span>跨租户不存在性继续由后端统一 404/403 策略保护；历史日期只改变 effective-dated 查询口径，不绕过 scope。高敏字段明文仍只能通过独立受审计 reveal endpoint 获取。</span>
@@ -133,17 +122,24 @@
       return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "—")}</dd>`;
     }
 
+    let reading = false;
     async function load() {
+      if (reading) return;
+      reading = true;
+      const ctl = new AbortController();
+      const timeout = setTimeout(() => ctl.abort(), 15000);
+      root.setAttribute("aria-busy", "true");
+      window.HrDetailUX.clearNote(root);
+      document.getElementById("statusBadge").textContent = "读取中";
+      try {
       const q = new URLSearchParams();
       if (requestedAsOf) q.set("asOf", requestedAsOf);
       const suffix = q.toString() ? `?${q.toString()}` : "";
-      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/profile${suffix}`, {credentials:"same-origin"});
+      const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/profile${suffix}`, {credentials:"same-origin", signal:ctl.signal});
       if (!resp.ok) {
-        document.getElementById("statusBadge").textContent = "加载失败";
-        document.getElementById("asofText").textContent = `主档加载失败（HTTP ${resp.status}）`;
-        document.getElementById("facts").innerHTML = factRow("状态", "无法读取当前主档");
-        document.getElementById("identity").innerHTML = factRow("状态", "无法读取身份摘要");
-        return;
+        const error = new Error(`主档读取失败（HTTP ${resp.status}）`);
+        error.status = resp.status;
+        throw error;
       }
 
       const body = await resp.json();
@@ -187,6 +183,14 @@
         factRow("性别", identity.gender || "—") +
         factRow("出生年份", identity.birthYear || "—") +
         factRow("数据口径", header.dataBasis || body.dataBasis || "—");
+      } catch (error) {
+        document.getElementById("statusBadge").textContent = "读取失败";
+        document.getElementById("asofText").textContent = "资料未能读取，请先恢复连接或核对访问权限。";
+        document.getElementById("facts").innerHTML = factRow("状态", "未读取到人事事实");
+        document.getElementById("identity").innerHTML = factRow("状态", "未读取到身份摘要");
+        document.getElementById("orgLine").textContent = "当前任职尚未读取";
+        window.HrDetailUX.note(root, window.HrDetailUX.errorText(error), "error", load);
+      } finally { clearTimeout(timeout); reading = false; root.removeAttribute("aria-busy"); }
     }
 
     document.getElementById("asOfInput").addEventListener("change", function () {

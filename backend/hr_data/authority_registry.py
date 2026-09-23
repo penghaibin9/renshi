@@ -4,6 +4,7 @@ from horilla.hr_event_registry import BusinessEventDefinition, register_business
 from horilla.hr_permission_registry import PermissionDefinition, register_permissions
 
 PERMISSIONS = (
+    PermissionDefinition("hr.data.snapshot.capture", "HR18", "冻结学校全域人事运行观察快照"),
     PermissionDefinition("hr.data.view", "HR18", "查看人事数据中心"),
     PermissionDefinition("hr.data.define", "HR18", "维护人口、维度和指标定义"),
     PermissionDefinition("hr.data.asof", "HR18", "执行历史时点证据重建"),

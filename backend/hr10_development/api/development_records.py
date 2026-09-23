@@ -18,12 +18,21 @@ from hr10_development.models.development_fact import (
 )
 from hr10_development.services.compliance_service import ComplianceService
 from hr10_development.permissions import require_hr10_permission
+from hr10_development.identity import resolve_staff_identity, staff_identity_q, StaffIdentityError
 from hr10_development.services.development_fact_authority_service import (
     DevelopmentFactAuthorityError,
     DevelopmentFactAuthorityService,
     development_fact_event_payload,
 )
 
+
+
+def _resolve_identity_response(tenant_id, staff_id):
+    try:
+        return resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_id), None
+    except StaffIdentityError as exc:
+        status = 404 if exc.code == "STAFF_NOT_FOUND" else 400
+        return None, JsonResponse(error(exc.code, str(exc)), status=status)
 
 def _authority_error(exc):
     status = 404 if exc.code == "DEVELOPMENT_FACT_NOT_FOUND" else 409
@@ -104,11 +113,14 @@ def get_record_summary(request, staff_id):
     if tenant_id is None:
         return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
 
+    identity, response = _resolve_identity_response(tenant_id, staff_id)
+    if response:
+        return response
     facts = HrDevelopmentFact.objects.effective().filter(
-        tenant_id=tenant_id, staff_master_id=staff_id
+        staff_identity_q(identity), tenant_id=tenant_id
     )
     summary = {
-        "staffMasterId": staff_id,
+        "staffMasterId": str(identity.staff_uuid),
         "totalFacts": facts.count(),
         "trainingCompletions": facts.filter(fact_type="TRAINING_COMPLETION").count(),
         "furtherStudies": facts.filter(fact_type="FURTHER_STUDY").count(),
@@ -128,8 +140,11 @@ def get_facts(request, staff_id):
     if tenant_id is None:
         return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
 
+    identity, response = _resolve_identity_response(tenant_id, staff_id)
+    if response:
+        return response
     qs = HrDevelopmentFact.objects.effective().filter(
-        tenant_id=tenant_id, staff_master_id=staff_id
+        staff_identity_q(identity), tenant_id=tenant_id
     ).order_by("-valid_from")
     fact_type = request.GET.get("factType")
     if fact_type:
@@ -163,7 +178,12 @@ def get_ledger(request, staff_id):
     if tenant_id is None:
         return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
 
-    entries = HrDevelopmentMetricLedger.objects.filter(tenant_id=tenant_id, staff_master_id=staff_id)
+    identity, response = _resolve_identity_response(tenant_id, staff_id)
+    if response:
+        return response
+    entries = HrDevelopmentMetricLedger.objects.filter(
+        staff_identity_q(identity), tenant_id=tenant_id
+    )
     metric_code = request.GET.get("metricCode")
     if metric_code:
         entries = entries.filter(metric_code=metric_code)
@@ -191,19 +211,6 @@ def get_compliance(request, staff_id):
 
     from datetime import date
 
-    try:
-        staff_id = int(staff_id)
-        if staff_id <= 0:
-            raise ValueError
-    except (TypeError, ValueError):
-        return JsonResponse(
-            error(
-                DevelopmentErrorCode.INVALID_REQUEST,
-                "staffId 必须是正整数",
-            ),
-            status=400,
-        )
-
     as_of = request.GET.get("asOf")
     try:
         as_of_date = date.fromisoformat(as_of) if as_of else None
@@ -216,8 +223,11 @@ def get_compliance(request, staff_id):
             status=400,
         )
 
+    identity, response = _resolve_identity_response(tenant_id, staff_id)
+    if response:
+        return response
     results = ComplianceService.evaluate_compliance(
-        staff_master_id=staff_id,
+        staff_master_id=identity.staff_uuid,
         tenant_id=tenant_id,
         as_of=as_of_date,
     )
@@ -232,8 +242,11 @@ def get_risks(request, staff_id):
     if tenant_id is None:
         return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
 
+    identity, response = _resolve_identity_response(tenant_id, staff_id)
+    if response:
+        return response
     risks = HrDevelopmentRiskCase.objects.filter(
-        tenant_id=tenant_id, staff_master_id=staff_id,
+        staff_identity_q(identity), tenant_id=tenant_id,
     ).order_by("-detected_at")
 
     data = [{

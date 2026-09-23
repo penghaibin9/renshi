@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "round": "Round11",
+  "date": "2026-09-17",
+  "baseline": {
+    "file": "Yueke_University_HR_Round10_20260916.zip",
+    "sha256": "2e03507cece15147cfd44edd8d339ed92c1a1bddc72593b567dcb5b41988ff08",
+    "deliverableFileCount": 10651
+  },
+  "status": "SOURCE_CODE_CANDIDATE",
+  "releaseStatus": "NOT_RELEASED",
+  "scope": "Procurement-grade school handover portability: open-format data/source-adjacent delivery evidence, detached checksum, exact exported-row verification, isolated restore, audit receipts and acceptance-harness integration",
+  "sourceClosure": {
+    "added": 9,
+    "modified": 8,
+    "deleted": 0,
+    "changedTotal": 17,
+    "deliveryMetadataExcludedFromDiff": true
+  },
+  "referenceUse": {
+    "document": "User-provided 9-page non-degree education smart-front procurement checklist",
+    "policy": "Procurement acceptance/delivery reference only; HR01-HR18 domain boundaries remain authoritative",
+    "adoptedPatterns": [
+      "independently deployable delivery materials",
+      "school ownership and reusable structured data handover",
+      "database structure, interface documentation and configuration portability",
+      "no proprietary-format or supplier-only decryption lock-in"
+    ]
+  },
+  "handoverContract": {
+    "drBackupSeparated": true,
+    "packageFormat": "standard tar.gz + detached SHA-256",
+    "databaseFormat": "plain MySQL logical SQL",
+    "mediaFormat": "POSIX-compatible tar.gz",
+    "metadataFormats": [
+      "UTF-8 CSV",
+      "JSON",
+      "plain text"
+    ],
+    "manifest": "byte size + SHA-256 for every packaged artifact except manifest.json itself",
+    "exactRowEvidence": "table_row_counts.csv/json derived from database.sql INSERT lines produced with --skip-extended-insert",
+    "restoreTarget": "different pre-created empty MySQL database only",
+    "secretValuesInPackage": false,
+    "fieldEncryptionKeyPolicy": "Key IDs in package; required key values transfer separately through a school-controlled secure channel",
+    "sourceCodePolicy": "matching signed source release is a separate contractual deliverable, never mixed with runtime secrets",
+    "auditReceiptPolicy": "append-only JSONL CREATED/VERIFIED/RESTORED receipts",
+    "writeFreezeRequiredForFormalHandover": true
+  },
+  "verification": {
+    "hr10ImportStatic": {
+      "passed": 20,
+      "total": 20,
+      "status": "PASS"
+    },
+    "hr10StaffIdentityStatic": {
+      "passed": 53,
+      "total": 53,
+      "status": "PASS"
+    },
+    "hr18ProcurementSyncStatic": {
+      "passed": 24,
+      "total": 24,
+      "status": "PASS"
+    },
+    "schoolHandoverPortabilityStatic": {
+      "passed": 33,
+      "total": 33,
+      "status": "PASS"
+    },
+    "round11PureUnittest": {
+      "tests": 11,
+      "status": "PASS"
+    },
+    "pureUnittest": {
+      "tests": 180,
+      "status": "PASS"
+    },
+    "pythonAst": {
+      "files": 3154,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "javascriptNodeCheck": {
+      "files": 253,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "acceptancePlan": {
+      "status": "PASS",
+      "project": "yueke_hr_acceptance_round11",
+      "includesOpenHandoverRestore": true
+    }
+  },
+  "djangoRuntimeRegression": {
+    "status": "NOT_RUN_DEPENDENCY_MISSING",
+    "attempted": true,
+    "error": "ModuleNotFoundError: No module named 'django'",
+    "requiredBeforeRelease": true
+  },
+  "dockerComposeRuntime": {
+    "status": "NOT_RUN_TOOL_MISSING",
+    "attempted": true,
+    "error": "docker command not found in current executor",
+    "requiredBeforeRelease": true
+  },
+  "runtimeGatesStillRequiredBeforeTraffic": [
+    "run scripts/run_hr_acceptance_gate.py in an isolated Docker/MySQL QA environment",
+    "export during an approved maintenance/write-freeze window",
+    "create and verify the open handover package plus detached SHA-256",
+    "restore into renshi_handover_restore_test and pass exact per-table row counts",
+    "migrate --check and schema-count verification on the restored database",
+    "start restored web and verify /health/ and /ready/",
+    "sample representative HR01-HR18 facts and attachments",
+    "verify governed encrypted fields after separate FIELD_ENCRYPTION_KEYS handover",
+    "complete the SCHOOL_HANDOVER_ACCEPTANCE_CHECKLIST sign-off"
+  ],
+  "safety": {
+    "productionTouched": false,
+    "gitHubTouched": false,
+    "externalSystemsTouched": false,
+    "realSchoolDataExported": false
+  },
+  "packageVerification": {
+    "expectedZipFileCount": 10663,
+    "expectedManifestEntries": 10662,
+    "status": "PASS",
+    "manifestPolicy": "ROUND11_FILE_MANIFEST.tsv covers every packaged file except itself",
+    "zipFileCount": 10663,
+    "manifestEntries": 10662,
+    "manifestMissing": 0,
+    "manifestHashOrSizeErrors": 0,
+    "unexpectedFiles": 0,
+    "pycacheArtifacts": 0,
+    "finalZipReextractGates": {
+      "hr10ImportStatic": "20/20 PASS",
+      "hr10StaffIdentityStatic": "53/53 PASS",
+      "hr18ProcurementSyncStatic": "24/24 PASS",
+      "schoolHandoverPortabilityStatic": "33/33 PASS",
+      "pureUnittest": "180/180 PASS"
+    }
+  }
+}

@@ -16,6 +16,7 @@ class Hr16AuthorityRegistryTests(SimpleTestCase):
             {row.key for row in permissions},
             {
                 "hr.exit.view",
+                "hr.exit.flex.review",
                 "hr.exit.manage",
                 "hr.exit.handover",
                 "hr.exit.effect",

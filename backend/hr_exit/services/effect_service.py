@@ -221,6 +221,12 @@ class ExitEffectService:
                 )
             return ExitEffectResult(fact=fact, effect=effect, effective=True)
 
+        from hr_exit.services.flex_service import validate_retirement_effect, FlexError
+        try:
+            validate_retirement_effect(self.tenant_id, case)
+        except FlexError as exc:
+            raise ExitEffectError(exc.code, str(exc)) from exc
+
         case.status = ExitCase.Status.EFFECT_PENDING
         case.updated_by = self.actor_user_id
         case.save(update_fields=["status", "updated_by", "updated_at"])

@@ -162,6 +162,33 @@ class Hr12ResultCorrectionServiceTests(TestCase):
         self.assertEqual(caught.exception.code, "ASSESSMENT_RESULT_ALREADY_REVOKED")
 
     @patch("hr_assessment.services.result_correction_service.emit_registered_event")
+    def test_term_correction_cannot_invent_annual_grade(self, emit):
+        term_result = HrFinalAssessmentResult.objects.create(
+            tenant_id=self.tenant_id,
+            case_id=uuid.uuid4(),
+            assessment_type="TERM",
+            grade_code="QUALIFIED",
+            display_grade_snapshot_json={"zh-CN": "合格"},
+            status="FINALIZED",
+        )
+
+        with self.assertRaises(AssessmentResultCorrectionError) as caught:
+            self.service.append(
+                result_id=term_result.id,
+                payload=self._payload(
+                    correction_no="TERM-COR-INVALID-GRADE",
+                    changes={"gradeCode": "EXCELLENT", "displayGrade": {"zh-CN": "优秀"}},
+                ),
+            )
+
+        self.assertEqual(
+            caught.exception.code,
+            "ASSESSMENT_GRADE_NOT_ALLOWED_FOR_TYPE",
+        )
+        self.assertFalse(HrResultRevision.objects.filter(result_id=term_result.id).exists())
+        emit.assert_not_called()
+
+    @patch("hr_assessment.services.result_correction_service.emit_registered_event")
     def test_expected_version_and_tenant_fail_closed(self, emit):
         with self.assertRaises(AssessmentResultCorrectionError) as version_error:
             self.service.append(

@@ -3,11 +3,13 @@
 Every selector is bound to SelfIdentityContext. Callers never provide staff_id.
 """
 from .models import SelfServiceCatalogItem, SelfServicePinnedService
+from .services.default_catalog import ensure_default_catalog_if_empty
 
 
 def dashboard_snapshot(context) -> dict:
     if not context or not context.tenant_id or not context.staff_id:
         raise ValueError("resolved SELF identity is required")
+    ensure_default_catalog_if_empty(context.tenant_id)
     catalog = SelfServiceCatalogItem.objects.filter(
         tenant_id=context.tenant_id,
         enabled=True,

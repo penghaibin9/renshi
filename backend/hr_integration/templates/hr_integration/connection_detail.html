@@ -1,0 +1,57 @@
+{% extends "hr/base.html" %}{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr_integration/integration_hub_v2.css' %}">
+<div class="hrint-page">
+  <div class="hrint-hero">
+    <div><span class="hrint-eyebrow">{{ connection.get_category_display }} · {{ adapter_ui.protocol|default:connection.adapter_code }}</span><h1>{{ connection.name }}</h1><p>{{ adapter_ui.summary|default:"学校接口连接。" }}</p></div>
+    <div class="hrint-hero-actions"><a class="hrint-btn is-secondary" href="{% url 'hr-integration-hub' %}">返回适配中心</a>{% if can_test %}<form method="post" action="{% url 'hr-integration-test' connection.id %}">{% csrf_token %}<button class="hrint-btn is-primary" type="submit"><ion-icon name="pulse-outline"></ion-icon>测试连接</button></form>{% endif %}</div>
+  </div>
+
+  <section class="hrint-connection-summary">
+    <article><span>当前状态</span><strong class="hrint-status is-{{ connection.status|lower }}">{{ connection.get_status_display }}</strong><small>{% if connection.enabled %}业务运行时已启用{% else %}业务运行时未启用{% endif %}</small></article>
+    <article><span>适配器</span><strong>{{ adapter_ui.title|default:connection.adapter_code }}</strong><small>{{ connection.adapter_code }}</small></article>
+    <article><span>凭据</span><strong>{% if connection.has_credentials %}已加密保存{% else %}未保存{% endif %}</strong><small>页面永不回显旧 Secret</small></article>
+    <article><span>最近测试</span><strong>{{ last_test_label }}</strong><small>{{ connection.last_test_at|date:"Y-m-d H:i"|default:"—" }}</small></article>
+  </section>
+
+  {% if connection.category == 'SSO' %}<section class="hrint-login-gate"><strong>统一认证上线门</strong><span>连接配置/端点可达 ≠ 单点登录已上线。正式交付必须留下学校真实账号的成功登录证据；Token、Ticket、密码和完整 Claims 永不落库。</span><span>已成功登录 {{ sso_success_count }} 次 · 回调地址：<code>{% url 'hr-sso-callback' connection.id %}</code></span></section>{% endif %}
+
+  <section class="hrint-panel">
+    <div class="hrint-section-head"><div><span>实施进度 {{ progress.complete }}/{{ progress.total }}</span><h2>接入完成度</h2><p>配置存在不等于已经能登录；每一步都要留下可回读证据。</p></div><strong class="hrint-progress-number">{{ progress.percent }}%</strong></div>
+    <div class="hrint-progress-bar"><i style="width:{{ progress.percent }}%"></i></div>
+    <div class="hrint-stepper">{% for step in progress.steps %}<div class="{% if step.done %}is-done{% endif %}"><span>{% if step.done %}✓{% else %}{{ forloop.counter }}{% endif %}</span><strong>{{ step.label }}</strong></div>{% endfor %}</div>
+  </section>
+
+  <div class="hrint-two-col">
+    <section class="hrint-panel">
+      <div class="hrint-section-head"><div><span>学校信息处需要提供</span><h2>接入资料清单</h2></div></div>
+      <ul class="hrint-check-list">{% for item in adapter_ui.materials %}<li><span>□</span>{{ item }}</li>{% empty %}<li><span>□</span>学校接口说明与测试环境</li>{% endfor %}</ul>
+    </section>
+    <section class="hrint-panel">
+      <div class="hrint-section-head"><div><span>本系统安全边界</span><h2>我们怎么接</h2></div></div>
+      <ul class="hrint-check-list is-system"><li><span>✓</span>学校级 tenant fail-closed，不接受浏览器传 tenant</li><li><span>✓</span>Secret 使用字段密钥环加密，只写不回显</li><li><span>✓</span>后台探测目标必须进入主机白名单</li><li><span>✓</span>连接测试和配置变化保留审计证据</li></ul>
+      <p class="hrint-scope-note"><strong>当前验证范围：</strong>{{ adapter_ui.verification|default:"按 Adapter 合同执行受控连通性验证。" }}</p>
+    </section>
+  </div>
+
+  {% if can_manage %}<section class="hrint-panel"><div class="hrint-section-head"><div><span>连接与协议</span><h2>维护当前适配</h2><p>常用字段按协议展示；高级 JSON 折叠保留给工程人员。</p></div></div>{% include "hr_integration/partials/connection_form.html" %}</section>{% endif %}
+
+  <section class="hrint-panel" id="mapping">
+    <div class="hrint-section-head"><div><span>04 · 字段映射</span><h2>外部身份 / 业务字段 → 跃科标准字段</h2><p>学校换系统时主要改这里。不要为了迎合学校字段名去改 HR01～HR18 模型。</p></div><span>{{ profiles|length }} 套映射</span></div>
+    <div class="hrint-mapping-grid">{% for p in profiles %}<article><div><span>{{ p.get_direction_display }}</span><strong>{{ p.name }}</strong><small>{{ p.source_object|default:"外部对象" }} → {{ p.target_domain }}</small></div><em>{{ p.fields.count }} 个字段</em><a href="{% url 'hr-integration-profile' connection.id p.id %}">维护字段映射 →</a></article>{% empty %}<div class="hrint-empty is-compact"><strong>还没有字段映射</strong><span>统一认证至少建议建立“账号 / 姓名 / 组织 / 身份”映射方案。</span></div>{% endfor %}</div>
+    {% if can_manage %}<details class="hrint-add-box"><summary>新增映射方案</summary><form method="post" class="hrint-form-grid">{% csrf_token %}<input type="hidden" name="action" value="add_profile">{% for field in profile_form %}<label><span>{{ field.label }}</span>{{ field }}{{ field.errors }}</label>{% endfor %}<div class="full"><button class="hrint-btn is-primary">保存映射方案</button></div></form></details>{% endif %}
+  </section>
+
+  <div class="hrint-two-col">
+    <section class="hrint-panel"><div class="hrint-section-head"><div><span>05 · 验证证据</span><h2>最近连接测试</h2></div></div><div class="hrint-table-wrap"><table class="hrint-table"><thead><tr><th>时间</th><th>结果</th><th>摘要</th></tr></thead><tbody>{% for x in test_runs %}<tr><td>{{ x.tested_at|date:"Y-m-d H:i:s" }}</td><td><span class="hrint-status is-{{ x.status|lower }}">{{ x.display_status }}</span></td><td>{{ x.summary }}</td></tr>{% empty %}<tr><td colspan="3">暂无测试记录。</td></tr>{% endfor %}</tbody></table></div></section>
+    <section class="hrint-panel"><div class="hrint-section-head"><div><span>审计</span><h2>最近配置变化</h2></div></div><div class="hrint-timeline">{% for x in audit_events %}<article><i></i><div><strong>{{ x.summary }}</strong><span>{{ x.event_type }} · {{ x.created_at|date:"Y-m-d H:i:s" }}</span></div></article>{% empty %}<p class="hrint-muted">暂无审计事件。</p>{% endfor %}</div></section>
+  </div>
+
+  {% if connection.category == 'SSO' and can_manage %}<section class="hrint-panel"><div class="hrint-section-head"><div><span>身份准备</span><h2>人工预绑定学校身份</h2><p>推荐上线前由信息处先绑定。Subject 原值只写入 HR03 外部身份映射，当前页面仅显示 SHA-256 指纹。</p></div></div><form method="post" class="hrint-form-grid">{% csrf_token %}<input type="hidden" name="action" value="prebind_identity">{% for field in prebind_form %}<label><span>{{ field.label }}</span>{{ field }}<small>{{ field.help_text }}</small>{{ field.errors }}</label>{% endfor %}<div class="full"><button class="hrint-btn is-primary" type="submit">确认预绑定</button></div></form><div class="hrint-table-wrap"><table class="hrint-table"><thead><tr><th>工号</th><th>Subject 指纹</th><th>状态</th></tr></thead><tbody>{% for x in identity_bindings %}<tr><td>{{ x.staff_no }}</td><td><code>{{ x.fingerprint|slice:":16" }}…</code></td><td>{{ x.status }}</td></tr>{% empty %}<tr><td colspan="3">尚未预绑定身份。</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+
+  {% if connection.category == 'SSO' %}<section class="hrint-panel"><div class="hrint-section-head"><div><span>真实 SSO 运行时</span><h2>最近登录验收证据</h2><p>只保存状态、失败码、工号、本地用户 ID 与不可逆 Subject 指纹。</p></div><a class="hrint-btn is-secondary" href="{% url 'hr-sso-start' connection.id %}?next=/">发起真实登录</a></div><div class="hrint-table-wrap"><table class="hrint-table"><thead><tr><th>时间</th><th>结果</th><th>工号</th><th>失败码</th></tr></thead><tbody>{% for x in sso_evidence %}<tr><td>{{ x.happened_at|date:"Y-m-d H:i:s" }}</td><td>{{ x.get_status_display }}</td><td>{{ x.staff_no|default:"—" }}</td><td>{{ x.failure_code|default:"—" }}</td></tr>{% empty %}<tr><td colspan="4">尚无真实登录证据；端点测试不能替代这里。</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+
+  <section class="hrint-panel hrint-advanced-contract"><details><summary>工程接口合同</summary><p>业务代码如需读取当前连接，只通过稳定 contract，不读取页面字段或厂商私有配置。</p><a href="{% url 'hr-integration-contract-api' connection.id %}" target="_blank" rel="noopener">查看只读 Contract API</a></details></section>
+</div>
+<script src="{% static 'hr_integration/integration_hub_v2.js' %}"></script>
+{% endblock content %}

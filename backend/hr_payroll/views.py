@@ -66,3 +66,19 @@ def workspace(request, section="overview"):
             "can_change_approve": can_change_approve,
         },
     )
+
+
+@ensure_csrf_cookie
+def policy_workspace(request):
+    """Existing HR15 navigation/shell; only the policy work area is new."""
+    from .policy_api import permitted
+    from .authority_registry import PERM_RULE_MANAGE,PERM_REVIEW,PERM_RECONCILE
+    try:
+        tenant=permitted(request,[PERM_RULE_MANAGE,PERM_INPUT_MANAGE,PERM_REVIEW,PERM_CALCULATE,PERM_RECONCILE])
+    except HrPayrollAccessError as exc:
+        return render(request,"hr_payroll/policy_workspace.html",{"access_error":str(exc)},status=403)
+    user=request.user
+    allowed=lambda p: bool(user.is_superuser or user.has_perm(p))
+    return render(request,"hr_payroll/policy_workspace.html",{"tenant_id":tenant,"can_rules":allowed(PERM_RULE_MANAGE),
+        "can_input":allowed(PERM_INPUT_MANAGE),"can_calculate":allowed(PERM_CALCULATE),
+        "can_review":allowed(PERM_REVIEW),"can_reconcile":allowed(PERM_RECONCILE)})

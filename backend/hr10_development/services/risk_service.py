@@ -10,6 +10,7 @@ hr10_development/services/risk_service.py
 from datetime import date, datetime, timezone
 
 from hr10_development.constants import RiskType, RiskCaseStatus, RiskSeverity
+from hr10_development.identity import resolve_staff_identity
 
 
 class RiskService:
@@ -62,7 +63,7 @@ class RiskService:
         tenant_id: int,
         risk_type: str,
         severity: str = RiskSeverity.MEDIUM,
-        staff_master_id: int | None = None,
+        staff_master_id=None,
         source_case_type: str = "",
         source_case_id: int | None = None,
         detected_rule_version: str = "S11_RISK_RULES_V1",
@@ -82,10 +83,14 @@ class RiskService:
         if existing:
             return existing
 
+        identity = None
+        if staff_master_id not in (None, ""):
+            identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
         return HrDevelopmentRiskCase.objects.create(
             tenant_id=tenant_id,
             risk_type=risk_type,
-            staff_master_id=staff_master_id,
+            staff_master_uuid=identity.staff_uuid if identity else None,
+            staff_master_id=identity.legacy_employee_id if identity else None,
             source_case_type=source_case_type,
             source_case_id=source_case_id,
             severity=severity,

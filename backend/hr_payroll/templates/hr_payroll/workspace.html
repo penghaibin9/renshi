@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr15" data-module="HR15" data-section="{{ section }}"
+<div class="hr-v2-page hr15" data-module="HR15" data-hr-workspace="v6" data-section="{{ section }}"
      data-can-adjust="{{ can_adjust|yesno:'true,false' }}"
      data-can-input="{{ can_input|yesno:'true,false' }}"
      data-can-calculate="{{ can_calculate|yesno:'true,false' }}"
@@ -40,6 +40,7 @@
       <a class="{% if section == 'social_security' %}active{% endif %}" href="{% url 'hr_payroll:social_security' %}"><small>05</small>社保与公积金</a>
       <a class="{% if section == 'results' or section == 'payments' or section == 'reconciliation' or section == 'legacy_takeover' %}active{% endif %}" href="{% url 'hr_payroll:payments' %}"><small>06</small>工资条与财务</a>
     </nav>
+    <p><a class="hr-btn" href="{% url 'hr_payroll:policy-workbench' %}">制度核算工作区：标准、核定、试算与补差</a></p>
     <div class="hr15-mobile-hint">可左右滑动查看更多薪酬工作区</div>
 
     <section id="hr15-kpis" class="hr15-kpis" aria-label="薪酬关键结论">
@@ -63,6 +64,12 @@
           <a class="hr15-process__step" href="{% url 'hr_payroll:reconciliation' %}"><span class="hr15-process__no">06</span><b>财务对账</b><small>银行/财务回执接通后才确认一致</small></a>
         </div>
       </section>
+    {% endif %}
+
+    {% if section == 'calculations' %}
+    <div class="hr15-calc-stage" aria-label="工资核算办理顺序">
+      <span><b>01</b><small>确认工资期间</small></span><span><b>02</b><small>冻结输入边界</small></span><span><b>03</b><small>采集受信输入</small></span><span class="is-current"><b>04</b><small>执行核算</small></span><span><b>05</b><small>复核并形成正式结果</small></span>
+    </div>
     {% endif %}
 
     <section class="hr-v2-section" aria-labelledby="hr15-work-title">
@@ -93,7 +100,7 @@
 
 {% block scripts %}
 {{ block.super }}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-payroll.js' %}?v=20260830-2"></script>{% endif %}
-{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-actions.js' %}?v=20260830-2"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-payroll.js' %}?v=20260918-all-secondary-v6"></script>{% endif %}
+{% if not access_error %}<script src="{% static 'hr/js/pages/hr15-actions.js' %}?v=20260918-detail-v5-2"></script>{% endif %}
 {% if not access_error %}<script src="{% static 'hr/js/pages/hr15-legacy.js' %}?v=20260830-2"></script>{% endif %}
 {% endblock scripts %}

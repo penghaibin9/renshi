@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
@@ -7,10 +7,11 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr17-self.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr-round2.css' %}">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr17" data-module="HR17" data-section="{{ section }}" data-bootstrap-url="{% url 'hr_self_api:bootstrap' %}" data-records-url="{% url 'hr_self_api:self_records' %}" data-pin-url-template="{% url 'hr_self_api:service_pin' service_code='__service__' %}">
+<div class="hr-v2-page hr17" data-module="HR17" data-hr-workspace="v6" data-section="{{ section }}" data-bootstrap-url="{% url 'hr_self_api:bootstrap' %}" data-records-url="{% url 'hr_self_api:self_records' %}" data-pin-url-template="{% url 'hr_self_api:service_pin' service_code='__service__' %}">
   {% if access_error %}
     <div class="hr17-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -28,10 +29,10 @@
     <nav class="hr17-nav" aria-label="教职工本人服务导航">
       {% comment %}合同文件入口：{% url 'hr_self:contracts' %}{% endcomment %}
       <a class="{% if section == 'overview' %}active{% endif %}" href="{% url 'hr_self:overview' %}"><small>01</small>我的服务首页</a>
-      <a class="{% if section == 'files' %}active{% endif %}" href="{% url 'hr_self:files' %}"><small>02</small>我的档案与更正</a>
+      <a class="{% if section == 'files' %}active{% endif %}" href="{% url 'hr_self:files' %}"><small>02</small>我的档案材料</a>
       <a class="{% if section == 'progress' %}active{% endif %}" href="{% url 'hr_self:progress' %}"><small>03</small>我的任职与成长</a>
       <a class="{% if section == 'payslips' or section == 'contracts' %}active{% endif %}" href="{% url 'hr_self:payslips' %}"><small>04</small>薪酬权益与文件</a>
-      <a class="{% if section == 'todos' %}active{% endif %}" href="{% url 'hr_self:todos' %}"><small>05</small>我的申请与办理</a>
+      <a class="{% if section == 'todos' %}active{% endif %}" href="{% url 'hr_self:todos' %}"><small>05</small>我的待办与进度</a>
       <a class="{% if section == 'services' %}active{% endif %}" href="{% url 'hr_self:services' %}"><small>06</small>关怀与退休服务</a>
     </nav>
     <div class="hr17-mobile-hint">可左右滑动查看更多本人服务工作区</div>
@@ -80,9 +81,14 @@
     <div class="hr17-principle"><strong>本人数据保护：</strong>页面只展示系统根据登录态确认的本人信息，修改网址或请求参数不能切换到其他教职工。工资、合同、职称、岗位聘任和离退结果均以对应业务模块的正式记录为准；尚未开放的跨模块汇总会明确提示。</div>
   {% endif %}
 </div>
+
+{% if not access_error %}{% if section == 'services' or section == 'files' or section == 'progress' or section == 'todos' %}<section class="hr-r2" id="hr17-command-panel" aria-label="新增业务办理工作区" data-hr-workspace="v6" data-v6-module="HR17"></section>{% endif %}{% endif %}
 {% endblock content %}
 
 {% block scripts %}
+<script src="{% static 'hr/js/pages/hr-round2-common.js' %}?v=20260918-all-secondary-v6" defer></script>
+<script src="{% static 'hr/js/pages/hr17-commands.js' %}?v=20260918-all-secondary-v6" defer></script>
+
 {{ block.super }}
 {% if not access_error %}<script src="{% static 'hr/js/pages/hr17-self.js' %}?v=20260830-2"></script>{% endif %}
 {% endblock scripts %}

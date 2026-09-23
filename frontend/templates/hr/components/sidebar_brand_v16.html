@@ -1,0 +1,31 @@
+{% load static %}
+<div class="hr-ui-sidebar-brand" aria-label="跃科高校人事一体化平台">
+  <a class="hr-ui-sidebar-brand__product" href="/hr/overview">
+    <span class="hr-ui-sidebar-brand__mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6l8-3 8 3-8 4-8-4M6 10v7l6 4 6-4v-7M12 10v11"/>
+      </svg>
+    </span>
+    <span class="hr-ui-sidebar-brand__copy">
+      <strong>跃科高校人事</strong>
+      <small>一体化平台</small>
+    </span>
+  </a>
+  <div class="hr-ui-school-switch" title="当前学校">
+    <span class="hr-ui-school-switch__icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-5h6v5M9 9h.01M15 9h.01M9 12h.01M15 12h.01"/>
+      </svg>
+    </span>
+    <span class="hr-ui-school-switch__copy">
+      <strong>
+        {% if request.session.selected_company_instance %}
+          {{ request.session.selected_company_instance.company }}
+        {% else %}
+          {{ request.user.employee_get.employee_work_info.company_id|default:"当前学校" }}
+        {% endif %}
+      </strong>
+      <small>当前学校</small>
+    </span>
+  </div>
+</div>

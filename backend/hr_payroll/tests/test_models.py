@@ -74,3 +74,28 @@ class Hr15FinalFactImmutabilityTests(TestCase):
         fact.status = PayrollResultFact.Status.ADJUSTED
         with self.assertRaisesRegex(ValueError, "PAYROLL_FINAL_RESULT_IMMUTABLE"):
             fact.save(update_fields=["status", "updated_at"])
+
+    def test_finalized_fact_instance_delete_is_blocked(self):
+        fact = self._draft_fact()
+        fact.status = PayrollResultFact.Status.FINALIZED
+        fact.save(update_fields=["status", "updated_at"])
+
+        with self.assertRaisesRegex(ValueError, "PAYROLL_FINAL_RESULT_IMMUTABLE"):
+            fact.delete()
+        self.assertTrue(PayrollResultFact.objects.filter(pk=fact.pk).exists())
+
+    def test_terminal_fact_bulk_create_is_blocked_before_database_write(self):
+        fact = PayrollResultFact(
+            tenant_id=1,
+            result_no="PAY-BULK-FINAL",
+            payroll_period_id=uuid.uuid4(),
+            staff_id=uuid.uuid4(),
+            currency_code="CNY",
+            gross_amount=Decimal("100.00"),
+            deduction_amount=Decimal("10.00"),
+            net_amount=Decimal("90.00"),
+            status=PayrollResultFact.Status.FINALIZED,
+        )
+        with self.assertRaisesRegex(ValueError, "PAYROLL_FINAL_RESULT_BULK_CREATE_FORBIDDEN"):
+            PayrollResultFact.objects.bulk_create([fact])
+        self.assertFalse(PayrollResultFact.objects.filter(result_no="PAY-BULK-FINAL").exists())

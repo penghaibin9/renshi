@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 
-from django.db.models import Q
+from django.db.models import Q, F
 
 from hr_control_center.providers.todo_base import (
     HrTodoProvider,
@@ -36,7 +36,8 @@ _STATUS_LABELS = {
 
 class OnboardingTaskTodoProvider(HrTodoProvider):
     provider_key = "hr05_onboarding"
-    required_permission = "hr.onboarding.task.manage"
+    required_permission = "hr05.task.complete"
+    required_any_permissions = ("hr05.task.complete", "hr05.task.manage", "hr05.task.waive")
 
     @staticmethod
     def _assert_current(context) -> None:
@@ -56,14 +57,14 @@ class OnboardingTaskTodoProvider(HrTodoProvider):
 
         self._assert_current(context)
         query = HrOnboardingTaskInstance.objects.filter(
-            tenant_id=context.tenant_id,
+            tenant_id=context.tenant_id, case__tenant_id=context.tenant_id,
+            definition__tenant_id=context.tenant_id, definition__template_version_id=F("case__template_version_id"),
             status__in=_ACTIVE,
         )
-        if context.user_id:
-            query = query.filter(
-                Q(assignee_id=context.user_id) | Q(assignee_id__isnull=True)
-            )
-        return query
+        if not context.user_id:
+            raise TodoProviderUnavailable("hr05_onboarding", "USER_CONTEXT_REQUIRED", "缺少责任人上下文")
+        # Unassigned work is the manager's dispatch queue, never a personal todo.
+        return query.filter(assignee_id=context.user_id).exclude(case__status__in=("CANCELLED", "DECLINED", "PROBATION_FAILED"))
 
     @staticmethod
     def _day_bounds(context):
@@ -104,7 +105,7 @@ class OnboardingTaskTodoProvider(HrTodoProvider):
             is_overdue=overdue,
             assignee_type=task.assignee_type,
             action_label="办理入职任务",
-            action_url=f"/hr/onboarding/collaboration?case_id={task.case_id}",
+            action_url=f"/hr/onboarding/collaboration?case_id={task.case_id}&task_id={task.id}",
             permission_code=self.required_permission,
             version=str(task.version),
         )

@@ -14,6 +14,7 @@ from typing import Any
 import bleach
 from django import forms
 from django.apps import apps
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import SetPasswordForm, _unicode_ci_compare
@@ -431,7 +432,8 @@ class UserGroupForm(ModelForm):
         super().__init__(*args, **kwargs)
         try:
             self.fields["permissions"].choices = [
-                (perm.codename, perm.name) for perm in Permission.objects.all()
+                (f"{perm.content_type.app_label}.{perm.codename}", perm.name)
+                for perm in Permission.objects.select_related("content_type").all()
             ]
         except Exception:
             # Safe fallback when DB is not ready
@@ -447,10 +449,12 @@ class UserGroupForm(ModelForm):
         group.save()
 
         # Convert the selected codenames back to Permission instances
-        permissions_codenames = self.cleaned_data["permissions"]
-        permissions = Permission.objects.filter(codename__in=permissions_codenames)
+        from base.permission_refs import resolve_permission_refs
 
-        # Set the associated permissions
+        permission_values = self.cleaned_data["permissions"]
+        permissions = resolve_permission_refs(permission_values)
+
+        # Set only the exact app-qualified permissions selected in the UI.
         group.permissions.set(permissions)
 
         if commit:
@@ -658,7 +662,8 @@ class AssignPermission(Form):
         # Dynamically load permission choices only when DB is ready
         try:
             self.fields["permissions"].choices = [
-                (perm.codename, perm.name) for perm in Permission.objects.all()
+                (f"{perm.content_type.app_label}.{perm.codename}", perm.name)
+                for perm in Permission.objects.select_related("content_type").all()
             ]
         except Exception:
             # Fallback in case the DB isn't ready yet
@@ -678,8 +683,9 @@ class AssignPermission(Form):
         user_ids = Employee.objects.filter(
             id__in=self.data.getlist("employee")
         ).values_list("employee_user_id", flat=True)
-        permissions = self.cleaned_data["permissions"]
-        permissions = Permission.objects.filter(codename__in=permissions)
+        from base.permission_refs import resolve_permission_refs
+
+        permissions = resolve_permission_refs(self.cleaned_data["permissions"])
         users = HorillaUser.objects.filter(id__in=user_ids)
         for user in users:
             user.user_permissions.add(*permissions)
@@ -713,6 +719,27 @@ class CompanyForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["icon"].required = False
+        for field_name in ("address", "country", "state", "city", "zip"):
+            self.fields[field_name].required = False
+            self.fields[field_name].help_text = "可后补，不影响首次开户；正式报送时请填写真实资料。"
+
+        if getattr(settings, "HR_INSTALLATION_MODE", "standalone_school") == "standalone_school":
+            self.fields["company"].label = _("School name")
+            self.fields["company"].help_text = _("The standalone edition keeps exactly one school authority record.")
+            if "hq" in self.fields:
+                self.fields["hq"].widget = forms.HiddenInput()
+                self.fields["hq"].initial = True
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if getattr(settings, "HR_INSTALLATION_MODE", "standalone_school") == "standalone_school":
+            existing = Company.objects.exclude(pk=self.instance.pk).count() if self.instance.pk else Company.objects.count()
+            if existing:
+                raise ValidationError(
+                    _("The standalone-school edition allows exactly one school authority record. Use departments for colleges and offices instead of creating another school.")
+                )
+            cleaned_data["hq"] = True
+        return cleaned_data
 
     def validate_image(self, file):
         max_size = 5 * 1024 * 1024
@@ -761,6 +788,13 @@ class DepartmentForm(ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if getattr(settings, "HR_INSTALLATION_MODE", "standalone_school") == "standalone_school":
+            schools = Company.objects.order_by("id")
+            if schools.count() == 1:
+                school = schools.first()
+                self.fields["company_id"].initial = [school.pk]
+                self.fields["company_id"].widget = forms.MultipleHiddenInput()
+                self.fields["company_id"].help_text = _("Automatically bound to the current school in standalone mode.")
         if self.instance.pk:
             # Manager choices are restricted to employees who already belong
             # to this department (matches helpdesk's original behavior). A
@@ -782,6 +816,10 @@ class DepartmentForm(ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        if getattr(settings, "HR_INSTALLATION_MODE", "standalone_school") == "standalone_school":
+            schools = Company.objects.order_by("id")
+            if schools.count() == 1:
+                cleaned_data["company_id"] = schools.filter(pk=schools.first().pk)
         manager = cleaned_data.get("manager")
         # Mirrors helpdesk.DepartmentManager.clean() so this fails as a clean
         # field error here instead of surfacing as a model ValidationError

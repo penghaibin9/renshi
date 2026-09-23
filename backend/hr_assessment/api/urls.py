@@ -3,14 +3,18 @@
 from django.urls import path
 
 from hr_assessment.api import views_assessment as probe
-from hr_assessment.api import views_policy
+from hr_assessment.api import views_policy, views_archive
 
 app_name = "hr_assessment_api"
 
 urlpatterns = [
+    path("api/v1/hr/assessments/results/<uuid:result_id>/archives/<int:version>/evidence", views_archive.evidence, name="hr12-api-archive-evidence"),
+    path("api/v1/hr/assessments/results/<uuid:result_id>/archives/<int:version>/evidence.xlsx", views_archive.export_evidence, name="hr12-api-archive-export"),
+    path("api/v1/hr/assessments/results/<uuid:result_id>/archives/<int:version>/compare", views_archive.compare_evidence, name="hr12-api-archive-compare"),
     path("api/v1/hr/assessments/ping", probe.ping, name="hr12-api-ping"),
     path("api/v1/hr/assessments/eligibility", probe.eligibility_probe, name="hr12-api-eligibility"),
     path("api/v1/hr/assessments/annual", probe.annual_case_list, name="hr12-api-annual-list"),
+    path("api/v1/hr/assessments/term", probe.term_case_list, name="hr12-api-term-list"),
     path(
         "api/v1/hr/assessments/workbench/<str:section>",
         probe.workbench_rows,
@@ -126,6 +130,7 @@ urlpatterns = [
     path("api/v1/hr/assessments/setup-options", probe.setup_options, name="hr12-api-setup-options"),
     path("api/v1/hr/assessments/cycles", probe.create_cycle, name="hr12-api-cycle-create"),
     path("api/v1/hr/assessments/annual/cases", probe.create_annual_case, name="hr12-api-annual-create"),
+    path("api/v1/hr/assessments/term/cases", probe.create_term_case, name="hr12-api-term-create"),
     path("api/v1/hr/assessments/indicators", views_policy.indicator_list, name="hr12-api-indicator-list"),
     path("api/v1/hr/assessments/rating-scales", views_policy.rating_scale_list, name="hr12-api-rating-scale-list"),
 ]

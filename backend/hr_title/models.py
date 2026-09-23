@@ -315,6 +315,36 @@ class TitleQualificationDecision(HrTenantScopedModel):
         return super().save(*args, **kwargs)
 
 
+class TitleMaterialSnapshotQuerySet(models.QuerySet):
+    """Preserve the complete title-review evidence trail.
+
+    Review evidence is corrected by appending a successor snapshot through
+    ``TitleMaterialService``. Bulk ORM mutations/deletes would bypass that
+    lineage and are therefore forbidden.
+    """
+
+    def update(self, **kwargs):
+        if self.exists():
+            raise ValueError(
+                "TITLE_MATERIAL_RETENTION_REQUIRED: review evidence must be changed through the append-only service"
+            )
+        return 0
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        if objs:
+            raise ValueError(
+                "TITLE_MATERIAL_RETENTION_REQUIRED: review evidence cannot be bulk-updated"
+            )
+        return 0
+
+    def delete(self):
+        if self.exists():
+            raise ValueError(
+                "TITLE_MATERIAL_RETENTION_REQUIRED: title-review evidence cannot be deleted"
+            )
+        return (0, {})
+
+
 class TitleMaterialSnapshot(HrTenantScopedModel):
     class Status(models.TextChoices):
         ATTACHED = "ATTACHED", "Attached"
@@ -338,6 +368,8 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
         db_index=True,
     )
     supersedes_snapshot_id = models.UUIDField(null=True, blank=True)
+
+    objects = TitleMaterialSnapshotQuerySet.as_manager()
 
     _IMMUTABLE_STATUSES = frozenset({Status.ACCEPTED, Status.WITHDRAWN})
     _SNAPSHOT_FIELDS = (
@@ -391,6 +423,11 @@ class TitleMaterialSnapshot(HrTenantScopedModel):
                         "must not be edited in place"
                     )
         return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError(
+            "TITLE_MATERIAL_RETENTION_REQUIRED: title-review evidence cannot be deleted"
+        )
 
 
 class TitleReviewRoundQuerySet(models.QuerySet):

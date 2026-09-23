@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "round": "Round7",
+  "date": "2026-09-15",
+  "baseline": {
+    "file": "Yueke_University_HR_Round6_20260915.zip",
+    "sha256": "37ac202014b73c53efe88e63c9e0aec02631fc0b9645e465723c28b3a0bef63d",
+    "deliverableFileCount": 10597
+  },
+  "status": "SOURCE_CODE_LAUNCH_CANDIDATE",
+  "releaseStatus": "NOT_RELEASED",
+  "sourceClosure": {
+    "added": 16,
+    "modified": 29,
+    "deleted": 0,
+    "changedTotal": 45,
+    "deliveryMetadataExcludedFromDiff": true
+  },
+  "marketClosure": [
+    "higher-ed HR/HCM core breadth benchmarked against mature products",
+    "independent field encryption/fingerprint/ticket secrets with rotation and legacy compatibility",
+    "per-tenant sensitive-field audit/rewrap command",
+    "HR05 durable asynchronous Excel import ledger with confirmer audit preservation",
+    "HR05 production outbox authority-verification worker",
+    "HR09 database-backed authority cutover",
+    "single-tenant read-only go-live audit with dead-letter/stale-work/worker heartbeat blockers",
+    "production runbook and acceptance gate updated"
+  ],
+  "pureGateTests": {
+    "Round2": 66,
+    "Round3": 6,
+    "Round4": 16,
+    "Round5": 20,
+    "Round6": 24,
+    "Round7": 23,
+    "total": 155,
+    "status": "PASS"
+  },
+  "staticVerification": {
+    "pythonAstFiles": 3136,
+    "pythonAstErrors": 0,
+    "compileall": "PASS",
+    "djangoMigrationFiles": 446,
+    "migrationDuplicatePrefixes": 0,
+    "javascriptNodeCheckFiles": 253,
+    "javascriptErrors": 0,
+    "entrypointBashSyntax": "PASS"
+  },
+  "acceptancePlan": "PASS",
+  "productionShapedAcceptance": {
+    "status": "FAILED",
+    "failedPhase": "compose-version",
+    "error": "compose-version failed",
+    "productionTouched": false,
+    "gitHubTouched": false,
+    "reason": "Current cloud executor has no Docker Compose runtime; fail-closed at version check."
+  },
+  "runtimeGatesStillRequiredBeforeTraffic": [
+    "Docker Compose >= 2.24.4 merged production config validation",
+    "MySQL 8.4 migrations/triggers and full Django HR01-HR18 test suite",
+    "all production workers/schedulers healthy and go-live audit PASS for target tenant",
+    "encrypted backup plus isolated restore drill with RPO/RTO evidence",
+    "real browser golden flows including cross-worker/restart Excel import",
+    "real SMTP/ClamAV/IAM/finance-tax/e-sign integrations as applicable",
+    "school data classification/approval and responsible-owner sign-off"
+  ],
+  "safety": {
+    "productionTouched": false,
+    "gitHubTouched": false
+  },
+  "packageVerification": {
+    "zipFileCount": 10616,
+    "manifestEntries": 10615,
+    "manifestMissing": 0,
+    "manifestHashOrSizeErrors": 0,
+    "unexpectedFiles": 0,
+    "extractedPureGateTests": 155,
+    "extractedPythonAstFiles": 3136,
+    "extractedMigrationFiles": 446,
+    "extractedJavascriptFiles": 253,
+    "status": "PASS"
+  }
+}

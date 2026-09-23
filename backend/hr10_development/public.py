@@ -1,9 +1,9 @@
 """Stable read contract for verified HR10 development facts.
 
-Consumers provide canonical HR03 staff ids. HR10 resolves its current legacy
-bigint storage key through tenant-scoped HR03 identity and exposes only trusted,
-as-of-effective append-only facts. Missing identity mappings are explicit and
-must never be interpreted as zero development activity.
+Consumers provide canonical HR03 staff UUIDs. New HR10 rows persist that UUID
+directly; untouched sealed history may still carry the legacy Employee bigint,
+so reads use a tenant-scoped fallback mapping without rewriting sealed facts.
+Missing identities are explicit and must never be interpreted as zero activity.
 """
 
 from __future__ import annotations
@@ -111,31 +111,82 @@ def get_verified_development_facts(
             "id", "legacy_employee_id"
         )
     )
+    by_uuid = {master.id: master for master in masters}
+
+    # A canonical staff row without a legacy bridge is safe only after HR10 has
+    # started recording canonical UUID facts for that staff.  Otherwise an
+    # empty query cannot distinguish “no development facts” from historical
+    # bigint facts that can no longer be attributed to this person.  Fail
+    # closed for authority consumers (HR09/HR12) instead of returning a fake
+    # empty evidence set.
+    no_legacy_ids = [
+        master.id for master in masters if master.legacy_employee_id is None
+    ]
+    if no_legacy_ids:
+        canonical_fact_staff_ids = set(
+            HrDevelopmentFact.objects.filter(
+                tenant_id=tenant_id, staff_master_uuid__in=no_legacy_ids
+            ).values_list("staff_master_uuid", flat=True)
+        )
+        unresolved = [
+            staff_id for staff_id in no_legacy_ids if staff_id not in canonical_fact_staff_ids
+        ]
+        if unresolved:
+            raise DevelopmentEvidenceUnavailable(
+                "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+                "canonical HR03 staff has no legacy bridge and no canonical HR10 fact lineage",
+            )
+
+    requested_legacy_ids = {
+        int(master.legacy_employee_id)
+        for master in masters
+        if master.legacy_employee_id is not None
+    }
+    bridge_members = {}
+    if requested_legacy_ids:
+        for legacy_id, staff_uuid in HrStaffMaster.objects.filter(
+            tenant_id=tenant_id, legacy_employee_id__in=requested_legacy_ids
+        ).values_list("legacy_employee_id", "id"):
+            bridge_members.setdefault(int(legacy_id), set()).add(staff_uuid)
+    ambiguous_legacy_ids = sorted(
+        legacy_id for legacy_id, staff_uuids in bridge_members.items() if len(staff_uuids) != 1
+    )
+    if ambiguous_legacy_ids:
+        raise DevelopmentEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_AMBIGUOUS",
+            "legacy Employee ids are not unique inside tenant: "
+            + ",".join(str(value) for value in ambiguous_legacy_ids[:20]),
+        )
     by_legacy = {
         int(master.legacy_employee_id): master.id
         for master in masters
         if master.legacy_employee_id is not None
     }
-    mapped = set(by_legacy.values())
     requested_by_key = {str(value): value for value in staff_ids}
-    mapped_keys = {str(value) for value in mapped}
+    found_keys = {str(value) for value in by_uuid}
     missing = tuple(
         requested_by_key[key]
-        for key in sorted(set(requested_by_key) - mapped_keys)
+        for key in sorted(set(requested_by_key) - found_keys)
     )
-    if not by_legacy:
+    if not by_uuid:
         raise DevelopmentEvidenceUnavailable(
             "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
-            "requested canonical HR03 staff ids have no tenant-scoped HR10 identity mapping",
+            "requested canonical HR03 staff ids do not exist in this tenant",
         )
 
     # Resolve lineage *after* applying the requested as-of window.  The
     # manager's ``current()`` view intentionally answers today's head, so using
     # it here would let a future correction erase its predecessor from a
     # historical HR09 evidence query.
+    identity_filter = Q(staff_master_uuid__in=list(by_uuid))
+    if by_legacy:
+        identity_filter |= Q(
+            staff_master_uuid__isnull=True,
+            staff_master_id__in=list(by_legacy),
+        )
     effective_rows = HrDevelopmentFact.objects.filter(
+        identity_filter,
         tenant_id=tenant_id,
-        staff_master_id__in=by_legacy,
         verification_status__in=TRUSTED_VERIFICATION_STATUSES,
         valid_from__isnull=False,
         valid_from__lte=as_of,
@@ -148,13 +199,23 @@ def get_verified_development_facts(
     facts = (
         effective_rows.exclude(id__in=superseded_ids)
         .exclude(record_kind=HrDevelopmentFact.RecordKind.REVOCATION)
-        .order_by("staff_master_id", "valid_from", "id")
+        .order_by("staff_master_uuid", "staff_master_id", "valid_from", "id")
     )
+
+    def _canonical_fact_staff_id(fact):
+        if fact.staff_master_uuid is not None:
+            return fact.staff_master_uuid
+        if fact.staff_master_id is not None and int(fact.staff_master_id) in by_legacy:
+            return by_legacy[int(fact.staff_master_id)]
+        raise DevelopmentEvidenceUnavailable(
+            "SOURCE_IDENTITY_MAPPING_UNAVAILABLE",
+            f"fact {fact.id} has no tenant-scoped canonical HR03 identity",
+        )
 
     rows = tuple(
         VerifiedDevelopmentFact(
             fact_id=fact.id,
-            staff_id=by_legacy[int(fact.staff_master_id)],
+            staff_id=_canonical_fact_staff_id(fact),
             fact_type=fact.fact_type,
             activity_type=fact.activity_type,
             start_date=fact.start_date,

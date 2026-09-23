@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "integrations": [
+    {
+      "integrationCode": "SCHOOL_SSO",
+      "name": "学校统一认证",
+      "applicability": "REQUIRED",
+      "status": "PENDING",
+      "buyerConfirmed": false,
+      "supplierConfirmed": false,
+      "rationale": "",
+      "evidenceRefs": []
+    },
+    {
+      "integrationCode": "SCHOOL_DATA_HUB",
+      "name": "学校数据中台",
+      "applicability": "REQUIRED",
+      "status": "PENDING",
+      "buyerConfirmed": false,
+      "supplierConfirmed": false,
+      "rationale": "",
+      "evidenceRefs": []
+    },
+    {
+      "integrationCode": "PROVINCIAL_PLATFORM",
+      "name": "省级平台/其他合同约定平台",
+      "applicability": "NOT_APPLICABLE",
+      "status": "NOT_APPLICABLE",
+      "buyerConfirmed": false,
+      "supplierConfirmed": false,
+      "rationale": "如本校合同不包含省级平台对接，由采购人明确确认不适用。",
+      "evidenceRefs": []
+    }
+  ],
+  "noExternalIntegrationsConfirmedByBuyer": false,
+  "noExternalIntegrationsConfirmedBySupplier": false
+}

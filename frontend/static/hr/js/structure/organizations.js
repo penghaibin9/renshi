@@ -143,3 +143,18 @@
 
   document.addEventListener("DOMContentLoaded", loadRoot);
 })();
+
+// R2 UI polish: filter only the organization nodes already loaded in the tree.
+(function () {
+  const input = document.getElementById("hr-org-search");
+  const focusButton = document.getElementById("hr-org-focus-search");
+  if (focusButton && input) focusButton.addEventListener("click", () => { input.focus(); input.select(); });
+  if (!input) return;
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    document.querySelectorAll("#hr-org-tree .hr-org-node").forEach((node) => {
+      const text = (node.textContent || "").toLowerCase();
+      node.classList.toggle("is-filter-hidden", Boolean(q) && !text.includes(q));
+    });
+  });
+})();

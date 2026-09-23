@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% block title %}{% trans "异动影响预览" %} · {{ case.case_no }}{% endblock %}
 {% block styles %}
@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">
 {% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr06-page" data-module="HR06" data-section="preview" data-hr-page="change-preview" data-case-id="{{ case.id }}">
+<div class="hr-v2-page hr06-page" data-module="HR06" data-hr-workspace="v6" data-section="preview" data-hr-page="change-preview" data-case-id="{{ case.id }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>影响预览</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-preview-title">
     <div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">人事异动 · 影响核对</div><h1 class="hr-v2-title" id="hr06-preview-title">影响预览 · {{ case.case_no }}</h1><p class="hr-v2-subtitle">以下待补充事项与业务影响根据当前案件实时核对；预览结果不是审批结论，也不会直接触发正式生效。</p></div>

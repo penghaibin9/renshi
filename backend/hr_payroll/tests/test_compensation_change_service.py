@@ -135,7 +135,7 @@ class CompensationChangeServiceTests(TestCase):
             period_id="00000000-0000-0000-0000-000000001515",
             period_start=date(2026, 9, 1),
             period_end=date(2026, 9, 30),
-            base_variables={},
+            base_variables={"transportAllowance": "0.00"},  # Explicitly confirmed no allowance before introduction.
         )
 
         self.assertEqual(source["authority"], "HR15_CHANGE")

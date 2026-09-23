@@ -1,14 +1,31 @@
-"""Revalidate frozen HR13/HR14 evidence before returning a historical value."""
+"""Revalidate frozen formal-fact evidence before returning a historical value."""
 
 from __future__ import annotations
 
-from hr_data.providers.formal_facts import hr13_asof_provider, hr14_asof_provider
+from hr_data.providers.formal_facts import (
+    hr04_asof_provider,
+    hr05_asof_provider,
+    hr06_asof_provider,
+    hr07_asof_provider,
+    hr12_asof_provider,
+    hr13_asof_provider,
+    hr14_asof_provider,
+    hr15_asof_provider,
+    hr16_asof_provider,
+)
 from hr_data.services.evaluation_service import AsOfEvaluationError, AsOfEvaluationResult
 
 
 _PROVIDERS = {
+    "HR04": hr04_asof_provider,
+    "HR05": hr05_asof_provider,
+    "HR06": hr06_asof_provider,
+    "HR07": hr07_asof_provider,
+    "HR12": hr12_asof_provider,
     "HR13": hr13_asof_provider,
     "HR14": hr14_asof_provider,
+    "HR15": hr15_asof_provider,
+    "HR16": hr16_asof_provider,
 }
 
 
@@ -24,7 +41,7 @@ def verify_formal_fact_evidence(
     if provider is None:
         raise AsOfEvaluationError(
             "ASOF_EVALUATION_SOURCE_UNSUPPORTED",
-            "formal-fact evidence guard supports HR13 or HR14 only",
+            "formal-fact evidence guard supports HR04, HR05, HR06, HR07, HR12, HR13, HR14, HR15 or HR16 only",
         )
     frozen_hash = str(
         (getattr(result.evidence, "provider_evidence_hashes_json", {}) or {}).get(domain)

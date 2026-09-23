@@ -17,8 +17,14 @@ from hr_data.services.quality_service import DataQualityError, DataQualityExecut
 class RuntimeDataQualityExecutionService(DataQualityExecutionService):
     _BUILTIN_PROVIDERS = {
         "HR03": "hr_data.providers.hr03_quality.quality_provider",
+        "HR04": "hr_data.providers.round6_chain_quality.quality_provider",
+        "HR05": "hr_data.providers.round6_chain_quality.quality_provider",
+        "HR06": "hr_data.providers.chain_fact_quality.quality_provider",
+        "HR07": "hr_data.providers.formal_fact_quality.quality_provider",
+        "HR12": "hr_data.providers.chain_fact_quality.quality_provider",
         "HR13": "hr_data.providers.formal_fact_quality.quality_provider",
         "HR14": "hr_data.providers.formal_fact_quality.quality_provider",
+        "HR15": "hr_data.providers.round6_chain_quality.quality_provider",
     }
 
     @staticmethod

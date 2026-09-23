@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr13 hr13c" data-module="HR13" data-section="{{ section }}">
+<div class="hr-v2-page hr13 hr13c" data-module="HR13" data-hr-workspace="v6" data-section="{{ section }}">
   {% if access_error %}
     <div class="hr13-access" role="alert">{{ access_error }}</div>
   {% else %}

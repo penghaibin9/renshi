@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "status": "PENDING",
+  "startAt": "",
+  "endAt": "",
+  "environment": "school-preproduction",
+  "buyerRepresentative": "",
+  "supplierRepresentative": "",
+  "buyerConfirmed": false,
+  "supplierConfirmed": false,
+  "sampledFlows": [
+    {
+      "flowCode": "HR03-STAFF-MASTER",
+      "name": "教职工主档查询与更正",
+      "status": "PENDING",
+      "evidenceRef": ""
+    },
+    {
+      "flowCode": "HR10-DEVELOPMENT",
+      "name": "培训/企业实践核心流程",
+      "status": "PENDING",
+      "evidenceRef": ""
+    },
+    {
+      "flowCode": "HR12-ASSESSMENT",
+      "name": "考核计算、确认、异议、归档",
+      "status": "PENDING",
+      "evidenceRef": ""
+    },
+    {
+      "flowCode": "HR17-SELF-SERVICE",
+      "name": "教职工本人申请/补件/更正",
+      "status": "PENDING",
+      "evidenceRef": ""
+    },
+    {
+      "flowCode": "HR18-DATA-CENTER",
+      "name": "数据中心、同步、失败重试与对账",
+      "status": "PENDING",
+      "evidenceRef": ""
+    }
+  ],
+  "notes": "必须在脱敏真实数据或采购人认可的代表性数据上执行；只有所有抽样流程 PASS 且双方确认后，最终验收包才接受。"
+}

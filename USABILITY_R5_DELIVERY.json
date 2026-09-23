@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "releaseName": "Usability Candidate R5 2026-09-17",
+  "baseline": {
+    "file": "Yueke_University_HR_Usability_Candidate_R4_20260917.zip",
+    "sha256": "e41a2e92f993bc78421ea278b06deba8f1e9ae2002e2deeff303be1e5a0208ee"
+  },
+  "status": "SOURCE_USABILITY_R5_CLOSURE_COMPLETE",
+  "runtimeBusinessFlowStatus": "QA_RUNTIME_PENDING_DJANGO_MYSQL",
+  "closures": [
+    "pre-submit review shows only required completion, missing field names, changed field count and carried-value count",
+    "pre-submit review never renders sensitive field values and can jump directly to missing required controls",
+    "existing values are labeled as existing values; only explicit server/unique-option values are labeled carried-in",
+    "compact mode hides only empty optional fields; populated optional values always remain visible for review",
+    "optional fields are explicitly labeled 可选",
+    "assistant safe prompt may include required completion metadata and missing field labels but never form values",
+    "generic prompt set expanded from 8 to 16, yielding at least 23 contextual prompts on every HR01-HR18 module",
+    "assistant now answers pre-submit review, shortest-change path, why-field-is-needed and next-handler questions",
+    "14-step lifecycle Chromium click-through remains green in the exact user-requested order"
+  ],
+  "researchBasis": [
+    "GOV.UK Design System Question pages: ask only what the service needs and mark optional information clearly",
+    "Oracle HCM Guided Journeys: contextual step-by-step guidance inside assigned HR tasks",
+    "SAP SuccessFactors Joule HR use cases: natural-language sample prompts for HR navigation/transactions",
+    "SAP Performance Preparation Agent 2026: role-relevant next steps and graceful handling of incomplete queries"
+  ],
+  "sourceVerification": {
+    "hr10Import": "20/20 PASS",
+    "hr10StaffIdentity": "53/53 PASS",
+    "hr18ProcurementSync": "24/24 PASS",
+    "schoolHandover": "33/33 PASS",
+    "finalProcurement": "53/53 PASS",
+    "hrUsability": "102/102 PASS",
+    "pureTests": "188/188 PASS + 25 subtests",
+    "pythonAst": "3162/3162 PASS",
+    "javascriptNodeCheck": "255/255 PASS"
+  },
+  "browserVerification": {
+    "engine": "Chromium via Playwright",
+    "usabilitySmoke": "PASS",
+    "fourteenStepClickSequence": "PASS",
+    "promptCountPerModuleMin": 20,
+    "preSubmitReview": "PASS",
+    "optionalFieldLabels": "PASS",
+    "compactModeKeepsPopulatedOptionalFields": "PASS",
+    "safePromptCompletionMetadataNoValues": "PASS",
+    "pageErrors": 0,
+    "backendBusinessTransactionsExecuted": false,
+    "evidenceDirs": [
+      "tests/artifacts/hr-usability-static",
+      "tests/artifacts/hr-lifecycle-static"
+    ]
+  },
+  "runtimeBlocker": {
+    "meaning": "Source/UI and real Chromium interaction gates are complete. Database-writing HR transactions still require a Django + MySQL QA runtime, and school-specific external integrations require their real endpoints and credentials."
+  },
+  "finalReextractStatus": "PASS",
+  "pass1ZipVerification": {
+    "manifestRows": 10717,
+    "missing": 0,
+    "extra": 0,
+    "hashOrSizeMismatch": 0,
+    "hrUsability": "102/102 PASS",
+    "pureTests": "188/188 PASS + 25 subtests",
+    "chromiumUsability": "PASS",
+    "chromiumLifecycle14Step": "PASS"
+  }
+}

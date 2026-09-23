@@ -51,25 +51,9 @@ def tasks_list(request, case_id: str):
     try:
         context = api_base.make_hr05_context(request)
         case = _load_case_or_404(context, case_id)
-        qs = HrOnboardingTaskInstance.objects.filter(case=case).select_related("definition")
-        items = [
-            {
-                "id": str(t.id),
-                "code": t.definition.code,
-                "title": t.definition.title,
-                "category": t.definition.category,
-                "blocking_level": t.definition.blocking_level,
-                "blockingLevelLabel": label_for(BLOCKING_LEVEL_LABELS, t.definition.blocking_level),
-                "responsible_role": t.assignee_type,
-                "responsibleRoleLabel": label_for(RESPONSIBLE_ROLE_LABELS, t.assignee_type),
-                "assignee_id": t.assignee_id,
-                "status": t.status,
-                "statusLabel": label_for(TASK_STATUS_LABELS, t.status),
-                "due_at": t.due_at.isoformat() if t.due_at else None,
-                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
-            }
-            for t in qs
-        ]
+        from hr_onboarding.services.workflow_service import case_tasks, task_projection
+        qs = list(case_tasks(case))
+        items = [task_projection(t, request.user, tasks=qs) for t in qs]
         return api_base.ok(request, {"items": items, "total": len(items)})
     except Hr05ApiError as exc:
         return api_base.handle_hr05_error(request, exc)
@@ -78,47 +62,22 @@ def tasks_list(request, case_id: str):
 @require_POST
 @require_hr05_permission("hr05.task.complete")
 def task_start(request, task_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        instance = _load_task_or_404(context, task_id)
-        updated = TaskService(
-            tenant_id=context.tenant_id, actor_user_id=context.user_id
-        ).start_task(instance)
-        return api_base.ok(request, {"task_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    from hr_onboarding.api.workflow import run_task_command
+    return run_task_command(request, task_id, "start")
 
 
 @require_POST
 @require_hr05_permission("hr05.task.complete")
 def task_complete(request, task_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        instance = _load_task_or_404(context, task_id)
-        updated = TaskService(
-            tenant_id=context.tenant_id, actor_user_id=context.user_id
-        ).complete_task(
-            instance,
-            note=request.POST.get("note", ""),
-            evidence={"evidence": request.POST.get("evidence", "")},
-        )
-        return api_base.ok(request, {"task_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    from hr_onboarding.api.workflow import run_task_command
+    return run_task_command(request, task_id, "complete")
 
 
 @require_POST
 @require_hr05_permission("hr05.task.waive")
 def task_waive(request, task_id: str):
-    try:
-        context = api_base.make_hr05_context(request)
-        instance = _load_task_or_404(context, task_id)
-        updated = TaskService(
-            tenant_id=context.tenant_id, actor_user_id=context.user_id
-        ).waive_task(instance, reason=request.POST.get("reason", ""))
-        return api_base.ok(request, {"task_id": str(updated.id), "status": updated.status})
-    except Hr05ApiError as exc:
-        return api_base.handle_hr05_error(request, exc)
+    from hr_onboarding.api.workflow import run_task_command
+    return run_task_command(request, task_id, "waive")
 
 
 @require_POST

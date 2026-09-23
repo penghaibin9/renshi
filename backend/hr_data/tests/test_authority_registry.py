@@ -16,6 +16,7 @@ class Hr18AuthorityRegistryTests(SimpleTestCase):
             {row.key for row in permissions},
             {
                 "hr.data.view",
+                "hr.data.snapshot.capture",
                 "hr.data.define",
                 "hr.data.asof",
                 "hr.data.quality",

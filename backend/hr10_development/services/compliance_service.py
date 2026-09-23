@@ -13,6 +13,7 @@ from decimal import Decimal
 from django.db.models import Q
 
 from hr10_development.constants import FactType, TimeWindowType, VerificationStatus
+from hr10_development.identity import resolve_staff_identity, staff_identity_q
 
 
 class ComplianceService:
@@ -35,7 +36,7 @@ class ComplianceService:
 
     @staticmethod
     def evaluate_compliance(
-        staff_master_id: int,
+        staff_master_id,
         tenant_id: int,
         as_of: date | None = None,
     ) -> list[dict]:
@@ -84,9 +85,10 @@ class ComplianceService:
         """按规则窗口统计当前值。"""
         from hr10_development.models.development_fact import HrDevelopmentFact
 
+        identity = resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_master_id)
         facts = HrDevelopmentFact.objects.effective().filter(
+            staff_identity_q(identity),
             tenant_id=tenant_id,
-            staff_master_id=staff_master_id,
             fact_type=FactType.ENTERPRISE_PRACTICE,
             valid_from__lte=as_of,
         ).filter(Q(valid_to__isnull=True) | Q(valid_to__gte=as_of))

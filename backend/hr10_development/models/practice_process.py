@@ -118,7 +118,8 @@ class HrEnterprisePracticeEvaluation(DevelopmentTenantModel):
 
 
 class HrDevelopmentOutput(DevelopmentTenantModel):
-    staff_master_id = models.BigIntegerField(db_index=True)
+    staff_master_uuid = models.UUIDField(null=True, blank=True, db_index=True, verbose_name=_("HR03 教职工 UUID"))
+    staff_master_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     source_activity_type = models.CharField(max_length=64)
     source_case_id = models.BigIntegerField()
     output_type = models.CharField(max_length=48, verbose_name=_("成果类型"))
@@ -138,3 +139,9 @@ class HrDevelopmentOutput(DevelopmentTenantModel):
         verbose_name = _("发展成果")
         verbose_name_plural = verbose_name
         indexes = [models.Index(fields=["staff_master_id", "output_type"]), models.Index(fields=["duplicate_group_id"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(staff_master_uuid__isnull=False) | models.Q(staff_master_id__isnull=False),
+                name="ck_hr10_output_staff_identity",
+            ),
+        ]

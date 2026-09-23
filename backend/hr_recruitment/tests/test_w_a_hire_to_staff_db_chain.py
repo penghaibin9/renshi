@@ -314,3 +314,57 @@ class WAHireToStaffDatabaseChainTests(TestCase):
         # Failed cross-tenant attempt must not consume the HR02 reservation.
         self.reservation.refresh_from_db()
         self.assertEqual(self.reservation.status, HrPositionReservation.Status.HELD)
+
+    def test_v9_same_hire_material_activation_task_and_outcome_chain(self):
+        """Extends the accepted-hire boundary through actual new V9 commands.
+
+        Organization, position hold, handoff, uploaded file, verification,
+        activation writers and task/closure records use real ORM services.
+        Upstream selection acceptance is the documented fixture in setUp.
+        """
+        import tempfile
+        from django.test import override_settings
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from hr_onboarding.models import (
+            HrOnboardingTemplate, HrOnboardingTemplateVersion, HrOnboardingTaskDefinition,
+            HrOnboardingTaskInstance, HrOnboardingMaterialRequirement,
+        )
+        from hr_onboarding.services.material_service import MaterialService
+        from hr_onboarding.services.workflow_service import OnboardingWorkflowService, workflow_summary
+        from hr_onboarding.tests.test_workflow_v9 import actor
+        case = self._handoff_to_hr05()
+        template = HrOnboardingTemplate.objects.create(tenant_id=TENANT, code='V9-CHAIN', name='正式入职程序')
+        version = HrOnboardingTemplateVersion.objects.create(tenant_id=TENANT, template=template, version_no=1, status='ACTIVE')
+        case.template_version=version;case.save(update_fields=['template_version'])
+        HrOnboardingTaskDefinition.objects.create(tenant_id=TENANT,template_version=version,code='IDENTITY_CARD',
+            title='校园身份办理',blocking_level='BLOCKS_ONBOARDING_COMPLETE')
+        req=HrOnboardingMaterialRequirement.objects.create(tenant_id=TENANT,template_version=version,
+            material_type='IDENTITY_REVIEW',label='原件核验',allowed_formats=['txt'],max_size=1024*1024)
+        manager=actor('chain-manager-v9',superuser=True)
+        workflow=OnboardingWorkflowService(tenant_id=TENANT,user=manager)
+        workflow.case_command(case_id=case.id,action='initialize',version=case.version,idempotency_key='chain-initialize')
+        with tempfile.TemporaryDirectory() as root, override_settings(MEDIA_ROOT=root,MALWARE_SCAN_REQUIRED=False):
+            materials=MaterialService(tenant_id=TENANT,actor_user_id=manager.id)
+            material=materials.submit_material(case,req.id,SimpleUploadedFile('identity.txt',b'synthetic verified original',content_type='text/plain'))
+            materials.verify_material(material,result='VERIFIED',reason='已对照原件核对',evidence={'reference':'TEST-CHAIN-VERIFY'})
+            case.refresh_from_db();case=self._ready_for_activation(case)
+            activated=ActivationService(tenant_id=TENANT).activate(case,effective_at=self.today,idempotency_key='chain-activate')
+        self.assertTrue(activated['activated'])
+        case.refresh_from_db();task=HrOnboardingTaskInstance.objects.get(case_id=case.id)
+        # Assignee lookup/assignment authorization is separately tested; this
+        # fixture assigns the same explicit actor, then uses protected commands.
+        task.assignee_id=manager.id;task.save(update_fields=['assignee_id'])
+        workflow.task_command(task_id=task.id,action='start',version=task.version,idempotency_key='chain-start',data={})
+        task.refresh_from_db()
+        workflow.task_command(task_id=task.id,action='complete',version=task.version,idempotency_key='chain-finish',
+            data={'note':'已完成身份办理','evidence':'TEST-CHAIN-CARD'})
+        summary=workflow_summary(case,manager)
+        self.assertTrue(summary['can_complete'], summary['blockers'])
+        first=workflow.case_command(case_id=case.id,action='complete',version=case.version,idempotency_key='chain-close',fingerprint=summary['fingerprint'])
+        again=workflow.case_command(case_id=case.id,action='complete',version=case.version,idempotency_key='chain-close',fingerprint=summary['fingerprint'])
+        self.assertEqual(first['receipt'],again['receipt']);self.assertTrue(again['replayed'])
+        case.refresh_from_db();self.assertEqual(case.status,CaseStatus.ONBOARDING_COMPLETED)
+        self.assertEqual(str(case.hr03_staff_master_id),activated['staff_master_id'])
+        for model in [HrPerson,HrStaffMaster,HrEmploymentRelationship,HrStaffAssignment]:
+            self.assertEqual(model.objects.filter(tenant_id=TENANT).count(),1)
+        self.reservation.refresh_from_db();self.assertEqual(self.reservation.status,HrPositionReservation.Status.COMMITTED)

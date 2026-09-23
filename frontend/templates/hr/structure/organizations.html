@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}
 HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未来）
@@ -15,7 +15,7 @@ HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr02-page" data-module="HR02" data-hr02-section="organizations">
+<div class="hr-v2-page hr02-page" data-module="HR02" data-hr-workspace="v6" data-hr02-section="organizations">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR02 组织与岗位</span>
     <strong>组织机构</strong>
@@ -71,6 +71,8 @@ HR02-01 组织机构 —— 权威组织树 + 详情（as-of 可切换历史/未
         <p>左侧定位正式机构，右侧只展示当前选择机构的正式记录；未建立根组织时保持真实空态。</p>
       </div>
     </div>
+
+    <div class="hr02-taskbar"><span><strong>推荐操作：</strong>先搜索或选择机构，再在右侧核对稳定编码、类型和生效状态。</span><button type="button" class="hr02-focus-search" id="hr-org-focus-search">定位机构</button></div>
 
     <div class="hr02-org-grid">
       <aside class="hr-v2-panel hr-structure-tree" aria-label="组织树">

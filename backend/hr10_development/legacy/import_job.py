@@ -74,6 +74,29 @@ class HrDevelopmentImportJob(DevelopmentTenantModel):
         verbose_name=_("状态"),  # PENDING / PARSE / VALIDATION / PREVIEW / CONFIRMING / EXECUTING / SUCCESS / FAILED / CANCELLED
     )
 
+    claim_token = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        editable=False,
+        verbose_name=_("Worker claim token"),
+    )
+
+    lease_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        db_index=True,
+        verbose_name=_("Worker lease expires at"),
+    )
+
+    heartbeat_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name=_("Worker heartbeat at"),
+    )
+
     total_rows = models.IntegerField(
         default=0,
         verbose_name=_("总行数"),

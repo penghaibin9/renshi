@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
@@ -10,7 +10,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr14" data-module="HR14" data-section="{{ section }}"
+<div class="hr-v2-page hr14" data-module="HR14" data-hr-workspace="v6" data-section="{{ section }}"
      data-can-apply="{{ can_apply|yesno:'true,false' }}"
      data-can-manage="{{ can_manage|yesno:'true,false' }}"
      data-can-review="{{ can_review|yesno:'true,false' }}"

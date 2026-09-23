@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static %}
 {% block title %}{{ section_title }}{% endblock %}
 
@@ -8,10 +8,11 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr18-data.css' %}?v=20260830-2">
 <link rel="stylesheet" href="{% static 'hr/css/hr18-actions.css' %}?v=20260830-2">
+<link rel="stylesheet" href="{% static 'hr/css/hr-round2.css' %}">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr18" data-module="HR18" data-section="{{ section }}" data-api-base="{% url 'hr_data_api:dashboard' %}" data-can-define="{{ can_define|yesno:'true,false' }}" data-can-asof="{{ can_asof|yesno:'true,false' }}" data-can-quality="{{ can_quality|yesno:'true,false' }}" data-can-submit="{{ can_submit|yesno:'true,false' }}" data-can-approve="{{ can_approve|yesno:'true,false' }}" data-can-receipt="{{ can_receipt|yesno:'true,false' }}" data-can-exchange="{{ can_exchange|yesno:'true,false' }}" data-route-metrics="{% url 'hr_data:metrics' %}" data-route-population="{% url 'hr_data:population' %}" data-route-asof="{% url 'hr_data:asof' %}" data-route-quality="{% url 'hr_data:quality' %}" data-route-submissions="{% url 'hr_data:submissions' %}" data-route-corrections="{% url 'hr_data:corrections' %}">
+<div class="hr-v2-page hr18" data-module="HR18" data-hr-workspace="v6" data-section="{{ section }}" data-api-base="{% url 'hr_data_api:dashboard' %}" data-can-define="{{ can_define|yesno:'true,false' }}" data-can-asof="{{ can_asof|yesno:'true,false' }}" data-can-quality="{{ can_quality|yesno:'true,false' }}" data-can-submit="{{ can_submit|yesno:'true,false' }}" data-can-approve="{{ can_approve|yesno:'true,false' }}" data-can-receipt="{{ can_receipt|yesno:'true,false' }}" data-can-exchange="{{ can_exchange|yesno:'true,false' }}" data-route-metrics="{% url 'hr_data:metrics' %}" data-route-population="{% url 'hr_data:population' %}" data-route-asof="{% url 'hr_data:asof' %}" data-route-quality="{% url 'hr_data:quality' %}" data-route-submissions="{% url 'hr_data:submissions' %}" data-route-corrections="{% url 'hr_data:corrections' %}">
   {% if access_error %}
     <div class="hr18-error" role="alert">{{ access_error }}</div>
   {% else %}
@@ -89,10 +90,15 @@
     </section>
   {% endif %}
 </div>
+
+{% if not access_error %}<section class="hr-r2" id="hr18-operational-panel" aria-label="新增业务办理工作区" data-hr-workspace="v6" data-v6-module="HR18"></section>{% endif %}
 {% endblock %}
 
 {% block scripts %}
+<script src="{% static 'hr/js/pages/hr-round2-common.js' %}?v=20260918-all-secondary-v6" defer></script>
+<script src="{% static 'hr/js/pages/hr18-operations.js' %}?v=20260918-all-secondary-v6" defer></script>
+
 {{ block.super }}
 <script src="{% static 'hr/js/pages/hr18-data-v2.js' %}?v=20260830-2"></script>
-<script src="{% static 'hr/js/pages/hr18-actions.js' %}?v=20260830-2"></script>
+<script src="{% static 'hr/js/pages/hr18-actions.js' %}?v=20260918-workspace-v6-1"></script>
 {% endblock scripts %}

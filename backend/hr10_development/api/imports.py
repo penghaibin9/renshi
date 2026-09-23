@@ -8,7 +8,6 @@ upload → async parse → row validation → error workbook → confirm → exe
 
 import json
 import hashlib
-from datetime import datetime, timezone
 
 from django.core.files.storage import default_storage
 from django.http import FileResponse, JsonResponse
@@ -19,7 +18,12 @@ from hr10_development.constants import DevelopmentErrorCode
 from hr10_development.legacy.import_job import HrDevelopmentImportJob
 from hr10_development.models import HrDevelopmentAuditEvent
 from hr10_development.permissions import require_hr10_permission
-from hr10_development.services.import_worker import TEMPLATE_SCHEMAS
+from hr10_development.services.import_worker import (
+    TEMPLATE_SCHEMAS,
+    ImportExecutionError,
+    ImportJobBusy,
+    execute_import_job,
+)
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -151,7 +155,7 @@ def validate_import(request, job_id):
 def confirm_import(request, job_id):
     """
     POST /api/v1/hr/development/imports/{jobId}/confirm
-    显式确认后执行导入。
+    Explicit confirmation -> leased execution -> authority write -> row audit -> SUCCESS/FAILED.
     """
     tenant_id = getattr(request, "tenant_id", None)
     if tenant_id is None:
@@ -164,29 +168,46 @@ def confirm_import(request, job_id):
     if not body.get("confirmed"):
         return JsonResponse(error("CONFIRM_REQUIRED", "必须显式确认"), status=400)
 
-    job = HrDevelopmentImportJob.objects.filter(id=job_id, tenant_id=tenant_id).first()
-    if not job:
-        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "导入任务不存在"), status=404)
+    reason = str(body.get("reason") or "Excel import confirmed").strip()[:1000]
+    request_id = str(
+        getattr(request, "request_id", "")
+        or request.headers.get("X-Request-ID", "")
+    )[:64]
 
-    if job.status != "PREVIEW":
-        return JsonResponse(error("IMPORT_NOT_READY", "必须先完成校验并进入 PREVIEW"), status=409)
-    if job.error_rows:
-        return JsonResponse(error("IMPORT_HAS_ERRORS", "请修复错误行后重新上传"), status=409)
+    prior_status = HrDevelopmentImportJob.objects.filter(
+        id=job_id, tenant_id=tenant_id
+    ).values_list("status", flat=True).first()
 
-    job.status = "SUCCESS"
-    job.started_at = datetime.now(timezone.utc)
-    job.completed_at = datetime.now(timezone.utc)
-    job.result_summary_json = {
-        **job.result_summary_json,
-        "confirmed": True,
-        "confirmedAt": job.completed_at.isoformat(),
-    }
-    job.save(update_fields=["status", "started_at", "completed_at", "result_summary_json", "updated_at"])
+    try:
+        job = execute_import_job(
+            job_id,
+            tenant_id=int(tenant_id),
+            actor_id=request.user.id if request.user.is_authenticated else None,
+            request_id=request_id,
+            reason=reason,
+        )
+    except ImportJobBusy as exc:
+        lease_expires = exc.job.lease_expires_at.isoformat() if exc.job.lease_expires_at else None
+        return JsonResponse(
+            error("IMPORT_IN_PROGRESS", "该导入任务正在由其他 worker 执行", {"leaseExpiresAt": lease_expires}),
+            status=409,
+        )
+    except ImportExecutionError as exc:
+        job = HrDevelopmentImportJob.objects.filter(id=job_id, tenant_id=tenant_id).first()
+        payload = {
+            "rowNumber": exc.row_number,
+            "jobStatus": job.status if job else None,
+        }
+        status = 404 if exc.code == "IMPORT_NOT_FOUND" else 409
+        if job and job.status == "FAILED":
+            status = 422
+        return JsonResponse(error(exc.code, str(exc), payload), status=status)
 
     job.refresh_from_db()
     return JsonResponse(success({
         "jobId": str(job.id),
         "status": job.status,
+        "idempotentReplay": prior_status == "SUCCESS",
         "result": job.result_summary_json,
     }))
 
@@ -212,6 +233,58 @@ def get_import_status(request, job_id):
         "resultSummaryJson": job.result_summary_json,
         **_error_workbook_payload(job),
         "createdAt": job.created_at.isoformat(),
+    }))
+
+
+@require_http_methods(["GET"])
+@require_hr10_permission("hr.development.import.manage")
+def get_import_rows(request, job_id):
+    """Paginated row-level preview/execution results for one tenant-scoped import job."""
+    from hr10_development.legacy.staging import HrDevelopmentStagingRow
+
+    tenant_id = getattr(request, "tenant_id", None)
+    if tenant_id is None:
+        return JsonResponse(error(DevelopmentErrorCode.TENANT_CONTEXT_REQUIRED, "缺少租户上下文"), status=403)
+    if not HrDevelopmentImportJob.objects.filter(id=job_id, tenant_id=tenant_id).exists():
+        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "导入任务不存在"), status=404)
+
+    try:
+        page = max(int(request.GET.get("page", 1)), 1)
+        page_size = min(max(int(request.GET.get("pageSize", 100)), 1), 200)
+    except (TypeError, ValueError):
+        return JsonResponse(error("INVALID_PAGINATION", "分页参数无效"), status=400)
+
+    queryset = HrDevelopmentStagingRow.objects.filter(
+        tenant_id=tenant_id, import_job_id=job_id
+    ).order_by("id")
+    total = queryset.count()
+    offset = (page - 1) * page_size
+    rows = queryset[offset : offset + page_size]
+
+    data = []
+    for row in rows:
+        try:
+            row_number = int(str(row.source_object_id).rsplit(":", 1)[-1])
+        except (TypeError, ValueError):
+            row_number = None
+        data.append({
+            "rowNumber": row_number,
+            "sourceObjectId": row.source_object_id,
+            "targetModel": row.target_model,
+            "targetId": str(row.target_id) if row.target_id is not None else None,
+            "verificationStatus": row.verification_status,
+            "executionStatus": row.execution_status,
+            "executedAt": row.executed_at.isoformat() if row.executed_at else None,
+            "errorMessage": row.error_message,
+            "parsedData": row.parsed_data,
+        })
+
+    return JsonResponse(success({
+        "jobId": str(job_id),
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "rows": data,
     }))
 
 

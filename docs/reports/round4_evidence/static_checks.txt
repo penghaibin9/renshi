@@ -1,0 +1,20 @@
+== environment ==
+docker=MISSING
+django=ModuleNotFoundError: No module named 'django'
+== compileall ==
+COMPILEALL_OK
+== AST utf-8-sig ==
+AST_OK files=3111
+== JS ==
+HR16_JS_OK
+HR17_JS_OK
+== entrypoint ==
+ENTRYPOINT_BASH_OK
+== yaml ==
+docker-compose.yml: YAML_OK services=8
+docker-compose.prod.yml: YAML_OK services=11
+docker-compose.acceptance.yml: YAML_OK services=7
+== migration duplicate numbers ==
+MIGRATION_NUMBERS_OK
+== acceptance runtime cleanup ==
+ACCEPTANCE_RUNTIME_CLEAN

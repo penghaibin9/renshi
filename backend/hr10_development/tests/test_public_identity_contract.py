@@ -35,6 +35,25 @@ class Hr10PublicIdentityContractTests(TestCase):
         )
         self.assertEqual(evidence.missing_staff_ids, ())
 
+
+    def test_ambiguous_legacy_bridge_fails_closed_for_authority_evidence(self):
+        other_person = HrPerson.objects.create(
+            tenant_id=self.tenant_id, legal_name="duplicate legacy bridge"
+        )
+        HrStaffMaster.objects.create(
+            tenant_id=self.tenant_id,
+            person_id=other_person,
+            staff_no=f"HR10-DUP-{uuid.uuid4().hex}",
+            legacy_employee_id=91001,
+        )
+        with self.assertRaises(DevelopmentEvidenceUnavailable) as cm:
+            get_verified_development_facts(
+                tenant_id=self.tenant_id,
+                staff_ids=[self.staff.id],
+                as_of=date(2026, 8, 1),
+            )
+        self.assertEqual(cm.exception.code, "SOURCE_IDENTITY_MAPPING_AMBIGUOUS")
+
     def test_person_staff_mismatch_fails_closed(self):
         other = HrPerson.objects.create(
             tenant_id=self.tenant_id,

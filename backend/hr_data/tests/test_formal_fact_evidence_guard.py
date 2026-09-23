@@ -76,10 +76,12 @@ class FormalFactEvidenceGuardTests(SimpleTestCase):
                 )
             self.assertEqual(ctx.exception.code, "ASOF_EVALUATION_EVIDENCE_STALE")
 
+        # HR16 became a supported formal-fact provider; use a truly unknown
+        # domain to keep the fail-closed contract meaningful.
         with self.assertRaises(AsOfEvaluationError) as ctx:
             verify_formal_fact_evidence(
                 tenant_id=77,
-                domain="HR16",
-                result=self._result(domain="HR16"),
+                domain="HR99",
+                result=self._result(domain="HR99"),
             )
         self.assertEqual(ctx.exception.code, "ASOF_EVALUATION_SOURCE_UNSUPPORTED")

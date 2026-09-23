@@ -15,8 +15,8 @@ from hr10_development.constants import DevelopmentErrorCode, PlanLifecycleStatus
 from hr10_development.models.plan import HrDevelopmentPlan
 from hr10_development.models.plan_version import HrDevelopmentPlanVersion
 from hr10_development.services.plan_service import PlanService
-from hr_staff.models import HrStaffMaster
 from hr10_development.permissions import require_hr10_permission
+from hr10_development.identity import resolve_staff_identity, StaffIdentityError
 
 
 def _plan_to_dict(plan: HrDevelopmentPlan) -> dict:
@@ -27,7 +27,7 @@ def _plan_to_dict(plan: HrDevelopmentPlan) -> dict:
         "planType": plan.plan_type,
         "planTypeLabel": plan.get_plan_type_display(),
         "ownerOrgId": plan.owner_org_id,
-        "staffMasterId": plan.staff_master_id,
+        "staffMasterId": str(plan.staff_master_uuid) if plan.staff_master_uuid else plan.staff_master_id,
         "cycleType": plan.cycle_type,
         "startDate": str(plan.start_date) if plan.start_date else None,
         "endDate": str(plan.end_date) if plan.end_date else None,
@@ -135,11 +135,11 @@ def create_plan(request):
 
     plan_type = body.get("planType", "SCHOOL")
     staff_id = body.get("staffMasterId")
-    if plan_type == "INDIVIDUAL" and not HrStaffMaster.objects.filter(
-        tenant_id=tenant_id,
-        legacy_employee_id=staff_id,
-    ).exists():
-        return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "教师不存在"), status=404)
+    if plan_type == "INDIVIDUAL":
+        try:
+            resolve_staff_identity(tenant_id=tenant_id, raw_staff_id=staff_id)
+        except StaffIdentityError as exc:
+            return JsonResponse(error(exc.code, str(exc)), status=404 if exc.code == "STAFF_NOT_FOUND" else 400)
 
     plan = PlanService.create_plan(
         tenant_id=tenant_id,

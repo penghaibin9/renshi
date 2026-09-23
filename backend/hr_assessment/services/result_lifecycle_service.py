@@ -299,6 +299,22 @@ class AssessmentResultLifecycleService:
     def archive(self, *, result_id, document_refs=None) -> HrAssessmentArchivePackage:
         result = self._result(result_id)
         state = self._version_state(result)
+        from hr_assessment.services.archive_evidence import (
+            SCHEMA, ArchiveEvidenceError, capture_evidence, verified_archive,
+        )
+        refs = sorted({str(value).strip() for value in (document_refs or []) if str(value).strip()})
+        # Replays read their historical artifact before considering today's data.
+        existing = HrAssessmentArchivePackage.objects.select_for_update().filter(
+            tenant_id=self.tenant_id, result_id=result.id, result_version=state.version,
+        ).first()
+        if existing is not None:
+            try:
+                verified_archive(existing)
+            except ArchiveEvidenceError as exc:
+                raise AssessmentResultLifecycleError(exc.code, str(exc)) from exc
+            if existing.document_refs_json != refs:
+                raise AssessmentResultLifecycleError('ASSESSMENT_ARCHIVE_IDEMPOTENCY_CONFLICT', '归档已经形成，引用不一致，不能覆盖历史。')
+            return existing
         notice = HrResultNotice.objects.filter(
             tenant_id=self.tenant_id,
             result_id=result.id,
@@ -359,6 +375,15 @@ class AssessmentResultLifecycleService:
             },
             "documentRefs": refs,
         }
+        binding = (result.calculation_snapshot_json or {}).get('evidenceBinding')
+        if isinstance(binding, dict) and binding.get('status') == 'COMPLETE':
+            try:
+                manifest['schemaVersion'] = SCHEMA
+                manifest['evidence'] = capture_evidence(result, state.version)
+            except (ArchiveEvidenceError, ValueError) as exc:
+                raise AssessmentResultLifecycleError(getattr(exc, 'code', 'ASSESSMENT_ARCHIVE_EVIDENCE_INVALID'), str(exc)) from exc
+        # Legacy formal results remain readable and archivable in v1. Do not
+        # rewrite their sealed result or use current HR03/HR09 as historical data.
         encoded = json.dumps(
             manifest,
             ensure_ascii=False,
@@ -395,6 +420,10 @@ class AssessmentResultLifecycleService:
             sealed_at=now,
             archive_provider_ref=f"hr12://archive/{content_hash}",
         )
+        try:
+            verified_archive(archive)
+        except ArchiveEvidenceError as exc:
+            raise AssessmentResultLifecycleError(exc.code, str(exc)) from exc
         emit_registered_event(
             tenant_id=self.tenant_id,
             event_name="hr.assessment.assessment_result.archived",

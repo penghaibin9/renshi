@@ -142,9 +142,9 @@
     button.disabled = false;
   }
 
-  function reload(message) {
+  function reload(message, button) {
     show('ok', message);
-    window.setTimeout(() => location.reload(), 650);
+    window.HrWorkspaceUX?.afterCommit({host, button, message});
   }
 
   host.querySelector('[data-open]').addEventListener('click', () => {
@@ -162,7 +162,7 @@
         name: data.get('name'),
         assessment_domain: data.get('assessment_domain'),
       });
-      reload(`制度包 ${created.code} 已创建`);
+      reload(`制度包 ${created.code} 已创建`, button);
     } catch (error) {
       show('error', error.name === 'AbortError' ? '请求超时，请稍后重试。' : error.message);
       busy(button, false);
@@ -180,6 +180,28 @@
       for (const pack of packs) {
         const row = document.createElement('div');
         row.className = 'hr12-action-row';
+        const thresholdFields = pack.assessment_domain === 'ANNUAL'
+          ? `
+              <div class="hr12-action-field"><label>优秀分数线<input name="excellentMinScore" type="number" min="1" max="100" step="0.01" value="90" required></label></div>
+              <div class="hr12-action-field"><label>合格分数线<input name="qualifiedMinScore" type="number" min="1" max="99.99" step="0.01" value="60" required></label></div>
+              <div class="hr12-action-field"><label>基本合格分数线<input name="basicQualifiedMinScore" type="number" min="1" max="99.98" step="0.01" value="50" required></label></div>
+              <div class="hr12-action-field"><label>优秀比例上限（%）<input name="excellentRatioPercent" type="number" min="0" max="100" step="0.01" value="20" required></label></div>`
+          : pack.assessment_domain === 'TERM'
+            ? `
+              <div class="hr12-action-field"><label>聘期合格分数线<input name="qualifiedMinScore" type="number" min="1" max="100" step="0.01" value="60" required></label></div>
+              <input name="excellentMinScore" type="hidden" value="90">
+              <input name="basicQualifiedMinScore" type="hidden" value="50">
+              <input name="excellentRatioPercent" type="hidden" value="20">`
+            : `
+              <div class="hr12-action-field"><label>优秀分数线<input name="excellentMinScore" type="number" min="1" max="100" step="0.01" value="90" required></label></div>
+              <div class="hr12-action-field"><label>合格分数线<input name="qualifiedMinScore" type="number" min="1" max="99.99" step="0.01" value="60" required></label></div>
+              <input name="basicQualifiedMinScore" type="hidden" value="50">
+              <div class="hr12-action-field"><label>优秀比例上限（%）<input name="excellentRatioPercent" type="number" min="0" max="100" step="0.01" value="20" required></label></div>`;
+        const policyNote = pack.assessment_domain === 'ANNUAL'
+          ? '年度考核按“优秀、合格、基本合格、不合格”四档建立；分数线和优秀比例应以本校正式制度为准。'
+          : pack.assessment_domain === 'TERM'
+            ? '聘期考核按“合格、不合格”两档建立，不套用年度考核的优秀比例。'
+            : '按当前考核域建立基础量表、结果映射、指标集和评审流程；保存后仍需正式发布才会生效。';
         row.innerHTML = `
           <div class="hr12-action-row-main">
             <div><b>${esc(pack.name)}</b><small>${esc(pack.code)} · ${esc(domainLabels[pack.assessment_domain] || '其它考核')}</small></div>
@@ -204,11 +226,9 @@
             <div class="hr12-action-grid">
               <div class="hr12-action-field"><label>生效日期<input name="effectiveFrom" type="date" required></label></div>
               <div class="hr12-action-field"><label>失效日期<input name="effectiveTo" type="date"></label></div>
-              <div class="hr12-action-field"><label>优秀分数线<input name="excellentMinScore" type="number" min="1" max="100" step="0.01" value="90" required></label></div>
-              <div class="hr12-action-field"><label>合格分数线<input name="qualifiedMinScore" type="number" min="1" max="99.99" step="0.01" value="60" required></label></div>
-              <div class="hr12-action-field"><label>优秀比例上限（%）<input name="excellentRatioPercent" type="number" min="0" max="100" step="0.01" value="20" required></label></div>
+              ${thresholdFields}
             </div>
-            <div class="hr12-action-note">按中国高校常用口径建立百分制量表、结果映射、优秀比例、基础指标集和评审流程；以上数值可按本校制度修改，保存后仍需点击“发布版本”才会生效。</div>
+            <div class="hr12-action-note">${policyNote}</div>
             <div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="submit">保存草稿版本</button><button class="hr12-action-btn" type="button" data-version-cancel>取消</button></div>
           </form>
           <div class="hr12-action-versions" data-version-list>
@@ -247,9 +267,10 @@
               assessmentTypes: [pack.assessment_domain],
               excellentMinScore: data.get('excellentMinScore'),
               qualifiedMinScore: data.get('qualifiedMinScore'),
+              basicQualifiedMinScore: data.get('basicQualifiedMinScore'),
               excellentRatio: Number(data.get('excellentRatioPercent')) / 100,
             });
-            reload(`制度草稿版本 v${created.versionNo} 已建立`);
+            reload(`制度草稿版本 v${created.versionNo} 已建立`, button);
           } catch (error) {
             show('error', error.name === 'AbortError' ? '请求超时，请稍后重试。' : error.message);
             busy(button, false);
@@ -270,7 +291,7 @@
           busy(button, true);
           try {
             await put(`/policies/${pack.id}`, { name });
-            reload(`制度包已改名为 ${name}`);
+            reload(`制度包已改名为 ${name}`, button);
           } catch (error) {
             show('error', error.name === 'AbortError' ? '请求超时，请稍后重试。' : error.message);
             busy(button, false);
@@ -302,7 +323,7 @@
                 busy(publishButton, true);
                 try {
                   const output = await post(`/policies/${pack.id}/versions/${version.id}/publish`, {});
-                  reload(`制度版本 v${version.version_no} 已发布：${output.status}`);
+                  reload(`制度版本 v${version.version_no} 已发布：${output.status}`, publishButton);
                 } catch (error) {
                   show('error', error.name === 'AbortError' ? '请求超时，请稍后重试。' : error.message);
                   busy(publishButton, false);

@@ -85,8 +85,10 @@ class CompanyScopedBackend(ModelBackend):
         if getattr(user_obj, "is_superuser", False):
             return Permission.objects.all()
 
-        user_ids = self._get_user_permissions(user_obj).values_list("pk", flat=True)
-        group_ids = self._get_group_permissions(user_obj).values_list("pk", flat=True)
+        # Permission.Meta.ordering is presentation-only. UNION operands must not
+        # inherit that ordering (SQLite rejects it; it has no authorization meaning).
+        user_ids = self._get_user_permissions(user_obj).order_by().values_list("pk", flat=True)
+        group_ids = self._get_group_permissions(user_obj).order_by().values_list("pk", flat=True)
         return Permission.objects.filter(
             pk__in=user_ids.union(group_ids)
         ).select_related("content_type")

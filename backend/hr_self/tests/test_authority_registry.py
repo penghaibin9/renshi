@@ -12,5 +12,5 @@ class Hr17AuthorityRegistryTests(SimpleTestCase):
         events = [
             row for row in global_event_registry.all() if row.module_code == "HR17"
         ]
-        self.assertEqual([row.key for row in permissions], ["hr.self.view"])
+        self.assertEqual({row.key for row in permissions}, {"hr.self.view", "hr.self.apply"})
         self.assertEqual(events, [])

@@ -212,7 +212,7 @@ def credential_create(request: HttpRequest) -> JsonResponse:
                 credential_name_snapshot=data["credential_name_snapshot"],
                 level_code=data.get("level_code", ""),
                 certificate_no_cipher=encrypt_certificate_no(cert_no),
-                certificate_no_hash=certificate_no_hash(cert_no),
+                certificate_no_hash=certificate_no_hash(cert_no, tenant_id=ctx.tenant_id),
                 issuer_name=data["issuer_name"],
                 issue_date=data.get("issue_date"),
                 valid_from=data.get("valid_from"),
@@ -388,7 +388,7 @@ def credential_renew(request: HttpRequest, credential_id: str) -> JsonResponse:
         cert_no = data.get("certificate_no", "")
         new_data = {}
         if cert_no:
-            new_data["certificate_no_hash"] = certificate_no_hash(cert_no)
+            new_data["certificate_no_hash"] = certificate_no_hash(cert_no, tenant_id=ctx.tenant_id)
             new_data["certificate_no_cipher"] = encrypt_certificate_no(cert_no)
         if data.get("issuer_name"):
             new_data["issuer_name"] = data["issuer_name"]

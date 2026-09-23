@@ -13,6 +13,7 @@ requestId 用等宽字体单独一行展示，便于排障。
   <div class="hr-error-state__icon" aria-hidden="true">&#33;</div>
   <h3 class="hr-error-state__title">{{ title|default:_("数据暂时无法计算") }}</h3>
   {% if message %}<p class="hr-meta">{{ message }}</p>{% endif %}
+  <p class="hr-meta hr-error-state__next">下一步：先刷新或稍后重试；如果仍失败，请保留下面的请求编号交给管理员排查，避免反复提交同一业务。</p>
   {% if retry_url %}
     <a class="hr-btn hr-btn--ghost hr-error-state__retry" href="{{ retry_url }}">{{ retry_label|default:_("重试") }}</a>
   {% endif %}

@@ -1,9 +1,9 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% block title %}{% trans "未来生效队列" %}{% endblock %}
 {% block styles %}{{ block.super }}<link rel="stylesheet" href="{% static 'hr/css/hr-tokens.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}"><link rel="stylesheet" href="{% static 'hr/css/hr06-changes-v2.css' %}">{% endblock styles %}
 {% block content %}
-<div class="hr-v2-page hr06-page" data-module="HR06" data-section="future" data-hr-page="future-changes">
+<div class="hr-v2-page hr06-page" data-module="HR06" data-hr-workspace="v6" data-section="future" data-hr-page="future-changes">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>人事异动</span><strong>待生效清单</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr06-future-title"><div class="hr-v2-pagehead__copy"><div class="hr-v2-eyebrow">人事异动 · 生效跟踪</div><h1 class="hr-v2-title" id="hr06-future-title">待生效清单</h1><p class="hr-v2-subtitle">只展示当前学校已经批准、等待计划日期生效的案件。批准事实与正式生效事实保持分离。</p></div><div class="hr-v2-context"><span class="hr-v2-context__item"><strong>状态范围</strong> 已批准待生效</span><span class="hr-v2-context__item"><strong>排序</strong> 计划生效日</span></div></header>
   {% include "hr_changes/components/v2_nav.html" with active="future" %}

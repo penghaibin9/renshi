@@ -1,0 +1,43 @@
+# Isolated acceptance overlay; never used by make prod.
+# ALL application services must use the generated acceptance env and image.
+# Compose project names isolate resources, but do not isolate explicit image tags.
+# Keep this list synchronized with docker-compose.prod.yml; tests enforce coverage.
+services:
+  release:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  web:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  hr05-outbox-worker:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  hr05-import-worker:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  hr18-submission-worker:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  hr18-exchange-worker:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  legacy-scheduler:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  employee-scheduler:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  backup-scheduler:
+    image: ${HR_ACCEPTANCE_IMAGE:?HR_ACCEPTANCE_IMAGE is required}
+    env_file: !override
+      - ${HR_ACCEPTANCE_ENV_FILE:?HR_ACCEPTANCE_ENV_FILE is required}
+  nginx:
+    ports: !reset []

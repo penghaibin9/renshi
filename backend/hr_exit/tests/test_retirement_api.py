@@ -21,6 +21,7 @@ class RetirementApiTests(SimpleTestCase):
         self.exit_fact_id = uuid.uuid4()
         self.retirement_fact_id = uuid.uuid4()
         self.person_id = uuid.uuid4()
+        self.precheck_id = uuid.uuid4()
 
     def _fact(self, *, pension_status="NOT_STARTED"):
         return SimpleNamespace(
@@ -49,6 +50,7 @@ class RetirementApiTests(SimpleTestCase):
             data=json.dumps(
                 {
                     "factNo": "RET-2026-001",
+                    "precheckId": str(self.precheck_id),
                     "retirementType": "STATUTORY",
                     "statutoryDate": "2026-09-01",
                     "effectiveDate": "2030-01-01",
@@ -66,6 +68,7 @@ class RetirementApiTests(SimpleTestCase):
         )
         kwargs = service_cls.return_value.finalize.call_args.kwargs
         self.assertNotIn("effective_date", kwargs)
+        self.assertEqual(kwargs["precheck_id"], self.precheck_id)
         self.assertEqual(kwargs["statutory_date"], date(2026, 9, 1))
         self.assertIn(b'"effectiveDate": "2026-09-01"', response.content)
 
@@ -101,6 +104,7 @@ class RetirementApiTests(SimpleTestCase):
             data=json.dumps(
                 {
                     "factNo": "RET-2026-001",
+                    "precheckId": str(self.precheck_id),
                     "retirementType": "STATUTORY",
                     "statutoryDate": "2026-99-99",
                 }

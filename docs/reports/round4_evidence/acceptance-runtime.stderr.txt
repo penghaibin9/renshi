@@ -1,0 +1,1 @@
+HR_ACCEPTANCE_GATE_FAILED: compose-version failed

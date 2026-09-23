@@ -1,0 +1,333 @@
+/* Yueke University HR — Business Surface V2
+ * Goal: reduce dashboard-card monoculture. Keep data/API/business contracts intact.
+ * Loaded after previous HR polish layers, so it only changes presentation.
+ */
+
+body.hr-shell-v3 [data-module^="HR"] {
+  --hr-sv2-line:#e2e8f0;
+  --hr-sv2-line-strong:#cbd5e1;
+  --hr-sv2-ink:#0f172a;
+  --hr-sv2-muted:#64748b;
+  --hr-sv2-canvas:#f8fafc;
+  --hr-sv2-soft:#f1f5f9;
+  --hr-sv2-radius:8px;
+}
+
+/* 1. Open canvas: the page itself is the workspace, not one giant stack of cards. */
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-pagehead {
+  padding: 8px 0 22px !important;
+  margin-bottom: 14px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--hr-sv2-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-pagehead::before { display:none !important; }
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-title { letter-spacing:-.025em; }
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-subtitle { max-width: 78ch; }
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-context { align-self:flex-end; }
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-context__item {
+  border:0 !important;
+  border-left:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  padding:2px 10px !important;
+}
+
+/* 2. Navigation behaves like a workbench tab strip, not a row of buttons. */
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,.hr10-nav,
+  .hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) {
+  border:0 !important;
+  border-bottom:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  padding:0 !important;
+  gap:18px !important;
+  overflow-x:auto;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,.hr10-nav,
+  .hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a {
+  min-height:44px !important;
+  padding:9px 1px 10px !important;
+  border:0 !important;
+  border-bottom:3px solid transparent !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  white-space:nowrap;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,.hr10-nav,
+  .hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a:is(.active,.is-active,[aria-current="page"]) {
+  color:var(--hr-biz-accent-700,#1d4ed8) !important;
+  border-bottom-color:var(--hr-biz-accent,#2563eb) !important;
+  background:transparent !important;
+}
+
+/* 3. KPI clusters become compact fact strips. They are context, not the product. */
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr-v2-kpis,.hr03-stats,.hr07-kpis,.hr09-primary-kpis,.hr11-summary,.hr12-primary-kpis,
+  .hr13c-kpis,.hr14-kpis,.hr15-kpis,.hr16-kpis,.hr17-kpis,.hr18-kpis
+) {
+  display:grid !important;
+  grid-template-columns:repeat(auto-fit,minmax(135px,1fr)) !important;
+  gap:0 !important;
+  border:1px solid var(--hr-sv2-line) !important;
+  border-radius:var(--hr-sv2-radius) !important;
+  overflow:hidden;
+  background:#fff !important;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr-v2-kpi,.hr03-stats > *, .hr07-kpis > *, .hr09-primary-kpis > *, .hr11-kpi,.hr12-kpi,
+  .hr13c-kpi,.hr14-kpi,.hr15-kpi,.hr16-kpi,.hr17-kpi,.hr18-kpi
+) {
+  min-height:78px !important;
+  margin:0 !important;
+  border:0 !important;
+  border-right:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:#fff !important;
+  box-shadow:none !important;
+}
+
+/* 4. Default content sections are open surfaces separated by rules. */
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr-v2-panel,.hr02-card,.hr04-panel,.hr05-panel,.hr06-case-panel,.hr06-attention__panel,
+  .hr07-card,.hr09-ledger-card,.hr11-card,.hr12-panel,.hr13c-card,.hr14-card,.hr15-card,
+  .hr16-card,.hr17-card,.hr18-card
+) {
+  border:0 !important;
+  border-top:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(
+  .hr03-filter-panel,.hr03-ledger-panel,.hr07-toolbar,.hr11-workbar,.hr13c-toolbar,.hr14-toolbar,
+  .hr15-toolbar,.hr16-toolbar,.hr17-toolbar,.hr18-toolbar
+) {
+  border-radius:0 !important;
+  box-shadow:none !important;
+}
+
+/* 5. Tables are first-class work surfaces. */
+body.hr-shell-v3 [data-module^="HR"] :is(.hr03-table-wrap,.hr04-table-wrap,.hr05-table-wrap,.hr06-table-wrap,.hr07-table-wrap,.hr09-table-wrap) {
+  border:1px solid var(--hr-sv2-line) !important;
+  border-radius:var(--hr-sv2-radius) !important;
+  overflow:auto;
+  background:#fff;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(.hr03-table,.hr06-table,.hr07-table,.hr09-table) thead th {
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:#f8fafc !important;
+  border-bottom:1px solid var(--hr-sv2-line-strong) !important;
+}
+
+/* ---------- HR01: command center = priority queue + numbered route, not tiles ---------- */
+body.hr-shell-v3 .hr-home .hr-v2-conclusions {
+  display:grid !important;
+  grid-template-columns:1.4fr 1fr 1fr !important;
+  gap:0 !important;
+  border-top:1px solid var(--hr-sv2-line);
+  border-bottom:1px solid var(--hr-sv2-line);
+}
+body.hr-shell-v3 .hr-home .hr-v2-conclusion {
+  min-height:112px !important;
+  padding:16px 18px !important;
+  border:0 !important;
+  border-right:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 .hr-home .hr-home__core-flow {
+  display:grid;
+  grid-template-columns:minmax(220px,.7fr) minmax(0,2fr);
+  gap:28px;
+  padding:24px 0 !important;
+  border:0 !important;
+  border-bottom:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 .hr-home .hr-home__flow-grid { display:block !important; }
+body.hr-shell-v3 .hr-home .hr-home__flow-card {
+  display:grid !important;
+  grid-template-columns:32px minmax(0,1fr) auto;
+  align-items:center;
+  min-height:68px !important;
+  padding:10px 0 !important;
+  border:0 !important;
+  border-bottom:1px solid var(--hr-sv2-line) !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 .hr-home .hr-home__flow-card::after { display:none !important; }
+body.hr-shell-v3 .hr-home .hr-home__flow-no {
+  width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:#0f172a !important;color:#fff !important;font-size:12px;
+}
+body.hr-shell-v3 .hr-home .hr-home__module-groups { gap:0 !important; }
+body.hr-shell-v3 .hr-home .hr-home__module-group { border-top:1px solid var(--hr-sv2-line); padding:18px 0; }
+body.hr-shell-v3 .hr-home .hr-home__modules { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0 !important; }
+body.hr-shell-v3 .hr-home .hr-home__module {
+  border:0 !important; border-left:1px solid var(--hr-sv2-line) !important; border-radius:0 !important;
+  box-shadow:none !important; background:transparent !important; padding:10px 18px !important;
+}
+
+/* ---------- HR02: organization = split pane / tree explorer ---------- */
+body.hr-shell-v3 .hr02-page .hr-v2-conclusions { display:none !important; }
+body.hr-shell-v3 .hr02-page .hr02-card { padding:18px 0 !important; }
+body.hr-shell-v3 .hr02-page :is(.hr02-tree,[class*="org-tree"]) {
+  border-right:1px solid var(--hr-sv2-line) !important;
+  background:#fbfdff !important;
+}
+body.hr-shell-v3 .hr02-page .hr02-toolbar { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; background:#fff !important; }
+
+/* ---------- HR03: staff = directory/table + inspector, almost no cards ---------- */
+body.hr-shell-v3 .hr03-page .hr03-stats { margin-bottom:10px; }
+body.hr-shell-v3 .hr03-page .hr03-filter-panel {
+  padding:10px 0 !important;
+  border:0 !important;
+  border-bottom:1px solid var(--hr-sv2-line) !important;
+  background:transparent !important;
+}
+body.hr-shell-v3 .hr03-page .hr03-ledger-panel { border-top:0 !important; padding-top:0 !important; }
+body.hr-shell-v3 .hr03-page .hr03-table tbody tr:hover { background:#f8fafc; }
+
+/* ---------- HR04: recruitment = pipeline rail + candidate ledger ---------- */
+body.hr-shell-v3 .hr04-page .hr04-panel { padding:18px 0 !important; }
+body.hr-shell-v3 .hr04-page .hr04-toolbar { border-bottom:1px solid var(--hr-sv2-line) !important; background:transparent !important; }
+body.hr-shell-v3 .hr04-page .hr04-table-wrap { margin-top:0 !important; }
+
+/* ---------- HR05: onboarding = journey/checklist ---------- */
+body.hr-shell-v3 .hr05-page .hr05-panel { padding:18px 0 !important; }
+body.hr-shell-v3 .hr05-page .hr05-toolbar { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; background:transparent !important; }
+
+/* ---------- HR06: personnel changes = case inbox ---------- */
+body.hr-shell-v3 .hr06-page .hr06-summary {
+  display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0 !important;
+  border-top:1px solid var(--hr-sv2-line); border-bottom:1px solid var(--hr-sv2-line);
+}
+body.hr-shell-v3 .hr06-page .hr06-summary__item { border:0 !important; border-right:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; }
+body.hr-shell-v3 .hr06-page .hr06-workbench { display:grid; grid-template-columns:minmax(0,2.2fr) minmax(260px,.8fr); gap:22px; }
+body.hr-shell-v3 .hr06-page .hr06-side-view { border-left:1px solid var(--hr-sv2-line); padding-left:20px; }
+
+/* ---------- HR07: contracts = ledger + risk rail ---------- */
+body.hr-shell-v3 .hr07-page .hr07-card { padding:18px 0 !important; }
+body.hr-shell-v3 .hr07-page .hr07-stagebar { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; }
+
+/* ---------- HR08: external people = roster workspace ---------- */
+body.hr-shell-v3 .hr08-page :is(.hr08-card,.hr-v2-panel) { border-radius:0 !important; box-shadow:none !important; }
+
+/* ---------- HR09: qualification = compliance matrix ---------- */
+body.hr-shell-v3 .hr09 .hr09-split { grid-template-columns:minmax(0,2fr) minmax(260px,.8fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr09 .hr09-side-list { border-left:1px solid var(--hr-sv2-line); padding-left:20px; }
+body.hr-shell-v3 .hr09 .hr09-secondary-metrics { display:flex !important; gap:24px !important; border-bottom:1px solid var(--hr-sv2-line); padding-bottom:12px; }
+body.hr-shell-v3 .hr09 .hr09-secondary-metric { border:0 !important; background:transparent !important; box-shadow:none !important; }
+
+/* ---------- HR10: development = roadmap / activity stream ---------- */
+body.hr-shell-v3 .hr10 .hr10-workspace :is(.hr-v2-panel,.hr10-card) { border-radius:0 !important; box-shadow:none !important; }
+
+/* ---------- HR11: time = exception console ---------- */
+body.hr-shell-v3 .hr11 .hr11-grid { grid-template-columns:minmax(0,2.1fr) minmax(260px,.9fr) !important; gap:22px !important; }
+body.hr-shell-v3 .hr11 .hr11-card { padding:18px 0 !important; }
+body.hr-shell-v3 .hr11 .hr11-list { border-top:1px solid var(--hr-sv2-line); }
+body.hr-shell-v3 .hr11 .hr11-row { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; }
+body.hr-shell-v3 .hr11 .hr11-flow { border-left:2px solid var(--hr-sv2-line); padding-left:18px; }
+body.hr-shell-v3 .hr11 .hr11-flow-step { border:0 !important; background:transparent !important; box-shadow:none !important; }
+
+/* ---------- HR12: assessment = score/progress matrix ---------- */
+body.hr-shell-v3 .hr12 .hr12-workspace-grid { grid-template-columns:minmax(0,2fr) minmax(270px,.8fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr12 .hr12-panel { padding:18px 0 !important; }
+body.hr-shell-v3 .hr12 .hr12-process { display:flex !important; gap:0 !important; border-bottom:1px solid var(--hr-sv2-line); }
+body.hr-shell-v3 .hr12 .hr12-process__step { flex:1; border:0 !important; border-right:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; }
+
+/* ---------- HR13: title review = formal docket + stage rail ---------- */
+body.hr-shell-v3 .hr13 .hr13-process,
+body.hr-shell-v3 .hr13 .hr13c-flow { display:flex !important; gap:0 !important; border-bottom:1px solid var(--hr-sv2-line); }
+body.hr-shell-v3 .hr13 :is(.hr13-process__step,.hr13c-step) { flex:1; border:0 !important; border-right:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; box-shadow:none !important; }
+body.hr-shell-v3 .hr13 .hr13c-layout { grid-template-columns:minmax(0,2.1fr) minmax(260px,.9fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr13 .hr13c-card { padding:18px 0 !important; }
+
+/* ---------- HR14: appointment = quota matrix ---------- */
+body.hr-shell-v3 .hr14 .hr14-layout { grid-template-columns:minmax(0,2.15fr) minmax(260px,.85fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr14 .hr14-card { padding:18px 0 !important; }
+body.hr-shell-v3 .hr14 .hr14-flow { border-left:2px solid var(--hr-sv2-line); padding-left:18px; }
+body.hr-shell-v3 .hr14 .hr14-step { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; }
+
+/* ---------- HR15: payroll = spreadsheet / reconciliation desk ---------- */
+body.hr-shell-v3 .hr15 .hr15-layout { grid-template-columns:minmax(0,2.4fr) minmax(250px,.7fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr15 .hr15-card { padding:16px 0 !important; }
+body.hr-shell-v3 .hr15 .hr15-list { border:1px solid var(--hr-sv2-line); background:#fff; }
+body.hr-shell-v3 .hr15 .hr15-list > * { border-bottom:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; }
+body.hr-shell-v3 .hr15 .hr15-flow { border-left:2px solid #94a3b8; padding-left:18px; }
+body.hr-shell-v3 .hr15 .hr15-step { border:0 !important; background:transparent !important; box-shadow:none !important; }
+
+/* ---------- HR16: exit = clearance checklist / blockers ---------- */
+body.hr-shell-v3 .hr16 .hr16-layout { grid-template-columns:minmax(0,2fr) minmax(280px,.8fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr16 .hr16-card { padding:18px 0 !important; }
+body.hr-shell-v3 .hr16 .hr16-flow { border-left:2px solid var(--hr-sv2-line); padding-left:18px; }
+body.hr-shell-v3 .hr16 .hr16-step { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; background:transparent !important; }
+
+/* ---------- HR17: self service = search-first service directory ---------- */
+body.hr-shell-v3 .hr17 .hr17-kpis { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+body.hr-shell-v3 .hr17 .hr17-context { display:grid !important; grid-template-columns:1.1fr .9fr; gap:0 !important; border-top:1px solid var(--hr-sv2-line); border-bottom:1px solid var(--hr-sv2-line); }
+body.hr-shell-v3 .hr17 .hr17-context .hr17-card { border:0 !important; border-right:1px solid var(--hr-sv2-line) !important; padding:18px 20px !important; }
+body.hr-shell-v3 .hr17 .hr17-layout { grid-template-columns:minmax(0,2.2fr) minmax(250px,.75fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr17 .hr17-services { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 !important; border-top:1px solid var(--hr-sv2-line); }
+body.hr-shell-v3 .hr17 .hr17-services > * { border:0 !important; border-bottom:1px solid var(--hr-sv2-line) !important; border-right:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; box-shadow:none !important; }
+
+/* ---------- HR18: data = studio / governance console ---------- */
+body.hr-shell-v3 .hr18 .hr18-layout { grid-template-columns:minmax(0,2.5fr) minmax(250px,.72fr) !important; gap:24px !important; }
+body.hr-shell-v3 .hr18 .hr18-card { padding:18px 0 !important; }
+body.hr-shell-v3 .hr18 .hr18-main { min-width:0; }
+body.hr-shell-v3 .hr18 .hr18-side { border-left:1px solid var(--hr-sv2-line); padding-left:22px; }
+body.hr-shell-v3 .hr18 .hr18-priority { border-top:1px solid var(--hr-sv2-line); }
+body.hr-shell-v3 .hr18 .hr18-list { border:1px solid var(--hr-sv2-line); background:#fff; }
+body.hr-shell-v3 .hr18 .hr18-list > * { border-bottom:1px solid var(--hr-sv2-line) !important; border-radius:0 !important; box-shadow:none !important; }
+body.hr-shell-v3 .hr18 .hr18-flow { border-left:2px solid var(--hr-sv2-line); padding-left:16px; }
+
+/* Keep cards only where the content is truly atomic (dialogs, import summaries, selected entity, service tile). */
+body.hr-shell-v3 [data-module^="HR"] :is(dialog,.modal,.hr03-import-panel,.hr07-selected,.hr06-person,.hr09-focus) {
+  border-radius:10px !important;
+}
+
+@media (max-width: 1100px) {
+  body.hr-shell-v3 .hr-home .hr-home__core-flow,
+  body.hr-shell-v3 .hr06-page .hr06-workbench,
+  body.hr-shell-v3 .hr09 .hr09-split,
+  body.hr-shell-v3 .hr11 .hr11-grid,
+  body.hr-shell-v3 .hr12 .hr12-workspace-grid,
+  body.hr-shell-v3 .hr13 .hr13c-layout,
+  body.hr-shell-v3 .hr14 .hr14-layout,
+  body.hr-shell-v3 .hr15 .hr15-layout,
+  body.hr-shell-v3 .hr16 .hr16-layout,
+  body.hr-shell-v3 .hr17 .hr17-layout,
+  body.hr-shell-v3 .hr18 .hr18-layout { grid-template-columns:1fr !important; }
+  body.hr-shell-v3 .hr18 .hr18-side,
+  body.hr-shell-v3 .hr06-page .hr06-side-view,
+  body.hr-shell-v3 .hr09 .hr09-side-list { border-left:0; padding-left:0; border-top:1px solid var(--hr-sv2-line); padding-top:18px; }
+}
+
+@media (max-width: 760px) {
+  body.hr-shell-v3 .hr-home .hr-home__modules { grid-template-columns:1fr; }
+  body.hr-shell-v3 .hr-home .hr-v2-conclusions,
+  body.hr-shell-v3 .hr06-page .hr06-summary,
+  body.hr-shell-v3 .hr17 .hr17-context { grid-template-columns:1fr !important; }
+  body.hr-shell-v3 [data-module^="HR"] :is(
+    .hr-v2-kpis,.hr03-stats,.hr07-kpis,.hr09-primary-kpis,.hr11-summary,.hr12-primary-kpis,
+    .hr13c-kpis,.hr14-kpis,.hr15-kpis,.hr16-kpis,.hr17-kpis,.hr18-kpis
+  ) { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+}

@@ -1,9 +1,7 @@
-import json
 import os
 import re
 import shutil
 import subprocess
-import tarfile
 import tempfile
 from pathlib import Path
 
@@ -11,7 +9,8 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from horilla_backup.mysqldump import resolve_mysql_client
-from horilla_backup.production import decrypt_file, resolve_bundle, sha256_file
+from horilla_backup.production import decrypt_file, resolve_bundle, verified_bundle_manifest, verified_bundle_artifact
+from horilla_backup.handover import safe_extract_archive, restore_media_target_for_settings
 
 
 class Command(BaseCommand):
@@ -32,7 +31,7 @@ class Command(BaseCommand):
                 "--target-database must contain only letters, digits and underscores"
             )
         source_name = str(settings.DATABASES["default"]["NAME"])
-        if target == source_name:
+        if target.casefold() == source_name.casefold():
             raise CommandError("Refusing to restore over the live configured database")
         password = os.environ.get("RESTORE_DATABASE_PASSWORD", "")
         user = os.environ.get("RESTORE_DATABASE_USER", "")
@@ -55,9 +54,7 @@ class Command(BaseCommand):
                 environment=environment,
             )
             bundle = resolve_bundle(settings.PRODUCTION_BACKUP_ROOT, options["bundle"])
-            manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
-            if manifest.get("format") != "renshi-production-backup-v1":
-                raise ValueError("unsupported backup manifest format")
+            manifest = verified_bundle_manifest(bundle)
             database_artifact = self._verified_artifact(bundle, manifest, "database.sql.enc")
             media_artifact = self._verified_artifact(bundle, manifest, "media.tar.gz.enc")
             with tempfile.TemporaryDirectory(dir=bundle) as temporary:
@@ -84,8 +81,7 @@ class Command(BaseCommand):
                     prepared_media = media_staging_root / "media"
                     prepared_media.mkdir()
                     try:
-                        with tarfile.open(media_archive, "r:gz") as archive:
-                            archive.extractall(prepared_media, filter="data")
+                        safe_extract_archive(media_archive, prepared_media)
                     except Exception:
                         shutil.rmtree(media_staging_root, ignore_errors=True)
                         raise
@@ -99,9 +95,12 @@ class Command(BaseCommand):
                     f"--database={target}",
                 ]
                 try:
+                    if media_target is not None:
+                        self._validate_media_target(media_target)
                     with sql.open("rb") as source:
                         subprocess.run(command, stdin=source, env=environment, check=True)
                     if prepared_media is not None:
+                        self._validate_media_target(media_target)
                         if media_target.exists():
                             media_target.rmdir()
                         os.replace(prepared_media, media_target)
@@ -114,12 +113,7 @@ class Command(BaseCommand):
 
     @staticmethod
     def _validate_media_target(value):
-        if not value:
-            return None
-        target = Path(value).resolve()
-        if target.exists() and (not target.is_dir() or any(target.iterdir())):
-            raise ValueError("media target must be absent or an empty directory")
-        return target
+        return restore_media_target_for_settings(value, settings)
 
     @staticmethod
     def _require_empty_database(*, client, target, host, port, user, environment):
@@ -155,8 +149,4 @@ class Command(BaseCommand):
 
     @staticmethod
     def _verified_artifact(bundle, manifest, name):
-        artifact = bundle / name
-        metadata = manifest["artifacts"][name]
-        if sha256_file(artifact) != metadata["sha256"]:
-            raise ValueError(f"checksum mismatch for {name}")
-        return artifact
+        return verified_bundle_artifact(bundle, manifest, name)

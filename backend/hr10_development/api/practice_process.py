@@ -32,7 +32,7 @@ from hr10_development.models.practice_process import (
 from hr10_development.services.practice_process_service import PracticeProcessService
 from hr10_development.services.risk_service import RiskService
 from hr10_development.permissions import require_hr10_permission
-from hr_staff.models import HrStaffMaster
+from hr10_development.identity import resolve_staff_identity
 
 
 def _body_object(request):
@@ -356,19 +356,17 @@ def create_output(request):
     if body is None:
         return JsonResponse(error("INVALID_JSON", "请求体不是有效 JSON"), status=400)
     try:
-        staff_id = int(body["staffMasterId"])
         output_type = body.get("outputType", OutputType.OTHER)
         if output_type not in OutputType.values:
             raise ValueError("成果类型无效")
         with transaction.atomic():
-            if not HrStaffMaster.objects.select_for_update().filter(
-                tenant_id=tenant_id,
-                legacy_employee_id=staff_id,
-            ).exists():
-                return JsonResponse(error(DevelopmentErrorCode.NOT_FOUND, "教师不存在"), status=404)
+            identity = resolve_staff_identity(
+                tenant_id=tenant_id, raw_staff_id=body["staffMasterId"], for_update=True
+            )
             output = HrDevelopmentOutput(
                 tenant_id=tenant_id,
-                staff_master_id=staff_id,
+                staff_master_uuid=identity.staff_uuid,
+                staff_master_id=identity.legacy_employee_id,
                 source_activity_type=str(body.get("sourceActivityType") or "").strip(),
                 source_case_id=int(body.get("sourceCaseId") or 0),
                 output_type=output_type,

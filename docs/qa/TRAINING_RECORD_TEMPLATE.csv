@@ -1,0 +1,3 @@
+participant,role,session_at,trainer,topic,attendance_status,acknowledgement,evidence_ref
+学校管理员,ADMIN,2026-01-01T09:00:00+08:00,跃科培训讲师,系统初始化/权限/审计/备份恢复,COMPLETED,CONFIRMED,evidence/admin-training
+业务经办人,OPERATOR,2026-01-01T14:00:00+08:00,跃科培训讲师,HR01-HR18日常办理/查询/导入导出,COMPLETED,CONFIRMED,evidence/operator-training

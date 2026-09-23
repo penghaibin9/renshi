@@ -7,4 +7,4 @@ class HrExitConfig(AppConfig):
     verbose_name = "HR16 退休与离校"
 
     def ready(self):
-        from . import archive_models, archive_registry  # noqa: F401
+        from . import archive_models, archive_registry, flex_registry  # noqa: F401

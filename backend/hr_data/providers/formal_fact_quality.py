@@ -1,9 +1,10 @@
-"""Bounded cross-branch quality Providers for HR13 and HR14 formal facts.
+"""Bounded cross-branch quality Providers for HR07/HR13/HR14 formal facts.
 
 These checks encode Authority invariants only.  They do not contain school policy
 thresholds or mutate source data.  Sibling apps are resolved lazily through the
 Django app registry: an isolated HR18 branch therefore returns UNAVAILABLE, while
 an integrated tree can execute the same Provider against canonical formal facts.
+HR07 checks the signed-version authority chain rather than draft workflow rows.
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ from hr_data.services.source_gate import SourceStatus
 
 
 _PROVIDER_VERSIONS = {
+    "HR07": "hr07-contract-quality-v1",
     "HR13": "hr13-title-quality-v1",
     "HR14": "hr14-appointment-quality-v1",
 }
 _SUPPORTED_RULES = {
+    "HR07": {"HR07_CONTRACT_VERSION_INTEGRITY"},
     "HR13": {"HR13_RESULT_CHAIN_INTEGRITY"},
     "HR14": {"HR14_APPOINTMENT_FACT_INTEGRITY"},
 }
@@ -58,6 +61,85 @@ def _finding(*, rule_code: str, source_ref: str, issue: str, **details):
         ),
         "details": {"issue": issue, **details},
     }
+
+
+_HR07_FORMAL_STATUSES = {"EFFECTIVE", "SUPERSEDED", "TERMINATED", "EXPIRED"}
+
+
+def _hr07_findings(*, rule_code: str, rows: list[dict], tenant_id: int):
+    by_id = {_sid(row["id"]): row for row in rows}
+    by_agreement = defaultdict(list)
+    findings = []
+    for row in rows:
+        row_id = _sid(row["id"])
+        agreement_id = _sid(row.get("agreement_id"))
+        source_ref = f"contract-version:{row_id}"
+        by_agreement[agreement_id].append(row)
+        if int(row.get("agreement__tenant_id") or 0) != int(tenant_id):
+            findings.append(_finding(
+                rule_code=rule_code, source_ref=source_ref,
+                issue="CROSS_TENANT_AGREEMENT", agreementId=agreement_id,
+            ))
+        status = str(row.get("status") or "")
+        if status in _HR07_FORMAL_STATUSES:
+            if not row.get("signed_at") or not str(row.get("signed_document_ref") or "").strip():
+                findings.append(_finding(
+                    rule_code=rule_code, source_ref=source_ref,
+                    issue="FORMAL_SIGNATURE_EVIDENCE_REQUIRED", status=status,
+                ))
+            content_hash = str(row.get("content_hash") or "").lower()
+            if len(content_hash) != 64 or any(c not in "0123456789abcdef" for c in content_hash):
+                findings.append(_finding(
+                    rule_code=rule_code, source_ref=source_ref,
+                    issue="CONTENT_HASH_INVALID", status=status,
+                ))
+        start, end = row.get("effective_from"), row.get("effective_to")
+        if start and end and end <= start:
+            findings.append(_finding(
+                rule_code=rule_code, source_ref=source_ref,
+                issue="EFFECTIVE_RANGE_INVALID",
+            ))
+        predecessor_id = _sid(row.get("supersedes_version_id"))
+        if predecessor_id:
+            predecessor = by_id.get(predecessor_id)
+            if predecessor is None:
+                findings.append(_finding(
+                    rule_code=rule_code, source_ref=source_ref,
+                    issue="PREDECESSOR_MISSING", predecessorId=predecessor_id,
+                ))
+            elif _sid(predecessor.get("agreement_id")) != agreement_id:
+                findings.append(_finding(
+                    rule_code=rule_code, source_ref=source_ref,
+                    issue="PREDECESSOR_AGREEMENT_MISMATCH", predecessorId=predecessor_id,
+                ))
+            elif int(row.get("version_no") or 0) <= int(predecessor.get("version_no") or 0):
+                findings.append(_finding(
+                    rule_code=rule_code, source_ref=source_ref,
+                    issue="SUCCESSOR_VERSION_NOT_ADVANCED", predecessorId=predecessor_id,
+                ))
+
+    for agreement_id, versions in by_agreement.items():
+        formal = [r for r in versions if str(r.get("status") or "") in _HR07_FORMAL_STATUSES]
+        formal.sort(key=lambda r: (r.get("effective_from"), int(r.get("version_no") or 0), _sid(r.get("id"))))
+        for index, left in enumerate(formal):
+            left_start, left_end = left.get("effective_from"), left.get("effective_to")
+            if not left_start:
+                continue
+            for right in formal[index + 1:]:
+                right_start, right_end = right.get("effective_from"), right.get("effective_to")
+                if not right_start:
+                    continue
+                if left_end is not None and left_end <= right_start:
+                    break
+                if right_end is not None and right_end <= left_start:
+                    continue
+                findings.append(_finding(
+                    rule_code=rule_code,
+                    source_ref=f"contract-agreement:{agreement_id}",
+                    issue="FORMAL_VERSION_OVERLAP",
+                    versionIds=sorted([_sid(left.get("id")), _sid(right.get("id"))]),
+                ))
+    return findings
 
 
 def _hr13_findings(*, rule_code: str, rows: list[dict], cases: dict[str, str]):
@@ -343,7 +425,7 @@ def quality_provider(
     as_of_date=None,
     actor_user_id=None,
 ):
-    """Execute a bounded HR13/HR14 invariant rule and return a typed receipt."""
+    """Execute a bounded formal-fact invariant rule and return a typed receipt."""
     del actor_user_id, rule_version
     try:
         tenant_id = int(tenant_id)
@@ -360,7 +442,24 @@ def quality_provider(
     if as_of_date is not None and not isinstance(as_of_date, date):
         return {"status": SourceStatus.ERROR.value}
 
-    if domain == "HR13":
+    if domain == "HR07":
+        fact_model = _model("hr_contracts", "HrContractVersion")
+        if fact_model is None:
+            return {"status": SourceStatus.UNAVAILABLE.value}
+        queryset = fact_model.objects.filter(tenant_id=tenant_id)
+        if as_of_date is not None:
+            queryset = queryset.filter(effective_from__lte=as_of_date)
+        rows = list(
+            queryset.order_by("id").values(
+                "id", "agreement_id", "agreement__tenant_id",
+                "agreement__staff_id", "agreement__employment_relationship_id",
+                "version_no", "status", "effective_from", "effective_to",
+                "signed_at", "signed_document_ref", "content_hash",
+                "supersedes_version_id",
+            )
+        )
+        findings = _hr07_findings(rule_code=rule_code, rows=rows, tenant_id=tenant_id)
+    elif domain == "HR13":
         fact_model = _model("hr_title", "ProfessionalTitleResult")
         case_model = _model("hr_title", "TitleApplicationCase")
         if fact_model is None or case_model is None:

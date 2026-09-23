@@ -11,7 +11,7 @@ Usage:
 <div class="hr-empty-state">
   <div class="hr-empty-state__icon" aria-hidden="true">&#8709;</div>
   <h3 class="hr-empty-state__title">{{ title|default:_("暂无数据") }}</h3>
-  {% if hint %}<p class="hr-meta hr-empty-state__hint">{{ hint }}</p>{% endif %}
+  {% if hint %}<p class="hr-meta hr-empty-state__hint">{{ hint }}</p>{% else %}<p class="hr-meta hr-empty-state__hint">当前范围确实没有符合条件的数据。可先检查筛选条件；需要新增时请从对应业务入口开始。</p>{% endif %}
   {% if action_label and action_url %}
     <a class="hr-btn hr-btn--primary hr-empty-state__action" href="{{ action_url }}">{{ action_label }}</a>
   {% endif %}

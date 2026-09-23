@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, override_settings
 
 from hr_data.providers.formal_fact_quality import (
+    _hr07_findings,
     _hr13_findings,
     _hr14_findings,
     quality_provider,
@@ -12,6 +13,68 @@ from hr_data.services.quality_runtime_service import RuntimeDataQualityExecution
 
 
 class FormalFactQualityInvariantTests(SimpleTestCase):
+
+    def test_hr07_detects_formal_overlap_and_authority_evidence_breaks(self):
+        rows = [
+            {
+                "id": "v1",
+                "agreement_id": "a1",
+                "agreement__tenant_id": 77,
+                "agreement__staff_id": "staff-1",
+                "agreement__employment_relationship_id": "rel-1",
+                "version_no": 1,
+                "status": "SUPERSEDED",
+                "effective_from": date(2025, 1, 1),
+                "effective_to": date(2026, 8, 1),
+                "signed_at": date(2024, 12, 1),
+                "signed_document_ref": "doc-v1",
+                "content_hash": "a" * 64,
+                "supersedes_version_id": None,
+            },
+            {
+                "id": "v2",
+                "agreement_id": "a1",
+                "agreement__tenant_id": 77,
+                "agreement__staff_id": "staff-1",
+                "agreement__employment_relationship_id": "rel-1",
+                "version_no": 2,
+                "status": "EFFECTIVE",
+                "effective_from": date(2026, 7, 1),
+                "effective_to": None,
+                "signed_at": None,
+                "signed_document_ref": "",
+                "content_hash": "not-a-real-hash",
+                "supersedes_version_id": "v1",
+            },
+            {
+                "id": "v-cross",
+                "agreement_id": "a-cross",
+                "agreement__tenant_id": 88,
+                "agreement__staff_id": "staff-x",
+                "agreement__employment_relationship_id": "rel-x",
+                "version_no": 1,
+                "status": "EFFECTIVE",
+                "effective_from": date(2026, 1, 1),
+                "effective_to": None,
+                "signed_at": date(2025, 12, 1),
+                "signed_document_ref": "doc-cross",
+                "content_hash": "c" * 64,
+                "supersedes_version_id": None,
+            },
+        ]
+
+        findings = _hr07_findings(
+            rule_code="HR07_CONTRACT_VERSION_INTEGRITY",
+            rows=rows,
+            tenant_id=77,
+        )
+        issues = {item["details"]["issue"] for item in findings}
+
+        self.assertIn("FORMAL_VERSION_OVERLAP", issues)
+        self.assertIn("FORMAL_SIGNATURE_EVIDENCE_REQUIRED", issues)
+        self.assertIn("CONTENT_HASH_INVALID", issues)
+        self.assertIn("CROSS_TENANT_AGREEMENT", issues)
+        self.assertTrue(all(len(item["fingerprint"]) == 64 for item in findings))
     def test_hr13_detects_broken_append_only_chain_and_case_identity(self):
         rows = [
             {
@@ -206,6 +269,10 @@ class FormalFactQualityRuntimeTests(SimpleTestCase):
     def test_runtime_registers_formal_providers_and_settings_can_override(self):
         registry = RuntimeDataQualityExecutionService._registry()
         self.assertEqual(
+            registry["HR07"],
+            "hr_data.providers.formal_fact_quality.quality_provider",
+        )
+        self.assertEqual(
             registry["HR13"],
             "hr_data.providers.formal_fact_quality.quality_provider",
         )
@@ -217,6 +284,10 @@ class FormalFactQualityRuntimeTests(SimpleTestCase):
         with override_settings(HR18_QUALITY_PROVIDERS={"hr13": "custom.provider"}):
             overridden = RuntimeDataQualityExecutionService._registry()
         self.assertEqual(overridden["HR13"], "custom.provider")
+        self.assertEqual(
+            overridden["HR07"],
+            "hr_data.providers.formal_fact_quality.quality_provider",
+        )
         self.assertEqual(
             overridden["HR14"],
             "hr_data.providers.formal_fact_quality.quality_provider",

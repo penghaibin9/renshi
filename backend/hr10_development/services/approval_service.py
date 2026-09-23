@@ -48,9 +48,19 @@ class ApprovalService:
         }
 
     @staticmethod
+    def _is_self_approval(request_obj, approver_id: int, approver_staff_uuid=None) -> bool:
+        """Compare canonical HR03 UUID first and legacy actor id only as fallback."""
+        applicant_uuid = getattr(request_obj, "staff_master_uuid", None)
+        if applicant_uuid is not None and approver_staff_uuid is not None:
+            return str(applicant_uuid) == str(approver_staff_uuid)
+        applicant_legacy = getattr(request_obj, "staff_master_id", None)
+        return applicant_legacy is not None and str(applicant_legacy) == str(approver_id)
+
+    @staticmethod
     @transaction.atomic
     def approve_step(request_obj, approver_id: int, workflow_version: str,
-                     comment: str = "", reason_code: str = "") -> dict:
+                     comment: str = "", reason_code: str = "",
+                     approver_staff_uuid=None) -> dict:
         """
         推进审批一步。
 
@@ -60,8 +70,8 @@ class ApprovalService:
         if request_obj is None:
             return {"approved": False, "error": DevelopmentErrorCode.NOT_FOUND}
 
-        # 禁止自审批：申请人与审批人相同
-        if request_obj.staff_master_id == approver_id:
+        # 禁止自审批：canonical HR03 UUID 优先，legacy actor id 仅兼容旧链路。
+        if ApprovalService._is_self_approval(request_obj, approver_id, approver_staff_uuid):
             return {"approved": False, "error": DevelopmentErrorCode.SELF_APPROVAL_NOT_ALLOWED}
 
         current_status = request_obj.lifecycle_status
@@ -108,11 +118,14 @@ class ApprovalService:
     @staticmethod
     @transaction.atomic
     def return_step(request_obj, approver_id: int, workflow_version: str,
-                    comment: str = "", reason_code: str = "") -> dict:
+                    comment: str = "", reason_code: str = "",
+                    approver_staff_uuid=None) -> dict:
         """退回修改（RETURNED 可重提）。"""
         request_obj = ApprovalService._lock_request(request_obj)
         if request_obj is None:
             return {"approved": False, "error": DevelopmentErrorCode.NOT_FOUND}
+        if ApprovalService._is_self_approval(request_obj, approver_id, approver_staff_uuid):
+            return {"approved": False, "error": DevelopmentErrorCode.SELF_APPROVAL_NOT_ALLOWED}
         current_status = request_obj.lifecycle_status
         if not ApprovalService._is_reviewable(current_status):
             return {
@@ -143,11 +156,14 @@ class ApprovalService:
     @staticmethod
     @transaction.atomic
     def reject(request_obj, approver_id: int, workflow_version: str,
-               comment: str = "", reason_code: str = "") -> dict:
+               comment: str = "", reason_code: str = "",
+               approver_staff_uuid=None) -> dict:
         """最终否决（REJECTED 为终局）。"""
         request_obj = ApprovalService._lock_request(request_obj)
         if request_obj is None:
             return {"approved": False, "error": DevelopmentErrorCode.NOT_FOUND}
+        if ApprovalService._is_self_approval(request_obj, approver_id, approver_staff_uuid):
+            return {"approved": False, "error": DevelopmentErrorCode.SELF_APPROVAL_NOT_ALLOWED}
         current_status = request_obj.lifecycle_status
         if not ApprovalService._is_reviewable(current_status):
             return {

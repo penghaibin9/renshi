@@ -77,3 +77,6 @@
     left: -21px;
   }
 }
+
+/* R2 UI polish: readable timeline legend. */
+.hr03-history-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:0 0 10px;padding:8px 10px;border:1px solid var(--hr-v2-line);border-radius:8px;background:#fff;color:var(--hr-v2-muted);font-size:10px}.hr03-history-legend span{display:inline-flex;align-items:center;gap:6px}.hr03-history-legend i{width:8px;height:8px;border-radius:50%;background:#2563eb}.hr03-history-legend i.concurrent{background:#7c3aed}.hr03-history-legend i.ended{background:#94a3b8}

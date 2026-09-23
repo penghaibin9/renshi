@@ -204,9 +204,14 @@ class StatutoryContributionRuleService:
             raise StatutoryContributionError(
                 "STATUTORY_RULE_INVALID_STATE", "only a draft rule can be published"
             )
+        from hr_payroll.policy_models import PayrollPolicyScope
+        scope, _ = PayrollPolicyScope.objects.get_or_create(tenant_id=self.tenant_id,
+            scope_key=f"STATUTORY:{rule.jurisdiction_code}:{rule.contribution_code}")
+        PayrollPolicyScope.objects.select_for_update().get(pk=scope.pk)
         overlaps = StatutoryContributionRuleVersion.objects.select_for_update().filter(
             tenant_id=self.tenant_id,
             contribution_code=rule.contribution_code,
+            jurisdiction_code=rule.jurisdiction_code,
             status=rule.Status.PUBLISHED,
         ).filter(
             Q(effective_to__isnull=True) | Q(effective_to__gt=rule.effective_from)

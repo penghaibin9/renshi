@@ -1,4 +1,4 @@
-"""Bounded historical COUNT evaluator for formal HR13/HR14 facts.
+"""Bounded historical COUNT evaluator for formal HR06/HR07/HR12/HR13/HR14/HR16 facts.
 
 The evaluator deliberately resolves sibling Authority models through Django's app
 registry so the isolated HR18 branch has no import-time dependency on HR13/HR14.
@@ -15,10 +15,11 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
 from django.apps import apps
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils.dateparse import parse_date
 
 from hr_data.models import AsOfEvidenceSnapshot, MetricDefinitionVersion, PopulationDefinitionVersion
@@ -37,6 +38,8 @@ class FormalDomainSpec:
     evaluator_version: str
     active_statuses: tuple[str, ...]
     field_map: dict[str, tuple[str, str]]
+    grain: str = PopulationDefinitionVersion.Grain.PERSON
+    identity_field: str = "person_id"
 
 
 def _normalize_path(value: str) -> str:
@@ -59,6 +62,13 @@ def _coerce(value: Any, value_type: str):
         except (TypeError, ValueError, AttributeError) as exc:
             raise AsOfEvaluationError(
                 "ASOF_EVALUATION_VALUE_INVALID", "UUID predicate value is invalid"
+            ) from exc
+    if value_type == "DECIMAL":
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise AsOfEvaluationError(
+                "ASOF_EVALUATION_VALUE_INVALID", "decimal predicate value is invalid"
             ) from exc
     if value_type == "INTEGER":
         try:
@@ -142,6 +152,152 @@ def _compile_predicate(node, spec: FormalDomainSpec) -> Q:
     )
 
 
+
+HR04_SPEC = FormalDomainSpec(
+    domain="HR04",
+    app_label="hr_recruitment",
+    model_name="HrHiringDecisionFact",
+    evaluator_version="hr04-hiring-person-count-v1",
+    active_statuses=("EFFECTIVE", "CORRECTED"),
+    field_map={
+        _normalize_path(field): mapping
+        for field, mapping in {
+            "hiring.candidateId": ("candidateId", "UUID"),
+            "hiring.recruitmentPositionId": ("recruitmentPositionId", "UUID"),
+            "hiring.offerNo": ("offerNo", "STRING"),
+            "hiring.rank": ("rank", "INTEGER"),
+            "hiring.finalScore": ("finalScore", "DECIMAL"),
+            "hiring.employmentType": ("employmentType", "STRING"),
+            "hiring.expectedReportDate": ("expectedReportDate", "DATE"),
+            "hiring.acceptedAt": ("acceptedAt", "DATE"),
+            "hiring.status": ("status", "STRING"),
+        }.items()
+    },
+    grain=PopulationDefinitionVersion.Grain.PERSON,
+    identity_field="candidateId",
+)
+
+HR05_SPEC = FormalDomainSpec(
+    domain="HR05",
+    app_label="hr_onboarding",
+    model_name="HrOnboardingActivationSnapshot",
+    evaluator_version="hr05-activation-staff-count-v1",
+    active_statuses=("EFFECTIVE",),
+    field_map={
+        _normalize_path(field): mapping
+        for field, mapping in {
+            "onboarding.personId": ("personId", "UUID"),
+            "onboarding.staffMasterId": ("staffMasterId", "UUID"),
+            "onboarding.employmentId": ("employmentId", "UUID"),
+            "onboarding.assignmentId": ("assignmentId", "UUID"),
+            "onboarding.staffNo": ("staffNo", "STRING"),
+            "onboarding.organizationId": ("organizationId", "INTEGER"),
+            "onboarding.positionId": ("positionId", "INTEGER"),
+            "onboarding.sourceType": ("sourceType", "STRING"),
+            "onboarding.sourceId": ("sourceId", "STRING"),
+            "onboarding.activatedAt": ("activatedAt", "DATE"),
+            "onboarding.status": ("status", "STRING"),
+        }.items()
+    },
+    grain=PopulationDefinitionVersion.Grain.STAFF,
+    identity_field="staffMasterId",
+)
+
+HR15_SPEC = FormalDomainSpec(
+    domain="HR15",
+    app_label="hr_payroll",
+    model_name="PayrollResultFact",
+    evaluator_version="hr15-payroll-staff-count-v1",
+    active_statuses=("FINALIZED", "ADJUSTED"),
+    field_map={
+        _normalize_path(field): mapping
+        for field, mapping in {
+            "payroll.resultId": ("resultId", "UUID"),
+            "payroll.periodId": ("periodId", "UUID"),
+            "payroll.periodCode": ("periodCode", "STRING"),
+            "payroll.staffId": ("staffId", "UUID"),
+            "payroll.currencyCode": ("currencyCode", "STRING"),
+            "payroll.grossAmount": ("grossAmount", "DECIMAL"),
+            "payroll.deductionAmount": ("deductionAmount", "DECIMAL"),
+            "payroll.netAmount": ("netAmount", "DECIMAL"),
+            "payroll.status": ("status", "STRING"),
+            "payroll.effectiveAt": ("effectiveAt", "DATE"),
+        }.items()
+    },
+    grain=PopulationDefinitionVersion.Grain.STAFF,
+    identity_field="staffId",
+)
+
+
+HR06_SPEC = FormalDomainSpec(
+    domain="HR06",
+    app_label="hr_changes",
+    model_name="HrChangeEffectiveSnapshot",
+    evaluator_version="hr06-change-staff-count-v1",
+    active_statuses=(),
+    field_map={
+        _normalize_path(field): mapping
+        for field, mapping in {
+            "change.staffId": ("change_case_id__staff_master_id", "UUID"),
+            "change.actionCode": ("change_case_id__action_id__code", "STRING"),
+            "change.reasonCode": ("change_case_id__reason_id__code", "STRING"),
+            "change.sourceOrgId": ("change_case_id__source_org_id_id", "INTEGER"),
+            "change.targetOrgId": ("change_case_id__target_org_id_id", "INTEGER"),
+            "change.sourcePositionId": ("change_case_id__source_position_id_id", "INTEGER"),
+            "change.targetPositionId": ("change_case_id__target_position_id_id", "INTEGER"),
+            "change.effectiveDate": ("effective_at", "DATE"),
+        }.items()
+    },
+    grain=PopulationDefinitionVersion.Grain.STAFF,
+    identity_field="change_case_id__staff_master_id",
+)
+
+HR07_SPEC = FormalDomainSpec(
+    domain="HR07",
+    app_label="hr_contracts",
+    model_name="HrContractVersion",
+    evaluator_version="hr07-contract-staff-count-v1",
+    active_statuses=("EFFECTIVE", "SUPERSEDED", "TERMINATED", "EXPIRED"),
+    field_map={
+        _normalize_path(field): mapping
+        for field, mapping in {
+            "contract.staffId": ("agreement__staff_id", "UUID"),
+            "contract.employmentRelationshipId": ("agreement__employment_relationship_id", "UUID"),
+            "contract.agreementType": ("agreement__agreement_type", "STRING"),
+            "contract.subjectType": ("agreement__subject_type", "STRING"),
+            "contract.versionType": ("version_type", "STRING"),
+            "contract.effectiveFrom": ("effective_from", "DATE"),
+            "contract.effectiveTo": ("effective_to", "DATE"),
+            "contract.status": ("status", "STRING"),
+        }.items()
+    },
+    grain=PopulationDefinitionVersion.Grain.STAFF,
+    identity_field="agreement__staff_id",
+)
+
+
+HR12_SPEC = FormalDomainSpec(
+    domain="HR12",
+    app_label="hr_assessment",
+    model_name="HrFinalAssessmentResult",
+    evaluator_version="hr12-assessment-staff-count-v1",
+    active_statuses=("FINALIZED", "CORRECTED"),
+    field_map={
+        _normalize_path(field): mapping
+        for field, mapping in {
+            "assessment.resultId": ("resultId", "UUID"),
+            "assessment.staffId": ("staffId", "UUID"),
+            "assessment.assessmentType": ("assessmentType", "STRING"),
+            "assessment.cycleId": ("cycleId", "UUID"),
+            "assessment.gradeCode": ("gradeCode", "STRING"),
+            "assessment.status": ("status", "STRING"),
+            "assessment.finalizedAt": ("finalizedAt", "DATE"),
+        }.items()
+    },
+    grain=PopulationDefinitionVersion.Grain.STAFF,
+    identity_field="staffId",
+)
+
 HR13_SPEC = FormalDomainSpec(
     domain="HR13",
     app_label="hr_title",
@@ -197,7 +353,17 @@ HR14_SPEC = FormalDomainSpec(
     },
 )
 
-SPECS = {spec.domain: spec for spec in (HR13_SPEC, HR14_SPEC)}
+HR16_SPEC = FormalDomainSpec(
+    domain="HR16", app_label="hr_exit", model_name="RetirementFact",
+    evaluator_version="hr16-retirement-person-count-v1", active_statuses=("EFFECTIVE", "REVISED"),
+    field_map={_normalize_path(field): mapping for field, mapping in {
+        "retirement.personId": ("person_id", "UUID"),
+        "retirement.retirementType": ("retirement_type", "STRING"),
+        "retirement.statutoryDate": ("statutory_date", "DATE"),
+        "retirement.effectiveDate": ("effective_date", "DATE"),
+    }.items()},
+)
+SPECS = {spec.domain: spec for spec in (HR04_SPEC, HR05_SPEC, HR06_SPEC, HR07_SPEC, HR12_SPEC, HR13_SPEC, HR14_SPEC, HR15_SPEC, HR16_SPEC)}
 
 
 class FormalFactAsOfEvaluationService:
@@ -228,12 +394,12 @@ class FormalFactAsOfEvaluationService:
         if spec is None or set(population.source_domains or []) != {domain}:
             raise AsOfEvaluationError(
                 "ASOF_EVALUATION_SOURCE_UNSUPPORTED",
-                "formal fact evaluator only supports HR13-only or HR14-only populations",
+                "formal fact evaluator supports single-domain HR04, HR05, HR06, HR07, HR12, HR13, HR14, HR15 or HR16 formal-fact populations",
             )
-        if population.grain != PopulationDefinitionVersion.Grain.PERSON:
+        if population.grain != spec.grain:
             raise AsOfEvaluationError(
                 "ASOF_EVALUATION_GRAIN_UNSUPPORTED",
-                "formal fact evaluator requires PERSON grain",
+                f"{spec.domain} formal fact evaluator requires {spec.grain} grain",
             )
         return population, spec
 
@@ -245,6 +411,9 @@ class FormalFactAsOfEvaluationService:
             return None
 
     def _count(self, population: PopulationDefinitionVersion, spec: FormalDomainSpec, as_of_date: date) -> int:
+        if spec.domain in {"HR04", "HR05", "HR06", "HR12", "HR15", "HR16"}:
+            from hr_data.services.formal_fact_chain_service import FormalFactAsOfEvaluationService as ChainService
+            return ChainService(self.tenant_id, self.actor_user_id)._count(population, spec, as_of_date)
         model = self._model(spec)
         if model is None:
             raise AsOfEvaluationError(
@@ -258,20 +427,27 @@ class FormalFactAsOfEvaluationService:
                 status__in=spec.active_statuses,
             )
             .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=as_of_date))
-            .filter(_compile_predicate(population.predicate_json, spec))
         )
-        return queryset.values("person_id").distinct().count()
+        if spec.domain == "HR07":
+            queryset = queryset.filter(agreement__tenant_id=self.tenant_id)
+            if queryset.values("agreement_id").annotate(_hr18_n=Count("id")).filter(_hr18_n__gt=1).exists():
+                raise AsOfEvaluationError(
+                    "ASOF_EVALUATION_SOURCE_CONFLICT",
+                    "multiple formal HR07 contract versions overlap the requested as-of date",
+                )
+        queryset = queryset.filter(_compile_predicate(population.predicate_json, spec))
+        return queryset.exclude(**{f"{spec.identity_field}__isnull": True}).values(spec.identity_field).distinct().count()
 
     @staticmethod
     def _calculation_hash(
-        *, definition_hash: str, evidence_hash: str, value: int, evaluator_version: str
+        *, definition_hash: str, evidence_hash: str, value: int, evaluator_version: str, grain: str
     ) -> str:
         raw = json.dumps(
             {
                 "definitionHash": definition_hash.lower(),
                 "evidenceHash": evidence_hash.lower(),
                 "value": value,
-                "grain": PopulationDefinitionVersion.Grain.PERSON,
+                "grain": grain,
                 "evaluatorVersion": evaluator_version,
             },
             sort_keys=True,
@@ -339,6 +515,7 @@ class FormalFactAsOfEvaluationService:
                 evidence_hash=evidence.evidence_hash,
                 value=value,
                 evaluator_version=spec.evaluator_version,
+                grain=population.grain,
             ),
         )
         return result, spec.evaluator_version
@@ -406,6 +583,7 @@ class FormalFactAsOfEvaluationService:
                 evidence_hash=evidence.evidence_hash,
                 value=value,
                 evaluator_version=spec.evaluator_version,
+                grain=population.grain,
             ),
         )
         return result, spec.evaluator_version

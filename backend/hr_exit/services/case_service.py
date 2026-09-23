@@ -227,6 +227,108 @@ class ExitCaseService:
         return case
 
     @transaction.atomic
+    def revise_retirement_plan_for_successor(
+        self,
+        case_id,
+        *,
+        requested_date,
+        last_working_date,
+        planned_employment_end_date,
+    ):
+        """Reopen a not-yet-effective retirement case for an approved successor plan.
+
+        This is intentionally narrower than a generic case edit.  It is used by an
+        approved flexible-retirement END_DELAY successor.  Once settlement/effect
+        work or any handover checklist item exists, an operator must resolve that
+        downstream work explicitly instead of silently rewriting its dates.
+        """
+        from hr_exit.models import ExitEffect, ExitHandoverItem
+
+        case = self._lock_case(case_id)
+        if case.exit_type != ExitCase.ExitType.RETIREMENT:
+            raise ExitCaseError(
+                "EXIT_RETIREMENT_REVISION_TYPE_REQUIRED",
+                "only a retirement exit case can be revised by a retirement successor",
+            )
+        if ExitEffect.objects.filter(tenant_id=self.tenant_id, case_id=case.id).exists():
+            raise ExitCaseError(
+                "EXIT_RETIREMENT_REVISION_TOO_LATE",
+                "an employment effect has already been created; do not rewrite the exit plan",
+            )
+        if case.status in {
+            ExitCase.Status.SETTLEMENT,
+            ExitCase.Status.EFFECT_PENDING,
+            ExitCase.Status.EFFECTIVE,
+        }:
+            raise ExitCaseError(
+                "EXIT_RETIREMENT_REVISION_TOO_LATE",
+                f"case status {case.status} requires explicit downstream correction",
+            )
+        if case.status in {
+            ExitCase.Status.APPROVED,
+            ExitCase.Status.HANDOVER,
+        } and ExitHandoverItem.objects.filter(
+            tenant_id=self.tenant_id, case_id=case.id
+        ).exists():
+            raise ExitCaseError(
+                "EXIT_RETIREMENT_HANDOVER_REVISION_REQUIRED",
+                "handover work already exists; resolve or supersede it before changing the retirement plan",
+            )
+        allowed = {
+            ExitCase.Status.DRAFT,
+            ExitCase.Status.RETURNED,
+            ExitCase.Status.SUBMITTED,
+            ExitCase.Status.APPROVED,
+            ExitCase.Status.HANDOVER,
+        }
+        if case.status not in allowed:
+            raise ExitCaseError(
+                "EXIT_CASE_INVALID_STATE",
+                f"case status {case.status} cannot be reopened for retirement-plan revision",
+            )
+
+        self._validate_plan_dates(last_working_date, planned_employment_end_date)
+        prior = {
+            "status": case.status,
+            "requestedDate": case.requested_date.isoformat() if case.requested_date else None,
+            "lastWorkingDate": case.last_working_date.isoformat() if case.last_working_date else None,
+            "plannedEmploymentEndDate": (
+                case.planned_employment_end_date.isoformat()
+                if case.planned_employment_end_date
+                else None
+            ),
+            "plannedAccessEndAt": (
+                case.planned_access_end_at.isoformat() if case.planned_access_end_at else None
+            ),
+        }
+
+        case.requested_date = requested_date
+        case.last_working_date = last_working_date
+        case.planned_employment_end_date = planned_employment_end_date
+        # Access de-provisioning may have been scheduled from the old date.  Clear
+        # it so the reopened workflow must set/confirm it again.
+        case.planned_access_end_at = None
+        if case.status in {
+            ExitCase.Status.SUBMITTED,
+            ExitCase.Status.APPROVED,
+            ExitCase.Status.HANDOVER,
+        }:
+            case.status = ExitCase.Status.RETURNED
+        case.updated_by = self.actor_user_id
+        case.save(
+            update_fields=[
+                "requested_date",
+                "last_working_date",
+                "planned_employment_end_date",
+                "planned_access_end_at",
+                "status",
+                "updated_by",
+                "updated_at",
+            ]
+        )
+        return case, prior
+
+    @transaction.atomic
     def submit(self, case_id) -> ExitCase:
         case = self._lock_case(case_id)
         if case.requested_date is None:

@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block styles %}
@@ -12,7 +12,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr03-page" data-module="HR03" data-section="assignments" data-staff-id="{{ staff_id }}" data-as-of="{{ as_of }}">
+<div class="hr-v2-page hr03-page" data-module="HR03" data-hr-workspace="v6" data-section="assignments" data-staff-id="{{ staff_id }}" data-as-of="{{ as_of }}">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>HR03 教职工主档</span>
     <strong>任职履历</strong>
@@ -48,6 +48,7 @@
         <p>按后端 timeline API 返回顺序展示；没有历史段就保持真实空态。</p>
       </div>
     </div>
+    <div class="hr03-history-legend" aria-label="时间线图例"><span><i></i>当前/主岗任职段</span><span><i class="concurrent"></i>兼岗任职段</span><span><i class="ended"></i>已结束任职段</span></div>
     <div class="hr-v2-panel">
       <div class="hr03-history-timeline" id="timeline">
         <div class="hr-v2-state"><strong>正在读取任职履历</strong><span>正在查询正式聘用关系与任职段。</span></div>
@@ -76,12 +77,15 @@
       return String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
     }
 
+    let reading=false;
     async function load() {
+      if(reading)return;reading=true;window.HrDetailUX.clearNote(root);
       const timeline = document.getElementById("timeline");
+      timeline.setAttribute("aria-busy","true");
+      try {
       const resp = await fetch(`/api/hr/v1/staff/${encodeURIComponent(staffId)}/timeline`, {credentials:"same-origin"});
       if (!resp.ok) {
-        timeline.innerHTML = `<div class="hr-v2-state" data-state="error"><strong>任职履历读取失败</strong><span>HTTP ${resp.status}</span></div>`;
-        return;
+        const error=new Error("任职履历读取失败");error.status=resp.status;throw error;
       }
       const body = await resp.json();
       const events = Array.isArray(body.data?.events) ? body.data.events : [];
@@ -100,6 +104,8 @@
           <div class="hr03-history-detail">${escapeHtml(event.label || "—")} · ${escapeHtml(event.status || "—")}</div>
         </article>`;
       }).join("");
+      } catch(error) {timeline.innerHTML='<div class="hr-v2-state" data-state="error"><strong>任职履历读取失败</strong><span>请重新读取，暂不展示旧任职记录。</span></div>';window.HrDetailUX.note(root,window.HrDetailUX.errorText(error),"error",load);}
+      finally {reading=false;timeline.removeAttribute("aria-busy");}
     }
 
     load();

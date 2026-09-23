@@ -13,6 +13,7 @@ from hr_payroll.services.adjustment_service import PayrollAdjustmentError
 class _User:
     is_authenticated = True
     is_superuser = False
+    id = 9001
 
     def __init__(self, permissions=()):
         self.permissions = set(permissions)
@@ -30,6 +31,8 @@ class PayrollAdjustmentApiTests(SimpleTestCase):
             "grossDelta": "100.00",
             "deductionDelta": "20.00",
             "netDelta": "80.00",
+            "reason": "retroactive correction",
+            "evidenceRef": "evidence://payroll/adj-1",
         }
 
     def _request(self, *, user, body=None, method="post"):
@@ -114,7 +117,7 @@ class PayrollAdjustmentApiTests(SimpleTestCase):
         self.assertEqual(body["schemaVersion"], "hr15.adjustment.1")
         self.assertEqual(body["data"]["sourceResultId"], str(self.source_id))
         self.assertEqual(body["data"]["netDelta"], "80.00")
-        service_cls.assert_called_once_with(77)
+        service_cls.assert_called_once_with(77, actor_user_id=9001)
         service_cls.return_value.append_adjustment.assert_called_once_with(
             source_result_id=self.source_id,
             adjustment_no="ADJ-2026-08-001",
@@ -122,6 +125,8 @@ class PayrollAdjustmentApiTests(SimpleTestCase):
             deduction_delta="20.00",
             net_delta="80.00",
             currency_code=None,
+            reason="retroactive correction",
+            evidence_ref="evidence://payroll/adj-1",
         )
 
     @patch("hr_payroll.api.resolve_tenant_from_request", return_value=77)

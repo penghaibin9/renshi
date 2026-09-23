@@ -35,6 +35,10 @@ from hr_onboarding.models.idempotency import (
     HrOnboardingIdempotencyRecord,
     IdempotencyStatus,
 )
+from hr_onboarding.models.import_job import (
+    HrOnboardingImportJob,
+    HrOnboardingImportRow,
+)
 from hr_onboarding.models.material import (
     HrMaterialVerification,
     HrOnboardingMaterial,
@@ -70,6 +74,8 @@ __all__ = [
     "HrOnboardingTaskDefinition",
     "HrOnboardingCase",
     "HrOnboardingIdempotencyRecord",
+    "HrOnboardingImportJob",
+    "HrOnboardingImportRow",
     "IdempotencyStatus",
     "HrOnboardingStageTransition",
     "HrReportDelay",

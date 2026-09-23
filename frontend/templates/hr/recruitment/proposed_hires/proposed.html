@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block styles %}
@@ -7,10 +7,12 @@
 <link rel="stylesheet" href="{% static 'hr/css/hr-components.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr-v2.css' %}">
 <link rel="stylesheet" href="{% static 'hr/css/hr04-recruitment-v2.css' %}">
+<link rel="stylesheet" href="{% static 'hr/css/hr-workflow-closure-v7.css' %}?v=20260918-workflow-v7-1">
+<link rel="stylesheet" href="{% static 'hr/css/hr-workflow-v9.css' %}?v=9">
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr04-page" data-module="HR04" data-section="proposed-hires" data-hr-page="recruitment-proposed">
+<div class="hr-v2-page hr04-page" data-hr-workflow="v9" data-module="HR04" data-hr-workspace="v6" data-section="proposed-hires" data-hr-page="recruitment-proposed">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR04 招聘与人才引进</span><strong>录用与人才引进</strong></div>
 
   <header class="hr-v2-pagehead" aria-labelledby="hr04-proposed-title">
@@ -35,14 +37,17 @@
     <a href="{% url 'hr04-proposed-hires' %}" aria-current="page">录用与人才引进</a>
   </nav>
 
+  <form id="hr04-proposed-search" class="hr-wf-toolbar" role="search"><label>候选人 / 申请号 / 岗位<input id="hr04-proposed-keyword" maxlength="200" placeholder="查找历史或当前拟录用记录" autocomplete="off"></label><button type="submit" class="hr05-button">查找办理记录</button></form>
   <section class="hr04-panel">
     <div class="hr04-panel__head"><div><h2>{% trans "拟录用" %}</h2><p>排名与成绩只展示服务端已形成的正式结果，不在浏览器中重算。</p></div></div>
     <div id="hr04-proposed-list" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取拟录用结果</strong><span>等待正式审批与预占事实。</span></div></div>
+    <nav class="hr-wf-pager" aria-label="拟录用分页"><button type="button" id="hr04-proposed-prev" disabled>上一页</button><span id="hr04-proposed-page">尚未读取</span><button type="button" id="hr04-proposed-next" disabled>下一页</button></nav>
   </section>
 
   <section class="hr04-panel">
     <div class="hr04-panel__head"><div><h2>待形成拟录用</h2><p>只展示已有服务端冻结排名且资格通过的候选人。</p></div></div>
     <div id="hr04-proposed-eligible" class="hr04-table-wrap"><div class="hr04-state"><strong>正在读取冻结排名</strong></div></div>
+    <nav class="hr-wf-pager" aria-label="冻结结果分页"><button type="button" id="hr04-eligible-prev" disabled>上一页</button><span id="hr04-eligible-page">尚未读取</span><button type="button" id="hr04-eligible-next" disabled>下一页</button></nav>
   </section>
 
   <div class="hr-v2-truth-note"><strong>录用边界</strong><span>“拟录用”不等于“已入职”；公示、录用通知、预占与 HR05 报到交接必须按各自正式状态推进。</span></div>
@@ -52,5 +57,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/recruitment-proposed.js' %}?v=20260901-2"></script>
+<script src="{% static 'hr/js/pages/recruitment-proposed.js' %}?v=9"></script>
 {% endblock scripts %}

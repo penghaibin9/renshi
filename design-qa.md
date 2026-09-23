@@ -1,54 +1,62 @@
-# 登录首页设计验收
+# Product Design QA — Secondary Workspaces V4
 
-**最终结果**
+- Source visual truth: `/mnt/data/Yueke_University_HR_R2_Unified_Brand_V3_20260918_ContactSheet.png`
+- Implementation evidence: `/mnt/data/hr_detail_polish_v4/evidence/secondary_workspaces_v4_contact_sheet.png`
+- Combined comparison: `/mnt/data/hr_detail_polish_v4/evidence/designqa_v3_system_vs_v4_details.png`
+- Before/after evidence: `/mnt/data/hr_detail_polish_v4/evidence/secondary_workspaces_v4_before_after.png`
+- Viewport: 1440 × 1024 CSS px, deviceScaleFactor 1
+- State: desktop school-admin / HR-teacher representative states; browser fixtures use real project CSS and the modified production JS for HR04, HR05 and HR16.
+- Important evidence limit: Django is not installed in this sandbox, so these are Chromium frontend regression captures with representative data, not a claim of a live Django + MySQL authenticated E2E run.
+
+## Full-view comparison
+
+The V4 detail workspaces preserve Unified Brand V3's single blue brand system, neutral surfaces, compact typography, low-shadow visual language and semantic-only success/warning/error colors. The detail pages intentionally diverge in composition because the user requested business-specific workflows rather than repeated card layouts.
+
+## Focused region comparisons
+
+- **HR03 person profile:** identity and navigation moved to a stable left rail; current facts and masked identity are readable as an open fact sheet. The hierarchy is materially clearer without introducing another dashboard layer.
+- **HR04 candidate detail:** candidate search/list is now a master pane and the current candidate remains visible in a dedicated detail pane. Selection state has a clear blue edge and the next recruitment steps are exposed without inventing new business facts.
+- **HR05 onboarding case:** the five-stage handling position is visible before the case facts; next actions are separated from facts in a dedicated handling rail. The current stage is singular and visually obvious.
+- **HR13 expert review:** operator forms are separated from live round/assignment evidence. Review facts, assignment/conflict state and current rounds are no longer mixed into a generic grid of equal cards.
+- **HR15 payroll calculation:** the calculation stage is explicit and the central surface reads as a ledger/operator workspace. Formal result, payment and reconciliation remain separated conceptually.
+- **HR16 exit handover:** mandatory incomplete items visually precede optional/completed items; guidance communicates the three handling rules before the checklist, while the business path remains visible at right.
+
+## Required fidelity surfaces
+
+### Fonts and typography
+Pass. The implementation keeps the V3 system font/fallbacks, compact body scale, restrained title hierarchy, tabular/ledger density, and avoids decorative typography. No new font was introduced.
+
+### Spacing and layout rhythm
+Pass. Detail workspaces use 24–28 px major gutters, 10–16 px row rhythm, separators rather than nested card padding, and consistent sticky-rail spacing. HR03/04/05/13/15/16 intentionally have different column structures but share the same spacing grammar.
+
+### Colors and visual tokens
+Pass. One brand-blue interaction color is retained. Green/orange/red are used only for success/attention/risk semantics. No module-specific palette was reintroduced.
+
+### Image quality and asset fidelity
+Pass / not applicable. These six enterprise HR workspaces do not require decorative imagery. No fake illustration, emoji, handcrafted SVG or placeholder art was introduced.
+
+### Copy and content
+Pass. The new copy describes workflow position, safe next steps, evidence boundaries and handling rules. It does not change formal state definitions or claim backend actions that do not exist.
+
+## Interaction evidence
+
+- HR04 candidate master-detail selection: PASS. Clicking the second candidate changes the right detail pane and leaves exactly one selected row.
+- HR05 onboarding stage/action rendering: PASS. Five stages render, exactly one current stage is marked, and existing action links remain present.
+- HR16 handover priority sorting: PASS. Required incomplete handover precedes optional incomplete and completed/not-required items.
+- Chromium page errors across all six after screenshots: none.
+
+## Comparison history
+
+### Iteration 1 findings
+- HR04/HR05/HR16 initially rendered blank/error in the screenshot harness because mocks were injected as init scripts after `set_content`; this was a test-harness issue, not product code.
+- Fix: inject fixture APIs into the active document before loading the real production JS.
+- Post-fix evidence: all six after captures render correctly and every `*_after_console.txt` reports `NO_PAGE_ERRORS`.
+
+No actionable P0/P1/P2 visual or interaction findings remain in the scoped frontend-only work.
+
+## Follow-up polish (P3 only)
+
+- In a real Django login session, validate long real-world names, 10+ candidate rows, unusually long contract/qualification labels, and 125% Windows display scaling.
+- Re-run the same six flows against MySQL-backed data before production deployment; this is an environment acceptance step, not a V4 design blocker.
 
 final result: passed
-
-**对照目标**
-
-- 源设计稿：`C:\Users\10850\.codex\generated_images\01a04d25-bc1e-76c2-9a24-00167ea13f60\exec-4ce903d1-df7c-46bb-b24d-0e72b18b448d.png`
-- 源设计稿归一化：`docs/qa/login/login-reference-1440x1024.jpg`
-- 实际页面截图：`docs/qa/login/login-implementation-1440x1024.jpg`
-- 全屏并排证据：`docs/qa/login/login-side-by-side-qa.jpg`
-- 登录区聚焦证据：`docs/qa/login/login-form-side-by-side-qa.jpg`
-- 人物图片区聚焦证据：`docs/qa/login/login-hero-side-by-side-qa.jpg`
-- 页面地址：`http://127.0.0.1:8000/login/?next=/hr/changes/`
-- 状态：未登录、浅色主题、账号密码表单初始状态。
-
-**尺寸与归一化**
-
-- 源设计稿像素：1486 × 1058；按目标桌面比例缩放为 1440 × 1024。
-- 实际 CSS 视口：1440 × 1024；devicePixelRatio 约为 1。
-- 浏览器截图接口在显式大视口下将页面栅格压入左上 1013 × 720 区域，因此验收图按 1013 × 720 裁取后高质量还原到 1440 × 1024；页面 DOM 实测宽高、滚动宽高均为 1440 × 1024，无横向或纵向溢出。
-- 1024 × 728 响应式状态也已检查：左右布局完整，无滚动溢出；移动窄屏状态隐藏人物图区，登录表单保持可用。
-
-**发现与修复历史**
-
-- [P2] 首轮桌面截图中登录内容贴住左边缘。
-  - 原因：登录内容容器使用 `flex: 1`，覆盖了 430px 设计宽度。
-  - 修复：改为固定弹性基准与最大宽度，1440 视口下内容区实际左边距约 101px、宽度 430px，与设计稿一致。
-  - 复核：第二轮并排图中品牌、标题、输入区和页脚已按同一纵轴对齐。
-- [P2] 用户要求不能显示“国立大学”。
-  - 修复：页面文字统一改为“国内大学”；校徽替换为不含任何文字和数字的中性高校徽记。
-  - 复核：浏览器正文检测 `国内大学=true`、`国立大学=false`。
-
-**五项视觉核对**
-
-- 字体与层级：使用微软雅黑/苹方中文字体栈；标题、说明、字段、按钮和开发归属层级清楚。实际字号略比概念图克制，属于真实产品可读性优化，无 P0/P1/P2 问题。
-- 间距与布局：44%/56% 左右分栏、430px 表单宽度、品牌—标题—表单—归属信息的纵向节奏与目标一致；页面无溢出。
-- 颜色与令牌：主色使用 #2563EB/#1D4ED8，正文 #0F172A，浅灰边框与白底一致；没有继续使用旧页面红色品牌。
-- 图片与资产：校园人物图、无文字高校徽记均为独立真实图片资产，没有使用占位图、CSS 绘图或截取整张 UI 充当页面内容；人物主体、构图、光线与目标一致。
-- 文案与内容：全页中文；“国内大学”“人事一体化平台”“本系统由湖南跃科信息工程有限公司设计开发”和 2026 版权所有均清晰可见。
-
-**交互与可访问性**
-
-- 表单使用 POST 并包含 CSRF 字段。
-- 用户名、密码、记住我、忘记密码和登录按钮均可访问。
-- 密码显隐已验证：password → text → password。
-- 记住我勾选状态可用；忘记密码地址为 `/forgot-password/`。
-- 人物图和校徽均加载成功，无破损图片。
-
-**遗留 P3**
-
-- 实际登录按钮保留了一个小型登录图标，概念图只显示文字；该差异提升动作识别，不影响整体一致性。
-- 独立生成的人物照片与概念图不是逐像素同一张，但人物数量、场景、光线、构图和视觉重心一致。

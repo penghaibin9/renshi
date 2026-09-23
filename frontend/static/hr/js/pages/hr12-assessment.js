@@ -139,6 +139,43 @@
     }
   }
 
+  function termRow(item) {
+    const result = item.formalResult;
+    const grade = result?.displayGrade?.['zh-CN'] || result?.gradeCode || '';
+    const label = item.staffName || '人员档案暂不可用';
+    const period = [item.termStart, item.termEnd].filter(Boolean).join(' 至 ') || item.cycleName || '聘期考核';
+    if (result) {
+      return `<div class="hr12-row" data-term-case="${esc(item.id)}" data-case-status="FINALIZED">
+        <div><strong>${esc(label)}</strong><small>${esc(period)} · ${esc(item.cycleName || '')}</small></div>
+        <div class="hr12-row__meta">${esc(grade || '已定稿')} · 正式结果版本 ${esc(result.resultVersionNo || 1)}</div>
+        <span class="hr12-pill hr12-pill--success">已定稿</span>
+      </div>`;
+    }
+    let action = '<span class="hr12-pill hr12-pill--warning">待处理</span>';
+    if (!item.providerSnapshotReady) {
+      action = '<button type="button" class="hr-v2-button hr-v2-button--primary" data-term-snapshot>锁定聘期证据</button>';
+    } else if (!item.decisionSessionId) {
+      action = '<span class="hr12-pill hr12-pill--warning">待完成审定会</span>';
+    } else if (item.status === 'PROPOSED' || item.status === 'PUBLICITY') {
+      action = '<div class="hr12-annual-action"><span class="hr12-status-note">聘期档次按已发布聘期规则计算</span><button type="button" class="hr-v2-button hr-v2-button--primary" data-term-finalize>正式审定</button></div>';
+    }
+    return `<div class="hr12-row" data-term-case="${esc(item.id)}" data-decision-session="${esc(item.decisionSessionId || '')}" data-case-status="${esc(item.status || '')}">
+      <div><strong>${esc(label)}</strong><small>${esc(period)} · ${esc(item.cycleName || '')}</small></div>
+      <div class="hr12-row__meta">${esc(item.providerSnapshotReady ? '聘期证据已锁定' : '待锁定聘期证据')} · ${esc(zhStatus[item.status] || item.status || '—')}</div>${action}</div>`;
+  }
+
+  async function loadTermCases() {
+    const box = document.getElementById('workRows');
+    if (!box) return;
+    try {
+      const value = await getJson('/api/v1/hr/assessments/term');
+      const items = Array.isArray(value) ? value : [];
+      box.innerHTML = items.length ? items.map(termRow).join('') : empty('暂无聘期考核对象', '请先建立聘期考核周期，并从 HR14 正式聘期纳入考核对象。');
+    } catch (error) {
+      box.innerHTML = empty('聘期考核数据读取失败', error.message || '请稍后重试。');
+    }
+  }
+
   function optionHtml(items) {
     return (items || []).map((item) => `<option value="${esc(item.value)}">${esc(item.label)}</option>`).join('');
   }
@@ -209,6 +246,77 @@
     catch (error) { show(error.message || '启动选项读取失败', true); }
   }
 
+  async function mountTermSetup() {
+    if (section !== 'term' || root.querySelector('[data-term-setup]')) return;
+    const host = document.createElement('section');
+    host.className = 'hr12-action-card';
+    host.dataset.termSetup = 'true';
+    host.innerHTML = `<h2>聘期考核启动</h2><p>聘期对象必须来自 HR14 已生效的正式聘期，并同时核验 HR03 教职工主档和 HR07 正式聘用合同；不能手工虚构人员、合同或聘期日期。</p>
+      <div class="hr12-action-result" data-term-setup-result role="status" aria-live="polite"></div>
+      <div class="hr12-action-grid">
+        <form class="hr12-action-form open" data-term-cycle-form>
+          <h3>1 · 新建并发布聘期考核周期</h3>
+          <div class="hr12-action-field"><label>周期编号<input name="cycleNo" required placeholder="TERM_2026"></label></div>
+          <div class="hr12-action-field"><label>周期名称<input name="name" required placeholder="2026 聘期考核"></label></div>
+          <div class="hr12-action-field"><label>业务年度<input name="businessYear" type="number" min="2000" max="2100" required></label></div>
+          <div class="hr12-action-field"><label>已发布聘期制度<select name="policyVersionId" required><option value="">请选择</option></select></label></div>
+          <div class="hr12-action-field"><label>开始时间<input name="startAt" type="datetime-local" required></label></div>
+          <div class="hr12-action-field"><label>结束时间<input name="endAt" type="datetime-local" required></label></div>
+          <div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="submit">建立聘期周期</button></div>
+        </form>
+        <form class="hr12-action-form open" data-term-case-form>
+          <h3>2 · 纳入正式聘期</h3>
+          <div class="hr12-action-field"><label>聘期考核周期<select name="cycleId" required><option value="">请选择</option></select></label></div>
+          <div class="hr12-action-field"><label>正式聘期<select name="termId" required><option value="">请选择</option></select></label></div>
+          <div class="hr12-action-note">列表只显示 HR14 中有明确结束日期且尚未建立聘期考核 Case 的有效聘期。</div>
+          <div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="submit">创建聘期考核对象</button></div>
+        </form>
+      </div>`;
+    root.querySelector('.hr12-principle')?.before(host);
+    const status = host.querySelector('[data-term-setup-result]');
+    const show = (message, error = false) => {
+      status.className = `hr12-action-result show ${error ? 'error' : 'ok'}`;
+      status.textContent = message;
+    };
+    async function refreshOptions() {
+      const data = await getJson('/api/v1/hr/assessments/setup-options?assessmentType=TERM');
+      host.querySelector('[name="policyVersionId"]').innerHTML = `<option value="">请选择</option>${optionHtml(data.policies)}`;
+      host.querySelector('[name="cycleId"]').innerHTML = `<option value="">请选择</option>${optionHtml(data.cycles)}`;
+      host.querySelector('[name="termId"]').innerHTML = `<option value="">请选择</option>${optionHtml(data.terms)}`;
+    }
+    host.querySelector('[data-term-cycle-form]').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        const body = Object.fromEntries(new FormData(form).entries());
+        body.assessmentType = 'TERM';
+        await postJson('/api/v1/hr/assessments/cycles', body);
+        show('聘期考核周期已建立并发布，制度、量表和办理时间边界已冻结。');
+        form.reset();
+        await refreshOptions();
+      } catch (error) { show(error.message || '聘期周期建立失败', true); }
+      finally { button.disabled = false; }
+    });
+    host.querySelector('[data-term-case-form]').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button');
+      button.disabled = true;
+      try {
+        await postJson('/api/v1/hr/assessments/term/cases', Object.fromEntries(new FormData(form).entries()));
+        show('聘期考核对象已由正式聘期、教职工主档和聘用合同建立，可进入证据与评议流程。');
+        form.reset();
+        await refreshOptions();
+        await loadTermCases();
+      } catch (error) { show(error.message || '聘期考核对象建立失败', true); }
+      finally { button.disabled = false; }
+    });
+    try { await refreshOptions(); }
+    catch (error) { show(error.message || '聘期启动选项读取失败', true); }
+  }
+
   function showAnnualActionError(message) {
     const box = document.getElementById('workRows');
     if (!box) return;
@@ -243,6 +351,30 @@
       await loadAnnualCases();
     } catch (error) {
       showAnnualActionError(error.message || '办理失败');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function handleTermAction(event) {
+    const button = event.target.closest('[data-term-snapshot], [data-term-finalize]');
+    if (!button) return;
+    const caseRow = button.closest('[data-term-case]');
+    if (!caseRow) return;
+    const caseId = caseRow.dataset.termCase;
+    button.disabled = true;
+    try {
+      if (button.matches('[data-term-snapshot]')) {
+        await postJson(`/api/v1/hr/assessments/cases/${caseId}/provider-snapshot`, {});
+      } else {
+        const decisionSessionId = caseRow.dataset.decisionSession || '';
+        await postJson(`/api/v1/hr/assessments/cases/${caseId}/finalize`, {
+          decisionSessionId, decisionReason: '聘期考核工作台正式审定',
+        });
+      }
+      await loadTermCases();
+    } catch (error) {
+      showAnnualActionError(error.message || '聘期考核办理失败');
     } finally {
       button.disabled = false;
     }
@@ -455,6 +587,10 @@
   function lifecycleItemHtml(item) {
     const result = item.result || {};
     const actions = item.actions || {};
+    const assessmentType = String(item.assessmentType || '').toUpperCase();
+    const correctedGradeOptions = assessmentType === 'TERM'
+      ? '<option value="">请选择</option><option value="QUALIFIED">合格</option><option value="UNQUALIFIED">不合格</option>'
+      : '<option value="">请选择</option><option value="EXCELLENT">优秀</option><option value="QUALIFIED">合格</option><option value="BASIC_QUALIFIED">基本合格</option><option value="UNQUALIFIED">不合格</option>';
     const grade = result.displayGrade?.['zh-CN'] || result.gradeCode || '正式结果';
     const notice = item.notice;
     const acknowledgement = item.acknowledgement;
@@ -467,13 +603,20 @@
         告知：${esc(notice ? (zhStatus[notice.deliveryStatus] || notice.deliveryStatus) : '待生成')}　
         本人确认：${esc(acknowledgement ? acknowledgement.acknowledgementStatus : '待确认')}　
         异议：${esc(objection ? (objection.decisionCode || zhStatus[objection.status] || objection.status) : '无')}　
-        归档：${esc(archive ? '已归档' : '待归档')}
+        归档：${esc(archive ? (archive.integrityStatus === 'INVALID' ? '证据校验失败' : '已归档') : '待归档')}
       </div>
       ${actions.canIssueNotice ? '<div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="button" data-issue-notice>生成结果告知单</button></div>' : ''}
       ${actions.canConfirmDelivery ? `<div class="hr12-action-field"><label>送达回执编号<input data-delivery-receipt maxlength="200" placeholder="系统消息回执、邮件回执或纸质签收编号"></label></div><div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="button" data-confirm-delivery data-notice-id="${esc(notice.id)}">确认已送达</button></div>` : ''}
       ${actions.canAcknowledge ? `<div class="hr12-action-field"><label>本人意见<select data-ack-status><option value="RECEIVED_AGREE">已收到并同意</option><option value="RECEIVED_RESERVATION">已收到，保留意见</option><option value="RECEIVED_DISAGREE">已收到，不同意</option></select></label></div><div class="hr12-action-field"><label>本人意见说明<textarea data-ack-opinion rows="3" maxlength="2000" placeholder="保留意见或不同意时必须填写"></textarea></label></div><div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="button" data-acknowledge>确认本人意见</button></div>` : ''}
       ${actions.canSubmitObjection ? `<div class="hr12-action-field"><label>结果异议理由<textarea data-objection-reason rows="4" minlength="10" maxlength="4000" placeholder="请写明异议事实、依据和具体诉求（至少 10 个字符）"></textarea></label></div><div class="hr12-action-toolbar"><button class="hr12-action-btn" type="button" data-submit-objection>提交结果异议</button></div>` : ''}
-      ${actions.canDecideObjection ? `<div data-objection-decision data-objection-id="${esc(objection.id)}"><div class="hr12-action-field"><label>复核决定<select data-decision-code><option value="REJECTED">异议驳回</option><option value="MODIFIED">部分调整</option><option value="UPHELD">异议成立</option></select></label></div><div class="hr12-action-field"><label>复核结论<textarea data-decision-conclusion rows="4" minlength="10" maxlength="4000" placeholder="写明复核事实、制度依据和处理结论"></textarea></label></div><div class="hr12-action-field"><label>调整后档次（成立/调整时必填）<select data-corrected-grade><option value="">请选择</option><option value="EXCELLENT">优秀</option><option value="QUALIFIED">合格</option><option value="BASIC_QUALIFIED">基本合格</option><option value="UNQUALIFIED">不合格</option></select></label></div><div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="button" data-decide-objection>复核结案</button></div></div>` : ''}
+      ${actions.canDecideObjection ? `<div data-objection-decision data-objection-id="${esc(objection.id)}"><div class="hr12-action-field"><label>复核决定<select data-decision-code><option value="REJECTED">异议驳回</option><option value="MODIFIED">部分调整</option><option value="UPHELD">异议成立</option></select></label></div><div class="hr12-action-field"><label>复核结论<textarea data-decision-conclusion rows="4" minlength="10" maxlength="4000" placeholder="写明复核事实、制度依据和处理结论"></textarea></label></div><div class="hr12-action-field"><label>调整后档次（成立/调整时必填）<select data-corrected-grade>${correctedGradeOptions}</select></label></div><div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="button" data-decide-objection>复核结案</button></div></div>` : ''}
+      ${actions.canReadArchive ? `<section class="hr12-frozen-entry" aria-label="历史归档依据">
+        <h4>查阅当期依据</h4><p>只读取选定版本，不用当前人员或新证书补写历史。</p>
+        <div class="hr12-action-field"><label>归档版本<select data-archive-version>${(item.archiveVersions || []).map(v => `<option value="${esc(v.version)}">版本 ${esc(v.version)}</option>`).join('')}</select></label></div>
+        <div class="hr12-action-field"><label>查阅用途<input data-archive-purpose maxlength="500" placeholder="例如：核对本年度考核归档依据" autocomplete="off"></label></div>
+        <div class="hr12-action-toolbar"><button type="button" class="hr12-action-btn" data-archive-evidence data-can-export="${actions.canExportArchive ? 'true' : 'false'}">查看历史依据</button></div>
+        <div data-archive-feedback role="status" aria-live="polite"></div><div data-archive-panel></div>
+      </section>` : ''}
       ${actions.canArchive ? '<div class="hr12-action-toolbar"><button class="hr12-action-btn primary" type="button" data-archive-result>核验条件并正式归档</button></div>' : ''}
     </article>`;
   }
@@ -575,9 +718,16 @@
       return;
     }
 
+    if (section === 'term') {
+      title.textContent = '聘期考核';
+      description.textContent = '从 HR14 正式聘期建档，锁定聘期证据，完成评议与集体审定后形成聘期正式结果。';
+      box.innerHTML = empty('正在读取聘期考核', '正在核对正式聘期、证据快照和审定状态。');
+      loadTermCases();
+      return;
+    }
+
     const authoritySections = {
       goals: ['目标任务与平时考核', '读取当前学校的目标版本、目标计划、承担人数和正式状态。'],
-      term: ['聘期考核', '聘期案件与年度案件分开呈现，保留独立周期和状态。'],
       ethics: ['师德与专项考核', '仅呈现独立师德案件的事实来源、Gate 状态和原因，不从其它评价推断。'],
       review: ['评议与审定', '校准会与正式审定会分权呈现，保留会议状态和修订数量。'],
       archive: ['结果与考核档案', '读取正式结果版本、归档状态和异议数量，确保结果链可追溯。'],
@@ -683,9 +833,11 @@
   }
 
   root.addEventListener('click', handleAnnualAction);
+  root.addEventListener('click', handleTermAction);
   // Start immediately after the HR12 root is mounted. Each provider read is
   // independently bounded above, so one slow/unavailable source cannot leave
   // the whole workspace permanently stuck in the initial loading state.
   boot();
   mountAnnualSetup();
+  mountTermSetup();
 })();

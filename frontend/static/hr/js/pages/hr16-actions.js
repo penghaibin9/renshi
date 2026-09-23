@@ -47,7 +47,7 @@
     });
     let data = {};
     try { data = await response.json(); } catch (_error) { /* Status remains authoritative. */ }
-    if (!response.ok) throw new Error(data?.error?.message || '办理失败，请检查前置条件后重试。');
+    if (!response.ok) { const error=new Error(data?.error?.message || '办理失败，请检查前置条件后重试。');error.status=response.status;throw error; }
     return data.data ?? data;
   }
   async function upload(path, fields, file) {
@@ -63,7 +63,7 @@
     });
     let data = {};
     try { data = await response.json(); } catch (_error) { /* Status remains authoritative. */ }
-    if (!response.ok) throw new Error(data?.error?.message || '文件上传或办理失败，请检查后重试。');
+    if (!response.ok) { const error=new Error(data?.error?.message || '文件上传或办理失败，请检查后重试。');error.status=response.status;throw error; }
     return data.data ?? data;
   }
   async function downloadEvidence(url, defaultName, reason) {
@@ -172,26 +172,29 @@
         const form = event.currentTarget;
         const button = form.querySelector('[type="submit"]');
         const fields = new FormData(form);
-        busy(button, true);
-        try {
-          const saved = await request(`/cases/${fields.get('caseId')}/handover-items/`, {itemNo: fields.get('itemNo'), categoryCode: fields.get('categoryCode'), title: fields.get('title'), description: fields.get('description'), required: fields.get('required') === 'on', ownerStaffId: null, dueDate: fields.get('dueDate') || null});
-          result(host, 'ok', `${saved.itemNo} 已新增为“${label(saved.status)}”。`);
-          form.reset();
-          busy(button, false);
-        } catch (error) { result(host, 'error', error.message); busy(button, false); }
+        await window.HrDetailUX.run({scope:form,button,
+          confirmation:{title:'确认新增交接项',message:'请核对离校案件、交接事项及是否必交。',facts:window.HrDetailUX.formFacts(form)},
+          task:()=>request(`/cases/${fields.get('caseId')}/handover-items/`, {itemNo: fields.get('itemNo'), categoryCode: fields.get('categoryCode'), title: fields.get('title'), description: fields.get('description'), required: fields.get('required') === 'on', ownerStaffId: null, dueDate: fields.get('dueDate') || null}),
+          onSuccess:saved=>{result(host,'ok',`${saved.itemNo} 已新增为“${label(saved.status)}”。请重新读取列表核对。`);form.reset();},
+          onError:error=>window.HrDetailUX.note(form,window.HrDetailUX.errorText(error,true))
+        });
       });
     }
     const target = document.createElement('div');
     target.className = 'hr16-action-list';
     host.appendChild(target);
-    const items = data.recentHandoverItems || [];
+    const items = [...(data.recentHandoverItems || [])].sort((a,b) => {
+      const priority=item=>['COMPLETED','WAIVED','NOT_REQUIRED'].includes(item.status)?2:item.required?0:1;
+      return priority(a)-priority(b) || String(a.due_date || '9999').localeCompare(String(b.due_date || '9999'));
+    });
+    const count=document.createElement('p');count.className='hr-v5-table-meta';count.textContent=`本次返回 ${items.length} 项，按必交待办、截止日期优先显示。`;target.before(count);
     target.innerHTML = items.length ? '' : '<div class="hr16-action-empty">当前没有交接项。</div>';
     items.forEach((item) => {
       const row = document.createElement('div');
       row.className = 'hr16-action-row';
       const canAct = allowed.handover && item.status === 'PENDING';
       const downloadAction = item.has_evidence ? '<div class="hr16-action-inline"><input data-download-reason maxlength="200" placeholder="填写查阅事由（记入审计）" aria-label="查阅交接凭证事由"><button class="hr16-action-btn" data-download-evidence type="button">审计下载凭证</button></div>' : '';
-      row.innerHTML = `<div class="hr16-action-row-main"><div><b>${esc(item.title || item.item_no)}</b><small>${esc(item.item_no)} · ${item.required ? '必交' : '可选'} · ${esc(label(item.status))}</small></div><div><small>截止 ${esc(item.due_date || '—')}${item.has_evidence ? ' · 已登记完成证据' : ''}</small></div>${downloadAction}${canAct ? '<div><div class="hr16-action-inline"><input data-evidence type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.txt"><button class="hr16-action-btn primary" data-complete type="button">上传凭证并完成</button></div><div class="hr16-action-inline"><input data-reason placeholder="填写豁免原因"><button class="hr16-action-btn" data-waive type="button">确认豁免</button></div><small>凭证最大 10 MiB；文件仅保存为受保护的存储引用。</small></div>' : ''}</div>`;
+      row.innerHTML = `<div class="hr16-action-row-main"><div><b>${esc(item.title || item.item_no)}</b><small>${esc(item.item_no)} · ${item.required ? '必交' : '可选'} · ${esc(label(item.status))}</small></div><div><small>截止 ${esc(item.due_date || '—')}${item.has_evidence ? ' · 已登记完成证据' : ''}</small></div>${downloadAction}${canAct ? '<div><div class="hr16-action-inline"><input data-evidence aria-label="交接凭证文件" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.txt"><button class="hr16-action-btn primary" data-complete type="button">上传凭证并完成</button></div><div class="hr16-action-inline"><input data-reason aria-label="豁免原因" placeholder="填写豁免原因"><button class="hr16-action-btn" data-waive type="button">确认豁免</button></div><small>凭证最大 10 MiB；文件仅保存为受保护的存储引用。</small></div>' : ''}</div>`;
       row.querySelector('[data-download-evidence]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget; busy(button, true);
         try { await downloadEvidence(item.evidence_download_url, `${item.item_no || '交接'}-凭证`, row.querySelector('[data-download-reason]')?.value); result(host, 'ok', '凭证已下载，本次查阅已记录审计。'); }
@@ -201,19 +204,31 @@
       row.querySelector('[data-complete]')?.addEventListener('click', async (event) => {
         const file = row.querySelector('[data-evidence]').files[0];
         if (!file) { result(host, 'error', '请先选择交接凭证文件。'); return; }
-        const button = event.currentTarget; busy(button, true);
-        try {
-          const saved = await upload(`/handover-items/${item.id}/complete-upload/`, {}, file);
-          result(host, 'ok', `${item.item_no} 已变为“${label(saved.status)}”，凭证已受控保存。`);
-          row.querySelectorAll('button,input').forEach((control) => { control.disabled = true; });
-        } catch (error) { result(host, 'error', error.message); busy(button, false); }
+        if(file.size > 10*1024*1024) {window.HrDetailUX.note(row,'凭证不能超过 10 MiB，请选择符合要求的文件。');row.querySelector('[data-evidence]').focus();return;}
+        const button = event.currentTarget;
+        await window.HrDetailUX.run({scope:row,button,lockSuccess:true,
+          confirmation:{title:'完成本项交接',message:'完成后该项不能原地改写，请核对交接事项与凭证文件。',facts:[['交接事项',item.title || item.item_no],['交接项编号',item.item_no],['凭证文件',file.name],['大小',`${(file.size/1024).toFixed(1)} KiB`]]},
+          task:()=>upload(`/handover-items/${item.id}/complete-upload/`, {}, file),
+          onSuccess:saved=>{
+            window.HrDetailUX.note(row,`${item.item_no} 已变为“${label(saved.status)}”，请重新读取清单核对证据。`,'success');
+            row.querySelectorAll('[data-complete],[data-waive],[data-evidence],[data-reason]').forEach(control=>{control.disabled=true;});
+          },
+          onError:error=>window.HrDetailUX.note(row,window.HrDetailUX.errorText(error,true))
+        });
       });
       row.querySelector('[data-waive]')?.addEventListener('click', async (event) => {
         const reason = row.querySelector('[data-reason]').value.trim();
         if (!reason) { result(host, 'error', '豁免必须填写原因。'); return; }
-        const button = event.currentTarget; busy(button, true);
-        try { const saved = await request(`/handover-items/${item.id}/waive/`, {reason}); result(host, 'ok', `${item.item_no} 已变为“${label(saved.status)}”。`); button.disabled = true; }
-        catch (error) { result(host, 'error', error.message); busy(button, false); }
+        const button = event.currentTarget;
+        await window.HrDetailUX.run({scope:row,button,lockSuccess:true,
+          confirmation:{title:'确认豁免交接事项',message:'豁免将记录原因，终态交接项不能原地改写。请核对本次对象。',facts:[['交接事项',item.title || item.item_no],['交接项编号',item.item_no],['豁免原因',reason]],danger:true},
+          task:()=>request(`/handover-items/${item.id}/waive/`, {reason}),
+          onSuccess:saved=>{
+            window.HrDetailUX.note(row,`${item.item_no} 已变为“${label(saved.status)}”。请重新读取最新清单。`,'success');
+            row.querySelectorAll('[data-complete],[data-waive],[data-evidence],[data-reason]').forEach(control=>{control.disabled=true;});
+          },
+          onError:error=>window.HrDetailUX.note(row,window.HrDetailUX.errorText(error,true))
+        });
       });
       target.appendChild(row);
     });
@@ -295,11 +310,30 @@
   }
 
   async function retirementPanel() {
-    const host = card('正式退休事实与养老金进度', '只有退休类型且已经正式生效的离校记录才能形成退休事实；养老金进度只能向前推进。');
-    const data = await dashboard(); const eligible = (data.recentExitFacts || []).filter((item) => item.exit_type === 'RETIREMENT' && item.status === 'EFFECTIVE'); const facts = data.recentRetirements || [];
-    if (allowed.effect) host.insertAdjacentHTML('beforeend', `<form class="hr16-action-form open"><div class="hr16-action-grid"><div class="hr16-action-field"><label>正式退休离校记录</label><select name="exitFactId" required><option value="">选择正式记录</option>${eligible.map((item) => `<option value="${esc(item.id)}">${esc(item.fact_no)} · ${esc(item.employment_end_date)}</option>`).join('')}</select></div><div class="hr16-action-field"><label>退休事实编号</label><input name="factNo" required placeholder="例如：TX-2026-0001"></div><div class="hr16-action-field"><label>退休类型</label><select name="retirementType"><option value="STATUTORY">法定退休</option><option value="POLICY">政策退休</option></select></div><div class="hr16-action-field"><label>法定退休日期</label><input name="statutoryDate" type="date"></div></div><div class="hr16-action-toolbar"><button class="hr16-action-btn primary" type="submit">形成退休事实</button></div></form>`);
+    const host = card('正式退休事实与养老金进度', '正式退休事实必须引用同一教职工、同一聘用关系且结论为“符合条件”的退休预审；权威退休类型和法定日期不再由页面手填。');
+    const data = await dashboard();
+    const eligible = (data.recentExitFacts || []).filter((item) => item.exit_type === 'RETIREMENT' && item.status === 'EFFECTIVE');
+    const prechecks = (data.recentRetirementPrechecks || []).filter((item) => item.decision === 'ELIGIBLE');
+    const pairs = [];
+    eligible.forEach((exitFact) => {
+      prechecks.filter((item) => String(item.person_id) === String(exitFact.person_id)
+        && String(item.employment_relationship_id) === String(exitFact.employment_relationship_id)
+        && item.statutory_date === exitFact.employment_end_date)
+        .forEach((precheck) => pairs.push({exitFact, precheck}));
+    });
+    const facts = data.recentRetirements || [];
+    if (allowed.effect) host.insertAdjacentHTML('beforeend', `<form class="hr16-action-form open"><div class="hr16-action-grid"><div class="hr16-action-field full"><label>已核验退休依据</label><select name="pairIndex" required><option value="">选择“正式离校事实 + 合格退休预审”</option>${pairs.map((item, index) => `<option value="${index}">${esc(item.exitFact.fact_no)} · ${esc(item.precheck.retirement_type)} · 法定日期 ${esc(item.precheck.statutory_date)}</option>`).join('')}</select><span class="hr16-action-help">只有预审人员、聘用关系和法定日期与正式离校事实完全一致时才可选择。弹性提前/延迟退休请使用下方“弹性退休核验与审批”，完成批准和离校生效后，在申请详情中形成正式退休事实。</span></div><div class="hr16-action-field"><label>退休事实编号</label><input name="factNo" required placeholder="例如：TX-2026-0001"></div></div><div class="hr16-action-toolbar"><button class="hr16-action-btn primary" type="submit" ${pairs.length ? '' : 'disabled'}>形成退休事实</button></div></form>`);
     else readonly(host, '当前账号可查看退休事实，但没有形成正式退休事实的权限。');
-    host.querySelector('form')?.addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('[type="submit"]'); const fields = new FormData(form); busy(button, true); try { const saved = await request(`/exit-facts/${fields.get('exitFactId')}/retirement/`, {factNo: fields.get('factNo'), retirementType: fields.get('retirementType'), statutoryDate: fields.get('statutoryDate') || null}); result(host, 'ok', `${saved.factNo} 已形成，养老金进度“${label(saved.pensionProcessingStatus)}”。`); } catch (error) { result(host, 'error', error.message); busy(button, false); } });
+    host.querySelector('form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget; const button = form.querySelector('[type="submit"]'); const fields = new FormData(form); const pair = pairs[Number(fields.get('pairIndex'))];
+      if (!pair) { result(host, 'error', '请选择已经通过退休预审并与正式离校日期一致的退休依据。'); return; }
+      busy(button, true);
+      try {
+        const saved = await request(`/exit-facts/${pair.exitFact.id}/retirement/`, {factNo: fields.get('factNo'), precheckId: pair.precheck.id});
+        result(host, 'ok', `${saved.factNo} 已由退休预审形成，养老金进度“${label(saved.pensionProcessingStatus)}”。`);
+      } catch (error) { result(host, 'error', error.message); busy(button, false); }
+    });
     const target = document.createElement('div'); target.className = 'hr16-action-list'; host.appendChild(target); target.innerHTML = facts.length ? '' : '<div class="hr16-action-empty">当前没有正式退休事实。</div>';
     facts.forEach((fact) => { const row = document.createElement('div'); row.className = 'hr16-action-row'; row.innerHTML = `<div class="hr16-action-row-main"><div><b>${esc(fact.fact_no)}</b><small>${esc(fact.retirement_type)} · 生效 ${esc(fact.effective_date)}</small></div><div><span class="hr16-action-badge">${esc(label(fact.pension_processing_status))}</span></div>${allowed.retirementPensionManage ? `<div class="hr16-action-row-actions"><select data-status><option value="NOT_STARTED">未开始</option><option value="IN_PROGRESS">办理中</option><option value="COMPLETED">已完成</option></select><button class="hr16-action-btn" type="button" data-save>更新养老金进度</button></div>` : ''}</div>`; row.querySelector('[data-status]') && (row.querySelector('[data-status]').value = fact.pension_processing_status); row.querySelector('[data-save]')?.addEventListener('click', async (event) => { const button = event.currentTarget; busy(button, true); try { const saved = await request(`/retirement-facts/${fact.id}/pension-status/`, {status: row.querySelector('[data-status]').value}); result(host, 'ok', `${saved.factNo} 养老金进度已更新为“${label(saved.pensionProcessingStatus)}”。`); } catch (error) { result(host, 'error', error.message); busy(button, false); } }); target.appendChild(row); });
   }
@@ -365,7 +399,10 @@
       else if (section === 'retirement_facts') await retirementPanel();
       else if (section === 'archive') await archivePanel();
       else if (section === 'retirement_precheck') await retirementPrecheckPanel();
-    } catch (error) { result(card('办理区加载失败', '页面不会回退到历史写入口。'), 'error', error.message); }
+    } catch (error) {
+      if(section==='handover'){const host=work.querySelector('.hr16-action-card')||card('交接办理读取失败','请先恢复读取后继续办理。');window.HrDetailUX.note(host,window.HrDetailUX.errorText(error),'error',async()=>{host.remove();await boot();});}
+      else result(card('办理区加载失败', '页面不会回退到历史写入口。'), 'error', error.message);
+    }
   }
   boot();
 })();

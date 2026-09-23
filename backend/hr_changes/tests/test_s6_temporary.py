@@ -1,6 +1,7 @@
 """S6 借调挂职契约测试：link 创建/延期/超期/返岗/原岗无效 exception。"""
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 from django.test import TestCase
 
@@ -54,6 +55,7 @@ def make_source_and_temp():
         effective_from=date(2026, 9, 1),
         effective_to=date(2027, 9, 1),
         organization_id=temp_org,
+        fte=Decimal("0.50"),
         source_business_type="MIGRATION_VERIFIED",
     )
     return staff, source, temporary, rel
@@ -194,6 +196,7 @@ class TemporaryCreateWriterTests(TestCase):
         self.assertEqual(proposals["organization"], str(target_org.id))
         self.assertEqual(proposals["expected_return_at"], return_at.isoformat())
         self.assertEqual(proposals["source_policy"], "KEEP_ACTIVE")
+        self.assertEqual(proposals["fte"], "0.50")
         workflow = ChangeService(TENANT, actor_user_id=1)
         case = workflow.submit(case.id)
         case = workflow.start_approval(case.id)
@@ -209,6 +212,7 @@ class TemporaryCreateWriterTests(TestCase):
         self.assertEqual(temporary.organization_id_id, target_org.id)
         self.assertEqual(temporary.effective_from, effective_at)
         self.assertEqual(temporary.effective_to, return_at)
+        self.assertEqual(temporary.fte, Decimal("0.50"))
         source.refresh_from_db()
         self.assertIsNone(source.effective_to)
         link = HrTemporaryAssignmentLink.objects.get(change_case_id=case)
@@ -216,6 +220,39 @@ class TemporaryCreateWriterTests(TestCase):
         self.assertEqual(link.temporary_assignment_id_id, temporary.id)
         self.assertEqual(link.expected_return_at, return_at)
         self.assertEqual(link.source_assignment_status_policy, "KEEP_ACTIVE")
+
+    def test_default_temporary_fte_preserves_one_point_zero_when_capacity_allows(self):
+        staff, target_org, source = self._authority_facts("T5110-FTE")
+        source.fte = Decimal("0.50")
+        source.save(update_fields=["fte"])
+        action = make_action(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        reason = make_reason(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        case = TemporaryAssignmentService(TENANT, actor_user_id=1).create_temporary_case(
+            staff_master_id=staff,
+            action_id=action,
+            reason_id=reason,
+            target_org_id=target_org.id,
+            requested_effective_at=date.today(),
+            expected_return_at=date.today() + timedelta(days=90),
+        )
+        proposal = case.proposals.get(domain="assignment", field_code="fte")
+        self.assertEqual(proposal.proposed_value_ref, "1.00")
+
+    def test_explicit_temporary_fte_cannot_exceed_remaining_capacity(self):
+        staff, target_org, _source = self._authority_facts("T5110-LIMIT")
+        action = make_action(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        reason = make_reason(TENANT, ChangeActionCode.TEMPORARY_SECONDMENT)
+        with self.assertRaises(TemporaryServiceError) as caught:
+            TemporaryAssignmentService(TENANT, actor_user_id=1).create_temporary_case(
+                staff_master_id=staff,
+                action_id=action,
+                reason_id=reason,
+                target_org_id=target_org.id,
+                requested_effective_at=date.today(),
+                expected_return_at=date.today() + timedelta(days=90),
+                fte="0.75",
+            )
+        self.assertEqual(caught.exception.code, "CHANGE_TEMPORARY_FTE_EXCEEDED")
 
     def test_attachment_writer_rejects_unsupported_source_policy(self):
         staff, target_org, _source = self._authority_facts("T5111")

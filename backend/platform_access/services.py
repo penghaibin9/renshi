@@ -16,7 +16,7 @@ MIN_REASON_LENGTH = 12
 
 
 def is_platform_operator(user):
-    """Return True only for a platform-only superuser without school HR identity.
+    """Return True only for an enabled SaaS platform operator identity.
 
     Horilla legitimately uses ``is_superuser`` for school HR administrators too.
     Those users remain tenant-bound through their Employee identity and must not
@@ -24,6 +24,8 @@ def is_platform_operator(user):
     Employee row is the platform/operator identity and therefore requires an
     audited elevation before entering a concrete school tenant.
     """
+    if not getattr(settings, "PLATFORM_OPERATIONS_ENABLED", False):
+        return False
     if not (
         user
         and getattr(user, "is_authenticated", False)

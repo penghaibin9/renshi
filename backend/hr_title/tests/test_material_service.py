@@ -77,6 +77,20 @@ class TitleMaterialServiceTests(TestCase):
 
         self.assertIn("TITLE_MATERIAL_SNAPSHOT_IMMUTABLE", str(cm.exception))
 
+    def test_review_material_cannot_be_deleted_or_bulk_rewritten(self):
+        service = TitleMaterialService(77)
+        material = service.accept(service.attach_snapshot(self.payload).id)
+
+        with self.assertRaisesRegex(ValueError, "TITLE_MATERIAL_RETENTION_REQUIRED"):
+            material.delete()
+        with self.assertRaisesRegex(ValueError, "TITLE_MATERIAL_RETENTION_REQUIRED"):
+            TitleMaterialSnapshot.objects.filter(id=material.id).delete()
+        with self.assertRaisesRegex(ValueError, "TITLE_MATERIAL_RETENTION_REQUIRED"):
+            TitleMaterialSnapshot.objects.filter(id=material.id).update(display_name="覆盖历史")
+
+        material.refresh_from_db()
+        self.assertEqual(material.display_name, "代表性成果一")
+
     def test_returned_material_is_replaced_by_new_snapshot(self):
         service = TitleMaterialService(77)
         original = service.attach_snapshot(self.payload)

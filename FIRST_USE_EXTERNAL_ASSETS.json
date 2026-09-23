@@ -1,0 +1,132 @@
+{
+  "baseline_name": "Yueke_University_HR_Standalone_School_Admin_Professional_20260917.zip",
+  "baseline_sha256": "91a9769d8b870ab01105c09212b038c5cf55760cd364fea3f39db540b3a8781d",
+  "note": "原工程的字体二进制不重新分发；请保留已有部署资产，或由部署工具从用户持有的同基线包补齐。业务源码与部署结构均保留。",
+  "files": [
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-brands-400.ttf",
+      "sha256": "0821aa9ca9cc259fad64b1dc7f1cc5be71faaee46bb945ede763fca0c4166bed",
+      "bytes": 210792
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-brands-400.woff2",
+      "sha256": "b10a049b201da5518120d35dc74ad7f5ef328ca1e8b7f9d3f6ad11bc76115eeb",
+      "bytes": 118680
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-regular-400.ttf",
+      "sha256": "557e6966ad8dba7352ac6d350c1546b685b13d68db26f09cba45cadd660d45db",
+      "bytes": 68064
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-regular-400.woff2",
+      "sha256": "dc9e5038a1401446549f7eb3c23911cfac844b3b4a3a3b76c33c34962ee652cb",
+      "bytes": 25472
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-solid-900.ttf",
+      "sha256": "af19d135d3a935b3ebfbd80320716ffe1202052c5f68dc2c5f1abc57005ac605",
+      "bytes": 426112
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-solid-900.woff2",
+      "sha256": "6a3b4536c389c82a2a2e160e7ab15f6c8acef77f42e04d4c697f1cbfa9e90026",
+      "bytes": 158220
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-v4compatibility.ttf",
+      "sha256": "a06887ba6ac295c832386d87ce425e4f45211b3f1c37c8f35040058569f9f6fd",
+      "bytes": 10836
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/font-awsome/webfonts/fa-v4compatibility.woff2",
+      "sha256": "748f5563971e99a952f6d3dd49154e610fc5aec27f0c17b05bc4cccc9b501275",
+      "bytes": 4796
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwAT9nA2.woff2",
+      "sha256": "14ddcf510a1755c59cab5df964cf2fe2097648c3fda27e203a8e79c9e1caf2ad",
+      "bytes": 32136
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwQT9g.woff2",
+      "sha256": "c58f9d530baa7e96355f444502eca739d5eefa0f328f3d635b73648373214629",
+      "bytes": 79716
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwcT9nA2.woff2",
+      "sha256": "a43206fa4efd055035701cd9d7dfac35be66d54e88f0ce6de900522f0dd6d31d",
+      "bytes": 33140
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwgT9nA2.woff2",
+      "sha256": "71c4a244d634ac140a11dff1cc4151d992f6c9d81c2ac3c59a6fbbd106dcf622",
+      "bytes": 18504
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwkT9nA2.woff2",
+      "sha256": "d54db8e96a26a41c56ef2b86f54ea131b166fa0de6024d8cd7f6a90d1215a9b5",
+      "bytes": 44216
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwoT9nA2.woff2",
+      "sha256": "cd92c8740f77f482bcd39e831fa7b1445589e9203cc9edb39fd49435d8976257",
+      "bytes": 146460
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCm3FwrK3iLTcvnUwsT9nA2.woff2",
+      "sha256": "d102ea2c86a59e30a0c647a30791e251bf6701492a50549d1cdcf8a643fbbc98",
+      "bytes": 16216
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcvhYwYL8g.woff2",
+      "sha256": "6b9f4924313756a758ee0bc85a1ca64eeafc650d5ae06bc7434a5810428fa634",
+      "bytes": 30264
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcviYwY.woff2",
+      "sha256": "2c295d99e26dcf357d4d01bcf270fd6924b600c9a13dd8c363ef114f4c6976fa",
+      "bytes": 72920
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcvmYwYL8g.woff2",
+      "sha256": "1e3ca90db51ad9fda114ef8ba6d0934102f7e94e9dfb0a7e727447ac741feb00",
+      "bytes": 29588
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcvsYwYL8g.woff2",
+      "sha256": "5e6d4fe9d9f4bff8b2a2469d25ab19576bb85331e22c6ed51398e16f95d56a9c",
+      "bytes": 133336
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcvtYwYL8g.woff2",
+      "sha256": "935ab355938e6cd9b5fa39f2c3250ee16f3b08807c65dc4162356b50dbc8c7a2",
+      "bytes": 15268
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcvuYwYL8g.woff2",
+      "sha256": "caa89796709cdb3d6334b6ac8b3d496458f1017056e1ac94c4f9825f948c4f87",
+      "bytes": 17304
+    },
+    {
+      "path": "backend/horilla_theme/static/cdn/googleapi/webfonts/UcCo3FwrK3iLTcvvYwYL8g.woff2",
+      "sha256": "d42861c55425a6951780e44347c3f005bbc9753ca3b0505290e746a14d950d8c",
+      "bytes": 41536
+    },
+    {
+      "path": "backend/payroll/static/payroll/fonts/Poppins_Regular.ttf",
+      "sha256": "4bb722fdfadc6ca417a99d2b89ce6743795d1a59a86762962b03dcaf0ea70a2f",
+      "bytes": 146204
+    },
+    {
+      "path": "frontend/static/fonts/material_icons.woff2",
+      "sha256": "8265f64786397d6b832d1ca0aafdf149ad84e72759fffa9f7272e91a0fb015d1",
+      "bytes": 128352
+    },
+    {
+      "path": "frontend/static/fonts/material_icons_outlined.woff2",
+      "sha256": "156e9c691b5722ffd7e65124fb7f54768d8af7e5dcb649f325e98e8e26991e14",
+      "bytes": 245764
+    }
+  ]
+}

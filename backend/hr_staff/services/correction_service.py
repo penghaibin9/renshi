@@ -178,6 +178,7 @@ class CorrectionService:
         case.status = CorrectionStatus.SUBMITTED
         case.submitted_by = self.actor_user_id
         case.submitted_at = timezone.now()
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionSubmitted")
         return case
@@ -189,6 +190,7 @@ class CorrectionService:
         case.status = CorrectionStatus.UNDER_REVIEW
         case.reviewed_by = self.actor_user_id
         case.reviewed_at = timezone.now()
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionUnderReview")
         return case
@@ -200,6 +202,7 @@ class CorrectionService:
             raise CorrectionStateError("仅 UNDER_REVIEW/SUBMITTED 可退回")
         case.status = CorrectionStatus.RETURNED
         case.return_reason = reason
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionReturned", f"reason={reason[:200]}")
         return case
@@ -209,6 +212,7 @@ class CorrectionService:
         case = self._get(case_id)
         self._assert_status(case, CorrectionStatus.RETURNED)
         case.status = CorrectionStatus.RESUBMITTED
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionResubmitted")
         return case
@@ -219,6 +223,13 @@ class CorrectionService:
         if case.status not in (CorrectionStatus.UNDER_REVIEW, CorrectionStatus.RESUBMITTED):
             raise CorrectionStateError("仅 UNDER_REVIEW/RESUBMITTED 可审批")
         case.refresh_from_db()
+        if case.source_channel == "SELF":
+            from hr_staff.services.self_submission_service import assert_independent_reviewer
+            assert_independent_reviewer(self.tenant_id, self.actor_user_id, case.staff_id_id, case.submitted_by)
+            from hr_staff.services.evidence_reference_service import evidence_snapshot
+            if not case.source_evidence_version_id:
+                raise CorrectionPolicyDenied("SELF_EVIDENCE_VERSION_REQUIRED")
+            evidence_snapshot(self.tenant_id, case.staff_id_id, case.source_evidence_version_id, lock=True)
         impact = self._max_impact(case)
         if impact in (
             CorrectionImpactLevel.AFFECTS_CLOSED_PAYROLL,
@@ -231,6 +242,7 @@ class CorrectionService:
         case.approved_by = self.actor_user_id
         case.approved_at = timezone.now()
         case.impact_level = impact
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionApproved", f"impact={impact}")
         return case
@@ -242,6 +254,7 @@ class CorrectionService:
             raise CorrectionStateError("仅 UNDER_REVIEW/RESUBMITTED 可拒绝")
         case.status = CorrectionStatus.REJECTED
         case.reject_reason = reason
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionRejected", f"reason={reason[:200]}")
         return case
@@ -257,6 +270,7 @@ class CorrectionService:
         ):
             raise CorrectionStateError("当前状态不可取消")
         case.status = CorrectionStatus.CANCELLED
+        case.version += 1
         case.save()
         self._audit(case, "CorrectionCancelled")
         return case
@@ -291,6 +305,11 @@ class CorrectionService:
                 case.status = CorrectionStatus.APPLYING
                 case.save(update_fields=["status"])
                 application_started = True
+                if case.source_channel == "SELF":
+                    from hr_staff.services.self_submission_service import verify_correction_source
+                    verify_correction_source(case)
+                    if apply_fn is not None:
+                        raise CorrectionPolicyDenied("SELF 更正不得使用自定义应用器绕过字段校验")
                 if apply_fn is None:
                     apply_fn = self._default_apply
                 apply_fn(case)
@@ -311,9 +330,9 @@ class CorrectionService:
         except Exception as exc:  # 应用失败必须可追踪（独立落库，不被块2回滚）
             if not application_started or case is None:
                 raise
-            HrCorrectionCase.objects.filter(pk=case.pk).update(
+            HrCorrectionCase.objects.filter(tenant_id=self.tenant_id, pk=case.pk).update(
                 status=CorrectionStatus.FAILED,
-                apply_error=f"{exc.__class__.__name__}: {exc}",
+                apply_error=f"{exc.__class__.__name__}: {exc}"[:512],
             )
             write_audit_event(
                 tenant_id=self.tenant_id,
@@ -411,7 +430,7 @@ class CorrectionService:
         return CorrectionImpactLevel.NO_DOWNSTREAM_IMPACT
 
     def _get(self, case_id) -> HrCorrectionCase:
-        case = HrCorrectionCase.objects.filter(
+        case = HrCorrectionCase.objects.select_for_update().filter(
             tenant_id=self.tenant_id, id=case_id
         ).prefetch_related("items").first()
         if case is None:

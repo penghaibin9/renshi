@@ -77,17 +77,22 @@
   }
 
   async function act(button, host, path, body, message, after) {
+    if (button.disabled || button.dataset.v6Committed === 'true') return null;
     busy(button, true);
     try {
       const data = await post(path, body);
       result(host, 'ok', typeof message === 'function' ? message(data) : message);
-      if (after) await after(data);
+      if (after) {
+        window.HrWorkspaceUX?.afterCommit({host,button,message:typeof message === 'function' ? message(data) : message});
+      } else {
+        window.HrWorkspaceUX?.markSaved(button.form);
+      }
       return data;
     } catch (error) {
       result(host, 'error', error.message);
       return null;
     } finally {
-      busy(button, false);
+      if (button.dataset.v6Committed !== 'true') busy(button, false);
     }
   }
 

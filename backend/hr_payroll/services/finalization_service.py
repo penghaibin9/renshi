@@ -122,7 +122,17 @@ class PayrollFinalizationService:
                 f"period status {period.status} cannot be finalized",
             )
 
-        time_source_snapshot = self._time_source_snapshot(period)
+        if period.engine_version == "POLICY_V1":
+            from .policy_payroll_service import policy_finalization_sources
+            from .policy_math import PolicyPayrollError
+            try:
+                time_source_snapshot = policy_finalization_sources(period)
+                if "HR11" in time_source_snapshot["requiredAuthorities"]:
+                    time_source_snapshot["hr11Close"] = self._time_source_snapshot(period)
+            except PolicyPayrollError as exc:
+                raise PayrollFinalizationError(exc.code, str(exc)) from exc
+        else:
+            time_source_snapshot = self._time_source_snapshot(period)
 
         results = list(
             PayrollResultFact.objects.select_for_update()
@@ -161,7 +171,17 @@ class PayrollFinalizationService:
         finalized_ids = []
         for result in results:
             result.status = PayrollResultFact.Status.FINALIZED
-            result.save(update_fields=["status", "updated_at"])
+            result.effective_at = finalization_time
+            result.sealed_at = finalization_time
+            result.save(
+                update_fields=[
+                    "status",
+                    "effective_at",
+                    "sealed_at",
+                    "content_hash",
+                    "updated_at",
+                ]
+            )
             finalized_ids.append(str(result.id))
 
         period.status = PayrollPeriod.Status.FINALIZED

@@ -76,12 +76,16 @@ class Hr10MutationSecurityContractTests(SimpleTestCase):
                 self.assertIn("@transaction.atomic", function_source)
                 self.assertIn("select_for_update()", function_source)
 
-    def test_self_approval_compares_matching_employee_identifiers(self):
+    def test_self_approval_uses_canonical_hr03_identity_with_legacy_actor_fallback(self):
         source = self.source_path.read_text(encoding="utf-8")
-        self.assertIn("def _approver_employee_id", source)
+        approval_source = (
+            Path(__file__).resolve().parent / "services/approval_service.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("def _approver_identity", source)
         self.assertIn("request.user.employee_get.id", source)
-        self.assertIn("approver_id = _approver_employee_id(request)", source)
-        self.assertNotIn(
-            "approver_id = request.user.id if request.user.is_authenticated else 0",
-            source,
-        )
+        self.assertIn("resolve_staff_identity(tenant_id=tenant_id", source)
+        self.assertIn("approver_id, approver_staff_uuid = _approver_identity", source)
+        self.assertGreaterEqual(approval_source.count("ApprovalService._is_self_approval"), 3)
+        self.assertIn("applicant_uuid", approval_source)
+        self.assertIn("approver_staff_uuid", approval_source)
+        self.assertNotIn("def _approver_employee_id", source)

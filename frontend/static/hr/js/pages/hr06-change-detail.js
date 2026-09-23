@@ -53,7 +53,7 @@
               body: {requestId: "hr06-ui-" + caseId + "-" + item.version}
             }
           );
-          window.location.reload();
+          window.HrWorkspaceUX?.afterCommit({host:host,button:button,message:"本次异动操作已提交，请读取最新案件状态后继续。"});
         } catch (error) {
           button.disabled = false;
           var message = window.HrApi.apiErrorToMessage(error) || "操作失败";

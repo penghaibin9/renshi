@@ -963,14 +963,19 @@ def adjust_result(request, source_result_id):
     if not isinstance(payload, dict):
         return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
 
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return _error("PAYROLL_ADJUSTMENT_REASON_REQUIRED", "追溯调整必须填写原因", status=400)
     try:
-        outcome = PayrollAdjustmentService(tenant_id).append_adjustment(
+        outcome = PayrollAdjustmentService(tenant_id, actor_user_id=_actor_id(request)).append_adjustment(
             source_result_id=source_result_id,
             adjustment_no=payload.get("adjustmentNo", ""),
             gross_delta=payload.get("grossDelta"),
             deduction_delta=payload.get("deductionDelta"),
             net_delta=payload.get("netDelta"),
             currency_code=payload.get("currencyCode"),
+            reason=reason,
+            evidence_ref=payload.get("evidenceRef", ""),
         )
     except PayrollAdjustmentError as exc:
         if exc.code == "PAYROLL_SOURCE_RESULT_NOT_FOUND":
@@ -980,6 +985,7 @@ def adjust_result(request, source_result_id):
             "PAYROLL_SOURCE_RESULT_NOT_FINAL",
             "PAYROLL_PERIOD_NOT_FINAL",
             "PAYROLL_ADJUSTMENT_CURRENCY_MISMATCH",
+            "PAYROLL_SOURCE_RESULT_SUPERSEDED",
         }:
             status = 409
         else:
@@ -1000,6 +1006,9 @@ def adjust_result(request, source_result_id):
                 "deductionDelta": str(fact.deduction_amount),
                 "netDelta": str(fact.net_amount),
                 "status": fact.status,
+                "authorityReason": getattr(fact, "authority_reason", ""),
+                "authorityEvidenceRef": getattr(fact, "authority_evidence_ref", ""),
+                "authorityActorId": getattr(fact, "authority_actor_id", None),
                 "created": outcome.created,
             },
             "apiVersion": "1.0",
@@ -1007,6 +1016,61 @@ def adjust_result(request, source_result_id):
         },
         status=201 if outcome.created else 200,
     )
+    response["Cache-Control"] = "no-store"
+    return response
+
+
+def reverse_result(request, source_result_id):
+    """Append one sealed reversal fact for the latest payroll authority result."""
+    if request.method != "POST":
+        return _error("METHOD_NOT_ALLOWED", status=405)
+    try:
+        tenant_id = resolve_request_tenant(request, required_permission=ADJUST_PERMISSION)
+    except HrPayrollAccessError as exc:
+        return _error(exc.code, exc.message, status=403)
+    try:
+        payload = json.loads(request.body or b"{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return _error("INVALID_JSON", "请求体必须是合法 JSON", status=400)
+    if not isinstance(payload, dict):
+        return _error("INVALID_JSON", "请求体必须是 JSON 对象", status=400)
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return _error("PAYROLL_REVERSAL_REASON_REQUIRED", "工资结果冲销必须填写原因", status=400)
+    try:
+        outcome = PayrollAdjustmentService(tenant_id, actor_user_id=_actor_id(request)).append_reversal(
+            source_result_id=source_result_id,
+            reversal_no=payload.get("reversalNo", ""),
+            reason=reason,
+            evidence_ref=payload.get("evidenceRef", ""),
+        )
+    except PayrollAdjustmentError as exc:
+        if exc.code == "PAYROLL_SOURCE_RESULT_NOT_FOUND":
+            status = 404
+        elif exc.code in {
+            "PAYROLL_REVERSAL_IDEMPOTENCY_CONFLICT", "PAYROLL_SOURCE_RESULT_NOT_FINAL",
+            "PAYROLL_PERIOD_NOT_FINAL", "PAYROLL_SOURCE_RESULT_SUPERSEDED",
+            "PAYROLL_RESULT_CHAIN_BROKEN", "PAYROLL_RESULT_CHAIN_CYCLE",
+            "PAYROLL_RESULT_CHAIN_ROOT_INVALID", "PAYROLL_RESULT_CHAIN_IDENTITY_MISMATCH",
+        }:
+            status = 409
+        else:
+            status = 400
+        return _error(exc.code, str(exc), status=status)
+    fact = outcome.reversal
+    response = JsonResponse({
+        "data": {
+            "id": str(fact.id), "resultNo": fact.result_no,
+            "sourceResultId": str(fact.supersedes_result_id),
+            "payrollPeriodId": str(fact.payroll_period_id), "staffId": str(fact.staff_id),
+            "currencyCode": fact.currency_code, "grossDelta": str(fact.gross_amount),
+            "deductionDelta": str(fact.deduction_amount), "netDelta": str(fact.net_amount),
+            "status": fact.status, "authorityReason": getattr(fact, "authority_reason", ""),
+            "authorityEvidenceRef": getattr(fact, "authority_evidence_ref", ""),
+            "authorityActorId": getattr(fact, "authority_actor_id", None), "created": outcome.created,
+        },
+        "apiVersion": "1.0", "schemaVersion": "hr15.reversal.1",
+    }, status=201 if outcome.created else 200)
     response["Cache-Control"] = "no-store"
     return response
 
@@ -1087,6 +1151,10 @@ def publish_salary_rule(request, rule_id):
         return _error("METHOD_NOT_ALLOWED", status=405)
     try:
         tenant_id = resolve_request_tenant(request, required_permission=PERM_RULE_MANAGE)
+        from hr_payroll.calculation_models import SalaryRuleVersion
+        selected = SalaryRuleVersion.objects.filter(tenant_id=tenant_id, id=rule_id).first()
+        if selected and selected.pay_group_code:
+            resolve_request_tenant(request, required_permission=PERM_REVIEW)
         rule = PayrollRuleService(tenant_id, _actor_id(request)).publish(rule_id)
     except HrPayrollAccessError as exc:
         return _error(exc.code, exc.message, status=403)

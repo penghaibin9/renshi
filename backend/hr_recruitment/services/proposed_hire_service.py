@@ -172,7 +172,7 @@ class ProposedHireService:
             raise ProposedHireServiceError(
                 "INVALID_DECISION", f"非法决策: {decision}（允许 APPROVE/REJECT/WITHDRAW）", http_status=422
             )
-        proposed = self._get(proposed_hire_id)
+        proposed = self._get(proposed_hire_id, lock=True)
         if proposed.approval_status in (ProposedHireDecision.APPROVE,):
             raise ProposedHireServiceError("ALREADY_APPROVED", "拟录用已批准", http_status=409)
 
@@ -180,7 +180,12 @@ class ProposedHireService:
         proposed.approval_status = decision
         proposed.decision_reason = reason or proposed.decision_reason
         if decision == ProposedHireDecision.APPROVE:
-            proposed.approved_by = approving_user or self.actor
+            # An API payload must never impersonate the authenticated approver.
+            if not self.actor:
+                raise ProposedHireServiceError("APPROVER_CONTEXT_REQUIRED", "认证审批人缺失", http_status=403)
+            if approving_user and str(approving_user) != str(self.actor):
+                raise ProposedHireServiceError("APPROVER_IDENTITY_MISMATCH", "审批人必须为当前认证用户", http_status=403)
+            proposed.approved_by = self.actor
             proposed.approved_at = timezone.now()
         proposed.version += 1
         proposed.save(
@@ -195,10 +200,9 @@ class ProposedHireService:
         )
         return proposed
 
-    def _get(self, proposed_hire_id: str) -> HrProposedHire:
+    def _get(self, proposed_hire_id: str, *, lock=False) -> HrProposedHire:
         try:
-            return HrProposedHire.objects.get(
-                id=proposed_hire_id, tenant_id=self.tenant_id
-            )
+            query = HrProposedHire.objects.select_for_update() if lock else HrProposedHire.objects
+            return query.get(id=proposed_hire_id, tenant_id=self.tenant_id)
         except HrProposedHire.DoesNotExist:
             raise ProposedHireServiceError("PROPOSED_HIRE_NOT_FOUND", "拟录用不存在", http_status=404)

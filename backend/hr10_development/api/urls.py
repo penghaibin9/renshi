@@ -82,11 +82,11 @@ urlpatterns = [
     path("api/v1/hr/development/development-outputs/<int:output_id>/verify", practice_process.verify_output, name="output-verify"),
 
     # ============ S8: Development Records / Dashboard / Metrics ============
-    path("api/v1/hr/development/development-records/<int:staff_id>", development_records.get_record_summary, name="record-summary"),
-    path("api/v1/hr/development/development-records/<int:staff_id>/facts", development_records.get_facts, name="record-facts"),
-    path("api/v1/hr/development/development-records/<int:staff_id>/ledger", development_records.get_ledger, name="record-ledger"),
-    path("api/v1/hr/development/development-records/<int:staff_id>/compliance", development_records.get_compliance, name="record-compliance"),
-    path("api/v1/hr/development/development-records/<int:staff_id>/risks", development_records.get_risks, name="record-risks"),
+    path("api/v1/hr/development/development-records/<str:staff_id>", development_records.get_record_summary, name="record-summary"),
+    path("api/v1/hr/development/development-records/<str:staff_id>/facts", development_records.get_facts, name="record-facts"),
+    path("api/v1/hr/development/development-records/<str:staff_id>/ledger", development_records.get_ledger, name="record-ledger"),
+    path("api/v1/hr/development/development-records/<str:staff_id>/compliance", development_records.get_compliance, name="record-compliance"),
+    path("api/v1/hr/development/development-records/<str:staff_id>/risks", development_records.get_risks, name="record-risks"),
     path("api/v1/hr/development/development-facts/<int:fact_id>/correct", development_records.correct_fact, name="development-fact-correct"),
     path("api/v1/hr/development/development-facts/<int:fact_id>/revoke", development_records.revoke_fact, name="development-fact-revoke"),
     path("api/v1/hr/development/dashboard", dashboard.dashboard, name="development-dashboard"),
@@ -96,6 +96,7 @@ urlpatterns = [
     path("api/v1/hr/development/imports/upload", imports.upload_import, name="import-upload"),
     path("api/v1/hr/development/imports/<int:job_id>/validate", imports.validate_import, name="import-validate"),
     path("api/v1/hr/development/imports/<int:job_id>/confirm", imports.confirm_import, name="import-confirm"),
+    path("api/v1/hr/development/imports/<int:job_id>/rows", imports.get_import_rows, name="import-rows"),
     path("api/v1/hr/development/imports/<int:job_id>/errors/download", imports.download_error_workbook, name="import-error-workbook-download"),
     path("api/v1/hr/development/imports/<int:job_id>", imports.get_import_status, name="import-status"),
 

@@ -14,7 +14,18 @@
   const resultRows=a=>(a||[]).map(x=>({name:x.result_no||'未编号工资结果',sub:[x.currency_code,`应发 ${x.gross_amount??'—'}`,`扣减 ${x.deduction_amount??'—'}`].filter(Boolean).join(' · '),status:x.status,last:`实发 ${x.net_amount??'—'}`,kind:'工资结果'}));
   const changeTypeLabels={POSITION_PAY_CHANGE:'岗位工资变更',SALARY_STEP_CHANGE:'薪级变更',POLICY_STANDARD_CHANGE:'政策性调资',PERFORMANCE_ADJUSTMENT:'绩效工资调整',ALLOWANCE_START:'津补贴启用',ALLOWANCE_CHANGE:'津补贴变更',ALLOWANCE_STOP:'津补贴停发',BONUS:'一次性奖金',SPECIAL_REWARD:'专项奖励',ARREARS:'补发',RECOVERY:'追扣',CORRECTION:'更正'};
   const changeRows=a=>(a||[]).map(x=>({name:`${x.case_no} · ${x.item_name}`,sub:[x.staff_name||'人员档案暂不可用',changeTypeLabels[x.change_type]||x.change_type,x.amount_mode==='DELTA'?`增减 ${x.amount}`:`金额 ${x.amount}`,x.currency_code].join(' · '),status:x.status,last:x.effective_to?`${x.effective_from} 至 ${x.effective_to}`:x.effective_from,kind:'调资津补贴变更单'}));
-  function render(){const target=document.getElementById('hr15-rows'),q=document.getElementById('hr15-search')?.value.trim().toLowerCase()||'',st=document.getElementById('hr15-status')?.value||'';if(!target)return;const rows=current.filter(x=>(!st||x.status===st)&&(!q||[x.name,x.sub,x.status,x.last,x.kind].join(' ').toLowerCase().includes(q)));target.innerHTML=rows.length?rows.map(x=>`<div class="hr15-row"><div><b>${esc(x.name)}</b><small>${esc(x.sub||'—')}</small></div><div class="kind">${esc(x.kind)}</div><span class="hr15-badge">${esc(status(x.status))}</span><small class="date">${esc(x.last||'—')}</small></div>`).join(''):'<div class="hr15-empty">当前没有符合筛选条件的真实记录。</div>'}
+  function ledger(rows,target,q,st) {
+    const count=document.createElement('div'); count.className='hr-v5-table-meta'; count.textContent=`本次已读取 ${current.length} 条 · 当前显示 ${rows.length} 条（不是全校总数）`;
+    target.replaceChildren(count);
+    if (!rows.length) {
+      const empty=document.createElement('p'); empty.className='hr15-empty'; empty.textContent=q||st?'当前筛选没有匹配记录，清除条件后重新查看。':'本次接口尚未返回记录，请先核对工资期间和办理条件。'; target.append(empty);
+      if(q||st) {const clear=document.createElement('button'); clear.type='button';clear.className='hr-v5-button';clear.textContent='清除筛选';clear.addEventListener('click',()=>{document.getElementById('hr15-search').value='';document.getElementById('hr15-status').value='';render()});target.append(clear)}
+      return;
+    }
+    target.insertAdjacentHTML('beforeend','<table aria-label="薪酬工作记录" class="hr-v5-ledger"><thead><tr><th>记录与依据</th><th>业务类型</th><th>状态</th><th>金额 / 日期</th></tr></thead><tbody>'+rows.map(x=>`<tr class="hr15-row"><td><b>${esc(x.name)}</b><small>${esc(x.sub||'—')}</small></td><td>${esc(x.kind)}</td><td><span class="hr15-badge">${esc(status(x.status))}</span></td><td class="date">${esc(x.last||'—')}</td></tr>`).join('')+'</tbody></table>');
+    window.HrDetailUX.enhance();
+  }
+  function render(){const target=document.getElementById('hr15-rows'),q=document.getElementById('hr15-search')?.value.trim().toLowerCase()||'',st=document.getElementById('hr15-status')?.value||'';if(!target)return;const rows=current.filter(x=>(!st||x.status===st)&&(!q||[x.name,x.sub,x.status,x.last,x.kind].join(' ').toLowerCase().includes(q)));if(['calculations','results'].includes(section)&&window.HrDetailUX){ledger(rows,target,q,st);return}target.innerHTML=rows.length?rows.map(x=>`<div class="hr15-row"><div><b>${esc(x.name)}</b><small>${esc(x.sub||'—')}</small></div><div class="kind">${esc(x.kind)}</div><span class="hr15-badge">${esc(status(x.status))}</span><small class="date">${esc(x.last||'—')}</small></div>`).join(''):'<div class="hr15-empty">当前没有符合筛选条件的真实记录。</div>'}
   function setRows(rows){current=Array.isArray(rows)?rows:[];const select=document.getElementById('hr15-status');if(select){const states=[...new Set(current.map(x=>x.status).filter(Boolean))].sort();select.innerHTML='<option value="">全部状态</option>'+states.map(v=>`<option value="${esc(v)}">${esc(status(v))}</option>`).join('')}render()}
   function unavailable(title,text){const t=document.getElementById('hr15-title'),d=document.getElementById('hr15-desc'),target=document.getElementById('hr15-rows'),select=document.getElementById('hr15-status');current=[];if(t)t.textContent=title;if(d)d.textContent=text;if(select)select.innerHTML='<option value="">全部状态</option>';if(target)target.innerHTML=`<div class="hr15-empty">${esc(text)} 不会用估算金额、旧系统状态或示例工资替代正式事实。</div>`}
   function sectionRows(data){const t=document.getElementById('hr15-title'),d=document.getElementById('hr15-desc');if(!t||!d)return;if(section==='profiles'){t.textContent='薪酬档案';d.textContent='薪酬身份、工资组、币种和生效区间来自当前学校真实档案。';setRows(profileRows(data.recentProfiles));return}if(section==='periods'){t.textContent='工资期间';d.textContent='期间状态决定输入、复核和封板边界；封板后不原地覆盖。';setRows(periodRows(data.recentPeriods));return}if(section==='calculations'){t.textContent='工资核算';d.textContent='按已冻结受信输入和已发布规则执行可解释核算；校外人员工作量只作为输入依据，不直接等于工资金额。';setRows(externalSettlementRows(data.recentExternalSettlementInputs).concat((data.recentCalculations||[]).map(x=>({name:x.batch_no,sub:`人员 ${x.staff_count} · 结果 ${x.result_count}`,status:x.status,last:`实发合计 ${x.net_total}`,kind:'核算批次'}))).concat(periodRows(data.recentPeriods)));return}if(section==='results'){t.textContent='正式薪酬结果';d.textContent='只展示正式工资记录；已封板或已调整的结果才属于正式工资事实。';setRows(resultRows(data.recentResults));return}if(section==='rules'){t.textContent='薪资项目与规则';d.textContent='规则按版本发布，已发布版本参与对应工资期间核算。';setRows((data.recentRules||[]).map(x=>({name:x.name,sub:`${x.item_code} · ${x.item_type} · v${x.version_no}`,status:x.status,last:x.effective_from,kind:'薪资规则'})));return}if(section==='allowances'){t.textContent='调资与津补贴';d.textContent='变更单经独立审批后按生效日期进入工资输入快照；福利计划与个人办理事实单独留痕。';const plans=(data.recentBenefitPlans||[]).map(x=>({name:x.name,sub:`${x.plan_code} · ${x.benefit_type} · v${x.version_no} · 固定额 ${x.fixed_amount}`,status:x.status,last:x.effective_from,kind:'福利计划'}));const enrollments=(data.recentBenefitEnrollments||[]).map(x=>({name:x.enrollment_no,sub:`人员 ${x.staff_name||x.staff_id} · 单位 ${x.employer_amount} · 个人 ${x.employee_amount}`,status:'ACTIVE',last:x.effective_from,kind:'个人福利办理'}));setRows(changeRows(data.recentCompensationChanges).concat(plans,enrollments));return}if(section==='social_security'){t.textContent='社保公积金与年金';d.textContent='展示由已发布法定规则计算并封存的缴费事实。';setRows((data.recentStatutoryContributions||[]).map(x=>({name:x.contribution_code,sub:`基数 ${x.contribution_base} · 个人 ${x.employee_amount} · 单位 ${x.employer_amount}`,status:x.status,last:(x.sealed_at||'').slice(0,10)||'—',kind:x.contribution_group})));return}if(section==='payments'){t.textContent='支付与工资条';d.textContent='支付指令、银行回执和工资条分别记录，不以工资封板替代支付成功。';setRows((data.recentPayments||[]).map(x=>({name:x.instruction_no,sub:`${x.currency_code} ${x.requested_amount} · ${x.provider_code}`,status:x.status,last:(x.received_at||x.sent_at||'').slice(0,10)||'—',kind:'支付指令'})));return}if(section==='reconciliation'){t.textContent='财务对账';d.textContent='按支付回执核对预期金额和实收金额，差异保持可追溯。';setRows((data.recentReconciliations||[]).map(x=>({name:x.reconciliation_no,sub:`预期 ${x.expected_amount} · 实收 ${x.settled_amount} · 差额 ${x.difference_amount}`,status:x.status,last:(x.reconciled_at||'').slice(0,10)||'—',kind:'财务对账'})));return}if(section==='legacy_takeover'){unavailable('历史工资对账','下方正式接管工作区会展示真实盘点、差异与切换状态。');return}t.textContent='最近工资期间与正式结果';d.textContent='先确认最近期间是否封板，再查看正式工资事实。';setRows([...externalSettlementRows(data.recentExternalSettlementInputs).slice(0,4),...periodRows(data.recentPeriods).slice(0,6),...resultRows(data.recentResults).slice(0,6)])}
@@ -23,7 +34,8 @@
   function caps(data){const target=document.getElementById('hr15-caps');if(!target)return;const entries=Object.entries(data.capabilities||{}),reasons=data.capabilityReasons||{};target.innerHTML=entries.length?entries.map(([k,v])=>{const reason=!v&&reasons[k]?`<small>${esc(reasons[k])}</small>`:'';return `<div class="hr15-cap"><span>${esc(capLabels[k]||k)}${reason}</span><span class="${v?'hr15-on':'hr15-off'}">${v?'已接通':'暂不可用'}</span></div>`}).join(''):'<div class="hr15-empty">当前无法确认能力状态。</div>'}
   function fail(message){document.getElementById('hr15-rows')?.replaceChildren(Object.assign(document.createElement('div'),{className:'hr15-empty',textContent:`真实薪酬数据读取失败：${message}。未知状态不会按 0 元或正常处理。`}));const t=document.getElementById('hr15-tasks');if(t)t.innerHTML='<div class="hr15-empty">当前无法计算本期重点。</div>';const c=document.getElementById('hr15-caps');if(c)c.innerHTML='<div class="hr15-empty">当前无法确认能力状态。</div>'}
   document.getElementById('hr15-search')?.addEventListener('input',render);document.getElementById('hr15-status')?.addEventListener('change',render);
-  getJson('/api/v1/hr/payroll/dashboard/').then(data=>{kpis(data);tasks(data);caps(data);sectionRows(data)}).catch(e=>fail(e.name==='AbortError'?'请求超时':e.message));
+  function reloadLedger(){return getJson('/api/v1/hr/payroll/dashboard/').then(data=>{kpis(data);tasks(data);caps(data);sectionRows(data);window.HrDetailUX?.clearNote(root)}).catch(e=>{fail(e.name==='AbortError'?'请求超时':e.message);if(['calculations','results'].includes(section))window.HrDetailUX?.note(root,'工资记录未能读取，请重试；本页不以空列表代替读取失败。','error',reloadLedger)})}
+  reloadLedger();
 })();
 
 /* HR15 empty-state setup and calculation launch actions. */
@@ -50,7 +62,7 @@
       body: method === 'POST' ? JSON.stringify(body || {}) : undefined,
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.error?.message || `办理失败（状态码 ${response.status}）`);
+    if (!response.ok) { const error = new Error(payload?.error?.message || `办理失败（状态码 ${response.status}）`); error.status=response.status; throw error; }
     return payload.data || payload;
   }
   const options = (items) => (items || []).map((item) => `<option value="${esc(item.value ?? item.staffId)}">${esc(item.label)}</option>`).join('');
@@ -64,15 +76,37 @@
     target.className = `hr15-adjust-result show ${bad ? 'error' : 'ok'}`;
     target.textContent = message;
   };
+  const calculationKeys = new Map();
+  function calculationKey(periodId,batchNo) {
+    const signature=JSON.stringify([String(periodId),String(batchNo)]);
+    if(!calculationKeys.has(signature))calculationKeys.set(signature,crypto.randomUUID());
+    return calculationKeys.get(signature);
+  }
   const bind = (selector, handler) => card.querySelector(selector)?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const button = form.querySelector('button');
-    button.disabled = true;
-    try { await handler(new FormData(form)); window.setTimeout(() => location.reload(), 500); }
-    catch (error) { show(error.message, true); button.disabled = false; }
+    const button = event.submitter || form.querySelector('button');
+    if (section !== 'calculations') {
+      if (button.disabled) return;
+      button.disabled = true;
+      try { await handler(new FormData(form)); window.HrWorkspaceUX?.afterCommit({host:card,form,button,message:'本次工资业务已提交，请核对最新记录。'}); }
+      catch (error) { show(error.message, true); button.disabled = false; }
+      return;
+    }
+    const values=new FormData(form);
+    await window.HrDetailUX.run({scope:form,button,lockSuccess:true,
+      confirmation:{title:button.textContent, message:selector==='[data-calculate]'?'请核对工资期间与核算批次。本次仅执行原有核算，不代表已封板或已支付。':'请核对本次办理的期间和对象，确认后按现有规则提交。',facts:window.HrDetailUX.formFacts(form)},
+      task:()=>handler(values),
+      onSuccess:()=>{
+        window.HrDetailUX.note(form,'本次办理已提交。请重新读取最新期间状态后继续；已填写的其他表单不会自动清空。','success');
+        const refresh=document.createElement('button');refresh.type='button';refresh.className='hr-v5-button';refresh.textContent='重新读取最新状态';
+        refresh.addEventListener('click',()=>location.reload()); form.append(refresh);
+      },
+      onError:error=>window.HrDetailUX.note(form,window.HrDetailUX.errorText(error,true))
+    });
   });
-  json('/api/v1/hr/payroll/setup-options/').then((data) => {
+  function loadSetup() {
+  return json('/api/v1/hr/payroll/setup-options/').then((data) => {
     if (section === 'allowances') {
       const draftPlans = (data.benefitPlans || []).filter((item) => item.status === 'DRAFT');
       const publishedPlans = (data.benefitPlans || []).filter((item) => item.status === 'PUBLISHED');
@@ -143,7 +177,7 @@
         try {
           await json(`/api/v1/hr/payroll/compensation-changes/${encodeURIComponent(values.get('caseId'))}/${decision}/`, 'POST', {decisionNote: values.get('decisionNote')});
           show(decision === 'approve' ? '变更单已批准，将按生效日期进入工资输入。' : '变更单已拒绝。');
-          window.setTimeout(() => location.reload(), 500);
+          window.HrWorkspaceUX?.afterCommit({host:card, form, button:submitter, message:decision === 'approve' ? '变更单已批准，将按生效日期进入工资输入。' : '变更单已拒绝。'});
         } catch (error) {
           show(error.message, true);
           form.querySelectorAll('button').forEach((button) => { button.disabled = false; });
@@ -190,6 +224,8 @@
       ${canCalculate ? `<form class="hr15-adjust-form open" data-calculate><div class="hr15-adjust-grid"><div class="hr15-adjust-field"><label>已冻结期间</label><select name="periodId" required><option value="">请选择</option>${options(frozenPeriods)}</select></div><div class="hr15-adjust-field"><label>核算批次编号</label><input name="batchNo" required placeholder="CALC-2026-09-01"></div></div><div class="hr15-adjust-actions"><button class="hr15-adjust-btn primary" type="submit">执行工资核算</button></div></form>` : '<div class="hr15-empty">当前账号没有工资核算权限。</div>'}<div data-result></div>`;
     bind('[data-freeze]', async (values) => { await json(`/api/v1/hr/payroll/periods/${encodeURIComponent(values.get('periodId'))}/freeze-input/`, 'POST', {}); show('期间输入边界已冻结。'); });
     bind('[data-capture]', async (values) => { await json(`/api/v1/hr/payroll/periods/${encodeURIComponent(values.get('periodId'))}/inputs/`, 'POST', {staffId: values.get('staffId')}); show('人员受信输入已固化。'); });
-    bind('[data-calculate]', async (values) => { await json(`/api/v1/hr/payroll/periods/${encodeURIComponent(values.get('periodId'))}/calculations/`, 'POST', {batchNo: values.get('batchNo'), idempotencyKey: crypto.randomUUID()}); show('工资核算已完成。'); });
-  }).catch((error) => { card.innerHTML = `<h2>业务办理</h2><div class="hr15-empty">${esc(error.message)}</div>`; });
+    bind('[data-calculate]', async (values) => { await json(`/api/v1/hr/payroll/periods/${encodeURIComponent(values.get('periodId'))}/calculations/`, 'POST', {batchNo: values.get('batchNo'), idempotencyKey: calculationKey(values.get('periodId'), values.get('batchNo'))}); show('工资核算已完成。'); });
+  }).catch((error) => { card.innerHTML = `<h2>业务办理</h2><div class="hr15-empty">${esc(error.message)}</div>`; if(section==='calculations')window.HrDetailUX.note(card,'核算办理所需选项读取失败，请恢复读取后继续。','error',loadSetup); });
+  }
+  loadSetup();
 })();

@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 
 {% block title %}{% trans "待报到人员" %}{% endblock %}
@@ -11,7 +11,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr-v2-page hr05-page" data-module="HR05" data-section="prehires" data-hr-page="onboarding-prehires">
+<div class="hr-v2-page hr05-page" data-module="HR05" data-hr-workspace="v6" data-section="prehires" data-hr-page="onboarding-prehires">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置"><span>HR05 入职管理</span><strong>待报到人员</strong></div>
   <header class="hr-v2-pagehead" aria-labelledby="hr05-prehires-title">
     <div class="hr-v2-pagehead__copy">
@@ -30,7 +30,7 @@
   <section class="hr05-panel">
     <div class="hr05-toolbar">
       <div class="hr05-toolbar__copy"><h2>入职单</h2><p>可按入职单编号或来源编号搜索，搜索条件直接发送给服务端。</p></div>
-      <input class="hr05-search" id="hr05-prehire-keyword" placeholder="搜索入职单/来源编号" autocomplete="off">
+      <input class="hr05-search" id="hr05-prehire-keyword" placeholder="搜索姓名、工号、入职单或来源编号" autocomplete="off">
     </div>
     <div id="hr05-prehire-list" class="hr05-table-wrap" aria-live="polite">
       <div class="hr05-state"><strong>正在读取待报到人员</strong><span>等待服务端返回当前学校可见的正式入职单。</span></div>
@@ -43,5 +43,5 @@
 {% block scripts %}
 {{ block.super }}
 <script src="{% static 'hr/js/core/api-client.js' %}"></script>
-<script src="{% static 'hr/js/pages/hr05-prehires.js' %}"></script>
+<script src="{% static 'hr/js/pages/hr05-prehires.js' %}?v=workflow9?v=20260918-workflow-v7-1"></script>
 {% endblock scripts %}

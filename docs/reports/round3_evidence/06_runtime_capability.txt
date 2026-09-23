@@ -1,0 +1,9 @@
+python=3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]
+django=MISSING
+rest_framework=MISSING
+MySQLdb=MISSING
+docker=MISSING
+mysql=MISSING
+mysqld=MISSING
+node=/opt/nvm/versions/node/v22.16.0/bin/node
+conclusion=Django/MySQL/Docker runtime execution is BLOCKED in this cloud executor; do not substitute SQLite.

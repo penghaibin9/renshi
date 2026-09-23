@@ -110,17 +110,35 @@ class PayrollPaymentService:
             raise PayrollPaymentError(
                 "PAYROLL_PERIOD_NOT_FINAL", "payroll period is not finalized"
             )
-        profile = (
-            PayrollProfile.objects.filter(
-                tenant_id=self.tenant_id,
-                staff_id=result.staff_id,
-                currency_code=result.currency_code,
-                status=PayrollProfile.Status.ACTIVE,
-                effective_from__lte=period.end_date,
+        if period.engine_version == "POLICY_V1":
+            from hr_payroll.calculation_models import PayrollCalculationLine, PayrollInputSnapshot
+            from .policy_payroll_service import verify_policy_snapshot
+            from .policy_math import PolicyPayrollError, digest
+            from .calculation_service import verify_payroll_result_input_evidence, PayrollCalculationError
+            try:
+                snapshot = verify_payroll_result_input_evidence(result)
+            except PayrollCalculationError as exc:
+                raise PayrollPaymentError(exc.code, str(exc)) from exc
+            try:
+                trial = verify_policy_snapshot(snapshot)
+            except (PolicyPayrollError, AttributeError) as exc:
+                raise PayrollPaymentError("PAYROLL_PAYMENT_EVIDENCE_INVALID", "工资复核依据无效") from exc
+            payload = trial.input_payload_json
+            profile = PayrollProfile.objects.filter(tenant_id=self.tenant_id,id=payload["paymentProfileId"],staff_id=result.staff_id).first()
+            if profile is None or digest({"tenant":self.tenant_id,"ref":profile.payment_account_ref}) != payload["paymentAccountHash"]:
+                raise PayrollPaymentError("PAYROLL_PAYMENT_ACCOUNT_CHANGED", "收款账户已改变，须核对后重新走受控审批，不能按新账号直接发薪")
+        else:
+            profile = (
+                PayrollProfile.objects.filter(
+                    tenant_id=self.tenant_id,
+                    staff_id=result.staff_id,
+                    currency_code=result.currency_code,
+                    status=PayrollProfile.Status.ACTIVE,
+                    effective_from__lte=period.end_date,
+                )
+                .order_by("-effective_from", "-created_at")
+                .first()
             )
-            .order_by("-effective_from", "-created_at")
-            .first()
-        )
         if profile is None or not profile.payment_account_ref:
             raise PayrollPaymentError(
                 "PAYROLL_PAYMENT_ACCOUNT_UNAVAILABLE",
@@ -388,12 +406,19 @@ class PayrollPaymentService:
                 "PAYROLL_PAYMENT_PROVIDER_RECEIPT_INVALID",
                 "verified payment receipt number is required",
             )
-        return {
+        normalized = {
             **expected,
             "receiptNo": receipt_no,
             "status": status,
             "settledAmount": str(amount),
         }
+        if receipt.get("paidDate"):
+            from datetime import date
+            try:
+                normalized["paidDate"] = date.fromisoformat(str(receipt["paidDate"])).isoformat()
+            except ValueError as exc:
+                raise PayrollPaymentError("PAYROLL_PAYMENT_DATE_INVALID", "verified paidDate is invalid") from exc
+        return normalized
 
     @transaction.atomic
     def _apply_provider_receipt(self, instruction_id, receipt: dict):
@@ -457,7 +482,29 @@ class PayrollPaymentService:
                 },
                 correlation_id=self.correlation_id,
             )
+        if target == PayrollPaymentInstruction.Status.ACCEPTED:
+            self._post_policy_tax(instruction, receipt)
         return instruction
+
+    def _post_policy_tax(self, instruction, receipt):
+        from .policy_tax_service import PolicyTaxService
+        from .policy_math import PolicyPayrollError
+        from hr_payroll.policy_models import PayrollTaxReservation
+        try:
+            with transaction.atomic():
+                PolicyTaxService(self.tenant_id, self.actor_user_id).post_verified_receipt(instruction, receipt)
+        except PolicyPayrollError as exc:
+            # The verified bank receipt is real even when the tax posting needs
+            # attention. Preserve it and block further dependent payroll.
+            reservation = PayrollTaxReservation.objects.select_for_update().filter(
+                tenant_id=self.tenant_id, payroll_result_id=instruction.payroll_result_id).first()
+            if reservation and reservation.status != "POSTED":
+                reservation.status = "REVIEW_REQUIRED"
+                reservation.receipt_ref = str(receipt.get("receiptNo", ""))
+                reservation.save(update_fields=["status", "receipt_ref", "updated_at"])
+            emit_registered_event(tenant_id=self.tenant_id, event_name="hr.payroll.tax.blocked",
+                                  payload={"resultId": str(instruction.payroll_result_id), "code": exc.code},
+                                  correlation_id=self.correlation_id)
 
     def ingest_provider_receipt(
         self, *, instruction_id, provider_payload: Mapping
@@ -634,6 +681,10 @@ class PayrollPaymentService:
                     "payment already has another reconciliation fact",
                 )
             return existing
+        from hr_payroll.policy_models import PayrollTaxReservation
+        tax_reservation = PayrollTaxReservation.objects.filter(tenant_id=self.tenant_id,payroll_result_id=instruction.payroll_result_id).first()
+        if tax_reservation and tax_reservation.status != "POSTED":
+            raise PayrollPaymentError("PAYROLL_TAX_RECONCILIATION_PENDING", "银行付款事实已保留，但税额尚未入账，不能标记完整对账通过")
         receipt = self._trusted_terminal_receipt(instruction)
         settled = _money(receipt.get("settledAmount"))
         expected = _money(instruction.requested_amount)

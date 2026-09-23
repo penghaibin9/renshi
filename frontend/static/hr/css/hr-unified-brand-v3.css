@@ -1,0 +1,235 @@
+/* Yueke University HR — Unified Brand V3
+ * Purpose: one visual brand across HR01-HR18. Modules differ by information
+ * architecture and work surface, never by arbitrary theme colors.
+ * Semantic colors are reserved for success / warning / danger only.
+ */
+
+body.hr-shell-v3 [data-module^="HR"],
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10,.hr11,.hr12,.hr13,.hr14,.hr15,.hr16,.hr17,.hr18) {
+  --hr-brand-700:#1d4ed8;
+  --hr-brand-600:#2563eb;
+  --hr-brand-100:#dbeafe;
+  --hr-brand-50:#eff6ff;
+  --hr-ink:#0f172a;
+  --hr-text:#334155;
+  --hr-muted:#64748b;
+  --hr-line:#e2e8f0;
+  --hr-line-strong:#cbd5e1;
+  --hr-canvas:#f8fafc;
+  --hr-soft:#f1f5f9;
+  --hr-success:#15803d;
+  --hr-success-soft:#f0fdf4;
+  --hr-warning:#b45309;
+  --hr-warning-soft:#fff7ed;
+  --hr-danger:#be123c;
+  --hr-danger-soft:#fff1f2;
+  --hr-biz-accent:var(--hr-brand-600);
+  --hr-biz-accent-700:var(--hr-brand-700);
+  --hr-biz-soft:var(--hr-brand-50);
+  --hr-biz-soft-2:#f8fbff;
+  --hr-biz-border:#dbe7fb;
+  --biz-accent:var(--hr-brand-600);
+  --biz-accent-700:var(--hr-brand-700);
+  --biz-soft:var(--hr-brand-50);
+  --biz-soft-2:#f8fbff;
+  --biz-border:#dbe7fb;
+}
+
+/* Module title and interaction language stays the same across all 18 domains. */
+body.hr-shell-v3 [data-module^="HR"] .hr-v2-eyebrow,
+body.hr-shell-v3 :is(.hr09,.hr10,.hr11,.hr12,.hr13,.hr14,.hr15,.hr16,.hr17,.hr18) .hr-v2-eyebrow {
+  color:var(--hr-brand-700) !important;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(a,button,input,select,textarea):focus-visible {
+  outline-color:rgba(37,99,235,.28) !important;
+}
+
+/* Primary actions: one action color. Risk is expressed inside the content, not by changing the module theme. */
+body.hr-shell-v3 :is(
+  .hr02-primary-action,.hr03-primary-action,.hr04-primary-action,.hr05-primary-action,.hr06-primary-action,
+  .hr07-primary-action,.hr08-primary-action,.hr09-primary-action,.hr10-primary-action,.hr11-primary-action,
+  .hr12-primary-action,.hr13-primary-action,.hr14-primary-action,.hr15-primary-action,.hr16-primary-action,
+  .hr17-primary-action,.hr18-primary-action,
+  .btn-primary,.hr-v2-btn--primary
+) {
+  background:var(--hr-brand-600) !important;
+  border-color:var(--hr-brand-600) !important;
+  color:#fff !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 :is(
+  .hr02-primary-action,.hr03-primary-action,.hr04-primary-action,.hr05-primary-action,.hr06-primary-action,
+  .hr07-primary-action,.hr08-primary-action,.hr09-primary-action,.hr10-primary-action,.hr11-primary-action,
+  .hr12-primary-action,.hr13-primary-action,.hr14-primary-action,.hr15-primary-action,.hr16-primary-action,
+  .hr17-primary-action,.hr18-primary-action,.btn-primary,.hr-v2-btn--primary
+):hover { background:var(--hr-brand-700) !important; border-color:var(--hr-brand-700) !important; }
+
+/* All module navigation uses the same neutral strip + brand-blue current marker. */
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,.hr10-nav,
+  .hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) {
+  border-color:var(--hr-line) !important;
+  background:transparent !important;
+}
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,.hr10-nav,
+  .hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a {
+  color:var(--hr-muted) !important;
+  border-color:transparent !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 :is(
+  .hr02-nav,.hr03-nav,.hr04-nav,.hr05-nav,.hr06-nav,.hr07-nav,.hr08-nav,.hr09-nav,.hr10-nav,
+  .hr11-nav,.hr12-nav,.hr13-nav,.hr14-nav,.hr15-nav,.hr16-nav,.hr17-nav,.hr18-nav
+) > a:is(.active,.is-active,[aria-current="page"]) {
+  color:var(--hr-brand-700) !important;
+  border-bottom-color:var(--hr-brand-600) !important;
+  background:transparent !important;
+  box-shadow:inset 0 -3px 0 var(--hr-brand-600) !important;
+}
+
+/* Page heads: no module-tinted hero areas. */
+body.hr-shell-v3 :is(
+  .hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,
+  .hr09,.hr10,.hr11,.hr12,.hr13,.hr14,.hr15,.hr16,.hr17,.hr18
+) .hr-v2-pagehead {
+  background:transparent !important;
+  border-color:var(--hr-line) !important;
+  box-shadow:none !important;
+}
+
+/* Fact strips and KPI areas: neutral facts; business meaning comes from labels and placement. */
+body.hr-shell-v3 :is(
+  .hr-v2-kpis,.hr03-stats,.hr07-kpis,.hr09-primary-kpis,.hr11-summary,.hr12-primary-kpis,
+  .hr13c-kpis,.hr14-kpis,.hr15-kpis,.hr16-kpis,.hr17-kpis,.hr18-kpis
+) {
+  border-color:var(--hr-line) !important;
+  background:var(--hr-line) !important;
+}
+body.hr-shell-v3 :is(
+  .hr-v2-kpi,.hr03-stats > *,.hr07-kpis > *,.hr09-primary-kpis > *,.hr11-kpi,.hr12-kpi,
+  .hr13c-kpi,.hr14-kpi,.hr15-kpi,.hr16-kpi,.hr17-kpi,.hr18-kpi
+) {
+  background:#fff !important;
+  border-color:var(--hr-line) !important;
+  box-shadow:none !important;
+}
+/* Previous per-module "featured KPI" colors become a subtle shared brand cue. */
+body.hr-shell-v3 :is(
+  .hr04-page .hr04-kpi:nth-child(-n+2),.hr05-page .hr05-kpi:nth-child(-n+3),
+  .hr09 .hr09-kpi:nth-child(1),.hr10 .hr10-kpi:nth-child(2),
+  .hr11 .hr11-kpi:first-child,.hr12 .hr12-kpi:nth-child(1),.hr12 .hr12-kpi:nth-child(3),
+  .hr13 .hr13c-kpi:nth-child(1),.hr14 .hr14-kpi:nth-child(-n+2),
+  .hr15 .hr15-kpi:nth-child(-n+2),.hr16 .hr16-kpi:nth-child(2),.hr16 .hr16-kpi:nth-child(3),
+  .hr17 .hr17-kpi:first-child,.hr17 .hr17-kpi:last-child,.hr18 .hr18-kpi:nth-child(3),.hr18 .hr18-kpi:nth-child(6)
+) {
+  background:#fbfdff !important;
+  border-color:var(--hr-line) !important;
+  border-top-color:var(--hr-brand-600) !important;
+}
+
+/* Work surfaces use neutral separators. The module's grammar stays distinct. */
+body.hr-shell-v3 :is(
+  .hr02-card,.hr04-panel,.hr05-panel,.hr06-case-panel,.hr06-attention__panel,.hr07-card,.hr09-ledger-card,
+  .hr10-panel,.hr11-card,.hr12-panel,.hr13c-card,.hr14-card,.hr15-card,.hr16-card,.hr17-card,.hr18-card
+) {
+  border-color:var(--hr-line) !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body.hr-shell-v3 :is(
+  .hr02-toolbar,.hr03-filter-panel,.hr04-toolbar,.hr05-toolbar,.hr06-stagebar,.hr07-toolbar,
+  .hr09-toolbar,.hr10-toolbar,.hr11-workbar,.hr12-toolbar,.hr13c-toolbar,.hr14-toolbar,.hr15-toolbar,
+  .hr16-toolbar,.hr17-toolbar,.hr18-toolbar
+) {
+  background:transparent !important;
+  border-color:var(--hr-line) !important;
+}
+
+/* Process rails / timelines use one brand track. */
+body.hr-shell-v3 :is(
+  .hr04-process__step,.hr05-process__step,.hr09-process__step,.hr10-process__step,.hr12-process__step,
+  .hr13-process__step,.hr14-process__step,.hr15-process__step,.hr16-process__step
+) {
+  border-color:var(--hr-line) !important;
+  border-top-color:var(--hr-line-strong) !important;
+  background:#fff !important;
+}
+body.hr-shell-v3 :is(
+  .hr04-process__step.active,.hr04-process__step.is-active,.hr05-process__step.active,.hr05-process__step.is-active,
+  .hr09-process__step.active,.hr10-process__step.active,.hr12-process__step.active,.hr13-process__step.active,
+  .hr14-process__step.active,.hr15-process__step.active,.hr16-process__step.active
+) {
+  border-top-color:var(--hr-brand-600) !important;
+  background:#fbfdff !important;
+}
+body.hr-shell-v3 :is(
+  .hr09-process__no,.hr10-process__no,.hr12-process__no,.hr13-process__no,.hr14-process__no,
+  .hr15-process__no,.hr16-process__no
+) {
+  background:var(--hr-brand-50) !important;
+  color:var(--hr-brand-700) !important;
+}
+
+/* Left accent rules: one shared brand. */
+body.hr-shell-v3 :is(
+  .hr09-focus,.hr10-panel:first-child,.hr11-card:first-child,.hr13c-card:first-child,.hr14-card:first-child,
+  .hr15-card:first-child,.hr16-card:first-child,.hr17-context .hr17-card:first-child,.hr18-main > .hr18-card:first-child,
+  .hr18-workspace
+) { border-color:var(--hr-line) !important; border-left-color:var(--hr-brand-600) !important; border-top-color:var(--hr-brand-600) !important; }
+
+/* Inline service / flow links are neutral until interactive. */
+body.hr-shell-v3 :is(
+  .hr10-flow a,.hr11-flow a,.hr12-flow a,.hr13-flow a,.hr14-flow a,.hr15-flow a,.hr16-flow a,.hr17-flow a,.hr18-flow a
+) {
+  border-color:var(--hr-line) !important;
+  border-left-color:var(--hr-brand-100) !important;
+  background:#fff !important;
+}
+body.hr-shell-v3 :is(
+  .hr10-flow a,.hr11-flow a,.hr12-flow a,.hr13-flow a,.hr14-flow a,.hr15-flow a,.hr16-flow a,.hr17-flow a,.hr18-flow a
+):hover { border-left-color:var(--hr-brand-600) !important; background:#fbfdff !important; }
+
+/* HR17 remains friendlier through spacing/search-first composition, not a different color theme. */
+body.hr-shell-v3 .hr17 .hr17-nav { background:transparent !important; border-color:var(--hr-line) !important; }
+body.hr-shell-v3 .hr17 .hr17-nav > a { background:transparent !important; border-color:transparent !important; }
+body.hr-shell-v3 .hr17 .hr17-services > * { border-color:var(--hr-line) !important; background:#fff !important; }
+body.hr-shell-v3 .hr17 .hr17-principle { border-left-color:var(--hr-brand-100) !important; background:#fbfdff !important; }
+
+/* HR18 reads like a control room because of density / split layout, not cyan theming. */
+body.hr-shell-v3 .hr18 .hr18-workspace { border-top-color:var(--hr-brand-600) !important; }
+body.hr-shell-v3 .hr18 .hr18-rule { border-left-color:var(--hr-brand-100) !important; background:#fbfdff !important; }
+
+/* Semantic color contract — the only deliberate non-brand colors. */
+body.hr-shell-v3 :is(.is-success,.status-success,.hr-status--success,.text-success,.hr-success) {
+  color:var(--hr-success) !important;
+}
+body.hr-shell-v3 :is(.is-warning,.status-warning,.hr-status--warning,.text-warning,.hr-warning,.warning) {
+  color:var(--hr-warning) !important;
+}
+body.hr-shell-v3 :is(.is-danger,.status-danger,.hr-status--danger,.text-danger,.hr-danger,.danger) {
+  color:var(--hr-danger) !important;
+}
+body.hr-shell-v3 :is(.badge-success,.hr-badge--success) { color:var(--hr-success) !important; background:var(--hr-success-soft) !important; }
+body.hr-shell-v3 :is(.badge-warning,.hr-badge--warning) { color:var(--hr-warning) !important; background:var(--hr-warning-soft) !important; }
+body.hr-shell-v3 :is(.badge-danger,.hr-badge--danger) { color:var(--hr-danger) !important; background:var(--hr-danger-soft) !important; }
+
+/* Tables, forms and dividers share one calm neutral system. */
+body.hr-shell-v3 [data-module^="HR"] :is(table,.hr03-table,.hr06-table,.hr07-table,.hr09-table) thead th {
+  background:var(--hr-canvas) !important;
+  color:#475569 !important;
+  border-color:var(--hr-line) !important;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(table,.hr03-table,.hr06-table,.hr07-table,.hr09-table) tbody tr:hover {
+  background:#f8fbff !important;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(input,select,textarea) {
+  border-color:var(--hr-line-strong) !important;
+}
+body.hr-shell-v3 [data-module^="HR"] :is(input,select,textarea):focus {
+  border-color:#93b4ef !important;
+  box-shadow:0 0 0 3px rgba(37,99,235,.10) !important;
+}

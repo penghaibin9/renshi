@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "project": "Yueke University HR",
+  "round": "Round5",
+  "date": "2026-09-15",
+  "baseline": {
+    "name": "Yueke_University_HR_Round4_20260915.zip",
+    "sha256": "57602ef0ef2e7fe014cd381b007fce1f0370d55837a8673c1cb0a27f8957379e",
+    "soleBaseline": true
+  },
+  "releaseDecision": "NOT_RELEASED",
+  "scope": [
+    "HR18 HR06 sealed personnel-change execution/correction/rescind historical authority chain",
+    "HR18 HR12 sealed assessment result correction/revocation historical authority chain",
+    "fail-closed evidence and runtime quality validation with exact sealed-hash recomputation",
+    "release-neutral isolated acceptance runtime evidence path"
+  ],
+  "changedFiles": {
+    "count": 17,
+    "added": 6,
+    "modified": 11,
+    "deleted": 0,
+    "metadataExcludedFromDiff": [
+      "ROUND5_CHANGED_FILES.tsv",
+      "ROUND5_DELIVERY.json",
+      "ROUND5_FILE_MANIFEST.tsv"
+    ]
+  },
+  "verified": {
+    "round2Pure": "66/66 PASS",
+    "round3Pure": "6/6 PASS",
+    "round4Pure": "16/16 PASS",
+    "round5Pure": "20/20 PASS",
+    "djangoRound5TestSource": "AST/py_compile PASS; runtime BLOCKED because Django/MySQL are unavailable in current executor",
+    "acceptancePlan": "PASS",
+    "acceptanceRuntime": "BLOCKED/FAIL-CLOSED at compose-version: Docker unavailable",
+    "acceptanceRuntimeSeconds": 0.001,
+    "pythonAst": "3117 files PASS (utf-8-sig aware; inherited BOM source compiles)",
+    "compileall": "PASS",
+    "entrypointBash": "PASS (deploy/docker/entrypoint.sh)",
+    "migrationNumberUniqueness": "443 migration files / 0 duplicate numeric prefixes",
+    "javascriptSyntax": "56 files PASS"
+  },
+  "safety": {
+    "githubTouched": false,
+    "productionServerTouched": false,
+    "productionDatabaseTouched": false,
+    "acceptanceReadsProductionDotEnv": false,
+    "acceptanceEvidenceProductionTouched": false,
+    "acceptanceEvidenceGitHubTouched": false
+  },
+  "historicalAuthoritySupport": [
+    "HR03",
+    "HR06",
+    "HR07",
+    "HR12",
+    "HR13",
+    "HR14",
+    "HR16"
+  ],
+  "historicalFailClosed": [
+    "HR04",
+    "HR05",
+    "HR15"
+  ],
+  "manifest": {
+    "name": "ROUND5_FILE_MANIFEST.tsv",
+    "excludesItself": true
+  },
+  "notes": [
+    "Do not claim RELEASED until make acceptance-qa passes on a trusted Docker/MySQL QA host and target-environment external/browser gates pass.",
+    "Round5 does not directly COUNT mutable HR06/HR12 workflow rows; it reconstructs sealed append-only authority chains as-of the requested date.",
+    "HR04/HR05/HR15 historical evaluators remain fail-closed until their authority/history semantics are implemented."
+  ]
+}

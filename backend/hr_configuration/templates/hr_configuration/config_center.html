@@ -1,0 +1,32 @@
+{% extends "hr/base.html" %}
+{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr_configuration/configuration_v1.css' %}">
+<div class="hrcfg-page">
+  <div class="hrcfg-hero">
+    <div><span class="hrcfg-kicker">系统管理 · 学校级配置</span><h1>高校人事配置中心 V1</h1><p>只配置学校差异，不复制 HR01～HR18 业务事实。发布后的规则保持不可变，修改从新草稿版本开始。</p></div>
+    <a class="hrcfg-link" href="{% url 'system-admin-center' %}">返回系统管理</a>
+  </div>
+  <div class="hrcfg-flowline"><span>流程</span><i>→</i><span>表单</span><i>→</i><span>字段</span><i>→</i><span>审批角色</span><i>→</i><span>条件</span><i>→</i><span>通知</span><i>→</i><span>打印模板</span><i>→</i><span>Excel 模板</span></div>
+
+  <section class="hrcfg-panel">
+    <div class="hrcfg-section-head"><div><small>已配置流程</small><h2>学校流程清单</h2></div><span>当前学校 #{{ tenant_id }}</span></div>
+    <div class="hrcfg-table-wrap"><table class="hrcfg-table"><thead><tr><th>模块</th><th>流程</th><th>草稿</th><th>正式版本</th><th>操作</th></tr></thead><tbody>
+      {% for row in rows %}
+      <tr><td><b>{{ row.workflow.business_domain }}</b></td><td><strong>{{ row.workflow.name }}</strong><small>{{ row.workflow.code }}</small></td><td>{% if row.draft %}v{{ row.draft.version_no }} · 草稿{% else %}—{% endif %}</td><td>{% if row.published %}v{{ row.published.version_no }} · 已发布{% else %}未发布{% endif %}</td><td><a href="{% url 'hr-configuration-workflow' row.workflow.id %}">进入配置</a></td></tr>
+      {% empty %}<tr><td colspan="5" class="hrcfg-empty">还没有学校级流程。可先创建 HR04/05/06/12/13/14/16/17 中最常变化的一条。</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  {% if can_manage %}
+  <section class="hrcfg-panel">
+    <div class="hrcfg-section-head"><div><small>新增</small><h2>创建一个流程配置</h2></div><span>不会新增 HR19/HR20</span></div>
+    <form method="post" class="hrcfg-form-grid">{% csrf_token %}
+      {% if create_form.non_field_errors %}<div class="hrcfg-error full">{{ create_form.non_field_errors }}</div>{% endif %}
+      {% for field in create_form %}<label><span>{{ field.label }}</span>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{{ field.errors }}</label>{% endfor %}
+      <div class="full"><button class="hrcfg-primary" type="submit">创建草稿流程</button></div>
+    </form>
+  </section>
+  {% endif %}
+</div>
+{% endblock content %}

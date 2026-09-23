@@ -1,0 +1,450 @@
+/*
+ * HR01-HR10 business-shaped visual system — 2026-09-18
+ * Frontend-only presentation layer. No API / permission / workflow / state changes.
+ * Principle: one brand system, different workspace grammars by HR business job.
+ */
+
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) {
+  --hr-biz-accent: #2563eb;
+  --hr-biz-accent-700: #1d4ed8;
+  --hr-biz-soft: #eff6ff;
+  --hr-biz-soft-2: #f8fbff;
+  --hr-biz-border: #cfe0fb;
+  --hr-biz-ink: #0f172a;
+}
+body.hr-shell-v3 .hr-home { --hr-biz-accent:#1d4ed8; --hr-biz-accent-700:#1e40af; --hr-biz-soft:#eef4ff; --hr-biz-soft-2:#f8fbff; --hr-biz-border:#cbdcff; }
+body.hr-shell-v3 .hr02-page { --hr-biz-accent:#0f766e; --hr-biz-accent-700:#115e59; --hr-biz-soft:#ecfdf5; --hr-biz-soft-2:#f6fffb; --hr-biz-border:#c7eee4; }
+body.hr-shell-v3 .hr03-page { --hr-biz-accent:#334155; --hr-biz-accent-700:#1e293b; --hr-biz-soft:#f1f5f9; --hr-biz-soft-2:#f8fafc; --hr-biz-border:#d9e1ea; }
+body.hr-shell-v3 .hr04-page { --hr-biz-accent:#6d28d9; --hr-biz-accent-700:#5b21b6; --hr-biz-soft:#f5f3ff; --hr-biz-soft-2:#fbfaff; --hr-biz-border:#ddd6fe; }
+body.hr-shell-v3 .hr05-page { --hr-biz-accent:#15803d; --hr-biz-accent-700:#166534; --hr-biz-soft:#f0fdf4; --hr-biz-soft-2:#f8fff9; --hr-biz-border:#ccebd5; }
+body.hr-shell-v3 .hr06-page { --hr-biz-accent:#b45309; --hr-biz-accent-700:#92400e; --hr-biz-soft:#fff7ed; --hr-biz-soft-2:#fffbf7; --hr-biz-border:#fed7aa; }
+body.hr-shell-v3 .hr07-page { --hr-biz-accent:#be123c; --hr-biz-accent-700:#9f1239; --hr-biz-soft:#fff1f2; --hr-biz-soft-2:#fff8f8; --hr-biz-border:#fecdd3; }
+body.hr-shell-v3 .hr08-page { --hr-biz-accent:#0e7490; --hr-biz-accent-700:#155e75; --hr-biz-soft:#ecfeff; --hr-biz-soft-2:#f7feff; --hr-biz-border:#bae6fd; }
+body.hr-shell-v3 .hr09 { --hr-biz-accent:#7e22ce; --hr-biz-accent-700:#6b21a8; --hr-biz-soft:#faf5ff; --hr-biz-soft-2:#fdfaff; --hr-biz-border:#e9d5ff; }
+body.hr-shell-v3 .hr10 { --hr-biz-accent:#047857; --hr-biz-accent-700:#065f46; --hr-biz-soft:#ecfdf5; --hr-biz-soft-2:#f7fffb; --hr-biz-border:#bbf7d0; }
+
+/* Module identity lives in the header, not in a rainbow of controls. */
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) .hr-v2-pagehead {
+  border-color: var(--hr-biz-border) !important;
+  background: var(--hr-biz-soft-2) !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) .hr-v2-pagehead::before {
+  width: 5px;
+  background: var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) .hr-v2-eyebrow {
+  color: var(--hr-biz-accent-700) !important;
+}
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) .hr-v2-context__item {
+  border-color: color-mix(in srgb, var(--hr-biz-accent) 18%, white) !important;
+  background: #fff !important;
+}
+
+/* -------- HR01: executive command center -------- */
+body.hr-shell-v3 .hr-home .hr-v2-pagehead {
+  padding: 24px 26px 22px;
+  background: #f7faff !important;
+}
+body.hr-shell-v3 .hr-home .hr-v2-title { font-size: 29px; line-height: 38px; }
+body.hr-shell-v3 .hr-home .hr-v2-conclusions {
+  grid-template-columns: 1.25fr 1fr 1fr;
+  gap: 12px;
+}
+body.hr-shell-v3 .hr-home .hr-v2-conclusion {
+  min-height: 124px;
+  border-top: 3px solid var(--hr-biz-accent) !important;
+  background: #fff !important;
+}
+body.hr-shell-v3 .hr-home .hr-v2-conclusion:first-child {
+  background: var(--hr-biz-soft) !important;
+  border-color: var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr-home .hr-home__core-flow {
+  border: 0 !important;
+  border-left: 4px solid var(--hr-biz-accent) !important;
+  background: #fff !important;
+  box-shadow: 0 1px 3px rgba(15,23,42,.06);
+}
+body.hr-shell-v3 .hr-home .hr-home__flow-grid { gap: 10px; }
+body.hr-shell-v3 .hr-home .hr-home__flow-card {
+  position: relative;
+  min-height: 118px;
+  padding-top: 18px !important;
+}
+body.hr-shell-v3 .hr-home .hr-home__flow-card::after {
+  content:"";
+  position:absolute;
+  left:18px; right:18px; bottom:0;
+  height:3px;
+  background: var(--hr-biz-soft);
+}
+body.hr-shell-v3 .hr-home .hr-home__module-group {
+  border-top: 1px solid #e8eef7;
+  padding-top: 18px;
+}
+
+/* -------- HR02: org / position architecture -------- */
+body.hr-shell-v3 .hr02-page .hr02-nav {
+  display:grid;
+  grid-template-columns: repeat(6,minmax(130px,1fr));
+  gap:0;
+  padding:0;
+  border-radius:10px;
+  overflow:hidden;
+}
+body.hr-shell-v3 .hr02-page .hr02-nav > a {
+  min-height:48px;
+  border-radius:0 !important;
+  border-right:1px solid #edf2f7 !important;
+  border-bottom:3px solid transparent !important;
+  background:#fff !important;
+}
+body.hr-shell-v3 .hr02-page .hr02-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  color:var(--hr-biz-accent-700) !important;
+  border-bottom-color:var(--hr-biz-accent) !important;
+  background:var(--hr-biz-soft) !important;
+}
+body.hr-shell-v3 .hr02-page :is(.hr-v2-kpis,.hr02-kpis) {
+  grid-template-columns: 1.35fr 1.35fr repeat(4,minmax(0,1fr)) !important;
+}
+body.hr-shell-v3 .hr02-page :is(.hr-v2-kpi,.hr02-kpi) {
+  border-top:3px solid #dbe7e3 !important;
+}
+body.hr-shell-v3 .hr02-page :is(.hr-v2-kpi,.hr02-kpi):nth-child(-n+2) {
+  min-height:112px;
+  background:var(--hr-biz-soft-2) !important;
+  border-color:var(--hr-biz-border) !important;
+  border-top-color:var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr02-page :is(.hr02-card,.hr-v2-panel) {
+  border-left:4px solid #d7ebe6 !important;
+}
+body.hr-shell-v3 .hr02-page .hr02-tree,
+body.hr-shell-v3 .hr02-page [class*="org-tree"] {
+  background: linear-gradient(#fff,#fff) padding-box;
+}
+
+/* -------- HR03: dense people directory -------- */
+body.hr-shell-v3 .hr03-page .hr03-nav {
+  gap:16px;
+  padding:0 2px;
+  border:0;
+  border-bottom:1px solid #dfe6ee;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+body.hr-shell-v3 .hr03-page .hr03-nav > a {
+  min-height:42px;
+  padding:8px 2px 10px;
+  border-radius:0 !important;
+  border-bottom:3px solid transparent !important;
+}
+body.hr-shell-v3 .hr03-page .hr03-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:transparent !important;
+  color:var(--hr-biz-ink) !important;
+  border-bottom-color:var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr03-page :is(.hr-v2-kpis,.hr03-kpis,.hr03-stats) {
+  display:grid !important;
+  grid-template-columns:repeat(6,minmax(0,1fr)) !important;
+  gap:1px !important;
+  border:1px solid #e2e8f0;
+  border-radius:10px;
+  overflow:hidden;
+  background:#e2e8f0;
+}
+body.hr-shell-v3 .hr03-page :is(.hr-v2-kpi,.hr03-kpi,.hr03-stat) {
+  min-height:76px !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:#fff !important;
+}
+body.hr-shell-v3 .hr03-page .hr03-filter-panel {
+  border-radius:10px 10px 0 0 !important;
+  border-bottom:0 !important;
+  background:#f8fafc !important;
+}
+body.hr-shell-v3 .hr03-page .hr03-ledger-panel {
+  border-radius:0 0 10px 10px !important;
+  margin-top:0 !important;
+}
+body.hr-shell-v3 .hr03-page .hr03-table thead th { background:#f1f5f9 !important; }
+body.hr-shell-v3 .hr03-page .hr03-table tbody td { padding-top:9px !important; padding-bottom:9px !important; }
+
+/* -------- HR04: recruiting pipeline / funnel -------- */
+body.hr-shell-v3 .hr04-page .hr04-nav {
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(5,minmax(120px,1fr));
+  gap:0;
+  padding:0;
+  border:1px solid var(--hr-biz-border);
+  background:#fff;
+  overflow:hidden;
+}
+body.hr-shell-v3 .hr04-page .hr04-nav > a {
+  min-height:52px;
+  border-radius:0 !important;
+  border-right:1px solid #eee9fb !important;
+  justify-content:flex-start;
+  padding-inline:14px;
+}
+body.hr-shell-v3 .hr04-page .hr04-nav > a small {
+  display:inline-grid;
+  place-items:center;
+  width:22px; height:22px;
+  border-radius:50%;
+  background:#ede9fe;
+  color:var(--hr-biz-accent-700) !important;
+}
+body.hr-shell-v3 .hr04-page .hr04-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:var(--hr-biz-soft) !important;
+  box-shadow: inset 0 -3px 0 var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr04-page :is(.hr04-metric-grid,.hr04-kpis,.hr-v2-kpis) {
+  grid-template-columns:repeat(5,minmax(0,1fr)) !important;
+  gap:0 !important;
+  border:1px solid var(--hr-biz-border);
+  border-radius:12px;
+  overflow:hidden;
+  background:#eee9fb;
+}
+body.hr-shell-v3 .hr04-page :is(.hr04-metric,.hr04-kpi,.hr-v2-kpi) {
+  min-height:92px !important;
+  border:0 !important;
+  border-right:1px solid #eee9fb !important;
+  border-radius:0 !important;
+}
+body.hr-shell-v3 .hr04-page :is(.hr04-panel,.shot-card) {
+  border-top:3px solid var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr04-page :is(.hr04-toolbar,.shot-toolbar) { background:#faf9ff !important; }
+
+/* -------- HR05: onboarding journey -------- */
+body.hr-shell-v3 .hr05-page .hr05-nav {
+  display:grid;
+  grid-template-columns:repeat(6,minmax(115px,1fr));
+  gap:8px;
+  padding:8px;
+  background:#f7fbf8;
+  border-color:#d8eadf;
+}
+body.hr-shell-v3 .hr05-page .hr05-nav > a {
+  min-height:48px;
+  border:1px solid #dcebe1 !important;
+  background:#fff !important;
+}
+body.hr-shell-v3 .hr05-page .hr05-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  border-color:var(--hr-biz-accent) !important;
+  background:var(--hr-biz-soft) !important;
+  color:var(--hr-biz-accent-700) !important;
+}
+body.hr-shell-v3 .hr05-page :is(.hr05-kpis,.hr-v2-kpis) {
+  grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+}
+body.hr-shell-v3 .hr05-page :is(.hr05-kpi,.hr-v2-kpi) {
+  min-height:98px !important;
+  border-top:3px solid #cfe9d7 !important;
+}
+body.hr-shell-v3 .hr05-page :is(.hr05-kpi,.hr-v2-kpi):nth-child(-n+3) { border-top-color:var(--hr-biz-accent) !important; }
+body.hr-shell-v3 .hr05-page .hr05-panel {
+  border-left:4px solid #d7ecdd !important;
+}
+body.hr-shell-v3 .hr05-page .hr05-panel:has(.hr05-actions) { border-left-color:var(--hr-biz-accent) !important; }
+
+/* -------- HR06: change case center -------- */
+body.hr-shell-v3 .hr06-page .hr06-nav {
+  padding:5px;
+  border-color:#f3dfca;
+  background:#fffdfa;
+}
+body.hr-shell-v3 .hr06-page .hr06-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:var(--hr-biz-soft) !important;
+  color:var(--hr-biz-accent-700) !important;
+  box-shadow:inset 3px 0 0 var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr06-page :is(.hr06-summary,.hr06-kpis,.hr-v2-kpis) {
+  grid-template-columns:1.4fr repeat(5,minmax(0,1fr)) !important;
+}
+body.hr-shell-v3 .hr06-page :is(.hr06-summary__item,.hr06-kpi,.hr-v2-kpi):first-child {
+  background:var(--hr-biz-soft) !important;
+  border-color:var(--hr-biz-border) !important;
+  border-left:4px solid var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr06-page :is(.hr06-case-panel,.hr06-filter-panel,.hr-v2-panel) {
+  border-top:2px solid #f4dfca !important;
+}
+body.hr-shell-v3 .hr06-page .hr06-stagebar { border-color:var(--hr-biz-border) !important; background:#fffaf5 !important; }
+
+/* -------- HR07: contract ledger / compliance -------- */
+body.hr-shell-v3 .hr07-page .hr07-nav {
+  gap:12px;
+  padding:0;
+  border:0;
+  border-bottom:1px solid #eadde1;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+body.hr-shell-v3 .hr07-page .hr07-nav > a {
+  border-radius:0 !important;
+  border-bottom:3px solid transparent !important;
+  padding-inline:4px;
+}
+body.hr-shell-v3 .hr07-page .hr07-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:transparent !important;
+  border-bottom-color:var(--hr-biz-accent) !important;
+  color:var(--hr-biz-accent-700) !important;
+}
+body.hr-shell-v3 .hr07-page :is(.hr07-kpis,.hr-v2-kpis) {
+  grid-template-columns:1.15fr 1.15fr repeat(4,minmax(0,1fr)) !important;
+}
+body.hr-shell-v3 .hr07-page :is(.hr07-kpi,.hr-v2-kpi):nth-child(-n+2) {
+  background:var(--hr-biz-soft-2) !important;
+  border-color:var(--hr-biz-border) !important;
+  border-top:3px solid var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr07-page .hr07-card {
+  border-top:3px solid #f2d2da !important;
+}
+body.hr-shell-v3 .hr07-page .hr07-table thead th { background:#fff7f8 !important; }
+
+/* -------- HR08: external talent engagement -------- */
+body.hr-shell-v3 .hr08-page .hr08-nav {
+  border-color:#cdebf2;
+  background:#f7fdff;
+}
+body.hr-shell-v3 .hr08-page .hr08-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:var(--hr-biz-soft) !important;
+  color:var(--hr-biz-accent-700) !important;
+  border-color:#bce7f0 !important;
+}
+body.hr-shell-v3 .hr08-page :is(.hr08-kpis,.hr-v2-kpis) {
+  grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+}
+body.hr-shell-v3 .hr08-page :is(.hr08-kpi,.hr-v2-kpi) {
+  border-top:3px solid #d3edf2 !important;
+}
+body.hr-shell-v3 .hr08-page :is(.hr08-card,.hr-v2-panel) {
+  border-left:4px solid #d6eef3 !important;
+}
+
+/* -------- HR09: credential / recognition cockpit -------- */
+body.hr-shell-v3 .hr09 .hr09-nav {
+  display:grid;
+  grid-template-columns:repeat(6,minmax(120px,1fr));
+  gap:6px;
+  padding:6px;
+  background:#fbf8ff;
+  border-color:#eadcf8;
+}
+body.hr-shell-v3 .hr09 .hr09-nav > a {
+  border:1px solid transparent !important;
+  background:transparent !important;
+}
+body.hr-shell-v3 .hr09 .hr09-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:#fff !important;
+  border-color:var(--hr-biz-border) !important;
+  color:var(--hr-biz-accent-700) !important;
+  box-shadow:0 1px 3px rgba(88,28,135,.08) !important;
+}
+body.hr-shell-v3 .hr09 :is(.hr09-primary-kpis,.hr09-kpis,.hr-v2-kpis) {
+  grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+}
+body.hr-shell-v3 .hr09 :is(.hr09-primary-kpis > *,.hr09-kpi,.hr-v2-kpi) {
+  min-height:104px !important;
+  border-top:3px solid #eadcf8 !important;
+}
+body.hr-shell-v3 .hr09 :is(.hr09-kpi--warning,.hr09-kpi--danger) { background:#fffaf5 !important; }
+body.hr-shell-v3 .hr09 .hr09-process {
+  border:1px solid var(--hr-biz-border);
+  border-radius:12px;
+  padding:10px;
+  background:#fff;
+}
+body.hr-shell-v3 .hr09 .hr09-process__step { border-top:3px solid #eadcf8 !important; }
+body.hr-shell-v3 .hr09 .hr09-focus { border-left:4px solid var(--hr-biz-accent) !important; }
+
+/* -------- HR10: teacher growth portfolio -------- */
+body.hr-shell-v3 .hr10 .hr10-nav {
+  display:flex;
+  gap:0;
+  padding:0;
+  border-color:#caeadb;
+  overflow:hidden;
+}
+body.hr-shell-v3 .hr10 .hr10-nav > a {
+  flex:1 0 0;
+  min-width:130px;
+  border-right:1px solid #e2f2e9 !important;
+  border-radius:0 !important;
+  justify-content:flex-start;
+}
+body.hr-shell-v3 .hr10 .hr10-nav > a:is(.active,.is-active,[aria-current="page"]) {
+  background:var(--hr-biz-soft) !important;
+  color:var(--hr-biz-accent-700) !important;
+  box-shadow:inset 0 -3px 0 var(--hr-biz-accent) !important;
+}
+body.hr-shell-v3 .hr10 .hr10-summary {
+  display:grid !important;
+  grid-template-columns:repeat(4,minmax(0,1fr)) !important;
+  gap:10px !important;
+}
+body.hr-shell-v3 .hr10 .hr10-kpi {
+  min-height:102px;
+  border:1px solid #d8ebe1;
+  border-top:3px solid #bde3ce;
+  border-radius:11px;
+  background:#fff;
+}
+body.hr-shell-v3 .hr10 .hr10-kpi:first-child,
+body.hr-shell-v3 .hr10 .hr10-kpi:nth-child(2) { background:var(--hr-biz-soft-2); border-top-color:var(--hr-biz-accent); }
+body.hr-shell-v3 .hr10 .hr10-dashboard-grid { grid-template-columns:1.15fr .85fr; gap:14px; }
+body.hr-shell-v3 .hr10 .hr10-panel {
+  border-top:3px solid #cee8d9 !important;
+}
+body.hr-shell-v3 .hr10 .hr10-panel:first-child { border-top-color:var(--hr-biz-accent) !important; }
+
+/* Shared semantic focus follows the current module, not always global blue. */
+body.hr-shell-v3 :is(.hr-home,.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) :is(input,select,textarea,button,a):focus-visible {
+  outline-color: color-mix(in srgb, var(--hr-biz-accent) 24%, transparent) !important;
+}
+
+/* Keep forms readable, but let business workspaces use different density. */
+body.hr-shell-v3 .hr03-page :is(input,select,button) { min-height:34px; }
+body.hr-shell-v3 :is(.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) :is(input,select,button) { min-height:36px; }
+
+@media (max-width: 1280px) {
+  body.hr-shell-v3 .hr02-page :is(.hr-v2-kpis,.hr02-kpis),
+  body.hr-shell-v3 .hr06-page :is(.hr06-summary,.hr06-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr07-page :is(.hr07-kpis,.hr-v2-kpis) { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+  body.hr-shell-v3 .hr04-page :is(.hr04-metric-grid,.hr04-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr05-page :is(.hr05-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr08-page :is(.hr08-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr09 :is(.hr09-primary-kpis,.hr09-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr10 .hr10-summary { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+}
+
+@media (max-width: 900px) {
+  body.hr-shell-v3 :is(.hr02-page .hr02-nav,.hr04-page .hr04-nav,.hr05-page .hr05-nav,.hr09 .hr09-nav) {
+    display:flex;
+    overflow-x:auto;
+  }
+  body.hr-shell-v3 .hr03-page :is(.hr-v2-kpis,.hr03-kpis,.hr03-stats),
+  body.hr-shell-v3 .hr04-page :is(.hr04-metric-grid,.hr04-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr05-page :is(.hr05-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr08-page :is(.hr08-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr09 :is(.hr09-primary-kpis,.hr09-kpis,.hr-v2-kpis),
+  body.hr-shell-v3 .hr10 .hr10-summary { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  body.hr-shell-v3 .hr10 .hr10-dashboard-grid { grid-template-columns:1fr; }
+}
+
+@media (max-width: 560px) {
+  body.hr-shell-v3 :is(.hr02-page,.hr03-page,.hr04-page,.hr05-page,.hr06-page,.hr07-page,.hr08-page,.hr09,.hr10) :is(.hr-v2-kpis,.hr02-kpis,.hr03-kpis,.hr04-kpis,.hr05-kpis,.hr06-kpis,.hr07-kpis,.hr08-kpis,.hr09-kpis) {
+    grid-template-columns:1fr 1fr !important;
+  }
+  body.hr-shell-v3 .hr10 .hr10-summary { grid-template-columns:1fr 1fr !important; }
+}

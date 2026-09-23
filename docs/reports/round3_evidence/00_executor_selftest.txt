@@ -1,0 +1,5 @@
+2026-09-15 minimal executor self-test
+operation: write /mnt/data/hr_executor_selftest_20260915.txt then read it back
+readback: ok
+size: 3 bytes
+result: PASSED

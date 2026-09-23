@@ -99,7 +99,11 @@ class TicketInvalid(Exception):
 class MaterialService:
     @staticmethod
     def _secret() -> str:
-        return getattr(settings, "SECRET_KEY", "hr08-insecure-fallback")
+        dedicated = str(getattr(settings, "HR08_TICKET_SIGNING_KEY", "") or "").strip()
+        if dedicated:
+            return dedicated
+        # Local/test compatibility only. Production settings require a dedicated key.
+        return str(getattr(settings, "SECRET_KEY", "hr08-insecure-fallback"))
 
     def sign_token(self, *, tenant_id: int, material_id: str) -> str:
         """HMAC 签名：绑定租户、材料、时效和随机数，避免同秒重复 token。"""

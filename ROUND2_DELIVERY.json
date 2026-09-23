@@ -1,0 +1,24 @@
+{
+  "delivery": "University HR round2 productionization candidate",
+  "date": "2026-09-14",
+  "inputArchive": "Yueke_University_HR_Audited_20260914.zip",
+  "inputSHA256": "ed44b03381617428c9fdc0d8698444fd6d2e9e9ddb4efc8e630476a04375b23f",
+  "sourceFilesRetained": 10496,
+  "changedFilesBeforeManifests": 75,
+  "addedBeforeManifests": 42,
+  "modifiedBeforeManifests": 33,
+  "productionRelease": "NOT_RELEASED",
+  "verification": {
+    "pureTestsPassed": 66,
+    "mysqlIntegrationTestsAuthored": 26,
+    "mysqlIntegrationTestsExecuted": false,
+    "backendASTFiles": 3073,
+    "javascriptSyntaxFiles": 6,
+    "newMigrations": 8,
+    "newBusinessDataSources": 15,
+    "newOperationalIndicators": 20
+  },
+  "entrypoint": "02_ROUND2_START_HERE.md",
+  "report": "docs/reports/HR_ROUND2_PRODUCTION_READINESS_2026-09-14.md",
+  "manifestNotes": "ROUND2_CHANGED_FILES.tsv was computed against the input ZIP before adding delivery manifests. ROUND2_FILE_MANIFEST.tsv covers every packaged file except itself. Original manifest remains a historical input record."
+}

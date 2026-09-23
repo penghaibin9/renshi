@@ -8,6 +8,8 @@ from horilla.settings.security import (
     validate_internal_service_credentials,
     validate_malware_scanner_configuration,
     validate_field_encryption_configuration,
+    validate_field_fingerprint_configuration,
+    validate_hr08_ticket_signing_configuration,
     validate_mfa_email_configuration,
     validate_login_security_configuration,
     validate_production_secrets,
@@ -94,6 +96,70 @@ class ProductionFieldEncryptionGateTests(SimpleTestCase):
             validate_field_encryption_configuration(
                 f"same:{self.valid_key},same:{self.valid_key}", production=True
             )
+
+
+class ProductionSeparatedHrSecretGateTests(SimpleTestCase):
+    field_key = base64.urlsafe_b64encode(b"f" * 32).decode("ascii")
+    ring = f"primary:{field_key}"
+    secret_key = "django-secret-key-with-more-than-thirty-two-bytes"
+    backup_key = "backup-secret-key-with-more-than-thirty-two-bytes"
+    fingerprint = "fingerprint-secret-with-more-than-thirty-two-bytes"
+    ticket = "ticket-signing-secret-with-more-than-thirty-two-bytes"
+
+    def test_distinct_hr_secrets_pass(self):
+        validate_field_encryption_configuration(
+            self.ring,
+            production=True,
+            disallowed_secrets=(
+                self.secret_key, self.backup_key, self.fingerprint, self.ticket
+            ),
+        )
+        validate_field_fingerprint_configuration(
+            self.fingerprint,
+            secret_key=self.secret_key,
+            backup_key=self.backup_key,
+            encryption_keys=self.ring,
+            production=True,
+        )
+        validate_hr08_ticket_signing_configuration(
+            self.ticket,
+            secret_key=self.secret_key,
+            fingerprint_key=self.fingerprint,
+            backup_key=self.backup_key,
+            encryption_keys=self.ring,
+            production=True,
+        )
+
+    def test_field_key_cannot_reuse_other_secret(self):
+        with self.assertRaisesMessage(ImproperlyConfigured, "must not reuse"):
+            validate_field_encryption_configuration(
+                self.ring, production=True, disallowed_secrets=(self.field_key,)
+            )
+
+    def test_fingerprint_cannot_reuse_field_key_or_django_secret(self):
+        for value in (self.field_key, self.secret_key, self.backup_key):
+            with self.subTest(value=value):
+                with self.assertRaisesMessage(ImproperlyConfigured, "must not reuse"):
+                    validate_field_fingerprint_configuration(
+                        value,
+                        secret_key=self.secret_key,
+                        backup_key=self.backup_key,
+                        encryption_keys=self.ring,
+                        production=True,
+                    )
+
+    def test_ticket_key_cannot_reuse_any_sensitive_key(self):
+        for value in (self.secret_key, self.backup_key, self.fingerprint, self.field_key):
+            with self.subTest(value=value):
+                with self.assertRaisesMessage(ImproperlyConfigured, "must not reuse"):
+                    validate_hr08_ticket_signing_configuration(
+                        value,
+                        secret_key=self.secret_key,
+                        fingerprint_key=self.fingerprint,
+                        backup_key=self.backup_key,
+                        encryption_keys=self.ring,
+                        production=True,
+                    )
 
 
 class InternalServiceCredentialGateTests(SimpleTestCase):

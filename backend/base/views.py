@@ -117,6 +117,9 @@ from base.forms import (
     WorkTypeRequestCommentForm,
     WorkTypeRequestForm,
 )
+from base.system_admin_health import build_system_admin_health
+from base.first_use import resolve_admin_school, build_first_use
+
 from base.methods import (
     check_chart_permission,
     choosesubordinates,
@@ -273,6 +276,30 @@ def _posted_json_ids(request):
     return ids
 
 
+DATABASE_INIT_SESSION_KEY = "_yueke_database_init_authorized_at"
+DATABASE_INIT_SESSION_TTL_SECONDS = 15 * 60
+
+
+def _grant_database_initialization_access(request):
+    """Authorize the DEBUG-only initialization wizard for this browser session."""
+    request.session.cycle_key()
+    request.session[DATABASE_INIT_SESSION_KEY] = int(timezone.now().timestamp())
+
+
+def _require_database_initialization_access(request):
+    """Fail closed for direct calls to child initialization endpoints."""
+    if not settings.DEBUG:
+        raise Http404
+    granted_at = request.session.get(DATABASE_INIT_SESSION_KEY)
+    try:
+        age = int(timezone.now().timestamp()) - int(granted_at)
+    except (TypeError, ValueError):
+        age = DATABASE_INIT_SESSION_TTL_SECONDS + 1
+    if age < 0 or age > DATABASE_INIT_SESSION_TTL_SECONDS:
+        request.session.pop(DATABASE_INIT_SESSION_KEY, None)
+        raise Http404
+
+
 def initialize_database_condition():
     """
     Determines if the database initialization process should be triggered.
@@ -393,9 +420,15 @@ def normalize_demo_payslips():
 
 
 def load_demo_database(request):
+    # Demo data is development-only; production must never expose this loader.
+    if not settings.DEBUG:
+        raise Http404
     if initialize_database_condition():
         if request.method == "POST":
-            if request.POST.get("load_data_password") == settings.DB_INIT_PASSWORD:
+            if constant_time_compare(
+                str(settings.DB_INIT_PASSWORD),
+                str(request.POST.get("load_data_password") or ""),
+            ):
                 import tempfile
 
                 data_files = [
@@ -517,7 +550,8 @@ def initialize_database(request):
     if initialize_database_condition():
         if request.method == "POST":
             password = request._post.get("password")
-            if settings.DB_INIT_PASSWORD == password:
+            if constant_time_compare(str(settings.DB_INIT_PASSWORD), str(password or "")):
+                _grant_database_initialization_access(request)
                 return redirect(initialize_database_user)
             else:
                 messages.warning(
@@ -541,6 +575,7 @@ def initialize_database_user(request):
     Returns:
         HttpResponse: The rendered HTML template for company creation or user signup.
     """
+    _require_database_initialization_access(request)
     if request.method == "POST":
         form_data = request.__dict__.get("_post")
         username = form_data.get("username")
@@ -588,6 +623,7 @@ def initialize_database_company(request):
     Returns:
         HttpResponse: The rendered HTML template for department creation or company creation.
     """
+    _require_database_initialization_access(request)
     form = CompanyForm()
     if request.method == "POST":
         form = CompanyForm(request.POST, request.FILES)
@@ -618,6 +654,7 @@ def initialize_database_department(request):
     Returns:
         HttpResponse: The rendered HTML template for department creation.
     """
+    _require_database_initialization_access(request)
     departments = Department.objects.all()
     form = DepartmentForm(initial={"company_id": Company.objects.first()})
     if request.method == "POST":
@@ -645,6 +682,7 @@ def initialize_department_edit(request, obj_id):
     Returns:
         HttpResponse: The rendered HTML template for department editing.
     """
+    _require_database_initialization_access(request)
     department = Department.find(obj_id)
     form = DepartmentForm(instance=department)
     if request.method == "POST":
@@ -683,6 +721,7 @@ def initialize_department_delete(request, obj_id):
     Returns:
         HttpResponse: A redirect response to the department creation page.
     """
+    _require_database_initialization_access(request)
     department = Department.find(obj_id)
     department.delete() if department else None
     return redirect(initialize_database_department)
@@ -699,6 +738,7 @@ def initialize_database_job_position(request):
     Returns:
         HttpResponse: The rendered HTML template for job position creation.
     """
+    _require_database_initialization_access(request)
     company = Company.objects.first()
     form = JobPositionMultiForm(initial={"company_id": company})
     if request.method == "POST":
@@ -734,6 +774,7 @@ def initialize_job_position_edit(request, obj_id):
     Returns:
         HttpResponse: The rendered HTML template for job position editing.
     """
+    _require_database_initialization_access(request)
     company = Company.objects.first()
     job_position = JobPosition.find(obj_id)
     form = JobPositionForm(instance=job_position)
@@ -774,6 +815,7 @@ def initialize_job_position_delete(request, obj_id):
     Returns:
         HttpResponse: The rendered HTML template for job position creating.
     """
+    _require_database_initialization_access(request)
     company = Company.objects.first()
     job_position = JobPosition.find(obj_id)
     job_position.delete() if job_position else None
@@ -853,8 +895,16 @@ def login_user(request):
             next_url += f"?{params}"
         return redirect(next_url)
 
+    sso_options = []
+    try:
+        from hr_integration.sso_runtime import public_sso_connections
+        for row in public_sso_connections():
+            sso_options.append({"name": row.name, "url": reverse("hr-sso-start", kwargs={"connection_id": row.pk}), "protocol": row.adapter_code.replace("SSO_", "")})
+    except Exception:
+        # Login must remain available even if Integration Hub is not migrated yet.
+        sso_options = []
     return render(
-        request, "login.html", {"initialize_database": initialize_database_condition()}
+        request, "login.html", {"initialize_database": initialize_database_condition(), "sso_options": sso_options}
     )
 
 
@@ -1205,9 +1255,9 @@ def verify_otp(request, supplied_otp):
 
 
 def logout_user(request):
-    """
-    This method used to logout the user
-    """
+    """Logout locally; SSO sessions use the protocol-aware logout endpoint."""
+    if request.session.get("hr_sso_connection_id"):
+        return redirect("hr-sso-logout")
     if request.user:
         logout(request)
     response = HttpResponse()
@@ -1326,6 +1376,88 @@ def employee_workinfo_complete(request):
     )
 
 
+def _system_admin_center_allowed(user):
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_superuser:
+        return True
+    return any(
+        user.has_perm(p)
+        for p in [
+            "auth.view_group",
+            "auth.view_permission",
+            "base.view_company",
+            "base.view_department",
+            "base.view_jobposition",
+            "horilla_audit.view_audittag",
+            "horilla_audit.view_auditmodelconfig",
+            "hr.configuration.view",
+            "hr.integration.view",
+        ]
+    )
+
+
+@login_required
+def system_admin_center_view(request):
+    """Task-first school system-management cockpit.
+
+    This page is deliberately read-mostly: it organises existing authoritative
+    settings and exposes small health summaries.  It does not duplicate RBAC,
+    organisation, audit, integration, backup or HR18 authorities.
+    """
+    if not _system_admin_center_allowed(request.user):
+        raise PermissionDenied(_("You do not have access to system management."))
+
+    school = resolve_admin_school(request)
+    if school is None:
+        raise PermissionDenied("无法确认本校绑定，请联系部署管理员；不会自动切换到其他学校。")
+    selected_company = str(school.pk) if school else None
+    employees = Employee.objects.entire().filter(employee_work_info__company_id=school).distinct() if school else Employee.objects.none()
+    user_ids = list(
+        employees.exclude(employee_user_id=None).values_list("employee_user_id", flat=True)
+    )
+    users = HorillaUser.objects.filter(id__in=user_ids)
+
+    settings_menu = get_settings_menu(request)
+    visible_items = []
+    for section in settings_menu:
+        for item in section.get("items", []):
+            url = str(item.get("url") or "").strip()
+            if not url:
+                continue
+            visible_items.append(
+                {
+                    "section": str(section.get("title") or ""),
+                    "label": str(item.get("label") or ""),
+                    "url": url,
+                }
+            )
+
+    admin_metrics = {
+        "employees": employees.count(),
+        "active_accounts": users.filter(is_active=True).count(),
+        "inactive_accounts": users.filter(is_active=False).count(),
+        "accounts_without_role": users.filter(groups__isnull=True).distinct().count(),
+        "direct_permission_accounts": users.filter(user_permissions__isnull=False).distinct().count(),
+        "roles": Group.objects.filter(user__id__in=user_ids).distinct().count(),
+        "superusers": users.filter(is_superuser=True, is_active=True).count(),
+    }
+    context = {
+        "admin_metrics": admin_metrics,
+        "first_use": build_first_use(request, school),
+        "admin_health": build_system_admin_health(
+            selected_company=selected_company,
+            metrics=admin_metrics,
+        ),
+        "admin_visible_settings": visible_items,
+        "admin_selected_company": selected_company,
+        "admin_can_hr18_exchange": request.user.is_superuser or request.user.has_perm("hr.data.exchange"),
+        "admin_can_hr_configuration": request.user.is_superuser or request.user.has_perm("hr.configuration.view"),
+        "admin_can_hr_integration": request.user.is_superuser or request.user.has_perm("hr.integration.view"),
+    }
+    return render(request, "base/settings/system_admin_center.html", context)
+
+
 @login_required
 def common_settings(request):
     """
@@ -1420,6 +1552,7 @@ def _build_permission_matrix():
         permissions.append(
             {
                 "app": _permission_app_label(app_name),
+                "app_label": app_name,
                 "app_models": app_models,
                 "has_custom_permissions": any(
                     m["custom_permissions"] for m in app_models
@@ -1732,16 +1865,87 @@ def user_group_view(request):
 @login_required
 @superuser_required
 @require_http_methods(["POST"])
+@transaction.atomic
 def user_group_permission_remove(request, pid, gid):
+    """Remove exactly the requested permission from exactly the requested role.
+
+    The previous implementation ignored both URL parameters and always mutated
+    ``Group(id=1)`` / ``Permission(id=2)``.  That is unsafe in a school RBAC
+    screen because an administrator can believe one role was changed while a
+    different role was actually modified.  Lock the role row, resolve the exact
+    permission, and make a missing relationship an idempotent no-op.
     """
-    This method is used to remove permission from group.
-    args:
-        pid: permission id
-        gid: group id
+    group = get_object_or_404(Group.objects.select_for_update(), id=gid)
+    permission = get_object_or_404(Permission, id=pid)
+    if group.permissions.filter(id=permission.id).exists():
+        group.permissions.remove(permission)
+        logger.info(
+            "role_permission_removed actor_user_id=%s group_id=%s permission_id=%s",
+            getattr(request.user, "id", None),
+            group.id,
+            permission.id,
+        )
+        messages.success(request, _("Permission removed from role."))
+    else:
+        messages.info(request, _("This role no longer contains that permission."))
+    return HorillaRedirect(request)
+
+
+def _next_role_copy_name(source_name):
+    """Return a collision-safe role name without changing the source role."""
+    base = _("{name} Copy").format(name=str(source_name).strip())
+    candidate = base
+    suffix = 2
+    while Group.objects.filter(name=candidate).exists():
+        candidate = _("{name} ({number})").format(name=base, number=suffix)
+        suffix += 1
+    return candidate
+
+
+@login_required
+@superuser_required
+@require_http_methods(["POST"])
+@transaction.atomic
+def user_group_permission_copy(request, gid):
+    """Copy only an existing role's permission set.
+
+    Procurement initialization requires a fast way to reuse a role definition.
+    Membership and company/data-scope assignments are deliberately *not* copied:
+    a newly copied role must not silently grant access to any person or school
+    organization.
     """
-    group = Group.objects.get(id=1)
-    permission = Permission.objects.get(id=2)
-    group.permissions.remove(permission)
+    source = get_object_or_404(
+        Group.objects.select_for_update().prefetch_related("permissions"), id=gid
+    )
+    requested_name = str(request.POST.get("name") or "").strip()
+    if requested_name:
+        if len(requested_name) > 150:
+            return JsonResponse(
+                {"message": _("Role name is too long."), "type": "danger"},
+                status=400,
+            )
+        if Group.objects.filter(name=requested_name).exists():
+            return JsonResponse(
+                {"message": _("A role with this name already exists."), "type": "danger"},
+                status=409,
+            )
+        target_name = requested_name
+    else:
+        target_name = _next_role_copy_name(source.name)
+
+    copied = Group.objects.create(name=target_name)
+    copied.permissions.set(source.permissions.all())
+    logger.info(
+        "role_permissions_copied actor_user_id=%s source_group_id=%s target_group_id=%s permission_count=%s memberships_copied=false data_scopes_copied=false",
+        getattr(request.user, "id", None),
+        source.id,
+        copied.id,
+        copied.permissions.count(),
+    )
+    messages.success(
+        request,
+        _("Role permissions copied. Members and organization scope were not copied."),
+    )
     return HorillaRedirect(request)
 
 
@@ -4295,13 +4499,15 @@ def update_permission(
 
         user = employee.employee_user_id
 
-        all_codenames = [p["codename"] for p in permissions_data]
-        checked_codenames = [p["codename"] for p in permissions_data if p["checked"]]
+        from base.permission_refs import resolve_permission_refs
 
-        existing_managed = user.user_permissions.filter(codename__in=all_codenames)
-        managed_permissions = Permission.objects.filter(codename__in=all_codenames)
-        checked_permissions = managed_permissions.filter(codename__in=checked_codenames)
+        all_refs = [p["codename"] for p in permissions_data]
+        checked_refs = [p["codename"] for p in permissions_data if p["checked"]]
+        managed_permissions = resolve_permission_refs(all_refs)
+        checked_permissions = resolve_permission_refs(checked_refs)
+        managed_ids = [permission.id for permission in managed_permissions]
 
+        existing_managed = user.user_permissions.filter(id__in=managed_ids)
         user.user_permissions.remove(*existing_managed)
         user.user_permissions.add(*checked_permissions)
 
@@ -4363,10 +4569,8 @@ def employee_permission_codenames(request, emp_id):
     user = employee.employee_user_id
     if not user:
         return JsonResponse({"codenames": []})
-    codenames = sorted(
-        {perm.split(".", 1)[-1] for perm in user.get_all_permissions() if perm}
-    )
-    return JsonResponse({"codenames": codenames})
+    permission_refs = sorted({perm for perm in user.get_all_permissions() if perm})
+    return JsonResponse({"codenames": permission_refs})
 
 
 @login_required

@@ -5,6 +5,7 @@ from . import views
 app_name = "hr_payroll"
 
 urlpatterns = [
+    path("policy-workbench/", views.policy_workspace, name="policy-workbench"),
     path("", views.workspace, name="overview"),
     path("profiles/", views.workspace, {"section": "profiles"}, name="profiles"),
     path("periods/", views.workspace, {"section": "periods"}, name="periods"),

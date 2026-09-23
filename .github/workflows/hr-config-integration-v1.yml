@@ -1,0 +1,271 @@
+name: HR Configuration + Integration V1 MySQL Browser Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hr-config-integration-v1-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: mysql://renshi_user:renshi_pass@127.0.0.1:3306/renshi_db?charset=utf8mb4
+  DB_INIT_PASSWORD: ci-db-init-password-not-a-documented-default
+  SECRET_KEY: ci-only-hr-config-integration-v1-secret-key
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+  COMPANY_SCOPED_PERMISSIONS: "True"
+  TENANT_FAIL_CLOSED: "True"
+  FIELD_ENCRYPTION_KEYS: ci:cnhASoOnwgdA9byg_icWKFZ7hdQT0QU0Sjl9523EyfM=
+  HR_INTEGRATION_ALLOWED_HOSTS: 127.0.0.1,localhost
+  HR_INTEGRATION_HTTP_TIMEOUT_SECONDS: "5"
+  DEBUG: "True"
+  HR_SSO_ALLOW_INSECURE_FOR_TESTS: "True"
+  HR_SSO_MOCK_CLIENT_ID: hr-ci-oidc
+  HR_SSO_MOCK_CLIENT_SECRET: hr-ci-oidc-secret
+  HR_SSO_MOCK_SUBJECT: ci-subject-v1-auditor
+  HR_SSO_MOCK_STAFF_NO: V1-AUDITOR-001
+  HR_V1_BROWSER_USERNAME: hr-config-integration-auditor
+  HR_V1_BROWSER_PASSWORD: config-integration-browser-only-password
+  HR_V1_BROWSER_BASE_URL: http://127.0.0.1:8000
+  HR_V1_BROWSER_ARTIFACT_DIR: tests/artifacts/hr-config-integration-v1
+
+jobs:
+  mysql-browser-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: renshi_db
+          MYSQL_USER: renshi_user
+          MYSQL_PASSWORD: renshi_pass
+          MYSQL_ROOT_PASSWORD: renshi_root_pass
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -urenshi_user -prenshi_pass --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Syntax and source-contract gates
+        run: |
+          python -m pip install pytest==9.0.2
+          python -m py_compile \
+            scripts/hr_config_integration_mock_school.py \
+            scripts/hr_config_integration_browser.py \
+            scripts/verify_hr_config_integration_v1.py \
+            backend/hr_configuration/management/commands/hr_config_integration_v1_gate.py \
+            backend/hr_integration/sso_runtime.py \
+            backend/hr_integration/sso_views.py \
+            backend/hr_integration/management/commands/hr_sso_school_preflight.py \
+            scripts/hr_sso_mock_oidc.py \
+            scripts/hr_sso_runtime_browser.py
+          python -m pytest -q \
+            tests/configuration_hub/test_v1_source_contract.py \
+            tests/configuration_hub/test_v1_acceptance_contract.py \
+            tests/configuration_hub/test_integration_frontend_v12_contract.py \
+            tests/configuration_hub/test_sso_runtime_contract.py \
+            tests/configuration_hub/test_sso_acceptance_harness_contract.py
+          node --check backend/hr_integration/static/hr_integration/integration_hub_v2.js
+
+      - name: Install application and Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            default-libmysqlclient-dev pkg-config curl \
+            libcairo2 libpango-1.0-0 libpangocairo-1.0-0 \
+            libgdk-pixbuf-2.0-0 libffi8 shared-mime-info
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install playwright==1.57.0
+          python -m playwright install --with-deps chromium
+          PYTHONPATH=backend DJANGO_SETTINGS_MODULE=hr_integration.tests.mini_settings \
+            python -m django test \
+              hr_integration.tests.test_sso_runtime \
+              hr_integration.tests.test_sso_protocol_harness \
+              hr_integration.tests.test_sso_ldap_logic_harness -v 1
+
+      - name: Ensure local settings stub
+        run: |
+          if [ ! -f backend/horilla/settings/local_settings.py ]; then
+            printf '%s\n' '# Ephemeral for HR config/integration V1 gate' > backend/horilla/settings/local_settings.py
+          fi
+
+      - name: Migrate real MySQL 8.4 runtime
+        run: |
+          python manage.py migrate --noinput
+          python manage.py migrate --check
+          python manage.py makemigrations hr_configuration hr_integration --check --dry-run
+
+      - name: Seed one real school administrator
+        shell: bash
+        run: |
+          python manage.py shell <<'PY'
+          import os
+          from pathlib import Path
+          from django.contrib.auth import get_user_model
+          from django.core.files.uploadedfile import SimpleUploadedFile
+          from base.models import Company
+          from employee.models import Employee, EmployeeWorkInformation
+          from hr_staff.models import HrAccountLink, HrEmploymentRelationship, HrPerson, HrStaffMaster
+          from hr_integration.models import IntegrationConnection
+          from hr_integration.crypto import encrypt_secret_payload
+          from hr_integration.sso_runtime import prebind_identity
+          from django.utils import timezone
+
+          company = Company.objects.create(
+              company="跃科 V1 配置与集成验收学校",
+              hq=True,
+              address="长沙市 V1 验收路 1 号",
+              country="CN",
+              state="Hunan",
+              city="Changsha",
+              zip="410000",
+              icon=SimpleUploadedFile("v1.png", b"v1", content_type="image/png"),
+          )
+          User = get_user_model()
+          user = User.objects.create_superuser(
+              username=os.environ["HR_V1_BROWSER_USERNAME"],
+              email="hr-v1-browser@example.invalid",
+              password=os.environ["HR_V1_BROWSER_PASSWORD"],
+          )
+          user.is_new_employee = False
+          user.save(update_fields=["is_new_employee"])
+          employee = Employee.objects.create(
+              employee_user_id=user,
+              employee_first_name="V1",
+              employee_last_name="验收管理员",
+              email="hr-v1-employee@example.invalid",
+              phone="13800000031",
+              is_active=True,
+          )
+          work_info, _ = EmployeeWorkInformation._base_manager.get_or_create(employee_id=employee)
+          work_info.company_id = company
+          work_info.save(update_fields=["company_id"])
+          person = HrPerson.objects.create(tenant_id=company.pk, legal_name="V1 验收管理员", status="ACTIVE")
+          staff = HrStaffMaster.objects.create(
+              tenant_id=company.pk,
+              person_id=person,
+              staff_no="V1-AUDITOR-001",
+              current_employment_status="ACTIVE",
+              legacy_employee_id=employee.pk,
+          )
+          HrEmploymentRelationship.objects.create(
+              tenant_id=company.pk, staff_id=staff, effective_from=timezone.localdate(), status="ACTIVE"
+          )
+          HrAccountLink.objects.create(
+              tenant_id=company.pk, staff_id=staff, auth_user_id=user.pk,
+              auth_identifier=user.username, link_status=HrAccountLink.LinkStatus.ACTIVE, linked_at=timezone.now(),
+          )
+          sso = IntegrationConnection.objects.create(
+              tenant_id=company.pk, code="SSO_OIDC_CI", name="CI OIDC 统一认证", category="SSO",
+              adapter_code="SSO_OIDC", base_url="http://localhost:9012", enabled=True, status="CONFIGURED",
+              config_json={
+                  "client_id": os.environ["HR_SSO_MOCK_CLIENT_ID"],
+                  "discovery_path": "/.well-known/openid-configuration",
+                  "scope": "openid profile",
+                  "token_auth_method": "client_secret_post",
+                  "staff_no_claim": "employee_no",
+                  "allow_first_login_binding": "0",
+              },
+              secret_ciphertext=encrypt_secret_payload({"client_secret": os.environ["HR_SSO_MOCK_CLIENT_SECRET"]}),
+              credential_updated_at=timezone.now(),
+              created_by=user.pk, updated_by=user.pk,
+          )
+          prebind_identity(
+              sso, staff_no="V1-AUDITOR-001", external_subject=os.environ["HR_SSO_MOCK_SUBJECT"], actor_user_id=user.pk
+          )
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as fh:
+              fh.write(f"HR_V1_TENANT_ID={company.pk}\n")
+              fh.write(f"HR_V1_ACTOR_ID={user.pk}\n")
+              fh.write(f"HR_SSO_PUBLIC_TENANT_ID={company.pk}\n")
+              fh.write(f"HR_SSO_CI_CONNECTION_CODE=SSO_OIDC_CI\n")
+          print(f"seeded tenant={company.pk} actor={user.pk}")
+          PY
+
+      - name: Initialize exactly eight draft workflow shells
+        run: |
+          python manage.py bootstrap_hr_configuration_v1 --tenant "$HR_V1_TENANT_ID" --actor "$HR_V1_ACTOR_ID"
+          python manage.py bootstrap_hr_configuration_v1 --tenant "$HR_V1_TENANT_ID" --actor "$HR_V1_ACTOR_ID" \
+            | tee tests-v1-bootstrap-second-run.log
+          grep -F "created workflows=0" tests-v1-bootstrap-second-run.log
+
+      - name: Run real browser configuration + real HTTP adapter probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HR_V1_BROWSER_ARTIFACT_DIR"
+          python scripts/hr_config_integration_mock_school.py \
+            > "$HR_V1_BROWSER_ARTIFACT_DIR/mock-school.log" 2>&1 &
+          mock_pid=$!
+          python scripts/hr_sso_mock_oidc.py \
+            > "$HR_V1_BROWSER_ARTIFACT_DIR/mock-oidc.log" 2>&1 &
+          oidc_pid=$!
+          python manage.py runserver 127.0.0.1:8000 --noreload \
+            > "$HR_V1_BROWSER_ARTIFACT_DIR/django-runserver.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" "$mock_pid" "$oidc_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/login/ >/dev/null \
+              && curl --fail --silent http://127.0.0.1:9011/health >/dev/null \
+              && curl --fail --silent http://localhost:9012/health >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl --fail --silent --show-error http://127.0.0.1:8000/ready/ \
+            | tee "$HR_V1_BROWSER_ARTIFACT_DIR/readiness.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = json.loads((Path(os.environ["HR_V1_BROWSER_ARTIFACT_DIR"]) / "readiness.json").read_text())
+          assert payload.get("status") == "ok", payload
+          assert payload.get("database_vendor") == "mysql", payload
+          PY
+
+          python scripts/hr_config_integration_browser.py
+          python scripts/hr_sso_runtime_browser.py
+          python scripts/verify_hr_config_integration_v1.py
+          python manage.py hr_sso_school_preflight \
+            --tenant "$HR_V1_TENANT_ID" \
+            --connection "$HR_SSO_CI_CONNECTION_CODE" \
+            --public-base-url "$HR_V1_BROWSER_BASE_URL" \
+            --require-live-ready \
+            --json-output "$HR_V1_BROWSER_ARTIFACT_DIR/sso-school-preflight.json"
+          python manage.py hr_config_integration_v1_gate \
+            --tenant "$HR_V1_TENANT_ID" \
+            --require-published HR05 \
+            --require-verified MASTER_DATA \
+            --require-mapping \
+            --require-sso-runtime \
+            --json-output "$HR_V1_BROWSER_ARTIFACT_DIR/implementation-gate.json"
+
+      - name: Upload MySQL/browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hr-config-integration-v1-${{ github.event.pull_request.number || github.run_id }}-${{ github.sha }}
+          path: |
+            tests/artifacts/hr-config-integration-v1/
+            tests-v1-bootstrap-second-run.log
+          if-no-files-found: error
+          retention-days: 14

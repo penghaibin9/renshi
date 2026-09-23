@@ -6,7 +6,7 @@ HR03～HR18 的正式事实使用 MySQL Trigger 作为数据库层防篡改兜�
 
 ## 新手本地启动
 
-需要 Docker Desktop（含 Docker Compose）。开发栈自带本地开发凭据，不需要先配置数据库：
+需要 Docker Desktop（含 Docker Compose）。开发栈自带本地开发凭据，不需要先配置数据库；生产 overlay 另外要求 Docker Compose **v2.24.4+**：
 
 ```bash
 make dev
@@ -47,13 +47,14 @@ docker compose -f docker-compose.yml -f docker-compose.dbport.yml up -d db
 ```bash
 cp .env.dist .env
 # 把 .env 中每个 change-me 值替换成独立强密钥/密码，并填写真实域名
-docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+make prod-preflight
 make prod
 ```
 
 生产 overlay 会：
 
-- 先运行唯一的 `release` 任务完成 migration、静态文件收集和 Django check；
+- `make prod-preflight` 先校验 Compose 版本并解析生产配置；
+- 再运行唯一的 `release` 任务；release 保留 `/entrypoint.sh` 的数据库和生产密钥门禁，并用固定参数完成 migration、静态文件收集和 Django check；
 - `release` 成功后才启动 Web；
 - 使用 MySQL 8.4 和带密码的 Redis；
 - 使用私网 ClamAV 扫描所有上传，扫描器不可用时 `/ready/` 失败并拒绝上传；
@@ -89,3 +90,14 @@ curl http://localhost:18000/ready/
 - MySQL 未就绪：先看 `db` 健康检查和密码是否一致。
 - Redis 未就绪：检查 `REDIS_PASSWORD` 与 `REDIS_URL` 是否一致。
 - 生产配置拒绝启动：这是 fail-closed；修正弱密钥、`DEBUG`、域名或可信来源，禁止关闭安全门禁。
+
+## 学校开放格式移交包
+
+合同终止、换供应商或采购验收时，不使用日常 AES 灾备包冒充可迁移交付物。生产 overlay 另行挂载 `HANDOVER_STORAGE_PATH` 与 `HANDOVER_AUDIT_STORAGE_PATH`，由 `backup-scheduler` 容器执行：
+
+```bash
+make handover-export RECIPIENT="学校信息中心" PURPOSE="合同到期数据移交" OPERATOR="授权运维人员"
+make handover-verify PACKAGE="school-handover-....tar.gz" OPERATOR="校验人员"
+```
+
+移交包使用 MySQL SQL、tar.gz、CSV、JSON 等开放格式；敏感字段解密所需 `FIELD_ENCRYPTION_KEYS` 只通过学校控制的独立安全通道交接，绝不写入移交包、源码包或日志。完整恢复和验收步骤见 `docs/PRODUCTION_RUNBOOK.md` 第 9 节。

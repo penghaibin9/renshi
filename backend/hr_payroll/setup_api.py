@@ -192,15 +192,31 @@ def create_period(request):
     end_date = parse_date(str(body.get("endDate") or ""))
     if not code or not start_date or not end_date or end_date <= start_date:
         return _error("PAYROLL_PERIOD_INPUT_INVALID", "请填写有效期间编号和起止日期", status=400)
+    engine = str(body.get("engineVersion") or "LEGACY_V2")
+    purpose = str(body.get("payrollPurpose") or "REGULAR")
+    payment_day = parse_date(str(body.get("paymentDate") or ""))
+    if engine not in {"LEGACY_V2", "POLICY_V1"} or purpose not in {"REGULAR", "SUPPLEMENT", "ANNUAL_BONUS"}:
+        return _error("PAYROLL_ENGINE_INVALID", "请选择明确的核算引擎与用途", status=400)
+    if engine == "LEGACY_V2" and purpose != "REGULAR":
+        return _error("PAYROLL_PURPOSE_INVALID", "旧引擎不支持新增补发/奖金期间", status=400)
+    if engine == "POLICY_V1":
+        import calendar
+        if (not payment_day or start_date.day != 1 or start_date.year != end_date.year
+                or start_date.month != end_date.month or end_date.day != calendar.monthrange(end_date.year, end_date.month)[1]):
+            return _error("PAYROLL_POLICY_PERIOD_INVALID", "制度核算须为一个完整自然月并明确预计支付日期", status=400)
     try:
         with transaction.atomic():
+            from hr_payroll.policy_models import PayrollPolicyScope
+            scope, _ = PayrollPolicyScope.objects.get_or_create(tenant_id=tenant_id, scope_key="PERIODS")
+            PayrollPolicyScope.objects.select_for_update().get(pk=scope.pk)
             periods = PayrollPeriod.objects.select_for_update().filter(
                 tenant_id=tenant_id
             )
-            if periods.filter(
-                start_date__lte=end_date,
-                end_date__gte=start_date,
-            ).exists():
+            overlap = periods.filter(start_date__lte=end_date, end_date__gte=start_date)
+            if engine == "POLICY_V1":
+                # Supplements and annual bonuses are distinct payment scopes, not a second regular salary.
+                overlap = overlap.filter(payroll_purpose="REGULAR") if purpose == "REGULAR" else overlap.none()
+            if overlap.exists():
                 return _error(
                     "PAYROLL_PERIOD_OVERLAP",
                     "工资期间与已有期间重叠",
@@ -209,6 +225,7 @@ def create_period(request):
             period = PayrollPeriod(
                 tenant_id=tenant_id,
                 period_code=code,
+                engine_version=engine, payroll_purpose=purpose, payment_date=payment_day,
                 start_date=start_date,
                 end_date=end_date,
                 created_by=getattr(request.user, "id", None),

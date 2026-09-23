@@ -104,6 +104,10 @@
 
   function openDialog(config) {
     pending = config;
+    window.HrWorkspaceUX?.markSaved(form);
+    delete form.dataset.v6Committed;
+    const submit = root.querySelector('[data-dialog-submit]');
+    if (submit) { delete submit.dataset.v6Committed; submit.disabled = false; }
     title.textContent = config.title;
     fields.innerHTML = config.fields;
     dialog.showModal();
@@ -121,6 +125,7 @@
   }
 
   async function runAction(action, recordId, payload = {}, button = null) {
+    if (button?.disabled) return false;
     if (button) button.disabled = true;
     setFeedback('正在提交到考勤业务台账…');
     try {
@@ -132,12 +137,14 @@
         return;
       }
       setFeedback(`办理成功：${data.statusLabel || data.status || '已写入正式事实'}`);
-      window.setTimeout(() => window.location.reload(), 250);
+      window.HrWorkspaceUX?.afterCommit({host: root, button, message: feedback?.textContent});
+      return true;
     } catch (error) {
       const blockers = error.details?.blockers || [];
       const suffix = blockers.length ? `（${blockers.map((item) => `${item.code} ${item.count} 项`).join('；')}）` : '';
       setFeedback(`${error.message}${suffix}`, true);
       if (button) button.disabled = false;
+      return false;
     }
   }
 
@@ -151,6 +158,7 @@
   };
 
   root.addEventListener('click', async (event) => {
+    if (form?.dataset.v6Pending === 'true') return;
     const closeButton = event.target.closest('[data-dialog-close]');
     if (closeButton) { dialog.close(); pending = null; return; }
 
@@ -334,13 +342,16 @@
 
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!pending) return;
+    if (!pending || form.dataset.v6Pending === 'true' || root.querySelector('[data-dialog-submit]')?.disabled) return;
+    const active = pending;
+    form.dataset.v6Pending = 'true';
+    try {
     const payload = Object.fromEntries(new FormData(form).entries());
-    if (pending.action === 'close-reopen') payload.idempotencyKey = crypto.randomUUID();
+    if (active.action === 'close-reopen') payload.idempotencyKey = crypto.randomUUID();
     const submit = root.querySelector('[data-dialog-submit]');
     submit.disabled = true;
-    if (pending.kind === 'evidence-download') {
-      const downloadRequest = pending;
+    if (active.kind === 'evidence-download') {
+      const downloadRequest = active;
       const reason = String(payload.reason || '').trim();
       if (!reason) { setFeedback('下载请假证明必须填写查阅事由。', true); submit.disabled = false; return; }
       downloadRequest.link.setAttribute('aria-disabled', 'true');
@@ -360,7 +371,7 @@
         link.href = blobUrl; link.download = downloadRequest.filename; link.click();
         URL.revokeObjectURL(blobUrl);
         downloadRequest.link.removeAttribute('aria-disabled');
-        if (pending === downloadRequest) { dialog.close(); pending = null; }
+        if (pending === downloadRequest) { window.HrWorkspaceUX?.markSaved(form); dialog.close(); pending = null; }
         setFeedback('证明已下载，本次查阅事由已写入审计记录。');
       } catch (error) {
         downloadRequest.link.removeAttribute('aria-disabled');
@@ -369,11 +380,11 @@
       }
       return;
     }
-    if (pending.kind === 'leave-evidence') {
+    if (active.kind === 'leave-evidence') {
       setFeedback('正在安全保存请假证明…');
       try {
         const upload = new FormData(form);
-        const response = await fetch(`/api/v1/hr/time/leaves/${pending.recordId}/evidence`, {
+        const response = await fetch(`/api/v1/hr/time/leaves/${active.recordId}/evidence`, {
           method: 'POST', credentials: 'same-origin',
           headers: {'X-CSRFToken': csrfToken(), 'X-Requested-With': 'XMLHttpRequest'},
           body: upload
@@ -383,11 +394,12 @@
         if (!response.ok) throw new Error(body.error?.message || `上传失败（状态码 ${response.status}）`);
         dialog.close();
         setFeedback('请假证明已保存并完成哈希留痕，可以提交审批。');
-        window.setTimeout(() => window.location.reload(), 250);
+        window.HrWorkspaceUX?.afterCommit({host: root, button: submit, form, message: feedback?.textContent});
+        pending = null;
       } catch (error) { setFeedback(error.message, true); submit.disabled = false; }
       return;
     }
-    if (pending.kind === 'calendar-import') {
+    if (active.kind === 'calendar-import') {
       setFeedback('正在校验全年日期并发布不可变日历版本…');
       try {
         const file = fields.querySelector('[name="calendarFile"]').files?.[0];
@@ -399,33 +411,37 @@
         });
         dialog.close();
         setFeedback('年度工作日历已校验并发布，可用于人员排班和请假核算。');
-        window.setTimeout(() => window.location.reload(), 250);
+        window.HrWorkspaceUX?.afterCommit({host: root, button: submit, form, message: feedback?.textContent});
+        pending = null;
       } catch (error) { setFeedback(error.message, true); submit.disabled = false; }
       return;
     }
-    if (pending.kind === 'schedule') {
+    if (active.kind === 'schedule') {
       setFeedback('正在校验排班冲突并创建…');
       try {
         await request('/api/v1/hr/time/schedules/create', payload);
         dialog.close();
         setFeedback('排班已创建并写入当前学校正式数据。');
-        window.setTimeout(() => window.location.reload(), 250);
+        window.HrWorkspaceUX?.afterCommit({host: root, button: submit, form, message: feedback?.textContent});
+        pending = null;
       } catch (error) { setFeedback(error.message, true); submit.disabled = false; }
       return;
     }
-    if (pending.kind === 'create') {
+    if (active.kind === 'create') {
       setFeedback('正在创建正式业务记录…');
       try {
-        await request(pending.endpoint, payload);
+        await request(active.endpoint, payload);
         dialog.close();
-        setFeedback(pending.success);
-        window.setTimeout(() => window.location.reload(), 250);
+        setFeedback(active.success);
+        window.HrWorkspaceUX?.afterCommit({host: root, button: submit, form, message: feedback?.textContent});
+        pending = null;
       } catch (error) { setFeedback(error.message, true); submit.disabled = false; }
       return;
     }
-    dialog.close();
-    submit.disabled = false;
-    await runAction(pending.action, pending.recordId, payload, pending.button);
-    pending = null;
+    // Keep the dialog and its reason visible until the write is confirmed.
+    const ok = await runAction(active.action, active.recordId, payload, active.button);
+    if (ok) { window.HrWorkspaceUX?.markSaved(form); dialog.close(); pending = null; }
+    else { submit.disabled = false; }
+    } finally { delete form.dataset.v6Pending; }
   });
 })();

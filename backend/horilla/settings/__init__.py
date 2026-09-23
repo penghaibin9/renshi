@@ -65,6 +65,32 @@ for _app in CANONICAL_HR_APPS:
 if "platform_access" not in INSTALLED_APPS:  # noqa: F405
     INSTALLED_APPS.append("platform_access")  # noqa: F405
 
+# School implementation infrastructure. These are deliberately not HR19/HR20:
+# they configure/bridge existing HR authorities without becoming business fact owners.
+SYSTEM_HR_INFRA_APPS = ["hr_configuration", "hr_integration"]
+for _app in SYSTEM_HR_INFRA_APPS:
+    if find_spec(_app) is not None and _app not in INSTALLED_APPS:  # noqa: F405
+        INSTALLED_APPS.append(_app)  # noqa: F405
+
+HR_INTEGRATION_ALLOWED_HOSTS = tuple(
+    item.strip().lower()
+    for item in os.getenv("HR_INTEGRATION_ALLOWED_HOSTS", "").split(",")
+    if item.strip()
+)
+HR_INTEGRATION_HTTP_TIMEOUT_SECONDS = float(
+    os.getenv("HR_INTEGRATION_HTTP_TIMEOUT_SECONDS", "5") or "5"
+)
+if not 1 <= HR_INTEGRATION_HTTP_TIMEOUT_SECONDS <= 30:
+    raise ImproperlyConfigured("HR_INTEGRATION_HTTP_TIMEOUT_SECONDS must be between 1 and 30")
+
+_hr_sso_tenant_raw = os.getenv("HR_SSO_PUBLIC_TENANT_ID", "").strip()
+HR_SSO_PUBLIC_TENANT_ID = int(_hr_sso_tenant_raw) if _hr_sso_tenant_raw else None
+if HR_SSO_PUBLIC_TENANT_ID is not None and HR_SSO_PUBLIC_TENANT_ID <= 0:
+    raise ImproperlyConfigured("HR_SSO_PUBLIC_TENANT_ID must be a positive school/company id")
+HR_SSO_ALLOW_INSECURE_FOR_TESTS = bool(DEBUG) and os.getenv(
+    "HR_SSO_ALLOW_INSECURE_FOR_TESTS", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+
 # HR04 public recruitment privacy notice.  The public page renders these
 # server-owned values so every campaign uses the same reviewed notice version
 # and retention policy instead of embedding unverifiable wording in JavaScript.

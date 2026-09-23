@@ -1,4 +1,4 @@
-{% extends "index.html" %}
+{% extends "hr/base.html" %}
 {% load static i18n %}
 {% comment %}Contract test marker: 查询 HR03 名册.{% endcomment %}
 
@@ -11,7 +11,7 @@
 {% endblock styles %}
 
 {% block content %}
-<div class="hr07-page" data-hr07-section="{{ section }}" data-module="HR07">
+<div class="hr07-page" data-hr07-section="{{ section }}" data-module="HR07" data-hr-workspace="v6">
   <div class="hr-v2-mobile-section-switcher" aria-label="当前位置">
     <span>合同管理</span>
     <strong>{{ section_title }}</strong>
@@ -63,7 +63,7 @@
       <button type="button" class="hr07-btn hr07-btn--primary" id="hr07-create-toggle">新建校内合同</button>
     </div>
 
-    <form class="hr07-create" id="hr07-create-form" hidden>
+    <form class="hr07-create" id="hr07-create-form" hidden data-v6-surface="form">
       <div class="hr07-form-grid">
         <label><span>合同编号</span><input name="agreementNo" required placeholder="例如 HT-2026-001"></label>
         <label><span>合同名称</span><input name="title" required placeholder="例如 专任教师聘用合同"></label>
@@ -112,7 +112,7 @@
   {% elif section == 'signing' %}
   <section class="hr07-card">
     <div class="hr07-card__head"><div><h2>首版签署与生效</h2><p>从合同台账选择主档，再通过 Agreement Authority 冻结首个签署版本并按生效日激活。</p></div></div>
-    <form id="hr07-sign-query" class="hr07-query-row">
+    <form id="hr07-sign-query" class="hr07-query-row" data-v6-form="read">
       <label><span>待签 / 待生效合同</span><select id="hr07-sign-agreement-id" required><option value="">正在读取合同 Authority…</option></select></label>
       <button class="hr07-btn hr07-btn--primary" type="submit">读取合同</button>
     </form>
@@ -121,7 +121,7 @@
 
   <section class="hr07-card" data-lifecycle-workspace data-case-mode="RENEW">
     <div class="hr07-card__head"><div><h2>续签业务单</h2><p>续签先形成独立 Case，经提交、审批后冻结 successor version，再到生效日切换正式版本；不覆盖原合同版本。</p></div></div>
-    <form class="hr07-sign-form" data-lifecycle-create-form>
+    <form class="hr07-sign-form" data-lifecycle-create-form data-v6-surface="form">
       <input type="hidden" name="caseType" value="RENEW">
       <label><span>选择有效合同</span><select name="agreementId" data-agreement-select data-statuses="ACTIVE,EXPIRING,RENEWAL_IN_PROGRESS" required><option value="">正在读取合同 Authority…</option></select></label>
       <label><span>业务单编号</span><input name="caseNo" required placeholder="例如 RENEW-2026-001"></label>
@@ -137,7 +137,7 @@
   {% elif section == 'changes' %}
   <section class="hr07-card" data-lifecycle-workspace data-case-mode="CHANGE_OR_TERMINATE">
     <div class="hr07-card__head"><div><h2>合同变更与解除</h2><p>变更与解除均走独立 Case；变更生成追加版本，解除在批准且到达生效日后终止当前正式版本。</p></div></div>
-    <form class="hr07-sign-form" data-lifecycle-create-form>
+    <form class="hr07-sign-form" data-lifecycle-create-form data-v6-surface="form">
       <label><span>业务类型</span><select name="caseType" required><option value="CHANGE">合同变更</option><option value="TERMINATE">合同解除/终止</option></select></label>
       <label><span>选择有效合同</span><select name="agreementId" data-agreement-select data-statuses="ACTIVE,EXPIRING,RENEWAL_IN_PROGRESS" required><option value="">正在读取合同 Authority…</option></select></label>
       <label><span>业务单编号</span><input name="caseNo" required placeholder="例如 CHANGE-2026-001"></label>
@@ -153,7 +153,7 @@
   {% elif section == 'rules' %}
   <section class="hr07-card" data-hr07-setup="rules">
     <div class="hr07-card__head"><div><h2>发布合同模板版本</h2><p>每次发布形成不可改写的新版本；已签合同仍保留签署时的正式内容快照。</p></div><button type="button" class="hr07-btn" data-hr07-setup-refresh>刷新配置</button></div>
-    <form class="hr07-sign-form" id="hr07-template-form">
+    <form class="hr07-sign-form" id="hr07-template-form" data-v6-surface="form">
       <label><span>模板代码</span><input name="templateCode" required maxlength="64" placeholder="例如 TEACHER_FIXED_TERM"></label>
       <label><span>模板名称</span><input name="templateName" required maxlength="160" placeholder="例如 专任教师固定期限合同"></label>
       <label><span>适用合同类型</span><select name="agreementType" required><option value="">请选择</option><option value="PUBLIC_INSTITUTION_EMPLOYMENT">事业单位聘用合同</option><option value="LABOR_CONTRACT">劳动合同</option><option value="FIXED_TERM">固定期限聘用合同</option><option value="OPEN_ENDED">无固定期限合同</option><option value="LABOR_DISPATCH">劳务协议</option><option value="EXTERNAL_TEACHER">外聘教师协议</option><option value="OTHER">其他</option></select></label>
@@ -172,7 +172,7 @@
   {% else %}
   <section class="hr07-card" data-hr07-setup="risks">
     <div class="hr07-card__head"><div><h2>到期策略</h2><p>发布新策略会停用同合同类型的旧策略；每次风险扫描都冻结所依据的策略哈希。</p></div><button type="button" class="hr07-btn" data-hr07-setup-refresh>刷新风险</button></div>
-    <form class="hr07-sign-form" id="hr07-policy-form">
+    <form class="hr07-sign-form" id="hr07-policy-form" data-v6-surface="form">
       <label><span>策略版本</span><input name="policyVersion" maxlength="64" placeholder="例如 EXP-2026-V1（留空自动生成）"></label>
       <label><span>合同类型（留空为默认策略）</span><select name="agreementType"><option value="">全部类型默认策略</option><option value="PUBLIC_INSTITUTION_EMPLOYMENT">事业单位聘用合同</option><option value="LABOR_CONTRACT">劳动合同</option><option value="FIXED_TERM">固定期限聘用合同</option><option value="OPEN_ENDED">无固定期限合同</option><option value="LABOR_DISPATCH">劳务协议</option><option value="EXTERNAL_TEACHER">外聘教师协议</option><option value="OTHER">其他</option></select></label>
       <label><span>提前预警天数</span><input name="warningDays" type="number" min="1" max="730" value="90" required></label>
@@ -184,7 +184,7 @@
   </section>
   <section class="hr07-card">
     <div class="hr07-card__head"><div><h2>到期扫描与处置事实</h2><p>扫描由服务端业务日期、正式合同版本和有效策略共同判定；命中后自动形成风险事实与可追踪业务单。</p></div></div>
-    <form class="hr07-query-row" id="hr07-scan-form"><label><span>扫描业务日期</span><input name="asOf" type="date" required></label><button class="hr07-btn hr07-btn--primary" type="submit">执行到期扫描</button></form>
+    <form class="hr07-query-row" id="hr07-scan-form" data-v6-form="read"><label><span>扫描业务日期</span><input name="asOf" type="date" required></label><button class="hr07-btn hr07-btn--primary" type="submit">执行到期扫描</button></form>
     <div class="hr07-form-message hr07-scan-message" id="hr07-scan-message" role="status"></div>
     <div class="hr07-table-wrap"><table class="hr07-table"><thead><tr><th>合同</th><th>到期日</th><th>风险</th><th>距到期</th><th>处置业务单</th><th>策略版本</th><th>识别日期</th></tr></thead><tbody id="hr07-risk-body"><tr><td colspan="7" class="hr07-loading">正在读取风险事实…</td></tr></tbody></table></div>
   </section>

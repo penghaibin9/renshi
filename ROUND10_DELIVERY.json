@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "product": "Yueke University HR",
+  "round": "Round10",
+  "date": "2026-09-16",
+  "baseline": {
+    "file": "Yueke_University_HR_Round9_20260916.zip",
+    "sha256": "499edda65c9c9c1d7640caceefa354d158af4d6857ef9d7c0dbff2e34cd75ca4",
+    "deliverableFileCount": 10642
+  },
+  "status": "SOURCE_CODE_CANDIDATE",
+  "releaseStatus": "NOT_RELEASED",
+  "scope": "Procurement-reference acceptance hardening: HR18 sync observability, immutable manual retry, and executable 3s/5s/100-concurrency QA probe",
+  "sourceClosure": {
+    "added": 6,
+    "modified": 8,
+    "deleted": 0,
+    "changedTotal": 14,
+    "deliveryMetadataExcludedFromDiff": true
+  },
+  "referenceUse": {
+    "document": "User-provided 9-page non-degree education smart-front procurement checklist",
+    "policy": "Acceptance-quality reference only; HR01-HR18 domain boundaries remain authoritative",
+    "adoptedPatterns": [
+      "field mapping and last sync/failure observability",
+      "single/batch manual retry with original failure evidence retained",
+      "idempotent repeated submission protection",
+      "ordinary page <=3s / analytics <=5s / 100-concurrency QA targets"
+    ],
+    "notClaimedIntegrated": [
+      "school SSO",
+      "school data middle platform",
+      "provincial platform"
+    ]
+  },
+  "fixedDefects": [
+    "HR18 target mappings and sync health were not visible together for operator verification",
+    "terminal exchange failures had automatic dead-lettering but no controlled single/batch manual requeue path",
+    "manual retry must append a successor instead of resetting or erasing the original failed job/attempt evidence",
+    "preserved historical failures and currently unresolved failures needed separate counters",
+    "receipt-required targets must not report transport-only success as end-to-end success",
+    "manual retry idempotency must reject changed job number/reason/max-attempt parameters under the same key",
+    "reconciliation dead letters needed an observable unresolved reason even when job.last_error_code is blank",
+    "procurement 3s/5s and 100-concurrency targets were prose only rather than an executable QA gate",
+    "class-scoped static checks now prevent retry fields placed on the wrong job model from passing source gates"
+  ],
+  "exchangeContract": {
+    "manualRetry": "DEAD_LETTER -> append successor QUEUED job",
+    "provenanceFields": [
+      "retry_of_job",
+      "manual_retry_reason",
+      "manual_retry_by"
+    ],
+    "originalFailurePolicy": "source job, attempts and dead-letter facts remain intact",
+    "batchLimit": 100,
+    "successSemantics": "expectedReceipt=true -> RECONCILED; false -> TRANSMITTED",
+    "operatorHealth": [
+      "pending",
+      "transmitted",
+      "reconciled",
+      "unresolved failures",
+      "historical terminal failures",
+      "latest unresolved failure reason"
+    ]
+  },
+  "verification": {
+    "hr10ImportStatic": {
+      "passed": 20,
+      "total": 20,
+      "status": "PASS"
+    },
+    "hr10StaffIdentityStatic": {
+      "passed": 53,
+      "total": 53,
+      "status": "PASS"
+    },
+    "hr18ProcurementSyncStatic": {
+      "passed": 24,
+      "total": 24,
+      "status": "PASS"
+    },
+    "pureUnittest": {
+      "tests": 169,
+      "status": "PASS"
+    },
+    "pythonAst": {
+      "files": 3148,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "javascriptNodeCheck": {
+      "files": 253,
+      "errors": 0,
+      "status": "PASS"
+    },
+    "performanceProbeSafety": {
+      "withoutAllowLoad": "REFUSED_AS_DESIGNED",
+      "status": "PASS"
+    }
+  },
+  "djangoRuntimeRegression": {
+    "status": "NOT_RUN_DEPENDENCY_MISSING",
+    "attempted": true,
+    "error": "ModuleNotFoundError: No module named 'django'",
+    "requiredBeforeRelease": true
+  },
+  "runtimeGatesStillRequiredBeforeTraffic": [
+    "python manage.py makemigrations --check --dry-run",
+    "MySQL migrate 0019 on disposable QA database and migration-state drift check",
+    "hr_data.tests.test_exchange_service and hr_data.tests.test_exchange_api",
+    "two-admin concurrent manual retry of the same dead-letter",
+    "provider failure -> dead-letter -> manual retry -> receipt -> reconciliation end-to-end",
+    "authenticated browser HR18 exchange workbench flow",
+    "desensitized realistic-data performance run: normal <=3s, analytics <=5s, 100 concurrent",
+    "real school SSO/data-middle-platform/provincial interface integration only after official specs are available"
+  ],
+  "safety": {
+    "productionTouched": false,
+    "gitHubTouched": false,
+    "externalSystemsTouched": false
+  },
+  "packageVerification": {
+    "expectedZipFileCount": 10651,
+    "expectedManifestEntries": 10650,
+    "status": "PASS",
+    "manifestPolicy": "ROUND10_FILE_MANIFEST.tsv covers every packaged file except itself",
+    "zipFileCount": 10651,
+    "manifestEntries": 10650,
+    "manifestMissing": 0,
+    "manifestHashOrSizeErrors": 0,
+    "unexpectedFiles": 0,
+    "pycacheArtifacts": 0,
+    "finalZipReextractGates": {
+      "hr10ImportStatic": "20/20 PASS",
+      "hr10StaffIdentityStatic": "53/53 PASS",
+      "hr18ProcurementSyncStatic": "24/24 PASS",
+      "pureUnittest": "169/169 PASS"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{% extends "hr/base.html" %}{% load static %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'hr_integration/integration_hub_v2.css' %}">
+<div class="hrint-page">
+  <div class="hrint-hero"><div><span class="hrint-eyebrow">Integration Hub · 新增学校接口</span><h1>选择协议，按向导接入</h1><p>普通实施只填学校提供的参数。底层仍保存为 V1.1 的稳定连接合同，不把厂商字段写进 HR01～HR18。</p></div><a class="hrint-btn is-secondary" href="{% url 'hr-integration-hub' %}">返回适配中心</a></div>
+
+  <section class="hrint-panel">
+    <div class="hrint-section-head"><div><span>统一认证优先</span><h2>学校登录系统用哪一种？</h2><p>不确定时把学校信息处提供的接口说明交给 AI/Codex判断，不要凭感觉选协议。</p></div></div>
+    <div class="hrint-protocol-grid is-selectable">
+      {% for item in adapter_ui_catalog %}{% if item.category == 'SSO' %}
+      <button type="button" class="hrint-protocol-card" data-hrint-pick-adapter="{{ item.code }}"><div><span>{{ item.badge }}</span><strong>{{ item.title }}</strong><small>{{ item.protocol }}</small></div><p>{{ item.summary }}</p><em>选择此协议</em></button>
+      {% endif %}{% endfor %}
+    </div>
+    <div class="hrint-other-adapters"><span>其他学校系统</span><div>
+      {% for item in adapter_ui_catalog %}{% if item.category != 'SSO' %}<button type="button" data-hrint-pick-adapter="{{ item.code }}"><strong>{{ item.title }}</strong><small>{{ item.protocol }}</small></button>{% endif %}{% endfor %}
+    </div></div>
+  </section>
+
+  <section class="hrint-panel">
+    <div class="hrint-section-head"><div><span>实施向导</span><h2>连接配置</h2></div><div class="hrint-step-labels"><span>连接</span><span>协议</span><span>密钥</span><span>映射</span><span>测试</span></div></div>
+    {% include "hr_integration/partials/connection_form.html" %}
+  </section>
+</div>
+<script src="{% static 'hr_integration/integration_hub_v2.js' %}"></script>
+{% endblock content %}

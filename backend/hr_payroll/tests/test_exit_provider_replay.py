@@ -111,6 +111,8 @@ class Hr15ExitSettlementReplayTests(TestCase):
             deduction_amount=Decimal("100.00"),
             net_amount=Decimal("400.00"),
             status=PayrollResultFact.Status.ADJUSTED,
+            # Existing sealed-result contract requires a real correction reason.
+            authority_reason="TEST_APPROVED_EXIT_SETTLEMENT_CORRECTION",
             supersedes_result_id=base.id,
         )
 
@@ -144,6 +146,8 @@ class Hr15ExitSettlementReplayTests(TestCase):
             deduction_amount=Decimal("0.00"),
             net_amount=Decimal("50.00"),
             status=PayrollResultFact.Status.ADJUSTED,
+            # Existing sealed-result contract requires a real correction reason.
+            authority_reason="TEST_APPROVED_EXIT_SETTLEMENT_CORRECTION",
             supersedes_result_id=july_base.id,
         )
 
@@ -180,6 +184,8 @@ class Hr15ExitSettlementReplayTests(TestCase):
             deduction_amount=Decimal("0.00"),
             net_amount=Decimal("1000.00"),
             status=PayrollResultFact.Status.ADJUSTED,
+            # Existing sealed-result contract requires a real correction reason.
+            authority_reason="TEST_APPROVED_EXIT_SETTLEMENT_CORRECTION",
             supersedes_result_id=base.id,
         )
 

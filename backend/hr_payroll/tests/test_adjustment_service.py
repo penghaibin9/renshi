@@ -37,6 +37,7 @@ class PayrollAdjustmentServiceTests(TestCase):
 
         source_query = result_objects.select_for_update.return_value.filter.return_value
         source_query.first.side_effect = [source, None]
+        source_query.exists.return_value = False
 
         period = MagicMock()
         period.status = PayrollPeriod.Status.FINALIZED
@@ -73,6 +74,9 @@ class PayrollAdjustmentServiceTests(TestCase):
             net_amount=Decimal("80.00"),
             status=PayrollResultFact.Status.ADJUSTED,
             supersedes_result_id=source.id,
+            authority_reason="LEGACY_COMPATIBILITY_ADJUSTMENT",
+            authority_evidence_ref="",
+            authority_actor_id=None,
         )
         self.assertTrue(outcome.created)
         self.assertIs(outcome.adjustment, created)
@@ -98,6 +102,9 @@ class PayrollAdjustmentServiceTests(TestCase):
         existing.gross_amount = Decimal("100.00")
         existing.deduction_amount = Decimal("20.00")
         existing.net_amount = Decimal("80.00")
+        existing.authority_reason = "LEGACY_COMPATIBILITY_ADJUSTMENT"
+        existing.authority_evidence_ref = ""
+        existing.authority_actor_id = None
 
         result_objects.select_for_update.return_value.filter.return_value.first.side_effect = [
             source,

@@ -103,6 +103,8 @@ class TaskService:
         """按 case.template_version 的任务定义实例化（幂等）。返回新建数。"""
         if case.template_version is None:
             return 0
+        from hr_onboarding.services.school_template_service import verify_school_template
+        verify_school_template(case.template_version, self.tenant_id)
         self.validate_no_cycles(case.template_version_id)
         created = 0
         definitions = HrOnboardingTaskDefinition.objects.filter(
@@ -132,6 +134,8 @@ class TaskService:
     # ------------------------------------------------------------------
     def _check_prerequisites(self, instance: HrOnboardingTaskInstance) -> None:
         """前置任务（definition.prerequisite_codes）必须 COMPLETED/WAIVED。"""
+        from hr_onboarding.services.school_template_service import verify_school_template
+        verify_school_template(instance.case.template_version, self.tenant_id)
         prereq_codes = (instance.definition.prerequisite_codes or [])
         if not prereq_codes:
             return

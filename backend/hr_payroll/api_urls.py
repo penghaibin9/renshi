@@ -1,9 +1,17 @@
 from django.urls import path
 
-from . import api, setup_api
+from . import api, setup_api, policy_api
 
 app_name = "hr_payroll_api"
 urlpatterns = [
+    path("policy/options/", policy_api.options, name="policy-options"),
+    path("policy/config/<str:kind>/", policy_api.configurations, name="policy-config"),
+    path("policy/config/<str:kind>/<uuid:object_id>/publish/", policy_api.publish_configuration, name="policy-publish"),
+    path("policy/trials/", policy_api.trials, name="policy-trials"),
+    path("policy/trials/<uuid:trial_id>/", policy_api.trial_detail, name="policy-trial-detail"),
+    path("policy/trials/<uuid:trial_id>/review/", policy_api.review_trial, name="policy-trial-review"),
+    path("policy/tax-accounts/", policy_api.tax_accounts, name="policy-tax-accounts"),
+    path("policy/settlements/", policy_api.settlement_status, name="policy-settlements"),
     path("dashboard/", api.dashboard, name="dashboard"),
     path("setup-options/", setup_api.setup_options, name="setup-options"),
     path("profiles/", setup_api.create_profile, name="profile-create"),
@@ -64,4 +72,20 @@ urlpatterns = [
         api.adjust_result,
         name="result-adjustments",
     ),
+    path(
+        "results/<uuid:source_result_id>/reversal/",
+        api.reverse_result,
+        name="result-reversal",
+    ),
 ]
+
+urlpatterns += [
+ path("policy/import/<str:kind>/template/", policy_api.import_template),
+ path("policy/import/<str:kind>/preview/", policy_api.import_preview),
+ path("policy/import-stage/<uuid:stage_id>/confirm/", policy_api.import_confirm),
+ path("policy/import-stage/<uuid:stage_id>/errors/", policy_api.import_errors),
+]
+
+urlpatterns += [path("policy/retro/trials/",policy_api.retro_trial),path("policy/retro/<uuid:trial_id>/apply/",policy_api.retro_apply)]
+
+urlpatterns += [path("policy/trials/<uuid:trial_id>/export.xlsx",policy_api.export_trial)]

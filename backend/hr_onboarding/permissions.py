@@ -14,6 +14,9 @@ from django.db import models
 
 # fmt: off
 HR05_PERMISSIONS = (
+    # School configuration is separately granted; not implied by task execution.
+    "hr05.template.manage",
+    "hr05.template.publish",
     # 通用 case 权限
     "hr05.case.view",
     "hr05.case.create",
@@ -75,4 +78,21 @@ def require_hr05_permission(perm_code):
         _wrapped.hr05_permission_code = perm_code
         return _wrapped
 
+    return decorator
+
+
+def require_hr05_any_permission(*perm_codes):
+    """Task executors may enter their inbox without receiving case-view power."""
+    from functools import wraps
+    def decorator(view):
+        @wraps(view)
+        def wrapped(request, *args, **kwargs):
+            user = request.user
+            if not user.is_authenticated or not user.is_active:
+                raise PermissionDenied("UNAUTHENTICATED")
+            if not (user.is_superuser or any(user.has_perm(code) for code in perm_codes)):
+                raise PermissionDenied("PERMISSION_DENIED")
+            return view(request, *args, **kwargs)
+        wrapped.hr05_permission_codes = perm_codes
+        return wrapped
     return decorator

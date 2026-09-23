@@ -253,3 +253,7 @@
     margin-bottom: var(--hr-space-2);
   }
 }
+
+/* R2 UI polish: make the next personnel action explicit without changing facts. */
+.hr03-next-actions{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:14px 0;padding:12px 14px;border:1px solid #dbeafe;border-radius:10px;background:#f8fbff}.hr03-next-actions>span strong,.hr03-next-actions>span small{display:block}.hr03-next-actions>span strong{color:#1e3a8a;font-size:12px}.hr03-next-actions>span small{margin-top:3px;color:#64748b;font-size:10px;line-height:1.45}.hr03-next-actions>div{display:flex;flex-wrap:wrap;gap:7px;justify-content:flex-end}.hr03-next-actions a{padding:7px 10px;border:1px solid #dbe5f2;border-radius:7px;background:#fff;color:#334155;font-size:11px;font-weight:750;text-decoration:none;white-space:nowrap}.hr03-next-actions a.is-primary{border-color:#2563eb;background:#2563eb;color:#fff}
+@media(max-width:760px){.hr03-next-actions{align-items:stretch;flex-direction:column}.hr03-next-actions>div{justify-content:flex-start}}

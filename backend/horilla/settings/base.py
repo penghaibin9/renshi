@@ -41,6 +41,12 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 HORILLA_ENV = env("HORILLA_ENV", default="")
+HR_INSTALLATION_MODE = env("HR_INSTALLATION_MODE", default="standalone_school").strip().lower()
+if HR_INSTALLATION_MODE not in {"standalone_school", "saas_platform"}:
+    raise ValueError("HR_INSTALLATION_MODE must be standalone_school or saas_platform")
+PLATFORM_OPERATIONS_ENABLED = env.bool(
+    "PLATFORM_OPERATIONS_ENABLED", default=(HR_INSTALLATION_MODE == "saas_platform")
+)
 REDIS_URL = env("REDIS_URL", default=None)
 REDIS_PASSWORD = env("REDIS_PASSWORD", default="")
 FAIL2BAN_MAX_RETRY = env.int("FAIL2BAN_MAX_RETRY", default=5)
@@ -66,6 +72,8 @@ EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
 EMAIL_FAIL_SILENTLY = env.bool("EMAIL_FAIL_SILENTLY", default=False)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@localhost")
 FIELD_ENCRYPTION_KEYS = env("FIELD_ENCRYPTION_KEYS", default="")
+FIELD_FINGERPRINT_KEY = env("FIELD_FINGERPRINT_KEY", default="")
+HR08_TICKET_SIGNING_KEY = env("HR08_TICKET_SIGNING_KEY", default="")
 MALWARE_SCAN_REQUIRED = env.bool("MALWARE_SCAN_REQUIRED", default=False)
 MALWARE_SCAN_HOST = env("MALWARE_SCAN_HOST", default="")
 MALWARE_SCAN_PORT = env.int("MALWARE_SCAN_PORT", default=3310)
@@ -190,6 +198,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "simple_history.middleware.HistoryRequestMiddleware",
     "django.middleware.locale.LocaleMiddleware",
+    "horilla.canonical_hr_language.CanonicalHrLanguageMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -339,6 +348,12 @@ PRODUCTION_BACKUP_RETENTION_COUNT = env.int(
 PRODUCTION_BACKUP_INTERVAL_HOURS = env.int(
     "PRODUCTION_BACKUP_INTERVAL_HOURS", default=24
 )
+SCHOOL_HANDOVER_ROOT = env(
+    "SCHOOL_HANDOVER_ROOT", default=str(RUNTIME_DIR / "school-handover")
+)
+SCHOOL_HANDOVER_RECEIPT_ROOT = env(
+    "SCHOOL_HANDOVER_RECEIPT_ROOT", default=str(RUNTIME_DIR / "school-handover-audit")
+)
 CANONICAL_HR_JOB_BATCH_SIZE = env.int("CANONICAL_HR_JOB_BATCH_SIZE", default=2000)
 if not 1 <= CANONICAL_HR_JOB_BATCH_SIZE <= 5000:
     raise ValueError("CANONICAL_HR_JOB_BATCH_SIZE must be between 1 and 5000")
@@ -419,6 +434,7 @@ WSGI_APPLICATION = "horilla.wsgi.application"
 # INTERNATIONALIZATION
 # ========================================
 LANGUAGE_CODE = "zh-hans"
+HR_CANONICAL_LANGUAGE = "zh-hans"
 TIME_ZONE = env("TIME_ZONE", default="Asia/Shanghai")
 USE_I18N = True
 USE_TZ = True
@@ -649,6 +665,8 @@ from horilla.settings.security import (  # noqa: E402
     validate_login_security_configuration,
     validate_malware_scanner_configuration,
     validate_field_encryption_configuration,
+    validate_field_fingerprint_configuration,
+    validate_hr08_ticket_signing_configuration,
     validate_mfa_email_configuration,
     validate_production_secrets,
 )
@@ -665,6 +683,27 @@ if IS_PRODUCTION:
     )
     validate_field_encryption_configuration(
         FIELD_ENCRYPTION_KEYS,
+        production=True,
+        disallowed_secrets=(
+            SECRET_KEY,
+            PRODUCTION_BACKUP_ENCRYPTION_KEY,
+            FIELD_FINGERPRINT_KEY,
+            HR08_TICKET_SIGNING_KEY,
+        ),
+    )
+    validate_field_fingerprint_configuration(
+        FIELD_FINGERPRINT_KEY,
+        secret_key=SECRET_KEY,
+        backup_key=PRODUCTION_BACKUP_ENCRYPTION_KEY,
+        encryption_keys=FIELD_ENCRYPTION_KEYS,
+        production=True,
+    )
+    validate_hr08_ticket_signing_configuration(
+        HR08_TICKET_SIGNING_KEY,
+        secret_key=SECRET_KEY,
+        fingerprint_key=FIELD_FINGERPRINT_KEY,
+        backup_key=PRODUCTION_BACKUP_ENCRYPTION_KEY,
+        encryption_keys=FIELD_ENCRYPTION_KEYS,
         production=True,
     )
     validate_mfa_email_configuration(

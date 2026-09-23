@@ -80,20 +80,56 @@ class AssignmentService:
         self.audit_actor_user_id = audit_actor_user_id
 
     def _assert_relationship_tenant(self, employment_relationship_id):
-        """P1-6：关系必须属于当前 tenant（UUID/实例归一）。"""
+        """关系必须属于当前 tenant，并锁住关系行串行化同关系任职写入。"""
         from hr_staff.models import HrEmploymentRelationship
 
+        relationship_pk = getattr(employment_relationship_id, "pk", employment_relationship_id)
         rel = (
-            employment_relationship_id
-            if isinstance(employment_relationship_id, HrEmploymentRelationship)
-            else HrEmploymentRelationship.objects.filter(
-                tenant_id=self.tenant_id, id=employment_relationship_id
-            ).first()
+            HrEmploymentRelationship.objects.select_for_update()
+            .filter(tenant_id=self.tenant_id, id=relationship_pk)
+            .first()
         )
-        if rel is None or rel.tenant_id != self.tenant_id:
+        if rel is None:
             raise AssignmentPolicyViolation(
                 "CROSS_TENANT_REFERENCE", "employment relationship 不属于当前学校"
             )
+        return rel
+
+    def _lock_authority_refs(
+        self,
+        *,
+        organization_id=None,
+        position_id=None,
+        post_catalog_id=None,
+        reporting_staff_id=None,
+    ):
+        """重新从 DB 锁定 HR02/HR03 引用，禁止使用过期对象绕过状态校验。"""
+        from hr_structure.models import HrOrganization, HrPosition, HrPostCatalogVersion
+        from hr_staff.models import HrStaffMaster
+
+        specs = (
+            ("organization_id", organization_id, HrOrganization, "组织"),
+            ("position_id", position_id, HrPosition, "岗位"),
+            ("post_catalog_id", post_catalog_id, HrPostCatalogVersion, "岗位目录"),
+            ("reporting_staff_id", reporting_staff_id, HrStaffMaster, "汇报对象"),
+        )
+        resolved = {}
+        for key, value, model, label in specs:
+            if value is None:
+                resolved[key] = None
+                continue
+            pk = getattr(value, "pk", value)
+            obj = (
+                model.objects.select_for_update()
+                .filter(tenant_id=self.tenant_id, pk=pk)
+                .first()
+            )
+            if obj is None:
+                raise AssignmentPolicyViolation(
+                    "CROSS_TENANT_REFERENCE", f"{label}不存在或不属于当前学校"
+                )
+            resolved[key] = obj
+        return resolved
 
     # ------------------------------------------------------------------
     # 创建（普通：concurrent/temporary/secondment 或首个 primary）
@@ -124,10 +160,28 @@ class AssignmentService:
             raise AssignmentPolicyViolation(
                 "EFFECTIVE_DATE_INVALID", "effective_to 必须晚于 effective_from"
             )
-        self._assert_relationship_tenant(employment_relationship_id)  # P1-6
+        relationship = self._assert_relationship_tenant(employment_relationship_id)
+        refs = self._lock_authority_refs(
+            organization_id=organization_id,
+            position_id=position_id,
+            post_catalog_id=post_catalog_id,
+            reporting_staff_id=reporting_staff_id,
+        )
+        organization_id = refs["organization_id"]
+        position_id = refs["position_id"]
+        post_catalog_id = refs["post_catalog_id"]
+        reporting_staff_id = refs["reporting_staff_id"]
         self.policy.validate_fte(fte)
         self.policy.validate_cross_tenant_ref(
-            organization_id=organization_id, position_id=position_id
+            organization_id=organization_id,
+            position_id=position_id,
+            post_catalog_id=post_catalog_id,
+            reporting_staff_id=reporting_staff_id,
+        )
+        self.policy.validate_relationship_window(
+            relationship=relationship,
+            effective_from=effective_from,
+            effective_to=effective_to,
         )
         # 权威组织/岗位必须 as_of 有效；无权威引用则必须给 legacy 映射（LEGACY_CURRENT_SNAPSHOT 预览）
         if organization_id is None and legacy_department_id is None:
@@ -137,29 +191,28 @@ class AssignmentService:
         self.policy.validate_org_position_as_of(
             organization_id=organization_id,
             position_id=position_id,
+            post_catalog_id=post_catalog_id,
             as_of=effective_from,
         )
         if assignment_type == AssignmentType.PRIMARY:
-            # P1-k：PRIMARY 创建加行锁（对齐 switch_primary），防止与并发 PRIMARY 创建
-            # 的有界重叠竞态（DB 条件唯一仅拦开放段，服务锁覆盖有界段）。
-            HrStaffAssignment.objects.select_for_update().filter(
-                tenant_id=self.tenant_id,
-                employment_relationship_id=employment_relationship_id,
-                assignment_type=AssignmentType.PRIMARY,
-                status="ACTIVE",
-            ).exists()
             self.policy.validate_primary_overlap(
-                relationship_id=employment_relationship_id,
+                relationship_id=relationship,
                 effective_from=effective_from,
                 effective_to=effective_to,
             )
+        self.policy.validate_total_fte(
+            relationship_id=relationship,
+            fte=fte,
+            effective_from=effective_from,
+            effective_to=effective_to,
+        )
         self.policy.validate_position_capacity(
             position_id=position_id, effective_from=effective_from
         )
 
         assignment = HrStaffAssignment.objects.create(
             tenant_id=self.tenant_id,
-            employment_relationship_id=employment_relationship_id,
+            employment_relationship_id=relationship,
             organization_id=organization_id,
             position_id=position_id,
             post_catalog_id=post_catalog_id,
@@ -176,7 +229,7 @@ class AssignmentService:
             source_business_id=source_business_id,
         )
         self._refresh_projection_if_current(
-            employment_relationship_id, assignment, effective_from
+            relationship, assignment, effective_from
         )
         write_audit_event(
             tenant_id=self.tenant_id,
@@ -230,10 +283,29 @@ class AssignmentService:
         source_business_type: str = "",
         source_business_id: str = "",
     ) -> HrStaffAssignment:
-        self._assert_relationship_tenant(employment_relationship_id)  # P1-6
+        _assert_source_valid(source_business_type)
+        relationship = self._assert_relationship_tenant(employment_relationship_id)
+        refs = self._lock_authority_refs(
+            organization_id=organization_id,
+            position_id=position_id,
+            post_catalog_id=post_catalog_id,
+            reporting_staff_id=reporting_staff_id,
+        )
+        organization_id = refs["organization_id"]
+        position_id = refs["position_id"]
+        post_catalog_id = refs["post_catalog_id"]
+        reporting_staff_id = refs["reporting_staff_id"]
         self.policy.validate_fte(fte)
         self.policy.validate_cross_tenant_ref(
-            organization_id=organization_id, position_id=position_id
+            organization_id=organization_id,
+            position_id=position_id,
+            post_catalog_id=post_catalog_id,
+            reporting_staff_id=reporting_staff_id,
+        )
+        self.policy.validate_relationship_window(
+            relationship=relationship,
+            effective_from=effective_from,
+            effective_to=None,
         )
         if organization_id is None and legacy_department_id is None:
             raise AssignmentPolicyViolation(
@@ -242,6 +314,7 @@ class AssignmentService:
         self.policy.validate_org_position_as_of(
             organization_id=organization_id,
             position_id=position_id,
+            post_catalog_id=post_catalog_id,
             as_of=effective_from,
         )
 
@@ -250,7 +323,7 @@ class AssignmentService:
             HrStaffAssignment.objects.select_for_update()
             .filter(
                 tenant_id=self.tenant_id,
-                employment_relationship_id=employment_relationship_id,
+                employment_relationship_id=relationship,
                 assignment_type=AssignmentType.PRIMARY,
                 status="ACTIVE",
                 effective_from__lte=effective_from,
@@ -263,7 +336,7 @@ class AssignmentService:
         # 2) 其余任何与 [T, ∞) 重叠的 PRIMARY 段 → 拒绝（含 T 后才开始的历史/未来段）
         other_qs = HrStaffAssignment.objects.filter(
             tenant_id=self.tenant_id,
-            employment_relationship_id=employment_relationship_id,
+            employment_relationship_id=relationship,
             assignment_type=AssignmentType.PRIMARY,
         )
         if current is not None:
@@ -291,7 +364,13 @@ class AssignmentService:
             current.version += 1
             current.save(update_fields=["effective_to", "status", "version", "updated_at"])
 
-        # P2-5：capacity 校验在关旧段之后（同岗位切换不误报已占满）
+        # 关旧段之后再校验 FTE/capacity，避免同一主岗切换把旧段重复计入。
+        self.policy.validate_total_fte(
+            relationship_id=relationship,
+            fte=fte,
+            effective_from=effective_from,
+            effective_to=None,
+        )
         self.policy.validate_position_capacity(
             position_id=position_id, effective_from=effective_from
         )
@@ -299,7 +378,7 @@ class AssignmentService:
         # 4) 创建新段
         new_primary = HrStaffAssignment.objects.create(
             tenant_id=self.tenant_id,
-            employment_relationship_id=employment_relationship_id,
+            employment_relationship_id=relationship,
             organization_id=organization_id,
             position_id=position_id,
             post_catalog_id=post_catalog_id,
@@ -318,7 +397,7 @@ class AssignmentService:
 
         # 4) 更新当前投影（仅当已生效）
         self._refresh_projection_if_current(
-            employment_relationship_id, new_primary, effective_from
+            relationship, new_primary, effective_from
         )
         write_audit_event(
             tenant_id=self.tenant_id,
@@ -404,7 +483,8 @@ class AssignmentService:
     # ------------------------------------------------------------------
     def _refresh_projection_if_current(self, employment_relationship_id, assignment, effective_from: date):
         staff = HrStaffMaster.objects.filter(
-            id=assignment.employment_relationship_id.staff_id_id
+            tenant_id=self.tenant_id,
+            id=assignment.employment_relationship_id.staff_id_id,
         ).first()
         if staff is None:
             return
