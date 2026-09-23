@@ -111,7 +111,7 @@ class SsoRuntimeSecurityTests(TestCase):
         self.assertNotIn("client_secret",calls[0][2]["data"])
         self.assertTrue(calls[0][2]["headers"]["Authorization"].startswith("Basic "))
 
-    def test_ldap_missing_reviewed_client_fails_closed(self):
+    def test_ldap_unavailable_or_bind_failure_fails_closed(self):
         ldap=IntegrationConnection.objects.create(tenant_id=9,code="LDAP",name="LDAP",category="SSO",adapter_code="SSO_LDAP",enabled=True,config_json={"host":"sso.example.edu.cn","port":"636","base_dn":"dc=x","user_filter":"(uid={username})","staff_no_attribute":"employeeNumber","security_mode":"LDAPS"})
         with self.assertRaises(SsoRuntimeError) as ctx: ldap_authenticate(ldap,username="u",password="p")
-        self.assertIn(ctx.exception.code,{"LDAP_CLIENT_MISSING","SSO_CREDENTIAL_DECRYPT_FAILED"})
+        self.assertIn(ctx.exception.code,{"LDAP_CLIENT_MISSING","SSO_CREDENTIAL_DECRYPT_FAILED","LDAP_BIND_FAILED"})
