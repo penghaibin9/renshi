@@ -34,6 +34,7 @@ paths = {
     "m26": "backend/hr10_development/migrations/0026_canonical_hr03_staff_uuid.py",
     "m27": "backend/hr10_development/migrations/0027_backfill_hr10_staff_uuid.py",
     "m28": "backend/hr10_development/migrations/0028_hr10_staff_identity_guards.py",
+    "m29": "backend/hr10_development/migrations/0029_shorten_fact_uuid_index_name.py",
     "plan": "backend/hr10_development/services/plan_service.py",
     "requests": "backend/hr10_development/api/requests.py",
     "approval": "backend/hr10_development/services/approval_service.py",
@@ -110,9 +111,14 @@ record(
 )
 record(
     "fact_uuid_index_state_matches_migration",
-    all_in(src["fact"], 'name="hr_dev_fact_uuid_type_valid_idx"')
-    and all_in(src["m28"], "FACT_UUID_INDEX = \"hr_dev_fact_uuid_type_valid_idx\""),
-    "model state and retry-safe DB migration use the same canonical fact index name",
+    all_in(src["fact"], 'name="hr10_fact_uuid_type_valid_idx"')
+    and all_in(src["m28"], "FACT_UUID_INDEX = \"hr_dev_fact_uuid_type_valid_idx\"")
+    and all_in(
+        src["m29"],
+        'old_name="hr_dev_fact_uuid_type_valid_idx"',
+        'new_name="hr10_fact_uuid_type_valid_idx"',
+    ),
+    "historic index name is preserved in 0028 and upgraded by 0029 to the portable current model name",
 )
 record(
     "schema_migration_is_ddl_only",

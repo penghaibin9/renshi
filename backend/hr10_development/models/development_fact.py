@@ -127,7 +127,7 @@ class HrDevelopmentFact(DevelopmentTenantModel):
             models.Index(fields=["staff_master_id", "fact_type", "valid_from"]),
             models.Index(
                 fields=["staff_master_uuid", "fact_type", "valid_from"],
-                name="hr_dev_fact_uuid_type_valid_idx",
+                name="hr10_fact_uuid_type_valid_idx",
             ),
         ]
         base_manager_name = "objects"
