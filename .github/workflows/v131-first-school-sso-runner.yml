@@ -1,8 +1,61 @@
-name: V1.3.1 SSO Runner Gate
+name: V1.3.1 First-School SSO Runner Gate
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/v131-first-school-sso-runner.yml"
+      - ".github/runner/v131_*"
+
+permissions:
+  contents: read
+
 jobs:
-  smoke:
-    runs-on: ubuntu-latest
+  mysql84-chromium-sso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: yueke_hr_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -pci-root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      DATABASE_URL: mysql://root:ci-root@127.0.0.1:3306/yueke_hr_ci
+      DJANGO_SETTINGS_MODULE: horilla.settings
+      DEBUG: "1"
+      SECRET_KEY: ci-only-v131
+      ALLOWED_HOSTS: 127.0.0.1,localhost,testserver
+      CSRF_TRUSTED_ORIGINS: http://127.0.0.1:8000,http://localhost:8000
+      HR_INTEGRATION_ALLOWED_HOSTS: 127.0.0.1,localhost
+      HR_SSO_PUBLIC_TENANT_ID: "1"
+      HR_SSO_ALLOW_INSECURE_FOR_TESTS: "1"
+      HR_V1_TENANT_ID: "1"
+      HR_V1_BROWSER_BASE_URL: http://127.0.0.1:8000
+      HR_V1_BROWSER_USERNAME: ci-admin
+      HR_SSO_CI_CONNECTION_NAME: CI OIDC 统一认证
+      FIELD_FINGERPRINT_KEY: ci-fingerprint-key-0123456789-abcdefghijklmnopqrstuvwxyz
     steps:
-      - run: echo runner-ready
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare exact V1.3.1 snapshot
+        run: bash .github/runner/v131_prepare.sh
+      - name: Run MySQL 8.4 Chromium SSO gate
+        run: bash .github/runner/v131_run.sh
+      - name: Upload acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v131-first-school-sso-gate
+          path: /tmp/v131/evidence
+          if-no-files-found: warn
+          retention-days: 14
