@@ -3,13 +3,13 @@ set -euo pipefail
 WORK=/tmp/mature-hr
 mkdir -p "$WORK/evidence"
 cd "$WORK"
-SHARE_ID="jVKAGVMQQWz-"
-FILE_ID="01a0d47ee076740ab4bb0541a737bd82"
+SHARE_ID="_BvMl6AVaiJM"
+FILE_ID="01a0d48b49d87634920e5d69692c811b"
 API="https://api.firestorage.ai/dev/file"
 curl -fsS -X POST "$API/shares/$SHARE_ID/files/$FILE_ID/download" -H "Content-Type: application/json" -d '{}' > download.json
 URL="$(python -c 'import json; print(json.load(open("download.json"))["downloadUrl"])')"
 curl -fL "$URL" -o mature_hr.zip
-echo "d0dea50b70b95d286699093507ebc87b46e966e8f3db1d12d9a962878228a7fd  mature_hr.zip" | sha256sum -c -
+echo "2cadf361f85917194be789498b269a199f6779337d10c68f98abde39e2fb2027  mature_hr.zip" | sha256sum -c -
 mkdir -p snapshot
 unzip -q mature_hr.zip -d snapshot
 ROOT="$(dirname "$(find snapshot -maxdepth 3 -name manage.py -print -quit)")"
