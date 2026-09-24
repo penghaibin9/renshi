@@ -62,4 +62,28 @@ new_publish_assert = '            publish_body = page.locator("body").inner_text
 assert old_publish_assert in browser_text, "configuration browser publish assertion drifted"
 browser.write_text(browser_text.replace(old_publish_assert, new_publish_assert), encoding="utf-8")
 
-print("V1.3.1 runner patch applied: HR10 + LDAP + published-state browser contract alignment")
+# Integration Hub form buttons must not depend on HTML's implicit submit
+# default. Explicit types make the UI deterministic for browsers, automation
+# and accessibility tools.
+templates = {
+    root / "backend/hr_integration/templates/hr_integration/connection_detail.html": {
+        '<button class="hrint-btn is-primary">保存映射方案</button>':
+        '<button class="hrint-btn is-primary" type="submit">保存映射方案</button>',
+    },
+    root / "backend/hr_integration/templates/hr_integration/profile_detail.html": {
+        '<button class="hrint-danger-link">删除</button>':
+        '<button class="hrint-danger-link" type="submit">删除</button>',
+        '<button class="hrint-btn is-primary">保存字段映射</button>':
+        '<button class="hrint-btn is-primary" type="submit">保存字段映射</button>',
+        '<button class="hrint-btn is-danger">删除映射方案</button>':
+        '<button class="hrint-btn is-danger" type="submit">删除映射方案</button>',
+    },
+}
+for path, replacements in templates.items():
+    template_text = path.read_text(encoding="utf-8")
+    for old_html, new_html in replacements.items():
+        assert template_text.count(old_html) == 1, f"template button contract drifted: {path.name} {old_html}"
+        template_text = template_text.replace(old_html, new_html)
+    path.write_text(template_text, encoding="utf-8")
+
+print("V1.3.1 runner patch applied: HR10 + LDAP + publish semantics + explicit Integration Hub submit buttons")
