@@ -5,8 +5,8 @@ WORK=/tmp/v131
 mkdir -p "$WORK/evidence"
 cd "$WORK"
 
-SHARE_ID="tiaXiOC6z77s"
-FILE_ID="01a0cdd960c3720bae09d25b06cf572e"
+SHARE_ID="IFcgULEmjtNI"
+FILE_ID="01a0d325e60c75f8bc7c54e9c7aed060"
 API="https://api.firestorage.ai/dev/file"
 curl -fsS -X POST "$API/shares/$SHARE_ID/files/$FILE_ID/download"   -H "Content-Type: application/json" -d '{}' > download.json
 URL="$(python -c 'import json; print(json.load(open("download.json"))["downloadUrl"])')"
@@ -23,8 +23,8 @@ ROOT="$(cd "$ROOT" && pwd)"
 # Restore the exact user-owned external assets referenced by the V1.3.1
 # delivery manifest. The pack was extracted from the 2026-09-17 baseline and
 # verified 25/25 against FIRST_USE_EXTERNAL_ASSETS.json before upload.
-ASSET_SHARE_ID="qtTOLLp9XBvX"
-ASSET_FILE_ID="01a0d2fd5104757bb4d0d84f10cc48ee"
+ASSET_SHARE_ID="isXmdndbOkt2"
+ASSET_FILE_ID="01a0d3261dee72d1ac51224c690227a9"
 curl -fsS -X POST "$API/shares/$ASSET_SHARE_ID/files/$ASSET_FILE_ID/download" \
   -H "Content-Type: application/json" -d '{}' > asset-download.json
 ASSET_URL="$(python -c 'import json; print(json.load(open("asset-download.json"))["downloadUrl"])')"
