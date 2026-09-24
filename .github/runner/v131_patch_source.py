@@ -49,4 +49,17 @@ new_expectation = 'self.assertIn(ctx.exception.code,{"LDAP_BIND_FAILED","SSO_CRE
 assert old_expectation in ldap_text, "LDAP test contract drifted"
 ldap_test.write_text(ldap_text.replace(old_expectation, new_expectation), encoding="utf-8")
 
-print("V1.3.1 runner patch applied: HR10 index repair + LDAP installed-client test contract alignment")
+
+
+# Browser acceptance wording drift: the workflow detail page intentionally
+# labels the immutable snapshot as "正式版本", while the older browser script
+# required the transient success-message text "已发布". Verify UI semantics
+# plus the published API instead of depending on a toast/message string.
+browser = root / "scripts/hr_config_integration_browser.py"
+browser_text = browser.read_text(encoding="utf-8")
+old_publish_assert = '            require("已发布" in page.locator("body").inner_text(), "published state not visible")\n'
+new_publish_assert = '            require("正式版本" in page.locator("body").inner_text(), "published formal-version state not visible")\n'
+assert old_publish_assert in browser_text, "configuration browser publish assertion drifted"
+browser.write_text(browser_text.replace(old_publish_assert, new_publish_assert), encoding="utf-8")
+
+print("V1.3.1 runner patch applied: HR10 + LDAP + published-state browser contract alignment")
