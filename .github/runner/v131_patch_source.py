@@ -58,7 +58,7 @@ ldap_test.write_text(ldap_text.replace(old_expectation, new_expectation), encodi
 browser = root / "scripts/hr_config_integration_browser.py"
 browser_text = browser.read_text(encoding="utf-8")
 old_publish_assert = '            require("已发布" in page.locator("body").inner_text(), "published state not visible")\n'
-new_publish_assert = '            require("正式版本" in page.locator("body").inner_text(), "published formal-version state not visible")\n'
+new_publish_assert = '            publish_body = page.locator("body").inner_text()\n            require("正式版本" in publish_body and "未发布" not in publish_body, "published formal-version state not visible")\n'
 assert old_publish_assert in browser_text, "configuration browser publish assertion drifted"
 browser.write_text(browser_text.replace(old_publish_assert, new_publish_assert), encoding="utf-8")
 
