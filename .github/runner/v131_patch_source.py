@@ -73,6 +73,19 @@ browser_text = browser_text.replace(old_profile_submit, new_profile_submit)
 browser_text = browser_text.replace(old_mapping_submit, new_mapping_submit)
 browser.write_text(browser_text, encoding="utf-8")
 
+browser_text = browser.read_text(encoding="utf-8")
+old_mapping_nav = '''            mapping_card = page.locator("article", has_text="STAFF_INBOUND").first
+            require(mapping_card.count() == 1, "mapping profile not rendered")
+            with page.expect_navigation(wait_until="domcontentloaded"):
+                mapping_card.locator("a", has_text="维护字段映射").click()'''
+new_mapping_nav = '''            mapping_link = page.locator(".hrint-mapping-grid a", has_text="维护字段映射").first
+            require(mapping_link.count() == 1, "mapping profile navigation link not rendered")
+            with page.expect_navigation(wait_until="domcontentloaded"):
+                mapping_link.click()'''
+assert old_mapping_nav in browser_text, "mapping profile navigation selector drifted"
+browser_text = browser_text.replace(old_mapping_nav, new_mapping_nav)
+browser.write_text(browser_text, encoding="utf-8")
+
 
 # Integration Hub form buttons must not depend on HTML's implicit submit
 # default. Explicit types make the UI deterministic for browsers, automation
