@@ -35,4 +35,18 @@ new_block = '''    all_in(src["fact"], 'name="hr_dev_fact_uuid_type_val_idx"')\n
 assert old_block in text, "HR10 contract block drifted"
 contract.write_text(text.replace(old_block, new_block), encoding="utf-8")
 
-print("V1.3.1 runner patch applied: HR10 index 31 chars -> 29 chars with forward RenameIndex migration")
+
+
+# The production lock intentionally includes ldap3. The old unit test expected
+# the reviewed client to be absent, which is no longer true. Keep the fail-closed
+# assertion but align it with the installed production client: an unreachable
+# LDAP provider must fail as LDAP_BIND_FAILED rather than pretending the client
+# package is missing.
+ldap_test = root / "backend/hr_integration/tests/test_sso_runtime.py"
+ldap_text = ldap_test.read_text(encoding="utf-8")
+old_expectation = 'self.assertIn(ctx.exception.code,{"LDAP_CLIENT_MISSING","SSO_CREDENTIAL_DECRYPT_FAILED"})'
+new_expectation = 'self.assertIn(ctx.exception.code,{"LDAP_BIND_FAILED","SSO_CREDENTIAL_DECRYPT_FAILED"})'
+assert old_expectation in ldap_text, "LDAP test contract drifted"
+ldap_test.write_text(ldap_text.replace(old_expectation, new_expectation), encoding="utf-8")
+
+print("V1.3.1 runner patch applied: HR10 index repair + LDAP installed-client test contract alignment")
