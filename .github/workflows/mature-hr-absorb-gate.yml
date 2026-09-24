@@ -1,0 +1,54 @@
+name: MatureHR Integration MySQL 8.4 Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/mature-hr-absorb-gate.yml"
+      - ".github/runner/mature_hr_*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mature-hr-mysql84:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: yueke_hr_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      DATABASE_URL: mysql://root@127.0.0.1:3306/yueke_hr_ci
+      DJANGO_SETTINGS_MODULE: horilla.settings
+      DEBUG: "1"
+      SECRET_KEY: ci-only-mature-hr-gate
+      ALLOWED_HOSTS: 127.0.0.1,localhost,testserver
+      TIME_ZONE: Asia/Shanghai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare pinned MatureHR candidate
+        run: bash .github/runner/mature_hr_prepare.sh
+      - name: Run MySQL 8.4 MatureHR integration gate
+        run: bash .github/runner/mature_hr_run.sh
+      - name: Upload MatureHR evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mature-hr-integration-gate
+          path: /tmp/mature-hr/evidence
+          if-no-files-found: warn
+          retention-days: 14
