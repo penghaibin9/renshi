@@ -7,6 +7,10 @@ on:
       - ".github/workflows/v131-first-school-sso-runner.yml"
       - ".github/runner/v131_*"
 
+concurrency:
+  group: v131-first-school-sso-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
