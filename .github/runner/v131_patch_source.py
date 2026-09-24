@@ -62,6 +62,18 @@ new_publish_assert = '            publish_body = page.locator("body").inner_text
 assert old_publish_assert in browser_text, "configuration browser publish assertion drifted"
 browser.write_text(browser_text.replace(old_publish_assert, new_publish_assert), encoding="utf-8")
 
+browser_text = browser.read_text(encoding="utf-8")
+old_profile_submit = '                profile_details.locator(\'button[type="submit"]\').click()'
+new_profile_submit = '                profile_details.locator(\'button:has-text("保存映射方案")\').click()'
+old_mapping_submit = '                mapping_details.locator(\'button[type="submit"]\').click()'
+new_mapping_submit = '                mapping_details.locator(\'button:has-text("保存字段映射")\').click()'
+assert old_profile_submit in browser_text, "mapping profile submit selector drifted"
+assert old_mapping_submit in browser_text, "field mapping submit selector drifted"
+browser_text = browser_text.replace(old_profile_submit, new_profile_submit)
+browser_text = browser_text.replace(old_mapping_submit, new_mapping_submit)
+browser.write_text(browser_text, encoding="utf-8")
+
+
 # Integration Hub form buttons must not depend on HTML's implicit submit
 # default. Explicit types make the UI deterministic for browsers, automation
 # and accessibility tools.
